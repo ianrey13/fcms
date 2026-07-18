@@ -12,13 +12,10 @@ COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 # Install Node.js and npm
 RUN apk add --no-cache nodejs npm
 
-# Set working directory
 WORKDIR /var/www/html
 
-# Copy files
 COPY . .
 
-# Set temporary environment variables
 ENV BROADCAST_DRIVER=log
 ENV REVERB_APP_KEY=temp
 ENV REVERB_APP_SECRET=temp
@@ -28,12 +25,13 @@ ENV COMPOSER_ALLOW_SUPERUSER=1
 # Install PHP dependencies
 RUN composer install --no-dev --optimize-autoloader
 
-# Install frontend dependencies
+# Install and build frontend
 RUN npm install --legacy-peer-deps
 RUN npm install react-is@18.2.0 --legacy-peer-deps
+RUN npm run build
 
-# Build frontend - with verbose output
-RUN npm run build --verbose
+# Verify manifest was created
+RUN ls -la /var/www/html/public/build/ || echo "Build failed!"
 
 # Create storage directories
 RUN mkdir -p storage/framework/views storage/framework/cache storage/framework/sessions
@@ -48,10 +46,6 @@ RUN chmod -R 777 /var/www/html/public
 # Copy nginx config
 COPY nginx.conf /etc/nginx/nginx.conf
 
-# Check if manifest exists
-RUN ls -la /var/www/html/public/build/ || echo "Build directory not found"
-
 EXPOSE 8000
 
-# Clear all caches and start services
 CMD sh -c "php artisan config:clear && php artisan route:clear && php artisan view:clear && php artisan cache:clear && php artisan config:cache && php artisan route:cache && php artisan view:cache && php-fpm -D && nginx -g 'daemon off;'"
