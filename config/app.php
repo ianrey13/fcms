@@ -190,7 +190,7 @@ return [
 
     'aliases' => Facade::defaultAliases()->merge([
         // ✅ ADD THIS - Excel Facade
-        'Excel' => Maatwebsite\Excel\Facades\Excel::class,
+       // 'Excel' => Maatwebsite\Excel\Facades\Excel::class,
 
         // ✅ ADD THIS - PDF Facade
         'PDF' => Barryvdh\DomPDF\Facade\Pdf::class,

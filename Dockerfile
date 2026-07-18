@@ -3,7 +3,7 @@ FROM php:8.3-fpm-alpine
 # Install nginx
 RUN apk add --no-cache nginx
 
-# Install PHP extensions (NO GD needed!)
+# Install PHP extensions
 RUN docker-php-ext-install pdo pdo_mysql bcmath
 
 # Install Composer
@@ -17,6 +17,9 @@ WORKDIR /var/www/html
 
 # Copy files
 COPY . .
+
+# Remove excel config before composer install
+RUN rm -f config/excel.php
 
 # Install PHP dependencies
 RUN composer install --no-dev --optimize-autoloader
