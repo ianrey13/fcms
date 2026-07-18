@@ -11,7 +11,7 @@
         <title>{{ config('app.name', 'FCMS') }}</title>
         
         @viteReactRefresh
-        @vite(['resources/css/app.css', 'resources/js/main.jsx'])
+        @vite('resources/js/main.jsx')
     </head>
     <body>
         <div id="root"></div>
