@@ -3,6 +3,7 @@ FROM php:8.3-fpm-alpine
 # Install nginx and system dependencies
 RUN apk add --no-cache \
     nginx \
+    pkgconfig \
     zlib-dev \
     libjpeg-turbo-dev \
     libpng-dev \
