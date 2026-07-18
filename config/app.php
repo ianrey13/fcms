@@ -162,7 +162,7 @@ return [
          * Package Service Providers...
          */
         // ✅ ADD THIS - Excel Service Provider
-        Maatwebsite\Excel\ExcelServiceProvider::class,
+       // Maatwebsite\Excel\ExcelServiceProvider::class,
 
         // ✅ ADD THIS - DomPDF Service Provider (for PDF exports)
         Barryvdh\DomPDF\ServiceProvider::class,
