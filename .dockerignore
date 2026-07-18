@@ -1,0 +1,16 @@
+/node_modules
+/vendor
+/public/hot
+/public/storage
+/storage/*.key
+/.env
+/.git
+/.github
+/.idea
+/.vscode
+/.env.*
+!.env.example
+*.log
+*.sql
+.DS_Store
+Thumbs.db
