@@ -1,10 +1,12 @@
-FROM richarvey/nginx-php-fpm:3.1.6
+FROM richarvey/nginx-php-fpm:3.1.6-php83
 
-# Set working directory
 WORKDIR /var/www/html
 
 # Copy all files
 COPY . .
+
+# Set Composer to allow superuser
+ENV COMPOSER_ALLOW_SUPERUSER=1
 
 # Install PHP dependencies
 RUN composer install --no-dev --optimize-autoloader
@@ -21,7 +23,9 @@ RUN chmod -R 755 /var/www/html/storage /var/www/html/bootstrap/cache
 ENV APP_ENV=production
 ENV APP_DEBUG=false
 ENV LOG_CHANNEL=stderr
-ENV COMPOSER_ALLOW_SUPERUSER=1
 
 # Define the start command
+COPY start.sh /start.sh
+RUN chmod +x /start.sh
+
 CMD ["/start.sh"]
