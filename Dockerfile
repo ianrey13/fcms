@@ -1,17 +1,27 @@
-FROM richarvey/nginx-php-fpm:3.1.6-php83
+FROM php:8.3-fpm-alpine
 
+# Install nginx
+RUN apk add --no-cache nginx
+
+# Install PHP extensions
+RUN docker-php-ext-install pdo pdo_mysql bcmath
+
+# Install Composer
+COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
+
+# Install Node.js and npm
+RUN apk add --no-cache nodejs npm
+
+# Set working directory
 WORKDIR /var/www/html
 
-# Copy all files
+# Copy files
 COPY . .
-
-# Set Composer to allow superuser
-ENV COMPOSER_ALLOW_SUPERUSER=1
 
 # Install PHP dependencies
 RUN composer install --no-dev --optimize-autoloader
 
-# Build frontend assets (React + Vite)
+# Install and build frontend
 RUN npm install --legacy-peer-deps
 RUN npm run build
 
@@ -19,13 +29,10 @@ RUN npm run build
 RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache
 RUN chmod -R 755 /var/www/html/storage /var/www/html/bootstrap/cache
 
-# Laravel config
-ENV APP_ENV=production
-ENV APP_DEBUG=false
-ENV LOG_CHANNEL=stderr
-
-# Define the start command
+# Copy start script
 COPY start.sh /start.sh
 RUN chmod +x /start.sh
+
+EXPOSE 8000
 
 CMD ["/start.sh"]
