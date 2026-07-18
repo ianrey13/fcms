@@ -3,8 +3,8 @@ FROM php:8.3-fpm-alpine
 # Install nginx
 RUN apk add --no-cache nginx
 
-# Install PHP extensions
-RUN docker-php-ext-install pdo pdo_mysql bcmath
+# Install PHP extensions (including GD)
+RUN docker-php-ext-install pdo pdo_mysql bcmath gd
 
 # Install Composer
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
@@ -18,8 +18,8 @@ WORKDIR /var/www/html
 # Copy files
 COPY . .
 
-# Install PHP dependencies
-RUN composer install --no-dev --optimize-autoloader
+# Install PHP dependencies (ignore missing extensions if any)
+RUN composer install --no-dev --optimize-autoloader --ignore-platform-req=ext-gd
 
 # Install and build frontend
 RUN npm install --legacy-peer-deps
@@ -28,6 +28,9 @@ RUN npm run build
 # Set permissions
 RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache
 RUN chmod -R 755 /var/www/html/storage /var/www/html/bootstrap/cache
+
+# Copy nginx config
+COPY nginx.conf /etc/nginx/nginx.conf
 
 # Copy start script
 COPY start.sh /start.sh
