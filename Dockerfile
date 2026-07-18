@@ -1,10 +1,24 @@
 FROM php:8.3-fpm-alpine
 
-# Install nginx
-RUN apk add --no-cache nginx
+# Install nginx and system dependencies
+RUN apk add --no-cache \
+    nginx \
+    zlib-dev \
+    libjpeg-turbo-dev \
+    libpng-dev \
+    libwebp-dev \
+    freetype-dev \
+    libxpm-dev \
+    libavif-dev
 
-# Install PHP extensions (including GD)
-RUN docker-php-ext-install pdo pdo_mysql bcmath gd
+# Install PHP extensions (GD with all features)
+RUN docker-php-ext-configure gd \
+    --with-freetype \
+    --with-jpeg \
+    --with-webp \
+    --with-xpm \
+    --with-avif \
+    && docker-php-ext-install -j$(nproc) gd pdo pdo_mysql bcmath
 
 # Install Composer
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
@@ -18,7 +32,7 @@ WORKDIR /var/www/html
 # Copy files
 COPY . .
 
-# Install PHP dependencies (ignore missing extensions if any)
+# Install PHP dependencies
 RUN composer install --no-dev --optimize-autoloader --ignore-platform-req=ext-gd
 
 # Install and build frontend
