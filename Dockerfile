@@ -18,8 +18,12 @@ WORKDIR /var/www/html
 # Copy files
 COPY . .
 
-# Remove excel config before composer install
-RUN rm -f config/excel.php
+# Set temporary environment variables to avoid Reverb errors
+ENV BROADCAST_DRIVER=log
+ENV REVERB_APP_KEY=temp
+ENV REVERB_APP_SECRET=temp
+ENV REVERB_APP_ID=temp
+ENV COMPOSER_ALLOW_SUPERUSER=1
 
 # Install PHP dependencies
 RUN composer install --no-dev --optimize-autoloader
