@@ -18,7 +18,7 @@ WORKDIR /var/www/html
 # Copy files
 COPY . .
 
-# Set temporary environment variables to avoid Reverb errors
+# Set temporary environment variables
 ENV BROADCAST_DRIVER=log
 ENV REVERB_APP_KEY=temp
 ENV REVERB_APP_SECRET=temp
@@ -28,8 +28,13 @@ ENV COMPOSER_ALLOW_SUPERUSER=1
 # Install PHP dependencies
 RUN composer install --no-dev --optimize-autoloader
 
-# Install and build frontend
+# Install frontend dependencies
 RUN npm install --legacy-peer-deps
+
+# Install react-is for recharts compatibility
+RUN npm install react-is@18.2.0 --legacy-peer-deps
+
+# Build frontend
 RUN npm run build
 
 # Set permissions
