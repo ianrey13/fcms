@@ -2,10 +2,7 @@
 
 # Set permissions
 chown -R www-data:www-data storage bootstrap/cache
-chmod -R 775 storage/bootstrap/cache
-
-# Optional: Check database connection
-php artisan --version
+chmod -R 775 storage bootstrap/cache
 
 # Skip migrations - tables already exist
 echo "✅ Skipping migrations - database already set up"
