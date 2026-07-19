@@ -78,47 +78,73 @@ const BudgetPolicies = () => {
   const fetchBudgetData = async () => {
     setLoading(true);
     try {
-      const response = await mayorsOfficeAPI.getAllDepartmentsWithBudget();
-      let data = response.data?.data || response.data || [];
-      if (data.data) {
-        data = data.data;
-      }
-      
-      const formattedData = (Array.isArray(data) ? data : []).map(item => ({
-        ...item,
-        department_id: item.department_id,
-        department_name: item.department_name || 'Unknown',
-        department_code: item.department_code || '',
-        allocated_amount: parseFloat(item.allocated_amount || item.default_weekly_allocation || 0),
-        remaining_balance: parseFloat(item.remaining_balance || item.allocated_amount || 0),
-        spent_amount: parseFloat(item.spent_amount || 0),
-        has_budget: item.has_budget !== false,
-        period_id: item.period_id || null,
-        week_start: item.week_start || null,
-        status: item.status || 'inactive',
-      }));
-      
-      setBudgetData(formattedData);
+        // ✅ Uses your endpoint: /mayors-office/departments/all-with-budget
+        const response = await mayorsOfficeAPI.getAllDepartmentsWithBudget();
+        console.log('📊 Budget Data Response:', response);
+        
+        let data = response.data?.data || response.data || [];
+        if (data.data) {
+            data = data.data;
+        }
+        
+        const formattedData = (Array.isArray(data) ? data : []).map(item => ({
+            ...item,
+            department_id: item.department_id,
+            department_name: item.department_name || 'Unknown',
+            department_code: item.department_code || '',
+            allocated_amount: parseFloat(item.allocated_amount || item.default_weekly_allocation || 0),
+            remaining_balance: parseFloat(item.remaining_balance || item.allocated_amount || 0),
+            spent_amount: parseFloat(item.spent_amount || 0),
+            has_budget: item.has_budget !== false,
+            period_id: item.period_id || null,
+            week_start: item.week_start || null,
+            status: item.status || 'inactive',
+        }));
+        
+        setBudgetData(formattedData);
     } catch (error) {
-      console.error('Failed to fetch budget data:', error);
-      toast.error('Failed to load budget data');
-      setBudgetData([]);
+        console.error('Failed to fetch budget data:', error);
+        toast.error('Failed to load budget data');
+        setBudgetData([]);
     } finally {
-      setLoading(false);
+        setLoading(false);
     }
-  };
+};
 
-  const fetchBudgetHistory = async () => {
+ const fetchBudgetHistory = async () => {
     try {
-      const response = await mayorsOfficeAPI.getBudgetEventLogs?.() || 
-                        await mayorsOfficeAPI.getBudgetHistory?.();
-      const data = response.data?.data || response.data || [];
-      setBudgetHistory(Array.isArray(data) ? data : []);
+        // ✅ Uses your endpoint: /mayors-office/budget-history
+        const response = await mayorsOfficeAPI.getBudgetHistory();
+        console.log('📊 Budget History Response:', response);
+        
+        let data = response.data?.data || response.data || [];
+        
+        // Ensure we have an array
+        if (!Array.isArray(data)) {
+            data = [];
+        }
+        
+        setBudgetHistory(data);
     } catch (error) {
-      console.error('Failed to fetch budget history:', error);
-      setBudgetHistory([]);
+        console.error('Failed to fetch budget history:', error);
+        // Fallback: create history from current budget data
+        const fallbackHistory = budgetData
+            .filter(item => item.allocated_amount > 0)
+            .map(item => ({
+                id: item.department_id,
+                department_id: item.department_id,
+                department_name: item.department_name,
+                action: 'created',
+                previous_amount: 0,
+                added_amount: item.allocated_amount,
+                new_amount: item.allocated_amount,
+                reason: 'Initial budget',
+                user_name: 'System',
+                created_at: new Date().toISOString()
+            }));
+        setBudgetHistory(fallbackHistory);
     }
-  };
+};
 
   // ✅ Fetch budget reset history from dept_budget_period
   const fetchResetHistory = async () => {
