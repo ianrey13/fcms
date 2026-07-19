@@ -730,5 +730,77 @@ public function getPeriods(Request $request)
         ], 500);
     }
 }
+
+/**
+ * Get all departments with their budget data (for the frontend)
+ */
+public function getAllDepartmentsWithBudget()
+{
+    try {
+        $result = [];
+        
+        // Get all active departments
+        $departments = DB::table('departments')
+            ->where('is_active', 1)
+            ->get();
+        
+        foreach ($departments as $dept) {
+            // Get the active period for this department
+            $period = DB::table('dept_budget_period')
+                ->where('department_id', $dept->department_id)
+                ->where('status', 'active')
+                ->first();
+            
+            // Get the policy (fallback)
+            $policy = DB::table('dept_budget_policy')
+                ->where('department_id', $dept->department_id)
+                ->first();
+            
+            // Determine the allocated amount
+            $allocatedAmount = 0;
+            $remainingBalance = 0;
+            $status = 'inactive';
+            $weekStart = null;
+            $periodId = null;
+            
+            if ($period) {
+                $allocatedAmount = (float) ($period->allocated_amount ?? 0);
+                $remainingBalance = (float) ($period->remaining_balance ?? $allocatedAmount);
+                $status = $period->status ?? 'inactive';
+                $weekStart = $period->week_start ?? null;
+                $periodId = $period->period_id ?? null;
+            } elseif ($policy) {
+                $allocatedAmount = (float) ($policy->default_weekly_allocation ?? 0);
+                $remainingBalance = $allocatedAmount;
+                $status = 'inactive';
+            }
+            
+            $result[] = [
+                'department_id' => $dept->department_id,
+                'department_name' => $dept->department_name,
+                'department_code' => $dept->department_code,
+                'allocated_amount' => $allocatedAmount,
+                'remaining_balance' => $remainingBalance,
+                'spent_amount' => 0,
+                'status' => $status,
+                'has_budget' => ($policy || $period) ? true : false,
+                'period_id' => $periodId,
+                'week_start' => $weekStart,
+            ];
+        }
+        
+        return response()->json([
+            'success' => true,
+            'data' => $result
+        ]);
+    } catch (\Exception $e) {
+        \Log::error('getAllDepartmentsWithBudget error: ' . $e->getMessage());
+        return response()->json([
+            'success' => false,
+            'message' => $e->getMessage(),
+            'data' => []
+        ], 500);
+    }
+}
     
 }
