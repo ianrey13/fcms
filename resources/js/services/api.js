@@ -177,6 +177,14 @@ export const mayorsOfficeAPI = {
     api.get("/mayors-office/receipts/for-verification", { params }),
   verifyReceipt: (receiptId, data) => 
     api.post(`/mayors-office/receipts/${receiptId}/verify`, data),
+
+   getBudgetHistory: (params) => 
+    api.get('/mayors-office/budget-history', { params }),
+    
+   getBudgetSummary: () => 
+    api.get('/mayors-office/budget-summary'),
+   updateBudgetPolicy: (departmentId, data) => 
+    api.put(`/mayors-office/budget-policies/${departmentId}`, data),
 };
 
 // ============ DRIVER API (Merged with Staff) ============
