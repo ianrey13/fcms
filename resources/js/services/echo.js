@@ -10,6 +10,7 @@ window.Pusher = Pusher;
 
 const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+const isProduction = window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
 
 // ============================================
 // ✅ GET CORRECT HOST
@@ -20,7 +21,11 @@ const PC_IP = import.meta.env.VITE_PC_IP || '192.168.1.5';
 
 let wsHost = import.meta.env.VITE_REVERB_HOST || 'localhost';
 
-if (isMobile) {
+// ✅ PRODUCTION: Use the Render URL
+if (isProduction) {
+    wsHost = window.location.hostname; // fcms-j69h.onrender.com
+    console.log('🌐 Production detected - using host:', wsHost);
+} else if (isMobile) {
     wsHost = PC_IP;
     console.log('📱 Mobile device detected - using IP:', wsHost);
 } else {
@@ -28,17 +33,21 @@ if (isMobile) {
     console.log('💻 Desktop detected - using:', wsHost);
 }
 
-const wsPort = parseInt(import.meta.env.VITE_REVERB_PORT) || 8080;
-const wsKey = import.meta.env.VITE_REVERB_APP_KEY || 'velng2wlywkgfpeuhouw';
-const wsScheme = import.meta.env.VITE_REVERB_SCHEME || 'http';
+// ✅ For Reverb on Render, we need to use port 8000 (the web port)
+const wsPort = isProduction ? 8000 : (parseInt(import.meta.env.VITE_REVERB_PORT) || 8080);
+const wsKey = import.meta.env.VITE_REVERB_APP_KEY || 'tvv4dolwfj6x4radqf76';
+const wsScheme = isProduction ? 'https' : (import.meta.env.VITE_REVERB_SCHEME || 'http');
 
 // ✅ Get the correct API URL for auth
-const apiUrl = isMobile 
-    ? `http://${PC_IP}:8000/api`
-    : import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+const apiUrl = isProduction 
+    ? `https://${window.location.hostname}/api`
+    : (isMobile 
+        ? `http://${PC_IP}:8000/api`
+        : import.meta.env.VITE_API_URL || 'http://localhost:8000/api');
 
 console.log('🔊 ===== ECHO CONFIG =====');
 console.log('📱 Platform:', isMobile ? 'Mobile' : 'Desktop');
+console.log('🌐 Environment:', isProduction ? 'Production' : 'Local');
 console.log('🏠 Host:', wsHost);
 console.log('🔌 Port:', wsPort);
 console.log('🔑 Key:', wsKey);
