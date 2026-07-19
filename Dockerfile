@@ -16,7 +16,7 @@ WORKDIR /var/www/html
 
 COPY . .
 
-ENV BROADCAST_DRIVER=log
+ENV BROADCAST_DRIVER=reverb
 ENV REVERB_APP_KEY=temp
 ENV REVERB_APP_SECRET=temp
 ENV REVERB_APP_ID=temp
@@ -47,5 +47,7 @@ RUN chmod -R 777 /var/www/html/public
 COPY nginx.conf /etc/nginx/nginx.conf
 
 EXPOSE 8000
+EXPOSE 8080
 
-CMD sh -c "php artisan config:clear && php artisan route:clear && php artisan view:clear && php artisan cache:clear && php artisan config:cache && php artisan route:cache && php artisan view:cache && php-fpm -D && nginx -g 'daemon off;'"
+# Start all services: Scheduler + Reverb + PHP-FPM + Nginx
+CMD sh -c "php artisan config:clear && php artisan route:clear && php artisan view:clear && php artisan cache:clear && php artisan config:cache && php artisan route:cache && php artisan view:cache && php artisan schedule:work > /dev/null 2>&1 & php artisan reverb:start --host=0.0.0.0 --port=8080 > /dev/null 2>&1 & php-fpm -D && nginx -g 'daemon off;'"
