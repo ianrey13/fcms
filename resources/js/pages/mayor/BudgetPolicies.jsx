@@ -10,7 +10,6 @@ import {
   Plus,
   Edit,
   Trash2,
-  X,
   CheckCircle,
   AlertCircle,
   Search,
@@ -22,10 +21,8 @@ import {
   Loader2,
   History,
   ArrowUpCircle,
-  Clock,
   ChevronDown,
   ChevronUp,
-  Eye,
 } from 'lucide-react';
 import {
   Dialog,
@@ -44,7 +41,6 @@ const BudgetPolicies = () => {
   const [budgetHistory, setBudgetHistory] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [historyLoading, setHistoryLoading] = useState(false);
   
   // Modal states
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -61,7 +57,8 @@ const BudgetPolicies = () => {
   const [formData, setFormData] = useState({
     department_id: '',
     default_weekly_allocation: '',
-    add_amount: '', // ✅ NEW: For adding to existing budget
+    add_amount: '',
+    reason: '',
   });
   const [formErrors, setFormErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -83,29 +80,41 @@ const BudgetPolicies = () => {
       if (data.data) {
         data = data.data;
       }
-      setBudgetData(Array.isArray(data) ? data : []);
+      
+      // ✅ Format data with proper fields
+      const formattedData = (Array.isArray(data) ? data : []).map(item => ({
+        ...item,
+        department_id: item.department_id,
+        department_name: item.department_name || 'Unknown',
+        department_code: item.department_code || '',
+        allocated_amount: parseFloat(item.allocated_amount || item.default_weekly_allocation || 0),
+        remaining_balance: parseFloat(item.remaining_balance || item.allocated_amount || 0),
+        spent_amount: parseFloat(item.spent_amount || 0),
+        has_budget: item.has_budget !== false,
+        period_id: item.period_id || null,
+        week_start: item.week_start || null,
+        status: item.status || 'inactive',
+      }));
+      
+      setBudgetData(formattedData);
     } catch (error) {
       console.error('Failed to fetch budget data:', error);
       toast.error('Failed to load budget data');
+      setBudgetData([]);
     } finally {
       setLoading(false);
     }
   };
 
   const fetchBudgetHistory = async () => {
-    setHistoryLoading(true);
     try {
-      // ✅ Fetch budget event logs from backend
       const response = await mayorsOfficeAPI.getBudgetEventLogs?.() || 
                         await mayorsOfficeAPI.getBudgetHistory?.();
       const data = response.data?.data || response.data || [];
       setBudgetHistory(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error('Failed to fetch budget history:', error);
-      // If endpoint doesn't exist, use mock data or empty array
       setBudgetHistory([]);
-    } finally {
-      setHistoryLoading(false);
     }
   };
 
@@ -116,20 +125,14 @@ const BudgetPolicies = () => {
     toast.success('Data refreshed');
   };
 
-  // ✅ CREATE with Add to Existing
+  // ✅ CREATE
   const handleCreate = async (e) => {
     e.preventDefault();
     
     const errors = {};
     if (!formData.department_id) errors.department_id = 'Please select a department';
-    if (!formData.default_weekly_allocation && !formData.add_amount) {
-      errors.default_weekly_allocation = 'Please enter an allocation amount';
-    }
-    if (parseFloat(formData.default_weekly_allocation || 0) < 0) {
-      errors.default_weekly_allocation = 'Allocation must be a positive number';
-    }
-    if (parseFloat(formData.add_amount || 0) < 0) {
-      errors.add_amount = 'Add amount must be a positive number';
+    if (!formData.default_weekly_allocation || parseFloat(formData.default_weekly_allocation) <= 0) {
+      errors.default_weekly_allocation = 'Please enter a valid allocation amount';
     }
     
     if (Object.keys(errors).length > 0) {
@@ -139,43 +142,31 @@ const BudgetPolicies = () => {
     
     setIsSubmitting(true);
     try {
-      const allocation = parseFloat(formData.default_weekly_allocation || 0);
-      const addAmount = parseFloat(formData.add_amount || 0);
-      const totalAmount = allocation + addAmount;
-      
-      const response = await mayorsOfficeAPI.createBudgetPolicy({
+      await mayorsOfficeAPI.createBudgetPolicy({
         department_id: parseInt(formData.department_id),
-        default_weekly_allocation: totalAmount,
-        // ✅ Send additional info for history
-        previous_amount: allocation,
-        added_amount: addAmount,
-        reason: 'Initial budget allocation',
+        default_weekly_allocation: parseFloat(formData.default_weekly_allocation),
+        reason: formData.reason || 'Initial budget allocation',
       });
       
-      console.log('✅ Create response:', response);
-      toast.success(`Budget policy created with ₱${addAmount.toFixed(2)} added!`);
+      toast.success('Budget policy created successfully!');
       setShowCreateModal(false);
       resetForm();
       await Promise.all([fetchBudgetData(), fetchBudgetHistory()]);
     } catch (error) {
-      console.error('❌ Create error:', error);
-      const message = error.response?.data?.message || 'Failed to create budget policy';
-      toast.error(message);
+      console.error('Create error:', error);
+      toast.error(error.response?.data?.message || 'Failed to create budget policy');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // ✅ UPDATE - ADD to Existing Budget
+  // ✅ UPDATE - ADD to Budget
   const handleUpdate = async (e) => {
     e.preventDefault();
     
     const errors = {};
-    if (!formData.add_amount) {
-      errors.add_amount = 'Please enter an amount to add';
-    }
-    if (parseFloat(formData.add_amount || 0) <= 0) {
-      errors.add_amount = 'Amount must be greater than 0';
+    if (!formData.add_amount || parseFloat(formData.add_amount) <= 0) {
+      errors.add_amount = 'Please enter a valid amount to add';
     }
     
     if (Object.keys(errors).length > 0) {
@@ -189,26 +180,22 @@ const BudgetPolicies = () => {
       const currentAllocation = parseFloat(editingPolicy?.allocated_amount || 0);
       const newTotal = currentAllocation + addAmount;
       
-      const response = await mayorsOfficeAPI.updateBudgetPolicy(
+      await mayorsOfficeAPI.updateBudgetPolicy(
         editingPolicy.department_id,
         {
           default_weekly_allocation: newTotal,
-          // ✅ Send additional info for history
-          previous_amount: currentAllocation,
           added_amount: addAmount,
           reason: formData.reason || 'Budget addition',
         }
       );
       
-      console.log('✅ Update response:', response);
-      toast.success(`₱${addAmount.toFixed(2)} added to budget! New total: ₱${newTotal.toFixed(2)}`);
+      toast.success(`✅ ₱${addAmount.toFixed(2)} added! New total: ₱${newTotal.toFixed(2)}`);
       setShowEditModal(false);
       resetForm();
       await Promise.all([fetchBudgetData(), fetchBudgetHistory()]);
     } catch (error) {
-      console.error('❌ Update error:', error);
-      const message = error.response?.data?.message || 'Failed to update budget';
-      toast.error(message);
+      console.error('Update error:', error);
+      toast.error(error.response?.data?.message || 'Failed to update budget');
     } finally {
       setIsSubmitting(false);
     }
@@ -220,16 +207,14 @@ const BudgetPolicies = () => {
     
     setIsSubmitting(true);
     try {
-      const response = await mayorsOfficeAPI.deleteBudgetPolicy(deletingPolicy.department_id);
-      console.log('✅ Delete response:', response);
+      await mayorsOfficeAPI.deleteBudgetPolicy(deletingPolicy.department_id);
       toast.success('Budget policy deleted successfully!');
       setShowDeleteModal(false);
       setDeletingPolicy(null);
       await Promise.all([fetchBudgetData(), fetchBudgetHistory()]);
     } catch (error) {
-      console.error('❌ Delete error:', error);
-      const message = error.response?.data?.message || 'Failed to delete budget policy';
-      toast.error(message);
+      console.error('Delete error:', error);
+      toast.error(error.response?.data?.message || 'Failed to delete budget policy');
     } finally {
       setIsSubmitting(false);
     }
@@ -241,19 +226,17 @@ const BudgetPolicies = () => {
     
     setIsSubmitting(true);
     try {
-      const response = await mayorsOfficeAPI.forceActivateBudget({
+      await mayorsOfficeAPI.forceActivateBudget({
         department_id: showActivateModal.department_id,
         amount: showActivateModal.allocated_amount || 0,
       });
       
-      console.log('✅ Activate response:', response);
       toast.success(`Budget activated for ${showActivateModal.department_name}!`);
       setShowActivateModal(null);
       await Promise.all([fetchBudgetData(), fetchBudgetHistory()]);
     } catch (error) {
-      console.error('❌ Activate error:', error);
-      const message = error.response?.data?.message || 'Failed to activate budget';
-      toast.error(message);
+      console.error('Activate error:', error);
+      toast.error(error.response?.data?.message || 'Failed to activate budget');
     } finally {
       setIsSubmitting(false);
     }
@@ -283,7 +266,6 @@ const BudgetPolicies = () => {
 
   const openHistoryModal = (policy) => {
     setSelectedDepartment(policy);
-    // Filter history for this department
     const deptHistory = budgetHistory.filter(
       h => h.department_id === policy.department_id
     );
@@ -321,7 +303,11 @@ const BudgetPolicies = () => {
 
   const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
-    return format(new Date(dateString), 'MMM dd, yyyy hh:mm a');
+    try {
+      return format(new Date(dateString), 'MMM dd, yyyy hh:mm a');
+    } catch {
+      return dateString;
+    }
   };
 
   const filteredData = useMemo(() => {
@@ -334,9 +320,9 @@ const BudgetPolicies = () => {
   }, [budgetData, searchTerm]);
 
   const summaryStats = useMemo(() => {
-    const totalAllocation = budgetData.reduce((sum, p) => sum + parseFloat(p.allocated_amount || 0), 0);
-    const totalSpent = budgetData.reduce((sum, p) => sum + parseFloat(p.spent_amount || 0), 0);
-    const totalRemaining = budgetData.reduce((sum, p) => sum + parseFloat(p.remaining_amount || 0), 0);
+    const totalAllocation = budgetData.reduce((sum, p) => sum + (p.allocated_amount || 0), 0);
+    const totalSpent = budgetData.reduce((sum, p) => sum + (p.spent_amount || 0), 0);
+    const totalRemaining = budgetData.reduce((sum, p) => sum + (p.remaining_balance || 0), 0);
     return { totalAllocation, totalSpent, totalRemaining };
   }, [budgetData]);
 
@@ -443,7 +429,6 @@ const BudgetPolicies = () => {
       {/* TAB 1: POLICIES */}
       {activeTab === 'policies' && (
         <>
-          {/* Search */}
           <Card>
             <div className="p-4 flex flex-col sm:flex-row gap-4">
               <div className="relative flex-1">
@@ -458,7 +443,6 @@ const BudgetPolicies = () => {
             </div>
           </Card>
 
-          {/* Budget Table */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -491,11 +475,11 @@ const BudgetPolicies = () => {
                     <tbody className="divide-y divide-slate-200">
                       {filteredData.map((policy) => {
                         const utilization = policy.allocated_amount > 0
-                          ? (policy.spent_amount / policy.allocated_amount) * 100
+                          ? ((policy.spent_amount || 0) / policy.allocated_amount) * 100
                           : 0;
                         const isLow = utilization > 80;
                         const isCritical = utilization > 95;
-                        const hasActivePeriod = policy.has_budget !== false;
+                        const hasActivePeriod = policy.status === 'active';
 
                         return (
                           <tr key={policy.department_id} className="hover:bg-slate-50 transition-colors">
@@ -513,7 +497,7 @@ const BudgetPolicies = () => {
                                 isLow ? 'text-yellow-600' :
                                 'text-green-600'
                               }`}>
-                                {formatCurrency(policy.remaining_amount)}
+                                {formatCurrency(policy.remaining_balance)}
                               </span>
                             </td>
                             <td className="px-4 py-3">
@@ -539,7 +523,6 @@ const BudgetPolicies = () => {
                             </td>
                             <td className="px-4 py-3 text-right">
                               <div className="flex items-center justify-end gap-1">
-                                {/* History Button */}
                                 <Button
                                   variant="ghost"
                                   size="sm"
@@ -562,12 +545,11 @@ const BudgetPolicies = () => {
                                   </Button>
                                 )}
                                 
-                                {/* Edit Button - ADD to Budget */}
                                 <Button
                                   variant="ghost"
                                   size="sm"
                                   onClick={() => openEditModal(policy)}
-                                  className="text-blue-600 hover:bg-blue-50 h-8 w-8 p-0"
+                                  className="text-green-600 hover:bg-green-50 h-8 w-8 p-0"
                                   title="Add to Budget"
                                 >
                                   <Plus className="h-4 w-4" />
@@ -622,7 +604,11 @@ const BudgetPolicies = () => {
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
                         <div className="flex items-center gap-3 mb-2">
-                          <Badge className="bg-blue-100 text-blue-700">
+                          <Badge className={`${
+                            entry.action === 'added' || entry.action === 'add' 
+                              ? 'bg-green-100 text-green-700' 
+                              : 'bg-blue-100 text-blue-700'
+                          }`}>
                             {entry.action || 'Added'}
                           </Badge>
                           <h4 className="font-semibold">{entry.department_name}</h4>
@@ -631,7 +617,7 @@ const BudgetPolicies = () => {
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
                           <div>
                             <span className="text-slate-500">Before:</span>
-                            <span className="font-medium ml-1">{formatCurrency(entry.before_amount || 0)}</span>
+                            <span className="font-medium ml-1">{formatCurrency(entry.previous_amount || 0)}</span>
                           </div>
                           <div>
                             <span className="text-green-600">+ Added:</span>
@@ -642,7 +628,7 @@ const BudgetPolicies = () => {
                           <div>
                             <span className="text-blue-600">After:</span>
                             <span className="font-medium text-blue-600 ml-1">
-                              {formatCurrency(entry.after_amount || entry.new_amount || 0)}
+                              {formatCurrency(entry.new_amount || 0)}
                             </span>
                           </div>
                           <div>
@@ -683,7 +669,7 @@ const BudgetPolicies = () => {
         </Card>
       )}
 
-      {/* CREATE MODAL - With Add Amount */}
+      {/* CREATE MODAL */}
       <Dialog open={showCreateModal} onOpenChange={setShowCreateModal}>
         <DialogContent className="max-w-md">
           <DialogHeader>
@@ -717,10 +703,11 @@ const BudgetPolicies = () => {
               </div>
 
               <div>
-                <Label>Base Allocation (₱) *</Label>
+                <Label>Weekly Allocation (₱) *</Label>
                 <Input
                   type="number"
                   step="0.01"
+                  min="0.01"
                   value={formData.default_weekly_allocation}
                   onChange={(e) => setFormData({ ...formData, default_weekly_allocation: e.target.value })}
                   placeholder="e.g., 5000.00"
@@ -728,6 +715,16 @@ const BudgetPolicies = () => {
                 {formErrors.default_weekly_allocation && (
                   <p className="text-red-500 text-xs mt-1">{formErrors.default_weekly_allocation}</p>
                 )}
+              </div>
+
+              <div>
+                <Label>Reason (Optional)</Label>
+                <Input
+                  type="text"
+                  value={formData.reason || ''}
+                  onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
+                  placeholder="e.g., Initial budget allocation"
+                />
               </div>
 
               <div className="bg-blue-50 p-3 rounded-lg">
@@ -754,8 +751,8 @@ const BudgetPolicies = () => {
       <Dialog open={showEditModal} onOpenChange={setShowEditModal}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <ArrowUpCircle className="h-5 w-5 text-green-600" />
+            <DialogTitle className="flex items-center gap-2 text-green-600">
+              <ArrowUpCircle className="h-5 w-5" />
               Add to Budget
             </DialogTitle>
             <DialogDescription>
@@ -787,6 +784,7 @@ const BudgetPolicies = () => {
                 <Input
                   type="number"
                   step="0.01"
+                  min="0.01"
                   value={formData.add_amount}
                   onChange={(e) => setFormData({ ...formData, add_amount: e.target.value })}
                   placeholder="e.g., 5000.00"
@@ -864,7 +862,7 @@ const BudgetPolicies = () => {
         </DialogContent>
       </Dialog>
 
-      {/* HISTORY MODAL - Department History */}
+      {/* HISTORY MODAL */}
       <Dialog open={showHistoryModal} onOpenChange={setShowHistoryModal}>
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
@@ -889,7 +887,11 @@ const BudgetPolicies = () => {
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-1">
-                          <Badge className="bg-blue-100 text-blue-700 text-xs">
+                          <Badge className={`${
+                            entry.action === 'added' || entry.action === 'add' 
+                              ? 'bg-green-100 text-green-700' 
+                              : 'bg-blue-100 text-blue-700'
+                          } text-xs`}>
                             {entry.action || 'Added'}
                           </Badge>
                           <span className="text-xs text-slate-400">{formatDate(entry.created_at)}</span>
@@ -897,7 +899,7 @@ const BudgetPolicies = () => {
                         <div className="grid grid-cols-3 gap-2 text-sm">
                           <div>
                             <span className="text-slate-500">Before:</span>
-                            <span className="font-medium ml-1">{formatCurrency(entry.before_amount || 0)}</span>
+                            <span className="font-medium ml-1">{formatCurrency(entry.previous_amount || 0)}</span>
                           </div>
                           <div>
                             <span className="text-green-600">+ Added:</span>
@@ -908,7 +910,7 @@ const BudgetPolicies = () => {
                           <div>
                             <span className="text-blue-600">After:</span>
                             <span className="font-medium text-blue-600 ml-1">
-                              {formatCurrency(entry.after_amount || entry.new_amount || 0)}
+                              {formatCurrency(entry.new_amount || 0)}
                             </span>
                           </div>
                         </div>
