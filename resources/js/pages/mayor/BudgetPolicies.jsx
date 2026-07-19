@@ -23,6 +23,8 @@ import {
   ArrowUpCircle,
   ChevronDown,
   ChevronUp,
+  Calendar,
+  Clock,
 } from 'lucide-react';
 import {
   Dialog,
@@ -34,11 +36,12 @@ import {
 } from '@/components/ui/dialog';
 import { mayorsOfficeAPI } from '../../services/api';
 import { toast } from 'react-hot-toast';
-import { format } from 'date-fns';
+import { format, formatDistanceToNow, differenceInDays } from 'date-fns';
 
 const BudgetPolicies = () => {
   const [budgetData, setBudgetData] = useState([]);
   const [budgetHistory, setBudgetHistory] = useState([]);
+  const [resetHistory, setResetHistory] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   
@@ -65,11 +68,11 @@ const BudgetPolicies = () => {
   
   // UI state
   const [searchTerm, setSearchTerm] = useState('');
-  const [activeTab, setActiveTab] = useState('policies');
 
   useEffect(() => {
     fetchBudgetData();
     fetchBudgetHistory();
+    fetchResetHistory();
   }, []);
 
   const fetchBudgetData = async () => {
@@ -81,7 +84,6 @@ const BudgetPolicies = () => {
         data = data.data;
       }
       
-      // ✅ Format data with proper fields
       const formattedData = (Array.isArray(data) ? data : []).map(item => ({
         ...item,
         department_id: item.department_id,
@@ -118,9 +120,58 @@ const BudgetPolicies = () => {
     }
   };
 
+  // ✅ Fetch budget reset history from dept_budget_period
+  const fetchResetHistory = async () => {
+    try {
+      const response = await mayorsOfficeAPI.getBudgetPeriods?.();
+      const data = response.data?.data || response.data || [];
+      const formattedResetHistory = (Array.isArray(data) ? data : [])
+        .filter(item => item.status === 'closed' || item.status === 'active')
+        .map(item => ({
+          ...item,
+          period_id: item.period_id,
+          department_id: item.department_id,
+          week_start: item.week_start,
+          week_end: item.week_end || addDays(new Date(item.week_start), 6),
+          allocated_amount: parseFloat(item.allocated_amount || 0),
+          status: item.status,
+          closed_at: item.closed_at,
+          created_at: item.created_at,
+          is_current: item.status === 'active',
+        }))
+        .sort((a, b) => new Date(b.week_start) - new Date(a.week_start));
+      
+      setResetHistory(formattedResetHistory);
+    } catch (error) {
+      console.error('Failed to fetch reset history:', error);
+      // Fallback: try to get from budgetData
+      const fallbackData = budgetData
+        .filter(item => item.week_start)
+        .map(item => ({
+          period_id: item.period_id || Date.now(),
+          department_id: item.department_id,
+          department_name: item.department_name,
+          week_start: item.week_start,
+          week_end: item.week_end || addDays(new Date(item.week_start), 6),
+          allocated_amount: item.allocated_amount,
+          status: item.status || 'active',
+          closed_at: item.closed_at,
+          is_current: item.status === 'active',
+        }));
+      setResetHistory(fallbackData);
+    }
+  };
+
+  // Helper to add days
+  const addDays = (date, days) => {
+    const result = new Date(date);
+    result.setDate(result.getDate() + days);
+    return result;
+  };
+
   const handleRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([fetchBudgetData(), fetchBudgetHistory()]);
+    await Promise.all([fetchBudgetData(), fetchBudgetHistory(), fetchResetHistory()]);
     setRefreshing(false);
     toast.success('Data refreshed');
   };
@@ -151,7 +202,7 @@ const BudgetPolicies = () => {
       toast.success('Budget policy created successfully!');
       setShowCreateModal(false);
       resetForm();
-      await Promise.all([fetchBudgetData(), fetchBudgetHistory()]);
+      await Promise.all([fetchBudgetData(), fetchBudgetHistory(), fetchResetHistory()]);
     } catch (error) {
       console.error('Create error:', error);
       toast.error(error.response?.data?.message || 'Failed to create budget policy');
@@ -192,7 +243,7 @@ const BudgetPolicies = () => {
       toast.success(`✅ ₱${addAmount.toFixed(2)} added! New total: ₱${newTotal.toFixed(2)}`);
       setShowEditModal(false);
       resetForm();
-      await Promise.all([fetchBudgetData(), fetchBudgetHistory()]);
+      await Promise.all([fetchBudgetData(), fetchBudgetHistory(), fetchResetHistory()]);
     } catch (error) {
       console.error('Update error:', error);
       toast.error(error.response?.data?.message || 'Failed to update budget');
@@ -211,7 +262,7 @@ const BudgetPolicies = () => {
       toast.success('Budget policy deleted successfully!');
       setShowDeleteModal(false);
       setDeletingPolicy(null);
-      await Promise.all([fetchBudgetData(), fetchBudgetHistory()]);
+      await Promise.all([fetchBudgetData(), fetchBudgetHistory(), fetchResetHistory()]);
     } catch (error) {
       console.error('Delete error:', error);
       toast.error(error.response?.data?.message || 'Failed to delete budget policy');
@@ -233,7 +284,7 @@ const BudgetPolicies = () => {
       
       toast.success(`Budget activated for ${showActivateModal.department_name}!`);
       setShowActivateModal(null);
-      await Promise.all([fetchBudgetData(), fetchBudgetHistory()]);
+      await Promise.all([fetchBudgetData(), fetchBudgetHistory(), fetchResetHistory()]);
     } catch (error) {
       console.error('Activate error:', error);
       toast.error(error.response?.data?.message || 'Failed to activate budget');
@@ -304,10 +355,52 @@ const BudgetPolicies = () => {
   const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
     try {
+      return format(new Date(dateString), 'MMM dd, yyyy');
+    } catch {
+      return dateString;
+    }
+  };
+
+  const formatDateTime = (dateString) => {
+    if (!dateString) return 'N/A';
+    try {
       return format(new Date(dateString), 'MMM dd, yyyy hh:mm a');
     } catch {
       return dateString;
     }
+  };
+
+  const getWeekNumber = (dateString) => {
+    if (!dateString) return 'N/A';
+    try {
+      const date = new Date(dateString);
+      const startOfYear = new Date(date.getFullYear(), 0, 1);
+      const diff = date - startOfYear;
+      const days = Math.floor(diff / (24 * 60 * 60 * 1000));
+      return Math.ceil((days + startOfYear.getDay() + 1) / 7);
+    } catch {
+      return 'N/A';
+    }
+  };
+
+  const getWeekRange = (weekStart) => {
+    if (!weekStart) return 'N/A';
+    try {
+      const start = new Date(weekStart);
+      const end = addDays(start, 6);
+      return `${formatDate(start)} - ${formatDate(end)}`;
+    } catch {
+      return 'N/A';
+    }
+  };
+
+  const getStatusBadge = (status) => {
+    if (status === 'active') {
+      return <Badge className="bg-green-100 text-green-700">Active</Badge>;
+    } else if (status === 'closed') {
+      return <Badge className="bg-gray-100 text-gray-700">Closed</Badge>;
+    }
+    return <Badge variant="outline">{status}</Badge>;
   };
 
   const filteredData = useMemo(() => {
@@ -325,6 +418,27 @@ const BudgetPolicies = () => {
     const totalRemaining = budgetData.reduce((sum, p) => sum + (p.remaining_balance || 0), 0);
     return { totalAllocation, totalSpent, totalRemaining };
   }, [budgetData]);
+
+  // Group reset history by week
+  const groupedResetHistory = useMemo(() => {
+    const groups = {};
+    resetHistory.forEach(item => {
+      const weekKey = item.week_start;
+      if (!groups[weekKey]) {
+        groups[weekKey] = {
+          week_start: item.week_start,
+          week_end: item.week_end,
+          departments: [],
+          total_allocated: 0,
+          status: item.status,
+          closed_at: item.closed_at,
+        };
+      }
+      groups[weekKey].departments.push(item);
+      groups[weekKey].total_allocated += parseFloat(item.allocated_amount || 0);
+    });
+    return Object.values(groups).sort((a, b) => new Date(b.week_start) - new Date(a.week_start));
+  }, [resetHistory]);
 
   if (loading) {
     return (
@@ -393,281 +507,270 @@ const BudgetPolicies = () => {
         </Card>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-2 border-b">
-        <button
-          onClick={() => setActiveTab('policies')}
-          className={`px-4 py-2 text-sm font-medium transition-colors ${
-            activeTab === 'policies'
-              ? 'border-b-2 border-blue-600 text-blue-600'
-              : 'text-slate-500 hover:text-slate-700'
-          }`}
-        >
-          <div className="flex items-center gap-2">
-            <Building2 className="h-4 w-4" />
-            Department Budgets
-          </div>
-        </button>
-        <button
-          onClick={() => setActiveTab('history')}
-          className={`px-4 py-2 text-sm font-medium transition-colors ${
-            activeTab === 'history'
-              ? 'border-b-2 border-blue-600 text-blue-600'
-              : 'text-slate-500 hover:text-slate-700'
-          }`}
-        >
-          <div className="flex items-center gap-2">
-            <History className="h-4 w-4" />
-            Budget History
-            <Badge variant="secondary" className="ml-1">
-              {budgetHistory.length}
-            </Badge>
-          </div>
-        </button>
-      </div>
-
-      {/* TAB 1: POLICIES */}
-      {activeTab === 'policies' && (
-        <>
-          <Card>
-            <div className="p-4 flex flex-col sm:flex-row gap-4">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
-                <Input
-                  placeholder="Search departments..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
-                />
-              </div>
+      {/* Budget Reset History Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <RotateCcw className="h-5 w-5 text-purple-500" />
+            Budget Reset History
+            <span className="ml-2 text-sm font-normal text-slate-500">
+              ({groupedResetHistory.length} weeks)
+            </span>
+          </CardTitle>
+          <CardDescription>
+            Track weekly budget resets across all departments. Each week shows the total allocated budget.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {groupedResetHistory.length === 0 ? (
+            <div className="text-center py-8">
+              <Calendar className="h-12 w-12 text-slate-300 mx-auto mb-3" />
+              <p className="text-slate-500">No budget reset history found</p>
+              <p className="text-sm text-slate-400">Budgets will appear here after the first weekly reset</p>
             </div>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <DollarSign className="h-5 w-5" />
-                Department Budgets
-                <span className="ml-2 text-sm font-normal text-slate-500">
-                  ({filteredData.length} departments)
-                </span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {filteredData.length === 0 ? (
-                <div className="text-center py-12">
-                  <DollarSign className="h-12 w-12 text-slate-300 mx-auto mb-3" />
-                  <p className="text-slate-500">No budget data found</p>
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead className="bg-slate-50 dark:bg-slate-900/50">
-                      <tr>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Department</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Allocated</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Spent</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Remaining</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Utilization</th>
-                        <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-200">
-                      {filteredData.map((policy) => {
-                        const utilization = policy.allocated_amount > 0
-                          ? ((policy.spent_amount || 0) / policy.allocated_amount) * 100
-                          : 0;
-                        const isLow = utilization > 80;
-                        const isCritical = utilization > 95;
-                        const hasActivePeriod = policy.status === 'active';
-
-                        return (
-                          <tr key={policy.department_id} className="hover:bg-slate-50 transition-colors">
-                            <td className="px-4 py-3">
-                              <div>
-                                <p className="font-semibold">{policy.department_name}</p>
-                                <p className="text-xs text-slate-500">{policy.department_code}</p>
-                              </div>
-                            </td>
-                            <td className="px-4 py-3 font-semibold">{formatCurrency(policy.allocated_amount)}</td>
-                            <td className="px-4 py-3 text-red-600">{formatCurrency(policy.spent_amount)}</td>
-                            <td className="px-4 py-3">
-                              <span className={`font-semibold ${
-                                isCritical ? 'text-red-600' :
-                                isLow ? 'text-yellow-600' :
-                                'text-green-600'
-                              }`}>
-                                {formatCurrency(policy.remaining_balance)}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3">
-                              <div className="flex items-center gap-2">
-                                <div className="w-24 bg-slate-200 rounded-full h-2">
-                                  <div
-                                    className={`h-2 rounded-full transition-all ${
-                                      isCritical ? 'bg-red-500' :
-                                      isLow ? 'bg-yellow-500' :
-                                      'bg-green-500'
-                                    }`}
-                                    style={{ width: `${Math.min(utilization, 100)}%` }}
-                                  />
-                                </div>
-                                <span className={`text-xs font-medium ${
-                                  isCritical ? 'text-red-600' :
-                                  isLow ? 'text-yellow-600' :
-                                  'text-green-600'
-                                }`}>
-                                  {utilization.toFixed(1)}%
-                                </span>
-                              </div>
-                            </td>
-                            <td className="px-4 py-3 text-right">
-                              <div className="flex items-center justify-end gap-1">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => openHistoryModal(policy)}
-                                  className="text-purple-600 hover:bg-purple-50 h-8 w-8 p-0"
-                                  title="View History"
-                                >
-                                  <History className="h-4 w-4" />
-                                </Button>
-
-                                {!hasActivePeriod && (
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => openActivateModal(policy)}
-                                    className="text-green-600 border-green-300 hover:bg-green-50 h-8 px-2"
-                                  >
-                                    <RotateCcw className="h-3 w-3 mr-1" />
-                                    Activate
-                                  </Button>
-                                )}
-                                
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => openEditModal(policy)}
-                                  className="text-green-600 hover:bg-green-50 h-8 w-8 p-0"
-                                  title="Add to Budget"
-                                >
-                                  <Plus className="h-4 w-4" />
-                                </Button>
-                                
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => openDeleteModal(policy)}
-                                  className="text-red-600 hover:bg-red-50 h-8 w-8 p-0"
-                                  title="Delete"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </>
-      )}
-
-      {/* TAB 2: HISTORY */}
-      {activeTab === 'history' && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <History className="h-5 w-5 text-purple-500" />
-              Budget Change History
-            </CardTitle>
-            <CardDescription>
-              Track all budget additions and changes across departments
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {budgetHistory.length === 0 ? (
-              <div className="text-center py-12">
-                <History className="h-12 w-12 text-slate-300 mx-auto mb-3" />
-                <p className="text-slate-500">No budget history found</p>
-                <p className="text-sm text-slate-400">Changes will appear here once budget is added</p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {budgetHistory.map((entry, index) => (
-                  <div key={entry.id || index} className="border rounded-lg p-4 hover:bg-slate-50 transition-colors">
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-3 mb-2">
-                          <Badge className={`${
-                            entry.action === 'added' || entry.action === 'add' 
-                              ? 'bg-green-100 text-green-700' 
-                              : 'bg-blue-100 text-blue-700'
-                          }`}>
-                            {entry.action || 'Added'}
-                          </Badge>
-                          <h4 className="font-semibold">{entry.department_name}</h4>
-                          <span className="text-xs text-slate-400">{entry.department_code}</span>
+          ) : (
+            <div className="space-y-4">
+              {groupedResetHistory.map((week, index) => {
+                const isCurrentWeek = week.status === 'active';
+                const daysAgo = week.closed_at ? differenceInDays(new Date(), new Date(week.closed_at)) : 0;
+                
+                return (
+                  <div key={index} className={`border rounded-lg p-4 ${
+                    isCurrentWeek ? 'bg-green-50 border-green-200' : 'bg-white'
+                  }`}>
+                    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                      <div className="flex items-start gap-3">
+                        <div className={`p-2 rounded-full ${
+                          isCurrentWeek ? 'bg-green-100' : 'bg-gray-100'
+                        }`}>
+                          <Calendar className={`h-5 w-5 ${
+                            isCurrentWeek ? 'text-green-600' : 'text-gray-500'
+                          }`} />
                         </div>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
-                          <div>
-                            <span className="text-slate-500">Before:</span>
-                            <span className="font-medium ml-1">{formatCurrency(entry.previous_amount || 0)}</span>
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h4 className="font-semibold text-lg">
+                              Week {getWeekNumber(week.week_start)}
+                            </h4>
+                            {getStatusBadge(week.status)}
+                            {isCurrentWeek && (
+                              <Badge className="bg-green-100 text-green-700 animate-pulse">
+                                <Clock className="h-3 w-3 mr-1" />
+                                Current Week
+                              </Badge>
+                            )}
                           </div>
-                          <div>
-                            <span className="text-green-600">+ Added:</span>
-                            <span className="font-medium text-green-600 ml-1">
-                              {formatCurrency(entry.added_amount || entry.amount || 0)}
-                            </span>
-                          </div>
-                          <div>
-                            <span className="text-blue-600">After:</span>
-                            <span className="font-medium text-blue-600 ml-1">
-                              {formatCurrency(entry.new_amount || 0)}
-                            </span>
-                          </div>
-                          <div>
-                            <span className="text-slate-500">By:</span>
-                            <span className="font-medium ml-1">{entry.user_name || 'System'}</span>
-                          </div>
-                        </div>
-                        {entry.reason && (
-                          <p className="text-sm text-slate-500 mt-2">
-                            <span className="text-slate-400">Reason:</span> {entry.reason}
+                          <p className="text-sm text-slate-600">
+                            {getWeekRange(week.week_start)}
                           </p>
-                        )}
-                        <p className="text-xs text-slate-400 mt-2">
-                          {formatDate(entry.created_at)}
-                        </p>
+                          <div className="flex flex-wrap gap-3 mt-1 text-sm">
+                            <span className="text-slate-500">
+                              <strong>{week.departments.length}</strong> departments
+                            </span>
+                            <span className="text-slate-500">
+                              Total: <strong className="text-blue-600">{formatCurrency(week.total_allocated)}</strong>
+                            </span>
+                            {week.closed_at && (
+                              <span className="text-slate-400">
+                                Closed: {formatDateTime(week.closed_at)}
+                              </span>
+                            )}
+                            {daysAgo > 0 && week.status === 'closed' && (
+                              <span className="text-slate-400">
+                                ({daysAgo} day{daysAgo > 1 ? 's' : ''} ago)
+                              </span>
+                            )}
+                          </div>
+                        </div>
                       </div>
                       <Button
-                        variant="ghost"
+                        variant="outline"
                         size="sm"
-                        onClick={() => toggleHistoryExpand(index)}
-                        className="text-slate-400 hover:text-slate-600"
+                        onClick={() => {
+                          // Filter to show only this week's departments
+                          const weekDepts = week.departments.map(d => d.department_id);
+                          const filtered = budgetData.filter(d => weekDepts.includes(d.department_id));
+                          setBudgetData(filtered);
+                          setTimeout(() => setBudgetData(prev => prev), 100);
+                        }}
+                        className="text-xs"
                       >
-                        {expandedHistory[index] ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                        View Details
                       </Button>
                     </div>
-                    {expandedHistory[index] && entry.details && (
-                      <div className="mt-3 pt-3 border-t text-sm text-slate-600">
-                        <pre className="whitespace-pre-wrap text-xs bg-slate-50 p-2 rounded">
-                          {JSON.stringify(entry.details, null, 2)}
-                        </pre>
+                    
+                    {/* Department breakdown for this week */}
+                    {week.departments.length > 0 && (
+                      <div className="mt-3 pt-3 border-t grid grid-cols-2 md:grid-cols-4 gap-2">
+                        {week.departments.slice(0, 4).map((dept, idx) => (
+                          <div key={idx} className="text-sm">
+                            <span className="text-slate-500">{dept.department_name || `Dept ${dept.department_id}`}</span>
+                            <span className="ml-2 font-medium">{formatCurrency(dept.allocated_amount)}</span>
+                          </div>
+                        ))}
+                        {week.departments.length > 4 && (
+                          <div className="text-sm text-slate-400">
+                            +{week.departments.length - 4} more
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Search */}
+      <Card>
+        <div className="p-4 flex flex-col sm:flex-row gap-4">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
+            <Input
+              placeholder="Search departments..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-10"
+            />
+          </div>
+        </div>
+      </Card>
+
+      {/* Budget Table */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <DollarSign className="h-5 w-5" />
+            Department Budgets
+            <span className="ml-2 text-sm font-normal text-slate-500">
+              ({filteredData.length} departments)
+            </span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {filteredData.length === 0 ? (
+            <div className="text-center py-12">
+              <DollarSign className="h-12 w-12 text-slate-300 mx-auto mb-3" />
+              <p className="text-slate-500">No budget data found</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-slate-50 dark:bg-slate-900/50">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Department</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Allocated</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Spent</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Remaining</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Utilization</th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {filteredData.map((policy) => {
+                    const utilization = policy.allocated_amount > 0
+                      ? ((policy.spent_amount || 0) / policy.allocated_amount) * 100
+                      : 0;
+                    const isLow = utilization > 80;
+                    const isCritical = utilization > 95;
+                    const hasActivePeriod = policy.status === 'active';
+
+                    return (
+                      <tr key={policy.department_id} className="hover:bg-slate-50 transition-colors">
+                        <td className="px-4 py-3">
+                          <div>
+                            <p className="font-semibold">{policy.department_name}</p>
+                            <p className="text-xs text-slate-500">{policy.department_code}</p>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 font-semibold">{formatCurrency(policy.allocated_amount)}</td>
+                        <td className="px-4 py-3 text-red-600">{formatCurrency(policy.spent_amount)}</td>
+                        <td className="px-4 py-3">
+                          <span className={`font-semibold ${
+                            isCritical ? 'text-red-600' :
+                            isLow ? 'text-yellow-600' :
+                            'text-green-600'
+                          }`}>
+                            {formatCurrency(policy.remaining_balance)}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <div className="w-24 bg-slate-200 rounded-full h-2">
+                              <div
+                                className={`h-2 rounded-full transition-all ${
+                                  isCritical ? 'bg-red-500' :
+                                  isLow ? 'bg-yellow-500' :
+                                  'bg-green-500'
+                                }`}
+                                style={{ width: `${Math.min(utilization, 100)}%` }}
+                              />
+                            </div>
+                            <span className={`text-xs font-medium ${
+                              isCritical ? 'text-red-600' :
+                              isLow ? 'text-yellow-600' :
+                              'text-green-600'
+                            }`}>
+                              {utilization.toFixed(1)}%
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => openHistoryModal(policy)}
+                              className="text-purple-600 hover:bg-purple-50 h-8 w-8 p-0"
+                              title="View History"
+                            >
+                              <History className="h-4 w-4" />
+                            </Button>
+
+                            {!hasActivePeriod && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => openActivateModal(policy)}
+                                className="text-green-600 border-green-300 hover:bg-green-50 h-8 px-2"
+                              >
+                                <RotateCcw className="h-3 w-3 mr-1" />
+                                Activate
+                              </Button>
+                            )}
+                            
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => openEditModal(policy)}
+                              className="text-green-600 hover:bg-green-50 h-8 w-8 p-0"
+                              title="Add to Budget"
+                            >
+                              <Plus className="h-4 w-4" />
+                            </Button>
+                            
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => openDeleteModal(policy)}
+                              className="text-red-600 hover:bg-red-50 h-8 w-8 p-0"
+                              title="Delete"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* CREATE MODAL */}
       <Dialog open={showCreateModal} onOpenChange={setShowCreateModal}>
@@ -894,7 +997,7 @@ const BudgetPolicies = () => {
                           } text-xs`}>
                             {entry.action || 'Added'}
                           </Badge>
-                          <span className="text-xs text-slate-400">{formatDate(entry.created_at)}</span>
+                          <span className="text-xs text-slate-400">{formatDateTime(entry.created_at)}</span>
                         </div>
                         <div className="grid grid-cols-3 gap-2 text-sm">
                           <div>
