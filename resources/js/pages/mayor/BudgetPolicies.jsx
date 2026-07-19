@@ -36,7 +36,7 @@ import {
 } from '@/components/ui/dialog';
 import { mayorsOfficeAPI } from '../../services/api';
 import { toast } from 'react-hot-toast';
-import { format, formatDistanceToNow, differenceInDays } from 'date-fns';
+import { format, differenceInDays } from 'date-fns';
 
 const BudgetPolicies = () => {
   const [budgetData, setBudgetData] = useState([]);
@@ -69,16 +69,32 @@ const BudgetPolicies = () => {
   // UI state
   const [searchTerm, setSearchTerm] = useState('');
 
+  // ============================================================
+  // ✅ HELPER FUNCTIONS
+  // ============================================================
+  
+  const addDays = (date, days) => {
+    const result = new Date(date);
+    result.setDate(result.getDate() + days);
+    return result;
+  };
+
+  // ============================================================
+  // ✅ INITIAL LOAD
+  // ============================================================
   useEffect(() => {
     fetchBudgetData();
     fetchBudgetHistory();
     fetchResetHistory();
   }, []);
 
-  const fetchBudgetData = async () => {
+  // ============================================================
+  // ✅ FETCH FUNCTIONS
+  // ============================================================
+
+const fetchBudgetData = async () => {
     setLoading(true);
     try {
-        // ✅ Uses your endpoint: /mayors-office/departments/all-with-budget
         const response = await mayorsOfficeAPI.getAllDepartmentsWithBudget();
         console.log('📊 Budget Data Response:', response);
         
@@ -101,7 +117,41 @@ const BudgetPolicies = () => {
             status: item.status || 'inactive',
         }));
         
+        console.log('✅ Formatted Budget Data:', formattedData);
         setBudgetData(formattedData);
+        
+        // ✅ **FIX: Create reset history immediately**
+        if (formattedData.length > 0) {
+            const currentWeekStart = new Date();
+            currentWeekStart.setDate(currentWeekStart.getDate() - currentWeekStart.getDay() + 1);
+            const weekKey = currentWeekStart.toISOString().split('T')[0];
+            const weekEnd = new Date(currentWeekStart);
+            weekEnd.setDate(weekEnd.getDate() + 6);
+            const weekEndStr = weekEnd.toISOString().split('T')[0];
+            
+            const departments = formattedData.map(dept => ({
+                department_id: dept.department_id,
+                department_name: dept.department_name || `Department ${dept.department_id}`,
+                allocated_amount: dept.allocated_amount || 0,
+                remaining_balance: dept.remaining_balance || 0,
+                status: dept.status || 'inactive',
+            }));
+            
+            const totalAllocated = departments.reduce((sum, d) => sum + d.allocated_amount, 0);
+            
+            const resetHistoryData = [{
+                week_start: weekKey,
+                week_end: weekEndStr,
+                departments: departments,
+                total_allocated: totalAllocated,
+                status: 'active',
+                closed_at: null,
+            }];
+            
+            console.log('🔄 Setting Reset History:', resetHistoryData);
+            setResetHistory(resetHistoryData);
+        }
+        
     } catch (error) {
         console.error('Failed to fetch budget data:', error);
         toast.error('Failed to load budget data');
@@ -110,136 +160,136 @@ const BudgetPolicies = () => {
         setLoading(false);
     }
 };
-
- const fetchBudgetHistory = async () => {
+  const fetchBudgetHistory = async () => {
     try {
-        // ✅ Uses your endpoint: /mayors-office/budget-history
-        const response = await mayorsOfficeAPI.getBudgetHistory();
-        console.log('📊 Budget History Response:', response);
-        
-        let data = response.data?.data || response.data || [];
-        
-        // Ensure we have an array
-        if (!Array.isArray(data)) {
-            data = [];
-        }
-        
-        setBudgetHistory(data);
+      const response = await mayorsOfficeAPI.getBudgetHistory();
+      console.log('📊 Budget History Response:', response);
+      
+      let data = response.data?.data || response.data || [];
+      if (!Array.isArray(data)) {
+        data = [];
+      }
+      setBudgetHistory(data);
     } catch (error) {
-        console.error('Failed to fetch budget history:', error);
-        // Fallback: create history from current budget data
-        const fallbackHistory = budgetData
-            .filter(item => item.allocated_amount > 0)
-            .map(item => ({
-                id: item.department_id,
-                department_id: item.department_id,
-                department_name: item.department_name,
-                action: 'created',
-                previous_amount: 0,
-                added_amount: item.allocated_amount,
-                new_amount: item.allocated_amount,
-                reason: 'Initial budget',
-                user_name: 'System',
-                created_at: new Date().toISOString()
-            }));
-        setBudgetHistory(fallbackHistory);
+      console.error('Failed to fetch budget history:', error);
+      // Fallback: create history from current budget data
+      const fallbackHistory = budgetData
+        .filter(item => item.allocated_amount > 0)
+        .map(item => ({
+          id: item.department_id,
+          department_id: item.department_id,
+          department_name: item.department_name,
+          action: 'created',
+          previous_amount: 0,
+          added_amount: item.allocated_amount,
+          new_amount: item.allocated_amount,
+          reason: 'Initial budget',
+          user_name: 'System',
+          created_at: new Date().toISOString()
+        }));
+      setBudgetHistory(fallbackHistory);
     }
-};
+  };
 
- // ✅ Fetch budget reset history from dept_budget_period
-const fetchResetHistory = async () => {
+  // ✅ Fetch budget reset history from dept_budget_period
+  const fetchResetHistory = async () => {
     try {
-        // Try to fetch from API
-        const response = await mayorsOfficeAPI.getBudgetPeriods?.();
-        const data = response?.data?.data || response?.data || [];
+      const response = await mayorsOfficeAPI.getBudgetPeriods?.();
+      console.log('📊 Reset History Response:', response);
+      
+      const data = response?.data?.data || response?.data || [];
+      
+      if (Array.isArray(data) && data.length > 0) {
+        const formattedResetHistory = data.map(item => ({
+          period_id: item.period_id,
+          department_id: item.department_id,
+          department_name: item.department_name || `Department ${item.department_id}`,
+          department_code: item.department_code || '',
+          week_start: item.week_start,
+          week_end: item.week_end || addDays(new Date(item.week_start), 6).toISOString().split('T')[0],
+          allocated_amount: parseFloat(item.allocated_amount || 0),
+          remaining_balance: parseFloat(item.remaining_balance || 0),
+          status: item.status || 'inactive',
+          closed_at: item.closed_at,
+          created_at: item.created_at,
+          is_current: item.status === 'active',
+        }));
         
-        if (Array.isArray(data) && data.length > 0) {
-            const formattedResetHistory = data
-                .filter(item => item.status === 'closed' || item.status === 'active')
-                .map(item => ({
-                    ...item,
-                    period_id: item.period_id,
-                    department_id: item.department_id,
-                    week_start: item.week_start,
-                    week_end: item.week_end || addDays(new Date(item.week_start), 6),
-                    allocated_amount: parseFloat(item.allocated_amount || 0),
-                    status: item.status,
-                    closed_at: item.closed_at,
-                    created_at: item.created_at,
-                    is_current: item.status === 'active',
-                    department_name: item.department_name || `Department ${item.department_id}`,
-                }))
-                .sort((a, b) => new Date(b.week_start) - new Date(a.week_start));
-            
-            setResetHistory(formattedResetHistory);
-        } else {
-            // ✅ Fallback: Use budgetData to create reset history
-            createFallbackResetHistory();
-        }
-    } catch (error) {
-        console.error('Failed to fetch reset history:', error);
-        // ✅ Fallback: Use budgetData to create reset history
+        // ✅ Group by week
+        const groupedByWeek = {};
+        formattedResetHistory.forEach(item => {
+          const weekKey = item.week_start;
+          if (!groupedByWeek[weekKey]) {
+            groupedByWeek[weekKey] = {
+              week_start: item.week_start,
+              week_end: item.week_end,
+              departments: [],
+              total_allocated: 0,
+              status: item.status,
+              closed_at: item.closed_at,
+            };
+          }
+          groupedByWeek[weekKey].departments.push(item);
+          groupedByWeek[weekKey].total_allocated += item.allocated_amount;
+        });
+        
+        const groupedHistory = Object.values(groupedByWeek)
+          .sort((a, b) => new Date(b.week_start) - new Date(a.week_start));
+        
+        setResetHistory(groupedHistory);
+      } else {
         createFallbackResetHistory();
+      }
+    } catch (error) {
+      console.error('Failed to fetch reset history:', error);
+      createFallbackResetHistory();
     }
-};
+  };
 
-// ✅ Helper to create fallback reset history from budgetData
-const createFallbackResetHistory = () => {
-    // Group budget data by week_start
+  // ✅ Create fallback reset history from budgetData
+  const createFallbackResetHistory = () => {
+    if (!budgetData || budgetData.length === 0) {
+      setResetHistory([]);
+      return;
+    }
+    
+    // Group by week_start
     const groupedByWeek = {};
     
     budgetData.forEach(item => {
-        if (item.week_start) {
-            const weekKey = item.week_start;
-            if (!groupedByWeek[weekKey]) {
-                groupedByWeek[weekKey] = {
-                    week_start: item.week_start,
-                    departments: [],
-                    total_allocated: 0,
-                    status: item.status || 'active',
-                };
-            }
-            groupedByWeek[weekKey].departments.push(item);
-            groupedByWeek[weekKey].total_allocated += (item.allocated_amount || 0);
-        }
+      const weekKey = item.week_start || 'current';
+      if (!groupedByWeek[weekKey]) {
+        groupedByWeek[weekKey] = {
+          week_start: item.week_start || new Date().toISOString().split('T')[0],
+          departments: [],
+          total_allocated: 0,
+          status: item.status || 'inactive',
+          closed_at: item.closed_at || null,
+        };
+      }
+      
+      const deptName = item.department_name || `Department ${item.department_id}`;
+      
+      groupedByWeek[weekKey].departments.push({
+        department_id: item.department_id,
+        department_name: deptName,
+        department_code: item.department_code || '',
+        allocated_amount: parseFloat(item.allocated_amount || 0),
+        remaining_balance: parseFloat(item.remaining_balance || 0),
+        status: item.status || 'inactive',
+      });
+      groupedByWeek[weekKey].total_allocated += parseFloat(item.allocated_amount || 0);
     });
     
     const fallbackHistory = Object.values(groupedByWeek)
-        .map(week => ({
-            ...week,
-            week_end: addDays(new Date(week.week_start), 6),
-            is_current: week.status === 'active',
-        }))
-        .sort((a, b) => new Date(b.week_start) - new Date(a.week_start));
+      .map(week => ({
+        ...week,
+        week_end: addDays(new Date(week.week_start), 6).toISOString().split('T')[0],
+        is_current: week.status === 'active',
+      }))
+      .sort((a, b) => new Date(b.week_start) - new Date(a.week_start));
     
     setResetHistory(fallbackHistory);
-    
-    if (fallbackHistory.length === 0) {
-        // ✅ If no data, create a default entry from current budget
-        const currentWeekStart = new Date();
-        currentWeekStart.setDate(currentWeekStart.getDate() - currentWeekStart.getDay() + 1); // Monday
-        
-        const defaultEntry = {
-            week_start: currentWeekStart.toISOString().split('T')[0],
-            week_end: addDays(currentWeekStart, 6).toISOString().split('T')[0],
-            departments: budgetData.map(dept => ({
-                ...dept,
-                department_name: dept.department_name || `Department ${dept.department_id}`,
-            })),
-            total_allocated: budgetData.reduce((sum, d) => sum + (d.allocated_amount || 0), 0),
-            status: 'active',
-            is_current: true,
-        };
-        
-        setResetHistory([defaultEntry]);
-    }
-};
-
-  // Helper to add days
-  const addDays = (date, days) => {
-    const result = new Date(date);
-    result.setDate(result.getDate() + days);
-    return result;
   };
 
   const handleRefresh = async () => {
@@ -249,7 +299,10 @@ const createFallbackResetHistory = () => {
     toast.success('Data refreshed');
   };
 
-  // ✅ CREATE
+  // ============================================================
+  // ✅ CRUD OPERATIONS
+  // ============================================================
+
   const handleCreate = async (e) => {
     e.preventDefault();
     
@@ -284,7 +337,6 @@ const createFallbackResetHistory = () => {
     }
   };
 
-  // ✅ UPDATE - ADD to Budget
   const handleUpdate = async (e) => {
     e.preventDefault();
     
@@ -325,7 +377,6 @@ const createFallbackResetHistory = () => {
     }
   };
 
-  // ✅ DELETE
   const handleDelete = async () => {
     if (!deletingPolicy) return;
     
@@ -344,7 +395,6 @@ const createFallbackResetHistory = () => {
     }
   };
 
-  // ✅ ACTIVATE
   const handleActivate = async () => {
     if (!showActivateModal) return;
     
@@ -371,6 +421,10 @@ const createFallbackResetHistory = () => {
     setFormErrors({});
     setEditingPolicy(null);
   };
+
+  // ============================================================
+  // ✅ MODAL HANDLERS
+  // ============================================================
 
   const openCreateModal = () => {
     resetForm();
@@ -416,6 +470,10 @@ const createFallbackResetHistory = () => {
       [index]: !prev[index],
     }));
   };
+
+  // ============================================================
+  // ✅ UTILITY FUNCTIONS
+  // ============================================================
 
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('en-PH', {
@@ -476,6 +534,10 @@ const createFallbackResetHistory = () => {
     return <Badge variant="outline">{status}</Badge>;
   };
 
+  // ============================================================
+  // ✅ MEMOIZED DATA
+  // ============================================================
+
   const filteredData = useMemo(() => {
     if (!searchTerm) return budgetData;
     const search = searchTerm.toLowerCase();
@@ -492,26 +554,70 @@ const createFallbackResetHistory = () => {
     return { totalAllocation, totalSpent, totalRemaining };
   }, [budgetData]);
 
-  // Group reset history by week
-  const groupedResetHistory = useMemo(() => {
+const groupedResetHistory = useMemo(() => {
+    console.log('🔄 Computing groupedResetHistory from:', resetHistory);
+    
+    if (!resetHistory || resetHistory.length === 0) {
+        return [];
+    }
+    
     const groups = {};
+    
     resetHistory.forEach(item => {
-      const weekKey = item.week_start;
-      if (!groups[weekKey]) {
-        groups[weekKey] = {
-          week_start: item.week_start,
-          week_end: item.week_end,
-          departments: [],
-          total_allocated: 0,
-          status: item.status,
-          closed_at: item.closed_at,
-        };
-      }
-      groups[weekKey].departments.push(item);
-      groups[weekKey].total_allocated += parseFloat(item.allocated_amount || 0);
+        // Make sure we have departments
+        const depts = item.departments || [];
+        
+        // ✅ If departments is empty but we have allocated_amount, create a department entry
+        if (depts.length === 0 && item.allocated_amount) {
+            const deptName = item.department_name || `Department ${item.department_id}`;
+            groups[item.week_start] = {
+                week_start: item.week_start || new Date().toISOString().split('T')[0],
+                week_end: item.week_end || addDays(new Date(item.week_start || new Date()), 6).toISOString().split('T')[0],
+                departments: [{
+                    department_id: item.department_id || 0,
+                    department_name: deptName,
+                    allocated_amount: item.allocated_amount || 0,
+                    remaining_balance: item.remaining_balance || 0,
+                }],
+                total_allocated: item.allocated_amount || 0,
+                status: item.status || 'active',
+                closed_at: item.closed_at || null,
+            };
+        } else if (depts.length > 0) {
+            // ✅ Normal case: use departments array
+            const weekKey = item.week_start || 'current';
+            if (!groups[weekKey]) {
+                groups[weekKey] = {
+                    week_start: item.week_start || new Date().toISOString().split('T')[0],
+                    week_end: item.week_end || addDays(new Date(item.week_start || new Date()), 6).toISOString().split('T')[0],
+                    departments: [],
+                    total_allocated: 0,
+                    status: item.status || 'active',
+                    closed_at: item.closed_at || null,
+                };
+            }
+            
+            // ✅ Add all departments
+            depts.forEach(dept => {
+                groups[weekKey].departments.push({
+                    department_id: dept.department_id || 0,
+                    department_name: dept.department_name || `Department ${dept.department_id}`,
+                    allocated_amount: dept.allocated_amount || 0,
+                    remaining_balance: dept.remaining_balance || 0,
+                });
+                groups[weekKey].total_allocated += (dept.allocated_amount || 0);
+            });
+        }
     });
-    return Object.values(groups).sort((a, b) => new Date(b.week_start) - new Date(a.week_start));
-  }, [resetHistory]);
+    
+    const result = Object.values(groups).sort((a, b) => new Date(b.week_start) - new Date(a.week_start));
+    console.log('✅ groupedResetHistory result:', result);
+    return result;
+}, [resetHistory]);
+
+  // ============================================================
+  // ✅ RENDER
+  // ============================================================
 
   if (loading) {
     return (
@@ -580,121 +686,104 @@ const createFallbackResetHistory = () => {
         </Card>
       </div>
 
-      {/* Budget Reset History Section */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
+     {/* Budget Reset History Section */}
+<Card>
+    <CardHeader>
+        <CardTitle className="flex items-center gap-2">
             <RotateCcw className="h-5 w-5 text-purple-500" />
             Budget Reset History
             <span className="ml-2 text-sm font-normal text-slate-500">
-              ({groupedResetHistory.length} weeks)
+                ({resetHistory.length} weeks)
             </span>
-          </CardTitle>
-          <CardDescription>
+        </CardTitle>
+        <CardDescription>
             Track weekly budget resets across all departments. Each week shows the total allocated budget.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {groupedResetHistory.length === 0 ? (
+        </CardDescription>
+    </CardHeader>
+    <CardContent>
+        {resetHistory.length === 0 ? (
             <div className="text-center py-8">
-              <Calendar className="h-12 w-12 text-slate-300 mx-auto mb-3" />
-              <p className="text-slate-500">No budget reset history found</p>
-              <p className="text-sm text-slate-400">Budgets will appear here after the first weekly reset</p>
+                <Calendar className="h-12 w-12 text-slate-300 mx-auto mb-3" />
+                <p className="text-slate-500">No budget reset history found</p>
+                <p className="text-sm text-slate-400">Budgets will appear here after the first weekly reset</p>
             </div>
-          ) : (
+        ) : (
             <div className="space-y-4">
-              {groupedResetHistory.map((week, index) => {
-                const isCurrentWeek = week.status === 'active';
-                const daysAgo = week.closed_at ? differenceInDays(new Date(), new Date(week.closed_at)) : 0;
-                
-                return (
-                  <div key={index} className={`border rounded-lg p-4 ${
-                    isCurrentWeek ? 'bg-green-50 border-green-200' : 'bg-white'
-                  }`}>
-                    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-                      <div className="flex items-start gap-3">
-                        <div className={`p-2 rounded-full ${
-                          isCurrentWeek ? 'bg-green-100' : 'bg-gray-100'
-                        }`}>
-                          <Calendar className={`h-5 w-5 ${
-                            isCurrentWeek ? 'text-green-600' : 'text-gray-500'
-                          }`} />
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <h4 className="font-semibold text-lg">
-                              Week {getWeekNumber(week.week_start)}
-                            </h4>
-                            {getStatusBadge(week.status)}
-                            {isCurrentWeek && (
-                              <Badge className="bg-green-100 text-green-700 animate-pulse">
-                                <Clock className="h-3 w-3 mr-1" />
-                                Current Week
-                              </Badge>
-                            )}
-                          </div>
-                          <p className="text-sm text-slate-600">
-                            {getWeekRange(week.week_start)}
-                          </p>
-                          <div className="flex flex-wrap gap-3 mt-1 text-sm">
-                            <span className="text-slate-500">
-                              <strong>{week.departments.length}</strong> departments
-                            </span>
-                            <span className="text-slate-500">
-                              Total: <strong className="text-blue-600">{formatCurrency(week.total_allocated)}</strong>
-                            </span>
-                            {week.closed_at && (
-                              <span className="text-slate-400">
-                                Closed: {formatDateTime(week.closed_at)}
-                              </span>
-                            )}
-                            {daysAgo > 0 && week.status === 'closed' && (
-                              <span className="text-slate-400">
-                                ({daysAgo} day{daysAgo > 1 ? 's' : ''} ago)
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          // Filter to show only this week's departments
-                          const weekDepts = week.departments.map(d => d.department_id);
-                          const filtered = budgetData.filter(d => weekDepts.includes(d.department_id));
-                          setBudgetData(filtered);
-                          setTimeout(() => setBudgetData(prev => prev), 100);
-                        }}
-                        className="text-xs"
-                      >
-                        View Details
-                      </Button>
-                    </div>
+                {resetHistory.map((week, index) => {
+                    const departments = week.departments || [];
+                    const isCurrentWeek = week.status === 'active';
+                    const totalAllocated = week.total_allocated || departments.reduce((sum, d) => sum + (d.allocated_amount || 0), 0);
                     
-                    {/* Department breakdown for this week */}
-                    {week.departments.length > 0 && (
-                      <div className="mt-3 pt-3 border-t grid grid-cols-2 md:grid-cols-4 gap-2">
-                        {week.departments.slice(0, 4).map((dept, idx) => (
-                          <div key={idx} className="text-sm">
-                            <span className="text-slate-500">{dept.department_name || `Dept ${dept.department_id}`}</span>
-                            <span className="ml-2 font-medium">{formatCurrency(dept.allocated_amount)}</span>
-                          </div>
-                        ))}
-                        {week.departments.length > 4 && (
-                          <div className="text-sm text-slate-400">
-                            +{week.departments.length - 4} more
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+                    console.log(`📊 Week ${index}:`, { departments, totalAllocated, week });
+                    
+                    return (
+                        <div key={index} className={`border rounded-lg p-4 ${
+                            isCurrentWeek ? 'bg-green-50 border-green-200' : 'bg-white'
+                        }`}>
+                            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                                <div className="flex items-start gap-3">
+                                    <div className={`p-2 rounded-full ${
+                                        isCurrentWeek ? 'bg-green-100' : 'bg-gray-100'
+                                    }`}>
+                                        <Calendar className={`h-5 w-5 ${
+                                            isCurrentWeek ? 'text-green-600' : 'text-gray-500'
+                                        }`} />
+                                    </div>
+                                    <div>
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <h4 className="font-semibold text-lg">
+                                                Week {getWeekNumber(week.week_start)}
+                                            </h4>
+                                            {isCurrentWeek ? (
+                                                <Badge className="bg-green-100 text-green-700">Active</Badge>
+                                            ) : (
+                                                <Badge className="bg-gray-100 text-gray-700">Inactive</Badge>
+                                            )}
+                                            {isCurrentWeek && (
+                                                <Badge className="bg-green-100 text-green-700 animate-pulse">
+                                                    <Clock className="h-3 w-3 mr-1" />
+                                                    Current Week
+                                                </Badge>
+                                            )}
+                                        </div>
+                                        <p className="text-sm text-slate-600">
+                                            {week.week_start} - {week.week_end || 'N/A'}
+                                        </p>
+                                        <div className="flex flex-wrap gap-3 mt-1 text-sm">
+                                            <span className="text-slate-500">
+                                                <strong>{departments.length}</strong> departments
+                                            </span>
+                                            <span className="text-slate-500">
+                                                Total: <strong className="text-blue-600">{formatCurrency(totalAllocated)}</strong>
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            {/* Department breakdown */}
+                            {departments.length > 0 && (
+                                <div className="mt-3 pt-3 border-t grid grid-cols-2 md:grid-cols-4 gap-2">
+                                    {departments.slice(0, 4).map((dept, idx) => (
+                                        <div key={idx} className="text-sm">
+                                            <span className="text-slate-500">{dept.department_name || `Dept ${dept.department_id}`}</span>
+                                            <span className="ml-2 font-medium">{formatCurrency(dept.allocated_amount)}</span>
+                                        </div>
+                                    ))}
+                                    {departments.length > 4 && (
+                                        <div className="text-sm text-slate-400">
+                                            +{departments.length - 4} more
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    );
+                })}
             </div>
-          )}
-        </CardContent>
-      </Card>
+        )}
+    </CardContent>
+</Card>
 
       {/* Search */}
       <Card>

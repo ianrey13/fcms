@@ -701,35 +701,34 @@ class BudgetPolicyController extends Controller
         }
     }
     
-    /**
-     * Get all budget periods
-     */
-    public function getPeriods(Request $request)
-    {
-        try {
-            $departmentId = $request->get('department_id');
-            
-            $query = DB::table('dept_budget_period as dbp')
-                ->join('departments as d', 'dbp.department_id', '=', 'd.department_id')
-                ->select('dbp.*', 'd.department_name', 'd.department_code');
-            
-            if ($departmentId) {
-                $query->where('dbp.department_id', $departmentId);
-            }
-            
-            $periods = $query->orderBy('dbp.week_start', 'desc')
-                ->get();
-            
-            return response()->json([
-                'success' => true,
-                'data' => $periods
-            ]);
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to fetch budget periods: ' . $e->getMessage()
-            ], 500);
-        }
+   /**
+ * Get all budget periods for reset history
+ */
+public function getPeriods(Request $request)
+{
+    try {
+        $periods = DB::table('dept_budget_period as dbp')
+            ->join('departments as d', 'dbp.department_id', '=', 'd.department_id')
+            ->select(
+                'dbp.*',
+                'd.department_name',
+                'd.department_code'
+            )
+            ->orderBy('dbp.week_start', 'desc')
+            ->get();
+        
+        return response()->json([
+            'success' => true,
+            'data' => $periods
+        ]);
+    } catch (\Exception $e) {
+        Log::error('Get periods error: ' . $e->getMessage());
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to fetch periods: ' . $e->getMessage(),
+            'data' => []
+        ], 500);
     }
+}
     
 }
