@@ -10,16 +10,16 @@ export default defineConfig({
         }),
         react(),
     ],
-    // build: {
-    //     outDir: 'public/build',
-    //     manifest: 'manifest.json',  // ← FORCE the name and location
-    //     rollupOptions: {
-    //         input: ['resources/js/main.jsx'],
-    //         output: {
-    //             entryFileNames: 'assets/[name]-[hash].js',
-    //             chunkFileNames: 'assets/[name]-[hash].js',
-    //             assetFileNames: 'assets/[name]-[hash].[ext]',
-    //         },
-    //     },
-    // },
+    build: {
+        outDir: 'public/build',
+        manifest: 'manifest.json',  // ← FORCE the name and location
+        rollupOptions: {
+            input: ['resources/js/main.jsx'],
+            output: {
+                entryFileNames: 'assets/[name]-[hash].js',
+                chunkFileNames: 'assets/[name]-[hash].js',
+                assetFileNames: 'assets/[name]-[hash].[ext]',
+            },
+        },
+    },
 });
