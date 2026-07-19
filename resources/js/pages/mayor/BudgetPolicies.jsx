@@ -146,47 +146,94 @@ const BudgetPolicies = () => {
     }
 };
 
-  // ✅ Fetch budget reset history from dept_budget_period
-  const fetchResetHistory = async () => {
+ // ✅ Fetch budget reset history from dept_budget_period
+const fetchResetHistory = async () => {
     try {
-      const response = await mayorsOfficeAPI.getBudgetPeriods?.();
-      const data = response.data?.data || response.data || [];
-      const formattedResetHistory = (Array.isArray(data) ? data : [])
-        .filter(item => item.status === 'closed' || item.status === 'active')
-        .map(item => ({
-          ...item,
-          period_id: item.period_id,
-          department_id: item.department_id,
-          week_start: item.week_start,
-          week_end: item.week_end || addDays(new Date(item.week_start), 6),
-          allocated_amount: parseFloat(item.allocated_amount || 0),
-          status: item.status,
-          closed_at: item.closed_at,
-          created_at: item.created_at,
-          is_current: item.status === 'active',
+        // Try to fetch from API
+        const response = await mayorsOfficeAPI.getBudgetPeriods?.();
+        const data = response?.data?.data || response?.data || [];
+        
+        if (Array.isArray(data) && data.length > 0) {
+            const formattedResetHistory = data
+                .filter(item => item.status === 'closed' || item.status === 'active')
+                .map(item => ({
+                    ...item,
+                    period_id: item.period_id,
+                    department_id: item.department_id,
+                    week_start: item.week_start,
+                    week_end: item.week_end || addDays(new Date(item.week_start), 6),
+                    allocated_amount: parseFloat(item.allocated_amount || 0),
+                    status: item.status,
+                    closed_at: item.closed_at,
+                    created_at: item.created_at,
+                    is_current: item.status === 'active',
+                    department_name: item.department_name || `Department ${item.department_id}`,
+                }))
+                .sort((a, b) => new Date(b.week_start) - new Date(a.week_start));
+            
+            setResetHistory(formattedResetHistory);
+        } else {
+            // ✅ Fallback: Use budgetData to create reset history
+            createFallbackResetHistory();
+        }
+    } catch (error) {
+        console.error('Failed to fetch reset history:', error);
+        // ✅ Fallback: Use budgetData to create reset history
+        createFallbackResetHistory();
+    }
+};
+
+// ✅ Helper to create fallback reset history from budgetData
+const createFallbackResetHistory = () => {
+    // Group budget data by week_start
+    const groupedByWeek = {};
+    
+    budgetData.forEach(item => {
+        if (item.week_start) {
+            const weekKey = item.week_start;
+            if (!groupedByWeek[weekKey]) {
+                groupedByWeek[weekKey] = {
+                    week_start: item.week_start,
+                    departments: [],
+                    total_allocated: 0,
+                    status: item.status || 'active',
+                };
+            }
+            groupedByWeek[weekKey].departments.push(item);
+            groupedByWeek[weekKey].total_allocated += (item.allocated_amount || 0);
+        }
+    });
+    
+    const fallbackHistory = Object.values(groupedByWeek)
+        .map(week => ({
+            ...week,
+            week_end: addDays(new Date(week.week_start), 6),
+            is_current: week.status === 'active',
         }))
         .sort((a, b) => new Date(b.week_start) - new Date(a.week_start));
-      
-      setResetHistory(formattedResetHistory);
-    } catch (error) {
-      console.error('Failed to fetch reset history:', error);
-      // Fallback: try to get from budgetData
-      const fallbackData = budgetData
-        .filter(item => item.week_start)
-        .map(item => ({
-          period_id: item.period_id || Date.now(),
-          department_id: item.department_id,
-          department_name: item.department_name,
-          week_start: item.week_start,
-          week_end: item.week_end || addDays(new Date(item.week_start), 6),
-          allocated_amount: item.allocated_amount,
-          status: item.status || 'active',
-          closed_at: item.closed_at,
-          is_current: item.status === 'active',
-        }));
-      setResetHistory(fallbackData);
+    
+    setResetHistory(fallbackHistory);
+    
+    if (fallbackHistory.length === 0) {
+        // ✅ If no data, create a default entry from current budget
+        const currentWeekStart = new Date();
+        currentWeekStart.setDate(currentWeekStart.getDate() - currentWeekStart.getDay() + 1); // Monday
+        
+        const defaultEntry = {
+            week_start: currentWeekStart.toISOString().split('T')[0],
+            week_end: addDays(currentWeekStart, 6).toISOString().split('T')[0],
+            departments: budgetData.map(dept => ({
+                ...dept,
+                department_name: dept.department_name || `Department ${dept.department_id}`,
+            })),
+            total_allocated: budgetData.reduce((sum, d) => sum + (d.allocated_amount || 0), 0),
+            status: 'active',
+            is_current: true,
+        };
+        
+        setResetHistory([defaultEntry]);
     }
-  };
+};
 
   // Helper to add days
   const addDays = (date, days) => {
