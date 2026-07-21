@@ -18,6 +18,9 @@ class Vehicle extends Model
         'odometer_broken_since',
         'odometer_repair_requested',
         'odometer_repair_completed_at',
+        'current_fuel_balance',
+        'last_odometer_reading',
+        'fuel_capacity',
     ];
     
     protected $casts = [
@@ -28,6 +31,9 @@ class Vehicle extends Model
         'odometer_broken_since' => 'date',
         'odometer_repair_requested' => 'boolean',
         'odometer_repair_completed_at' => 'datetime',
+        'current_fuel_balance' => 'decimal:2',
+        'last_odometer_reading' => 'decimal:2',
+        'fuel_capacity' => 'decimal:2',
     ];
     
     // Relationships (keep all your existing relationships)
@@ -81,4 +87,55 @@ class Vehicle extends Model
     {
         return $this->odometer_status === 'functional';
     }
+
+    /**
+ * Update fuel balance
+ */
+public function updateFuelBalance(float $litersUsed): void
+{
+    $this->current_fuel_balance = max(0, $this->current_fuel_balance - $litersUsed);
+    $this->save();
+}
+
+/**
+ * Add fuel to vehicle
+ */
+public function addFuel(float $liters): void
+{
+    $this->current_fuel_balance = min($this->fuel_capacity, $this->current_fuel_balance + $liters);
+    $this->save();
+}
+
+/**
+ * Get fuel percentage
+ */
+public function getFuelPercentageAttribute(): float
+{
+    if ($this->fuel_capacity == 0) return 0;
+    return round(($this->current_fuel_balance / $this->fuel_capacity) * 100, 2);
+}
+
+/**
+ * Get fuel status (Sufficient, Low, Critical)
+ */
+public function getFuelStatusAttribute(): string
+{
+    $percentage = $this->fuel_percentage;
+    
+    if ($percentage > 50) return 'Sufficient';
+    if ($percentage > 25) return 'Low';
+    return 'Critical';
+}
+
+/**
+ * Get fuel status color
+ */
+public function getFuelStatusColorAttribute(): string
+{
+    $percentage = $this->fuel_percentage;
+    
+    if ($percentage > 50) return 'green-500';
+    if ($percentage > 25) return 'yellow-500';
+    return 'red-500';
+}
 }

@@ -1,3 +1,4 @@
+// src/App.jsx
 import React, { lazy, Suspense } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './contexts/AuthContext';
@@ -21,6 +22,10 @@ const FuelReceipts = lazy(() => import('./pages/gso/FuelReceipts'));
 const CompletedTrips = lazy(() => import('./pages/gso/CompletedTrips'));
 const LiveTracking = lazy(() => import('./pages/gso/LiveTracking'));
 const SystemSettings = lazy(() => import('./pages/gso/SystemSettings'));
+
+// ============ GSO REPORT PAGES (NEW) ============
+const WeeklyMonitoring = lazy(() => import('./pages/gso/reports/WeeklyMonitoring'));
+const FuelWithoutTripReport = lazy(() => import('./pages/gso/reports/FuelWithoutTripReport'));
 
 // ============ GSO ADMIN (Departments) ============
 const DepartmentManagement = lazy(() => import('./pages/gso/departments/DepartmentManagement'));
@@ -49,6 +54,10 @@ const MayorTripTicketDetail = lazy(() => import('./pages/mayor/MayorTripTicketDe
 const BudgetPolicies = lazy(() => import('./pages/mayor/BudgetPolicies'));
 const MayorReceiptVerification = lazy(() => import('./pages/mayor/MayorReceiptVerification'));
 const MayorTripTicket = lazy(() => import('./pages/mayor/MayorTripTicket'));
+
+// ============ MAYOR REPORT PAGES (NEW) ============
+const MayorWeeklyMonitoring = lazy(() => import('./pages/mayor/reports/WeeklyMonitoring'));
+const MayorFuelWithoutTripReport = lazy(() => import('./pages/mayor/reports/FuelWithoutTripReport'));
 
 // ============ STAFF PAGES ============
 const StaffDashboard = lazy(() => import('./pages/staff/StaffDashboard'));
@@ -188,6 +197,31 @@ function App() {
                         <ProtectedRoute allowedRoles={["gso_office"]}>
                             <Layout>
                                 <LiveTracking />
+                            </Layout>
+                        </ProtectedRoute>
+                    }
+                />
+
+                {/* ============================================================ */}
+                {/* ============ GSO REPORT ROUTES (NEW) ============ */}
+                {/* ============================================================ */}
+
+                <Route
+                    path="/gso/reports/weekly-monitoring"
+                    element={
+                        <ProtectedRoute allowedRoles={["gso_office"]}>
+                            <Layout>
+                                <WeeklyMonitoring />
+                            </Layout>
+                        </ProtectedRoute>
+                    }
+                />
+                <Route
+                    path="/gso/reports/fuel-without-trip"
+                    element={
+                        <ProtectedRoute allowedRoles={["gso_office"]}>
+                            <Layout>
+                                <FuelWithoutTripReport />
                             </Layout>
                         </ProtectedRoute>
                     }
@@ -463,6 +497,31 @@ function App() {
                         <ProtectedRoute allowedRoles={["mayors_office"]}>
                             <Layout>
                                 <MayorReceiptVerification />
+                            </Layout>
+                        </ProtectedRoute>
+                    }
+                />
+
+                {/* ============================================================ */}
+                {/* ============ MAYOR'S OFFICE REPORT ROUTES (NEW) ============ */}
+                {/* ============================================================ */}
+
+                <Route
+                    path="/mo/reports/weekly-monitoring"
+                    element={
+                        <ProtectedRoute allowedRoles={["mayors_office"]}>
+                            <Layout>
+                                <MayorWeeklyMonitoring />
+                            </Layout>
+                        </ProtectedRoute>
+                    }
+                />
+                <Route
+                    path="/mo/reports/fuel-without-trip"
+                    element={
+                        <ProtectedRoute allowedRoles={["mayors_office"]}>
+                            <Layout>
+                                <MayorFuelWithoutTripReport />
                             </Layout>
                         </ProtectedRoute>
                     }

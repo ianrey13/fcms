@@ -41,6 +41,13 @@ class TripTicket extends Model
         'has_insufficient_budget',
         'budget_shortage',
         'original_department_id',
+         'actual_distance_km',
+        'actual_fuel_used',
+        'fuel_balance_before',
+        'fuel_balance_after',
+        'odometer_start',
+        'odometer_end',
+        'is_fuel_issued_without_trip',
     ];
 
     protected $casts = [
@@ -53,6 +60,13 @@ class TripTicket extends Model
         'estimated_distance_km' => 'decimal:2',
         'estimated_fuel_liters' => 'decimal:2',
         'budget_shortage' => 'decimal:2',
+         'actual_distance_km' => 'decimal:2',
+        'actual_fuel_used' => 'decimal:2',
+        'fuel_balance_before' => 'decimal:2',
+        'fuel_balance_after' => 'decimal:2',
+        'odometer_start' => 'decimal:2',
+        'odometer_end' => 'decimal:2',
+        'is_fuel_issued_without_trip' => 'boolean',
     ];
 
     // ============ STATUS CONSTANTS ============
@@ -210,4 +224,65 @@ class TripTicket extends Model
         ];
         return $colors[$this->status] ?? 'gray';
     }
+
+    /**
+ * Calculate fuel efficiency (km per liter)
+ */
+public function getFuelEfficiencyAttribute(): ?float
+{
+    if ($this->actual_fuel_used > 0 && $this->actual_distance_km > 0) {
+        return round($this->actual_distance_km / $this->actual_fuel_used, 2);
+    }
+    return null;
+}
+
+/**
+ * Check if trip has odometer readings
+ */
+public function hasOdometerReadings(): bool
+{
+    return !is_null($this->odometer_start) && !is_null($this->odometer_end);
+}
+
+/**
+ * Check if trip has movement (distance > 0)
+ */
+public function hasMovement(): bool
+{
+    if ($this->hasOdometerReadings()) {
+        return $this->odometer_end > $this->odometer_start;
+    }
+    return $this->actual_distance_km > 0;
+}
+
+/**
+ * Check if fuel was issued without movement
+ */
+public function isFuelWithoutTrip(): bool
+{
+    return $this->is_fuel_issued_without_trip || 
+           (!$this->hasMovement() && $this->gasSlip?->amount_released > 0);
+}
+
+/**
+ * Get movement status label
+ */
+public function getMovementStatusAttribute(): string
+{
+    if (!$this->hasOdometerReadings()) {
+        return 'No Odometer Reading';
+    }
+    
+    $distance = $this->odometer_end - $this->odometer_start;
+    
+    if ($distance == 0) {
+        return 'No Movement';
+    }
+    
+    if ($distance < 1) {
+        return 'Minimal Movement (<1km)';
+    }
+    
+    return 'Normal Trip';
+}
 }

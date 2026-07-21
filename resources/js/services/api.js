@@ -178,13 +178,11 @@ export const mayorsOfficeAPI = {
   verifyReceipt: (receiptId, data) => 
     api.post(`/mayors-office/receipts/${receiptId}/verify`, data),
 
-   getBudgetHistory: (params) => 
+  getBudgetHistory: (params) => 
     api.get('/mayors-office/budget-history', { params }),
     
-   getBudgetSummary: () => 
+  getBudgetSummary: () => 
     api.get('/mayors-office/budget-summary'),
-   updateBudgetPolicy: (departmentId, data) => 
-    api.put(`/mayors-office/budget-policies/${departmentId}`, data),
 };
 
 // ============ DRIVER API (Merged with Staff) ============
@@ -377,11 +375,38 @@ export const reportsAPI = {
       responseType: "blob" 
     }),
 
+  // Fuel Receipt Report
   getFuelReceiptReport: (params) => 
     api.get("/reports/fuel-receipts", { params }),
     
   exportFuelReceiptReport: (format, params) =>
     api.get(`/reports/fuel-receipts/export/${format}`, { 
+      params, 
+      responseType: "blob" 
+    }),
+
+  // ============================================================
+  // ✅ NEW: Weekly Monitoring Report
+  // ============================================================
+  getWeeklyMonitoring: (params) => 
+    api.get("/reports/weekly-monitoring", { params }),
+
+  // ✅ NEW: Export Weekly Monitoring
+  exportWeeklyMonitoring: (format, params) =>
+    api.get(`/reports/weekly-monitoring/export/${format}`, { 
+      params, 
+      responseType: "blob" 
+    }),
+
+  // ============================================================
+  // ✅ NEW: Fuel Without Trip Report
+  // ============================================================
+  getFuelWithoutTrip: (params) => 
+    api.get("/reports/fuel-without-trip", { params }),
+
+  // ✅ NEW: Export Fuel Without Trip
+  exportFuelWithoutTrip: (format, params) =>
+    api.get(`/reports/fuel-without-trip/export/${format}`, { 
       params, 
       responseType: "blob" 
     }),

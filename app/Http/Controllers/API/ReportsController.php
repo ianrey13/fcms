@@ -1047,4 +1047,165 @@ public function getFuelReceiptReport(Request $request)
             'Expires' => '0',
         ]);
     }
+
+    /**
+ * Get Weekly Monitoring Data
+ */
+public function getWeeklyMonitoring(Request $request)
+{
+    try {
+        $departmentId = $request->get('department_id');
+        $weekStart = $request->get('week_start') ?? now()->startOfWeek()->toDateString();
+        $weekEnd = $request->get('week_end') ?? now()->endOfWeek()->toDateString();
+
+        $query = TripTicket::with(['department', 'gasSlip'])
+            ->whereBetween('created_at', [$weekStart, $weekEnd]);
+
+        if ($departmentId) {
+            $query->where('department_id', $departmentId);
+        }
+
+        $trips = $query->get();
+
+        // Calculate metrics
+        $totalBudget = 0;
+        $totalUsed = 0;
+        $completed = 0;
+        $pending = 0;
+
+        foreach ($trips as $trip) {
+            if ($trip->gasSlip) {
+                $totalUsed += $trip->gasSlip->amount_released;
+            }
+            
+            if ($trip->status === 'closed') {
+                $completed++;
+            } else {
+                $pending++;
+            }
+        }
+
+        // Get budget from department
+        $budgetPeriod = DeptBudgetPeriod::where('department_id', $departmentId)
+            ->where('status', 'active')
+            ->first();
+
+        if ($budgetPeriod) {
+            $totalBudget = $budgetPeriod->allocated_amount;
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'summary' => [
+                    'budget' => $totalBudget,
+                    'used' => $totalUsed,
+                    'remaining' => $totalBudget - $totalUsed,
+                    'utilization' => $totalBudget > 0 ? round(($totalUsed / $totalBudget) * 100, 2) : 0,
+                    'trips' => $trips->count(),
+                    'completed' => $completed,
+                    'pending' => $pending,
+                ],
+                'period' => [
+                    'start' => $weekStart,
+                    'end' => $weekEnd,
+                ],
+                'trips' => $trips->map(function($trip) {
+                    return [
+                        'id' => $trip->trip_ticket_id,
+                        'number' => $trip->trip_ticket_number,
+                        'destination' => $trip->destination,
+                        'status' => $trip->status,
+                        'estimated_fuel' => $trip->estimated_fuel_liters,
+                        'actual_fuel' => $trip->actual_fuel_used,
+                        'amount' => $trip->gasSlip?->amount_released ?? 0,
+                        'driver' => $trip->driver?->user?->full_name ?? 'N/A',
+                        'vehicle' => $trip->vehicle?->plate_number ?? 'N/A',
+                    ];
+                }),
+            ]
+        ]);
+
+    } catch (\Exception $e) {
+        Log::error('Weekly monitoring error: ' . $e->getMessage());
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to fetch weekly monitoring data'
+        ], 500);
+    }
+}
+/**
+ * Get Fuel Without Trip Report
+ */
+public function getFuelWithoutTrip(Request $request)
+{
+    try {
+        $departmentId = $request->get('department_id');
+        $startDate = $request->get('start_date');
+        $endDate = $request->get('end_date');
+
+        $query = TripTicket::with(['gasSlip', 'vehicle', 'driver.user', 'department'])
+            ->whereHas('gasSlip')
+            ->where(function($q) {
+                $q->whereNull('odometer_start')
+                  ->orWhereNull('odometer_end')
+                  ->orWhere('actual_distance_km', '<', 1)
+                  ->orWhere('actual_distance_km', '=', 0);
+            });
+
+        if ($departmentId) {
+            $query->where('department_id', $departmentId);
+        }
+
+        if ($startDate && $endDate) {
+            $query->whereBetween('created_at', [$startDate, $endDate]);
+        }
+
+        $trips = $query->get();
+
+        return response()->json([
+            'success' => true,
+            'data' => $trips->map(function($trip) {
+                $movementStatus = 'No Odometer Reading';
+                if ($trip->odometer_start && $trip->odometer_end) {
+                    if ($trip->odometer_start == $trip->odometer_end) {
+                        $movementStatus = 'No Movement';
+                    } elseif (($trip->odometer_end - $trip->odometer_start) < 1) {
+                        $movementStatus = 'Minimal Movement (<1km)';
+                    } else {
+                        $movementStatus = 'Normal Trip';
+                    }
+                }
+
+                return [
+                    'id' => $trip->trip_ticket_id,
+                    'trip_number' => $trip->trip_ticket_number,
+                    'date' => $trip->created_at?->format('Y-m-d H:i'),
+                    'plate_number' => $trip->vehicle?->plate_number ?? 'N/A',
+                    'driver' => $trip->driver?->user?->full_name ?? 'N/A',
+                    'department' => $trip->department?->department_name ?? 'N/A',
+                    'fuel_issued' => $trip->gasSlip?->amount_released ?? 0,
+                    'odometer_start' => $trip->odometer_start,
+                    'odometer_end' => $trip->odometer_end,
+                    'actual_distance' => $trip->actual_distance_km ?? 0,
+                    'movement_status' => $movementStatus,
+                    'status' => $trip->status,
+                ];
+            }),
+            'summary' => [
+                'total_trips' => $trips->count(),
+                'total_fuel' => $trips->sum(fn($t) => $t->gasSlip?->amount_released ?? 0),
+                'no_movement' => $trips->filter(fn($t) => $t->odometer_start == $t->odometer_end)->count(),
+                'no_odometer' => $trips->filter(fn($t) => is_null($t->odometer_start) || is_null($t->odometer_end))->count(),
+            ]
+        ]);
+
+    } catch (\Exception $e) {
+        Log::error('Fuel without trip error: ' . $e->getMessage());
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to fetch fuel without trip report'
+        ], 500);
+    }
+}
 }
