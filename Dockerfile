@@ -49,4 +49,4 @@ COPY nginx.conf /etc/nginx/nginx.conf
 EXPOSE 8000
 
 # ✅ FIXED: Start all services with queue worker and Reverb on port 8000
-CMD sh -c "php artisan config:clear && php artisan route:clear && php artisan view:clear && php artisan cache:clear && php artisan config:cache && php artisan route:cache && php artisan view:cache && php artisan schedule:work > /dev/null 2>&1 & php artisan queue:work --sleep=3 --tries=3 > /dev/null 2>&1 & php artisan reverb:start --host=0.0.0.0 --port=8000 > /dev/null 2>&1 & php-fpm -D && nginx -g 'daemon off;'"
+CMD sh -c "php artisan config:clear && php artisan route:clear && php artisan view:clear && php artisan cache:clear && php artisan config:cache && php artisan route:cache && php artisan view:cache && php artisan schedule:work > /dev/null 2>&1 & php artisan queue:work --sleep=3 --tries=3 > /dev/null 2>&1 & php artisan reverb:start --host=0.0.0.0 --port=8080 > /dev/null 2>&1 & php-fpm -D && nginx -g 'daemon off;'"
