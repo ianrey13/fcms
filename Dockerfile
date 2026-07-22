@@ -25,6 +25,15 @@ ENV COMPOSER_ALLOW_SUPERUSER=1
 # Install PHP dependencies
 RUN composer install --no-dev --optimize-autoloader
 
+# ✅ INSTALL REVERB
+RUN composer require laravel/reverb
+
+# ✅ Also install Reverb's dependencies if needed
+RUN composer require laravel/prompts
+
+# ✅ DEBUG: Check if Reverb is installed
+RUN php artisan list | grep reverb || echo "⚠️ Reverb not found!"
+
 # Install and build frontend
 RUN npm install --legacy-peer-deps
 RUN npm install react-is@18.2.0 --legacy-peer-deps
@@ -48,5 +57,5 @@ COPY nginx.conf /etc/nginx/nginx.conf
 
 EXPOSE 8000
 
-# ✅ FIXED: Start all services with queue worker and Reverb on port 8000
-CMD sh -c "php artisan config:clear && php artisan route:clear && php artisan view:clear && php artisan cache:clear && php artisan config:cache && php artisan route:cache && php artisan view:cache && php artisan schedule:work > /dev/null 2>&1 & php artisan queue:work --sleep=3 --tries=3 > /dev/null 2>&1 & php artisan reverb:start --host=0.0.0.0 --port=8000 > /dev/null 2>&1 & php-fpm -D && nginx -g 'daemon off;'"
+# ✅ DEBUG: Run Reverb with logs visible
+CMD sh -c "php artisan config:clear && php artisan route:clear && php artisan view:clear && php artisan cache:clear && php artisan config:cache && php artisan route:cache && php artisan view:cache && php artisan schedule:work > /dev/null 2>&1 & php artisan queue:work --sleep=3 --tries=3 > /dev/null 2>&1 & php artisan reverb:start --host=0.0.0.0 --port=8000 2>&1 & php-fpm -D && nginx -g 'daemon off;'"
