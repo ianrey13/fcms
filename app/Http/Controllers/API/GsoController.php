@@ -348,65 +348,108 @@ public function show($id)
         }
     }
 
-    /**
-     * Reconcile a trip (close it)
-     */
-    public function reconcileTrip(Request $request, $id)
-    {
-        try {
-            $user = $request->user();
-            
-            if (!$user->isGsoOffice()) {
-                return response()->json(['message' => 'Unauthorized'], 403);
-            }
-            
-            $validator = Validator::make($request->all(), [
-                'reconciliation_note' => 'nullable|string|max:500',
-            ]);
-            
-            if ($validator->fails()) {
-                return response()->json(['errors' => $validator->errors()], 422);
-            }
-            
-            $ticket = TripTicket::where('trip_ticket_id', $id)
-                ->where('status', TripTicket::STATUS_PENDING_RECONCILIATION)
-                ->first();
-            
-            if (!$ticket) {
-                return response()->json(['message' => 'Trip not found or not pending reconciliation'], 404);
-            }
-            
-            // Update gas slip reconciliation status
-            $gasSlip = GasSlip::where('trip_ticket_id', $id)->first();
-            if ($gasSlip) {
-                $gasSlip->reconciliation_status = 'verified';
-                $gasSlip->reconciled_by = $user->user_id;
-                $gasSlip->reconciled_at = now();
-                $gasSlip->reconciliation_note = $request->reconciliation_note;
-                $gasSlip->save();
-            }
-            
-            // Update ticket status
-            $ticket->status = TripTicket::STATUS_CLOSED;
-            $ticket->save();
-            
-            return response()->json([
-                'success' => true,
-                'message' => 'Trip reconciled and closed successfully',
-                'data' => [
-                    'trip_ticket_id' => $ticket->trip_ticket_id,
-                    'status' => $ticket->status,
-                ]
-            ]);
-        } catch (\Exception $e) {
-            Log::error('Reconcile trip error: ' . $e->getMessage());
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to reconcile trip: ' . $e->getMessage()
-            ], 500);
+ /**
+ * Reconcile a trip (close it)
+ */
+public function reconcileTrip(Request $request, $id)
+{
+    try {
+        $user = $request->user();
+        
+        if (!$user->isGsoOffice()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
         }
+        
+        $validator = Validator::make($request->all(), [
+            'reconciliation_note' => 'nullable|string|max:500',
+        ]);
+        
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+        
+        $ticket = TripTicket::where('trip_ticket_id', $id)
+            ->where('status', TripTicket::STATUS_PENDING_RECONCILIATION)
+            ->first();
+        
+        if (!$ticket) {
+            return response()->json(['message' => 'Trip not found or not pending reconciliation'], 404);
+        }
+        
+        // Update gas slip reconciliation status
+        $gasSlip = GasSlip::where('trip_ticket_id', $id)->first();
+        if ($gasSlip) {
+            $gasSlip->reconciliation_status = 'verified';
+            $gasSlip->reconciled_by = $user->user_id;
+            $gasSlip->reconciled_at = now();
+            $gasSlip->reconciliation_note = $request->reconciliation_note;
+            $gasSlip->save();
+        }
+        
+        // Update ticket status
+        $ticket->status = TripTicket::STATUS_CLOSED;
+        $ticket->save();
+        
+        // ✅ NEW: Broadcast to Department Staff
+        $deptStaff = User::where('department_id', $ticket->department_id)
+            ->where('status', 'active')
+            ->get();
+        
+        foreach ($deptStaff as $staff) {
+            NotificationHelper::send(
+                $staff->user_id,
+                'trip_reconciled',
+                'trip_ticket',
+                $ticket->trip_ticket_id,
+                "Trip {$ticket->trip_ticket_number} has been reconciled and closed by GSO"
+            );
+        }
+        Log::info('📡 Broadcasted trip_reconciled to ' . $deptStaff->count() . ' department staff');
+        
+        // ✅ NEW: Broadcast to Mayor's Office
+        $moStaff = User::where('role', 'mayors_office')->where('status', 'active')->get();
+        foreach ($moStaff as $mo) {
+            NotificationHelper::send(
+                $mo->user_id,
+                'trip_reconciled',
+                'trip_ticket',
+                $ticket->trip_ticket_id,
+                "Trip {$ticket->trip_ticket_number} has been reconciled and closed by GSO"
+            );
+        }
+        Log::info('📡 Broadcasted trip_reconciled to ' . $moStaff->count() . ' MO staff');
+        
+        // ✅ NEW: Broadcast to Driver (if assigned)
+        if ($ticket->driver_id) {
+            $driver = Driver::find($ticket->driver_id);
+            if ($driver && $driver->user_id) {
+                NotificationHelper::send(
+                    $driver->user_id,
+                    'trip_reconciled',
+                    'trip_ticket',
+                    $ticket->trip_ticket_id,
+                    "Trip {$ticket->trip_ticket_number} has been reconciled and closed"
+                );
+                Log::info('📡 Broadcasted trip_reconciled to driver: ' . $driver->user_id);
+            }
+        }
+        
+        return response()->json([
+            'success' => true,
+            'message' => 'Trip reconciled and closed successfully',
+            'data' => [
+                'trip_ticket_id' => $ticket->trip_ticket_id,
+                'status' => $ticket->status,
+            ]
+        ]);
+    } catch (\Exception $e) {
+        Log::error('Reconcile trip error: ' . $e->getMessage());
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to reconcile trip: ' . $e->getMessage()
+        ], 500);
     }
-
+}
     /**
      * Get completed trips for GSO - FIXED (No Odometer)
      */

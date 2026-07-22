@@ -1024,159 +1024,337 @@ class DriverController extends Controller
         }
     }
     
+  /**
+ * Acknowledge fund issuance (gas slip receipt)
+ */
+public function acknowledgeFunds(Request $request, $id)
+{
+    try {
+        $user = $request->user();
+        Log::info('acknowledgeFunds called', ['trip_id' => $id, 'user_id' => $user->user_id]);
+        
+        $driver = Driver::where('user_id', $user->user_id)->first();
+        
+        if (!$driver) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Driver record not found'
+            ], 404);
+        }
+        
+        $ticket = TripTicket::where('trip_ticket_id', $id)
+            ->where('driver_id', $driver->driver_id)
+            ->first();
+        
+        if (!$ticket) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Trip ticket not found'
+            ], 404);
+        }
+        
+        if ($ticket->status !== 'funds_issued') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Cannot acknowledge. Current status: ' . $ticket->status . '. Required: funds_issued'
+            ], 400);
+        }
+        
+        DB::beginTransaction();
+        
+        $ticket->status = 'acknowledged';
+        $ticket->save();
+        
+        $gasSlip = GasSlip::where('trip_ticket_id', $id)->first();
+        if ($gasSlip) {
+            $gasSlip->acknowledged_by = $user->user_id;
+            $gasSlip->acknowledged_at = now();
+            $gasSlip->save();
+        }
+        
+        DB::commit();
+        
+        Log::info('Gas slip acknowledged', ['trip_id' => $id, 'new_status' => $ticket->status]);
+        
+        // ✅ NEW: Broadcast to GSO Office
+        $gsoStaff = User::where('role', 'gso_office')->where('status', 'active')->get();
+        foreach ($gsoStaff as $gso) {
+            NotificationHelper::send(
+                $gso->user_id,
+                'driver_acknowledged',
+                'trip_ticket',
+                $ticket->trip_ticket_id,
+                "Driver {$user->full_name} acknowledged funds for trip {$ticket->trip_ticket_number}"
+            );
+        }
+        Log::info('📡 Broadcasted driver_acknowledged to ' . $gsoStaff->count() . ' GSO staff');
+        
+        // ✅ NEW: Broadcast to Mayor's Office
+        $moStaff = User::where('role', 'mayors_office')->where('status', 'active')->get();
+        foreach ($moStaff as $mo) {
+            NotificationHelper::send(
+                $mo->user_id,
+                'driver_acknowledged',
+                'trip_ticket',
+                $ticket->trip_ticket_id,
+                "Driver {$user->full_name} acknowledged funds for trip {$ticket->trip_ticket_number}"
+            );
+        }
+        Log::info('📡 Broadcasted driver_acknowledged to ' . $moStaff->count() . ' MO staff');
+        
+        return response()->json([
+            'success' => true,
+            'message' => 'Gas slip acknowledged successfully',
+            'data' => [
+                'trip_ticket_id' => $ticket->trip_ticket_id,
+                'status' => $ticket->status
+            ]
+        ]);
+    } catch (\Exception $e) {
+        DB::rollBack();
+        Log::error('Acknowledge funds error: ' . $e->getMessage());
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to acknowledge: ' . $e->getMessage()
+        ], 500);
+    }
+}
+    
     /**
-     * Acknowledge fund issuance (gas slip receipt)
-     */
-    public function acknowledgeFunds(Request $request, $id)
-    {
-        try {
-            $user = $request->user();
-            Log::info('acknowledgeFunds called', ['trip_id' => $id, 'user_id' => $user->user_id]);
-            
-            $driver = Driver::where('user_id', $user->user_id)->first();
-            
-            if (!$driver) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Driver record not found'
-                ], 404);
-            }
-            
-            $ticket = TripTicket::where('trip_ticket_id', $id)
-                ->where('driver_id', $driver->driver_id)
-                ->first();
-            
-            if (!$ticket) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Trip ticket not found'
-                ], 404);
-            }
-            
-            if ($ticket->status !== 'funds_issued') {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Cannot acknowledge. Current status: ' . $ticket->status . '. Required: funds_issued'
-                ], 400);
-            }
-            
-            DB::beginTransaction();
-            
-            $ticket->status = 'acknowledged';
-            $ticket->save();
-            
-            $gasSlip = GasSlip::where('trip_ticket_id', $id)->first();
-            if ($gasSlip) {
-                $gasSlip->acknowledged_by = $user->user_id;
-                $gasSlip->acknowledged_at = now();
-                $gasSlip->save();
-            }
-            
-            DB::commit();
-            
-            Log::info('Gas slip acknowledged', ['trip_id' => $id, 'new_status' => $ticket->status]);
-            
+ * Start trip and begin GPS tracking - FIXED (No Odometer)
+ */
+public function startTrip(Request $request, $id)
+{
+    try {
+        $user = $request->user();
+        
+        $validator = Validator::make($request->all(), [
+            'latitude' => 'nullable|numeric|between:-90,90',
+            'longitude' => 'nullable|numeric|between:-180,180',
+            'accuracy' => 'nullable|numeric',
+        ]);
+        
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+        
+        Log::info('startTrip called', ['trip_id' => $id, 'user_id' => $user->user_id]);
+        
+        $driver = Driver::where('user_id', $user->user_id)->first();
+        
+        if (!$driver) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Driver record not found'
+            ], 404);
+        }
+        
+        $ticket = TripTicket::where('trip_ticket_id', $id)
+            ->where('driver_id', $driver->driver_id)
+            ->first();
+        
+        if (!$ticket) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Trip ticket not found'
+            ], 404);
+        }
+        
+        Log::info('Trip found', [
+            'trip_id' => $ticket->trip_ticket_id,
+            'current_status' => $ticket->status
+        ]);
+        
+        if ($ticket->status === 'in_transit') {
+            Log::info('Trip already in progress', ['trip_id' => $id]);
             return response()->json([
                 'success' => true,
-                'message' => 'Gas slip acknowledged successfully',
+                'message' => 'Trip already in progress',
                 'data' => [
                     'trip_ticket_id' => $ticket->trip_ticket_id,
                     'status' => $ticket->status
                 ]
             ]);
-        } catch (\Exception $e) {
-            DB::rollBack();
-            Log::error('Acknowledge funds error: ' . $e->getMessage());
+        }
+        
+        if ($ticket->status !== 'acknowledged') {
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to acknowledge: ' . $e->getMessage()
-            ], 500);
+                'message' => 'Cannot start trip. Current status: ' . $ticket->status . '. Required: acknowledged'
+            ], 400);
         }
-    }
-    
-    /**
-     * Start trip and begin GPS tracking - FIXED (No Odometer)
-     */
-    public function startTrip(Request $request, $id)
-    {
-        try {
-            $user = $request->user();
-            
-            $validator = Validator::make($request->all(), [
-                'latitude' => 'nullable|numeric|between:-90,90',
-                'longitude' => 'nullable|numeric|between:-180,180',
-                'accuracy' => 'nullable|numeric',
-                // ✅ REMOVED: odometer_start
-            ]);
-            
-            if ($validator->fails()) {
-                return response()->json(['errors' => $validator->errors()], 422);
+        
+        DB::beginTransaction();
+        
+        $ticket->status = 'in_transit';
+        $ticket->save();
+        
+        $gasSlip = GasSlip::where('trip_ticket_id', $id)->first();
+        if ($gasSlip) {
+            $fuelReceipt = FuelReceipt::firstOrNew(['gas_slip_id' => $gasSlip->gas_slip_id]);
+            $fuelReceipt->trip_started_at = now();
+            if ($request->has('latitude') && $request->has('longitude')) {
+                $fuelReceipt->trip_start_gps_lat = $request->latitude;
+                $fuelReceipt->trip_start_gps_lng = $request->longitude;
+                $fuelReceipt->trip_start_gps_accuracy = $request->accuracy ?? null;
             }
+            $fuelReceipt->save();
             
-            Log::info('startTrip called', ['trip_id' => $id, 'user_id' => $user->user_id]);
-            
-            $driver = Driver::where('user_id', $user->user_id)->first();
-            
-            if (!$driver) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Driver record not found'
-                ], 404);
-            }
-            
-            $ticket = TripTicket::where('trip_ticket_id', $id)
-                ->where('driver_id', $driver->driver_id)
-                ->first();
-            
-            if (!$ticket) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Trip ticket not found'
-                ], 404);
-            }
-            
-            Log::info('Trip found', [
-                'trip_id' => $ticket->trip_ticket_id,
-                'current_status' => $ticket->status
-            ]);
-            
-            if ($ticket->status === 'in_transit') {
-                Log::info('Trip already in progress', ['trip_id' => $id]);
-                return response()->json([
-                    'success' => true,
-                    'message' => 'Trip already in progress',
-                    'data' => [
-                        'trip_ticket_id' => $ticket->trip_ticket_id,
-                        'status' => $ticket->status
-                    ]
+            // Store initial GPS ping
+            if ($request->has('latitude') && $request->has('longitude')) {
+                GpsPing::create([
+                    'trip_ticket_id' => $ticket->trip_ticket_id,
+                    'latitude' => $request->latitude,
+                    'longitude' => $request->longitude,
+                    'accuracy_meters' => $request->accuracy ?? null,
+                    'recorded_at' => now(),
+                    'received_at' => now(),
                 ]);
             }
-            
-            if ($ticket->status !== 'acknowledged') {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Cannot start trip. Current status: ' . $ticket->status . '. Required: acknowledged'
-                ], 400);
-            }
-            
-            DB::beginTransaction();
-            
-            $ticket->status = 'in_transit';
-            $ticket->save();
-            
-            $gasSlip = GasSlip::where('trip_ticket_id', $id)->first();
-            if ($gasSlip) {
-                $fuelReceipt = FuelReceipt::firstOrNew(['gas_slip_id' => $gasSlip->gas_slip_id]);
-                $fuelReceipt->trip_started_at = now();
-                if ($request->has('latitude') && $request->has('longitude')) {
-                    $fuelReceipt->trip_start_gps_lat = $request->latitude;
-                    $fuelReceipt->trip_start_gps_lng = $request->longitude;
-                    $fuelReceipt->trip_start_gps_accuracy = $request->accuracy ?? null;
+        }
+        
+        DB::commit();
+        
+        Log::info('Trip started successfully', [
+            'trip_id' => $ticket->trip_ticket_id,
+            'new_status' => $ticket->status
+        ]);
+        
+        // Send notification to GSO (submitted_by)
+        NotificationHelper::send(
+            $ticket->submitted_by,
+            'trip_started',
+            'trip_ticket',
+            $ticket->trip_ticket_id,
+            "Trip {$ticket->trip_ticket_number} has been started by driver " . $user->full_name
+        );
+        
+        // ✅ NEW: Broadcast to Mayor's Office
+        $moStaff = User::where('role', 'mayors_office')->where('status', 'active')->get();
+        foreach ($moStaff as $mo) {
+            NotificationHelper::send(
+                $mo->user_id,
+                'trip_started',
+                'trip_ticket',
+                $ticket->trip_ticket_id,
+                "Trip {$ticket->trip_ticket_number} has been started by driver " . $user->full_name
+            );
+        }
+        Log::info('📡 Broadcasted trip_started to ' . $moStaff->count() . ' MO staff');
+        
+        // ✅ NEW: Broadcast to all GSO staff (not just submitter)
+        $gsoStaff = User::where('role', 'gso_office')->where('status', 'active')->get();
+        foreach ($gsoStaff as $gso) {
+            NotificationHelper::send(
+                $gso->user_id,
+                'trip_started',
+                'trip_ticket',
+                $ticket->trip_ticket_id,
+                "Trip {$ticket->trip_ticket_number} has been started by driver " . $user->full_name
+            );
+        }
+        Log::info('📡 Broadcasted trip_started to ' . $gsoStaff->count() . ' GSO staff');
+        
+        return response()->json([
+            'success' => true,
+            'message' => 'Trip started successfully',
+            'data' => [
+                'trip_ticket_id' => $ticket->trip_ticket_id,
+                'status' => $ticket->status,
+                'trip_started_at' => now(),
+            ]
+        ]);
+    } catch (\Exception $e) {
+        DB::rollBack();
+        Log::error('Start trip error: ' . $e->getMessage());
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to start trip: ' . $e->getMessage()
+        ], 500);
+    }
+}
+    
+    /**
+ * Complete trip - FIXED (No Odometer)
+ */
+public function completeTrip(Request $request, $id)
+{
+    try {
+        $user = $request->user();
+        
+        $validator = Validator::make($request->all(), [
+            'latitude' => 'nullable|numeric|between:-90,90',
+            'longitude' => 'nullable|numeric|between:-180,180',
+            'gps_distance_km' => 'nullable|numeric|min:0',
+        ]);
+        
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+        
+        Log::info('completeTrip called', ['trip_id' => $id, 'user_id' => $user->user_id]);
+        
+        $driver = Driver::where('user_id', $user->user_id)->first();
+        
+        if (!$driver) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Driver record not found'
+            ], 404);
+        }
+        
+        $ticket = TripTicket::where('trip_ticket_id', $id)
+            ->where('driver_id', $driver->driver_id)
+            ->first();
+        
+        if (!$ticket) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Trip ticket not found'
+            ], 404);
+        }
+        
+        Log::info('Trip found for completion', [
+            'trip_id' => $ticket->trip_ticket_id,
+            'current_status' => $ticket->status
+        ]);
+        
+        if ($ticket->status === 'pending_reconciliation') {
+            return response()->json([
+                'success' => true,
+                'message' => 'Trip already completed',
+                'data' => [
+                    'trip_ticket_id' => $ticket->trip_ticket_id,
+                    'status' => $ticket->status
+                ]
+            ]);
+        }
+        
+        if ($ticket->status !== 'in_transit') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Cannot complete trip. Current status: ' . $ticket->status . '. Required: in_transit'
+            ], 400);
+        }
+        
+        DB::beginTransaction();
+        
+        $ticket->status = 'pending_reconciliation';
+        $ticket->save();
+        
+        $gasSlip = GasSlip::where('trip_ticket_id', $id)->first();
+        if ($gasSlip) {
+            $fuelReceipt = FuelReceipt::where('gas_slip_id', $gasSlip->gas_slip_id)->first();
+            if ($fuelReceipt) {
+                $fuelReceipt->trip_ended_at = now();
+                if ($request->has('gps_distance_km')) {
+                    $fuelReceipt->gps_distance_km = $request->gps_distance_km;
                 }
-                // ✅ REMOVED: odometer_start
+                $fuelReceipt->trip_elapsed_minutes = $fuelReceipt->trip_started_at ? 
+                    $fuelReceipt->trip_started_at->diffInMinutes(now()) : null;
                 $fuelReceipt->save();
                 
-                // Store initial GPS ping
+                // Store final GPS ping
                 if ($request->has('latitude') && $request->has('longitude')) {
                     GpsPing::create([
                         'trip_ticket_id' => $ticket->trip_ticket_id,
@@ -1188,172 +1366,68 @@ class DriverController extends Controller
                     ]);
                 }
             }
-            
-            DB::commit();
-            
-            Log::info('Trip started successfully', [
-                'trip_id' => $ticket->trip_ticket_id,
-                'new_status' => $ticket->status
-            ]);
-            
-            // Send notification
-            NotificationHelper::send(
-                $ticket->submitted_by,
-                'trip_started',
-                'trip_ticket',
-                $ticket->trip_ticket_id,
-                "Trip {$ticket->trip_ticket_number} has been started by driver " . $user->full_name
-            );
-            
-            return response()->json([
-                'success' => true,
-                'message' => 'Trip started successfully',
-                'data' => [
-                    'trip_ticket_id' => $ticket->trip_ticket_id,
-                    'status' => $ticket->status,
-                    'trip_started_at' => now(),
-                ]
-            ]);
-        } catch (\Exception $e) {
-            DB::rollBack();
-            Log::error('Start trip error: ' . $e->getMessage());
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to start trip: ' . $e->getMessage()
-            ], 500);
         }
-    }
-    
-    /**
-     * Complete trip - FIXED (No Odometer)
-     */
-    public function completeTrip(Request $request, $id)
-    {
-        try {
-            $user = $request->user();
-            
-            $validator = Validator::make($request->all(), [
-                'latitude' => 'nullable|numeric|between:-90,90',
-                'longitude' => 'nullable|numeric|between:-180,180',
-                'gps_distance_km' => 'nullable|numeric|min:0',
-                // ✅ REMOVED: odometer_end
-            ]);
-            
-            if ($validator->fails()) {
-                return response()->json(['errors' => $validator->errors()], 422);
-            }
-            
-            Log::info('completeTrip called', ['trip_id' => $id, 'user_id' => $user->user_id]);
-            
-            $driver = Driver::where('user_id', $user->user_id)->first();
-            
-            if (!$driver) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Driver record not found'
-                ], 404);
-            }
-            
-            $ticket = TripTicket::where('trip_ticket_id', $id)
-                ->where('driver_id', $driver->driver_id)
-                ->first();
-            
-            if (!$ticket) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Trip ticket not found'
-                ], 404);
-            }
-            
-            Log::info('Trip found for completion', [
-                'trip_id' => $ticket->trip_ticket_id,
-                'current_status' => $ticket->status
-            ]);
-            
-            if ($ticket->status === 'pending_reconciliation') {
-                return response()->json([
-                    'success' => true,
-                    'message' => 'Trip already completed',
-                    'data' => [
-                        'trip_ticket_id' => $ticket->trip_ticket_id,
-                        'status' => $ticket->status
-                    ]
-                ]);
-            }
-            
-            if ($ticket->status !== 'in_transit') {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Cannot complete trip. Current status: ' . $ticket->status . '. Required: in_transit'
-                ], 400);
-            }
-            
-            DB::beginTransaction();
-            
-            $ticket->status = 'pending_reconciliation';
-            $ticket->save();
-            
-            $gasSlip = GasSlip::where('trip_ticket_id', $id)->first();
-            if ($gasSlip) {
-                $fuelReceipt = FuelReceipt::where('gas_slip_id', $gasSlip->gas_slip_id)->first();
-                if ($fuelReceipt) {
-                    $fuelReceipt->trip_ended_at = now();
-                    if ($request->has('gps_distance_km')) {
-                        $fuelReceipt->gps_distance_km = $request->gps_distance_km;
-                    }
-                    $fuelReceipt->trip_elapsed_minutes = $fuelReceipt->trip_started_at ? 
-                        $fuelReceipt->trip_started_at->diffInMinutes(now()) : null;
-                    // ✅ REMOVED: odometer_end
-                    $fuelReceipt->save();
-                    
-                    // Store final GPS ping
-                    if ($request->has('latitude') && $request->has('longitude')) {
-                        GpsPing::create([
-                            'trip_ticket_id' => $ticket->trip_ticket_id,
-                            'latitude' => $request->latitude,
-                            'longitude' => $request->longitude,
-                            'accuracy_meters' => $request->accuracy ?? null,
-                            'recorded_at' => now(),
-                            'received_at' => now(),
-                        ]);
-                    }
-                }
-            }
-            
-            DB::commit();
-            
-            Log::info('Trip completed successfully', [
-                'trip_id' => $ticket->trip_ticket_id,
-                'new_status' => $ticket->status
-            ]);
-            
-            // Send notification
+        
+        DB::commit();
+        
+        Log::info('Trip completed successfully', [
+            'trip_id' => $ticket->trip_ticket_id,
+            'new_status' => $ticket->status
+        ]);
+        
+        // Send notification to GSO (submitted_by)
+        NotificationHelper::send(
+            $ticket->submitted_by,
+            'trip_completed',
+            'trip_ticket',
+            $ticket->trip_ticket_id,
+            "Trip {$ticket->trip_ticket_number} has been completed by driver " . $user->full_name
+        );
+        
+        // ✅ NEW: Broadcast to Mayor's Office
+        $moStaff = User::where('role', 'mayors_office')->where('status', 'active')->get();
+        foreach ($moStaff as $mo) {
             NotificationHelper::send(
-                $ticket->submitted_by,
+                $mo->user_id,
                 'trip_completed',
                 'trip_ticket',
                 $ticket->trip_ticket_id,
                 "Trip {$ticket->trip_ticket_number} has been completed by driver " . $user->full_name
             );
-            
-            return response()->json([
-                'success' => true,
-                'message' => 'Trip completed successfully',
-                'data' => [
-                    'trip_ticket_id' => $ticket->trip_ticket_id,
-                    'status' => $ticket->status,
-                    'trip_ended_at' => now(),
-                ]
-            ]);
-        } catch (\Exception $e) {
-            DB::rollBack();
-            Log::error('Complete trip error: ' . $e->getMessage());
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to complete trip: ' . $e->getMessage()
-            ], 500);
         }
+        Log::info('📡 Broadcasted trip_completed to ' . $moStaff->count() . ' MO staff');
+        
+        // ✅ NEW: Broadcast to all GSO staff (not just submitter)
+        $gsoStaff = User::where('role', 'gso_office')->where('status', 'active')->get();
+        foreach ($gsoStaff as $gso) {
+            NotificationHelper::send(
+                $gso->user_id,
+                'trip_completed',
+                'trip_ticket',
+                $ticket->trip_ticket_id,
+                "Trip {$ticket->trip_ticket_number} has been completed by driver " . $user->full_name
+            );
+        }
+        Log::info('📡 Broadcasted trip_completed to ' . $gsoStaff->count() . ' GSO staff');
+        
+        return response()->json([
+            'success' => true,
+            'message' => 'Trip completed successfully',
+            'data' => [
+                'trip_ticket_id' => $ticket->trip_ticket_id,
+                'status' => $ticket->status,
+                'trip_ended_at' => now(),
+            ]
+        ]);
+    } catch (\Exception $e) {
+        DB::rollBack();
+        Log::error('Complete trip error: ' . $e->getMessage());
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to complete trip: ' . $e->getMessage()
+        ], 500);
     }
+}
     
     /**
      * Upload fuel receipt - WITH AMOUNT VALIDATION

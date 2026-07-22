@@ -5,7 +5,7 @@ import NotificationBell from '../notifications/NotificationBell';
 import { useAuth } from '../../contexts/AuthContext';
 import { Menu, Sun, Moon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Toaster } from 'react-hot-toast';  // ✅ ADD THIS
+import { Toaster } from 'react-hot-toast';
 
 const Layout = ({ children }) => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -54,27 +54,56 @@ const Layout = ({ children }) => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 transition-colors duration-300">
-      {/* ✅ Toast notifications at root level */}
-      <Toaster 
+      {/* ✅ Toast notifications - IMPROVED CONFIG */}
+      <Toaster
         position="top-right"
+        reverseOrder={false}
+        gutter={8}
+        containerClassName=""
+        containerStyle={{}}
         toastOptions={{
           duration: 5000,
           style: {
-            background: '#363636',
-            color: '#fff',
+            background: '#ffffff',
+            color: '#1a1a1a',
+            padding: '16px',
+            borderRadius: '12px',
+            boxShadow: '0 10px 40px rgba(0,0,0,0.12)',
+            border: '1px solid #e5e7eb',
+            fontSize: '14px',
+            maxWidth: '420px',
           },
           success: {
             duration: 4000,
             iconTheme: {
               primary: '#10b981',
-              secondary: '#fff',
+              secondary: '#ffffff',
+            },
+            style: {
+              borderLeft: '4px solid #10b981',
             },
           },
           error: {
             duration: 5000,
             iconTheme: {
               primary: '#ef4444',
-              secondary: '#fff',
+              secondary: '#ffffff',
+            },
+            style: {
+              borderLeft: '4px solid #ef4444',
+            },
+          },
+          loading: {
+            duration: 3000,
+            style: {
+              borderLeft: '4px solid #6366f1',
+            },
+          },
+          // ✅ Custom styles for different toast types
+          custom: {
+            style: {
+              background: '#ffffff',
+              color: '#1a1a1a',
             },
           },
         }}

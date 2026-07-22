@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import { mayorsOfficeAPI } from "../../services/api";
-import { toast } from "react-hot-toast";
+import toast from "react-hot-toast";
 import echo from "../../services/echo";
 import eventBus from "../../utils/eventBus";
 
@@ -193,10 +193,54 @@ const MayorDashboard = () => {
   }, [fetchAllData, fetchPendingTickets, fetchDepartmentBudgets]);
 
   // ============================================
-  // ✅ SETUP REAL-TIME NOTIFICATIONS - NO TOASTS
+  // ✅ HANDLE NOTIFICATION BY TYPE - FIXED
   // ============================================
 
-  const setupRealtimeNotifications = () => {
+  const handleNotificationByType = useCallback((data) => {
+    const type = data.notification_type;
+    console.log(`📨 Processing notification type: ${type}`);
+    
+    // ✅ Update notification count
+    setNewNotificationCount(prev => prev + 1);
+    
+    // ✅ Refresh data based on notification type
+    if (type === 'trip_created' || type === 'trip_submitted') {
+      console.log('🔄 Refreshing pending tickets due to new trip');
+      // ✅ Use the ref directly
+      fetchPendingTicketsRef.current?.();
+      setForceUpdate(prev => prev + 1);
+    }
+
+    if (type === 'fund_issued' || type === 'fund_released') {
+      console.log('🔄 Refreshing all data due to fund release');
+      fetchAllDataRef.current?.();
+      setForceUpdate(prev => prev + 1);
+    }
+
+    if (type === 'trip_completed' || type === 'trip_started') {
+      console.log(`🔄 Refreshing all data due to ${type}`);
+      fetchAllDataRef.current?.();
+      setForceUpdate(prev => prev + 1);
+    }
+
+    if (type === 'driver_acknowledged') {
+      console.log('🔄 Refreshing all data due to driver acknowledged');
+      fetchAllDataRef.current?.();
+      setForceUpdate(prev => prev + 1);
+    }
+
+    if (type === 'trip_reconciled') {
+      console.log('🔄 Refreshing all data due to trip reconciled');
+      fetchAllDataRef.current?.();
+      setForceUpdate(prev => prev + 1);
+    }
+  }, []);
+
+  // ============================================
+  // ✅ SETUP REAL-TIME NOTIFICATIONS
+  // ============================================
+
+  const setupRealtimeNotifications = useCallback(() => {
     if (!user) return;
 
     console.log("🔔 Setting up real-time notifications for Mayor Dashboard:", user.user_id);
@@ -213,18 +257,10 @@ const MayorDashboard = () => {
       try {
         const channel = echo.private(`notifications.${user.user_id}`);
         
-        // ✅ SINGLE listener for all notifications
         channel.listen('.notification.new', (data) => {
           console.log('🔔 Mayor: Private notification received:', data);
           
-          // Update notification count
-          setNewNotificationCount(prev => prev + 1);
-          setLatestNotification(data);
-
-          // ✅ Emit to event bus for NotificationBell (it will show toast)
-          eventBus.emit('notification-received', data);
-
-          // ✅ Handle notification by type (REFRESH ONLY - NO TOAST)
+          // ✅ Handle notification (refreshes data)
           handleNotificationByType(data);
         });
 
@@ -238,39 +274,6 @@ const MayorDashboard = () => {
 
       } catch (error) {
         console.error('⚠️ Error subscribing to private channel:', error);
-      }
-    };
-
-    const handleNotificationByType = (data) => {
-      const type = data.notification_type;
-      const refreshDelay = 500;
-      
-      // ✅ ONLY REFRESH DATA - NO TOASTS HERE
-      // NotificationBell handles all toasts
-      
-      if (type === 'trip_created' || type === 'trip_submitted') {
-        console.log('🔄 Refreshing dashboard due to new trip notification');
-        setTimeout(() => {
-          fetchAllDataRef.current?.();
-          setForceUpdate(prev => prev + 1);
-        }, refreshDelay);
-      }
-
-      if (type === 'fund_issued' || type === 'fund_released') {
-        console.log('🔄 Refreshing budget data due to fund release');
-        setTimeout(() => {
-          fetchPendingTicketsRef.current?.();
-          fetchDepartmentBudgetsRef.current?.();
-          setForceUpdate(prev => prev + 1);
-        }, refreshDelay);
-      }
-
-      if (type === 'trip_completed' || type === 'trip_started') {
-        console.log(`🔄 Refreshing due to ${type}`);
-        setTimeout(() => {
-          fetchAllDataRef.current?.();
-          setForceUpdate(prev => prev + 1);
-        }, refreshDelay);
       }
     };
 
@@ -288,7 +291,7 @@ const MayorDashboard = () => {
         connection.connect();
       }
     }
-  };
+  }, [user, handleNotificationByType]);
 
   // ============================================
   // ✅ SETUP - Runs once on mount
@@ -306,7 +309,6 @@ const MayorDashboard = () => {
     // ✅ Cleanup on unmount
     return () => {
       setIsMounted(false);
-      // Leave private channel
       try {
         if (user) {
           echo.leave(`notifications.${user.user_id}`);
@@ -315,7 +317,7 @@ const MayorDashboard = () => {
         // Ignore cleanup errors
       }
     };
-  }, [user]); // ✅ Only runs when user changes
+  }, [user, fetchAllData, setupRealtimeNotifications]);
 
   const handleRefresh = () => {
     setRefreshing(true);
@@ -523,26 +525,11 @@ const MayorDashboard = () => {
                 Monitor fund releases and department budget utilization
               </p>
             </div>
-            <Button
-              onClick={handleRefresh}
-              variant="outline"
-              className="border-white/20 bg-white/10 text-white backdrop-blur-sm transition-all hover:bg-white/20"
-              disabled={refreshing}
-            >
-              {refreshing ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <RefreshCw className="mr-2 h-4 w-4" />
-              )}
-              {newNotificationCount > 0
-                ? `Refresh (${newNotificationCount} new)`
-                : "Refresh Data"}
-            </Button>
           </div>
         </div>
 
         {/* Stats Grid */}
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4" key={`stats-${forceUpdate}`}>
           <StatCard
             title="Pending Release"
             value={stats.pendingCount}

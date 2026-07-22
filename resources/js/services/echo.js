@@ -1,8 +1,32 @@
-// web/src/services/echo.js
+// resources/js/services/echo.js
 import Echo from 'laravel-echo';
 import Pusher from 'pusher-js';
 
 window.Pusher = Pusher;
+
+// ============================================
+// ✅ GET TOKENS
+// ============================================
+
+const getCsrfToken = () => {
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    return meta ? meta.content : '';
+};
+
+const getXSRFToken = () => {
+    const cookies = document.cookie.split(';');
+    for (let cookie of cookies) {
+        const [name, value] = cookie.trim().split('=');
+        if (name === 'XSRF-TOKEN') {
+            return decodeURIComponent(value);
+        }
+    }
+    return '';
+};
+
+const getToken = () => {
+    return localStorage.getItem('fcms_token');
+};
 
 // ============================================
 // ✅ DETECT PLATFORM
@@ -12,18 +36,12 @@ const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 const isProduction = window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
 
-// ============================================
-// ✅ GET CORRECT HOST
-// ============================================
-
-// ✅ Your PC's local IP - CHANGE THIS to match your actual IP!
 const PC_IP = import.meta.env.VITE_PC_IP || '192.168.1.5';
 
 let wsHost = import.meta.env.VITE_REVERB_HOST || 'localhost';
 
-// ✅ PRODUCTION: Use the Render URL
 if (isProduction) {
-    wsHost = window.location.hostname; // fcms-j69h.onrender.com
+    wsHost = window.location.hostname;
     console.log('🌐 Production detected - using host:', wsHost);
 } else if (isMobile) {
     wsHost = PC_IP;
@@ -33,12 +51,10 @@ if (isProduction) {
     console.log('💻 Desktop detected - using:', wsHost);
 }
 
-// ✅ For Reverb on Render, we need to use port 8000 (the web port)
 const wsPort = isProduction ? 8000 : (parseInt(import.meta.env.VITE_REVERB_PORT) || 8080);
 const wsKey = import.meta.env.VITE_REVERB_APP_KEY || 'tvv4dolwfj6x4radqf76';
 const wsScheme = isProduction ? 'https' : (import.meta.env.VITE_REVERB_SCHEME || 'http');
 
-// ✅ Get the correct API URL for auth
 const apiUrl = isProduction 
     ? `https://${window.location.hostname}/api`
     : (isMobile 
@@ -55,11 +71,6 @@ console.log('📡 Scheme:', wsScheme);
 console.log('🔗 API:', apiUrl);
 console.log('===========================');
 
-// ✅ Get token from localStorage
-const getToken = () => {
-    return localStorage.getItem('fcms_token');
-};
-
 // ============================================
 // ✅ CREATE ECHO INSTANCE
 // ============================================
@@ -73,21 +84,20 @@ const echo = new Echo({
     forceTLS: wsScheme === 'https',
     enabledTransports: ['ws', 'wss'],
     timeout: 30000,
-    authEndpoint: `${apiUrl}/broadcasting/auth`,
+    authEndpoint: '/api/broadcasting/auth',
     auth: {
         headers: {
             Accept: 'application/json',
             'X-Requested-With': 'XMLHttpRequest',
+            'X-CSRF-TOKEN': getCsrfToken(),
+            'X-XSRF-TOKEN': getXSRFToken(),
             Authorization: `Bearer ${getToken()}`,
         },
+        withCredentials: true,
     },
 });
 
-console.log('🔊 Echo instance created:', echo);
-
-// ============================================
-// ✅ EXPOSE GLOBALLY
-// ============================================
+console.log('🔊 Echo instance created');
 
 window.echo = echo;
 
@@ -114,10 +124,8 @@ const tryConnect = () => {
                     console.log('✅ Reverb WebSocket connected!');
                     console.log('🔗 Connected to:', wsHost, ':', wsPort);
                     
-                    // ✅ Reset retry count on successful connection
                     retryCount = 0;
                     
-                    // ✅ Subscribe after connection
                     setTimeout(() => {
                         subscribeToNotifications();
                     }, 500);
@@ -149,11 +157,10 @@ const tryConnect = () => {
 };
 
 // ============================================
-// ✅ SUBSCRIBE TO NOTIFICATIONS - SINGLE CHANNEL
+// ✅ SUBSCRIBE TO NOTIFICATIONS
 // ============================================
 
 function subscribeToNotifications() {
-    // ✅ Prevent multiple subscriptions
     if (isSubscribed) {
         console.log('✅ Already subscribed to notifications');
         return;
@@ -182,30 +189,24 @@ function subscribeToNotifications() {
         
         console.log('🔔 Subscribing to notifications for user:', userId);
         
-        // ✅ ONLY subscribe to private channel - NO public channel
         const channel = echo.private(`notifications.${userId}`);
         
-        // ✅ SINGLE listener for all notifications
         channel.listen('.notification.new', (data) => {
             console.log('📨 Real-time notification received:', data);
             
-            // ✅ Dispatch event for UI update (ONE event)
             window.dispatchEvent(new CustomEvent('new-notification', { 
                 detail: data 
             }));
             
-            // ✅ Update notification badge
             updateNotificationBadge();
         });
         
-        // ✅ Handle subscription success
         channel.subscribed(() => {
             console.log(`✅ Subscribed to notifications.${userId}`);
             isSubscribed = true;
             subscriptionAttempts = 0;
         });
         
-        // ✅ Handle subscription error with retry
         channel.error((error) => {
             console.error(`❌ Subscription error for notifications.${userId}:`, error);
             
@@ -232,7 +233,6 @@ function subscribeToNotifications() {
 
 function updateNotificationBadge() {
     try {
-        // ✅ Dispatch event to refresh notifications
         window.dispatchEvent(new CustomEvent('refresh-notifications'));
     } catch (error) {
         console.error('❌ Failed to update notification badge:', error);
@@ -243,10 +243,8 @@ function updateNotificationBadge() {
 // ✅ START CONNECTION
 // ============================================
 
-// ✅ Start after a short delay to allow page to load
 setTimeout(tryConnect, 1000);
 
-// ✅ Re-subscribe when user logs in (token changes)
 const originalSetItem = localStorage.setItem;
 localStorage.setItem = function(key, value) {
     originalSetItem.call(this, key, value);
@@ -263,15 +261,36 @@ localStorage.setItem = function(key, value) {
 export default echo;
 
 // ============================================
-// ✅ CONSOLE HELPERS
+// ✅ CONSOLE HELPERS - UPDATED
 // ============================================
 
+// ✅ FIXED: testNotification now shows a toast directly
 window.testNotification = () => {
     console.log('🔔 Testing notification...');
+    
+    // ✅ Show toast directly using react-hot-toast
+    import('react-hot-toast').then((module) => {
+        const toast = module.default || module;
+        toast.success('🔔 Test toast from window.testNotification!', {
+            duration: 5000,
+            position: 'top-right',
+        });
+        console.log('✅ Toast displayed!');
+    }).catch((err) => {
+        console.warn('⚠️ Failed to import react-hot-toast:', err);
+        // Fallback: try using window.toast
+        if (window.toast) {
+            window.toast.success('🔔 Test toast from window.testNotification!');
+        }
+    });
+    
+    // ✅ Also dispatch the custom event for NotificationBell
     window.dispatchEvent(new CustomEvent('new-notification', {
         detail: {
             message: '🔔 Test notification from browser!',
             notification_type: 'test',
+            entity_type: 'test',
+            entity_id: 1,
             created_at: new Date().toISOString(),
         }
     }));

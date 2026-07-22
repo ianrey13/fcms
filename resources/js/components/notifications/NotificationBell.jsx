@@ -3,10 +3,14 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Bell, Check, X, AlertCircle, DollarSign } from 'lucide-react';
 import { notificationAPI } from '../../services/api';
 import { useNavigate } from 'react-router-dom';
+// ✅ Import toast directly from react-hot-toast
 import toast from 'react-hot-toast';
 import echo from '../../services/echo';
 import { useAuth } from '../../contexts/AuthContext';
 import eventBus from '../../utils/eventBus';
+
+// ✅ Also import the showToast helper
+import { showToast } from '../../utils/toast';
 
 const NotificationBell = () => {
   const { user } = useAuth();
@@ -18,6 +22,22 @@ const NotificationBell = () => {
   const navigate = useNavigate();
   const channelRef = useRef(null);
   const isSubscribedRef = useRef(false);
+  
+  // ✅ Track notifications already shown to prevent duplicates
+  const shownNotificationsRef = useRef(new Set());
+
+  // // ✅ Debug: Test toast on mount
+  // useEffect(() => {
+  //   console.log('🔔 NotificationBell mounted - testing toast...');
+  //   // Test toast after 2 seconds
+  //   setTimeout(() => {
+  //     toast.success('🔔 NotificationBell is ready!', {
+  //       duration: 3000,
+  //       position: 'top-right',
+  //     });
+  //     console.log('✅ Mount toast sent!');
+  //   }, 2000);
+  // }, []);
 
   useEffect(() => {
     fetchNotifications();
@@ -46,12 +66,30 @@ const NotificationBell = () => {
       // ✅ SINGLE listener for notifications
       channel.listen('.notification.new', (data) => {
         console.log('🔔 Notification received in bell:', data);
-      
+        
+        // ✅ Generate unique ID for this notification
+        const notifId = data.notification_id || `${data.entity_type}_${data.entity_id}_${Date.now()}`;
+        
+        // ✅ Prevent duplicate processing
+        if (shownNotificationsRef.current.has(notifId)) {
+          console.log('⚠️ Duplicate notification skipped:', notifId);
+          return;
+        }
+        shownNotificationsRef.current.add(notifId);
+        
+        // ✅ Clear from set after 5 seconds to allow future duplicates
+        setTimeout(() => {
+          shownNotificationsRef.current.delete(notifId);
+        }, 5000);
+        
         // ✅ Update notification list
         setNotifications(prev => [data, ...prev]);
         setUnreadCount(prev => prev + 1);
         
-        // ✅ ONLY emit event - NO toast here (Dashboard handles toast)
+        // ✅ Show TOAST using the helper
+        showToastForNotification(data);
+        
+        // ✅ Emit event for dashboard refresh (NO TOAST)
         eventBus.emit('notification-received', data);
       });
 
@@ -72,6 +110,53 @@ const NotificationBell = () => {
     }
   };
 
+  // ✅ Show toast based on notification type
+  const showToastForNotification = (data) => {
+    const type = data.notification_type;
+    const message = data.message || 'New notification';
+    
+    console.log(`🔔 Showing toast for type: ${type}, message: ${message}`);
+    
+    // ✅ Different toast styles based on type
+    const toastOptions = {
+      duration: 5000,
+      position: 'top-right',
+    };
+
+    // ✅ Map notification types to toast styles
+    const toastMap = {
+      'trip_created': () => toast.success(`🚗 ${message}`, toastOptions),
+      'trip_submitted': () => toast.info(`📋 ${message}`, toastOptions),
+      'fund_issued': () => toast.success(`💰 ${message}`, toastOptions),
+      'fund_released': () => toast.success(`💵 ${message}`, toastOptions),
+      'driver_acknowledged': () => toast.success(`✅ ${message}`, toastOptions),
+      'trip_started': () => toast.success(`🚀 ${message}`, toastOptions),
+      'trip_completed': () => toast.success(`🏁 ${message}`, toastOptions),
+      'trip_reconciled': () => toast.success(`📄 ${message}`, toastOptions),
+      'mo_rejected': () => toast.error(`❌ ${message}`, toastOptions),
+      'budget_assistance_request': () => toast.warning(`📊 ${message}`, toastOptions),
+      'budget_low_warning': () => toast.warning(`⚠️ ${message}`, toastOptions),
+      'test': () => toast.success(`🔔 ${message}`, toastOptions),
+    };
+
+    // ✅ Default toast
+    const showToast = toastMap[type] || (() => toast(message, toastOptions));
+    
+    try {
+      showToast();
+      console.log('✅ Toast displayed successfully!');
+    } catch (error) {
+      console.error('❌ Failed to show toast:', error);
+      // ✅ Fallback: Try using showToast helper
+      try {
+        const { showToast: helperToast } = require('../../utils/toast');
+        helperToast('success', message, toastOptions);
+      } catch (e) {
+        console.error('❌ Fallback toast also failed:', e);
+      }
+    }
+  };
+
   useEffect(() => {
     if (!user) return;
 
@@ -83,7 +168,7 @@ const NotificationBell = () => {
       connection.bind('connected', () => {
         console.log('✅ WebSocket connected!');
         setIsConnected(true);
-        isSubscribedRef.current = false; // Reset so we can subscribe
+        isSubscribedRef.current = false;
         subscribeToChannel();
       });
       
@@ -186,6 +271,10 @@ const NotificationBell = () => {
       'trip_created': <Bell className="h-4 w-4 text-green-500" />,
       'fund_issued': <DollarSign className="h-4 w-4 text-green-500" />,
       'fund_released': <DollarSign className="h-4 w-4 text-green-500" />,
+      'driver_acknowledged': <Check className="h-4 w-4 text-blue-500" />,
+      'trip_started': <Check className="h-4 w-4 text-blue-500" />,
+      'trip_completed': <Check className="h-4 w-4 text-green-500" />,
+      'trip_reconciled': <Check className="h-4 w-4 text-purple-500" />,
       'trip_submitted': <Bell className="h-4 w-4 text-blue-500" />,
       'mo_rejected': <X className="h-4 w-4 text-red-500" />,
       'mo_approved': <Check className="h-4 w-4 text-green-500" />,
@@ -200,6 +289,10 @@ const NotificationBell = () => {
       'trip_created': 'bg-green-50 border-green-200',
       'fund_issued': 'bg-green-50 border-green-200',
       'fund_released': 'bg-green-50 border-green-200',
+      'driver_acknowledged': 'bg-blue-50 border-blue-200',
+      'trip_started': 'bg-blue-50 border-blue-200',
+      'trip_completed': 'bg-green-50 border-green-200',
+      'trip_reconciled': 'bg-purple-50 border-purple-200',
       'mo_rejected': 'bg-red-50 border-red-200',
       'mo_approved': 'bg-green-50 border-green-200',
     };
