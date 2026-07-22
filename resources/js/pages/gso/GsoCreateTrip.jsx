@@ -9,6 +9,7 @@ import {
   driverManagementAPI,
   adminDepartmentAPI,
   userAPI,
+  locationAPI,
 } from "../../services/api";
 import {
   Card,
@@ -41,8 +42,13 @@ import {
   Search,
   AlertTriangle,
   Car,
+  Fuel,
+  DollarSign,
+  Clock,
+  X,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
+import { debounce } from "lodash";
 
 const GsoCreateTrip = () => {
   const { user } = useAuth();
@@ -59,6 +65,9 @@ const GsoCreateTrip = () => {
     charge_to: "",
     passenger_name: "",
     staff_id: "",
+    estimated_distance_km: "",
+    estimated_fuel_liters: "",
+    estimated_cost: "",
   });
 
   const [errors, setErrors] = useState({});
@@ -71,6 +80,14 @@ const GsoCreateTrip = () => {
   const [lookupError, setLookupError] = useState(null);
   const [showNotFound, setShowNotFound] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
+
+  // ============ DISTANCE/ESTIMATE STATE ============
+  const [destinationSuggestions, setDestinationSuggestions] = useState([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [isCalculating, setIsCalculating] = useState(false);
+  const [tripEstimate, setTripEstimate] = useState(null);
+  const [selectedLocation, setSelectedLocation] = useState(null);
+  const originAddress = "Laguindingan Municipal Hall";
 
   // Fetch departments
   const { data: departments = [], isLoading: deptsLoading } = useQuery({
@@ -115,14 +132,112 @@ const GsoCreateTrip = () => {
     staleTime: 5 * 60 * 1000,
   });
 
-  // ============ AUTO-FILL FUNCTION ============
+  // ============ DESTINATION SEARCH (AUTOCOMPLETE) ============
+  const searchDestinations = debounce(async (query) => {
+    if (query.length < 2) {
+      setDestinationSuggestions([]);
+      setShowSuggestions(false);
+      return;
+    }
+
+    try {
+      const response = await locationAPI.searchPlaces(query);
+      console.log("🔍 Search results:", response.data);
+
+      if (response.data.success && response.data.predictions) {
+        // Filter out region-level results
+        const filtered = response.data.predictions.filter((item) => {
+          const description = item.description.toLowerCase();
+          return (
+            !description.includes("region") &&
+            !description.includes("province") &&
+            item.lat !== null &&
+            item.lng !== null
+          );
+        });
+
+        setDestinationSuggestions(filtered);
+        setShowSuggestions(filtered.length > 0);
+      } else {
+        setDestinationSuggestions([]);
+        setShowSuggestions(false);
+      }
+    } catch (error) {
+      console.error("Search error:", error);
+      setDestinationSuggestions([]);
+      setShowSuggestions(false);
+    }
+  }, 300);
+
+  // ============ CALCULATE DISTANCE & FUEL ============
+  const calculateTripEstimate = async (destination) => {
+    if (!destination || destination.length < 2) return;
+
+    setIsCalculating(true);
+    try {
+      const response = await locationAPI.calculateDistance({
+        origin: originAddress,
+        destination: destination,
+        vehicle_id: formData.vehicle_id || undefined,
+      });
+
+      console.log("📏 Distance result:", response.data);
+
+      if (response.data.success) {
+        const data = response.data;
+        setTripEstimate(data);
+
+        // Auto-fill form fields
+        setFormData((prev) => ({
+          ...prev,
+          estimated_distance_km: data.distance_km,
+          estimated_fuel_liters: data.estimated_liters,
+          estimated_cost: data.estimated_cost,
+        }));
+
+        toast.success(`Trip estimate calculated: ${data.distance_km} km, ${data.estimated_liters} L fuel`);
+      } else {
+        toast.error(response.data.message || "Failed to calculate distance");
+      }
+    } catch (error) {
+      console.error("Distance calculation error:", error);
+      toast.error("Failed to calculate distance. Please enter manually.");
+    } finally {
+      setIsCalculating(false);
+    }
+  };
+
+  // ============ HANDLE DESTINATION SELECTION ============
+  const handleSelectDestination = (suggestion) => {
+    setFormData((prev) => ({ ...prev, destination: suggestion.description }));
+    setSelectedLocation(suggestion);
+    setShowSuggestions(false);
+    calculateTripEstimate(suggestion.description);
+  };
+
+  const handleDestinationChange = (value) => {
+    setFormData((prev) => ({ ...prev, destination: value }));
+    setTripEstimate(null);
+    setSelectedLocation(null);
+    searchDestinations(value);
+  };
+
+  const clearDestination = () => {
+    setFormData((prev) => ({ ...prev, destination: "" }));
+    setTripEstimate(null);
+    setSelectedLocation(null);
+    setDestinationSuggestions([]);
+    setShowSuggestions(false);
+  };
+
+  // ============ AUTO-FILL FUNCTIONS ============
   const autoFillFormFromEmployee = (employee) => {
     const departmentId = employee.department_id?.toString() || "";
-    
+
     const matchedDriver = drivers.find(
       (d) => d.user_id === employee.user_id || d.user?.user_id === employee.user_id
     );
-    
+
     const deptVehicles = vehicles.filter(
       (v) => v.department_id === parseInt(departmentId) && v.status === "active"
     );
@@ -133,11 +248,11 @@ const GsoCreateTrip = () => {
       department_id: departmentId,
       staff_id: employee.user_id,
       passenger_name: employee.full_name,
-      driver_id: matchedDriver 
-        ? (matchedDriver.driver_id || matchedDriver.id)?.toString() 
+      driver_id: matchedDriver
+        ? (matchedDriver.driver_id || matchedDriver.id)?.toString()
         : "",
-      vehicle_id: firstVehicle 
-        ? firstVehicle.vehicle_id?.toString() 
+      vehicle_id: firstVehicle
+        ? firstVehicle.vehicle_id?.toString()
         : "",
     }));
 
@@ -170,7 +285,6 @@ const GsoCreateTrip = () => {
     });
   };
 
-  // ============ AUTO-FILL FROM VEHICLE ============
   const autoFillFormFromVehicle = (vehicle) => {
     const departmentId = vehicle.department_id?.toString() || "";
 
@@ -248,7 +362,6 @@ const GsoCreateTrip = () => {
     }
   };
 
-  // ============ CLEAR LOOKUP ============
   const clearLookup = () => {
     setLookupValue("");
     setLookupResult(null);
@@ -273,6 +386,14 @@ const GsoCreateTrip = () => {
       }
     }
   }, [formData.department_id, departments]);
+
+  // Re-calculate estimate when vehicle changes (for fuel efficiency)
+  useEffect(() => {
+    if (formData.destination && formData.vehicle_id) {
+      // Re-calculate with new vehicle efficiency
+      calculateTripEstimate(formData.destination);
+    }
+  }, [formData.vehicle_id]);
 
   // ============ VALIDATION ============
   const validateForm = () => {
@@ -380,7 +501,6 @@ const GsoCreateTrip = () => {
   const availableVehicles = getDepartmentVehicles();
   const availableDrivers = getDepartmentDrivers();
 
-  // Helper to check if field has error
   const hasError = (field) => touched[field] && errors[field];
 
   return (
@@ -556,7 +676,146 @@ const GsoCreateTrip = () => {
               )}
             </div>
 
-            {/* FORM FIELDS */}
+            {/* ============ DESTINATION WITH AUTOCOMPLETE ============ */}
+            <div className="relative">
+              <Label htmlFor="destination">
+                Destination <span className="text-red-500">*</span>
+              </Label>
+              <div className="relative mt-1">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <MapPin className="h-4 w-4 text-gray-400" />
+                </div>
+                <Input
+                  id="destination"
+                  placeholder="Type destination (e.g., Cagayan de Oro)"
+                  value={formData.destination}
+                  onChange={(e) => handleDestinationChange(e.target.value)}
+                  onBlur={() => handleFieldBlur("destination")}
+                  className={`pl-10 pr-10 ${hasError("destination") ? "border-red-500 ring-red-500" : ""}`}
+                />
+                {formData.destination && (
+                  <button
+                    type="button"
+                    onClick={clearDestination}
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                  >
+                    <X className="h-4 w-4 text-gray-400 hover:text-gray-600" />
+                  </button>
+                )}
+                {isCalculating && (
+                  <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
+                    <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
+                  </div>
+                )}
+              </div>
+
+              {/* Autocomplete Suggestions */}
+              {showSuggestions && destinationSuggestions.length > 0 && (
+                <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg max-h-60 overflow-auto">
+                  {destinationSuggestions.map((suggestion, index) => (
+                    <div
+                      key={index}
+                      onClick={() => handleSelectDestination(suggestion)}
+                      className="px-4 py-2 hover:bg-blue-50 dark:hover:bg-gray-700 cursor-pointer flex items-start gap-2"
+                    >
+                      <MapPin className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                      <div>
+                        <p className="text-sm text-gray-900 dark:text-white">
+                          {suggestion.description}
+                        </p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          {suggestion.lat && suggestion.lng 
+                            ? `${suggestion.lat.toFixed(4)}, ${suggestion.lng.toFixed(4)}`
+                            : "Click to calculate distance"}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {hasError("destination") && (
+                <p className="text-red-500 text-sm mt-1">{errors.destination}</p>
+              )}
+            </div>
+
+            {/* ============ TRIP ESTIMATE DISPLAY ============ */}
+            {tripEstimate && (
+              <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 border border-blue-200 dark:border-blue-800">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="font-medium text-blue-800 dark:text-blue-300 flex items-center gap-2">
+                    <Fuel className="h-4 w-4" />
+                    Trip Estimate
+                  </h4>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setTripEstimate(null);
+                      setFormData((prev) => ({
+                        ...prev,
+                        estimated_distance_km: "",
+                        estimated_fuel_liters: "",
+                        estimated_cost: "",
+                      }));
+                    }}
+                    className="h-6 px-2 text-gray-400 hover:text-gray-600"
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">Distance</p>
+                    <p className="font-semibold text-blue-700 dark:text-blue-300 text-lg">
+                      {tripEstimate.distance_km} km
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">Duration</p>
+                    <p className="font-semibold text-blue-700 dark:text-blue-300 text-lg flex items-center gap-1">
+                      <Clock className="h-3 w-3" />
+                      {tripEstimate.duration_minutes} mins
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">Estimated Fuel</p>
+                    <p className="font-semibold text-blue-700 dark:text-blue-300 text-lg flex items-center gap-1">
+                      <Fuel className="h-3 w-3" />
+                      {tripEstimate.estimated_liters} L
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">Estimated Cost</p>
+                    <p className="font-semibold text-green-600 dark:text-green-400 text-lg flex items-center gap-1">
+                      <DollarSign className="h-3 w-3" />
+                      ₱{tripEstimate.estimated_cost}
+                    </p>
+                  </div>
+                </div>
+                <div className="text-xs text-gray-400 dark:text-gray-500 mt-2">
+                  Based on {tripEstimate.fuel_efficiency_km_per_liter} km/L @ ₱{tripEstimate.fuel_price_per_liter}/L
+                </div>
+              </div>
+            )}
+
+            {/* ============ HIDDEN FIELDS FOR ESTIMATES ============ */}
+            <input
+              type="hidden"
+              name="estimated_distance_km"
+              value={formData.estimated_distance_km || ""}
+            />
+            <input
+              type="hidden"
+              name="estimated_fuel_liters"
+              value={formData.estimated_fuel_liters || ""}
+            />
+            <input
+              type="hidden"
+              name="estimated_cost"
+              value={formData.estimated_cost || ""}
+            />
 
             {/* Department */}
             <div>
@@ -715,7 +974,7 @@ const GsoCreateTrip = () => {
               </div>
             )}
 
-            {/* Trip Date & Destination */}
+            {/* Trip Date */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="trip_date">
@@ -735,23 +994,13 @@ const GsoCreateTrip = () => {
               </div>
 
               <div>
-                <Label htmlFor="destination">
-                  Destination <span className="text-red-500">*</span>
-                </Label>
-                <div className="relative">
-                  <MapPin className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                  <Input
-                    id="destination"
-                    placeholder="e.g., Cagayan de Oro City Hall"
-                    value={formData.destination}
-                    onChange={(e) => handleChange("destination", e.target.value)}
-                    onBlur={() => handleFieldBlur("destination")}
-                    className={`pl-10 ${hasError("destination") ? "border-red-500 ring-red-500" : ""}`}
-                  />
-                </div>
-                {hasError("destination") && (
-                  <p className="text-red-500 text-sm mt-1">{errors.destination}</p>
-                )}
+                <Label htmlFor="passenger_name">Passenger Name (Optional)</Label>
+                <Input
+                  id="passenger_name"
+                  placeholder="Name of passenger"
+                  value={formData.passenger_name}
+                  onChange={(e) => handleChange("passenger_name", e.target.value)}
+                />
               </div>
             </div>
 
@@ -774,36 +1023,24 @@ const GsoCreateTrip = () => {
               )}
             </div>
 
-            {/* Charge To & Passenger */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="charge_to">
-                  Charge To <span className="text-red-500">*</span>
-                </Label>
-                <Input
-                  id="charge_to"
-                  value={formData.charge_to || ""}
-                  disabled
-                  className="bg-gray-100 dark:bg-gray-700 cursor-not-allowed"
-                  placeholder="Auto-filled from department"
-                />
-                <p className="text-xs text-gray-500 mt-1">
-                  Automatically set to the selected department's code
-                </p>
-                {hasError("charge_to") && (
-                  <p className="text-red-500 text-sm mt-1">{errors.charge_to}</p>
-                )}
-              </div>
-
-              <div>
-                <Label htmlFor="passenger_name">Passenger Name (Optional)</Label>
-                <Input
-                  id="passenger_name"
-                  placeholder="Name of passenger"
-                  value={formData.passenger_name}
-                  onChange={(e) => handleChange("passenger_name", e.target.value)}
-                />
-              </div>
+            {/* Charge To */}
+            <div>
+              <Label htmlFor="charge_to">
+                Charge To <span className="text-red-500">*</span>
+              </Label>
+              <Input
+                id="charge_to"
+                value={formData.charge_to || ""}
+                disabled
+                className="bg-gray-100 dark:bg-gray-700 cursor-not-allowed"
+                placeholder="Auto-filled from department"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Automatically set to the selected department's code
+              </p>
+              {hasError("charge_to") && (
+                <p className="text-red-500 text-sm mt-1">{errors.charge_to}</p>
+              )}
             </div>
 
             {/* Department Info */}

@@ -480,6 +480,23 @@ export const gpsAPI = {
   // Delete GPS pings (admin only)
   deletePings: (tripId) => api.delete(`/gps/trips/${tripId}/pings`),
 };
+// ============ LOCATION API (OpenRouteService) ============
+export const locationAPI = {
+  // Search for places (autocomplete)
+  searchPlaces: (query) => api.get('/location/search', { 
+    params: { query } 
+  }),
+  
+  // Calculate distance between locations
+  calculateDistance: (params) => api.get('/location/distance', { 
+    params 
+  }),
+  
+  // Geocode a single address
+  geocode: (address) => api.get('/location/geocode', { 
+    params: { address } 
+  }),
+};
 
 // ============ EXPORT ============
 export default api;

@@ -32,7 +32,8 @@ return [
     ],
 
     'ors' => [
-        'key' => env('OPENROUTESERVICE_API_KEY', ''),
+        'api_key' => env('OPENROUTESERVICE_API_KEY'),
+        'base_url' => env('OPENROUTESERVICE_BASE_URL', 'https://api.openrouteservice.org'),
     ],
     'fuel_rates' => [
         'car' => env('FUEL_RATE_CAR', 0.10),

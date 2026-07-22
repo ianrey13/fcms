@@ -439,122 +439,148 @@ const SystemSettings = () => {
       )}
 
       {/* Fuel Stations Tab */}
-      {activeTab === 'stations' && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-            <CardHeader className="border-b dark:border-slate-700">
-              <CardTitle className="flex items-center gap-2 text-slate-900 dark:text-white">
-                <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center">
-                  <Fuel className="h-4 w-4 text-white" />
-                </div>
-                Contracted Fuel Stations
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4 pt-4">
-              <div>
-                <Label className="text-slate-700 dark:text-slate-300 mb-1.5 block">Primary Contracted Station</Label>
-                <Input
-                  value={settings.contracted_station_name || ''}
-                  onChange={(e) => handleSettingChange('contracted_station_name', e.target.value)}
-                  placeholder="e.g., Petron - Main Branch"
-                  className="dark:bg-slate-900 dark:border-slate-700"
-                />
-                <p className="text-xs text-slate-400 mt-1">Official fuel station where drivers must fuel</p>
-              </div>
-
-              <div>
-                <Label className="text-slate-700 dark:text-slate-300 mb-1.5 block">Station Address</Label>
-                <Input
-                  value={settings.contracted_station_address || ''}
-                  onChange={(e) => handleSettingChange('contracted_station_address', e.target.value)}
-                  placeholder="Full address of the station"
-                  className="dark:bg-slate-900 dark:border-slate-700"
-                />
-              </div>
-
-              <div>
-                <Label className="text-slate-700 dark:text-slate-300 mb-1.5 block">Station Contact Number</Label>
-                <Input
-                  value={settings.contracted_station_contact || ''}
-                  onChange={(e) => handleSettingChange('contracted_station_contact', e.target.value)}
-                  placeholder="Contact number"
-                  className="dark:bg-slate-900 dark:border-slate-700"
-                />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-            <CardHeader className="border-b dark:border-slate-700">
-              <CardTitle className="flex items-center gap-2 text-slate-900 dark:text-white">
-                <div className="w-8 h-8 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-xl flex items-center justify-center">
-                  <DollarSign className="h-4 w-4 text-white" />
-                </div>
-                Fuel Price Settings (Optional)
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4 pt-4">
-              <div>
-                <Label className="text-slate-700 dark:text-slate-300 mb-1.5 block">Diesel Price (₱/liter)</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={settings.diesel_price_per_liter || ''}
-                  onChange={(e) => handleSettingChange('diesel_price_per_liter', parseFloat(e.target.value))}
-                  className="dark:bg-slate-900 dark:border-slate-700"
-                  placeholder="e.g., 55.00"
-                />
-              </div>
-              <div>
-                <Label className="text-slate-700 dark:text-slate-300 mb-1.5 block">Premium Price (₱/liter)</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={settings.premium_price_per_liter || ''}
-                  onChange={(e) => handleSettingChange('premium_price_per_liter', parseFloat(e.target.value))}
-                  className="dark:bg-slate-900 dark:border-slate-700"
-                  placeholder="e.g., 65.00"
-                />
-              </div>
-              <div>
-                <Label className="text-slate-700 dark:text-slate-300 mb-1.5 block">Regular Price (₱/liter)</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={settings.regular_price_per_liter || ''}
-                  onChange={(e) => handleSettingChange('regular_price_per_liter', parseFloat(e.target.value))}
-                  className="dark:bg-slate-900 dark:border-slate-700"
-                  placeholder="e.g., 58.00"
-                />
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Alternate Station */}
-          <Card className="dark:bg-slate-800/80 dark:border-slate-700 lg:col-span-2">
-            <CardHeader className="border-b dark:border-slate-700">
-              <CardTitle className="flex items-center gap-2 text-slate-900 dark:text-white">
-                <div className="w-8 h-8 bg-gradient-to-br from-amber-500 to-amber-600 rounded-xl flex items-center justify-center">
-                  <Truck className="h-4 w-4 text-white" />
-                </div>
-                Alternate Station (Backup)
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="pt-4">
-              <div>
-                <Label className="text-slate-700 dark:text-slate-300 mb-1.5 block">Alternate Station Name</Label>
-                <Input
-                  value={settings.alternate_station_name || ''}
-                  onChange={(e) => handleSettingChange('alternate_station_name', e.target.value)}
-                  placeholder="e.g., Shell - South Branch"
-                  className="dark:bg-slate-900 dark:border-slate-700"
-                />
-                <p className="text-xs text-slate-400 mt-1">Used when primary station is unavailable</p>
-              </div>
-            </CardContent>
-          </Card>
+{activeTab === 'stations' && (
+  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    {/* Contracted Fuel Stations Card */}
+    <Card className="dark:bg-slate-800/80 dark:border-slate-700">
+      <CardHeader className="border-b dark:border-slate-700">
+        <CardTitle className="flex items-center gap-2 text-slate-900 dark:text-white">
+          <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center">
+            <Fuel className="h-4 w-4 text-white" />
+          </div>
+          Contracted Fuel Stations
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4 pt-4">
+        <div>
+          <Label className="text-slate-700 dark:text-slate-300 mb-1.5 block">Primary Contracted Station</Label>
+          <Input
+            value={settings.contracted_station_name || ''}
+            onChange={(e) => handleSettingChange('contracted_station_name', e.target.value)}
+            placeholder="e.g., Petron - Main Branch"
+            className="dark:bg-slate-900 dark:border-slate-700"
+          />
+          <p className="text-xs text-slate-400 mt-1">Official fuel station where drivers must fuel</p>
         </div>
-      )}
+
+        <div>
+          <Label className="text-slate-700 dark:text-slate-300 mb-1.5 block">Station Address</Label>
+          <Input
+            value={settings.contracted_station_address || ''}
+            onChange={(e) => handleSettingChange('contracted_station_address', e.target.value)}
+            placeholder="Full address of the station"
+            className="dark:bg-slate-900 dark:border-slate-700"
+          />
+        </div>
+
+        <div>
+          <Label className="text-slate-700 dark:text-slate-300 mb-1.5 block">Station Contact Number</Label>
+          <Input
+            value={settings.contracted_station_contact || ''}
+            onChange={(e) => handleSettingChange('contracted_station_contact', e.target.value)}
+            placeholder="Contact number"
+            className="dark:bg-slate-900 dark:border-slate-700"
+          />
+        </div>
+      </CardContent>
+    </Card>
+
+    {/* Fuel Price Settings Card - UPDATED */}
+    <Card className="dark:bg-slate-800/80 dark:border-slate-700">
+      <CardHeader className="border-b dark:border-slate-700">
+        <CardTitle className="flex items-center gap-2 text-slate-900 dark:text-white">
+          <div className="w-8 h-8 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-xl flex items-center justify-center">
+            <DollarSign className="h-4 w-4 text-white" />
+          </div>
+          Fuel Price Settings
+        </CardTitle>
+        <p className="text-sm text-slate-500 dark:text-slate-400">
+          Used for trip cost estimation
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-4 pt-4">
+        {/* ✅ NEW: General Fuel Price (used for trip estimates) */}
+        <div className="bg-emerald-50 dark:bg-emerald-950/30 p-3 rounded-xl border border-emerald-200 dark:border-emerald-800">
+          <Label className="text-slate-700 dark:text-slate-300 flex items-center gap-2 mb-1.5">
+            <Fuel className="h-4 w-4 text-emerald-600" />
+            <span className="font-semibold">Trip Estimation Fuel Price (₱/liter)</span>
+          </Label>
+          <Input
+            type="number"
+            step="0.01"
+            value={settings.fuel_price_per_liter || ''}
+            onChange={(e) => handleSettingChange('fuel_price_per_liter', parseFloat(e.target.value))}
+            className="dark:bg-slate-900 dark:border-slate-700 font-medium text-lg"
+            placeholder="e.g., 75.00"
+          />
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+            This price is used for auto-calculating trip cost estimates
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 pt-2">
+          <div>
+            <Label className="text-slate-700 dark:text-slate-300 mb-1.5 block">Diesel Price (₱/liter)</Label>
+            <Input
+              type="number"
+              step="0.01"
+              value={settings.diesel_price_per_liter || ''}
+              onChange={(e) => handleSettingChange('diesel_price_per_liter', parseFloat(e.target.value))}
+              className="dark:bg-slate-900 dark:border-slate-700"
+              placeholder="e.g., 55.00"
+            />
+          </div>
+          <div>
+            <Label className="text-slate-700 dark:text-slate-300 mb-1.5 block">Premium Price (₱/liter)</Label>
+            <Input
+              type="number"
+              step="0.01"
+              value={settings.premium_price_per_liter || ''}
+              onChange={(e) => handleSettingChange('premium_price_per_liter', parseFloat(e.target.value))}
+              className="dark:bg-slate-900 dark:border-slate-700"
+              placeholder="e.g., 65.00"
+            />
+          </div>
+          <div>
+            <Label className="text-slate-700 dark:text-slate-300 mb-1.5 block">Regular Price (₱/liter)</Label>
+            <Input
+              type="number"
+              step="0.01"
+              value={settings.regular_price_per_liter || ''}
+              onChange={(e) => handleSettingChange('regular_price_per_liter', parseFloat(e.target.value))}
+              className="dark:bg-slate-900 dark:border-slate-700"
+              placeholder="e.g., 58.00"
+            />
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+
+    {/* Alternate Station Card */}
+    <Card className="dark:bg-slate-800/80 dark:border-slate-700 lg:col-span-2">
+      <CardHeader className="border-b dark:border-slate-700">
+        <CardTitle className="flex items-center gap-2 text-slate-900 dark:text-white">
+          <div className="w-8 h-8 bg-gradient-to-br from-amber-500 to-amber-600 rounded-xl flex items-center justify-center">
+            <Truck className="h-4 w-4 text-white" />
+          </div>
+          Alternate Station (Backup)
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="pt-4">
+        <div>
+          <Label className="text-slate-700 dark:text-slate-300 mb-1.5 block">Alternate Station Name</Label>
+          <Input
+            value={settings.alternate_station_name || ''}
+            onChange={(e) => handleSettingChange('alternate_station_name', e.target.value)}
+            placeholder="e.g., Shell - South Branch"
+            className="dark:bg-slate-900 dark:border-slate-700"
+          />
+          <p className="text-xs text-slate-400 mt-1">Used when primary station is unavailable</p>
+        </div>
+      </CardContent>
+    </Card>
+  </div>
+)}
 
       {/* Notifications Tab */}
       {activeTab === 'notifications' && (
