@@ -8,7 +8,6 @@ import { Badge } from '@/components/ui/badge';
 import {
   DollarSign,
   Plus,
-  Edit,
   Trash2,
   CheckCircle,
   AlertCircle,
@@ -21,10 +20,11 @@ import {
   Loader2,
   History,
   ArrowUpCircle,
-  ChevronDown,
-  ChevronUp,
   Calendar,
-  Clock,
+  TrendingDown,
+  CalendarDays,
+  Edit,
+  CalendarRange,
 } from 'lucide-react';
 import {
   Dialog,
@@ -45,24 +45,27 @@ const BudgetPolicies = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState('budgets');
+  const [forceUpdate, setForceUpdate] = useState(0);
   
   // Modal states
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showWeeklyModal, setShowWeeklyModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [showActivateModal, setShowActivateModal] = useState(null);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [selectedDepartment, setSelectedDepartment] = useState(null);
   const [editingPolicy, setEditingPolicy] = useState(null);
+  const [weeklyPolicy, setWeeklyPolicy] = useState(null);
   const [deletingPolicy, setDeletingPolicy] = useState(null);
-  const [expandedHistory, setExpandedHistory] = useState({});
   
   // Form state
   const [formData, setFormData] = useState({
     department_id: '',
-    default_weekly_allocation: '',
+    annual_budget: '',
     add_amount: '',
+    weekly_allocation: '',
     reason: '',
+    fiscal_year: new Date().getFullYear(),
   });
   const [formErrors, setFormErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -93,69 +96,60 @@ const BudgetPolicies = () => {
   // ✅ FETCH FUNCTIONS
   // ============================================================
 
-const fetchBudgetData = async () => {
+  const fetchBudgetData = async () => {
     setLoading(true);
     try {
-        const response = await mayorsOfficeAPI.getAllDepartmentsWithBudget();
-        console.log('📊 Budget Data Response:', response);
-        
-        let data = response.data?.data || response.data || [];
-        if (data.data) {
-            data = data.data;
-        }
-        
-        // ✅ CHECK: If allocated_amount is 0, use hardcoded fallback
-        const hasValidData = Array.isArray(data) && data.some(item => item.allocated_amount > 0);
-        
-        if (!hasValidData) {
-            console.warn('⚠️ No valid budget data from API, using fallback data');
-            data = [
-                { department_id: 11, department_name: 'Engineering Office', department_code: 'ENGR', allocated_amount: 55000 },
-                { department_id: 2, department_name: 'General Services Office', department_code: 'GSO', allocated_amount: 50000 },
-                { department_id: 6, department_name: "Mayor's Office", department_code: 'MO', allocated_amount: 50000 },
-                { department_id: 12, department_name: 'tttt', department_code: 'TEST', allocated_amount: 50000 },
-            ];
-        }
-        
-        const formattedData = (Array.isArray(data) ? data : []).map(item => ({
-            ...item,
-            department_id: item.department_id,
-            department_name: item.department_name || 'Unknown',
-            department_code: item.department_code || '',
-            allocated_amount: parseFloat(item.allocated_amount || item.default_weekly_allocation || 0),
-            remaining_balance: parseFloat(item.remaining_balance || item.allocated_amount || 0),
-            spent_amount: parseFloat(item.spent_amount || 0),
-            has_budget: item.has_budget !== false,
-            period_id: item.period_id || null,
-            week_start: item.week_start || null,
-            status: item.status || 'inactive',
-        }));
-        
-        console.log('✅ Formatted Budget Data:', formattedData);
-        setBudgetData(formattedData);
-        
+      const response = await mayorsOfficeAPI.getAllDepartmentsWithBudget();
+      console.log('📊 Budget Data Response:', response);
+      
+      let data = response.data?.data || response.data || [];
+      if (data.data) {
+        data = data.data;
+      }
+      
+      const formattedData = (Array.isArray(data) ? data : []).map(item => ({
+        ...item,
+        department_id: item.department_id,
+        department_name: item.department_name || 'Unknown',
+        department_code: item.department_code || '',
+        // ✅ Annual budget (Primary)
+        annual_amount: parseFloat(item.annual_amount || 0),
+        used_amount: parseFloat(item.used_amount || 0),
+        remaining_amount: parseFloat(item.remaining_amount || 0),
+        // ✅ Weekly allocation
+        weekly_allocation: parseFloat(item.weekly_allocation || 0),
+        weekly_used: parseFloat(item.weekly_used || 0),
+        has_budget: item.has_budget !== false,
+        fiscal_year: item.fiscal_year || new Date().getFullYear(),
+        status: item.status || 'active',
+      }));
+      
+      console.log('✅ Formatted Annual Budget Data:', formattedData);
+      setBudgetData(formattedData);
+      
     } catch (error) {
-        console.error('Failed to fetch budget data:', error);
-        // ✅ Use fallback on error
-        const fallbackData = [
-            { department_id: 11, department_name: 'Engineering Office', department_code: 'ENGR', allocated_amount: 55000 },
-            { department_id: 2, department_name: 'General Services Office', department_code: 'GSO', allocated_amount: 50000 },
-            { department_id: 6, department_name: "Mayor's Office", department_code: 'MO', allocated_amount: 50000 },
-            { department_id: 12, department_name: 'tttt', department_code: 'TEST', allocated_amount: 50000 },
-        ];
-        
-        const formattedData = fallbackData.map(item => ({
-            ...item,
-            allocated_amount: parseFloat(item.allocated_amount || 0),
-            remaining_balance: parseFloat(item.allocated_amount || 0),
-            spent_amount: 0,
-        }));
-        setBudgetData(formattedData);
-        toast.error('Failed to load budget data, using fallback data');
+      console.error('Failed to fetch budget data:', error);
+      // Use fallback data
+      const fallbackData = [
+        { department_id: 11, department_name: 'Engineering Office', department_code: 'ENGR', annual_amount: 1000000, fiscal_year: 2026, weekly_allocation: 19230.77 },
+        { department_id: 2, department_name: 'General Services Office', department_code: 'GSO', annual_amount: 500000, fiscal_year: 2026, weekly_allocation: 9615.38 },
+        { department_id: 6, department_name: "Mayor's Office", department_code: 'MO', annual_amount: 500000, fiscal_year: 2026, weekly_allocation: 9615.38 },
+      ];
+      
+      const formattedData = fallbackData.map(item => ({
+        ...item,
+        used_amount: 0,
+        remaining_amount: item.annual_amount,
+        weekly_used: 0,
+        has_budget: true,
+        status: 'active',
+      }));
+      setBudgetData(formattedData);
+      toast.error('Failed to load budget data, using fallback data');
     } finally {
-        setLoading(false);
+      setLoading(false);
     }
-};
+  };
 
   const fetchBudgetHistory = async () => {
     try {
@@ -172,77 +166,69 @@ const fetchBudgetData = async () => {
       setBudgetHistory([]);
     }
   };
-useEffect(() => {
-    // If resetHistory is empty but we have budget data, create it
+
+  useEffect(() => {
     if (resetHistory.length === 0 && budgetData.length > 0) {
-        console.log('🔄 Force creating reset history from budget data');
-        createFallbackResetHistory();
+      console.log('🔄 Force creating reset history from budget data');
+      createFallbackResetHistory();
     }
-}, [budgetData, resetHistory]);
+  }, [budgetData, resetHistory]);
+
   const fetchResetHistory = async () => {
     try {
-        console.log('🔄 FETCHING RESET HISTORY...');
-        const response = await mayorsOfficeAPI.getBudgetPeriods?.();
-        console.log('📊 Reset History Response:', response);
+      console.log('🔄 FETCHING RESET HISTORY...');
+      const response = await mayorsOfficeAPI.getBudgetPeriods?.();
+      console.log('📊 Reset History Response:', response);
+      
+      const data = response?.data?.data || response?.data || [];
+      
+      if (Array.isArray(data) && data.length > 0) {
+        const formattedResetHistory = data.map(item => ({
+          period_id: item.period_id,
+          department_id: item.department_id,
+          department_name: item.department_name || `Department ${item.department_id}`,
+          department_code: item.department_code || '',
+          week_start: item.week_start,
+          week_end: item.week_end || addDays(new Date(item.week_start), 6).toISOString().split('T')[0],
+          allocated_amount: parseFloat(item.allocated_amount || 0),
+          remaining_balance: parseFloat(item.remaining_balance || 0),
+          status: item.status || 'inactive',
+          closed_at: item.closed_at,
+          created_at: item.created_at,
+          is_current: item.status === 'active',
+        }));
         
-        console.log('📊 Response data:', response?.data);
-        console.log('📊 Response data.data:', response?.data?.data);
+        const groupedByWeek = {};
+        formattedResetHistory.forEach(item => {
+          const weekKey = item.week_start;
+          if (!groupedByWeek[weekKey]) {
+            groupedByWeek[weekKey] = {
+              week_start: item.week_start,
+              week_end: item.week_end,
+              departments: [],
+              total_allocated: 0,
+              status: item.status,
+              closed_at: item.closed_at,
+            };
+          }
+          groupedByWeek[weekKey].departments.push(item);
+          groupedByWeek[weekKey].total_allocated += item.allocated_amount;
+        });
         
-        const data = response?.data?.data || response?.data || [];
-        console.log('📊 Extracted data:', data);
-        console.log('📊 Is array?', Array.isArray(data));
-        console.log('📊 Length:', data.length);
+        const groupedHistory = Object.values(groupedByWeek)
+          .sort((a, b) => new Date(b.week_start) - new Date(a.week_start));
         
-        if (Array.isArray(data) && data.length > 0) {
-            console.log('✅ Processing data...');
-            const formattedResetHistory = data.map(item => ({
-                period_id: item.period_id,
-                department_id: item.department_id,
-                department_name: item.department_name || `Department ${item.department_id}`,
-                department_code: item.department_code || '',
-                week_start: item.week_start,
-                week_end: item.week_end || addDays(new Date(item.week_start), 6).toISOString().split('T')[0],
-                allocated_amount: parseFloat(item.allocated_amount || 0),
-                remaining_balance: parseFloat(item.remaining_balance || 0),
-                status: item.status || 'inactive',
-                closed_at: item.closed_at,
-                created_at: item.created_at,
-                is_current: item.status === 'active',
-            }));
-            
-            console.log('✅ Formatted:', formattedResetHistory);
-            
-            const groupedByWeek = {};
-            formattedResetHistory.forEach(item => {
-                const weekKey = item.week_start;
-                if (!groupedByWeek[weekKey]) {
-                    groupedByWeek[weekKey] = {
-                        week_start: item.week_start,
-                        week_end: item.week_end,
-                        departments: [],
-                        total_allocated: 0,
-                        status: item.status,
-                        closed_at: item.closed_at,
-                    };
-                }
-                groupedByWeek[weekKey].departments.push(item);
-                groupedByWeek[weekKey].total_allocated += item.allocated_amount;
-            });
-            
-            const groupedHistory = Object.values(groupedByWeek)
-                .sort((a, b) => new Date(b.week_start) - new Date(a.week_start));
-            
-            console.log('✅ Grouped History:', groupedHistory);
-            setResetHistory(groupedHistory);
-        } else {
-            console.log('⚠️ No data found, using fallback');
-            createFallbackResetHistory();
-        }
-    } catch (error) {
-        console.error('❌ Failed to fetch reset history:', error);
+        console.log('✅ Grouped History:', groupedHistory);
+        setResetHistory(groupedHistory);
+      } else {
+        console.log('⚠️ No data found, using fallback');
         createFallbackResetHistory();
+      }
+    } catch (error) {
+      console.error('❌ Failed to fetch reset history:', error);
+      createFallbackResetHistory();
     }
-};
+  };
 
   const createFallbackResetHistory = () => {
     if (!budgetData || budgetData.length === 0) {
@@ -261,10 +247,9 @@ useEffect(() => {
       departments: budgetData.map(dept => ({
         department_id: dept.department_id,
         department_name: dept.department_name || `Department ${dept.department_id}`,
-        allocated_amount: dept.allocated_amount || 0,
-        remaining_balance: dept.remaining_balance || 0,
+        allocated_amount: dept.weekly_allocation || 0,
       })),
-      total_allocated: budgetData.reduce((sum, d) => sum + (d.allocated_amount || 0), 0),
+      total_allocated: budgetData.reduce((sum, d) => sum + (d.weekly_allocation || 0), 0),
       status: 'active',
       closed_at: null,
     };
@@ -288,8 +273,8 @@ useEffect(() => {
     
     const errors = {};
     if (!formData.department_id) errors.department_id = 'Please select a department';
-    if (!formData.default_weekly_allocation || parseFloat(formData.default_weekly_allocation) <= 0) {
-      errors.default_weekly_allocation = 'Please enter a valid allocation amount';
+    if (!formData.annual_budget || parseFloat(formData.annual_budget) <= 0) {
+      errors.annual_budget = 'Please enter a valid annual budget amount';
     }
     
     if (Object.keys(errors).length > 0) {
@@ -299,25 +284,43 @@ useEffect(() => {
     
     setIsSubmitting(true);
     try {
-      await mayorsOfficeAPI.createBudgetPolicy({
+      const payload = {
         department_id: parseInt(formData.department_id),
-        default_weekly_allocation: parseFloat(formData.default_weekly_allocation),
-        reason: formData.reason || 'Initial budget allocation',
-      });
+        annual_budget: parseFloat(formData.annual_budget),
+        fiscal_year: formData.fiscal_year || new Date().getFullYear(),
+        reason: formData.reason || 'Initial annual budget allocation',
+      };
       
-      toast.success('Budget policy created successfully!');
+      console.log('📤 Creating budget with payload:', payload);
+      
+      await mayorsOfficeAPI.createAnnualBudget(payload);
+      
+      toast.success(`✅ Annual budget created! (FY ${formData.fiscal_year})`);
       setShowCreateModal(false);
       resetForm();
       await Promise.all([fetchBudgetData(), fetchBudgetHistory(), fetchResetHistory()]);
+      setForceUpdate(prev => prev + 1);
     } catch (error) {
       console.error('Create error:', error);
-      toast.error(error.response?.data?.message || 'Failed to create budget policy');
+      console.error('Error response:', error.response?.data);
+      
+      const errorData = error.response?.data;
+      let errorMessage = 'Failed to create budget';
+      
+      if (errorData?.message) {
+        errorMessage = errorData.message;
+      } else if (errorData?.errors) {
+        const errors = Object.values(errorData.errors).flat();
+        errorMessage = errors.join(', ');
+      }
+      
+      toast.error(errorMessage);
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleUpdate = async (e) => {
+  const handleAddToBudget = async (e) => {
     e.preventDefault();
     
     const errors = {};
@@ -333,25 +336,109 @@ useEffect(() => {
     setIsSubmitting(true);
     try {
       const addAmount = parseFloat(formData.add_amount);
-      const currentAllocation = parseFloat(editingPolicy?.allocated_amount || 0);
-      const newTotal = currentAllocation + addAmount;
+      const currentAnnual = parseFloat(editingPolicy?.annual_amount || 0);
+      const newTotal = currentAnnual + addAmount;
+      
+      console.log('📤 Updating budget:', {
+        department_id: editingPolicy?.department_id,
+        currentAnnual,
+        addAmount,
+        newTotal,
+      });
+      
+      const payload = {
+        add_amount: addAmount,
+        reason: formData.reason || 'Budget addition',
+      };
       
       await mayorsOfficeAPI.updateBudgetPolicy(
         editingPolicy.department_id,
-        {
-          default_weekly_allocation: newTotal,
-          added_amount: addAmount,
-          reason: formData.reason || 'Budget addition',
-        }
+        payload
       );
       
-      toast.success(`✅ ₱${addAmount.toFixed(2)} added! New total: ₱${newTotal.toFixed(2)}`);
+      toast.success(`✅ ₱${addAmount.toFixed(2)} added!\nNew Annual: ₱${newTotal.toFixed(2)}\nNew Weekly: ₱${(newTotal / 52).toFixed(2)}`);
       setShowEditModal(false);
       resetForm();
+      
       await Promise.all([fetchBudgetData(), fetchBudgetHistory(), fetchResetHistory()]);
+      setForceUpdate(prev => prev + 1);
     } catch (error) {
       console.error('Update error:', error);
-      toast.error(error.response?.data?.message || 'Failed to update budget');
+      console.error('Error response:', error.response?.data);
+      
+      const errorData = error.response?.data;
+      let errorMessage = 'Failed to add to budget';
+      
+      if (errorData?.message) {
+        errorMessage = errorData.message;
+      } else if (errorData?.errors) {
+        const errors = Object.values(errorData.errors).flat();
+        errorMessage = errors.join(', ');
+      }
+      
+      toast.error(errorMessage);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // ✅ NEW: Update Weekly Allocation
+  const handleUpdateWeekly = async (e) => {
+    e.preventDefault();
+    
+    const errors = {};
+    if (!formData.weekly_allocation || parseFloat(formData.weekly_allocation) <= 0) {
+      errors.weekly_allocation = 'Please enter a valid weekly allocation amount';
+    }
+    
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors);
+      return;
+    }
+    
+    setIsSubmitting(true);
+    try {
+      const weeklyAmount = parseFloat(formData.weekly_allocation);
+      const newAnnual = weeklyAmount * 52;
+      
+      console.log('📤 Updating weekly allocation:', {
+        department_id: weeklyPolicy?.department_id,
+        weeklyAmount,
+        newAnnual,
+      });
+      
+      // ✅ Update the weekly allocation (this updates both weekly and annual)
+      const payload = {
+        weekly_allocation: weeklyAmount,
+        reason: formData.reason || 'Weekly allocation update',
+      };
+      
+      await mayorsOfficeAPI.updateWeeklyAllocation(
+        weeklyPolicy.department_id,
+        payload
+      );
+      
+      toast.success(`✅ Weekly allocation updated to ₱${weeklyAmount.toFixed(2)}!\nNew Annual: ₱${newAnnual.toFixed(2)}`);
+      setShowWeeklyModal(false);
+      resetForm();
+      
+      await Promise.all([fetchBudgetData(), fetchBudgetHistory(), fetchResetHistory()]);
+      setForceUpdate(prev => prev + 1);
+    } catch (error) {
+      console.error('Update weekly error:', error);
+      console.error('Error response:', error.response?.data);
+      
+      const errorData = error.response?.data;
+      let errorMessage = 'Failed to update weekly allocation';
+      
+      if (errorData?.message) {
+        errorMessage = errorData.message;
+      } else if (errorData?.errors) {
+        const errors = Object.values(errorData.errors).flat();
+        errorMessage = errors.join(', ');
+      }
+      
+      toast.error(errorMessage);
     } finally {
       setIsSubmitting(false);
     }
@@ -367,6 +454,7 @@ useEffect(() => {
       setShowDeleteModal(false);
       setDeletingPolicy(null);
       await Promise.all([fetchBudgetData(), fetchBudgetHistory(), fetchResetHistory()]);
+      setForceUpdate(prev => prev + 1);
     } catch (error) {
       console.error('Delete error:', error);
       toast.error(error.response?.data?.message || 'Failed to delete budget policy');
@@ -375,31 +463,18 @@ useEffect(() => {
     }
   };
 
-  const handleActivate = async () => {
-    if (!showActivateModal) return;
-    
-    setIsSubmitting(true);
-    try {
-      await mayorsOfficeAPI.forceActivateBudget({
-        department_id: showActivateModal.department_id,
-        amount: showActivateModal.allocated_amount || 0,
-      });
-      
-      toast.success(`Budget activated for ${showActivateModal.department_name}!`);
-      setShowActivateModal(null);
-      await Promise.all([fetchBudgetData(), fetchBudgetHistory(), fetchResetHistory()]);
-    } catch (error) {
-      console.error('Activate error:', error);
-      toast.error(error.response?.data?.message || 'Failed to activate budget');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
   const resetForm = () => {
-    setFormData({ department_id: '', default_weekly_allocation: '', add_amount: '', reason: '' });
+    setFormData({ 
+      department_id: '', 
+      annual_budget: '', 
+      add_amount: '', 
+      weekly_allocation: '',
+      reason: '',
+      fiscal_year: new Date().getFullYear(),
+    });
     setFormErrors({});
     setEditingPolicy(null);
+    setWeeklyPolicy(null);
   };
 
   // ============================================================
@@ -415,11 +490,24 @@ useEffect(() => {
     setEditingPolicy(policy);
     setFormData({
       department_id: policy.department_id,
-      default_weekly_allocation: policy.allocated_amount || 0,
+      annual_budget: policy.annual_amount || 0,
       add_amount: '',
       reason: '',
+      fiscal_year: policy.fiscal_year || new Date().getFullYear(),
     });
     setShowEditModal(true);
+  };
+
+  // ✅ NEW: Open Weekly Allocation Modal
+  const openWeeklyModal = (policy) => {
+    setWeeklyPolicy(policy);
+    setFormData({
+      department_id: policy.department_id,
+      weekly_allocation: policy.weekly_allocation || 0,
+      reason: '',
+      fiscal_year: policy.fiscal_year || new Date().getFullYear(),
+    });
+    setShowWeeklyModal(true);
   };
 
   const openHistoryModal = (policy) => {
@@ -434,21 +522,6 @@ useEffect(() => {
   const openDeleteModal = (policy) => {
     setDeletingPolicy(policy);
     setShowDeleteModal(true);
-  };
-
-  const openActivateModal = (policy) => {
-    setShowActivateModal({
-      department_id: policy.department_id,
-      department_name: policy.department_name,
-      allocated_amount: policy.allocated_amount || 0,
-    });
-  };
-
-  const toggleHistoryExpand = (index) => {
-    setExpandedHistory(prev => ({
-      ...prev,
-      [index]: !prev[index],
-    }));
   };
 
   // ============================================================
@@ -528,10 +601,11 @@ useEffect(() => {
   }, [budgetData, searchTerm]);
 
   const summaryStats = useMemo(() => {
-    const totalAllocation = budgetData.reduce((sum, p) => sum + (p.allocated_amount || 0), 0);
-    const totalSpent = budgetData.reduce((sum, p) => sum + (p.spent_amount || 0), 0);
-    const totalRemaining = budgetData.reduce((sum, p) => sum + (p.remaining_balance || 0), 0);
-    return { totalAllocation, totalSpent, totalRemaining };
+    const totalAnnual = budgetData.reduce((sum, p) => sum + (p.annual_amount || 0), 0);
+    const totalUsed = budgetData.reduce((sum, p) => sum + (p.used_amount || 0), 0);
+    const totalRemaining = budgetData.reduce((sum, p) => sum + (p.remaining_amount || 0), 0);
+    const totalWeekly = budgetData.reduce((sum, p) => sum + (p.weekly_allocation || 0), 0);
+    return { totalAnnual, totalUsed, totalRemaining, totalWeekly };
   }, [budgetData]);
 
   // ============================================================
@@ -551,9 +625,11 @@ useEffect(() => {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800 dark:text-white">Budget Allocation</h1>
+          <h1 className="text-2xl font-bold text-slate-800 dark:text-white">
+            Annual Budget Allocation
+          </h1>
           <p className="text-slate-500 dark:text-slate-400 mt-1">
-            Manage department weekly fuel budget allocations with history tracking
+            Manage department annual fuel budgets for FY {new Date().getFullYear()}
           </p>
         </div>
         <div className="flex gap-3">
@@ -563,21 +639,22 @@ useEffect(() => {
           </Button>
           <Button onClick={openCreateModal} className="bg-blue-600 hover:bg-blue-700">
             <Plus className="h-4 w-4 mr-2" />
-            Add Budget Policy
+            Set Annual Budget
           </Button>
         </div>
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-slate-500">Total Allocation</p>
-                <p className="text-2xl font-bold text-blue-600">{formatCurrency(summaryStats.totalAllocation)}</p>
+                <p className="text-sm text-slate-500">Total Annual Budget</p>
+                <p className="text-2xl font-bold text-blue-600">{formatCurrency(summaryStats.totalAnnual)}</p>
+                <p className="text-xs text-slate-400">FY {new Date().getFullYear()}</p>
               </div>
-              <DollarSign className="h-8 w-8 text-blue-500" />
+              <CalendarDays className="h-8 w-8 text-blue-500" />
             </div>
           </CardContent>
         </Card>
@@ -585,8 +662,20 @@ useEffect(() => {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-slate-500">Total Spent</p>
-                <p className="text-2xl font-bold text-red-600">{formatCurrency(summaryStats.totalSpent)}</p>
+                <p className="text-sm text-slate-500">Total Weekly Allocation</p>
+                <p className="text-2xl font-bold text-purple-600">{formatCurrency(summaryStats.totalWeekly)}</p>
+                <p className="text-xs text-slate-400">All departments combined</p>
+              </div>
+              <CalendarRange className="h-8 w-8 text-purple-500" />
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-slate-500">Total Used</p>
+                <p className="text-2xl font-bold text-red-600">{formatCurrency(summaryStats.totalUsed)}</p>
               </div>
               <TrendingUp className="h-8 w-8 text-red-500" />
             </div>
@@ -598,6 +687,11 @@ useEffect(() => {
               <div>
                 <p className="text-sm text-slate-500">Total Remaining</p>
                 <p className="text-2xl font-bold text-green-600">{formatCurrency(summaryStats.totalRemaining)}</p>
+                <p className="text-xs text-slate-400">
+                  {summaryStats.totalAnnual > 0 
+                    ? `${((summaryStats.totalRemaining / summaryStats.totalAnnual) * 100).toFixed(1)}% remaining`
+                    : 'No budget set'}
+                </p>
               </div>
               <CheckCircle className="h-8 w-8 text-green-500" />
             </div>
@@ -649,7 +743,7 @@ useEffect(() => {
         >
           <div className="flex items-center gap-2">
             <RotateCcw className="h-4 w-4" />
-            Budget Resets
+            Weekly Tracking
             <Badge variant="secondary" className="ml-1">
               {resetHistory.length}
             </Badge>
@@ -657,9 +751,7 @@ useEffect(() => {
         </button>
       </div>
 
-      {/* ============================================================
-      TAB 1: DEPARTMENT BUDGETS
-      ============================================================ */}
+      {/* TAB 1: DEPARTMENT BUDGETS */}
       {activeTab === 'budgets' && (
         <>
           <Card>
@@ -676,13 +768,13 @@ useEffect(() => {
             </div>
           </Card>
 
-          <Card>
+          <Card key={`budget-table-${forceUpdate}`}>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <DollarSign className="h-5 w-5" />
-                Department Budgets
+                Annual Budgets
                 <span className="ml-2 text-sm font-normal text-slate-500">
-                  ({filteredData.length} departments)
+                  ({filteredData.length} departments) • FY {new Date().getFullYear()}
                 </span>
               </CardTitle>
             </CardHeader>
@@ -690,7 +782,7 @@ useEffect(() => {
               {filteredData.length === 0 ? (
                 <div className="text-center py-12">
                   <DollarSign className="h-12 w-12 text-slate-300 mx-auto mb-3" />
-                  <p className="text-slate-500">No budget data found</p>
+                  <p className="text-slate-500">No annual budget data found</p>
                 </div>
               ) : (
                 <div className="overflow-x-auto">
@@ -698,8 +790,9 @@ useEffect(() => {
                     <thead className="bg-slate-50 dark:bg-slate-900/50">
                       <tr>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Department</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Allocated</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Spent</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Annual Budget</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Weekly Allocation</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Used</th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Remaining</th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Utilization</th>
                         <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase">Actions</th>
@@ -707,12 +800,11 @@ useEffect(() => {
                     </thead>
                     <tbody className="divide-y divide-slate-200">
                       {filteredData.map((policy) => {
-                        const utilization = policy.allocated_amount > 0
-                          ? ((policy.spent_amount || 0) / policy.allocated_amount) * 100
+                        const utilization = policy.annual_amount > 0
+                          ? ((policy.used_amount || 0) / policy.annual_amount) * 100
                           : 0;
                         const isLow = utilization > 80;
                         const isCritical = utilization > 95;
-                        const hasActivePeriod = policy.status === 'active';
 
                         return (
                           <tr key={policy.department_id} className="hover:bg-slate-50 transition-colors">
@@ -722,15 +814,26 @@ useEffect(() => {
                                 <p className="text-xs text-slate-500">{policy.department_code}</p>
                               </div>
                             </td>
-                            <td className="px-4 py-3 font-semibold">{formatCurrency(policy.allocated_amount)}</td>
-                            <td className="px-4 py-3 text-red-600">{formatCurrency(policy.spent_amount)}</td>
+                            <td className="px-4 py-3">
+                              <div>
+                                <p className="font-semibold text-blue-600">{formatCurrency(policy.annual_amount)}</p>
+                                <p className="text-xs text-slate-400">FY {policy.fiscal_year || new Date().getFullYear()}</p>
+                              </div>
+                            </td>
+                            <td className="px-4 py-3">
+                              <div>
+                                <p className="font-semibold text-purple-600">{formatCurrency(policy.weekly_allocation)}</p>
+                                <p className="text-xs text-slate-400">per week</p>
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 text-red-600">{formatCurrency(policy.used_amount)}</td>
                             <td className="px-4 py-3">
                               <span className={`font-semibold ${
                                 isCritical ? 'text-red-600' :
                                 isLow ? 'text-yellow-600' :
                                 'text-green-600'
                               }`}>
-                                {formatCurrency(policy.remaining_balance)}
+                                {formatCurrency(policy.remaining_amount)}
                               </span>
                             </td>
                             <td className="px-4 py-3">
@@ -765,18 +868,17 @@ useEffect(() => {
                                 >
                                   <History className="h-4 w-4" />
                                 </Button>
-
-                                {!hasActivePeriod && (
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => openActivateModal(policy)}
-                                    className="text-green-600 border-green-300 hover:bg-green-50 h-8 px-2"
-                                  >
-                                    <RotateCcw className="h-3 w-3 mr-1" />
-                                    Activate
-                                  </Button>
-                                )}
+                                
+                                {/* ✅ NEW: Edit Weekly Allocation */}
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => openWeeklyModal(policy)}
+                                  className="text-orange-600 hover:bg-orange-50 h-8 w-8 p-0"
+                                  title="Set Weekly Allocation"
+                                >
+                                  <CalendarRange className="h-4 w-4" />
+                                </Button>
                                 
                                 <Button
                                   variant="ghost"
@@ -811,9 +913,7 @@ useEffect(() => {
         </>
       )}
 
-      {/* ============================================================
-      TAB 2: BUDGET HISTORY
-      ============================================================ */}
+      {/* TAB 2: BUDGET HISTORY */}
       {activeTab === 'history' && (
         <Card>
           <CardHeader>
@@ -821,16 +921,12 @@ useEffect(() => {
               <History className="h-5 w-5 text-purple-500" />
               Budget Change History
             </CardTitle>
-            <CardDescription>
-              Track all budget additions and changes across departments
-            </CardDescription>
           </CardHeader>
           <CardContent>
             {budgetHistory.length === 0 ? (
               <div className="text-center py-12">
                 <History className="h-12 w-12 text-slate-300 mx-auto mb-3" />
                 <p className="text-slate-500">No budget history found</p>
-                <p className="text-sm text-slate-400">Changes will appear here once budget is added</p>
               </div>
             ) : (
               <div className="space-y-4">
@@ -839,15 +935,10 @@ useEffect(() => {
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
                         <div className="flex items-center gap-3 mb-2">
-                          <Badge className={`${
-                            entry.action === 'added' || entry.action === 'add' 
-                              ? 'bg-green-100 text-green-700' 
-                              : 'bg-blue-100 text-blue-700'
-                          }`}>
+                          <Badge className="bg-green-100 text-green-700">
                             {entry.action || 'Added'}
                           </Badge>
                           <h4 className="font-semibold">{entry.department_name}</h4>
-                          <span className="text-xs text-slate-400">{entry.department_code}</span>
                         </div>
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
                           <div>
@@ -880,22 +971,7 @@ useEffect(() => {
                           {formatDateTime(entry.created_at)}
                         </p>
                       </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => toggleHistoryExpand(index)}
-                        className="text-slate-400 hover:text-slate-600"
-                      >
-                        {expandedHistory[index] ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                      </Button>
                     </div>
-                    {expandedHistory[index] && entry.details && (
-                      <div className="mt-3 pt-3 border-t text-sm text-slate-600">
-                        <pre className="whitespace-pre-wrap text-xs bg-slate-50 p-2 rounded">
-                          {JSON.stringify(entry.details, null, 2)}
-                        </pre>
-                      </div>
-                    )}
                   </div>
                 ))}
               </div>
@@ -904,26 +980,20 @@ useEffect(() => {
         </Card>
       )}
 
-      {/* ============================================================
-      TAB 3: BUDGET RESETS
-      ============================================================ */}
+      {/* TAB 3: WEEKLY TRACKING */}
       {activeTab === 'resets' && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <RotateCcw className="h-5 w-5 text-purple-500" />
-              Budget Reset History
+              Weekly Budget Tracking
             </CardTitle>
-            <CardDescription>
-              Track weekly budget resets across all departments
-            </CardDescription>
           </CardHeader>
           <CardContent>
             {resetHistory.length === 0 ? (
               <div className="text-center py-12">
                 <RotateCcw className="h-12 w-12 text-slate-300 mx-auto mb-3" />
-                <p className="text-slate-500">No budget reset history found</p>
-                <p className="text-sm text-slate-400">Budgets will appear here after the first weekly reset</p>
+                <p className="text-slate-500">No weekly tracking data found</p>
               </div>
             ) : (
               <div className="space-y-4">
@@ -931,7 +1001,6 @@ useEffect(() => {
                   const departments = week.departments || [];
                   const isCurrentWeek = week.status === 'active';
                   const totalAllocated = week.total_allocated || departments.reduce((sum, d) => sum + (d.allocated_amount || 0), 0);
-                  const daysAgo = week.closed_at ? differenceInDays(new Date(), new Date(week.closed_at)) : 0;
                   
                   return (
                     <div key={index} className={`border rounded-lg p-4 ${
@@ -951,15 +1020,9 @@ useEffect(() => {
                               Week {getWeekNumber(week.week_start)}
                             </h4>
                             {isCurrentWeek ? (
-                              <Badge className="bg-green-100 text-green-700">Active</Badge>
+                              <Badge className="bg-green-100 text-green-700">Current Week</Badge>
                             ) : (
-                              <Badge className="bg-gray-100 text-gray-700">Closed</Badge>
-                            )}
-                            {isCurrentWeek && (
-                              <Badge className="bg-green-100 text-green-700 animate-pulse">
-                                <Clock className="h-3 w-3 mr-1" />
-                                Current Week
-                              </Badge>
+                              <Badge className="bg-gray-100 text-gray-700">Past</Badge>
                             )}
                           </div>
                           <p className="text-sm text-slate-600">
@@ -970,36 +1033,12 @@ useEffect(() => {
                               <strong>{departments.length}</strong> departments
                             </span>
                             <span className="text-slate-500">
-                              Total: <strong className="text-blue-600">{formatCurrency(totalAllocated)}</strong>
+                              Total Weekly: <strong className="text-purple-600">{formatCurrency(totalAllocated)}</strong>
                             </span>
-                            {week.closed_at && (
-                              <span className="text-slate-400">
-                                Closed: {formatDateTime(week.closed_at)}
-                              </span>
-                            )}
-                            {daysAgo > 0 && !isCurrentWeek && (
-                              <span className="text-slate-400">
-                                ({daysAgo} day{daysAgo > 1 ? 's' : ''} ago)
-                              </span>
-                            )}
+                            <span className="text-slate-400">
+                              Based on weekly allocations
+                            </span>
                           </div>
-                          
-                          {/* Department breakdown */}
-                          {departments.length > 0 && (
-                            <div className="mt-3 pt-3 border-t grid grid-cols-2 md:grid-cols-4 gap-2">
-                              {departments.slice(0, 4).map((dept, idx) => (
-                                <div key={idx} className="text-sm">
-                                  <span className="text-slate-500">{dept.department_name || `Dept ${dept.department_id}`}</span>
-                                  <span className="ml-2 font-medium">{formatCurrency(dept.allocated_amount)}</span>
-                                </div>
-                              ))}
-                              {departments.length > 4 && (
-                                <div className="text-sm text-slate-400">
-                                  +{departments.length - 4} more
-                                </div>
-                              )}
-                            </div>
-                          )}
                         </div>
                       </div>
                     </div>
@@ -1011,16 +1050,18 @@ useEffect(() => {
         </Card>
       )}
 
-      {/* CREATE MODAL */}
+      {/* ============================================================
+      CREATE MODAL - Annual Budget
+      ============================================================ */}
       <Dialog open={showCreateModal} onOpenChange={setShowCreateModal}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Plus className="h-5 w-5 text-blue-600" />
-              Add Budget Policy
+              Set Annual Budget
             </DialogTitle>
             <DialogDescription>
-              Set weekly fuel budget allocation for a department
+              Set annual fuel budget for a department
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleCreate}>
@@ -1045,18 +1086,31 @@ useEffect(() => {
               </div>
 
               <div>
-                <Label>Weekly Allocation (₱) *</Label>
+                <Label>Annual Budget (₱) *</Label>
                 <Input
                   type="number"
                   step="0.01"
                   min="0.01"
-                  value={formData.default_weekly_allocation}
-                  onChange={(e) => setFormData({ ...formData, default_weekly_allocation: e.target.value })}
-                  placeholder="e.g., 5000.00"
+                  value={formData.annual_budget}
+                  onChange={(e) => setFormData({ ...formData, annual_budget: e.target.value })}
+                  placeholder="e.g., 500000.00"
                 />
-                {formErrors.default_weekly_allocation && (
-                  <p className="text-red-500 text-xs mt-1">{formErrors.default_weekly_allocation}</p>
+                {formErrors.annual_budget && (
+                  <p className="text-red-500 text-xs mt-1">{formErrors.annual_budget}</p>
                 )}
+              </div>
+
+              <div>
+                <Label>Fiscal Year</Label>
+                <select
+                  value={formData.fiscal_year}
+                  onChange={(e) => setFormData({ ...formData, fiscal_year: parseInt(e.target.value) })}
+                  className="w-full mt-1.5 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value={2025}>2025</option>
+                  <option value={2026}>2026</option>
+                  <option value={2027}>2027</option>
+                </select>
               </div>
 
               <div>
@@ -1065,15 +1119,20 @@ useEffect(() => {
                   type="text"
                   value={formData.reason || ''}
                   onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
-                  placeholder="e.g., Initial budget allocation"
+                  placeholder="e.g., Initial annual budget allocation"
                 />
               </div>
 
-              <div className="bg-blue-50 p-3 rounded-lg">
-                <p className="text-sm text-blue-700">
-                  Estimated monthly: <strong>{formatCurrency(parseFloat(formData.default_weekly_allocation || 0) * 4)}</strong>
-                </p>
-              </div>
+              {formData.annual_budget && parseFloat(formData.annual_budget) > 0 && (
+                <div className="bg-blue-50 p-3 rounded-lg">
+                  <p className="text-sm text-blue-700">
+                    Weekly allocation: <strong>{formatCurrency(parseFloat(formData.annual_budget) / 52)}</strong>
+                  </p>
+                  <p className="text-xs text-blue-500 mt-1">
+                    (Annual budget divided by 52 weeks)
+                  </p>
+                </div>
+              )}
             </div>
 
             <DialogFooter>
@@ -1082,26 +1141,28 @@ useEffect(() => {
               </Button>
               <Button type="submit" disabled={isSubmitting} className="bg-blue-600 hover:bg-blue-700">
                 {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                Create Policy
+                Set Annual Budget
               </Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
 
-      {/* EDIT MODAL - ADD to Budget */}
+      {/* ============================================================
+      EDIT MODAL - Add to Annual Budget
+      ============================================================ */}
       <Dialog open={showEditModal} onOpenChange={setShowEditModal}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-green-600">
               <ArrowUpCircle className="h-5 w-5" />
-              Add to Budget
+              Add to Annual Budget
             </DialogTitle>
             <DialogDescription>
               Add additional funds to <strong>{editingPolicy?.department_name}</strong>
             </DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleUpdate}>
+          <form onSubmit={handleAddToBudget}>
             <div className="space-y-4 py-4">
               <div>
                 <Label>Department</Label>
@@ -1113,9 +1174,9 @@ useEffect(() => {
               </div>
 
               <div>
-                <Label>Current Allocation</Label>
+                <Label>Current Annual Budget</Label>
                 <Input
-                  value={formatCurrency(editingPolicy?.allocated_amount || 0)}
+                  value={formatCurrency(editingPolicy?.annual_amount || 0)}
                   disabled
                   className="mt-1.5 bg-slate-100 text-blue-600 font-semibold"
                 />
@@ -1129,7 +1190,7 @@ useEffect(() => {
                   min="0.01"
                   value={formData.add_amount}
                   onChange={(e) => setFormData({ ...formData, add_amount: e.target.value })}
-                  placeholder="e.g., 5000.00"
+                  placeholder="e.g., 50000.00"
                   className="border-green-300 focus:border-green-500"
                 />
                 {formErrors.add_amount && (
@@ -1143,15 +1204,20 @@ useEffect(() => {
                   type="text"
                   value={formData.reason || ''}
                   onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
-                  placeholder="e.g., Additional budget for project"
+                  placeholder="e.g., Additional budget for projects"
                 />
               </div>
 
               {formData.add_amount && parseFloat(formData.add_amount) > 0 && (
                 <div className="bg-green-50 p-3 rounded-lg border border-green-200">
                   <p className="text-sm text-green-700">
-                    New total will be: <strong>
-                      {formatCurrency((parseFloat(editingPolicy?.allocated_amount || 0) + parseFloat(formData.add_amount)))}
+                    New annual total: <strong>
+                      {formatCurrency((parseFloat(editingPolicy?.annual_amount || 0) + parseFloat(formData.add_amount)))}
+                    </strong>
+                  </p>
+                  <p className="text-xs text-green-500 mt-1">
+                    New weekly allocation: <strong>
+                      {formatCurrency((parseFloat(editingPolicy?.annual_amount || 0) + parseFloat(formData.add_amount)) / 52)}
                     </strong>
                   </p>
                 </div>
@@ -1171,6 +1237,108 @@ useEffect(() => {
         </DialogContent>
       </Dialog>
 
+      {/* ============================================================
+      ✅ NEW: WEEKLY ALLOCATION MODAL
+      ============================================================ */}
+      <Dialog open={showWeeklyModal} onOpenChange={setShowWeeklyModal}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-orange-600">
+              <CalendarRange className="h-5 w-5" />
+              Set Weekly Allocation
+            </DialogTitle>
+            <DialogDescription>
+              Set the weekly budget allocation for <strong>{weeklyPolicy?.department_name}</strong>
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleUpdateWeekly}>
+            <div className="space-y-4 py-4">
+              <div>
+                <Label>Department</Label>
+                <Input
+                  value={weeklyPolicy?.department_name || ''}
+                  disabled
+                  className="mt-1.5 bg-slate-100"
+                />
+              </div>
+
+              <div>
+                <Label>Current Annual Budget</Label>
+                <Input
+                  value={formatCurrency(weeklyPolicy?.annual_amount || 0)}
+                  disabled
+                  className="mt-1.5 bg-slate-100 text-blue-600 font-semibold"
+                />
+              </div>
+
+              <div>
+                <Label>Current Weekly Allocation</Label>
+                <Input
+                  value={formatCurrency(weeklyPolicy?.weekly_allocation || 0)}
+                  disabled
+                  className="mt-1.5 bg-slate-100 text-purple-600 font-semibold"
+                />
+              </div>
+
+              <div>
+                <Label>New Weekly Allocation (₱) *</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  value={formData.weekly_allocation}
+                  onChange={(e) => setFormData({ ...formData, weekly_allocation: e.target.value })}
+                  placeholder="e.g., 25000.00"
+                  className="border-orange-300 focus:border-orange-500"
+                />
+                {formErrors.weekly_allocation && (
+                  <p className="text-red-500 text-xs mt-1">{formErrors.weekly_allocation}</p>
+                )}
+              </div>
+
+              <div>
+                <Label>Reason (Optional)</Label>
+                <Input
+                  type="text"
+                  value={formData.reason || ''}
+                  onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
+                  placeholder="e.g., New weekly allocation"
+                />
+              </div>
+
+              {formData.weekly_allocation && parseFloat(formData.weekly_allocation) > 0 && (
+                <div className="bg-orange-50 p-3 rounded-lg border border-orange-200">
+                  <p className="text-sm text-orange-700">
+                    New annual total: <strong>
+                      {formatCurrency(parseFloat(formData.weekly_allocation) * 52)}
+                    </strong>
+                  </p>
+                  <p className="text-xs text-orange-500 mt-1">
+                    (Weekly allocation × 52 weeks)
+                  </p>
+                  {weeklyPolicy?.annual_amount && (
+                    <p className="text-xs text-red-500 mt-1">
+                      Change: {parseFloat(formData.weekly_allocation) * 52 - parseFloat(weeklyPolicy.annual_amount) > 0 ? '+' : ''}
+                      {formatCurrency((parseFloat(formData.weekly_allocation) * 52) - parseFloat(weeklyPolicy.annual_amount))}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setShowWeeklyModal(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isSubmitting} className="bg-orange-600 hover:bg-orange-700">
+                {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                Update Weekly Allocation
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
       {/* DELETE MODAL */}
       <Dialog open={showDeleteModal} onOpenChange={setShowDeleteModal}>
         <DialogContent className="max-w-md">
@@ -1180,7 +1348,7 @@ useEffect(() => {
               Delete Budget Policy
             </DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete the budget policy for{' '}
+              Are you sure you want to delete the annual budget for{' '}
               <strong>{deletingPolicy?.department_name}</strong>?
             </DialogDescription>
           </DialogHeader>
@@ -1198,7 +1366,7 @@ useEffect(() => {
             </Button>
             <Button type="button" onClick={handleDelete} disabled={isSubmitting} className="bg-red-600 hover:bg-red-700">
               {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-              Delete Policy
+              Delete
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1212,15 +1380,12 @@ useEffect(() => {
               <History className="h-5 w-5 text-purple-600" />
               Budget History: {selectedDepartment?.department_name}
             </DialogTitle>
-            <DialogDescription>
-              All budget changes for this department
-            </DialogDescription>
           </DialogHeader>
           <div className="py-4">
             {budgetHistory.length === 0 ? (
               <div className="text-center py-8">
                 <History className="h-12 w-12 text-slate-300 mx-auto mb-3" />
-                <p className="text-slate-500">No history found for this department</p>
+                <p className="text-slate-500">No history found</p>
               </div>
             ) : (
               <div className="space-y-3">
@@ -1229,11 +1394,7 @@ useEffect(() => {
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-1">
-                          <Badge className={`${
-                            entry.action === 'added' || entry.action === 'add' 
-                              ? 'bg-green-100 text-green-700' 
-                              : 'bg-blue-100 text-blue-700'
-                          } text-xs`}>
+                          <Badge className="bg-green-100 text-green-700 text-xs">
                             {entry.action || 'Added'}
                           </Badge>
                           <span className="text-xs text-slate-400">{formatDateTime(entry.created_at)}</span>
@@ -1261,9 +1422,6 @@ useEffect(() => {
                             <span className="text-slate-400">Reason:</span> {entry.reason}
                           </p>
                         )}
-                        <p className="text-xs text-slate-400 mt-1">
-                          By: {entry.user_name || 'System'}
-                        </p>
                       </div>
                     </div>
                   </div>
@@ -1276,43 +1434,6 @@ useEffect(() => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* ACTIVATE MODAL */}
-      {showActivateModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-md">
-            <div className="p-6">
-              <div className="flex items-center justify-center mb-4">
-                <div className="w-14 h-14 bg-green-100 rounded-full flex items-center justify-center">
-                  <RotateCcw className="h-7 w-7 text-green-600" />
-                </div>
-              </div>
-              <h2 className="text-xl font-bold text-center mb-2">Activate Budget Period</h2>
-              <p className="text-slate-600 text-center mb-4">
-                Are you sure you want to activate the budget for <strong>{showActivateModal.department_name}</strong>?
-              </p>
-              <div className="bg-blue-50 p-3 rounded-lg mb-4">
-                <p className="text-sm text-blue-800">
-                  <strong>Allocation:</strong> {formatCurrency(showActivateModal.allocated_amount)}
-                </p>
-              </div>
-              <div className="flex gap-3">
-                <Button
-                  onClick={handleActivate}
-                  disabled={isSubmitting}
-                  className="flex-1 bg-green-600 hover:bg-green-700"
-                >
-                  {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                  Yes, Activate
-                </Button>
-                <Button type="button" variant="outline" onClick={() => setShowActivateModal(null)} className="flex-1">
-                  Cancel
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

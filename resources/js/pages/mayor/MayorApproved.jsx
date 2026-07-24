@@ -27,6 +27,8 @@ import {
   Truck,
   Building2,
   X,
+  AlertTriangle,
+  Info,
 } from "lucide-react";
 
 // ============================================
@@ -39,7 +41,26 @@ const safeAmount = (amount) => {
 };
 
 // ============================================
-// GAS SLIP COMPONENT - FIXED PRINT & POSITION
+// ✅ NEW: Cross-Department Badge Component
+// ============================================
+const CrossDepartmentBadge = ({ reason }) => {
+  return (
+    <div className="flex items-center gap-1">
+      <span className="text-red-500 font-bold text-lg">*</span>
+      <Badge 
+        variant="outline" 
+        className="border-orange-400 text-orange-600 dark:border-orange-500 dark:text-orange-400 text-xs"
+        title={reason || "Cross-department fuel usage"}
+      >
+        <AlertTriangle className="h-3 w-3 mr-1" />
+        Cross-Dept
+      </Badge>
+    </div>
+  );
+};
+
+// ============================================
+// GAS SLIP COMPONENT - With Cross-Department Indicator
 // ============================================
 const GasSlipView = ({ ticket, onClose }) => {
   const printRef = useRef(null);
@@ -50,6 +71,10 @@ const GasSlipView = ({ ticket, onClose }) => {
   const fuelType = (ticket.vehicle?.fuel_type || "Diesel").toUpperCase();
   const amount = safeAmount(ticket.amount_released);
   const liters = amount > 0 ? (amount / 58).toFixed(2) : "0.00";
+  
+  // ✅ Check if cross-department
+  const isCrossDepartment = ticket.is_cross_department || false;
+  const crossDepartmentReason = ticket.cross_department_reason || "Cross-department fuel usage";
 
   const gasSlipData = {
     control_number: ticket.ticket_number || ticket.trip_ticket_number || "N/A",
@@ -64,10 +89,11 @@ const GasSlipView = ({ ticket, onClose }) => {
     purpose: (ticket.purpose || "Official Trip").toUpperCase(),
     destination: (ticket.destination || "N/A").toUpperCase(),
     fuel_type: fuelType,
-    //liters: liters + " L",
     amount: amount,
     mayor_name: "HON. ROY MACUA",
     department: ticket.department_name || ticket.department?.name || "N/A",
+    is_cross_department: isCrossDepartment,
+    cross_department_reason: crossDepartmentReason,
   };
 
   // ✅ FIXED: Print ONLY the gas slip content
@@ -151,6 +177,15 @@ const GasSlipView = ({ ticket, onClose }) => {
             .signature-line { border-top: 1px solid #1a1a1a; width: 250px; margin: 0 auto 8px auto; padding-top: 8px; }
             .mayor-name { font-size: 13px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; }
             .mayor-title { font-size: 11px; font-style: italic; margin-top: 3px; }
+            .cross-dept-note {
+              background: #fef3c7;
+              border: 1px solid #f59e0b;
+              border-radius: 4px;
+              padding: 8px 12px;
+              margin-top: 15px;
+              font-size: 10px;
+              color: #92400e;
+            }
             @media print {
               body { padding: 0; margin: 0; }
               .gas-slip-container { box-shadow: none; }
@@ -228,6 +263,8 @@ const GasSlipView = ({ ticket, onClose }) => {
                   {gasSlipData.destination}
                 </div>
               </div>
+              
+              {/* Fuel Section */}
               <div className="mb-4">
                 <div className="flex text-center mb-2">
                   <div className="flex-1 text-sm font-bold uppercase tracking-wide text-gray-800 dark:text-slate-300">FUEL</div>
@@ -263,10 +300,33 @@ const GasSlipView = ({ ticket, onClose }) => {
                   <div className="flex-1 border-b border-gray-800 dark:border-slate-600 text-center text-sm pb-0.5"></div>
                 </div>
               </div>
+
+              {/* ✅ Cross-Department Indicator on Gas Slip */}
+              {gasSlipData.is_cross_department && (
+                <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg p-3 mb-4">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
+                    <div>
+                      <p className="text-sm font-medium text-amber-700 dark:text-amber-300">
+                        ⚠️ Cross-Department Fuel Usage *
+                      </p>
+                      <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+                        {gasSlipData.cross_department_reason || "Fuel used by another department for recording purposes only."}
+                        <br />
+                        <span className="font-medium">No budget transfer was made.</span>
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="flex items-center gap-3 mt-5">
                 <span className="text-sm font-bold text-gray-800 dark:text-slate-300">Control No.</span>
                 <div className="flex-1 border-b border-gray-800 dark:border-slate-600 text-center text-sm font-bold tracking-wider pb-0.5">
                   {gasSlipData.control_number}
+                  {gasSlipData.is_cross_department && (
+                    <span className="text-red-500 font-bold ml-1">*</span>
+                  )}
                 </div>
               </div>
             </div>
@@ -475,7 +535,6 @@ const MayorApproved = () => {
               <p className="text-slate-500 dark:text-slate-400">No funds released tickets</p>
             </div>
           ) : (
-            // ✅ FIXED: Scrollable table container with max height
             <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
               <Table>
                 <TableHeader className="sticky top-0 bg-slate-50 dark:bg-slate-900/50 z-10">
@@ -493,13 +552,23 @@ const MayorApproved = () => {
                 <TableBody>
                   {tickets.map((ticket, index) => {
                     const driverName = getDriverName(ticket);
+                    const isCrossDept = ticket.is_cross_department || false;
+                    
                     return (
                       <TableRow 
                         key={ticket.id || ticket.trip_ticket_id} 
                         className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors"
                       >
                         <TableCell className="font-medium text-slate-900 dark:text-white whitespace-nowrap">
-                          {ticket.ticket_number || ticket.trip_ticket_number}
+                          <div className="flex items-center gap-1">
+                            <span>{ticket.ticket_number || ticket.trip_ticket_number}</span>
+                            {/* ✅ Cross-Department Asterisk */}
+                            {isCrossDept && (
+                              <span className="text-red-500 font-bold text-lg" title={ticket.cross_department_reason || "Cross-department fuel usage"}>
+                                *
+                              </span>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell className="whitespace-nowrap">
                           <div className="flex items-center gap-1 text-slate-600 dark:text-slate-400">
@@ -525,18 +594,17 @@ const MayorApproved = () => {
                         <TableCell className="font-semibold text-emerald-600 dark:text-emerald-400 text-right whitespace-nowrap">
                           {formatCurrency(ticket.amount_released)}
                         </TableCell>
-                        <TableCell className="whitespace-nowrap">{getStatusBadge(ticket.status)}</TableCell>
+                        <TableCell className="whitespace-nowrap">
+                          <div className="flex items-center gap-1">
+                            {getStatusBadge(ticket.status)}
+                            {/* ✅ Cross-Department Badge */}
+                            {isCrossDept && (
+                              <CrossDepartmentBadge reason={ticket.cross_department_reason} />
+                            )}
+                          </div>
+                        </TableCell>
                         <TableCell className="text-right whitespace-nowrap">
                           <div className="flex items-center justify-end gap-2">
-                            {/* <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => navigate(`/mo/tickets/${ticket.id || ticket.trip_ticket_id}`)}
-                              className="h-8 w-8 p-0 text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:text-blue-300 dark:hover:bg-blue-950/30"
-                              title="View Details"
-                            >
-                              <Eye className="h-4 w-4" />
-                            </Button> */}
                             <Button
                               variant="outline"
                               size="sm"

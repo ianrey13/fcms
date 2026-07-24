@@ -32,6 +32,8 @@ import {
   PieChart,
   ChevronRight,
   Bell,
+  TrendingDown,
+  Fuel,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -57,6 +59,11 @@ const MayorDashboard = () => {
     totalAmount: 0,
     avgUtilization: 0,
     criticalDepartments: 0,
+    // ✅ NEW: Annual budget stats
+    totalAnnualBudget: 0,
+    totalAnnualUsed: 0,
+    totalAnnualRemaining: 0,
+    departmentsWithBudget: 0,
   });
 
   // Use refs to prevent stale closures
@@ -120,35 +127,55 @@ const MayorDashboard = () => {
 
   const fetchDepartmentBudgets = useCallback(async () => {
     try {
-      const response = await mayorsOfficeAPI.getBudgetOverview();
+      const response = await mayorsOfficeAPI.getAllDepartmentsWithBudget();
       const budgetData = response.data?.data || response.data || [];
+      
       if (isMounted) {
+        // ✅ Format data for annual budget display
         const formatted = budgetData.map((dept) => ({
           department_id: dept.department_id,
           department_name: dept.department_name,
           allocated: parseFloat(dept.allocated_amount) || 0,
           spent: parseFloat(dept.spent_amount) || 0,
           remaining: parseFloat(dept.remaining_amount) || 0,
-          utilization:
-            dept.allocated_amount > 0
-              ? ((dept.spent_amount / dept.allocated_amount) * 100).toFixed(1)
-              : 0,
+          has_budget: dept.has_budget || false,
+          utilization: dept.allocated_amount > 0
+            ? ((dept.spent_amount / dept.allocated_amount) * 100).toFixed(1)
+            : 0,
+          // ✅ Annual budget specific
+          fiscal_year: dept.fiscal_year || new Date().getFullYear(),
+          budget_type: dept.budget_type || 'annual',
         }));
 
+        // ✅ Calculate totals
+        const totalAllocated = formatted.reduce((sum, d) => sum + d.allocated, 0);
+        const totalUsed = formatted.reduce((sum, d) => sum + d.spent, 0);
+        const totalRemaining = totalAllocated - totalUsed;
+        const deptsWithBudget = formatted.filter(d => d.has_budget).length;
+
+        // Sort by utilization
         formatted.sort(
           (a, b) => parseFloat(b.utilization) - parseFloat(a.utilization),
         );
+        
         setDepartmentBudgets(formatted);
 
-        const avgUtil =
-          formatted.reduce((sum, d) => sum + parseFloat(d.utilization), 0) /
-          (formatted.length || 1);
+        const avgUtil = formatted.filter(d => d.has_budget).length > 0
+          ? formatted.filter(d => d.has_budget).reduce((sum, d) => sum + parseFloat(d.utilization), 0) /
+            (formatted.filter(d => d.has_budget).length || 1)
+          : 0;
+
         setStats((prev) => ({
           ...prev,
           avgUtilization: avgUtil.toFixed(1),
           criticalDepartments: formatted.filter(
-            (d) => parseFloat(d.utilization) >= 80,
+            (d) => parseFloat(d.utilization) >= 80 && d.has_budget,
           ).length,
+          // ✅ NEW: Annual budget stats
+          totalAnnualBudget: totalAllocated,
+          totalAnnualUsed: totalUsed,
+          totalAnnualRemaining: totalRemaining,
+          departmentsWithBudget: deptsWithBudget,
         }));
         console.log("✅ Budget data updated:", formatted.length);
       }
@@ -206,7 +233,6 @@ const MayorDashboard = () => {
     // ✅ Refresh data based on notification type
     if (type === 'trip_created' || type === 'trip_submitted') {
       console.log('🔄 Refreshing pending tickets due to new trip');
-      // ✅ Use the ref directly
       fetchPendingTicketsRef.current?.();
       setForceUpdate(prev => prev + 1);
     }
@@ -259,8 +285,6 @@ const MayorDashboard = () => {
         
         channel.listen('.notification.new', (data) => {
           console.log('🔔 Mayor: Private notification received:', data);
-          
-          // ✅ Handle notification (refreshes data)
           handleNotificationByType(data);
         });
 
@@ -511,6 +535,10 @@ const MayorDashboard = () => {
                     day: "numeric",
                   })}
                 </Badge>
+                <Badge className="border-amber-500/30 bg-amber-500/20 text-amber-300">
+                  <Fuel className="mr-1 h-3 w-3" />
+                  FY {new Date().getFullYear()}
+                </Badge>
                 {newNotificationCount > 0 && (
                   <Badge className="border-red-500/30 bg-red-500/20 text-red-300 animate-pulse">
                     <Bell className="mr-1 h-3 w-3" />
@@ -522,11 +550,63 @@ const MayorDashboard = () => {
                 {getGreeting()}, {user?.first_name || "Mayor"}
               </h1>
               <p className="mt-1 text-sm text-slate-300">
-                Monitor fund releases and department budget utilization
+                Monitor fund releases and department budget utilization for FY {new Date().getFullYear()}
               </p>
             </div>
           </div>
         </div>
+
+        {/* ============================================================ */}
+        {/* ✅ ANNUAL BUDGET SUMMARY CARD - NEW */}
+        {/* ============================================================ */}
+        <Card className="border-0 shadow-sm overflow-hidden dark:bg-slate-800/80 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30">
+          <CardContent className="p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="rounded-xl bg-blue-500/20 p-2.5">
+                <Wallet className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
+                  Annual Budget Overview FY {new Date().getFullYear()}
+                </h3>
+                <p className="text-sm text-slate-500 dark:text-slate-400">
+                  {stats.departmentsWithBudget} departments with active budgets
+                </p>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="bg-white/60 dark:bg-slate-900/40 rounded-xl p-4">
+                <p className="text-sm text-slate-500 dark:text-slate-400">Total Annual Budget</p>
+                <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+                  {formatCurrency(stats.totalAnnualBudget)}
+                </p>
+                <p className="text-xs text-slate-400 mt-1">Across all departments</p>
+              </div>
+              <div className="bg-white/60 dark:bg-slate-900/40 rounded-xl p-4">
+                <p className="text-sm text-slate-500 dark:text-slate-400">Used to Date</p>
+                <p className="text-2xl font-bold text-amber-600 dark:text-amber-400">
+                  {formatCurrency(stats.totalAnnualUsed)}
+                </p>
+                <p className="text-xs text-slate-400 mt-1">
+                  {stats.totalAnnualBudget > 0 
+                    ? `${((stats.totalAnnualUsed / stats.totalAnnualBudget) * 100).toFixed(1)}% utilization`
+                    : 'No budget set'}
+                </p>
+              </div>
+              <div className="bg-white/60 dark:bg-slate-900/40 rounded-xl p-4">
+                <p className="text-sm text-slate-500 dark:text-slate-400">Remaining Budget</p>
+                <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">
+                  {formatCurrency(stats.totalAnnualRemaining)}
+                </p>
+                <p className="text-xs text-slate-400 mt-1">
+                  {stats.totalAnnualBudget > 0
+                    ? `${((stats.totalAnnualRemaining / stats.totalAnnualBudget) * 100).toFixed(1)}% remaining`
+                    : 'No budget set'}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Stats Grid */}
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4" key={`stats-${forceUpdate}`}>
@@ -571,10 +651,10 @@ const MayorDashboard = () => {
                 </div>
                 <div>
                   <CardTitle className="text-lg font-semibold text-slate-900 dark:text-white">
-                    Department Budget Utilization
+                    Annual Budget Utilization
                   </CardTitle>
                   <p className="text-sm text-slate-500 dark:text-slate-400">
-                    Real-time budget consumption across departments
+                    Real-time budget consumption across departments for FY {new Date().getFullYear()}
                   </p>
                 </div>
               </div>
@@ -590,16 +670,19 @@ const MayorDashboard = () => {
             </div>
           </CardHeader>
           <CardContent className="pt-6">
-            {topDepartments.length === 0 ? (
+            {topDepartments.length === 0 || topDepartments.every(d => !d.has_budget) ? (
               <div className="py-12 text-center">
                 <Building2 className="mx-auto h-12 w-12 text-slate-300 dark:text-slate-600" />
                 <p className="mt-3 text-slate-500 dark:text-slate-400">
-                  No budget data available
+                  No annual budget data available
+                </p>
+                <p className="text-sm text-slate-400 dark:text-slate-500">
+                  Please set up annual budgets for departments
                 </p>
               </div>
             ) : (
               <div className="space-y-5">
-                {topDepartments.map((dept) => (
+                {topDepartments.filter(d => d.has_budget).map((dept) => (
                   <div key={dept.department_id} className="group">
                     <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
@@ -608,6 +691,9 @@ const MayorDashboard = () => {
                           {dept.department_name}
                         </span>
                         {getStatusIcon(dept.utilization)}
+                        <Badge variant="outline" className="text-xs text-slate-400 border-slate-300 dark:border-slate-600">
+                          Annual
+                        </Badge>
                       </div>
                       <div className="flex items-center gap-3">
                         <span className="text-sm text-slate-500 dark:text-slate-400">
@@ -636,19 +722,25 @@ const MayorDashboard = () => {
                     {parseFloat(dept.utilization) >= 80 && (
                       <p className="mt-1.5 text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
                         <AlertCircle className="h-3 w-3" />
-                        Approaching or exceeding budget limit
+                        Approaching or exceeding annual budget limit
+                      </p>
+                    )}
+                    {parseFloat(dept.utilization) < 20 && dept.has_budget && (
+                      <p className="mt-1.5 text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                        <TrendingUp className="h-3 w-3" />
+                        Good budget utilization
                       </p>
                     )}
                   </div>
                 ))}
-                {departmentBudgets.length > 6 && (
+                {departmentBudgets.filter(d => d.has_budget).length > 6 && (
                   <div className="pt-3 text-center">
                     <Button
                       variant="link"
                       onClick={() => navigate("/mo/reports")}
                       className="text-blue-600 dark:text-blue-400"
                     >
-                      View all {departmentBudgets.length} departments
+                      View all {departmentBudgets.filter(d => d.has_budget).length} departments
                       <ArrowRight className="ml-1 h-4 w-4" />
                     </Button>
                   </div>
@@ -697,6 +789,11 @@ const MayorDashboard = () => {
                           <span className="font-mono text-sm font-medium text-slate-900 dark:text-white">
                             {ticket.ticket_number || ticket.trip_ticket_number}
                           </span>
+                          {ticket.is_cross_department && (
+                            <span className="text-red-500 font-bold text-sm" title={ticket.cross_department_reason || "Cross-department usage"}>
+                              *
+                            </span>
+                          )}
                           <Badge
                             variant="outline"
                             className="text-xs dark:border-slate-600 dark:text-slate-400"
@@ -706,6 +803,12 @@ const MayorDashboard = () => {
                           {ticket.is_mo_funded && (
                             <Badge className="bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 text-xs">
                               MO Funded
+                            </Badge>
+                          )}
+                          {ticket.is_cross_department && (
+                            <Badge className="bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 text-xs">
+                              <AlertTriangle className="h-3 w-3 mr-1" />
+                              Cross-Dept
                             </Badge>
                           )}
                         </div>
@@ -801,6 +904,13 @@ const MayorDashboard = () => {
                   color="from-purple-500 to-purple-600"
                   count={stats.releasedCount}
                 />
+                <QuickLinkCard
+                  title="Receipt Verification"
+                  description="Verify fuel receipts"
+                  icon={FileText}
+                  href="/mo/receipt-verification"
+                  color="from-emerald-500 to-emerald-600"
+                />
               </div>
 
               {/* Quick Stats Footer */}
@@ -817,7 +927,7 @@ const MayorDashboard = () => {
                       <div className="text-lg font-bold text-emerald-600 dark:text-emerald-400">
                         {
                           departmentBudgets.filter(
-                            (d) => parseFloat(d.utilization) < 60,
+                            (d) => parseFloat(d.utilization) < 60 && d.has_budget,
                           ).length
                         }
                       </div>
@@ -831,7 +941,8 @@ const MayorDashboard = () => {
                           departmentBudgets.filter(
                             (d) =>
                               parseFloat(d.utilization) >= 60 &&
-                              parseFloat(d.utilization) < 80,
+                              parseFloat(d.utilization) < 80 &&
+                              d.has_budget,
                           ).length
                         }
                       </div>
@@ -843,7 +954,7 @@ const MayorDashboard = () => {
                       <div className="text-lg font-bold text-red-600 dark:text-red-400">
                         {
                           departmentBudgets.filter(
-                            (d) => parseFloat(d.utilization) >= 80,
+                            (d) => parseFloat(d.utilization) >= 80 && d.has_budget,
                           ).length
                         }
                       </div>
@@ -852,6 +963,10 @@ const MayorDashboard = () => {
                       </div>
                     </div>
                   </div>
+                </div>
+                <div className="mt-3 flex items-center justify-between text-xs text-slate-400 dark:text-slate-500">
+                  <span>Annual Budgets FY {new Date().getFullYear()}</span>
+                  <span>{stats.departmentsWithBudget} departments active</span>
                 </div>
               </div>
             </CardContent>

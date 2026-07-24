@@ -128,6 +128,14 @@ export const gsoAPI = {
 
   // Get trips with GPS data for dashboard
   getTripsWithGPS: (params) => api.get("/gso/trips/with-gps", { params }),
+
+   // ✅ NEW: Get annual budget overview for GSO
+  getAnnualBudgetOverview: (params) => 
+    api.get("/gso/budget-overview", { params }),
+
+  // ✅ NEW: Get cross-department usage for GSO
+  getCrossDepartmentUsage: (params) => 
+    api.get("/gso/cross-department-usage", { params }),
 };
 
 // ============ MAYOR'S OFFICE API ============
@@ -183,7 +191,47 @@ export const mayorsOfficeAPI = {
     
   getBudgetSummary: () => 
     api.get('/mayors-office/budget-summary'),
+
+  // ============================================================
+  // ✅ NEW: Annual Budget Methods
+  // ============================================================
+  
+  // ✅ CREATE Annual Budget (NEW)
+  createAnnualBudget: (data) => api.post('/mayors-office/annual-budget', data),
+  
+  // Get annual budget overview for all departments
+  getAnnualBudgetOverview: (params) => 
+    api.get("/mayors-office/budget-overview", { params }),
+
+  // Get cross-department usage records
+  getCrossDepartmentUsage: (params) => 
+    api.get("/mayors-office/cross-department-usage", { params }),
+
+  // Update annual budget for a department
+  updateAnnualBudget: (departmentId, data) => 
+    api.put(`/mayors-office/budget/${departmentId}`, data),
+
+  // Get department annual budget details
+  getDepartmentAnnualBudget: (departmentId) => 
+    api.get(`/mayors-office/budget/${departmentId}`),
+
+  // Get weekly usage breakdown for a department
+  getWeeklyUsage: (departmentId, params) => 
+    api.get(`/mayors-office/budget/${departmentId}/weekly-usage`, { params }),
+  // ✅ NEW: Update weekly allocation
+    updateWeeklyAllocation: (departmentId, data) => 
+        api.put(`/mayors-office/budget/weekly/${departmentId}`, data),
+    
+    // ✅ NEW: Process surplus
+    processSurplus: (departmentId) => 
+        api.post(`/mayors-office/budget/process-surplus/${departmentId}`),
+    
+    // ✅ NEW: Get surplus history
+    getSurplusHistory: (params) => 
+        api.get('/mayors-office/budget/surplus-history', { params }),
+    getBudgetPeriods: (params) => api.get('/mayors-office/budget-periods', { params }),
 };
+
 
 // ============ DRIVER API (Merged with Staff) ============
 export const driverAPI = {

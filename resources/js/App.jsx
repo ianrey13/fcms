@@ -1,73 +1,99 @@
 // src/App.jsx
-import React, { lazy, Suspense } from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
-import { useAuth } from './contexts/AuthContext';
-import ProtectedRoute from './components/auth/ProtectedRoute';
-import Layout from './components/layout/Layout';
+import React, { lazy, Suspense } from "react";
+import { Routes, Route, Navigate } from "react-router-dom";
+import { useAuth } from "./contexts/AuthContext";
+import ProtectedRoute from "./components/auth/ProtectedRoute";
+import Layout from "./components/layout/Layout";
 
 // ============ PUBLIC PAGES (NO LAZY LOADING NEEDED) ============
-import Login from './pages/Login';
-import Unauthorized from './pages/Unauthorized';
+import Login from "./pages/Login";
+import Unauthorized from "./pages/Unauthorized";
 
 // ============ GSO PAGES (LAZY LOADED) ============
-const GsoDashboard = lazy(() => import('./pages/gso/GsoDashboard'));
-const GsoCreateTrip = lazy(() => import('./pages/gso/GsoCreateTrip'));
-const GsoAllTrips = lazy(() => import('./pages/gso/GsoAllTrips'));
-const GsoPendingMO = lazy(() => import('./pages/gso/GsoPendingMO'));
-const GsoReconciliation = lazy(() => import('./pages/gso/GsoReconciliation'));
-const GsoReturned = lazy(() => import('./pages/gso/GsoReturned'));
-const GsoReports = lazy(() => import('./pages/gso/GsoReports'));
-const GsoTripTicket = lazy(() => import('./pages/gso/GsoTripTicket'));
-const FuelReceipts = lazy(() => import('./pages/gso/FuelReceipts'));
-const CompletedTrips = lazy(() => import('./pages/gso/CompletedTrips'));
-const LiveTracking = lazy(() => import('./pages/gso/LiveTracking'));
-const SystemSettings = lazy(() => import('./pages/gso/SystemSettings'));
+const GsoDashboard = lazy(() => import("./pages/gso/GsoDashboard"));
+const GsoCreateTrip = lazy(() => import("./pages/gso/GsoCreateTrip"));
+const GsoAllTrips = lazy(() => import("./pages/gso/GsoAllTrips"));
+const GsoPendingMO = lazy(() => import("./pages/gso/GsoPendingMO"));
+const GsoReconciliation = lazy(() => import("./pages/gso/GsoReconciliation"));
+const GsoReturned = lazy(() => import("./pages/gso/GsoReturned"));
+const GsoReports = lazy(() => import("./pages/gso/GsoReports"));
+const GsoTripTicket = lazy(() => import("./pages/gso/GsoTripTicket"));
+const FuelReceipts = lazy(() => import("./pages/gso/FuelReceipts"));
+const CompletedTrips = lazy(() => import("./pages/gso/CompletedTrips"));
+const LiveTracking = lazy(() => import("./pages/gso/LiveTracking"));
+const SystemSettings = lazy(() => import("./pages/gso/SystemSettings"));
 
 // ============ GSO REPORT PAGES (NEW) ============
-const WeeklyMonitoring = lazy(() => import('./pages/gso/reports/WeeklyMonitoring'));
-const FuelWithoutTripReport = lazy(() => import('./pages/gso/reports/FuelWithoutTripReport'));
+const WeeklyMonitoring = lazy(
+    () => import("./pages/gso/reports/WeeklyMonitoring"),
+);
+const FuelWithoutTripReport = lazy(
+    () => import("./pages/gso/reports/FuelWithoutTripReport"),
+);
 
 // ============ GSO ADMIN (Departments) ============
-const DepartmentManagement = lazy(() => import('./pages/gso/departments/DepartmentManagement'));
-const AddDepartment = lazy(() => import('./pages/gso/departments/AddDepartment'));
-const EditDepartment = lazy(() => import('./pages/gso/departments/EditDepartment'));
+const DepartmentManagement = lazy(
+    () => import("./pages/gso/departments/DepartmentManagement"),
+);
+const AddDepartment = lazy(
+    () => import("./pages/gso/departments/AddDepartment"),
+);
+const EditDepartment = lazy(
+    () => import("./pages/gso/departments/EditDepartment"),
+);
 
 // ============ GSO ADMIN (Users) ============
-const UserManagement = lazy(() => import('./pages/gso/users/UserManagement'));
-const AddUser = lazy(() => import('./pages/gso/users/AddUser'));
-const EditUser = lazy(() => import('./pages/gso/users/EditUser'));
+const UserManagement = lazy(() => import("./pages/gso/users/UserManagement"));
+const AddUser = lazy(() => import("./pages/gso/users/AddUser"));
+const EditUser = lazy(() => import("./pages/gso/users/EditUser"));
 
 // ============ GSO ADMIN (Vehicles) ============
-const VehicleManagement = lazy(() => import('./pages/gso/vehicles/VehicleManagement'));
-const AddVehicle = lazy(() => import('./pages/gso/vehicles/AddVehicle'));
-const EditVehicle = lazy(() => import('./pages/gso/vehicles/EditVehicle'));
+const VehicleManagement = lazy(
+    () => import("./pages/gso/vehicles/VehicleManagement"),
+);
+const AddVehicle = lazy(() => import("./pages/gso/vehicles/AddVehicle"));
+const EditVehicle = lazy(() => import("./pages/gso/vehicles/EditVehicle"));
 
 // ============ MAYOR PAGES ============
-const MayorDashboard = lazy(() => import('./pages/mayor/MayorDashboard'));
-const MayorPending = lazy(() => import('./pages/mayor/MayorPending'));
-const MayorApproved = lazy(() => import('./pages/mayor/MayorApproved'));
-const MayorFundIssuance = lazy(() => import('./pages/mayor/MayorFundIssuance'));
-const MayorBudgetAssistance = lazy(() => import('./pages/mayor/BudgetAssistance'));
-const MayorBudget = lazy(() => import('./pages/mayor/MayorBudget'));
-const MayorReports = lazy(() => import('./pages/mayor/MayorReports'));
-const MayorTripTicketDetail = lazy(() => import('./pages/mayor/MayorTripTicketDetail'));
-const BudgetPolicies = lazy(() => import('./pages/mayor/BudgetPolicies'));
-const MayorReceiptVerification = lazy(() => import('./pages/mayor/MayorReceiptVerification'));
-const MayorTripTicket = lazy(() => import('./pages/mayor/MayorTripTicket'));
+const MayorDashboard = lazy(() => import("./pages/mayor/MayorDashboard"));
+const MayorPending = lazy(() => import("./pages/mayor/MayorPending"));
+const MayorApproved = lazy(() => import("./pages/mayor/MayorApproved"));
+const MayorFundIssuance = lazy(() => import("./pages/mayor/MayorFundIssuance"));
+const MayorBudgetAssistance = lazy(
+    () => import("./pages/mayor/BudgetAssistance"),
+);
+const MayorBudget = lazy(() => import("./pages/mayor/MayorBudget"));
+const MayorReports = lazy(() => import("./pages/mayor/MayorReports"));
+const MayorTripTicketDetail = lazy(
+    () => import("./pages/mayor/MayorTripTicketDetail"),
+);
+const BudgetPolicies = lazy(() => import("./pages/mayor/BudgetPolicies"));
+const MayorReceiptVerification = lazy(
+    () => import("./pages/mayor/MayorReceiptVerification"),
+);
+const MayorTripTicket = lazy(() => import("./pages/mayor/MayorTripTicket"));
+
+import BudgetAllocation from "./pages/mayor/budget/BudgetAllocation";
+import BudgetHistory from "./pages/mayor/budget/BudgetHistory";
+import WeeklyTracking from "./pages/mayor/budget/WeeklyTracking";
 
 // ============ MAYOR REPORT PAGES (NEW) ============
-const MayorWeeklyMonitoring = lazy(() => import('./pages/mayor/reports/WeeklyMonitoring'));
-const MayorFuelWithoutTripReport = lazy(() => import('./pages/mayor/reports/FuelWithoutTripReport'));
+const MayorWeeklyMonitoring = lazy(
+    () => import("./pages/mayor/reports/WeeklyMonitoring"),
+);
+const MayorFuelWithoutTripReport = lazy(
+    () => import("./pages/mayor/reports/FuelWithoutTripReport"),
+);
 
 // ============ STAFF PAGES ============
-const StaffDashboard = lazy(() => import('./pages/staff/StaffDashboard'));
-const StaffTrips = lazy(() => import('./pages/staff/StaffTrips'));
-const StaffReports = lazy(() => import('./pages/staff/StaffReports'));
+const StaffDashboard = lazy(() => import("./pages/staff/StaffDashboard"));
+const StaffTrips = lazy(() => import("./pages/staff/StaffTrips"));
+const StaffReports = lazy(() => import("./pages/staff/StaffReports"));
 
 // ============ SHARED PAGES ============
-const Reports = lazy(() => import('./pages/admin/Reports'));
-const Profile = lazy(() => import('./pages/admin/Profile'));
-const Help = lazy(() => import('./pages/admin/WorkInProgress'));
+const Reports = lazy(() => import("./pages/admin/Reports"));
+const Profile = lazy(() => import("./pages/admin/Profile"));
+const Help = lazy(() => import("./pages/admin/WorkInProgress"));
 
 // ============ LOADING COMPONENT ============
 const PageLoader = () => (
@@ -451,6 +477,38 @@ function App() {
                         </ProtectedRoute>
                     }
                 />
+
+                <Route
+                    path="/mo/budget-allocation"
+                    element={
+                        <ProtectedRoute allowedRoles={["mayors_office"]}>
+                            <Layout>
+                                <BudgetAllocation />
+                            </Layout>
+                        </ProtectedRoute>
+                    }
+                />
+                <Route
+                    path="/mo/budget-history"
+                    element={
+                        <ProtectedRoute allowedRoles={["mayors_office"]}>
+                            <Layout>
+                                <BudgetHistory />
+                            </Layout>
+                        </ProtectedRoute>
+                    }
+                />
+                <Route
+                    path="/mo/weekly-tracking"
+                    element={
+                        <ProtectedRoute allowedRoles={["mayors_office"]}>
+                            <Layout>
+                                <WeeklyTracking />
+                            </Layout>
+                        </ProtectedRoute>
+                    }
+                />
+
                 <Route
                     path="/mo/reports"
                     element={

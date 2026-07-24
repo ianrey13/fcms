@@ -33,6 +33,15 @@ import {
   Satellite,
   TrendingUp,
   TrendingDown,
+  Coins,
+  Banknote,
+  Wallet,
+  PiggyBank,
+  Landmark,
+  CalendarRange,
+  History,
+  Target,
+  PieChart,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -195,21 +204,35 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
         },
       ],
       mayors_office: [
-        { name: "Dashboard", href: "/mo/dashboard", icon: LayoutDashboard },
-        { name: "Pending Fund Release", href: "/mo/pending", icon: Clock },
-        { name: "Funds Released", href: "/mo/approved", icon: CheckCircle },
-        { name: "Receipt Verification", href: "/mo/receipt-verification", icon: Receipt },
-        { name: "Budget Policies", href: "/mo/budget-policies", icon: DollarSign },
-        {
-          name: "Reports",
-          icon: FileBarChart,
-          submenu: [
-            { name: "Weekly Monitoring", href: "/mo/reports/weekly-monitoring", icon: Calendar },
-            { name: "Fuel Without Trip", href: "/mo/reports/fuel-without-trip", icon: AlertTriangle },
-            { name: "Fuel Receipts", href: "/mo/reports", icon: Receipt },
-          ],
-        },
-      ],
+  { name: "Dashboard", href: "/mo/dashboard", icon: LayoutDashboard },
+  {
+    name: "Fund Management",
+    icon: Banknote,
+    submenu: [
+      { name: "Pending Fund Release", href: "/mo/pending", icon: Clock },
+      { name: "Funds Released", href: "/mo/approved", icon: CheckCircle },
+      { name: "Receipt Verification", href: "/mo/receipt-verification", icon: Receipt },
+    ],
+  },
+  {
+    name: "Budget Management",
+    icon: Wallet,
+    submenu: [
+      { name: "Budget Allocation", href: "/mo/budget-allocation", icon: DollarSign },
+      { name: "Budget History", href: "/mo/budget-history", icon: History },
+      { name: "Weekly Tracking", href: "/mo/weekly-tracking", icon: CalendarRange },
+    ],
+  },
+  {
+    name: "Reports",
+    icon: FileBarChart,
+    submenu: [
+      { name: "Weekly Monitoring", href: "/mo/reports/weekly-monitoring", icon: Calendar },
+      { name: "Fuel Without Trip", href: "/mo/reports/fuel-without-trip", icon: AlertTriangle },
+      { name: "Fuel Receipts", href: "/mo/reports", icon: Receipt },
+    ],
+  },
+],
       driver: [
         { name: "Dashboard", href: "/driver/dashboard", icon: LayoutDashboard },
         { name: "My Trips", href: "/driver/trips", icon: Truck },

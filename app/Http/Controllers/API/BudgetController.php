@@ -7,12 +7,22 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use App\Services\BudgetService;
 
 class BudgetPolicyController extends Controller
 {
+
+    protected $budgetService;
+
     /**
      * Get all budget policies with current allocation
      */
+
+     public function __construct(BudgetService $budgetService)
+    {
+        $this->budgetService = $budgetService;
+    }
+
     public function index()
     {
         try {
@@ -761,4 +771,6 @@ class BudgetPolicyController extends Controller
             ], 500);
         }
     }
+
+    
 }

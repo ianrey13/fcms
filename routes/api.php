@@ -147,46 +147,68 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('users/{id}/signature', [UserController::class, 'getSignatureForGso']);
         Route::post('create-trip', [TripTicketController::class, 'gsoCreate']);
         Route::post('tickets/{id}/reconcile', [GsoController::class, 'reconcileTrip']);
+            Route::get('budget-overview', [GsoController::class, 'getBudgetOverview']);
+
     });
 
 
 
-    // ============ MAYOR'S OFFICE ============
-    Route::middleware(['role:mayors_office'])->prefix('mayors-office')->group(function () {
-        Route::get('dashboard', [MayorsOfficeController::class, 'getDashboard']);
-        Route::get('pending', [MayorsOfficeController::class, 'getPendingTickets']);
-        Route::get('approved', [MayorsOfficeController::class, 'getApprovedTickets']);
-        Route::get('tickets/{id}', [MayorsOfficeController::class, 'show']);
-        Route::post('tickets/{id}/approve', [MayorsOfficeController::class, 'approveTicket']);
-        Route::post('tickets/{id}/reject', [MayorsOfficeController::class, 'rejectTicket']);
+  // ============ MAYOR'S OFFICE ============
+Route::middleware(['role:mayors_office'])->prefix('mayors-office')->group(function () {
+    Route::get('dashboard', [MayorsOfficeController::class, 'getDashboard']);
+    Route::get('pending', [MayorsOfficeController::class, 'getPendingTickets']);
+    Route::get('approved', [MayorsOfficeController::class, 'getApprovedTickets']);
+    Route::get('tickets/{id}', [MayorsOfficeController::class, 'show']);
+    Route::post('tickets/{id}/approve', [MayorsOfficeController::class, 'approveTicket']);
+    Route::post('tickets/{id}/reject', [MayorsOfficeController::class, 'rejectTicket']);
 
-        Route::get('budget-overview', [MayorsOfficeController::class, 'getBudgetOverview']);
-        Route::get('departments/{id}/budget', [MayorsOfficeController::class, 'getDepartmentBudget']);
-        Route::get('departments/all-with-budget', [MayorsOfficeController::class, 'getAllDepartmentsWithBudget']);
-        Route::get('departments/selector', [MayorsOfficeController::class, 'getAllDepartmentsForSelector']);
+    Route::get('budget-overview', [MayorsOfficeController::class, 'getBudgetOverview']);
+    Route::get('departments/{id}/budget', [MayorsOfficeController::class, 'getDepartmentBudget']);
+    Route::get('departments/all-with-budget', [MayorsOfficeController::class, 'getAllDepartmentsWithBudget']);
+    Route::get('departments/selector', [MayorsOfficeController::class, 'getAllDepartmentsForSelector']);
 
-        Route::get('budget-assistance/requests', [MayorsOfficeController::class, 'getBudgetAssistanceRequests']);
-        Route::get('budget-assistance/request/{requestId}', [MayorsOfficeController::class, 'getBudgetAssistanceRequest']);
-        Route::post('budget-assistance/create-ticket', [MayorsOfficeController::class, 'createMoFundedTicket']);
-        Route::delete('budget-assistance/request/{requestId}', [MayorsOfficeController::class, 'removeMORequest']);
-        Route::get('departments/all', [DepartmentController::class, 'getAllDepartmentsForMO']);
+    Route::get('budget-assistance/requests', [MayorsOfficeController::class, 'getBudgetAssistanceRequests']);
+    Route::get('budget-assistance/request/{requestId}', [MayorsOfficeController::class, 'getBudgetAssistanceRequest']);
+    Route::post('budget-assistance/create-ticket', [MayorsOfficeController::class, 'createMoFundedTicket']);
+    Route::delete('budget-assistance/request/{requestId}', [MayorsOfficeController::class, 'removeMORequest']);
+    Route::get('departments/all', [DepartmentController::class, 'getAllDepartmentsForMO']);
 
-        // ✅ Budget Policies
-        Route::get('budget-policies', [BudgetPolicyController::class, 'index']);
-        Route::get('budget-policies/{departmentId}', [BudgetPolicyController::class, 'show']);
-        Route::post('budget-policies', [BudgetPolicyController::class, 'store']);
-        Route::put('budget-policies/{departmentId}', [BudgetPolicyController::class, 'update']);
-        Route::delete('budget-policies/{departmentId}', [BudgetPolicyController::class, 'destroy']);
+    // ✅ Budget Policies
+    Route::get('budget-policies', [BudgetPolicyController::class, 'index']);
+    Route::get('budget-policies/{departmentId}', [BudgetPolicyController::class, 'show']);
+    Route::post('budget-policies', [BudgetPolicyController::class, 'store']);
+    Route::put('budget-policies/{departmentId}', [BudgetPolicyController::class, 'update']);
+    Route::delete('budget-policies/{departmentId}', [BudgetPolicyController::class, 'destroy']);
 
+    Route::get('budget-periods', [BudgetPolicyController::class, 'getPeriods']);
+    Route::post('budget-periods/force-activate', [BudgetPolicyController::class, 'forceActivate']);
+
+    // ✅ ✅ NEW: Budget History & Summary Routes
+    Route::get('budget-history', [BudgetPolicyController::class, 'getBudgetHistory']);
+    Route::get('budget-summary', [BudgetPolicyController::class, 'getBudgetSummary']);
+
+    // ✅ ✅ NEW: Annual Budget Specific Routes
+    Route::get('annual-budget/{departmentId}', [BudgetPolicyController::class, 'getAnnualBudget']);
+    Route::put('annual-budget/{departmentId}', [BudgetPolicyController::class, 'updateAnnualBudget']);
+    Route::post('annual-budget', [BudgetPolicyController::class, 'createAnnualBudget']);
+
+    Route::get('/receipts/for-verification', [MayorsOfficeController::class, 'getReceiptsForVerification']);
+    Route::post('/receipts/{id}/verify', [MayorsOfficeController::class, 'verifyReceipt']);
+
+    // ✅ ✅ NEW: Cross-Department Usage Routes
+    Route::get('cross-department-usage', [MayorsOfficeController::class, 'getCrossDepartmentUsage']);
+    Route::get('cross-department-usage/{id}', [MayorsOfficeController::class, 'getCrossDepartmentUsageDetails']);
+     // ✅ NEW: Weekly allocation update
+    Route::put('/budget/weekly/{departmentId}', [BudgetPolicyController::class, 'updateWeeklyAllocation']);
+    
+    // ✅ NEW: Process surplus
+    Route::post('/budget/process-surplus/{departmentId}', [BudgetPolicyController::class, 'processSurplus']);
+    
+    // ✅ NEW: Get surplus history
+    Route::get('/budget/surplus-history', [BudgetPolicyController::class, 'getSurplusHistory']);
         Route::get('budget-periods', [BudgetPolicyController::class, 'getPeriods']);
-        Route::post('budget-periods/force-activate', [BudgetPolicyController::class, 'forceActivate']);
 
-        // ✅ ✅ NEW: Budget History & Summary Routes
-        Route::get('budget-history', [BudgetPolicyController::class, 'getBudgetHistory']);
-        Route::get('budget-summary', [BudgetPolicyController::class, 'getBudgetSummary']);
 
-        Route::get('/receipts/for-verification', [MayorsOfficeController::class, 'getReceiptsForVerification']);
-        Route::post('/receipts/{id}/verify', [MayorsOfficeController::class, 'verifyReceipt']);
     });
     // ============ DRIVER ============
     Route::middleware(['role:driver'])->prefix('driver')->group(function () {
@@ -255,4 +277,6 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/send', [NotificationController::class, 'store']);
         Route::post('/test', [NotificationController::class, 'testBroadcast']);
     });
+
+
 });

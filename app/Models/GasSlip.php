@@ -28,6 +28,9 @@ class GasSlip extends Model
         'reconciled_at',
         'receipt_acknowledged_by',
         'receipt_acknowledged_at',
+        'is_cross_department',
+    'original_department_id',
+    'cross_department_reason',
     ];
     
     protected $casts = [
@@ -39,6 +42,8 @@ class GasSlip extends Model
         'amount_released' => 'decimal:2',
         'budget_before' => 'decimal:2',
         'budget_after' => 'decimal:2',
+            'is_cross_department' => 'boolean',
+
     ];
 
     // ============ RELATIONSHIPS ============
