@@ -17,6 +17,7 @@ use App\Models\Vehicle;
 use App\Models\Driver;
 use App\Models\Department;
 use App\Models\TripTicketVehicleSnapshot;
+use App\Models\DeptBudgetPolicy;
 use App\Services\BudgetService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -56,7 +57,7 @@ class MayorsOfficeController extends Controller
             'total_budget_allocated' => $annualBudgetSummary['total_allocated'],
             'total_budget_used' => $annualBudgetSummary['total_used'],
             'total_budget_remaining' => $annualBudgetSummary['total_remaining'],
-            'pending_receipts' => FuelReceipt::whereHas('gasSlip', function($q) {
+            'pending_receipts' => FuelReceipt::whereHas('gasSlip', function ($q) {
                 $q->where('reconciliation_status', 'pending');
             })->count(),
             'cross_department_usage' => CrossDepartmentUsage::whereDate('created_at', Carbon::today())->count(),
@@ -75,7 +76,7 @@ class MayorsOfficeController extends Controller
     private function getAnnualBudgetSummary()
     {
         $year = Carbon::now()->year;
-        
+
         $budgets = AnnualBudget::where('fiscal_year', $year)
             ->where('status', 'active')
             ->get();
@@ -87,7 +88,7 @@ class MayorsOfficeController extends Controller
             'total_allocated' => $totalAllocated,
             'total_used' => $totalUsed,
             'total_remaining' => $totalAllocated - $totalUsed,
-            'departments' => $budgets->map(function($budget) {
+            'departments' => $budgets->map(function ($budget) {
                 return [
                     'department_id' => $budget->department_id,
                     'department_name' => $budget->department->department_name ?? 'Unknown',
@@ -107,7 +108,7 @@ class MayorsOfficeController extends Controller
     private function getTotalRemainingBudget()
     {
         $year = Carbon::now()->year;
-        
+
         $budgets = AnnualBudget::where('fiscal_year', $year)
             ->where('status', 'active')
             ->get();
@@ -127,70 +128,99 @@ class MayorsOfficeController extends Controller
     /**
      * Get pending tickets for fund release (pending_mayors_office status)
      */
-    public function getPendingTickets(Request $request)
-    {
-        try {
-            $user = $request->user();
+ public function getPendingTickets(Request $request)
+{
+    try {
+        $user = $request->user();
 
-            if (!$user->isMayorsOffice()) {
-                return response()->json(['message' => 'Unauthorized'], 403);
-            }
-
-            $tickets = TripTicket::with(['vehicle', 'department', 'driver.user', 'gasSlip.fuelReceipt'])
-                ->where('status', 'pending_mayors_office')
-                ->orderBy('submitted_at', 'asc')
-                ->get()
-                ->map(function ($ticket) {
-                    $fuelReceipt = $ticket->gasSlip?->fuelReceipt;
-                    
-                    // Get remaining budget for the department
-                    $remainingBudget = $this->budgetService->getRemainingBudget($ticket->department_id);
-                    
-                    return [
-                        'id' => $ticket->trip_ticket_id,
-                        'ticket_number' => $ticket->trip_ticket_number,
-                        'trip_date' => $ticket->trip_date,
-                        'destination' => $ticket->destination,
-                        'purpose' => $ticket->purpose,
-                        'charge_to' => $ticket->charge_to,
-                        'passenger_name' => $ticket->passenger_name,
-                        'status' => $ticket->status,
-                        'submitted_at' => $ticket->submitted_at,
-                        'has_insufficient_budget' => $remainingBudget < ($ticket->estimated_cost ?? 0),
-                        'budget_shortage' => max(0, ($ticket->estimated_cost ?? 0) - $remainingBudget),
-                        'estimated_cost' => $ticket->estimated_fuel_liters ? 
-                            ($ticket->estimated_fuel_liters * 88) : null,
-                        'department_id' => $ticket->department_id,
-                        'remaining_budget' => $remainingBudget,
-                        'has_receipt' => $fuelReceipt && ($fuelReceipt->liters_availed > 0 || $fuelReceipt->amount_on_receipt > 0),
-                        'receipt_status' => $ticket->gasSlip?->reconciliation_status ?? 'none',
-                        'vehicle' => $ticket->vehicle ? [
-                            'plate_number' => $ticket->vehicle->plate_number,
-                            'vehicle_model' => $ticket->vehicle->vehicle_model,
-                            'fuel_type' => $ticket->vehicle->fuel_type,
-                        ] : null,
-                        'driver' => $ticket->driver && $ticket->driver->user ? [
-                            'full_name' => $ticket->driver->user->full_name,
-                        ] : null,
-                        'department_name' => $ticket->department ? $ticket->department->department_name : null,
-                        'department_code' => $ticket->department ? $ticket->department->department_code : null,
-                        'is_mo_funded' => $ticket->created_by_mo_user_id !== null,
-                        'is_cross_department' => $ticket->gasSlip?->is_cross_department ?? false,
-                    ];
-                });
-
-            return response()->json([
-                'success' => true,
-                'data' => $tickets
-            ]);
-        } catch (\Exception $e) {
-            Log::error('Get pending tickets error: ' . $e->getMessage());
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to fetch tickets: ' . $e->getMessage()
-            ], 500);
+        if (!$user->isMayorsOffice()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
         }
+
+        $tickets = TripTicket::with(['vehicle', 'department', 'driver.user', 'gasSlip.fuelReceipt'])
+            ->where('status', 'pending_mayors_office')
+            ->orderBy('submitted_at', 'asc')
+            ->get()
+            ->map(function ($ticket) {
+                $fuelReceipt = $ticket->gasSlip?->fuelReceipt;
+
+                // ✅ Get remaining budget for the department
+                $remainingBudget = $this->budgetService->getRemainingBudget($ticket->department_id);
+                
+                // ✅ Get weekly remaining budget
+                $weeklyRemaining = $this->getWeeklyRemainingBudget($ticket->department_id);
+
+                return [
+                    'id' => $ticket->trip_ticket_id,
+                    'ticket_number' => $ticket->trip_ticket_number,
+                    'trip_date' => $ticket->trip_date,
+                    'destination' => $ticket->destination,
+                    'purpose' => $ticket->purpose,
+                    'charge_to' => $ticket->charge_to,
+                    'passenger_name' => $ticket->passenger_name,
+                    'status' => $ticket->status,
+                    'submitted_at' => $ticket->submitted_at,
+                    'has_insufficient_budget' => $remainingBudget < ($ticket->estimated_cost ?? 0),
+                    'budget_shortage' => max(0, ($ticket->estimated_cost ?? 0) - $remainingBudget),
+                    'estimated_cost' => $ticket->estimated_fuel_liters ?
+                        ($ticket->estimated_fuel_liters * 88) : null,
+                    'department_id' => $ticket->department_id,
+                    'remaining_budget' => $remainingBudget,
+                    'weekly_remaining' => $weeklyRemaining,  // ✅ NEW: Weekly remaining
+                    'has_receipt' => $fuelReceipt && ($fuelReceipt->liters_availed > 0 || $fuelReceipt->amount_on_receipt > 0),
+                    'receipt_status' => $ticket->gasSlip?->reconciliation_status ?? 'none',
+                    'vehicle' => $ticket->vehicle ? [
+                        'plate_number' => $ticket->vehicle->plate_number,
+                        'vehicle_model' => $ticket->vehicle->vehicle_model,
+                        'fuel_type' => $ticket->vehicle->fuel_type,
+                    ] : null,
+                    'driver' => $ticket->driver && $ticket->driver->user ? [
+                        'full_name' => $ticket->driver->user->full_name,
+                    ] : null,
+                    'department_name' => $ticket->department ? $ticket->department->department_name : null,
+                    'department_code' => $ticket->department ? $ticket->department->department_code : null,
+                    'is_mo_funded' => $ticket->created_by_mo_user_id !== null,
+                    'is_cross_department' => $ticket->gasSlip?->is_cross_department ?? false,
+                ];
+            });
+
+        return response()->json([
+            'success' => true,
+            'data' => $tickets
+        ]);
+    } catch (\Exception $e) {
+        Log::error('Get pending tickets error: ' . $e->getMessage());
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to fetch tickets: ' . $e->getMessage()
+        ], 500);
     }
+}
+/**
+ * ✅ Get weekly remaining budget for a department
+ */
+private function getWeeklyRemainingBudget($departmentId)
+{
+    $currentWeek = date('W');
+    $year = date('Y');
+    
+    $weeklyUsage = DB::table('weekly_budget_usage')
+        ->where('department_id', $departmentId)
+        ->where('week_number', $currentWeek)
+        ->where('year', $year)
+        ->first();
+    
+    if (!$weeklyUsage) {
+        // If no weekly usage, get from policy
+        $policy = DeptBudgetPolicy::where('department_id', $departmentId)->first();
+        return $policy ? (float) $policy->default_weekly_allocation : 0;
+    }
+    
+    $weeklyCeiling = (float) $weeklyUsage->weekly_allocation;
+    $weeklyUsed = (float) $weeklyUsage->amount_used;
+    
+    return $weeklyCeiling - $weeklyUsed;
+}
 
     /**
      * Get approved/funds issued tickets
@@ -260,176 +290,309 @@ class MayorsOfficeController extends Controller
         }
     }
 
-    /**
-     * Approve ticket and release funds (Updated with Annual Budget + Cross-Department)
-     */
-    public function approveTicket(Request $request, $id)
-    {
-        try {
-            $validator = Validator::make($request->all(), [
-                'amount_released' => 'required|numeric|min:0.01',
-                'charge_to_department_id' => 'nullable|exists:departments,department_id',
-                'is_cross_department' => 'nullable|boolean',
-                'cross_department_reason' => 'nullable|string|max:255',
-            ]);
+  /**
+ * Approve ticket and release funds (Updated with Annual Budget + Cross-Department)
+ */
+public function approveTicket(Request $request, $id)
+{
+    try {
+        $validator = Validator::make($request->all(), [
+            'amount_released' => 'required|numeric|min:0.01',
+            'charge_to_department_id' => 'nullable|exists:departments,department_id',
+            'is_cross_department' => 'nullable|boolean',
+            'cross_department_reason' => 'nullable|string|max:255',
+        ]);
 
-            if ($validator->fails()) {
-                return response()->json(['errors' => $validator->errors()], 422);
-            }
-
-            $user = $request->user();
-
-            if (!$user->isMayorsOffice()) {
-                return response()->json(['message' => 'Unauthorized'], 403);
-            }
-
-            $ticket = TripTicket::where('trip_ticket_id', $id)
-                ->where('status', 'pending_mayors_office')
-                ->first();
-
-            if (!$ticket) {
-                return response()->json(['message' => 'Ticket not found or not eligible for fund release'], 404);
-            }
-
-            $amountToRelease = $request->amount_released;
-            $chargeDepartmentId = $request->charge_to_department_id ?? $ticket->department_id;
-            $chargeDepartment = Department::find($chargeDepartmentId);
-
-            $isCrossDepartment = $request->is_cross_department ?? false;
-            $crossDepartmentReason = $request->cross_department_reason ?? null;
-            $isMoFundedTicket = $ticket->created_by_mo_user_id !== null;
-
-            // ✅ Check budget using Annual Budget
-            if (!$isMoFundedTicket) {
-                $remainingBudget = $this->budgetService->getRemainingBudget($chargeDepartmentId);
-
-                if ($remainingBudget < $amountToRelease && !$isCrossDepartment) {
-                    $shortage = $amountToRelease - $remainingBudget;
-
-                    return response()->json([
-                        'success' => false,
-                        'message' => "Insufficient budget in {$chargeDepartment->department_name}",
-                        'budget_info' => [
-                            'allocated' => AnnualBudget::where('department_id', $chargeDepartmentId)
-                                ->where('fiscal_year', Carbon::now()->year)
-                                ->value('annual_amount') ?? 0,
-                            'remaining' => $remainingBudget,
-                            'requested' => $amountToRelease,
-                            'shortage' => $shortage,
-                            'department_id' => $chargeDepartmentId,
-                            'department_name' => $chargeDepartment->department_name,
-                            'is_negative' => $remainingBudget < 0,
-                        ],
-                        'available_departments' => Department::all(),
-                        'suggestions' => [
-                            'select_other_department' => 'Select a different department to charge',
-                            'reduce_amount' => "Reduce the amount to ₱" . number_format($remainingBudget, 2),
-                            'use_mo_funded' => 'Or mark as MO-funded trip',
-                            'mark_cross_department' => 'Or mark as cross-department usage (for recording only)',
-                        ]
-                    ], 422);
-                }
-            }
-
-            DB::beginTransaction();
-
-            // Create gas slip with cross-department flags
-            $gasSlipData = [
-                'trip_ticket_id' => $id,
-                'created_by' => $user->user_id,
-                'amount_released' => $amountToRelease,
-                'reconciliation_status' => 'pending',
-                'is_cross_department' => $isCrossDepartment,
-                'original_department_id' => $isCrossDepartment ? $ticket->department_id : null,
-                'cross_department_reason' => $crossDepartmentReason,
-                'created_at' => now(),
-                'updated_at' => now(),
-            ];
-
-            // Get period ID (for backward compatibility)
-            $periodId = $this->getDefaultPeriodId($ticket->department_id);
-            $gasSlipData['period_id'] = $periodId;
-            $gasSlipData['budget_before'] = 0;
-            $gasSlipData['budget_after'] = 0;
-
-            $gasSlip = GasSlip::create($gasSlipData);
-
-            // ✅ Deduct from budget using BudgetService
-            if ($isMoFundedTicket) {
-                // MO Funded - no budget deduction
-                // Just log that it's MO funded
-                Log::info('MO Funded ticket created', [
-                    'ticket_id' => $id,
-                    'amount' => $amountToRelease,
-                ]);
-            } elseif ($isCrossDepartment) {
-                // Cross-department usage - deduct from the department being charged
-                $this->budgetService->deductBudget(
-                    $chargeDepartmentId, // The department being charged
-                    $amountToRelease,
-                    true, // is cross-department
-                    $ticket->department_id, // original department
-                    $crossDepartmentReason
-                );
-            } else {
-                // Normal deduction
-                $this->budgetService->deductBudget(
-                    $chargeDepartmentId,
-                    $amountToRelease
-                );
-            }
-
-            // Update ticket
-            $ticket->has_insufficient_budget = false;
-            $ticket->status = TripTicket::STATUS_FUNDS_ISSUED;
-            if ($chargeDepartmentId != $ticket->department_id) {
-                $ticket->charge_to_department_id = $chargeDepartmentId;
-            }
-            $ticket->save();
-
-            DB::commit();
-
-            $fundingSource = $isMoFundedTicket ? 'MO Funded' : 
-                            ($isCrossDepartment ? "Cross-Department: {$chargeDepartment->department_name}" : 
-                            "Charged to: {$chargeDepartment->department_name}");
-
-            $this->sendFundIssuedNotification($ticket, $amountToRelease, $fundingSource, $isCrossDepartment);
-
-            $responseMessage = $isMoFundedTicket 
-                ? "Funds released successfully (MO Funded - No department budget deduction)"
-                : ($isCrossDepartment 
-                    ? "Funds released successfully (Cross-Department Usage - For recording only)\n\n" .
-                      "⚠️ This fuel will be recorded under {$chargeDepartment->department_name}'s budget.\n" .
-                      "Reason: " . ($crossDepartmentReason ?? 'No reason provided') . "\n" .
-                      "No budget transfer was made."
-                    : "Funds released successfully from {$chargeDepartment->department_name} budget");
-
-            return response()->json([
-                'success' => true,
-                'message' => $responseMessage,
-                'data' => [
-                    'ticket_id' => $ticket->trip_ticket_id,
-                    'ticket_number' => $ticket->trip_ticket_number,
-                    'amount_released' => $amountToRelease,
-                    'gas_slip_id' => $gasSlip->gas_slip_id,
-                    'status' => $ticket->status,
-                    'funding_source' => $fundingSource,
-                    'charged_to_department' => $chargeDepartment->department_name,
-                    'is_mo_funded' => $isMoFundedTicket,
-                    'is_cross_department' => $isCrossDepartment,
-                    'cross_department_reason' => $crossDepartmentReason,
-                    'remaining_budget' => $this->budgetService->getRemainingBudget($chargeDepartmentId),
-                ]
-            ]);
-        } catch (\Exception $e) {
-            DB::rollBack();
-            Log::error('Approve ticket error: ' . $e->getMessage());
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to release funds: ' . $e->getMessage()
-            ], 500);
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
         }
+
+        $user = $request->user();
+
+        if (!$user->isMayorsOffice()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $ticket = TripTicket::where('trip_ticket_id', $id)
+            ->where('status', 'pending_mayors_office')
+            ->first();
+
+        if (!$ticket) {
+            return response()->json(['message' => 'Ticket not found or not eligible for fund release'], 404);
+        }
+
+        $amountToRelease = $request->amount_released;
+        $chargeDepartmentId = $request->charge_to_department_id ?? $ticket->department_id;
+        $chargeDepartment = Department::find($chargeDepartmentId);
+
+        $isCrossDepartment = $request->is_cross_department ?? false;
+        $crossDepartmentReason = $request->cross_department_reason ?? null;
+        $isMoFundedTicket = $ticket->created_by_mo_user_id !== null;
+
+        $budgetBefore = 0;
+        $budgetAfter = 0;
+        $periodId = null;
+        $weeklyRemaining = 0;
+
+        // ✅ CHECK AND DEDUCT BUDGET
+        if (!$isMoFundedTicket) {
+            // ✅ 1. GET WEEKLY REMAINING BUDGET
+            $weeklyRemaining = $this->getWeeklyRemainingBudget($chargeDepartmentId);
+            
+            // ✅ 2. GET ANNUAL REMAINING BUDGET
+            $annualRemaining = $this->budgetService->getRemainingBudget($chargeDepartmentId);
+
+            // ✅ 3. CHECK WEEKLY BUDGET FIRST (Primary Check)
+            if ($weeklyRemaining < $amountToRelease && !$isCrossDepartment) {
+                $shortage = $amountToRelease - $weeklyRemaining;
+
+                return response()->json([
+                    'success' => false,
+                    'message' => "⚠️ Insufficient Weekly Budget!\n\n" .
+                                "Requested: ₱" . number_format($amountToRelease, 2) . "\n" .
+                                "Weekly Remaining: ₱" . number_format($weeklyRemaining, 2) . "\n" .
+                                "Shortage: ₱" . number_format($shortage, 2) . "\n\n" .
+                                "💡 Suggestions:\n" .
+                                "• Reduce the amount to ₱" . number_format($weeklyRemaining, 2) . "\n" .
+                                "• Mark as cross-department usage (for recording only)\n" .
+                                "• Wait for next week's allocation",
+                    'budget_info' => [
+                        'weekly_remaining' => (float) $weeklyRemaining,
+                        'requested' => $amountToRelease,
+                        'shortage' => $shortage,
+                        'annual_remaining' => (float) $annualRemaining,
+                        'department_id' => $chargeDepartmentId,
+                        'department_name' => $chargeDepartment->department_name,
+                    ],
+                    'suggestions' => [
+                        'reduce_amount' => "Reduce the amount to ₱" . number_format($weeklyRemaining, 2),
+                        'mark_cross_department' => 'Or mark as cross-department usage (for recording only)',
+                        'wait_next_week' => 'Wait for next week\'s allocation',
+                    ]
+                ], 422);
+            }
+
+            // ✅ 4. CHECK ANNUAL BUDGET (Secondary Check)
+            if ($annualRemaining < $amountToRelease && !$isCrossDepartment) {
+                $shortage = $amountToRelease - $annualRemaining;
+
+                return response()->json([
+                    'success' => false,
+                    'message' => "⚠️ Insufficient Annual Budget!\n\n" .
+                                "Requested: ₱" . number_format($amountToRelease, 2) . "\n" .
+                                "Annual Remaining: ₱" . number_format($annualRemaining, 2) . "\n" .
+                                "Shortage: ₱" . number_format($shortage, 2) . "\n\n" .
+                                "💡 Suggestions:\n" .
+                                "• Add more budget to annual allocation\n" .
+                                "• Reduce the amount to ₱" . number_format($annualRemaining, 2),
+                    'budget_info' => [
+                        'annual_remaining' => (float) $annualRemaining,
+                        'requested' => $amountToRelease,
+                        'shortage' => $shortage,
+                        'weekly_remaining' => (float) $weeklyRemaining,
+                        'department_id' => $chargeDepartmentId,
+                        'department_name' => $chargeDepartment->department_name,
+                    ],
+                    'suggestions' => [
+                        'add_budget' => 'Add more budget to annual allocation',
+                        'reduce_amount' => "Reduce the amount to ₱" . number_format($annualRemaining, 2),
+                    ]
+                ], 422);
+            }
+
+            // ✅ 5. PROCEED WITH DEDUCTION (Both checks passed)
+            $annualBudget = AnnualBudget::where('department_id', $chargeDepartmentId)
+                ->where('fiscal_year', Carbon::now()->year)
+                ->first();
+            $budgetBefore = $annualBudget ? (float) $annualBudget->annual_amount : 0;
+
+            // ✅ Deduct from weekly budget
+            $this->deductWeeklyBudget($chargeDepartmentId, $amountToRelease);
+
+            // ✅ Deduct from annual budget
+            $deductionResult = $this->budgetService->deductBudget(
+                $chargeDepartmentId,
+                $amountToRelease,
+                $isCrossDepartment,
+                $isCrossDepartment ? $ticket->department_id : null,
+                $crossDepartmentReason
+            );
+
+            $annualBudget = AnnualBudget::where('department_id', $chargeDepartmentId)
+                ->where('fiscal_year', Carbon::now()->year)
+                ->first();
+            $budgetAfter = $annualBudget ? (float) $annualBudget->annual_amount : 0;
+
+            $periodId = $this->getOrCreatePeriodId($chargeDepartmentId);
+        }
+
+        DB::beginTransaction();
+
+        // ✅ Create gas slip
+        $gasSlipData = [
+            'trip_ticket_id' => $id,
+            'created_by' => $user->user_id,
+            'amount_released' => $amountToRelease,
+            'reconciliation_status' => 'pending',
+            'is_cross_department' => $isCrossDepartment,
+            'original_department_id' => $isCrossDepartment ? $ticket->department_id : null,
+            'cross_department_reason' => $crossDepartmentReason,
+            'period_id' => $periodId ?? $this->getOrCreatePeriodId($chargeDepartmentId),
+            'budget_before' => $budgetBefore,
+            'budget_after' => $budgetAfter,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ];
+
+        $gasSlip = GasSlip::create($gasSlipData);
+
+        // ✅ Log cross-department usage if applicable
+        if ($isCrossDepartment) {
+            CrossDepartmentUsage::create([
+                'from_department_id' => $ticket->department_id,
+                'to_department_id' => $chargeDepartmentId,
+                'gas_slip_id' => $gasSlip->gas_slip_id,
+                'amount' => $amountToRelease,
+                'reason' => $crossDepartmentReason,
+                'created_at' => now(),
+            ]);
+        }
+
+        // ✅ Update ticket
+        $ticket->has_insufficient_budget = false;
+        $ticket->status = TripTicket::STATUS_FUNDS_ISSUED;
+        if ($chargeDepartmentId != $ticket->department_id) {
+            $ticket->charge_to_department_id = $chargeDepartmentId;
+        }
+        $ticket->save();
+
+        DB::commit();
+
+        // ✅ Get updated remaining budgets
+        $newWeeklyRemaining = $this->getWeeklyRemainingBudget($chargeDepartmentId);
+        $newAnnualRemaining = $this->budgetService->getRemainingBudget($chargeDepartmentId);
+        $usedAmount = $this->budgetService->getUsedAmount($chargeDepartmentId);
+
+        $fundingSource = $isMoFundedTicket ? 'MO Funded' : 
+                        ($isCrossDepartment ? "Cross-Department: {$chargeDepartment->department_name}" : 
+                        "Charged to: {$chargeDepartment->department_name}");
+
+        $this->sendFundIssuedNotification($ticket, $amountToRelease, $fundingSource, $isCrossDepartment);
+
+        $responseMessage = $isMoFundedTicket 
+            ? "✅ Funds released successfully (MO Funded - No department budget deduction)"
+            : ($isCrossDepartment 
+                ? "✅ Funds released successfully (Cross-Department Usage - For recording only)"
+                : "✅ Funds released successfully from {$chargeDepartment->department_name} budget\n" .
+                  "Weekly Remaining: ₱" . number_format($newWeeklyRemaining, 2) . "\n" .
+                  "Annual Remaining: ₱" . number_format($newAnnualRemaining, 2) . "\n" .
+                  "Total Used: ₱" . number_format($usedAmount, 2));
+
+        return response()->json([
+            'success' => true,
+            'message' => $responseMessage,
+            'data' => [
+                'ticket_id' => $ticket->trip_ticket_id,
+                'ticket_number' => $ticket->trip_ticket_number,
+                'amount_released' => $amountToRelease,
+                'gas_slip_id' => $gasSlip->gas_slip_id,
+                'status' => $ticket->status,
+                'funding_source' => $fundingSource,
+                'charged_to_department' => $chargeDepartment->department_name,
+                'is_mo_funded' => $isMoFundedTicket,
+                'is_cross_department' => $isCrossDepartment,
+                'cross_department_reason' => $crossDepartmentReason,
+                'budget_before' => $budgetBefore,
+                'budget_after' => $budgetAfter,
+                'weekly_remaining_before' => $weeklyRemaining,
+                'weekly_remaining_after' => $newWeeklyRemaining,
+                'annual_remaining_before' => $annualRemaining ?? 0,
+                'annual_remaining_after' => $newAnnualRemaining,
+                'total_used' => $usedAmount,
+            ]
+        ]);
+    } catch (\Exception $e) {
+        DB::rollBack();
+        Log::error('Approve ticket error: ' . $e->getMessage());
+        Log::error($e->getTraceAsString());
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to release funds: ' . $e->getMessage()
+        ], 500);
     }
+}
+
+/**
+ * ✅ Deduct from weekly budget
+ */
+private function deductWeeklyBudget($departmentId, $amount)
+{
+    $currentWeek = date('W');
+    $year = date('Y');
+    
+    $weeklyUsage = DB::table('weekly_budget_usage')
+        ->where('department_id', $departmentId)
+        ->where('week_number', $currentWeek)
+        ->where('year', $year)
+        ->first();
+    
+    if ($weeklyUsage) {
+        DB::table('weekly_budget_usage')
+            ->where('usage_id', $weeklyUsage->usage_id)
+            ->update([
+                'amount_used' => $weeklyUsage->amount_used + $amount,
+                'updated_at' => now()
+            ]);
+    } else {
+        // Create if not exists
+        $policy = DeptBudgetPolicy::where('department_id', $departmentId)->first();
+        $weeklyCeiling = $policy ? $policy->default_weekly_allocation : 0;
+        
+        DB::table('weekly_budget_usage')->insert([
+            'department_id' => $departmentId,
+            'week_number' => $currentWeek,
+            'year' => $year,
+            'week_start' => Carbon::now()->startOfWeek()->toDateString(),
+            'week_end' => Carbon::now()->endOfWeek()->toDateString(),
+            'weekly_allocation' => $weeklyCeiling,
+            'amount_used' => $amount,
+            'created_at' => now(),
+            'updated_at' => now()
+        ]);
+    }
+}
+
+
+    /**
+     * ✅ Create a new budget period for a department
+     */
+    private function createBudgetPeriod($departmentId)
+{
+    $policy = DeptBudgetPolicy::where('department_id', $departmentId)->first();
+    $allocatedAmount = $policy ? $policy->default_weekly_allocation : 1000;
+    $weekStart = Carbon::now()->startOfWeek()->toDateString();
+    
+    $period = DeptBudgetPeriod::create([
+        'department_id' => $departmentId,
+        'week_start' => $weekStart,
+        'allocated_amount' => $allocatedAmount,
+        'remaining_balance' => $allocatedAmount,
+        'status' => 'active',
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+    
+    Log::info('Created new budget period', [
+        'department_id' => $departmentId,
+        'period_id' => $period->period_id,
+        'allocated_amount' => $allocatedAmount,
+    ]);
+    
+    return $period;
+}
+
+
+
 
     /**
      * Get default period ID for a department (backward compatibility)
@@ -604,7 +767,7 @@ class MayorsOfficeController extends Controller
             }
 
             $year = Carbon::now()->year;
-            
+
             $budgets = AnnualBudget::with('department')
                 ->where('fiscal_year', $year)
                 ->where('status', 'active')
@@ -625,7 +788,7 @@ class MayorsOfficeController extends Controller
                     'remaining_amount' => $budget->remaining_amount,
                     'is_negative' => $budget->remaining_amount < 0,
                     'utilization_percentage' => $budget->utilization_percentage,
-                    'weekly_usage' => $weeklyUsage->map(function($week) {
+                    'weekly_usage' => $weeklyUsage->map(function ($week) {
                         return [
                             'week_number' => $week->week_number,
                             'week_start' => $week->week_start,
@@ -680,7 +843,64 @@ class MayorsOfficeController extends Controller
 
     public function getReceiptsForVerification(Request $request)
     {
-        // ... (keep existing code) ...
+        try {
+            $user = $request->user();
+            if (!$user->isMayorsOffice()) {
+                return response()->json(['message' => 'Unauthorized'], 403);
+            }
+
+            $receipts = DB::table('fuel_receipt as fr')
+                ->join('gas_slip as gs', 'fr.gas_slip_id', '=', 'gs.gas_slip_id')
+                ->join('trip_ticket as tt', 'gs.trip_ticket_id', '=', 'tt.trip_ticket_id')
+                ->join('vehicles as v', 'tt.vehicle_id', '=', 'v.vehicle_id')
+                // ✅ FIX: Join drivers table first, then users
+                ->join('drivers as d', 'tt.driver_id', '=', 'd.driver_id')
+                ->join('users as u_driver', 'd.user_id', '=', 'u_driver.user_id')
+                ->join('departments as dept', 'tt.department_id', '=', 'dept.department_id')
+                ->select(
+                    'fr.fuel_receipt_id as id',
+                    'fr.invoice_number',
+                    'fr.unit_price',
+                    'tt.trip_ticket_number as ticket_number',
+                    'u_driver.first_name',
+                    'u_driver.last_name',
+                    DB::raw("CONCAT(u_driver.first_name, ' ', u_driver.last_name) as driver_name"),
+                    'v.plate_number',
+                    'dept.department_name',
+                    'fr.liters_availed as liters',
+                    'fr.amount_on_receipt as amount',
+                    'fr.receipt_photo_path as receipt_url',
+                    'fr.receipt_uploaded_at as uploaded_at',
+                    'fr.gps_distance_km',
+                    'gs.reconciliation_status as status',
+                    'tt.trip_date',
+                    'v.fuel_type'
+                )
+                ->where(function ($query) {
+                    $query->where('fr.liters_availed', '>', 0)
+                        ->orWhere('fr.amount_on_receipt', '>', 0);
+                })
+                ->orderBy('fr.created_at', 'desc')
+                ->get()
+                ->map(function ($receipt) {
+                    if ($receipt->receipt_url && !str_starts_with($receipt->receipt_url, 'http')) {
+                        $receipt->receipt_url = asset('storage/' . $receipt->receipt_url);
+                    }
+                    return $receipt;
+                });
+
+            return response()->json([
+                'success' => true,
+                'data' => $receipts,
+                'total' => $receipts->count()
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Get receipts for verification error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch receipts: ' . $e->getMessage()
+            ], 500);
+        }
     }
 
     /**
@@ -688,7 +908,100 @@ class MayorsOfficeController extends Controller
      */
     public function verifyReceipt(Request $request, $id)
     {
-        // ... (keep existing code) ...
+        try {
+            $user = $request->user();
+            if (!$user->isMayorsOffice()) {
+                return response()->json(['message' => 'Unauthorized'], 403);
+            }
+
+            // ✅ Log incoming data for debugging
+            Log::info('Verifying receipt', [
+                'receipt_id' => $id,
+                'data' => $request->all(),
+            ]);
+
+            // ✅ Validate the incoming data
+            $validator = Validator::make($request->all(), [
+                'invoice_number' => 'nullable|string|max:50',
+                'liters_availed' => 'required|numeric|min:0.01',
+                'unit_price' => 'required|numeric|min:0.01',
+                'amount_on_receipt' => 'required|numeric|min:0.01',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation failed',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            // ✅ Find the fuel receipt
+            $fuelReceipt = FuelReceipt::findOrFail($id);
+            $gasSlip = GasSlip::findOrFail($fuelReceipt->gas_slip_id);
+
+            if ($gasSlip->reconciliation_status === 'verified') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'This receipt has already been verified'
+                ], 400);
+            }
+
+            DB::beginTransaction();
+
+            // ✅ Update fuel receipt with editable fields
+            if ($request->has('invoice_number')) {
+                $fuelReceipt->invoice_number = $request->invoice_number;
+            }
+            $fuelReceipt->liters_availed = $request->liters_availed;
+            $fuelReceipt->unit_price = $request->unit_price;
+            $fuelReceipt->amount_on_receipt = $request->amount_on_receipt;
+            $fuelReceipt->save();
+
+            // ✅ Update gas slip reconciliation status
+            $gasSlip->reconciliation_status = 'verified';
+            $gasSlip->reconciled_by = $user->user_id;
+            $gasSlip->reconciled_at = now();
+            $gasSlip->save();
+
+            DB::commit();
+
+            Log::info('Receipt verified with edits', [
+                'receipt_id' => $id,
+                'verified_by' => $user->user_id,
+                'invoice_number' => $request->invoice_number,
+                'liters_availed' => $request->liters_availed,
+                'unit_price' => $request->unit_price,
+                'amount_on_receipt' => $request->amount_on_receipt,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Receipt verified successfully',
+                'data' => [
+                    'receipt_id' => $id,
+                    'gas_slip_id' => $gasSlip->gas_slip_id,
+                    'status' => $gasSlip->reconciliation_status,
+                    'invoice_number' => $fuelReceipt->invoice_number,
+                    'liters_availed' => $fuelReceipt->liters_availed,
+                    'unit_price' => $fuelReceipt->unit_price,
+                    'amount_on_receipt' => $fuelReceipt->amount_on_receipt,
+                ]
+            ]);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Receipt not found'
+            ], 404);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Verify receipt error: ' . $e->getMessage());
+            Log::error($e->getTraceAsString());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to verify receipt: ' . $e->getMessage()
+            ], 500);
+        }
     }
 
     // ============ HELPER METHODS ============
@@ -696,7 +1009,7 @@ class MayorsOfficeController extends Controller
     private function getDepartmentBudgetInfo($departmentId)
     {
         $year = Carbon::now()->year;
-        
+
         $budget = AnnualBudget::where('department_id', $departmentId)
             ->where('fiscal_year', $year)
             ->first();
@@ -738,7 +1051,7 @@ class MayorsOfficeController extends Controller
 
         if ($driver) {
             $message = "Funds of ₱{$amount} have been released for trip ticket {$ticket->trip_ticket_number} ({$fundingSource})";
-            
+
             if ($isCrossDepartment) {
                 $message .= "\n\n⚠️ Note: This is a cross-department fuel usage.\n";
                 $message .= "This is for recording purposes only. No budget transfer was made.";
@@ -758,7 +1071,7 @@ class MayorsOfficeController extends Controller
         // Also notify GSO and Mayor's Office about cross-department usage
         if ($isCrossDepartment) {
             $adminUsers = User::whereIn('role', ['gso_office', 'mayors_office'])->get();
-            
+
             foreach ($adminUsers as $admin) {
                 Notification::create([
                     'recipient_user_id' => $admin->user_id,
@@ -797,7 +1110,7 @@ class MayorsOfficeController extends Controller
             }
 
             $year = Carbon::now()->year;
-            
+
             $budget = AnnualBudget::where('department_id', $departmentId)
                 ->where('fiscal_year', $year)
                 ->first();
@@ -843,99 +1156,98 @@ class MayorsOfficeController extends Controller
     }
 
     public function getAllDepartmentsWithBudget(Request $request)
-{
-    try {
-        $user = $request->user();
+    {
+        try {
+            $user = $request->user();
 
-        if (!$user->isMayorsOffice()) {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
-
-        $year = Carbon::now()->year;
-        
-        $departments = Department::select('department_id', 'department_name', 'department_code')
-            ->orderBy('department_name')
-            ->get();
-
-        $departmentsWithBudget = $departments->map(function ($department) use ($year) {
-            // ✅ Get annual budget
-            $budget = AnnualBudget::where('department_id', $department->department_id)
-                ->where('fiscal_year', $year)
-                ->first();
-            
-            // ✅ Get current week usage
-            $currentWeek = WeeklyBudgetUsage::where('department_id', $department->department_id)
-                ->where('week_number', date('W'))
-                ->where('year', $year)
-                ->first();
-            
-            // ✅ Get policy (fallback)
-            $policy = DB::table('dept_budget_policy')
-                ->where('department_id', $department->department_id)
-                ->first();
-
-            if ($budget) {
-                // ✅ Weekly allocation from current week or policy
-                $weeklyAllocation = 0;
-                $weeklyUsed = 0;
-                
-                if ($currentWeek) {
-                    $weeklyAllocation = (float) $currentWeek->weekly_allocation;
-                    $weeklyUsed = (float) $currentWeek->amount_used;
-                } elseif ($policy) {
-                    $weeklyAllocation = (float) $policy->default_weekly_allocation;
-                }
-                
-                return [
-                    'department_id' => $department->department_id,
-                    'department_name' => $department->department_name,
-                    'department_code' => $department->department_code,
-                    // ✅ ANNUAL BUDGET (Primary)
-                    'annual_amount' => (float) $budget->annual_amount,
-                    'used_amount' => (float) $budget->used_amount,
-                    'remaining_amount' => (float) $budget->remaining_amount,
-                    // ✅ WEEKLY ALLOCATION
-                    'weekly_allocation' => $weeklyAllocation,
-                    'weekly_used' => $weeklyUsed,
-                    // ✅ Other fields
-                    'has_budget' => true,
-                    'budget_type' => 'annual',
-                    'fiscal_year' => $budget->fiscal_year,
-                    'utilization_percentage' => $budget->utilization_percentage,
-                    'status' => $budget->status,
-                ];
-            } else {
-                return [
-                    'department_id' => $department->department_id,
-                    'department_name' => $department->department_name,
-                    'department_code' => $department->department_code,
-                    'annual_amount' => 0,
-                    'used_amount' => 0,
-                    'remaining_amount' => 0,
-                    'weekly_allocation' => 0,
-                    'weekly_used' => 0,
-                    'has_budget' => false,
-                    'budget_type' => 'annual',
-                    'fiscal_year' => $year,
-                    'utilization_percentage' => 0,
-                    'status' => 'inactive',
-                ];
+            if (!$user->isMayorsOffice()) {
+                return response()->json(['message' => 'Unauthorized'], 403);
             }
-        });
 
-        return response()->json([
-            'success' => true,
-            'data' => $departmentsWithBudget
-        ]);
-        
-    } catch (\Exception $e) {
-        Log::error('Get all departments with budget error: ' . $e->getMessage());
-        return response()->json([
-            'success' => false,
-            'message' => 'Failed to fetch departments: ' . $e->getMessage()
-        ], 500);
+            $year = Carbon::now()->year;
+
+            $departments = Department::select('department_id', 'department_name', 'department_code')
+                ->orderBy('department_name')
+                ->get();
+
+            $departmentsWithBudget = $departments->map(function ($department) use ($year) {
+                // ✅ Get annual budget
+                $budget = AnnualBudget::where('department_id', $department->department_id)
+                    ->where('fiscal_year', $year)
+                    ->first();
+
+                // ✅ Get current week usage
+                $currentWeek = WeeklyBudgetUsage::where('department_id', $department->department_id)
+                    ->where('week_number', date('W'))
+                    ->where('year', $year)
+                    ->first();
+
+                // ✅ Get policy (fallback)
+                $policy = DB::table('dept_budget_policy')
+                    ->where('department_id', $department->department_id)
+                    ->first();
+
+                if ($budget) {
+                    // ✅ Weekly allocation from current week or policy
+                    $weeklyAllocation = 0;
+                    $weeklyUsed = 0;
+
+                    if ($currentWeek) {
+                        $weeklyAllocation = (float) $currentWeek->weekly_allocation;
+                        $weeklyUsed = (float) $currentWeek->amount_used;
+                    } elseif ($policy) {
+                        $weeklyAllocation = (float) $policy->default_weekly_allocation;
+                    }
+
+                    return [
+                        'department_id' => $department->department_id,
+                        'department_name' => $department->department_name,
+                        'department_code' => $department->department_code,
+                        // ✅ ANNUAL BUDGET (Primary)
+                        'annual_amount' => (float) $budget->annual_amount,
+                        'used_amount' => (float) $budget->used_amount,
+                        'remaining_amount' => (float) $budget->remaining_amount,
+                        // ✅ WEEKLY ALLOCATION
+                        'weekly_allocation' => $weeklyAllocation,
+                        'weekly_used' => $weeklyUsed,
+                        // ✅ Other fields
+                        'has_budget' => true,
+                        'budget_type' => 'annual',
+                        'fiscal_year' => $budget->fiscal_year,
+                        'utilization_percentage' => $budget->utilization_percentage,
+                        'status' => $budget->status,
+                    ];
+                } else {
+                    return [
+                        'department_id' => $department->department_id,
+                        'department_name' => $department->department_name,
+                        'department_code' => $department->department_code,
+                        'annual_amount' => 0,
+                        'used_amount' => 0,
+                        'remaining_amount' => 0,
+                        'weekly_allocation' => 0,
+                        'weekly_used' => 0,
+                        'has_budget' => false,
+                        'budget_type' => 'annual',
+                        'fiscal_year' => $year,
+                        'utilization_percentage' => 0,
+                        'status' => 'inactive',
+                    ];
+                }
+            });
+
+            return response()->json([
+                'success' => true,
+                'data' => $departmentsWithBudget
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Get all departments with budget error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch departments: ' . $e->getMessage()
+            ], 500);
+        }
     }
-}
 
     public function getAllDepartmentsForSelector(Request $request)
     {
@@ -962,4 +1274,19 @@ class MayorsOfficeController extends Controller
             ], 500);
         }
     }
+
+  private function getOrCreatePeriodId($departmentId)
+{
+    $period = DeptBudgetPeriod::where('department_id', $departmentId)
+        ->where('status', 'active')
+        ->first();
+    
+    if ($period) {
+        return $period->period_id;  // ✅ Returns int
+    }
+    
+    $period = $this->createBudgetPeriod($departmentId);
+    return $period->period_id;  // ✅ Returns int
+}
+
 }

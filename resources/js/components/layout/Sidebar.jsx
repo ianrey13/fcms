@@ -200,8 +200,15 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
             { name: "Users", href: "/admin/users", icon: Users },
             { name: "Vehicles", href: "/admin/vehicles", icon: Car },
             { name: "System Settings", href: "/admin/settings", icon: Settings },
+                 {
+  name: "Calendar Year",
+  icon: Calendar,
+  href: "/gso/annual-budget",
+  roles: ["gso_office"],
+},
           ],
         },
+   
       ],
       mayors_office: [
   { name: "Dashboard", href: "/mo/dashboard", icon: LayoutDashboard },

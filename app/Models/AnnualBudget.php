@@ -13,45 +13,58 @@ class AnnualBudget extends Model
         'department_id',
         'fiscal_year',
         'annual_amount',
+        'weekly_ceiling',
         'used_amount',
         'status',
     ];
     
     protected $casts = [
         'annual_amount' => 'decimal:2',
+        'weekly_ceiling' => 'decimal:2',
         'used_amount' => 'decimal:2',
         'remaining_amount' => 'decimal:2',
-        'fiscal_year' => 'integer',
+        'available_amount' => 'decimal:2',
     ];
     
-    // Relationships
     public function department()
     {
-        return $this->belongsTo(Department::class, 'department_id', 'department_id');
+        return $this->belongsTo(Department::class, 'department_id');
     }
     
-    // Scopes
-    public function scopeActive($query)
+    public function fiscalYear()
     {
-        return $query->where('status', 'active');
+        return $this->belongsTo(FiscalYear::class, 'fiscal_year', 'year');
     }
     
-    public function scopeForYear($query, $year)
+    /**
+     * Get remaining amount (Annual - Used)
+     */
+    public function getRemainingAmountAttribute()
     {
-        return $query->where('fiscal_year', $year);
+        return $this->annual_amount - $this->used_amount;
     }
     
-    // Helper Methods
-    public function getUtilizationPercentageAttribute()
+    /**
+     * Get available amount (Remaining - Total Weekly Allocations)
+     */
+    public function getAvailableAmountAttribute()
     {
-        if ($this->annual_amount == 0) {
-            return 0;
-        }
-        return round(($this->used_amount / $this->annual_amount) * 100, 2);
+        $totalWeeklyAllocated = DB::table('weekly_budget_usage')
+            ->where('department_id', $this->department_id)
+            ->where('year', $this->fiscal_year)
+            ->sum('weekly_allocation');
+            
+        return $this->remaining_amount - $totalWeeklyAllocated;
     }
     
-    public function getIsOverBudgetAttribute()
+    /**
+     * Get total weekly allocations for this year
+     */
+    public function getTotalWeeklyAllocationsAttribute()
     {
-        return $this->used_amount > $this->annual_amount;
+        return DB::table('weekly_budget_usage')
+            ->where('department_id', $this->department_id)
+            ->where('year', $this->fiscal_year)
+            ->sum('weekly_allocation');
     }
 }

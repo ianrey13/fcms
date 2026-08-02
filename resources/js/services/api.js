@@ -80,7 +80,7 @@ export const tripTicketAPI = {
     api.post("/trip-tickets/check-budget", data),
 };
 
-// ============ GSO API (Superadmin Equivalent) ============
+// ============ GSO API ============
 export const gsoAPI = {
   // Dashboard
   getDashboard: () => api.get("/gso/dashboard"),
@@ -108,7 +108,7 @@ export const gsoAPI = {
   // Signature for GSO
   getSignature: (id) => api.get(`/gso/users/${id}/signature`),
 
-  // Fuel Receipts (now under admin prefix)
+  // Fuel Receipts
   getFuelReceipts: (params) => api.get("/admin/fuel-receipts", { params }),
   getFuelReceipt: (id) => api.get(`/admin/fuel-receipts/${id}`),
   recordReceipt: (data) => {
@@ -123,19 +123,35 @@ export const gsoAPI = {
     });
   },
 
-  // Completed Trips (now under admin prefix)
+  // Completed Trips
   getCompletedTrips: (params) => api.get("/admin/completed-trips", { params }),
 
-  // Get trips with GPS data for dashboard
+  // GPS
   getTripsWithGPS: (params) => api.get("/gso/trips/with-gps", { params }),
 
-   // ✅ NEW: Get annual budget overview for GSO
-  getAnnualBudgetOverview: (params) => 
+  // Budget Overview
+  getBudgetOverview: (params) => 
     api.get("/gso/budget-overview", { params }),
-
-  // ✅ NEW: Get cross-department usage for GSO
   getCrossDepartmentUsage: (params) => 
     api.get("/gso/cross-department-usage", { params }),
+
+  // ============================================================
+  // ✅ FISCAL YEAR MANAGEMENT (GSO)
+  // ============================================================
+  getFiscalYears: () => api.get("/admin/fiscal-years"),
+  addFiscalYear: (data) => api.post("/admin/fiscal-years", data),
+  toggleFiscalYear: (id) => api.patch(`/admin/fiscal-years/${id}/toggle`),
+  deleteFiscalYear: (id) => api.delete(`/admin/fiscal-years/${id}`),
+
+  // ============================================================
+  // ✅ ANNUAL BUDGET (GSO - View/Delete only)
+  // ============================================================
+  getAnnualBudgets: (params) => api.get("/admin/annual-budgets", { params }),
+  getBudgetYears: () => api.get("/admin/annual-budgets/years"),
+  getBudgetSummary: (params) => api.get("/admin/annual-budgets/summary", { params }),
+  deleteAnnualBudget: (id) => api.delete(`/admin/annual-budgets/${id}`),
+  getDepartmentsWithoutBudget: (params) => 
+    api.get("/admin/annual-budgets/departments-without-budget", { params }),
 };
 
 // ============ MAYOR'S OFFICE API ============
@@ -172,7 +188,7 @@ export const mayorsOfficeAPI = {
   removeMORequest: (requestId) =>
     api.delete(`/mayors-office/budget-assistance/request/${requestId}`),
 
-  // Budget Policies (Mayor's Office can manage)
+  // Budget Policies
   getBudgetPolicies: (params) => api.get('/mayors-office/budget-policies', { params }),
   getBudgetPolicy: (departmentId) => api.get(`/mayors-office/budget-policies/${departmentId}`),
   createBudgetPolicy: (data) => api.post('/mayors-office/budget-policies', data),
@@ -186,61 +202,67 @@ export const mayorsOfficeAPI = {
   verifyReceipt: (receiptId, data) => 
     api.post(`/mayors-office/receipts/${receiptId}/verify`, data),
 
+  // Budget History
   getBudgetHistory: (params) => 
     api.get('/mayors-office/budget-history', { params }),
-    
   getBudgetSummary: () => 
     api.get('/mayors-office/budget-summary'),
 
   // ============================================================
-  // ✅ NEW: Annual Budget Methods
+  // ✅ FISCAL YEARS (MO - View only)
+  // ============================================================
+  getFiscalYears: () => api.get("/mayors-office/fiscal-years"),
+  getActiveFiscalYears: () => api.get("/mayors-office/fiscal-years/active"),
+
+  // ============================================================
+  // ✅ ANNUAL BUDGET (MO - Set budgets) - FIXED
   // ============================================================
   
-  // ✅ CREATE Annual Budget (NEW)
-  createAnnualBudget: (data) => api.post('/mayors-office/annual-budget', data),
+  // ✅ Create/Update annual budget (POST without /set)
+  setAnnualBudget: (data) => 
+    api.post('/mayors-office/annual-budgets', data),
   
-  // Get annual budget overview for all departments
-  getAnnualBudgetOverview: (params) => 
-    api.get("/mayors-office/budget-overview", { params }),
-
-  // Get cross-department usage records
-  getCrossDepartmentUsage: (params) => 
-    api.get("/mayors-office/cross-department-usage", { params }),
-
-  // Update annual budget for a department
-  updateAnnualBudget: (departmentId, data) => 
-    api.put(`/mayors-office/budget/${departmentId}`, data),
-
-  // Get department annual budget details
+  // ✅ Add additional budget (Mayor's Memo)
+  addAnnualBudget: (data) => 
+    api.post('/mayors-office/annual-budgets/add', data),
+  
+  // Get budgets by year
+  getAnnualBudgetsByYear: (year) => 
+    api.get(`/mayors-office/annual-budgets/year/${year}`),
+  
+  // Bulk update
+  bulkUpdateAnnualBudgets: (data) => 
+    api.post('/mayors-office/annual-budgets/bulk', data),
+  
+  // Update single budget
+  updateAnnualBudget: (id, data) => 
+    api.put(`/mayors-office/annual-budgets/${id}`, data),
+  
+  // Get department budget
   getDepartmentAnnualBudget: (departmentId) => 
-    api.get(`/mayors-office/budget/${departmentId}`),
+    api.get(`/mayors-office/annual-budgets/${departmentId}`),
 
-  // Get weekly usage breakdown for a department
-  getWeeklyUsage: (departmentId, params) => 
-    api.get(`/mayors-office/budget/${departmentId}/weekly-usage`, { params }),
-  // ✅ NEW: Update weekly allocation
-    updateWeeklyAllocation: (departmentId, data) => 
-        api.put(`/mayors-office/budget/weekly/${departmentId}`, data),
-    
-    // ✅ NEW: Process surplus
-    processSurplus: (departmentId) => 
-        api.post(`/mayors-office/budget/process-surplus/${departmentId}`),
-    
-    // ✅ NEW: Get surplus history
-    getSurplusHistory: (params) => 
-        api.get('/mayors-office/budget/surplus-history', { params }),
-    getBudgetPeriods: (params) => api.get('/mayors-office/budget-periods', { params }),
+  // ============================================================
+  // ✅ WEEKLY BUDGET MANAGEMENT (MO)
+  // ============================================================
+  updateWeeklyAllocation: (departmentId, data) => 
+    api.put(`/mayors-office/budget/weekly/${departmentId}`, data),
+  processSurplus: (departmentId) => 
+    api.post(`/mayors-office/budget/process-surplus/${departmentId}`),
+  getSurplusHistory: (params) => 
+    api.get('/mayors-office/budget/surplus-history', { params }),
+  getBudgetPeriods: (params) => 
+    api.get('/mayors-office/budget-periods', { params }),
 };
 
-
-// ============ DRIVER API (Merged with Staff) ============
+// ============ DRIVER API ============
 export const driverAPI = {
-  // Trip Management (Driver execution)
+  // Trip Management
   getTrips: (params) => api.get("/driver/trips", { params }),
   getActiveTrip: () => api.get("/driver/trips/active"),
   getGasSlip: (id) => api.get(`/driver/trips/${id}/gas-slip`),
 
-  // Trip Actions (Driver execution)
+  // Trip Actions
   acknowledgeFunds: (id) => api.post(`/driver/trips/${id}/acknowledge`),
   startTrip: (id, data) => api.post(`/driver/trips/${id}/start`, data),
   completeTrip: (id, data) => api.post(`/driver/trips/${id}/complete`, data),
@@ -254,7 +276,7 @@ export const driverAPI = {
   // Dashboard
   getDashboard: () => api.get("/driver/dashboard"),
 
-  // Staff functionality merged into Driver
+  // Staff functionality
   getMyRequests: (params) => api.get("/driver/trips/my-requests", { params }),
   getTripById: (id) => api.get(`/driver/tickets/${id}`),
   checkBudget: (data) => api.post("/driver/tickets/check-budget", data),
@@ -274,14 +296,13 @@ export const driverAPI = {
   getReportSummary: (params) => api.get("/driver/reports/summary", { params }),
 };
 
-// ============ DEPARTMENT API (Mayor's Office) ============
+// ============ DEPARTMENT API ============
 export const departmentAPI = {
   getAll: (params) => api.get("/admin/departments", { params }),
   getById: (id) => api.get(`/admin/departments/${id}`),
   create: (data) => api.post("/admin/departments", data),
   update: (id, data) => api.put(`/admin/departments/${id}`, data),
   delete: (id) => api.delete(`/admin/departments/${id}`),
-
   toggleStatus: (id, isActive) => 
     api.patch(`/admin/departments/${id}/toggle-status`, { is_active: isActive }),
 };
@@ -384,75 +405,52 @@ export const notificationAPI = {
     api.put("/notifications/preferences", preferences),
   
   send: (data) => api.post("/notifications/send", data),
-  
-  // Test broadcast
   testBroadcast: () => api.post("/notifications/test"),
 };
 
 // ============ REPORTS API ============
 export const reportsAPI = {
-  // Trip Report
   getTripReport: (params) => api.get("/reports/trips", { params }),
   exportTripReport: (format, params) =>
     api.get(`/reports/trips/export/${format}`, { params, responseType: "blob" }),
   
-  // Fuel Report
   getFuelReport: (params) => api.get("/reports/fuel", { params }),
   exportFuelReport: (format, params) =>
     api.get(`/reports/fuel/export/${format}`, { params, responseType: "blob" }),
   
-  // Budget Report
   getBudgetReport: (params) => api.get("/reports/budget", { params }),
   exportBudgetReport: (format, params) =>
     api.get(`/reports/budget/export/${format}`, { params, responseType: "blob" }),
   
-  // Vehicle Report
   getVehicleReport: (params) => api.get("/reports/vehicles", { params }),
-  
-  // Report Summary
   getReportSummary: (params) => api.get("/reports/summary", { params }),
   
-  // Fuel Consumption Monitoring Report
   getFuelConsumptionReport: (params) => 
     api.get("/reports/fuel-consumption", { params }),
-  
-  // Export Fuel Consumption Report
   exportFuelConsumptionReport: (format, params) =>
     api.get(`/reports/fuel-consumption/export/${format}`, { 
       params, 
       responseType: "blob" 
     }),
 
-  // Fuel Receipt Report
   getFuelReceiptReport: (params) => 
     api.get("/reports/fuel-receipts", { params }),
-    
   exportFuelReceiptReport: (format, params) =>
     api.get(`/reports/fuel-receipts/export/${format}`, { 
       params, 
       responseType: "blob" 
     }),
 
-  // ============================================================
-  // ✅ NEW: Weekly Monitoring Report
-  // ============================================================
   getWeeklyMonitoring: (params) => 
     api.get("/reports/weekly-monitoring", { params }),
-
-  // ✅ NEW: Export Weekly Monitoring
   exportWeeklyMonitoring: (format, params) =>
     api.get(`/reports/weekly-monitoring/export/${format}`, { 
       params, 
       responseType: "blob" 
     }),
 
-  // ============================================================
-  // ✅ NEW: Fuel Without Trip Report
-  // ============================================================
   getFuelWithoutTrip: (params) => 
     api.get("/reports/fuel-without-trip", { params }),
-
-  // ✅ NEW: Export Fuel Without Trip
   exportFuelWithoutTrip: (format, params) =>
     api.get(`/reports/fuel-without-trip/export/${format}`, { 
       params, 
@@ -506,41 +504,24 @@ export const auditAPI = {
 
 // ============ GPS API ============
 export const gpsAPI = {
-  // Get all active trips with GPS data (for GSO Live Tracking)
   getActiveTrips: () => api.get("/gps/active-trips"),
-  
-  // Get route for a specific trip
   getTripRoute: (tripId) => api.get(`/gps/trips/${tripId}/route`),
-  
-  // Get track with statistics (full route with distance, speed, etc.)
   getTrack: (tripId) => api.get(`/gps/trips/${tripId}/track`),
-  
-  // Get all GPS pings for a trip with pagination
   getPings: (tripId, params = {}) => 
     api.get(`/gps/trips/${tripId}/pings`, { params }),
-  
-  // Get latest GPS ping for a trip
   getLatestPing: (tripId) => api.get(`/gps/trips/${tripId}/latest`),
-  
-  // Get trip summary with GPS stats
   getTripSummary: (tripId) => api.get(`/gps/trips/${tripId}/summary`),
-  
-  // Delete GPS pings (admin only)
   deletePings: (tripId) => api.delete(`/gps/trips/${tripId}/pings`),
 };
-// ============ LOCATION API (OpenRouteService) ============
+
+// ============ LOCATION API ============
 export const locationAPI = {
-  // Search for places (autocomplete)
   searchPlaces: (query) => api.get('/location/search', { 
     params: { query } 
   }),
-  
-  // Calculate distance between locations
   calculateDistance: (params) => api.get('/location/distance', { 
     params 
   }),
-  
-  // Geocode a single address
   geocode: (address) => api.get('/location/geocode', { 
     params: { address } 
   }),

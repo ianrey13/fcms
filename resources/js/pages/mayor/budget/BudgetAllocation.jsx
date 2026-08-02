@@ -1,882 +1,1367 @@
 // src/pages/mayor/budget/BudgetAllocation.jsx
-import React, { useState, useEffect, useMemo } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
+import React, { useState, useEffect } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import {
-  DollarSign,
-  Plus,
-  Trash2,
-  CheckCircle,
-  AlertCircle,
-  Search,
-  RefreshCw,
-  TrendingUp,
-  Building2,
-  AlertTriangle,
-  Loader2,
-  History,
-  ArrowUpCircle,
-  CalendarRange,
-  Edit,
-  CalendarDays,
-  TrendingDown,
-} from 'lucide-react';
+    Table,
+    TableBody,
+    TableCell,
+    TableHead,
+    TableHeader,
+    TableRow,
+} from "@/components/ui/table";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { mayorsOfficeAPI } from '../../../services/api';
-import { toast } from 'react-hot-toast';
-import { format } from 'date-fns';
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from "@/components/ui/dialog";
+import {
+    RefreshCw,
+    Loader2,
+    Calendar,
+    DollarSign,
+    TrendingUp,
+    TrendingDown,
+    Edit,
+    Save,
+    AlertCircle,
+    Building2,
+    X,
+    Eye,
+    Plus,
+    Info,
+} from "lucide-react";
+import { toast } from "react-hot-toast";
+import api from "../../../services/api";
 
 const BudgetAllocation = () => {
-  const [budgetData, setBudgetData] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [forceUpdate, setForceUpdate] = useState(0);
-  const [searchTerm, setSearchTerm] = useState('');
+    const queryClient = useQueryClient();
+    const [selectedYear, setSelectedYear] = useState(2026);
+    const [editingBudget, setEditingBudget] = useState(null);
+    const [showEditDialog, setShowEditDialog] = useState(false);
+    const [showViewDialog, setShowViewDialog] = useState(false);
+    const [viewingBudget, setViewingBudget] = useState(null);
+    const [showAddBudgetDialog, setShowAddBudgetDialog] = useState(false);
+    const [addBudgetData, setAddBudgetData] = useState({
+        department_id: "",
+        additional_amount: "",
+        reason: "",
+    });
+    const [formData, setFormData] = useState({
+        annual_amount: "",
+        weekly_ceiling: "",
+    });
+    const [isBulkMode, setIsBulkMode] = useState(false);
+    const [bulkData, setBulkData] = useState({});
 
-  // Modal states
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [showEditModal, setShowEditModal] = useState(false);
-  const [showWeeklyModal, setShowWeeklyModal] = useState(false);
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [editingPolicy, setEditingPolicy] = useState(null);
-  const [weeklyPolicy, setWeeklyPolicy] = useState(null);
-  const [deletingPolicy, setDeletingPolicy] = useState(null);
+    // Fetch active fiscal years
+    const { data: yearsData, isLoading: yearsLoading } = useQuery({
+        queryKey: ["fiscal-years-active"],
+        queryFn: async () => {
+            try {
+                const response = await api.get(
+                    "/mayors-office/fiscal-years?is_active=1",
+                );
+                return response.data.data || [];
+            } catch (error) {
+                console.error("Error fetching fiscal years:", error);
+                return [];
+            }
+        },
+    });
 
-  // Form state
-  const [formData, setFormData] = useState({
-    department_id: '',
-    annual_budget: '',
-    add_amount: '',
-    weekly_allocation: '',
-    reason: '',
-    fiscal_year: new Date().getFullYear(),
-  });
-  const [formErrors, setFormErrors] = useState({});
-  const [isSubmitting, setIsSubmitting] = useState(false);
+    // Set selected year to 2026 if available
+    useEffect(() => {
+        if (yearsData && yearsData.length > 0) {
+            const has2026 = yearsData.some((y) => y.year === 2026);
+            if (has2026) {
+                setSelectedYear(2026);
+            } else if (yearsData[0]?.year) {
+                setSelectedYear(yearsData[0].year);
+            }
+        }
+    }, [yearsData]);
 
-  // ============================================================
-  // ✅ FETCH FUNCTIONS
-  // ============================================================
+    // Fetch budget data for selected year
+    const {
+        data: budgetData,
+        isLoading,
+        refetch,
+        isFetching,
+        error: budgetError,
+    } = useQuery({
+        queryKey: ["annual-budgets", selectedYear],
+        queryFn: async () => {
+            try {
+                const response = await api.get(
+                    `/mayors-office/annual-budgets/year/${selectedYear}`,
+                );
+                return response.data;
+            } catch (error) {
+                console.error("Error fetching budgets:", error);
+                throw error;
+            }
+        },
+        enabled: !!selectedYear,
+        retry: 1,
+    });
 
- const fetchBudgetData = async () => {
-  setLoading(true);
-  try {
-    const response = await mayorsOfficeAPI.getAllDepartmentsWithBudget();
-    console.log('📊 Budget Data Response:', response);
-    
-    let data = response.data?.data || response.data || [];
-    if (data.data) {
-      data = data.data;
-    }
-    
-    const formattedData = (Array.isArray(data) ? data : []).map(item => ({
-      ...item,
-      department_id: item.department_id,
-      department_name: item.department_name || 'Unknown',
-      department_code: item.department_code || '',
-      // ✅ ANNUAL BUDGET (from response)
-      annual_amount: parseFloat(item.annual_amount || 0),
-      used_amount: parseFloat(item.used_amount || 0),
-      remaining_amount: parseFloat(item.remaining_amount || 0),
-      // ✅ WEEKLY ALLOCATION
-      weekly_allocation: parseFloat(item.weekly_allocation || 0),
-      weekly_used: parseFloat(item.weekly_used || 0),
-      has_budget: item.has_budget !== false,
-      fiscal_year: item.fiscal_year || new Date().getFullYear(),
-      status: item.status || 'active',
-    }));
-    
-    console.log('✅ Formatted Annual Budget Data:', formattedData);
-    setBudgetData(formattedData);
-    
-  } catch (error) {
-    console.error('Failed to fetch budget data:', error);
-    toast.error('Failed to load budget data');
-  } finally {
-    setLoading(false);
-  }
-};
+    // Set budget mutation
+    const setBudgetMutation = useMutation({
+        mutationFn: async ({ data }) => {
+            const response = await api.post("/mayors-office/annual-budgets", {
+                fiscal_year: selectedYear,
+                ...data,
+            });
+            return response.data;
+        },
+        onSuccess: () => {
+            toast.success("Budget set successfully");
+            setShowEditDialog(false);
+            setEditingBudget(null);
+            queryClient.invalidateQueries(["annual-budgets"]);
+        },
+        onError: (error) => {
+            toast.error(
+                error.response?.data?.message || "Failed to set budget",
+            );
+        },
+    });
 
-  useEffect(() => {
-    fetchBudgetData();
-  }, []);
+    // ✅ Add Budget Mutation
+    const addBudgetMutation = useMutation({
+        mutationFn: async (data) => {
+            const response = await api.post(
+                "/mayors-office/annual-budgets/add",
+                {
+                    fiscal_year: selectedYear,
+                    ...data,
+                },
+            );
+            return response.data;
+        },
+        onSuccess: () => {
+            toast.success("Additional budget added successfully");
+            setShowAddBudgetDialog(false);
+            setAddBudgetData({
+                department_id: "",
+                additional_amount: "",
+                reason: "",
+            });
+            queryClient.invalidateQueries(["annual-budgets"]);
+        },
+        onError: (error) => {
+            toast.error(
+                error.response?.data?.message || "Failed to add budget",
+            );
+        },
+    });
 
-  const handleRefresh = async () => {
-    setRefreshing(true);
-    await fetchBudgetData();
-    setRefreshing(false);
-    toast.success('Data refreshed');
-  };
+    // Bulk update mutation
+    const bulkUpdateMutation = useMutation({
+        mutationFn: async () => {
+            const budgets = Object.entries(bulkData).map(
+                ([departmentId, data]) => ({
+                    department_id: parseInt(departmentId),
+                    annual_amount: parseFloat(data.annual_amount) || 0,
+                    weekly_ceiling: parseFloat(data.weekly_ceiling) || 0,
+                }),
+            );
 
-  // ============================================================
-  // ✅ CRUD OPERATIONS
-  // ============================================================
+            const response = await api.post(
+                "/mayors-office/annual-budgets/bulk",
+                {
+                    fiscal_year: selectedYear,
+                    budgets,
+                },
+            );
+            return response.data;
+        },
+        onSuccess: () => {
+            toast.success("All budgets saved successfully");
+            setIsBulkMode(false);
+            setBulkData({});
+            queryClient.invalidateQueries(["annual-budgets"]);
+        },
+        onError: (error) => {
+            toast.error(
+                error.response?.data?.message || "Failed to save budgets",
+            );
+        },
+    });
 
-  const handleCreate = async (e) => {
-    e.preventDefault();
+    const budgets = budgetData?.data || [];
+    const summary = budgetData?.summary || {};
+    const fiscalYear = budgetData?.fiscal_year || {};
 
-    const errors = {};
-    if (!formData.department_id) errors.department_id = 'Please select a department';
-    if (!formData.annual_budget || parseFloat(formData.annual_budget) <= 0) {
-      errors.annual_budget = 'Please enter a valid annual budget amount';
-    }
-
-    if (Object.keys(errors).length > 0) {
-      setFormErrors(errors);
-      return;
-    }
-
-    setIsSubmitting(true);
-    try {
-      const payload = {
-        department_id: parseInt(formData.department_id),
-        annual_budget: parseFloat(formData.annual_budget),
-        fiscal_year: formData.fiscal_year || new Date().getFullYear(),
-        reason: formData.reason || 'Initial annual budget allocation',
-      };
-
-      await mayorsOfficeAPI.createAnnualBudget(payload);
-
-      toast.success(`✅ Annual budget created! (FY ${formData.fiscal_year})`);
-      setShowCreateModal(false);
-      resetForm();
-      await fetchBudgetData();
-      setForceUpdate(prev => prev + 1);
-    } catch (error) {
-      console.error('Create error:', error);
-      const errorData = error.response?.data;
-      let errorMessage = 'Failed to create budget';
-      if (errorData?.message) errorMessage = errorData.message;
-      else if (errorData?.errors) {
-        const errors = Object.values(errorData.errors).flat();
-        errorMessage = errors.join(', ');
-      }
-      toast.error(errorMessage);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleAddToBudget = async (e) => {
-    e.preventDefault();
-
-    const errors = {};
-    if (!formData.add_amount || parseFloat(formData.add_amount) <= 0) {
-      errors.add_amount = 'Please enter a valid amount to add';
-    }
-
-    if (Object.keys(errors).length > 0) {
-      setFormErrors(errors);
-      return;
-    }
-
-    setIsSubmitting(true);
-    try {
-      const addAmount = parseFloat(formData.add_amount);
-      const currentAnnual = parseFloat(editingPolicy?.annual_amount || 0);
-      const newTotal = currentAnnual + addAmount;
-
-      const payload = {
-        add_amount: addAmount,
-        reason: formData.reason || 'Budget addition',
-      };
-
-      await mayorsOfficeAPI.updateBudgetPolicy(editingPolicy.department_id, payload);
-
-      toast.success(`✅ ₱${addAmount.toFixed(2)} added!\nNew Annual: ₱${newTotal.toFixed(2)}`);
-      setShowEditModal(false);
-      resetForm();
-      await fetchBudgetData();
-      setForceUpdate(prev => prev + 1);
-    } catch (error) {
-      console.error('Update error:', error);
-      const errorData = error.response?.data;
-      let errorMessage = 'Failed to add to budget';
-      if (errorData?.message) errorMessage = errorData.message;
-      else if (errorData?.errors) {
-        const errors = Object.values(errorData.errors).flat();
-        errorMessage = errors.join(', ');
-      }
-      toast.error(errorMessage);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-const handleUpdateWeekly = async (e) => {
-  e.preventDefault();
-
-  const errors = {};
-  if (!formData.weekly_allocation || parseFloat(formData.weekly_allocation) <= 0) {
-    errors.weekly_allocation = 'Please enter a valid weekly allocation amount';
-  }
-
-  if (Object.keys(errors).length > 0) {
-    setFormErrors(errors);
-    return;
-  }
-
-  setIsSubmitting(true);
-  try {
-    const weeklyAmount = parseFloat(formData.weekly_allocation);
-    const currentAnnual = parseFloat(weeklyPolicy?.annual_amount || 0);
-    
-    // ✅ Check if annual budget has enough
-    if (currentAnnual < weeklyAmount) {
-      toast.error(`Insufficient annual budget! Available: ₱${currentAnnual.toFixed(2)}`);
-      setIsSubmitting(false);
-      return;
-    }
-
-    const payload = {
-      weekly_allocation: weeklyAmount,
-      reason: formData.reason || 'Weekly allocation update',
+    const formatCurrency = (amount) => {
+        if (!amount || amount === 0) return "₱0.00";
+        return new Intl.NumberFormat("en-PH", {
+            style: "currency",
+            currency: "PHP",
+            minimumFractionDigits: 2,
+        }).format(amount);
     };
 
-    const response = await mayorsOfficeAPI.updateWeeklyAllocation(
-      weeklyPolicy.department_id,
-      payload
-    );
+    const handleEdit = (budget) => {
+        setEditingBudget(budget);
+        setFormData({
+            annual_amount: budget.annual_amount?.toString() || "",
+            weekly_ceiling: budget.weekly_ceiling?.toString() || "",
+        });
+        setShowEditDialog(true);
+    };
 
-    // ✅ Show success message with week info
-    const data = response.data?.data || {};
-    const weekInfo = data.week_number ? `Week ${data.week_number}` : '';
-    const weekRange = data.week_start && data.week_end ? 
-      `(${format(new Date(data.week_start), 'MMM dd')} - ${format(new Date(data.week_end), 'MMM dd')})` : '';
+    const handleView = (budget) => {
+        setViewingBudget(budget);
+        setShowViewDialog(true);
+    };
 
-    toast.success(
-      `✅ Weekly allocation set to ₱${weeklyAmount.toFixed(2)}!\n` +
-      `${weekInfo} ${weekRange}\n` +
-      `Annual deducted: ₱${(data.deducted || weeklyAmount).toFixed(2)}`
-    );
-    
-    setShowWeeklyModal(false);
-    resetForm();
-    await fetchBudgetData();
-    setForceUpdate(prev => prev + 1);
-  } catch (error) {
-    console.error('Update weekly error:', error);
-    const errorData = error.response?.data;
-    let errorMessage = 'Failed to update weekly allocation';
-    if (errorData?.message) errorMessage = errorData.message;
-    else if (errorData?.errors) {
-      const errors = Object.values(errorData.errors).flat();
-      errorMessage = errors.join(', ');
-    }
-    toast.error(errorMessage);
-  } finally {
-    setIsSubmitting(false);
-  }
-};
+    const handleSetBudget = () => {
+        if (!editingBudget) return;
 
-  const handleDelete = async () => {
-    if (!deletingPolicy) return;
+        const data = {
+            department_id: editingBudget.department_id,
+            annual_amount: parseFloat(formData.annual_amount) || 0,
+            weekly_ceiling: parseFloat(formData.weekly_ceiling) || 0,
+        };
+        setBudgetMutation.mutate({ data });
+    };
 
-    setIsSubmitting(true);
-    try {
-      await mayorsOfficeAPI.deleteBudgetPolicy(deletingPolicy.department_id);
-      toast.success('Budget policy deleted successfully!');
-      setShowDeleteModal(false);
-      setDeletingPolicy(null);
-      await fetchBudgetData();
-      setForceUpdate(prev => prev + 1);
-    } catch (error) {
-      console.error('Delete error:', error);
-      toast.error(error.response?.data?.message || 'Failed to delete budget policy');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
+    const handleAddBudget = () => {
+        if (!addBudgetData.department_id) {
+            toast.error("Please select a department");
+            return;
+        }
+        if (
+            !addBudgetData.additional_amount ||
+            parseFloat(addBudgetData.additional_amount) <= 0
+        ) {
+            toast.error("Please enter a valid amount");
+            return;
+        }
 
-  const resetForm = () => {
-    setFormData({
-      department_id: '',
-      annual_budget: '',
-      add_amount: '',
-      weekly_allocation: '',
-      reason: '',
-      fiscal_year: new Date().getFullYear(),
-    });
-    setFormErrors({});
-    setEditingPolicy(null);
-    setWeeklyPolicy(null);
-  };
+        addBudgetMutation.mutate({
+            department_id: parseInt(addBudgetData.department_id),
+            additional_amount: parseFloat(addBudgetData.additional_amount),
+            reason: addBudgetData.reason || "Additional budget allocation",
+        });
+    };
 
-  // ============================================================
-  // ✅ MODAL HANDLERS
-  // ============================================================
+    const handleBulkChange = (departmentId, field, value) => {
+        setBulkData((prev) => {
+            const current = prev[departmentId] || {
+                annual_amount: "",
+                weekly_ceiling: "",
+            };
+            return {
+                ...prev,
+                [departmentId]: {
+                    ...current,
+                    [field]: value,
+                },
+            };
+        });
+    };
 
-  const openCreateModal = () => {
-    resetForm();
-    setShowCreateModal(true);
-  };
+    const handleBulkSave = () => {
+        bulkUpdateMutation.mutate();
+    };
 
-  const openEditModal = (policy) => {
-    setEditingPolicy(policy);
-    setFormData({
-      department_id: policy.department_id,
-      annual_budget: policy.annual_amount || 0,
-      add_amount: '',
-      reason: '',
-      fiscal_year: policy.fiscal_year || new Date().getFullYear(),
-    });
-    setShowEditModal(true);
-  };
+    const handleBulkCancel = () => {
+        setIsBulkMode(false);
+        setBulkData({});
+    };
 
-  const openWeeklyModal = (policy) => {
-    setWeeklyPolicy(policy);
-    setFormData({
-      department_id: policy.department_id,
-      weekly_allocation: policy.weekly_allocation || 0,
-      reason: '',
-      fiscal_year: policy.fiscal_year || new Date().getFullYear(),
-    });
-    setShowWeeklyModal(true);
-  };
+    const getStatusBadge = (status) => {
+        if (status === "not_set" || !status) {
+            return <Badge className="bg-slate-400">Not Set</Badge>;
+        }
+        return <Badge className="bg-green-500">Active</Badge>;
+    };
 
-  const openDeleteModal = (policy) => {
-    setDeletingPolicy(policy);
-    setShowDeleteModal(true);
-  };
+    // Auto-calculate weekly ceiling
+    useEffect(() => {
+        if (formData.annual_amount && !formData.weekly_ceiling) {
+            const weekly = parseFloat(formData.annual_amount) / 52;
+            setFormData((prev) => ({
+                ...prev,
+                weekly_ceiling: weekly.toFixed(2),
+            }));
+        }
+    }, [formData.annual_amount]);
 
-  // ============================================================
-  // ✅ UTILITY FUNCTIONS
-  // ============================================================
+    // Initialize bulk data
+    useEffect(() => {
+        if (budgets.length > 0 && isBulkMode) {
+            const initialBulk = {};
+            budgets.forEach((budget) => {
+                initialBulk[budget.department_id] = {
+                    annual_amount: budget.annual_amount?.toString() || "",
+                    weekly_ceiling: budget.weekly_ceiling?.toString() || "",
+                };
+            });
+            setBulkData(initialBulk);
+        }
+    }, [budgets, isBulkMode]);
 
-  const formatCurrency = (amount) => {
-    return new Intl.NumberFormat('en-PH', {
-      style: 'currency',
-      currency: 'PHP',
-      minimumFractionDigits: 2,
-    }).format(amount || 0);
-  };
-
-  // ============================================================
-  // ✅ MEMOIZED DATA
-  // ============================================================
-
-  const filteredData = useMemo(() => {
-    if (!searchTerm) return budgetData;
-    const search = searchTerm.toLowerCase();
-    return budgetData.filter(item =>
-      item.department_name?.toLowerCase().includes(search) ||
-      item.department_code?.toLowerCase().includes(search)
-    );
-  }, [budgetData, searchTerm]);
-
-  const summaryStats = useMemo(() => {
-    const totalAnnual = budgetData.reduce((sum, p) => sum + (p.annual_amount || 0), 0);
-    const totalUsed = budgetData.reduce((sum, p) => sum + (p.used_amount || 0), 0);
-    const totalRemaining = budgetData.reduce((sum, p) => sum + (p.remaining_amount || 0), 0);
-    const totalWeekly = budgetData.reduce((sum, p) => sum + (p.weekly_allocation || 0), 0);
-    return { totalAnnual, totalUsed, totalRemaining, totalWeekly };
-  }, [budgetData]);
-
-  // ============================================================
-  // ✅ RENDER
-  // ============================================================
-
-  if (loading) {
-    return (
-      <div className="flex justify-center items-center h-64">
-        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800 dark:text-white">
-            Budget Allocation
-          </h1>
-          <p className="text-slate-500 dark:text-slate-400 mt-1">
-            Manage department annual and weekly fuel budgets for FY {new Date().getFullYear()}
-          </p>
-        </div>
-        <div className="flex gap-3">
-          <Button variant="outline" onClick={handleRefresh} disabled={refreshing} className="flex items-center gap-2">
-            <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
-            Refresh
-          </Button>
-          <Button onClick={openCreateModal} className="bg-blue-600 hover:bg-blue-700">
-            <Plus className="h-4 w-4 mr-2" />
-            Set Annual Budget
-          </Button>
-        </div>
-      </div>
-
-      {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-slate-500">Total Annual Budget</p>
-                <p className="text-2xl font-bold text-blue-600">{formatCurrency(summaryStats.totalAnnual)}</p>
-                <p className="text-xs text-slate-400">FY {new Date().getFullYear()}</p>
-              </div>
-              <CalendarDays className="h-8 w-8 text-blue-500" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-slate-500">Total Weekly</p>
-                <p className="text-2xl font-bold text-purple-600">{formatCurrency(summaryStats.totalWeekly)}</p>
-                <p className="text-xs text-slate-400">All departments</p>
-              </div>
-              <CalendarRange className="h-8 w-8 text-purple-500" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-slate-500">Total Used</p>
-                <p className="text-2xl font-bold text-red-600">{formatCurrency(summaryStats.totalUsed)}</p>
-              </div>
-              <TrendingUp className="h-8 w-8 text-red-500" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-slate-500">Total Remaining</p>
-                <p className="text-2xl font-bold text-green-600">{formatCurrency(summaryStats.totalRemaining)}</p>
-                <p className="text-xs text-slate-400">
-                  {summaryStats.totalAnnual > 0
-                    ? `${((summaryStats.totalRemaining / summaryStats.totalAnnual) * 100).toFixed(1)}% remaining`
-                    : 'No budget set'}
+    if (budgetError) {
+        return (
+            <div className="flex flex-col items-center justify-center py-12">
+                <AlertCircle className="h-12 w-12 text-red-400 mb-4" />
+                <p className="text-red-600 mb-2">Failed to load budget data</p>
+                <p className="text-slate-500 text-sm mb-4">
+                    {budgetError.response?.data?.message || budgetError.message}
                 </p>
-              </div>
-              <CheckCircle className="h-8 w-8 text-green-500" />
+                <Button onClick={() => refetch()}>Retry</Button>
             </div>
-          </CardContent>
-        </Card>
-      </div>
+        );
+    }
 
-      {/* Search */}
-      <Card>
-        <div className="p-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
-            <Input
-              placeholder="Search departments..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10"
-            />
-          </div>
-        </div>
-      </Card>
-
-      {/* Table */}
-      <Card key={`budget-table-${forceUpdate}`}>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <DollarSign className="h-5 w-5" />
-            Department Budgets
-            <span className="ml-2 text-sm font-normal text-slate-500">
-              ({filteredData.length} departments) • FY {new Date().getFullYear()}
-            </span>
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {filteredData.length === 0 ? (
-            <div className="text-center py-12">
-              <DollarSign className="h-12 w-12 text-slate-300 mx-auto mb-3" />
-              <p className="text-slate-500">No budget data found</p>
+    if (yearsLoading || isLoading) {
+        return (
+            <div className="flex justify-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
             </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-slate-50 dark:bg-slate-900/50">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Department</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Annual Budget</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Weekly</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Used</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Remaining</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Utilization</th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200">
-                  {filteredData.map((policy) => {
-                    const utilization = policy.annual_amount > 0
-                      ? ((policy.used_amount || 0) / policy.annual_amount) * 100
-                      : 0;
-                    const isLow = utilization > 80;
-                    const isCritical = utilization > 95;
+        );
+    }
 
-                    return (
-                      <tr key={policy.department_id} className="hover:bg-slate-50 transition-colors">
-                        <td className="px-4 py-3">
-                          <div>
-                            <p className="font-semibold">{policy.department_name}</p>
-                            <p className="text-xs text-slate-500">{policy.department_code}</p>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3">
-                          <p className="font-semibold text-blue-600">{formatCurrency(policy.annual_amount)}</p>
-                          <p className="text-xs text-slate-400">FY {policy.fiscal_year}</p>
-                        </td>
-                        <td className="px-4 py-3 text-purple-600 font-medium">
-                          {formatCurrency(policy.weekly_allocation)}
-                          <p className="text-xs text-slate-400">per week</p>
-                        </td>
-                        <td className="px-4 py-3 text-red-600">{formatCurrency(policy.used_amount)}</td>
-                        <td className="px-4 py-3">
-                          <span className={`font-semibold ${isCritical ? 'text-red-600' : isLow ? 'text-yellow-600' : 'text-green-600'}`}>
-                            {formatCurrency(policy.remaining_amount)}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2">
-                            <div className="w-24 bg-slate-200 rounded-full h-2">
-                              <div
-                                className={`h-2 rounded-full transition-all ${isCritical ? 'bg-red-500' : isLow ? 'bg-yellow-500' : 'bg-green-500'}`}
-                                style={{ width: `${Math.min(utilization, 100)}%` }}
-                              />
-                            </div>
-                            <span className={`text-xs font-medium ${isCritical ? 'text-red-600' : isLow ? 'text-yellow-600' : 'text-green-600'}`}>
-                              {utilization.toFixed(1)}%
+    return (
+        <div className="space-y-6">
+            {/* ========== HEADER ========== */}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div>
+                    <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
+                        Annual Budget Allocation
+                    </h1>
+                    <p className="text-slate-500 dark:text-slate-400 mt-1">
+                        Set annual fuel budget and weekly ceiling per department
+                    </p>
+                </div>
+                <div className="flex gap-2 flex-wrap">
+                    <Button
+                        variant="outline"
+                        onClick={() => refetch()}
+                        disabled={isLoading || isFetching}
+                    >
+                        <RefreshCw
+                            className={`h-4 w-4 mr-2 ${isFetching ? "animate-spin" : ""}`}
+                        />
+                        Refresh
+                    </Button>
+                    {budgets.length > 0 && (
+                        <>
+                            <Button
+                                variant="outline"
+                                onClick={() => setShowAddBudgetDialog(true)}
+                                className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                            >
+                                <Plus className="h-4 w-4 mr-2" />
+                                Add Budget
+                            </Button>
+                            <Button
+                                variant={isBulkMode ? "default" : "outline"}
+                                onClick={() => setIsBulkMode(!isBulkMode)}
+                                className={
+                                    isBulkMode
+                                        ? "bg-blue-600 hover:bg-blue-700"
+                                        : ""
+                                }
+                            >
+                                {isBulkMode ? "Exit Bulk Edit" : "Bulk Edit"}
+                            </Button>
+                        </>
+                    )}
+                    {isBulkMode && (
+                        <>
+                            <Button
+                                onClick={handleBulkSave}
+                                disabled={bulkUpdateMutation.isPending}
+                                className="bg-green-600 hover:bg-green-700"
+                            >
+                                {bulkUpdateMutation.isPending ? (
+                                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                ) : (
+                                    <Save className="h-4 w-4 mr-2" />
+                                )}
+                                Save All
+                            </Button>
+                            <Button
+                                variant="outline"
+                                onClick={handleBulkCancel}
+                                className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400"
+                            >
+                                <X className="h-4 w-4 mr-2" />
+                                Cancel
+                            </Button>
+                        </>
+                    )}
+                </div>
+            </div>
+
+            {/* ========== YEAR SELECTOR ========== */}
+            <Card className="dark:bg-slate-800/80 dark:border-slate-700">
+                <CardContent className="pt-6">
+                    <div className="flex flex-wrap items-center gap-4">
+                        <div className="flex items-center gap-2">
+                            <Calendar className="h-5 w-5 text-slate-400" />
+                            <span className="font-medium text-slate-700 dark:text-slate-300">
+                                Select Fiscal Year:
                             </span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <div className="flex items-center justify-end gap-1">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => openWeeklyModal(policy)}
-                              className="text-orange-600 hover:bg-orange-50 h-8 w-8 p-0"
-                              title="Set Weekly Allocation"
-                            >
-                              <CalendarRange className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => openEditModal(policy)}
-                              className="text-green-600 hover:bg-green-50 h-8 w-8 p-0"
-                              title="Add to Budget"
-                            >
-                              <Plus className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => openDeleteModal(policy)}
-                              className="text-red-600 hover:bg-red-50 h-8 w-8 p-0"
-                              title="Delete"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                            {yearsData?.length > 0 ? (
+                                yearsData.map((year) => {
+                                    const yearValue =
+                                        typeof year === "object"
+                                            ? year.year
+                                            : year;
+                                    const isActive =
+                                        typeof year === "object"
+                                            ? year.is_active
+                                            : true;
+                                    const key =
+                                        typeof year === "object"
+                                            ? year.fiscal_year_id || yearValue
+                                            : yearValue;
+
+                                    return (
+                                        <Button
+                                            key={key}
+                                            variant={
+                                                selectedYear === yearValue
+                                                    ? "default"
+                                                    : "outline"
+                                            }
+                                            size="sm"
+                                            onClick={() =>
+                                                setSelectedYear(yearValue)
+                                            }
+                                            className={
+                                                selectedYear === yearValue
+                                                    ? "bg-blue-600 hover:bg-blue-700 text-white"
+                                                    : "dark:border-slate-700 dark:text-slate-300"
+                                            }
+                                        >
+                                            {yearValue}
+                                            {isActive && (
+                                                <span className="ml-1 text-xs text-green-400">
+                                                    ●
+                                                </span>
+                                            )}
+                                        </Button>
+                                    );
+                                })
+                            ) : (
+                                <p className="text-slate-500 dark:text-slate-400 text-sm">
+                                    No fiscal years available. Please ask GSO to
+                                    add years.
+                                </p>
+                            )}
+                        </div>
+                    </div>
+                </CardContent>
+            </Card>
+
+            {/* ========== SUMMARY CARDS ========== */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <Card className="dark:bg-slate-800/80 dark:border-slate-700">
+                    <CardContent className="pt-6">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <p className="text-sm text-slate-500 dark:text-slate-400">
+                                    Total Annual Budget
+                                </p>
+                                <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+                                    {formatCurrency(summary.total_allocated)}
+                                </p>
+                            </div>
+                            <div className="p-3 bg-blue-100 dark:bg-blue-900/30 rounded-full">
+                                <DollarSign className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+                            </div>
+                        </div>
+                    </CardContent>
+                </Card>
+
+                <Card className="dark:bg-slate-800/80 dark:border-slate-700">
+                    <CardContent className="pt-6">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <p className="text-sm text-slate-500 dark:text-slate-400">
+                                    Used
+                                </p>
+                                <p className="text-2xl font-bold text-yellow-600 dark:text-yellow-400">
+                                    {formatCurrency(summary.total_used)}
+                                </p>
+                                <p className="text-xs text-slate-400 dark:text-slate-500">
+                                    Total spent so far
+                                </p>
+                            </div>
+                            <div className="p-3 bg-yellow-100 dark:bg-yellow-900/30 rounded-full">
+                                <TrendingDown className="h-6 w-6 text-yellow-600 dark:text-yellow-400" />
+                            </div>
+                        </div>
+                    </CardContent>
+                </Card>
+
+                <Card className="dark:bg-slate-800/80 dark:border-slate-700">
+                    <CardContent className="pt-6">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <p className="text-sm text-slate-500 dark:text-slate-400">
+                                    Remaining Annual
+                                </p>
+                                <p className="text-2xl font-bold text-green-600 dark:text-green-400">
+                                    {formatCurrency(summary.total_remaining)}
+                                </p>
+                                <p className="text-xs text-slate-400 dark:text-slate-500">
+                                    Available for future allocation
+                                </p>
+                            </div>
+                            <div className="p-3 bg-green-100 dark:bg-green-900/30 rounded-full">
+                                <TrendingUp className="h-6 w-6 text-green-600 dark:text-green-400" />
+                            </div>
+                        </div>
+                    </CardContent>
+                </Card>
+
+                <Card className="dark:bg-slate-800/80 dark:border-slate-700">
+                    <CardContent className="pt-6">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <p className="text-sm text-slate-500 dark:text-slate-400">
+                                    Departments
+                                </p>
+                                <p className="text-2xl font-bold text-purple-600 dark:text-purple-400">
+                                    {summary.departments_with_budget || 0} /{" "}
+                                    {summary.total_departments || 0}
+                                </p>
+                                <p className="text-xs text-slate-400 dark:text-slate-500">
+                                    {summary.departments_without_budget || 0}{" "}
+                                    without budget
+                                </p>
+                            </div>
+                            <div className="p-3 bg-purple-100 dark:bg-purple-900/30 rounded-full">
+                                <Building2 className="h-6 w-6 text-purple-600 dark:text-purple-400" />
+                            </div>
+                        </div>
+                    </CardContent>
+                </Card>
+            </div>
+
+            {/* ========== BUDGET TABLE ========== */}
+            <Card className="dark:bg-slate-800/80 dark:border-slate-700 overflow-hidden">
+                <CardHeader className="border-b dark:border-slate-700">
+                    <div className="flex items-center justify-between">
+                        <CardTitle className="flex items-center gap-2 text-slate-900 dark:text-white">
+                            <DollarSign className="h-5 w-5 text-green-500" />
+                            Budget Details for {selectedYear}
+                            <Badge variant="secondary" className="ml-2">
+                                {budgets.length} departments
+                            </Badge>
+                        </CardTitle>
+                        {fiscalYear?.is_active === false && (
+                            <Badge className="bg-yellow-500">
+                                <AlertCircle className="h-3 w-3 mr-1" />
+                                Inactive
+                            </Badge>
+                        )}
+                    </div>
+                </CardHeader>
+                <CardContent className="p-0">
+                    {budgets.length === 0 ? (
+                        <div className="text-center py-12">
+                            <AlertCircle className="h-12 w-12 text-slate-400 mx-auto mb-4" />
+                            <p className="text-slate-500 dark:text-slate-400">
+                                No departments found for {selectedYear}
+                            </p>
+                            <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">
+                                Please ask GSO to add departments or select a
+                                different year
+                            </p>
+                        </div>
+                    ) : (
+                        <div className="overflow-x-auto">
+                            <Table>
+                                <TableHeader>
+                                    <TableRow className="bg-slate-50 dark:bg-slate-900/50">
+                                        <TableHead className="font-semibold">
+                                            Department
+                                        </TableHead>
+                                        <TableHead className="font-semibold">
+                                            Code
+                                        </TableHead>
+                                        <TableHead className="text-right font-semibold">
+                                            Annual Budget
+                                        </TableHead>
+                                        <TableHead className="text-right font-semibold">
+                                            Weekly Ceiling
+                                        </TableHead>
+                                        <TableHead className="text-right font-semibold">
+                                            Used
+                                        </TableHead>
+                                        <TableHead className="text-right font-semibold">
+                                            Remaining
+                                        </TableHead>
+                                        <TableHead className="text-right font-semibold">
+                                            Weekly Used
+                                        </TableHead>{" "}
+                                        {/* ✅ NEW */}
+                                            <TableHead className="text-right font-semibold">Weekly Remaining</TableHead>  {/* ✅ NEW */}
+
+                                        <TableHead className="text-center font-semibold">
+                                            Status
+                                        </TableHead>
+                                        <TableHead className="text-right font-semibold">
+                                            Actions
+                                        </TableHead>
+                                    </TableRow>
+                                </TableHeader>
+
+                               <TableBody>
+  {budgets.map((budget) => {
+    const isEditing = isBulkMode && bulkData[budget.department_id];
+    const isNew = !budget.has_budget;
+    
+    // ✅ Calculate weekly used percentage
+    const weeklyUsedPercent = budget.weekly_ceiling > 0 
+      ? Math.round((budget.weekly_used || 0) / budget.weekly_ceiling * 100) 
+      : 0;
+    
+    return (
+      <TableRow
+        key={budget.department_id}
+        className={`hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors ${
+          isNew ? 'bg-yellow-50/50 dark:bg-yellow-950/20' : ''
+        }`}
+      >
+        <TableCell className="font-medium text-slate-900 dark:text-white">
+          {budget.department_name}
+          {isNew && (
+            <Badge variant="outline" className="ml-2 text-yellow-600 border-yellow-300 text-xs">
+              New
+            </Badge>
+          )}
+        </TableCell>
+        <TableCell>
+          <Badge variant="outline">{budget.department_code}</Badge>
+        </TableCell>
+        <TableCell className="text-right">
+          {isBulkMode ? (
+            <Input
+              type="number"
+              step="0.01"
+              min="0"
+              value={isEditing ? bulkData[budget.department_id]?.annual_amount : ''}
+              onChange={(e) => handleBulkChange(budget.department_id, 'annual_amount', e.target.value)}
+              className="w-32 ml-auto text-right dark:bg-slate-900 dark:border-slate-700"
+              placeholder="0.00"
+            />
+          ) : (
+            <span className="font-medium text-blue-600 dark:text-blue-400">
+              {formatCurrency(budget.annual_amount)}
+            </span>
+          )}
+        </TableCell>
+        <TableCell className="text-right">
+          {isBulkMode ? (
+            <Input
+              type="number"
+              step="0.01"
+              min="0"
+              value={isEditing ? bulkData[budget.department_id]?.weekly_ceiling : ''}
+              onChange={(e) => handleBulkChange(budget.department_id, 'weekly_ceiling', e.target.value)}
+              className="w-32 ml-auto text-right dark:bg-slate-900 dark:border-slate-700"
+              placeholder="Auto"
+            />
+          ) : (
+            <div>
+              <span className={`font-medium ${
+                (budget.weekly_used || 0) > 0 ? 'text-orange-600 dark:text-orange-400' : 'text-slate-700 dark:text-slate-300'
+              }`}>
+                {formatCurrency(budget.weekly_ceiling || 0)}
+              </span>
+              {budget.suggested_ceiling > 0 && (
+                <div className="text-xs text-slate-400 dark:text-slate-500">
+                  Suggested: {formatCurrency(budget.suggested_ceiling)}
+                </div>
+              )}
             </div>
           )}
-        </CardContent>
-      </Card>
-
-      {/* ============================================================
-      MODALS (same as before - kept for functionality)
-      ============================================================ */}
-
-      {/* Create Modal */}
-      <Dialog open={showCreateModal} onOpenChange={setShowCreateModal}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Plus className="h-5 w-5 text-blue-600" />
-              Set Annual Budget
-            </DialogTitle>
-            <DialogDescription>Set annual fuel budget for a department</DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleCreate}>
-            <div className="space-y-4 py-4">
-              <div>
-                <Label>Department *</Label>
-                <select
-                  value={formData.department_id}
-                  onChange={(e) => setFormData({ ...formData, department_id: e.target.value })}
-                  className="w-full mt-1.5 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">Select Department</option>
-                  {budgetData.map((dept) => (
-                    <option key={dept.department_id} value={dept.department_id}>
-                      {dept.department_name} ({dept.department_code})
-                    </option>
-                  ))}
-                </select>
-                {formErrors.department_id && (
-                  <p className="text-red-500 text-xs mt-1">{formErrors.department_id}</p>
-                )}
-              </div>
-              <div>
-                <Label>Annual Budget (₱) *</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  min="0.01"
-                  value={formData.annual_budget}
-                  onChange={(e) => setFormData({ ...formData, annual_budget: e.target.value })}
-                  placeholder="e.g., 500000.00"
-                />
-                {formErrors.annual_budget && (
-                  <p className="text-red-500 text-xs mt-1">{formErrors.annual_budget}</p>
-                )}
-              </div>
-              <div>
-                <Label>Fiscal Year</Label>
-                <select
-                  value={formData.fiscal_year}
-                  onChange={(e) => setFormData({ ...formData, fiscal_year: parseInt(e.target.value) })}
-                  className="w-full mt-1.5 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value={2025}>2025</option>
-                  <option value={2026}>2026</option>
-                  <option value={2027}>2027</option>
-                </select>
-              </div>
-              <div>
-                <Label>Reason (Optional)</Label>
-                <Input
-                  type="text"
-                  value={formData.reason || ''}
-                  onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
-                  placeholder="e.g., Initial annual budget allocation"
-                />
-              </div>
+        </TableCell>
+        <TableCell className="text-right">
+          <span className="font-medium text-yellow-600 dark:text-yellow-400">
+            {formatCurrency(budget.used_amount || 0)}
+          </span>
+          {(budget.total_used_this_year || 0) > 0 && (
+            <div className="text-xs text-slate-400 dark:text-slate-500">
+              Total: {formatCurrency(budget.total_used_this_year)}
             </div>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setShowCreateModal(false)}>Cancel</Button>
-              <Button type="submit" disabled={isSubmitting} className="bg-blue-600 hover:bg-blue-700">
-                {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                Set Annual Budget
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      {/* Edit Modal - Add to Annual Budget */}
-      <Dialog open={showEditModal} onOpenChange={setShowEditModal}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-green-600">
-              <ArrowUpCircle className="h-5 w-5" />
-              Add to Annual Budget
-            </DialogTitle>
-            <DialogDescription>
-              Add additional funds to <strong>{editingPolicy?.department_name}</strong>
-            </DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleAddToBudget}>
-            <div className="space-y-4 py-4">
-              <div>
-                <Label>Department</Label>
-                <Input value={editingPolicy?.department_name || ''} disabled className="mt-1.5 bg-slate-100" />
-              </div>
-              <div>
-                <Label>Current Annual Budget</Label>
-                <Input
-                  value={formatCurrency(editingPolicy?.annual_amount || 0)}
-                  disabled
-                  className="mt-1.5 bg-slate-100 text-blue-600 font-semibold"
-                />
-              </div>
-              <div>
-                <Label>Amount to Add (₱) *</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  min="0.01"
-                  value={formData.add_amount}
-                  onChange={(e) => setFormData({ ...formData, add_amount: e.target.value })}
-                  placeholder="e.g., 50000.00"
-                  className="border-green-300 focus:border-green-500"
-                />
-                {formErrors.add_amount && (
-                  <p className="text-red-500 text-xs mt-1">{formErrors.add_amount}</p>
-                )}
-              </div>
-              <div>
-                <Label>Reason (Optional)</Label>
-                <Input
-                  type="text"
-                  value={formData.reason || ''}
-                  onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
-                  placeholder="e.g., Additional budget for projects"
-                />
-              </div>
+          )}
+        </TableCell>
+        <TableCell className="text-right">
+          <span className="font-medium text-green-600 dark:text-green-400">
+            {formatCurrency(budget.remaining_amount || 0)}
+          </span>
+          {budget.remaining_after_weekly !== undefined && (
+            <div className="text-xs text-slate-400 dark:text-slate-500">
+              After weekly: {formatCurrency(budget.remaining_after_weekly)}
             </div>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setShowEditModal(false)}>Cancel</Button>
-              <Button type="submit" disabled={isSubmitting} className="bg-green-600 hover:bg-green-700">
-                {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                Add to Budget
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+          )}
+        </TableCell>
+        {/* ✅ Weekly Used Column */}
+        <TableCell className="text-right">
+          <span className={`font-medium ${
+            (budget.weekly_used || 0) > 0 ? 'text-red-600 dark:text-red-400' : 'text-slate-400'
+          }`}>
+            {formatCurrency(budget.weekly_used || 0)}
+          </span>
+          {(budget.weekly_used || 0) > 0 && budget.weekly_ceiling > 0 && (
+            <div className="text-xs text-slate-400 dark:text-slate-500">
+              {weeklyUsedPercent}% used
+            </div>
+          )}
+        </TableCell>
+        {/* ✅ NEW: Weekly Remaining Column */}
+        <TableCell className="text-right">
+          <span className={`font-medium ${
+            (budget.weekly_remaining || 0) <= 0 ? 'text-red-600 dark:text-red-400' : 
+            (budget.weekly_remaining || 0) < (budget.weekly_ceiling || 0) * 0.2 ? 'text-yellow-600 dark:text-yellow-400' : 
+            'text-green-600 dark:text-green-400'
+          }`}>
+            {formatCurrency(budget.weekly_remaining || 0)}
+          </span>
+          {(budget.weekly_remaining || 0) > 0 && budget.weekly_ceiling > 0 && (
+            <div className="text-xs text-slate-400 dark:text-slate-500">
+              {formatCurrency(budget.weekly_ceiling - budget.weekly_remaining)} used
+            </div>
+          )}
+        </TableCell>
+        <TableCell className="text-center">
+          {getStatusBadge(budget.status)}
+        </TableCell>
+        <TableCell className="text-right">
+          <div className="flex items-center justify-end gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => handleView(budget)}
+              className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:text-blue-300 dark:hover:bg-blue-950/30 h-8 w-8 p-0"
+              title="View Details"
+            >
+              <Eye className="h-4 w-4" />
+            </Button>
+            {!isBulkMode && (
+              <>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setAddBudgetData({
+                      department_id: budget.department_id.toString(),
+                      additional_amount: '',
+                      reason: '',
+                    });
+                    setShowAddBudgetDialog(true);
+                  }}
+                  className="text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:text-emerald-300 dark:hover:bg-emerald-950/30 h-8 w-8 p-0"
+                  title="Add Budget"
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => handleEdit(budget)}
+                  className="text-green-600 hover:text-green-700 hover:bg-green-50 dark:text-green-400 dark:hover:text-green-300 dark:hover:bg-green-950/30 h-8 w-8 p-0"
+                  title="Edit Budget"
+                >
+                  <Edit className="h-4 w-4" />
+                </Button>
+              </>
+            )}
+          </div>
+        </TableCell>
+      </TableRow>
+    );
+  })}
+</TableBody>
+                            </Table>
+                        </div>
+                    )}
+                </CardContent>
+            </Card>
 
-      {/* Weekly Allocation Modal - Compact Version */}
-<Dialog open={showWeeklyModal} onOpenChange={setShowWeeklyModal}>
-  <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
-    <DialogHeader className="pb-2">
-      <DialogTitle className="flex items-center gap-2 text-orange-600 text-base">
-        <CalendarRange className="h-4 w-4" />
-        Set Weekly Allocation
+            {/* ========== EDIT DIALOG ========== */}
+            <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+                <DialogContent className="dark:bg-slate-800 dark:border-slate-700 max-w-md">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2 text-slate-900 dark:text-white">
+                            <Edit className="h-5 w-5 text-green-600" />
+                            Set Annual Budget
+                        </DialogTitle>
+                        <DialogDescription className="dark:text-slate-400">
+                            Set annual budget and weekly ceiling for{" "}
+                            {editingBudget?.department_name}
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="space-y-4">
+                        <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-3">
+                            <div className="grid grid-cols-2 gap-2 text-sm">
+                                <div>
+                                    <p className="text-slate-500 dark:text-slate-400 text-xs">
+                                        Department
+                                    </p>
+                                    <p className="font-semibold text-slate-900 dark:text-white">
+                                        {editingBudget?.department_name}
+                                    </p>
+                                </div>
+                                <div>
+                                    <p className="text-slate-500 dark:text-slate-400 text-xs">
+                                        Code
+                                    </p>
+                                    <p className="font-semibold text-slate-900 dark:text-white">
+                                        {editingBudget?.department_code}
+                                    </p>
+                                </div>
+                                <div>
+                                    <p className="text-slate-500 dark:text-slate-400 text-xs">
+                                        Fiscal Year
+                                    </p>
+                                    <p className="font-semibold text-slate-900 dark:text-white">
+                                        {selectedYear}
+                                    </p>
+                                </div>
+                                <div>
+                                    <p className="text-slate-500 dark:text-slate-400 text-xs">
+                                        Current Used
+                                    </p>
+                                    <p className="font-semibold text-yellow-600">
+                                        {formatCurrency(
+                                            editingBudget?.used_amount,
+                                        )}
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                                Annual Budget (₱){" "}
+                                <span className="text-red-500">*</span>
+                            </label>
+                            <Input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={formData.annual_amount}
+                                onChange={(e) => {
+                                    const value = e.target.value;
+                                    setFormData({
+                                        ...formData,
+                                        annual_amount: value,
+                                        weekly_ceiling: value
+                                            ? (parseFloat(value) / 52).toFixed(
+                                                  2,
+                                              )
+                                            : "",
+                                    });
+                                }}
+                                className="mt-1.5 dark:bg-slate-900 dark:border-slate-700"
+                                placeholder="Enter annual budget"
+                            />
+                        </div>
+
+                        <div>
+                            <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                                Weekly Fueling Ceiling (₱)
+                                <span className="text-xs text-slate-500 dark:text-slate-400 ml-2">
+                                    (Suggested:{" "}
+                                    {formData.annual_amount
+                                        ? formatCurrency(
+                                              parseFloat(
+                                                  formData.annual_amount,
+                                              ) / 52,
+                                          )
+                                        : "₱0.00"}
+                                    )
+                                </span>
+                            </label>
+                            <Input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={formData.weekly_ceiling}
+                                onChange={(e) =>
+                                    setFormData({
+                                        ...formData,
+                                        weekly_ceiling: e.target.value,
+                                    })
+                                }
+                                className="mt-1.5 dark:bg-slate-900 dark:border-slate-700"
+                                placeholder="Auto-calculated"
+                            />
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                                If left empty, it will be auto-calculated as
+                                (Annual ÷ 52)
+                            </p>
+                        </div>
+                    </div>
+
+                    <DialogFooter className="mt-6">
+                        <Button
+                            variant="outline"
+                            onClick={() => {
+                                setShowEditDialog(false);
+                                setEditingBudget(null);
+                            }}
+                            className="dark:border-slate-700 dark:text-slate-300"
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            onClick={handleSetBudget}
+                            disabled={setBudgetMutation.isPending}
+                            className="bg-green-600 hover:bg-green-700"
+                        >
+                            {setBudgetMutation.isPending ? (
+                                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                            ) : (
+                                <Save className="h-4 w-4 mr-2" />
+                            )}
+                            Save Budget
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* ========== ADD BUDGET DIALOG ========== */}
+            <Dialog
+                open={showAddBudgetDialog}
+                onOpenChange={setShowAddBudgetDialog}
+            >
+                <DialogContent className="dark:bg-slate-800 dark:border-slate-700 max-w-md">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2 text-slate-900 dark:text-white">
+                            <Plus className="h-5 w-5 text-emerald-600" />
+                            Add Additional Budget
+                        </DialogTitle>
+                        <DialogDescription className="dark:text-slate-400">
+                            Add additional annual budget to a department
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="space-y-4">
+                        <div className="bg-blue-50 dark:bg-blue-950/30 rounded-lg p-3 border border-blue-200 dark:border-blue-800">
+                            <div className="flex items-start gap-2">
+                                <Info className="h-4 w-4 text-blue-500 dark:text-blue-400 mt-0.5 flex-shrink-0" />
+                                <div className="text-xs text-blue-700 dark:text-blue-300">
+                                    <p>Adding budget will:</p>
+                                    <ul className="list-disc list-inside mt-1 space-y-1">
+                                        <li>
+                                            Increase the annual budget of the
+                                            department
+                                        </li>
+                                        <li>
+                                            Automatically update the weekly
+                                            ceiling
+                                        </li>
+                                        <li>
+                                            Be recorded in the budget history
+                                        </li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                                Department{" "}
+                                <span className="text-red-500">*</span>
+                            </label>
+                            <select
+                                value={addBudgetData.department_id}
+                                onChange={(e) =>
+                                    setAddBudgetData({
+                                        ...addBudgetData,
+                                        department_id: e.target.value,
+                                    })
+                                }
+                                className="w-full mt-1.5 px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-900 dark:text-white"
+                            >
+                                <option value="">Select Department</option>
+                                {budgets.map((budget) => (
+                                    <option
+                                        key={budget.department_id}
+                                        value={budget.department_id}
+                                    >
+                                        {budget.department_name} (
+                                        {budget.department_code})
+                                        {budget.has_budget &&
+                                            ` - Current: ${formatCurrency(budget.annual_amount)}`}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+
+                        <div>
+                            <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                                Additional Amount (₱){" "}
+                                <span className="text-red-500">*</span>
+                            </label>
+                            <Input
+                                type="number"
+                                step="0.01"
+                                min="0.01"
+                                value={addBudgetData.additional_amount}
+                                onChange={(e) =>
+                                    setAddBudgetData({
+                                        ...addBudgetData,
+                                        additional_amount: e.target.value,
+                                    })
+                                }
+                                className="mt-1.5 dark:bg-slate-900 dark:border-slate-700"
+                                placeholder="Enter amount to add"
+                            />
+                        </div>
+
+                        <div>
+                            <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                                Reason <span className="text-red-500">*</span>
+                            </label>
+                            <Input
+                                type="text"
+                                value={addBudgetData.reason}
+                                onChange={(e) =>
+                                    setAddBudgetData({
+                                        ...addBudgetData,
+                                        reason: e.target.value,
+                                    })
+                                }
+                                className="mt-1.5 dark:bg-slate-900 dark:border-slate-700"
+                                placeholder="e.g., Mayor's Memo No. 2026-001, Additional fuel allocation"
+                            />
+                        </div>
+
+                        {addBudgetData.department_id &&
+                            addBudgetData.additional_amount && (
+                                <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-3">
+                                    <p className="text-sm text-slate-600 dark:text-slate-300">
+                                        {
+                                            budgets.find(
+                                                (b) =>
+                                                    b.department_id ===
+                                                    parseInt(
+                                                        addBudgetData.department_id,
+                                                    ),
+                                            )?.department_name
+                                        }{" "}
+                                        will receive:
+                                    </p>
+                                    <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400">
+                                        {formatCurrency(
+                                            parseFloat(
+                                                addBudgetData.additional_amount,
+                                            ) || 0,
+                                        )}
+                                    </p>
+                                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                                        New weekly ceiling:{" "}
+                                        {formatCurrency(
+                                            (parseFloat(
+                                                addBudgetData.additional_amount,
+                                            ) || 0) / 52,
+                                        )}
+                                    </p>
+                                </div>
+                            )}
+                    </div>
+
+                    <DialogFooter className="mt-6">
+                        <Button
+                            variant="outline"
+                            onClick={() => {
+                                setShowAddBudgetDialog(false);
+                                setAddBudgetData({
+                                    department_id: "",
+                                    additional_amount: "",
+                                    reason: "",
+                                });
+                            }}
+                            className="dark:border-slate-700 dark:text-slate-300"
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            onClick={handleAddBudget}
+                            disabled={addBudgetMutation.isPending}
+                            className="bg-emerald-600 hover:bg-emerald-700"
+                        >
+                            {addBudgetMutation.isPending ? (
+                                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                            ) : (
+                                <Plus className="h-4 w-4 mr-2" />
+                            )}
+                            Add Budget
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* ========== VIEW DIALOG - IMPROVED ========== */}
+<Dialog open={showViewDialog} onOpenChange={setShowViewDialog}>
+  <DialogContent className="dark:bg-slate-800 dark:border-slate-700 max-w-lg">
+    <DialogHeader>
+      <DialogTitle className="flex items-center gap-2 text-slate-900 dark:text-white">
+        <Eye className="h-5 w-5 text-blue-600" />
+        Budget Details
       </DialogTitle>
-      <DialogDescription className="text-xs">
-        Set weekly budget for <strong>{weeklyPolicy?.department_name}</strong>
+      <DialogDescription className="dark:text-slate-400">
+        {viewingBudget?.department_name} - {selectedYear}
       </DialogDescription>
     </DialogHeader>
 
-    <form onSubmit={handleUpdateWeekly}>
-      <div className="space-y-3 py-2">
-        {/* Current Budget Info - Compact */}
-        <div className="grid grid-cols-2 gap-2 bg-slate-50 dark:bg-slate-900/50 p-2 rounded-lg">
-          <div>
-            <p className="text-[10px] text-slate-500">Annual Budget</p>
-            <p className="text-sm font-bold text-blue-600">{formatCurrency(weeklyPolicy?.annual_amount || 0)}</p>
-          </div>
-          <div>
-            <p className="text-[10px] text-slate-500">Current Weekly</p>
-            <p className="text-sm font-bold text-purple-600">{formatCurrency(weeklyPolicy?.weekly_allocation || 0)}</p>
+    {viewingBudget && (
+      <div className="space-y-4">
+        {/* Department Info */}
+        <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-3">
+          <div className="grid grid-cols-2 gap-2 text-sm">
+            <div>
+              <p className="text-xs text-slate-500 dark:text-slate-400">Department</p>
+              <p className="font-semibold text-slate-900 dark:text-white">
+                {viewingBudget.department_name}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-500 dark:text-slate-400">Code</p>
+              <p className="font-semibold text-slate-900 dark:text-white">
+                {viewingBudget.department_code}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-500 dark:text-slate-400">Fiscal Year</p>
+              <p className="font-semibold text-slate-900 dark:text-white">{selectedYear}</p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-500 dark:text-slate-400">Status</p>
+              <p>{getStatusBadge(viewingBudget.status)}</p>
+            </div>
           </div>
         </div>
 
-        {/* Week Info - Compact */}
-        <div className={`p-2 rounded-lg text-xs ${new Date().getDay() >= 5 ? 'bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800' : 'bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800'}`}>
-          <div className="flex items-center gap-1.5">
-            <CalendarRange className="h-3 w-3 text-amber-600 dark:text-amber-400" />
-            <span className="text-amber-700 dark:text-amber-300">
-              {new Date().getDay() >= 5 ? (
-                <>⏳ Next Week (starts Mon)</>
-              ) : (
-                <>📅 Current Week</>
-              )}
-            </span>
+        {/* Annual Budget Summary */}
+        <div className="grid grid-cols-3 gap-3">
+          <div className="bg-blue-50 dark:bg-blue-950/30 rounded-lg p-3 text-center border border-blue-200 dark:border-blue-800">
+            <p className="text-xs text-blue-600 dark:text-blue-400 font-medium">Annual Budget</p>
+            <p className="text-lg font-bold text-blue-600 dark:text-blue-400">
+              {formatCurrency(viewingBudget.annual_amount)}
+            </p>
+          </div>
+          <div className="bg-yellow-50 dark:bg-yellow-950/30 rounded-lg p-3 text-center border border-yellow-200 dark:border-yellow-800">
+            <p className="text-xs text-yellow-600 dark:text-yellow-400 font-medium">Total Used</p>
+            <p className="text-lg font-bold text-yellow-600 dark:text-yellow-400">
+              {formatCurrency(viewingBudget.used_amount || 0)}
+            </p>
+            {(viewingBudget.total_used_this_year || 0) > 0 && (
+              <p className="text-xs text-yellow-500">
+                Total: {formatCurrency(viewingBudget.total_used_this_year)}
+              </p>
+            )}
+          </div>
+          <div className="bg-green-50 dark:bg-green-950/30 rounded-lg p-3 text-center border border-green-200 dark:border-green-800">
+            <p className="text-xs text-green-600 dark:text-green-400 font-medium">Annual Remaining</p>
+            <p className="text-lg font-bold text-green-600 dark:text-green-400">
+              {formatCurrency(viewingBudget.remaining_amount || 0)}
+            </p>
+            {viewingBudget.remaining_after_weekly !== undefined && (
+              <p className="text-xs text-green-500">
+                After weekly: {formatCurrency(viewingBudget.remaining_after_weekly)}
+              </p>
+            )}
           </div>
         </div>
 
-        {/* New Weekly Allocation Input */}
-        <div>
-          <Label className="text-xs">New Weekly Allocation (₱) *</Label>
-          <Input
-            type="number"
-            step="0.01"
-            min="0.01"
-            value={formData.weekly_allocation}
-            onChange={(e) => setFormData({ ...formData, weekly_allocation: e.target.value })}
-            placeholder="Enter amount"
-            className="mt-1 h-9 text-sm border-orange-300 focus:border-orange-500"
-          />
-          {formErrors.weekly_allocation && (
-            <p className="text-red-500 text-xs mt-0.5">{formErrors.weekly_allocation}</p>
+        {/* Weekly Budget Summary */}
+        <div className="grid grid-cols-3 gap-3">
+          <div className="bg-purple-50 dark:bg-purple-950/30 rounded-lg p-3 text-center border border-purple-200 dark:border-purple-800">
+            <p className="text-xs text-purple-600 dark:text-purple-400 font-medium">Weekly Ceiling</p>
+            <p className="text-lg font-bold text-purple-600 dark:text-purple-400">
+              {formatCurrency(viewingBudget.weekly_ceiling || 0)}
+            </p>
+            {viewingBudget.suggested_ceiling > 0 && (
+              <p className="text-xs text-purple-500">
+                Suggested: {formatCurrency(viewingBudget.suggested_ceiling)}
+              </p>
+            )}
+          </div>
+          <div className="bg-orange-50 dark:bg-orange-950/30 rounded-lg p-3 text-center border border-orange-200 dark:border-orange-800">
+            <p className="text-xs text-orange-600 dark:text-orange-400 font-medium">Weekly Used</p>
+            <p className="text-lg font-bold text-orange-600 dark:text-orange-400">
+              {formatCurrency(viewingBudget.weekly_used || 0)}
+            </p>
+            {viewingBudget.weekly_ceiling > 0 && (
+              <p className="text-xs text-orange-500">
+                {Math.round(((viewingBudget.weekly_used || 0) / viewingBudget.weekly_ceiling) * 100)}% used
+              </p>
+            )}
+          </div>
+          <div className={`rounded-lg p-3 text-center border ${
+            (viewingBudget.weekly_remaining || 0) <= 0 
+              ? 'bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800'
+              : (viewingBudget.weekly_remaining || 0) < (viewingBudget.weekly_ceiling || 0) * 0.2
+              ? 'bg-yellow-50 dark:bg-yellow-950/30 border-yellow-200 dark:border-yellow-800'
+              : 'bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-800'
+          }`}>
+            <p className={`text-xs font-medium ${
+              (viewingBudget.weekly_remaining || 0) <= 0 
+                ? 'text-red-600 dark:text-red-400'
+                : (viewingBudget.weekly_remaining || 0) < (viewingBudget.weekly_ceiling || 0) * 0.2
+                ? 'text-yellow-600 dark:text-yellow-400'
+                : 'text-green-600 dark:text-green-400'
+            }`}>
+              Weekly Remaining
+            </p>
+            <p className={`text-lg font-bold ${
+              (viewingBudget.weekly_remaining || 0) <= 0 
+                ? 'text-red-600 dark:text-red-400'
+                : (viewingBudget.weekly_remaining || 0) < (viewingBudget.weekly_ceiling || 0) * 0.2
+                ? 'text-yellow-600 dark:text-yellow-400'
+                : 'text-green-600 dark:text-green-400'
+            }`}>
+              {formatCurrency(viewingBudget.weekly_remaining || 0)}
+            </p>
+            {(viewingBudget.weekly_remaining || 0) > 0 && (
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                {formatCurrency((viewingBudget.weekly_ceiling || 0) - (viewingBudget.weekly_remaining || 0))} used
+              </p>
+            )}
+            {(viewingBudget.weekly_remaining || 0) <= 0 && (
+              <p className="text-xs text-red-500">
+                ⚠️ Exceeded!
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* Utilization Bars */}
+        <div className="space-y-3">
+          {/* Annual Utilization */}
+          <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-3">
+            <div className="flex justify-between items-center">
+              <span className="text-xs text-slate-500 dark:text-slate-400">Annual Utilization</span>
+              <span className="text-xs font-semibold">
+                {viewingBudget.utilization_percentage || 0}%
+              </span>
+            </div>
+            <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2 mt-1">
+              <div
+                className={`h-2 rounded-full transition-all ${
+                  (viewingBudget.utilization_percentage || 0) > 80
+                    ? 'bg-red-500'
+                    : (viewingBudget.utilization_percentage || 0) > 50
+                    ? 'bg-yellow-500'
+                    : 'bg-green-500'
+                }`}
+                style={{ width: `${Math.min(viewingBudget.utilization_percentage || 0, 100)}%` }}
+              />
+            </div>
+          </div>
+
+          {/* Weekly Utilization */}
+          {viewingBudget.weekly_ceiling > 0 && (
+            <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-3">
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-slate-500 dark:text-slate-400">Weekly Utilization</span>
+                <span className="text-xs font-semibold">
+                  {viewingBudget.weekly_ceiling > 0 
+                    ? `${Math.round(((viewingBudget.weekly_used || 0) / viewingBudget.weekly_ceiling) * 100)}%`
+                    : '0%'
+                  }
+                </span>
+              </div>
+              <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2 mt-1">
+                <div
+                  className={`h-2 rounded-full transition-all ${
+                    ((viewingBudget.weekly_used || 0) / viewingBudget.weekly_ceiling) > 0.8
+                      ? 'bg-red-500'
+                      : ((viewingBudget.weekly_used || 0) / viewingBudget.weekly_ceiling) > 0.5
+                      ? 'bg-yellow-500'
+                      : 'bg-green-500'
+                  }`}
+                  style={{ 
+                    width: `${Math.min(((viewingBudget.weekly_used || 0) / viewingBudget.weekly_ceiling) * 100, 100)}%` 
+                  }}
+                />
+              </div>
+            </div>
           )}
         </div>
 
-        {/* Reason Input - Optional */}
-        <div>
-          <Label className="text-xs">Reason (Optional)</Label>
-          <Input
-            type="text"
-            value={formData.reason || ''}
-            onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
-            placeholder="e.g., Weekly allocation"
-            className="mt-1 h-9 text-sm"
-          />
-        </div>
-
-        {/* Preview - Compact */}
-        {formData.weekly_allocation && parseFloat(formData.weekly_allocation) > 0 && (
-          <div className="bg-orange-50 dark:bg-orange-950/30 p-2 rounded-lg border border-orange-200 dark:border-orange-800">
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-orange-700 dark:text-orange-300">New Annual:</span>
-              <span className="font-bold text-orange-700 dark:text-orange-300">
-                {formatCurrency((parseFloat(weeklyPolicy?.annual_amount || 0) - parseFloat(formData.weekly_allocation)))}
+        {/* Weekly Progress Bar (Visual) */}
+        {viewingBudget.weekly_ceiling > 0 && (
+          <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-3">
+            <div className="flex justify-between items-center mb-1">
+              <span className="text-xs text-slate-500 dark:text-slate-400">Weekly Progress</span>
+              <span className="text-xs font-semibold">
+                {formatCurrency(viewingBudget.weekly_used || 0)} / {formatCurrency(viewingBudget.weekly_ceiling)}
               </span>
             </div>
-            <p className="text-[10px] text-orange-500 mt-0.5">
-              ⚠️ Deduct ₱{parseFloat(formData.weekly_allocation).toFixed(2)} from annual
-            </p>
+            <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-4 relative overflow-hidden">
+              <div
+                className={`h-4 rounded-full transition-all flex items-center justify-end pr-1 ${
+                  ((viewingBudget.weekly_used || 0) / viewingBudget.weekly_ceiling) > 0.8
+                    ? 'bg-red-500'
+                    : ((viewingBudget.weekly_used || 0) / viewingBudget.weekly_ceiling) > 0.5
+                    ? 'bg-yellow-500'
+                    : 'bg-green-500'
+                }`}
+                style={{ 
+                  width: `${Math.min(((viewingBudget.weekly_used || 0) / viewingBudget.weekly_ceiling) * 100, 100)}%` 
+                }}
+              >
+                <span className="text-[10px] text-white font-bold">
+                  {Math.round(Math.min(((viewingBudget.weekly_used || 0) / viewingBudget.weekly_ceiling) * 100, 100))}%
+                </span>
+              </div>
+            </div>
+            {(viewingBudget.weekly_remaining || 0) > 0 && (
+              <p className="text-xs text-green-600 dark:text-green-400 mt-1">
+                ✅ {formatCurrency(viewingBudget.weekly_remaining)} remaining this week
+              </p>
+            )}
+            {(viewingBudget.weekly_remaining || 0) <= 0 && (
+              <p className="text-xs text-red-600 dark:text-red-400 mt-1">
+                ⚠️ Weekly budget exceeded!
+              </p>
+            )}
           </div>
         )}
       </div>
+    )}
 
-      <DialogFooter className="gap-2 pt-2">
-        <Button type="button" variant="outline" onClick={() => setShowWeeklyModal(false)} className="h-8 text-sm">
-          Cancel
-        </Button>
-        <Button type="submit" disabled={isSubmitting} className="bg-orange-600 hover:bg-orange-700 h-8 text-sm">
-          {isSubmitting ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
-          Set Weekly
-        </Button>
-      </DialogFooter>
-    </form>
+    <DialogFooter>
+      <Button
+        variant="outline"
+        onClick={() => {
+          setShowViewDialog(false);
+          setViewingBudget(null);
+        }}
+        className="dark:border-slate-700 dark:text-slate-300"
+      >
+        Close
+      </Button>
+    </DialogFooter>
   </DialogContent>
 </Dialog>
-
-      {/* Delete Modal */}
-      <Dialog open={showDeleteModal} onOpenChange={setShowDeleteModal}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-red-600">
-              <AlertCircle className="h-5 w-5" />
-              Delete Budget Policy
-            </DialogTitle>
-            <DialogDescription>
-              Are you sure you want to delete the budget for{' '}
-              <strong>{deletingPolicy?.department_name}</strong>?
-            </DialogDescription>
-          </DialogHeader>
-          <div className="py-4">
-            <div className="bg-red-50 p-3 rounded-lg">
-              <p className="text-sm text-red-700 flex items-center gap-2">
-                <AlertTriangle className="h-4 w-4" />
-                This action cannot be undone.
-              </p>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setShowDeleteModal(false)}>Cancel</Button>
-            <Button type="button" onClick={handleDelete} disabled={isSubmitting} className="bg-red-600 hover:bg-red-700">
-              {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-              Delete
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
-  );
+        </div>
+    );
 };
 
 export default BudgetAllocation;

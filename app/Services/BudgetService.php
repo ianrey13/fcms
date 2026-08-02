@@ -301,4 +301,21 @@ class BudgetService
         
         return $results;
     }
+    /**
+ * Get used amount for a department
+ */
+public function getUsedAmount($departmentId, $year = null)
+{
+    $year = $year ?? Carbon::now()->year;
+    
+    $budget = AnnualBudget::where('department_id', $departmentId)
+        ->where('fiscal_year', $year)
+        ->first();
+        
+    if (!$budget) {
+        return 0;
+    }
+    
+    return $budget->used_amount;
+}
 }

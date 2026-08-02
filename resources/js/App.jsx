@@ -22,6 +22,8 @@ const FuelReceipts = lazy(() => import("./pages/gso/FuelReceipts"));
 const CompletedTrips = lazy(() => import("./pages/gso/CompletedTrips"));
 const LiveTracking = lazy(() => import("./pages/gso/LiveTracking"));
 const SystemSettings = lazy(() => import("./pages/gso/SystemSettings"));
+const AnnualBudget = lazy(()=>import('./pages/gso/FiscalYearManagement'));
+
 
 // ============ GSO REPORT PAGES (NEW) ============
 const WeeklyMonitoring = lazy(
@@ -46,6 +48,8 @@ const EditDepartment = lazy(
 const UserManagement = lazy(() => import("./pages/gso/users/UserManagement"));
 const AddUser = lazy(() => import("./pages/gso/users/AddUser"));
 const EditUser = lazy(() => import("./pages/gso/users/EditUser"));
+
+
 
 // ============ GSO ADMIN (Vehicles) ============
 const VehicleManagement = lazy(
@@ -252,6 +256,16 @@ function App() {
                         </ProtectedRoute>
                     }
                 />
+                <Route
+  path="/gso/annual-budget"
+  element={
+    <ProtectedRoute allowedRoles={["gso_office"]}>
+      <Layout>
+        <AnnualBudget />
+      </Layout>
+    </ProtectedRoute>
+  }
+/>
 
                 {/* ============================================================ */}
                 {/* ============ GSO ADMIN ROUTES ============ */}

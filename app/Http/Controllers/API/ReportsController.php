@@ -1048,18 +1048,41 @@ public function getFuelReceiptReport(Request $request)
         ]);
     }
 
-    /**
+/**
  * Get Weekly Monitoring Data
  */
 public function getWeeklyMonitoring(Request $request)
 {
     try {
         $departmentId = $request->get('department_id');
-        $weekStart = $request->get('week_start') ?? now()->startOfWeek()->toDateString();
-        $weekEnd = $request->get('week_end') ?? now()->endOfWeek()->toDateString();
+        $weekStart = $request->get('week_start');
+        $weekEnd = $request->get('week_end');
 
-        $query = TripTicket::with(['department', 'gasSlip'])
-            ->whereBetween('created_at', [$weekStart, $weekEnd]);
+        // ✅ If no dates provided, use current week
+        if (!$weekStart || !$weekEnd) {
+            $weekStart = now()->startOfWeek()->toDateString();
+            $weekEnd = now()->endOfWeek()->toDateString();
+        }
+
+        Log::info('Weekly Monitoring Request', [
+            'department_id' => $departmentId,
+            'week_start' => $weekStart,
+            'week_end' => $weekEnd,
+        ]);
+
+        // ✅ Build query with proper relationships
+        $query = TripTicket::with([
+            'department', 
+            'gasSlip', 
+            'gasSlip.fuelReceipt',
+            'driver.user', 
+            'vehicle'
+        ])
+        // ✅ FIXED: Use 'submitted_at' instead of 'created_at'
+        ->whereBetween('submitted_at', [
+            Carbon::parse($weekStart)->startOfDay(),
+            Carbon::parse($weekEnd)->endOfDay()
+        ]);
 
         if ($departmentId) {
             $query->where('department_id', $departmentId);
@@ -1067,7 +1090,9 @@ public function getWeeklyMonitoring(Request $request)
 
         $trips = $query->get();
 
-        // Calculate metrics
+        Log::info('Trips found: ' . $trips->count());
+
+        // ✅ Calculate metrics
         $totalBudget = 0;
         $totalUsed = 0;
         $completed = 0;
@@ -1085,16 +1110,39 @@ public function getWeeklyMonitoring(Request $request)
             }
         }
 
-        // Get budget from department
-        $budgetPeriod = DeptBudgetPeriod::where('department_id', $departmentId)
-            ->where('status', 'active')
-            ->first();
+        // ✅ Get budget from department
+        if ($departmentId) {
+            $budgetPeriod = DeptBudgetPeriod::where('department_id', $departmentId)
+                ->where('status', 'active')
+                ->first();
 
-        if ($budgetPeriod) {
-            $totalBudget = $budgetPeriod->allocated_amount;
+            if ($budgetPeriod) {
+                $totalBudget = $budgetPeriod->allocated_amount;
+            }
+        } else {
+            // ✅ If all departments, sum all active budgets
+            $totalBudget = DeptBudgetPeriod::where('status', 'active')->sum('allocated_amount');
         }
 
-        return response()->json([
+        // ✅ Format trips data
+        $formattedTrips = $trips->map(function($trip) {
+            $fuelReceipt = $trip->gasSlip?->fuelReceipt;
+            $actualFuel = $fuelReceipt ? $fuelReceipt->liters_availed : null;
+            
+            return [
+                'id' => $trip->trip_ticket_id,
+                'number' => $trip->trip_ticket_number,
+                'destination' => $trip->destination,
+                'status' => $trip->status,
+                'estimated_fuel' => $trip->estimated_fuel_liters ?? null,
+                'actual_fuel' => $actualFuel,
+                'amount' => $trip->gasSlip?->amount_released ?? 0,
+                'driver' => $trip->driver?->user?->full_name ?? 'N/A',
+                'vehicle' => $trip->vehicle?->plate_number ?? 'N/A',
+            ];
+        });
+
+        $response = [
             'success' => true,
             'data' => [
                 'summary' => [
@@ -1110,27 +1158,21 @@ public function getWeeklyMonitoring(Request $request)
                     'start' => $weekStart,
                     'end' => $weekEnd,
                 ],
-                'trips' => $trips->map(function($trip) {
-                    return [
-                        'id' => $trip->trip_ticket_id,
-                        'number' => $trip->trip_ticket_number,
-                        'destination' => $trip->destination,
-                        'status' => $trip->status,
-                        'estimated_fuel' => $trip->estimated_fuel_liters,
-                        'actual_fuel' => $trip->actual_fuel_used,
-                        'amount' => $trip->gasSlip?->amount_released ?? 0,
-                        'driver' => $trip->driver?->user?->full_name ?? 'N/A',
-                        'vehicle' => $trip->vehicle?->plate_number ?? 'N/A',
-                    ];
-                }),
+                'trips' => $formattedTrips,
             ]
-        ]);
+        ];
+
+        Log::info('Weekly Monitoring Response', ['summary' => $response['data']['summary']]);
+
+        return response()->json($response);
 
     } catch (\Exception $e) {
         Log::error('Weekly monitoring error: ' . $e->getMessage());
+        Log::error('Stack trace: ' . $e->getTraceAsString());
+        
         return response()->json([
             'success' => false,
-            'message' => 'Failed to fetch weekly monitoring data'
+            'message' => 'Failed to fetch weekly monitoring data: ' . $e->getMessage()
         ], 500);
     }
 }
@@ -1208,4 +1250,6 @@ public function getFuelWithoutTrip(Request $request)
         ], 500);
     }
 }
+
+
 }

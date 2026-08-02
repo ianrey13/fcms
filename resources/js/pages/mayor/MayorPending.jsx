@@ -388,7 +388,7 @@ const MayorPending = () => {
   const openApproveDialog = async (ticket) => {
     console.log("Opening approve dialog for ticket:", ticket);
     setSelectedTicket(ticket);
-    setAmountReleased(ticket.estimated_cost?.toString() || "");
+    setAmountReleased("0");
     
     // ✅ Reset cross-department state
     setIsCrossDepartment(false);
@@ -848,7 +848,7 @@ const MayorPending = () => {
         </CardContent>
       </Card>
 
-      {/* ========== APPROVE DIALOG ========== */}
+    {/* ========== APPROVE DIALOG ========== */}
 <Dialog open={showApproveDialog} onOpenChange={setShowApproveDialog}>
   <DialogContent className="max-w-md dark:bg-slate-800 dark:border-slate-700">
     <DialogHeader>
@@ -978,7 +978,7 @@ const MayorPending = () => {
       </div>
 
       {/* ============================================================ */}
-      {/* ✅ NEW: Cross-Department Checkbox (Native HTML) */}
+      {/* ✅ Cross-Department Checkbox */}
       {/* ============================================================ */}
       <div className="border-t dark:border-slate-700 pt-4 mt-2">
         <div className="flex items-start gap-3">
@@ -1062,24 +1062,71 @@ const MayorPending = () => {
         )}
       </div>
 
-      {/* Amount Input */}
-      <div>
-        <Label
-          htmlFor="amount"
-          className="text-slate-700 dark:text-slate-300"
-        >
-          Amount to Release (₱)
-        </Label>
-        <Input
-          id="amount"
-          type="number"
-          step="0.01"
-          placeholder="Enter amount"
-          value={amountReleased}
-          onChange={(e) => setAmountReleased(e.target.value)}
-          className="mt-1.5 dark:bg-slate-900 dark:border-slate-700"
-        />
-      </div>
+    {/* ============================================================ */}
+{/* ✅ Amount Input with Suggested Display */}
+{/* ============================================================ */}
+<div>
+  <Label
+    htmlFor="amount"
+    className="text-slate-700 dark:text-slate-300"
+  >
+    Amount to Release (₱)
+  </Label>
+  <Input
+    id="amount"
+    type="number"
+    step="0.01"
+    min="0"
+    placeholder="Enter amount"
+    value={amountReleased}
+    onChange={(e) => setAmountReleased(e.target.value)}
+    className="mt-1.5 dark:bg-slate-900 dark:border-slate-700"
+  />
+  
+  {/* ✅ SUGGESTED AMOUNT - Display only, not input */}
+  {selectedTicket?.estimated_cost && (
+    <div className="mt-1.5 flex items-center gap-2">
+      <span className="text-xs text-slate-500 dark:text-slate-400">Suggested:</span>
+      <span className="text-xs font-medium text-blue-600 dark:text-blue-400">
+        {formatCurrency(selectedTicket.estimated_cost)}
+      </span>
+      <button
+        type="button"
+        onClick={() => setAmountReleased(selectedTicket.estimated_cost.toString())}
+        className="text-xs text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 underline"
+      >
+        Use suggested
+      </button>
+    </div>
+  )}
+  
+  {/* ✅ WEEKLY REMAINING BUDGET - Display only */}
+  {selectedTicket?.weekly_remaining !== undefined && (
+    <div className="mt-1 flex items-center gap-2">
+      <span className="text-xs text-slate-500 dark:text-slate-400">Weekly remaining:</span>
+      <span className={`text-xs font-medium ${
+        (selectedTicket.weekly_remaining || 0) < (selectedTicket.estimated_cost || 0) 
+          ? 'text-red-600 dark:text-red-400' 
+          : 'text-green-600 dark:text-green-400'
+      }`}>
+        {formatCurrency(selectedTicket.weekly_remaining || 0)}
+      </span>
+      {(selectedTicket.weekly_remaining || 0) < (selectedTicket.estimated_cost || 0) && (
+        <span className="text-xs text-red-500">⚠️ Insufficient weekly budget</span>
+      )}
+    </div>
+  )}
+  
+  {/* ✅ Annual Remaining (optional, for reference) */}
+  {selectedTicket?.remaining_budget !== undefined && (
+    <div className="mt-0.5 flex items-center gap-2">
+      <span className="text-xs text-slate-400 dark:text-slate-500">Annual remaining:</span>
+      <span className="text-xs text-slate-500 dark:text-slate-400">
+        {formatCurrency(selectedTicket.remaining_budget)}
+      </span>
+    </div>
+  )}
+</div>
     </div>
 
     <DialogFooter className="gap-3">
