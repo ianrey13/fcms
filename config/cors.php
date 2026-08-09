@@ -15,18 +15,26 @@ return [
     |
     */
 
-    // ✅ Add 'broadcasting/auth' to paths
-    'paths' => ['api/*', 'sanctum/csrf-cookie', 'broadcasting/auth'],
+    // ✅ ADD 'storage/*' to paths
+    'paths' => [
+        'api/*', 
+        'sanctum/csrf-cookie', 
+        'broadcasting/auth',
+        'storage/*',           // ✅ ADD THIS
+        'storage/receipts/*',  // ✅ ADD THIS (optional)
+    ],
 
     'allowed_methods' => ['*'],
 
-    // ✅ Keep '*' for development, or add specific origins
+    // ✅ Keep specific origins for development
     'allowed_origins' => [
         'http://localhost:5173',
         'http://localhost:3000',
         'http://localhost:8081',
         'http://127.0.0.1:5173',
         'http://192.168.1.5:5173',
+        'http://localhost:8000',  // ✅ ADD THIS
+        'http://127.0.0.1:8000',  // ✅ ADD THIS
     ],
 
     'allowed_origins_patterns' => [],

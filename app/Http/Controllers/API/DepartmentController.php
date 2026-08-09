@@ -42,6 +42,7 @@ class DepartmentController extends Controller
             $validator = Validator::make($request->all(), [
                 'department_name' => 'required|string|max:150|unique:departments,department_name',
                 'department_code' => 'required|string|max:20|unique:departments,department_code',
+                'head_of_office' => 'nullable|string|max:150',  // ✅ ADD THIS
             ]);
 
             if ($validator->fails()) {
@@ -55,6 +56,7 @@ class DepartmentController extends Controller
             $department = Department::create([
                 'department_name' => $request->department_name,
                 'department_code' => strtoupper($request->department_code),
+                'head_of_office' => $request->head_of_office,  // ✅ ADD THIS
                 'is_active' => true,
             ]);
 
@@ -103,6 +105,7 @@ class DepartmentController extends Controller
             $validator = Validator::make($request->all(), [
                 'department_name' => 'required|string|max:150|unique:departments,department_name,' . $id . ',department_id',
                 'department_code' => 'required|string|max:20|unique:departments,department_code,' . $id . ',department_id',
+                'head_of_office' => 'nullable|string|max:150',  // ✅ ADD THIS
             ]);
 
             if ($validator->fails()) {
@@ -116,6 +119,7 @@ class DepartmentController extends Controller
             $department->update([
                 'department_name' => $request->department_name,
                 'department_code' => strtoupper($request->department_code),
+                'head_of_office' => $request->head_of_office,  // ✅ ADD THIS
             ]);
 
             return response()->json([
@@ -164,7 +168,7 @@ class DepartmentController extends Controller
     }
 
     /**
-     * ✅ ADD THIS: Toggle department status (active/inactive)
+     * Toggle department status (active/inactive)
      */
     public function toggleStatus(Request $request, $id)
     {
@@ -237,49 +241,49 @@ class DepartmentController extends Controller
     }
 
     /**
- * Get active departments only (for dropdowns)
- */
-public function getActiveDepartments()
-{
-    try {
-        $departments = Department::where('is_active', true)
-            ->orderBy('department_name')
-            ->get();
+     * Get active departments only (for dropdowns)
+     */
+    public function getActiveDepartments()
+    {
+        try {
+            $departments = Department::where('is_active', true)
+                ->orderBy('department_name')
+                ->get();
 
-        return response()->json([
-            'success' => true,
-            'data' => $departments
-        ]);
-    } catch (\Exception $e) {
-        Log::error('Get active departments error: ' . $e->getMessage());
-        return response()->json([
-            'success' => false,
-            'message' => 'Failed to fetch active departments: ' . $e->getMessage()
-        ], 500);
+            return response()->json([
+                'success' => true,
+                'data' => $departments
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Get active departments error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch active departments: ' . $e->getMessage()
+            ], 500);
+        }
     }
-}
 
-/**
- * Get departments for selector (lightweight, only active)
- */
-public function getAllForSelector()
-{
-    try {
-        $departments = Department::select('department_id', 'department_name', 'department_code')
-            ->where('is_active', true)
-            ->orderBy('department_name')
-            ->get();
+    /**
+     * Get departments for selector (lightweight, only active)
+     */
+    public function getAllForSelector()
+    {
+        try {
+            $departments = Department::select('department_id', 'department_name', 'department_code', 'head_of_office')  // ✅ ADD head_of_office
+                ->where('is_active', true)
+                ->orderBy('department_name')
+                ->get();
 
-        return response()->json([
-            'success' => true,
-            'data' => $departments
-        ]);
-    } catch (\Exception $e) {
-        Log::error('Get departments selector error: ' . $e->getMessage());
-        return response()->json([
-            'success' => false,
-            'message' => 'Failed to fetch departments: ' . $e->getMessage()
-        ], 500);
+            return response()->json([
+                'success' => true,
+                'data' => $departments
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Get departments selector error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch departments: ' . $e->getMessage()
+            ], 500);
+        }
     }
-}
 }

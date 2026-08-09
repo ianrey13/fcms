@@ -177,6 +177,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('create-trip', [TripTicketController::class, 'gsoCreate']);
         Route::post('tickets/{id}/reconcile', [GsoController::class, 'reconcileTrip']);
         Route::get('budget-overview', [GsoController::class, 'getBudgetOverview']);
+            Route::get('/vehicles/available', [TripTicketController::class, 'getAvailableVehicles']);
+
 
         // GSO can view fiscal years
         Route::get('fiscal-years', [FiscalYearController::class, 'index']);

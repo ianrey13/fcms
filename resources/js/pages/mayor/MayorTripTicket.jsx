@@ -27,12 +27,10 @@ const PRINT_STYLES = `
 const formatDate = (dateString) => {
   if (!dateString) return "";
   try {
-    // Try to parse the ISO date
     const date = typeof dateString === 'string' ? parseISO(dateString) : new Date(dateString);
     if (isNaN(date.getTime())) return "";
     return format(date, "MMMM d, yyyy");
   } catch (e) {
-    // Fallback: try to create date from string
     try {
       const date = new Date(dateString);
       if (!isNaN(date.getTime())) {
@@ -86,6 +84,8 @@ const MayorTripTicket = ({ ticket: propTicket, onClose }) => {
 
       console.log("=== MAYOR TRIP TICKET DATA ===");
       console.log("Full data:", data);
+      console.log("Department:", data?.department);
+      console.log("Head of Office:", data?.department?.head_of_office);
 
       setTicket(data);
     } catch (err) {
@@ -144,42 +144,51 @@ const MayorTripTicket = ({ ticket: propTicket, onClose }) => {
 
   // Extract ticket data
   const ticketNumber = ticket.trip_ticket_number || ticket.ticket_number || "";
-  const driverName =
+  
+  const driverName = 
     ticket.driver?.user?.full_name ||
+    (ticket.driver?.user?.first_name && ticket.driver?.user?.last_name 
+      ? `${ticket.driver.user.first_name} ${ticket.driver.user.last_name}` 
+      : "") ||
     ticket.driver?.full_name ||
+    ticket.driver?.name ||
     ticket.driver_name ||
     "";
+  
   const vehicleModel = ticket.vehicle?.vehicle_model || "";
   const plateNumber = ticket.vehicle?.plate_number || "";
   const vehicleInfo = `${vehicleModel} / ${plateNumber}`.trim();
   const passenger = ticket.passenger_name || "";
   const destination = ticket.destination || "";
   const purpose = ticket.purpose || "";
-  const chargeToOffice =
-    ticket.department?.department_name ||
-    ticket.department_name ||
-    ticket.charge_to ||
-    "";
-  const amountReleased =
-    ticket.gas_slip?.amount_released || ticket.amount_released || 0;
+  
+  const departmentName = ticket.department?.name || 
+                         ticket.department?.department_name || 
+                         ticket.department_name || 
+                         ticket.charge_to || 
+                         "";
+  
+  const headOfOffice = ticket.department?.head_of_office || 
+                       ticket.head_of_office || 
+                       "";
+  
+  const amountReleased = ticket.gas_slip?.amount_released || 
+                         ticket.amount_released || 
+                         0;
 
-  // Get Head Approval Data
+  const ticketDate = formatDate(ticket.created_at || ticket.trip_date);
+
+  // Get Head Approval Data (for OIC indicator only)
   const headApproval = ticket.head_approval;
-
   let isOICAction = false;
   let oicName = "";
 
   if (headApproval) {
-    isOICAction =
-      headApproval.is_oic_action === true || headApproval.is_oic_action === 1;
-
+    isOICAction = headApproval.is_oic_action === true || headApproval.is_oic_action === 1;
     if (isOICAction && headApproval.approved_by?.full_name) {
       oicName = headApproval.approved_by.full_name;
     }
   }
-
-  // ✅ FIXED: Format the date properly
-  const ticketDate = formatDate(ticket.created_at || ticket.trip_date);
 
   // Styles
   const styles = {
@@ -194,8 +203,7 @@ const MayorTripTicket = ({ ticket: propTicket, onClose }) => {
       background: "#fff",
     },
     headerBanner: {
-      background:
-        "linear-gradient(135deg, #2d5a3f 0%, #4a7c59 50%, #2d5a3f 100%)",
+      background: "linear-gradient(135deg, #2d5a3f 0%, #4a7c59 50%, #2d5a3f 100%)",
       padding: "10px 15px",
       display: "flex",
       alignItems: "center",
@@ -307,30 +315,30 @@ const MayorTripTicket = ({ ticket: propTicket, onClose }) => {
       borderRight: "1px solid #000",
       paddingRight: "8px",
     },
-    rightColumn: {
+    // ✅ FIXED: Head of Office Column with Signature Line (same as GSO)
+    headOfficeColumn: {
       width: "160px",
       display: "flex",
       flexDirection: "column",
       alignItems: "center",
       justifyContent: "center",
-      fontWeight: "bold",
+      padding: "8px 4px",
+    },
+    signatureLine: {
+      borderTop: "1px solid #000",
+      width: "140px",
+      paddingTop: "2px",
+      marginBottom: "2px",
+    },
+    headOfficeName: {
       fontSize: "9px",
-      textAlign: "center",
-      padding: "4px 8px",
+      fontWeight: "bold",
+      marginBottom: "2px",
     },
-    signatureContainer: {
-      display: "flex",
-      justifyContent: "center",
-      alignItems: "center",
-      flexDirection: "column",
-      marginTop: "4px",
-      marginBottom: "4px",
-    },
-    signatureImage: {
-      maxWidth: "120px",
-      maxHeight: "50px",
-      marginBottom: "4px",
-      objectFit: "contain",
+    headOfficeLabel: {
+      fontSize: "7px",
+      fontWeight: "normal",
+      color: "#333",
     },
     fuelRow: {
       display: "flex",
@@ -399,7 +407,7 @@ const MayorTripTicket = ({ ticket: propTicket, onClose }) => {
     signatureBox: {
       textAlign: "center",
     },
-    signatureLine: {
+    signatureLineDriver: {
       borderTop: "1px solid #000",
       width: "200px",
       paddingTop: "2px",
@@ -516,16 +524,15 @@ const MayorTripTicket = ({ ticket: propTicket, onClose }) => {
         {/* Header with Logos */}
         <div style={styles.headerBanner}>
           <div style={styles.logoCircle}>
-            {/* <img
+            <img
               src={municipalLogo}
               alt="Municipal Logo"
               style={styles.logoImage}
               onError={(e) => {
                 e.target.style.display = "none";
-                e.target.parentElement.innerHTML =
-                  '<span style="font-size:8px;text-align:center;">MUN<br/>LOGO</span>';
+                e.target.parentElement.innerHTML = '<span style="font-size:8px;text-align:center;">MUN<br/>LOGO</span>';
               }}
-            /> */}
+            />
           </div>
 
           <div style={styles.headerText}>
@@ -539,16 +546,15 @@ const MayorTripTicket = ({ ticket: propTicket, onClose }) => {
           </div>
 
           <div style={styles.logoCircle}>
-            {/* <img
+            <img
               src={bagongPilipinasLogo}
               alt="Bagong Pilipinas Logo"
               style={styles.logoImage}
               onError={(e) => {
                 e.target.style.display = "none";
-                e.target.parentElement.innerHTML =
-                  '<span style="font-size:8px;text-align:center;">BP<br/>LOGO</span>';
+                e.target.parentElement.innerHTML = '<span style="font-size:8px;text-align:center;">BP<br/>LOGO</span>';
               }}
-            /> */}
+            />
           </div>
         </div>
 
@@ -578,15 +584,15 @@ const MayorTripTicket = ({ ticket: propTicket, onClose }) => {
             {ticketNumber}
           </span>
         </div>
+    
 
         {/* Section 1: Administrative */}
         <div style={{ ...styles.section, ...styles.sectionBorder }}>
           <div style={styles.italicNote}>
-            (To be filled up by the Administrative Official Authorizing the
-            Travel)
+            (To be filled up by the Administrative Official Authorizing the Travel)
           </div>
 
-          <FieldRow num="1." label="Name of Driver" value={driverName} />
+          <FieldRow num="1." label="Name of Driver" value={driverName || "N/A"} />
           <FieldRow
             num="2."
             label="Government Car used & Plate #"
@@ -603,27 +609,38 @@ const MayorTripTicket = ({ ticket: propTicket, onClose }) => {
             value={destination}
           />
 
-          {/* Fields 5 & 6 with HEAD OF OFFICE column */}
+          {/* ✅ FIXED: Fields 5 & 6 with HEAD OF OFFICE column - With Signature Line */}
           <div style={styles.twoColumnRow}>
             <div style={styles.leftColumn}>
               <FieldRow num="5." label="Purpose of Travel" value={purpose} />
               <FieldRow
                 num="6."
                 label="Charge to Project/Office"
-                value={chargeToOffice}
+                value={departmentName}
               />
             </div>
-            <div style={styles.rightColumn}>
-              <div style={{ fontWeight: "bold", fontSize: "10px" }}>
-                HEAD OF OFFICE
+            <div style={styles.headOfficeColumn}>
+              {/* ✅ Signature Line (for signature) */}
+              <div style={styles.signatureLine}></div>
+              
+              {/* ✅ Full Name of Head of Office */}
+              <div style={styles.headOfficeName}>
+                {headOfOffice || "_________________________"}
               </div>
+              
+              {/* ✅ Label: Head of Office */}
+              <div style={styles.headOfficeLabel}>
+                Head of Office
+              </div>
+              
+              {/* ✅ OIC indicator if applicable */}
               {isOICAction && oicName && (
                 <div
                   style={{
-                    fontSize: "7px",
+                    fontSize: "6px",
                     fontWeight: "normal",
                     color: "#ff9800",
-                    marginTop: "4px",
+                    marginTop: "2px",
                   }}
                 >
                   (OIC)
@@ -668,25 +685,14 @@ const MayorTripTicket = ({ ticket: propTicket, onClose }) => {
         </div>
 
         {/* Certification 1: Driver */}
-        <div
-          style={{ ...styles.certificationBox, borderBottom: "1px solid #ccc" }}
-        >
+        <div style={{ ...styles.certificationBox, borderBottom: "1px solid #ccc" }}>
           <div style={styles.certText}>
-            I HEREBY CERTIFY for the correctness of the above statement records
-            travel.
+            I HEREBY CERTIFY for the correctness of the above statement records travel.
           </div>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "flex-end",
-              paddingRight: "20px",
-            }}
-          >
+          <div style={{ display: "flex", justifyContent: "flex-end", paddingRight: "20px" }}>
             <div style={styles.signatureBox}>
-              {driverName && (
-                <div style={styles.signatureName}>{driverName}</div>
-              )}
-              <div style={styles.signatureLine}>Signature of Driver</div>
+              {driverName && <div style={styles.signatureName}>{driverName}</div>}
+              <div style={styles.signatureLineDriver}>Signature of Driver</div>
             </div>
           </div>
         </div>
@@ -694,21 +700,12 @@ const MayorTripTicket = ({ ticket: propTicket, onClose }) => {
         {/* Certification 2: Passenger */}
         <div style={styles.certificationBox}>
           <div style={styles.certText}>
-            I HEREBY CERTIFY that I used the car on the Official Travel as
-            stated above.
+            I HEREBY CERTIFY that I used the car on the Official Travel as stated above.
           </div>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "flex-end",
-              paddingRight: "20px",
-            }}
-          >
+          <div style={{ display: "flex", justifyContent: "flex-end", paddingRight: "20px" }}>
             <div style={styles.signatureBox}>
               {passenger && <div style={styles.signatureName}>{passenger}</div>}
-              <div style={styles.signatureLine}>
-                Signature of Authorized Passenger
-              </div>
+              <div style={styles.signatureLineDriver}>Signature of Authorized Passenger</div>
             </div>
           </div>
         </div>

@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use Carbon\Carbon;
 
 class AuthController extends Controller
 {
@@ -80,8 +81,8 @@ class AuthController extends Controller
             $user->save();
 
             Log::info('🔐 Attempting to log login for user: ' . $user->user_id);
-    AuditHelper::logLogin($user);
-    Log::info('✅ Login logged for user: ' . $user->user_id);
+            AuditHelper::logLogin($user);
+            Log::info('✅ Login logged for user: ' . $user->user_id);
             
             return response()->json([
                 'success' => false,
@@ -97,6 +98,13 @@ class AuthController extends Controller
 
         //Log login activity 
         AuditHelper::logLogin($user);
+
+        // ✅ ============================================================
+        // ✅ NEW: Check and reset weekly budget if Mayor's Office user
+        // ✅ ============================================================
+        if ($user->role === 'mayors_office') {
+            $this->checkAndResetWeeklyBudget($user);
+        }
 
         // Create token
         $deviceName = $request->device_name ?? 'web';
@@ -129,6 +137,64 @@ class AuthController extends Controller
                 'token_type' => 'Bearer'
             ]
         ]);
+    }
+
+    /**
+     * ✅ Check and reset weekly budget if needed
+     */
+    private function checkAndResetWeeklyBudget($user)
+    {
+        try {
+            $today = Carbon::now();
+            $currentWeek = $today->weekOfYear;
+            $currentYear = $today->year;
+            
+            // ✅ Check if reset was already done this week
+            $resetDone = DB::table('weekly_budget_usage')
+                ->where('week_number', $currentWeek)
+                ->where('year', $currentYear)
+                ->exists();
+            
+            // ✅ If not reset yet, run the reset
+            if (!$resetDone) {
+                Log::info('🔄 Weekly budget reset triggered by Mayor\'s Office login', [
+                    'user_id' => $user->user_id,
+                    'user_email' => $user->email,
+                    'week' => $currentWeek,
+                    'year' => $currentYear,
+                ]);
+                
+                // ✅ Call the stored procedure
+                DB::statement('CALL proc_weekly_budget_reset();');
+                
+                // ✅ Log the reset in budget history
+                DB::table('budget_history')->insert([
+                    'department_id' => 0,
+                    'department_name' => 'ALL DEPARTMENTS',
+                    'action' => 'weekly_reset',
+                    'previous_amount' => 0,
+                    'added_amount' => 0,
+                    'new_amount' => 0,
+                    'reason' => 'Weekly budget reset triggered by Mayor\'s Office login (Week ' . $currentWeek . ')',
+                    'user_id' => $user->user_id,
+                    'user_name' => $user->full_name,
+                    'created_at' => now(),
+                ]);
+                
+                Log::info('✅ Weekly budget reset completed (login trigger)', [
+                    'user_id' => $user->user_id,
+                    'week' => $currentWeek,
+                ]);
+            } else {
+                Log::info('ℹ️ Weekly budget already reset for this week', [
+                    'user_id' => $user->user_id,
+                    'week' => $currentWeek,
+                ]);
+            }
+        } catch (\Exception $e) {
+            Log::error('❌ Weekly budget reset failed (login trigger): ' . $e->getMessage());
+            // Don't block login if reset fails
+        }
     }
 
     /**
@@ -167,7 +233,6 @@ class AuthController extends Controller
     {
         $user = $request->user();
         
-        // ✅ Log logout activity - FIXED: use 'users' as table name
         AuditHelper::logLogout($user);
 
         // Revoke current access token
@@ -186,10 +251,9 @@ class AuthController extends Controller
     {
         $user = $request->user();
         
-        // ✅ Log logout from all devices - FIXED: use 'users' as table name
         AuditHelper::log(
             'logout_all',
-            'users',  // ✅ FIXED: Use table name
+            'users',
             $user->user_id,
             ['email' => $user->email],
             ['devices' => 'all']
@@ -273,10 +337,9 @@ class AuthController extends Controller
             DB::table('password_history')->where('history_id', $record->history_id)->delete();
         }
 
-        // ✅ Log password change - FIXED: use 'users' as table name
         AuditHelper::log(
             'password_changed',
-            'users',  // ✅ FIXED: Use table name
+            'users',
             $user->user_id,
             null,
             ['email' => $user->email]
@@ -311,7 +374,6 @@ class AuthController extends Controller
                 ], 422);
             }
             
-            // Store old values for audit
             $oldValues = [
                 'first_name' => $user->first_name,
                 'last_name' => $user->last_name,
@@ -319,7 +381,6 @@ class AuthController extends Controller
                 'email' => $user->email,
             ];
             
-            // Update fields if provided
             if ($request->has('first_name')) {
                 $user->first_name = $request->first_name;
             }
@@ -335,10 +396,9 @@ class AuthController extends Controller
             
             $user->save();
             
-            // ✅ Log profile update - FIXED: use 'users' as table name
             AuditHelper::log(
                 'profile_updated',
-                'users',  // ✅ FIXED: Use table name
+                'users',
                 $user->user_id,
                 $oldValues,
                 [
@@ -395,31 +455,25 @@ class AuthController extends Controller
 
         $user = User::where('email', $request->email)->first();
 
-        // Generate reset token
         $token = Str::random(64);
         
-        // Store token
         DB::table('password_reset_tokens')->updateOrInsert(
             ['email' => $request->email],
             ['token' => $token, 'created_at' => now()]
         );
 
-        // ✅ Log password reset request - FIXED: use 'users' as table name
         AuditHelper::log(
             'password_reset_requested',
-            'users',  // ✅ FIXED: Use table name
+            'users',
             $user->user_id,
             null,
             ['email' => $user->email]
         );
 
-        // TODO: Send email with reset link
-        // Mail::to($user->email)->send(new PasswordResetMail($token, $user));
-
         return response()->json([
             'success' => true,
             'message' => 'Password reset link sent to your email',
-            'reset_token' => $token // Remove in production
+            'reset_token' => $token
         ]);
     }
 
@@ -442,7 +496,6 @@ class AuthController extends Controller
             ], 422);
         }
 
-        // Verify token
         $resetRecord = DB::table('password_reset_tokens')
             ->where('email', $request->email)
             ->where('token', $request->token)
@@ -455,7 +508,6 @@ class AuthController extends Controller
             ], 400);
         }
 
-        // Check if token is expired (1 hour)
         if (now()->diffInMinutes($resetRecord->created_at) > 60) {
             DB::table('password_reset_tokens')->where('email', $request->email)->delete();
             return response()->json([
@@ -469,19 +521,16 @@ class AuthController extends Controller
         $user->password_changed_at = now();
         $user->save();
 
-        // Delete reset token
         DB::table('password_reset_tokens')->where('email', $request->email)->delete();
 
-        // ✅ Log password reset successful - FIXED: use 'users' as table name
         AuditHelper::log(
             'password_reset_successful',
-            'users',  // ✅ FIXED: Use table name
+            'users',
             $user->user_id,
             null,
             ['email' => $user->email]
         );
 
-        // Revoke all tokens
         $user->tokens()->delete();
 
         return response()->json([
@@ -497,10 +546,8 @@ class AuthController extends Controller
     {
         $user = $request->user();
         
-        // Revoke current token
         $request->user()->currentAccessToken()->delete();
         
-        // Create new token
         $deviceName = $request->device_name ?? 'web';
         $newToken = $user->createToken($deviceName)->plainTextToken;
 

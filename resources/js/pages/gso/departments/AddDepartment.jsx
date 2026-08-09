@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ArrowLeft, Building2, Code, Loader2 } from "lucide-react";
+import { ArrowLeft, Building2, Code, User, Loader2 } from "lucide-react";
 import { useCreateDepartment } from "../../../hooks/useDepartmentManagement";
 import { toast } from "react-hot-toast";
 
@@ -15,6 +15,7 @@ const AddDepartment = () => {
   const [formData, setFormData] = useState({
     department_name: "",
     department_code: "",
+    head_of_office: "",  // ✅ ADD THIS
   });
   const [errors, setErrors] = useState({});
 
@@ -41,11 +42,12 @@ const AddDepartment = () => {
       {
         department_name: formData.department_name.trim(),
         department_code: formData.department_code.trim().toUpperCase(),
+        head_of_office: formData.head_of_office.trim() || null,  // ✅ ADD THIS
       },
       {
         onSuccess: () => {
           toast.success("Department created successfully!");
-          navigate("/admin/departments"); // ✅ Correct path
+          navigate("/admin/departments");
         },
         onError: (error) => {
           const message = error.response?.data?.message || "Failed to create department";
@@ -113,6 +115,26 @@ const AddDepartment = () => {
               {errors.department_name && (
                 <p className="text-red-500 text-xs mt-1">{errors.department_name}</p>
               )}
+            </div>
+
+            {/* ✅ NEW: Head of Office Field */}
+            <div>
+              <Label className="flex items-center gap-2">
+                <User className="h-4 w-4" />
+                Head of Office
+              </Label>
+              <Input
+                placeholder="e.g., Dr. Zelyn Denampo"
+                value={formData.head_of_office}
+                onChange={(e) => setFormData({ 
+                  ...formData, 
+                  head_of_office: e.target.value 
+                })}
+                className="mt-1.5"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Full name of the department head (appears on trip tickets)
+              </p>
             </div>
 
             <div className="flex gap-3 pt-4">

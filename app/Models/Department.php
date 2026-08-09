@@ -12,7 +12,11 @@ class Department extends Model
     protected $primaryKey = 'department_id';
     
     protected $fillable = [
-        'department_name', 'department_code', 'is_active', 'deleted_at'
+        'department_name', 
+        'department_code', 
+        'head_of_office',  // ✅ ADD THIS
+        'is_active', 
+        'deleted_at'
     ];
     
     protected $casts = [

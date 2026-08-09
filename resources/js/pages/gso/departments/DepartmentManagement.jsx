@@ -15,6 +15,7 @@ import {
   CheckCircle,
   XCircle,
   Code,
+  User,
 } from "lucide-react";
 import { useDepartments, useDeleteDepartment, useToggleDepartmentStatus } from "../../../hooks/useDepartmentManagement";
 import { toast } from "react-hot-toast";
@@ -31,7 +32,8 @@ const DepartmentManagement = () => {
     const search = searchTerm.toLowerCase();
     return departments.filter((dept) =>
       dept.department_name?.toLowerCase().includes(search) ||
-      dept.department_code?.toLowerCase().includes(search)
+      dept.department_code?.toLowerCase().includes(search) ||
+      dept.head_of_office?.toLowerCase().includes(search)  // ✅ ADD THIS
     );
   }, [departments, searchTerm]);
 
@@ -85,7 +87,7 @@ const DepartmentManagement = () => {
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
           <Input
-            placeholder="Search departments by name or code..."
+            placeholder="Search departments by name, code, or head of office..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="pl-10"
@@ -115,6 +117,7 @@ const DepartmentManagement = () => {
                   <tr>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Code</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Department Name</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Head of Office</th>  {/* ✅ ADD THIS */}
                     <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Status</th>
                     <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase">Actions</th>
                   </tr>
@@ -132,6 +135,16 @@ const DepartmentManagement = () => {
                         <div className="flex items-center gap-2">
                           <Building2 className="h-4 w-4 text-slate-400" />
                           <span className="font-medium">{dept.department_name}</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <User className="h-4 w-4 text-slate-400" />
+                          <span className="font-medium">
+                            {dept.head_of_office || (
+                              <span className="text-slate-400 italic">Not set</span>
+                            )}
+                          </span>
                         </div>
                       </td>
                       <td className="px-4 py-3">

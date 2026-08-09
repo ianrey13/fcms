@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ArrowLeft, Building2, Code, Loader2 } from "lucide-react";
+import { ArrowLeft, Building2, Code, User, Loader2 } from "lucide-react";
 import { useDepartments, useUpdateDepartment } from "../../../hooks/useDepartmentManagement";
 import { toast } from "react-hot-toast";
 
@@ -16,7 +16,8 @@ const EditDepartment = () => {
   const updateDepartment = useUpdateDepartment();
   const [formData, setFormData] = useState({ 
     department_name: "", 
-    department_code: "" 
+    department_code: "",
+    head_of_office: "",  // ✅ ADD THIS
   });
   const [errors, setErrors] = useState({});
 
@@ -27,6 +28,7 @@ const EditDepartment = () => {
         setFormData({
           department_name: dept.department_name || "",
           department_code: dept.department_code || "",
+          head_of_office: dept.head_of_office || "",  // ✅ ADD THIS
         });
       } else {
         toast.error("Department not found");
@@ -60,12 +62,13 @@ const EditDepartment = () => {
         departmentData: {
           department_name: formData.department_name.trim(),
           department_code: formData.department_code.trim().toUpperCase(),
+          head_of_office: formData.head_of_office.trim() || null,  // ✅ ADD THIS
         },
       },
       {
         onSuccess: () => {
           toast.success("Department updated successfully!");
-          navigate("/mo/departments"); // ✅ Correct path
+          navigate("/admin/departments");
         },
         onError: (error) => {
           const message = error.response?.data?.message || "Failed to update department";
@@ -103,6 +106,7 @@ const EditDepartment = () => {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Department Code */}
             <div>
               <Label className="flex items-center gap-2">
                 <Code className="h-4 w-4" />
@@ -121,8 +125,10 @@ const EditDepartment = () => {
               {errors.department_code && (
                 <p className="text-red-500 text-xs mt-1">{errors.department_code}</p>
               )}
+              <p className="text-xs text-gray-500 mt-1">Short, unique identifier (max 20 characters)</p>
             </div>
 
+            {/* Department Name */}
             <div>
               <Label className="flex items-center gap-2">
                 <Building2 className="h-4 w-4" />
@@ -142,6 +148,26 @@ const EditDepartment = () => {
               )}
             </div>
 
+            {/* ✅ NEW: Head of Office Field */}
+            <div>
+              <Label className="flex items-center gap-2">
+                <User className="h-4 w-4" />
+                Head of Office
+              </Label>
+              <Input
+                placeholder="e.g., Dr. Zelyn Denampo"
+                value={formData.head_of_office}
+                onChange={(e) => setFormData({ 
+                  ...formData, 
+                  head_of_office: e.target.value 
+                })}
+                className="mt-1.5"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Full name of the department head (appears on trip tickets)
+              </p>
+            </div>
+
             <div className="flex gap-3 pt-4">
               <Button 
                 type="submit" 
@@ -156,7 +182,7 @@ const EditDepartment = () => {
               <Button 
                 type="button" 
                 variant="outline" 
-                onClick={() => navigate("/mo/departments")} 
+                onClick={() => navigate("/admin/departments")} 
                 className="flex-1"
               >
                 Cancel

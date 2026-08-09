@@ -6,7 +6,19 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Search, Eye, Receipt, Loader2, Image, Calendar, MapPin, User, Truck, Fuel,RefreshCw, } from "lucide-react";
+import {
+    Search,
+    Eye,
+    Receipt,
+    Loader2,
+    Image as ImageIcon,
+    Calendar,
+    MapPin,
+    User,
+    Truck,
+    Fuel,
+    RefreshCw,
+} from "lucide-react";
 import {
     Dialog,
     DialogContent,
@@ -16,6 +28,49 @@ import {
 import { format } from "date-fns";
 import { toast } from "react-hot-toast";
 
+// ============================================
+// ✅ FIXED: Get receipt image URL - same as Mayor's version
+// ============================================
+const getReceiptImageUrl = (receipt) => {
+    // Try to get URL from multiple sources
+    let url = receipt?.receipt_url || receipt?.receipt_photo_path || null;
+
+    if (!url) {
+        console.log('❌ No image path found for receipt:', receipt?.id);
+        return null;
+    }
+
+    console.log('🖼️ Original URL from API:', url);
+
+    // ✅ Use the same host as the browser
+    const currentHost = window.location.hostname;
+    const baseUrl = `http://${currentHost}:8000`;
+
+    // ✅ If it's already a full URL, extract filename and use public path
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+        const filename = url.split('/').pop();
+        if (filename) {
+            const newUrl = `${baseUrl}/receipts/${filename}`;
+            console.log('✅ Using public path:', newUrl);
+            return newUrl;
+        }
+        return url;
+    }
+
+    // ✅ If it's a relative path, extract filename
+    const filename = url.split('/').pop();
+    if (filename) {
+        const newUrl = `${baseUrl}/receipts/${filename}`;
+        console.log('✅ Constructed public path:', newUrl);
+        return newUrl;
+    }
+
+    return `${baseUrl}/receipts/${url}`;
+};
+
+// ============================================
+// MAIN COMPONENT
+// ============================================
 const FuelReceipts = () => {
     const [searchTerm, setSearchTerm] = useState("");
     const [selectedReceipt, setSelectedReceipt] = useState(null);
@@ -56,6 +111,46 @@ const FuelReceipts = () => {
     const formatDate = (date) => {
         if (!date) return "N/A";
         return format(new Date(date), "MMM dd, yyyy hh:mm a");
+    };
+
+    // ✅ Render receipt image with fallback
+    const renderReceiptImage = (receipt) => {
+        const imageUrl = getReceiptImageUrl(receipt);
+
+        console.log('🖼️ Final image URL:', imageUrl);
+
+        if (!imageUrl) {
+            return (
+                <div className="border rounded-lg p-8 text-center bg-slate-50 dark:bg-slate-900/50">
+                    <ImageIcon className="h-12 w-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
+                    <p className="text-slate-500 dark:text-slate-400">No receipt image uploaded</p>
+                    <p className="text-xs text-slate-400 mt-1 break-all">{receipt.receipt_photo_path || 'No path'}</p>
+                </div>
+            );
+        }
+
+        return (
+            <div className="border rounded-lg overflow-hidden bg-slate-50 dark:bg-slate-900/50">
+                <img
+                    src={imageUrl}
+                    alt="Fuel Receipt"
+                    className="w-full max-h-64 object-contain"
+                    onError={(e) => {
+                        console.log('❌ Failed to load image:', e.target.src);
+                        e.target.onerror = null;
+                        e.target.style.display = 'none';
+                        const parent = e.target.parentElement;
+                        parent.innerHTML = `
+                            <div class="flex flex-col items-center justify-center p-8 text-center">
+                                <ImageIcon class="h-12 w-12 text-slate-300 mx-auto mb-3" />
+                                <p class="text-slate-500 dark:text-slate-400">Cannot load receipt image</p>
+                                <p class="text-xs text-slate-400 mt-1 break-all">${receipt.receipt_photo_path || receipt.receipt_url || 'No image path'}</p>
+                            </div>
+                        `;
+                    }}
+                />
+            </div>
+        );
     };
 
     if (isLoading) {
@@ -168,19 +263,11 @@ const FuelReceipts = () => {
                             Fuel Receipt Details
                         </DialogTitle>
                     </DialogHeader>
-                    
+
                     {selectedReceipt && (
                         <div className="space-y-4">
-                            {/* Receipt Image */}
-                            {selectedReceipt.receipt_url && (
-                                <div className="border rounded-lg overflow-hidden">
-                                    <img 
-                                        src={selectedReceipt.receipt_url} 
-                                        alt="Fuel Receipt"
-                                        className="w-full max-h-64 object-contain bg-gray-50"
-                                    />
-                                </div>
-                            )}
+                            {/* ✅ Receipt Image with fallback */}
+                            {renderReceiptImage(selectedReceipt)}
 
                             {/* Receipt Info */}
                             <div className="grid grid-cols-2 gap-4">

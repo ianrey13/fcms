@@ -152,6 +152,10 @@ export const gsoAPI = {
   deleteAnnualBudget: (id) => api.delete(`/admin/annual-budgets/${id}`),
   getDepartmentsWithoutBudget: (params) => 
     api.get("/admin/annual-budgets/departments-without-budget", { params }),
+
+
+   getAvailableVehicles: (params = {}) => 
+    api.get("/gso/vehicles/available", { params }),
 };
 
 // ============ MAYOR'S OFFICE API ============

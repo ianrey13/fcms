@@ -1224,8 +1224,9 @@ class BudgetPolicyController extends Controller
         ], 500);
     }
 }
- /**
- * ✅ FIXED: Update Weekly Allocation (Deduct from Annual Budget)
+
+/**
+ * ✅ FIXED: Update Weekly Allocation - Log weekly amounts, not annual
  */
 public function updateWeeklyAllocation(Request $request, $departmentId)
 {
@@ -1364,28 +1365,19 @@ public function updateWeeklyAllocation(Request $request, $departmentId)
             ]);
         }
         
-        // ✅ 8. Log to history
+        // ✅ 8. ✅ FIXED: Log to history - Use WEEKLY amounts, NOT annual
         $department = DB::table('departments')
             ->where('department_id', $departmentId)
             ->first();
-        
-        $historyMessage = "Weekly allocation for Week {$weekNumber}: " .
-                         "₱" . number_format($oldWeeklyAmount, 2) . " → ₱" . number_format($newWeeklyAmount, 2);
-        
-        if ($annualDeduction > 0) {
-            $historyMessage .= "\nAnnual budget deducted: ₱" . number_format($annualDeduction, 2);
-        } elseif ($annualDeduction < 0) {
-            $historyMessage .= "\nAnnual budget increased: ₱" . number_format(abs($annualDeduction), 2);
-        }
         
         DB::table('budget_history')->insert([
             'department_id' => $departmentId,
             'department_name' => $department->department_name ?? 'Unknown',
             'action' => 'weekly_allocated',
-            'previous_amount' => $currentAnnual,
-            'added_amount' => $updatedAnnual->annual_amount - $currentAnnual,
-            'new_amount' => $updatedAnnual->annual_amount,
-            'reason' => $request->reason ?? $historyMessage,
+            'previous_amount' => $oldWeeklyAmount,          // ✅ FIXED: Weekly amount before
+            'added_amount' => $newWeeklyAmount - $oldWeeklyAmount, // ✅ FIXED: Weekly difference
+            'new_amount' => $newWeeklyAmount,               // ✅ FIXED: Weekly amount after
+            'reason' => $request->reason ?? "Weekly allocation for Week {$weekNumber}: ₱" . number_format($newWeeklyAmount, 2),
             'user_id' => $user->user_id,
             'user_name' => $user->full_name ?? $user->email,
             'created_at' => now(),
@@ -1403,9 +1395,10 @@ public function updateWeeklyAllocation(Request $request, $departmentId)
                 'department_id' => $departmentId,
                 'week_number' => $weekNumber,
                 'weekly_allocation' => $newWeeklyAmount,
+                'old_weekly_allocation' => $oldWeeklyAmount,
                 'annual_before' => $currentAnnual,
                 'annual_after' => $updatedAnnual->annual_amount,
-                'deducted' => $annualDeduction,
+                'annual_deducted' => $annualDeduction,
             ]
         ]);
         

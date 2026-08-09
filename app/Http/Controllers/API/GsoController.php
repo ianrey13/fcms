@@ -45,12 +45,89 @@ class GsoController extends Controller
             'total_users' => User::count(),
             'total_vehicles' => Vehicle::count(),
             'total_departments' => Department::count(),
+            'available_vehicles' => Vehicle::where('status', 'active')
+                ->where('maintenance_flag', false)
+                ->whereNotIn('vehicle_id', function($query) {
+                    $query->select('vehicle_id')
+                        ->from('trip_ticket')
+                        ->whereIn('status', Vehicle::getActiveTripStatuses());
+                })
+                ->count(),
+            'vehicles_in_use' => DB::table('trip_ticket')
+                ->whereIn('status', Vehicle::getActiveTripStatuses())
+                ->distinct('vehicle_id')
+                ->count('vehicle_id'),
         ];
 
         return response()->json([
             'success' => true,
             'data' => $stats,
         ]);
+    }
+
+    /**
+     * ✅ Get available vehicles (not in active trips)
+     */
+    public function getAvailableVehicles(Request $request)
+    {
+        try {
+            $user = $request->user();
+
+            if (!$user->isGsoOffice()) {
+                return response()->json(['message' => 'Unauthorized'], 403);
+            }
+
+            $departmentId = $request->get('department_id');
+            $includeAll = $request->get('include_all', false);
+            
+            // ✅ Get vehicle IDs that are currently in active trips
+            $activeTripVehicleIds = TripTicket::whereIn('status', Vehicle::getActiveTripStatuses())
+                ->pluck('vehicle_id')
+                ->toArray();
+            
+            // ✅ Query vehicles that are NOT in active trips
+            $query = Vehicle::where('status', 'active')
+                ->where('maintenance_flag', false);
+            
+            if ($departmentId && !$includeAll) {
+                $query->where('department_id', $departmentId);
+            }
+            
+            if (!empty($activeTripVehicleIds)) {
+                $query->whereNotIn('vehicle_id', $activeTripVehicleIds);
+            }
+            
+            $vehicles = $query->orderBy('vehicle_model')
+                ->get()
+                ->map(function ($vehicle) {
+                    return [
+                        'vehicle_id' => $vehicle->vehicle_id,
+                        'vehicle_model' => $vehicle->vehicle_model,
+                        'plate_number' => $vehicle->plate_number,
+                        'fuel_type' => $vehicle->fuel_type,
+                        'department_id' => $vehicle->department_id,
+                        'department_name' => $vehicle->department?->department_name ?? 'N/A',
+                        'is_available' => true,
+                        'fuel_percentage' => $vehicle->fuel_percentage,
+                        'fuel_status' => $vehicle->fuel_status,
+                    ];
+                });
+
+            return response()->json([
+                'success' => true,
+                'data' => $vehicles,
+                'total_available' => $vehicles->count(),
+                'active_vehicle_count' => count($activeTripVehicleIds),
+                'message' => 'Showing vehicles available for new trip assignments'
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('GSO get available vehicles error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch available vehicles: ' . $e->getMessage()
+            ], 500);
+        }
     }
 
     /**
@@ -261,43 +338,109 @@ class GsoController extends Controller
     /**
      * Get single ticket details - FIXED (No Odometer)
      */
- 
- 
-public function show($id)
-{
-    try {
-        $ticket = TripTicket::with([
-            'vehicle',
-            'driver.user',
-            'department',
-            'submittedBy',
-            'gasSlip',
-            'gasSlip.fuelLog',
-            'vehicleSnapshot',
-        
-        ])->find($id);
+    public function show($id)
+    {
+        try {
+            $ticket = TripTicket::with([
+                'vehicle',
+                'driver.user',
+                'department',
+                'submittedBy',
+                'gasSlip',
+                'gasSlip.fuelReceipt',
+                'vehicleSnapshot',
+            ])->find($id);
 
-        if (!$ticket) {
+            if (!$ticket) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Ticket not found'
+                ], 404);
+            }
+
+            // ✅ Check if vehicle is available (for reference)
+            $vehicleAvailability = null;
+            if ($ticket->vehicle) {
+                $vehicleAvailability = $ticket->vehicle->getAvailabilityStatus();
+            }
+
+            $response = [
+                'trip_ticket_id' => $ticket->trip_ticket_id,
+                'trip_ticket_number' => $ticket->trip_ticket_number,
+                'trip_date' => $ticket->trip_date,
+                'destination' => $ticket->destination,
+                'purpose' => $ticket->purpose,
+                'charge_to' => $ticket->charge_to,
+                'passenger_name' => $ticket->passenger_name,
+                'status' => $ticket->status,
+                'submitted_at' => $ticket->submitted_at,
+                'submitted_by_staff' => $ticket->submitted_by_staff ?? false,
+                'estimated_distance_km' => $ticket->estimated_distance_km,
+                'estimated_fuel_liters' => $ticket->estimated_fuel_liters,
+                'is_mo_funded' => $ticket->created_by_mo_user_id !== null,
+                'has_insufficient_budget' => $ticket->has_insufficient_budget ?? false,
+                'budget_shortage' => $ticket->budget_shortage ?? 0,
+                'driver' => $ticket->driver && $ticket->driver->user ? [
+                    'driver_id' => $ticket->driver->driver_id,
+                    'full_name' => $ticket->driver->user->full_name,
+                    'user_id' => $ticket->driver->user->user_id,
+                ] : null,
+                'vehicle' => $ticket->vehicle ? [
+                    'vehicle_id' => $ticket->vehicle->vehicle_id,
+                    'plate_number' => $ticket->vehicle->plate_number,
+                    'vehicle_model' => $ticket->vehicle->vehicle_model,
+                    'fuel_type' => $ticket->vehicle->fuel_type,
+                    'is_available' => $vehicleAvailability ? $vehicleAvailability['is_available'] : null,
+                    'has_active_trip' => $vehicleAvailability ? $vehicleAvailability['has_active_trip'] : null,
+                ] : null,
+                'department' => $ticket->department ? [
+                    'department_id' => $ticket->department->department_id,
+                    'name' => $ticket->department->department_name,
+                    'code' => $ticket->department->department_code,
+                    'head_of_office' => $ticket->department->head_of_office ?? null,
+                ] : null,
+                'submitted_by' => $ticket->submittedBy ? [
+                    'user_id' => $ticket->submittedBy->user_id,
+                    'full_name' => $ticket->submittedBy->full_name,
+                ] : null,
+                'gas_slip' => $ticket->gasSlip ? [
+                    'gas_slip_id' => $ticket->gasSlip->gas_slip_id,
+                    'amount_released' => $ticket->gasSlip->amount_released,
+                    'reconciliation_status' => $ticket->gasSlip->reconciliation_status,
+                    'budget_before' => $ticket->gasSlip->budget_before,
+                    'budget_after' => $ticket->gasSlip->budget_after,
+                    'is_cross_department' => $ticket->gasSlip->is_cross_department ?? false,
+                    'cross_department_reason' => $ticket->gasSlip->cross_department_reason ?? null,
+                ] : null,
+                'fuel_receipt' => $ticket->gasSlip && $ticket->gasSlip->fuelReceipt ? [
+                    'fuel_receipt_id' => $ticket->gasSlip->fuelReceipt->fuel_receipt_id,
+                    'invoice_number' => $ticket->gasSlip->fuelReceipt->invoice_number,
+                    'liters_availed' => $ticket->gasSlip->fuelReceipt->liters_availed,
+                    'amount_on_receipt' => $ticket->gasSlip->fuelReceipt->amount_on_receipt,
+                    'unit_price' => $ticket->gasSlip->fuelReceipt->unit_price,
+                    'receipt_photo_path' => $ticket->gasSlip->fuelReceipt->receipt_photo_path,
+                    'gps_distance_km' => $ticket->gasSlip->fuelReceipt->gps_distance_km,
+                ] : null,
+                'vehicle_snapshot' => $ticket->vehicleSnapshot ? [
+                    'vehicle_status' => $ticket->vehicleSnapshot->vehicle_status,
+                    'fuel_type' => $ticket->vehicleSnapshot->fuel_type,
+                    'snapshot_taken_at' => $ticket->vehicleSnapshot->snapshot_taken_at,
+                ] : null,
+            ];
+
+            return response()->json([
+                'success' => true,
+                'data' => $response
+            ]);
+            
+        } catch (\Exception $e) {
+            Log::error('Show ticket error: ' . $e->getMessage());
             return response()->json([
                 'success' => false,
-                'message' => 'Ticket not found'
-            ], 404);
+                'message' => 'Failed to fetch ticket: ' . $e->getMessage()
+            ], 500);
         }
-
-        //  Return FULL ticket data including relationships
-        return response()->json([
-            'success' => true,
-            'data' => $ticket
-        ]);
-        
-    } catch (\Exception $e) {
-        Log::error('Show ticket error: ' . $e->getMessage());
-        return response()->json([
-            'success' => false,
-            'message' => 'Failed to fetch ticket: ' . $e->getMessage()
-        ], 500);
     }
-}
 
     /**
      * Get GSO reports
@@ -333,6 +476,22 @@ public function show($id)
                     ->select('d.department_name', DB::raw('COUNT(*) as count'))
                     ->groupBy('d.department_id', 'd.department_name')
                     ->get(),
+                'vehicle_stats' => [
+                    'total' => Vehicle::count(),
+                    'available' => Vehicle::where('status', 'active')
+                        ->where('maintenance_flag', false)
+                        ->whereNotIn('vehicle_id', function($query) {
+                            $query->select('vehicle_id')
+                                ->from('trip_ticket')
+                                ->whereIn('status', Vehicle::getActiveTripStatuses());
+                        })
+                        ->count(),
+                    'in_use' => DB::table('trip_ticket')
+                        ->whereIn('status', Vehicle::getActiveTripStatuses())
+                        ->distinct('vehicle_id')
+                        ->count('vehicle_id'),
+                    'under_maintenance' => Vehicle::where('maintenance_flag', true)->count(),
+                ],
             ];
 
             return response()->json([
@@ -348,110 +507,109 @@ public function show($id)
         }
     }
 
- /**
- * Reconcile a trip (close it)
- */
-public function reconcileTrip(Request $request, $id)
-{
-    try {
-        $user = $request->user();
-        
-        if (!$user->isGsoOffice()) {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
-        
-        $validator = Validator::make($request->all(), [
-            'reconciliation_note' => 'nullable|string|max:500',
-        ]);
-        
-        if ($validator->fails()) {
-            return response()->json(['errors' => $validator->errors()], 422);
-        }
-        
-        $ticket = TripTicket::where('trip_ticket_id', $id)
-            ->where('status', TripTicket::STATUS_PENDING_RECONCILIATION)
-            ->first();
-        
-        if (!$ticket) {
-            return response()->json(['message' => 'Trip not found or not pending reconciliation'], 404);
-        }
-        
-        // Update gas slip reconciliation status
-        $gasSlip = GasSlip::where('trip_ticket_id', $id)->first();
-        if ($gasSlip) {
-            $gasSlip->reconciliation_status = 'verified';
-            $gasSlip->reconciled_by = $user->user_id;
-            $gasSlip->reconciled_at = now();
-            $gasSlip->reconciliation_note = $request->reconciliation_note;
-            $gasSlip->save();
-        }
-        
-        // Update ticket status
-        $ticket->status = TripTicket::STATUS_CLOSED;
-        $ticket->save();
-        
-        // ✅ NEW: Broadcast to Department Staff
-        $deptStaff = User::where('department_id', $ticket->department_id)
-            ->where('status', 'active')
-            ->get();
-        
-        foreach ($deptStaff as $staff) {
-            NotificationHelper::send(
-                $staff->user_id,
-                'trip_reconciled',
-                'trip_ticket',
-                $ticket->trip_ticket_id,
-                "Trip {$ticket->trip_ticket_number} has been reconciled and closed by GSO"
-            );
-        }
-        Log::info('📡 Broadcasted trip_reconciled to ' . $deptStaff->count() . ' department staff');
-        
-        // ✅ NEW: Broadcast to Mayor's Office
-        $moStaff = User::where('role', 'mayors_office')->where('status', 'active')->get();
-        foreach ($moStaff as $mo) {
-            NotificationHelper::send(
-                $mo->user_id,
-                'trip_reconciled',
-                'trip_ticket',
-                $ticket->trip_ticket_id,
-                "Trip {$ticket->trip_ticket_number} has been reconciled and closed by GSO"
-            );
-        }
-        Log::info('📡 Broadcasted trip_reconciled to ' . $moStaff->count() . ' MO staff');
-        
-        // ✅ NEW: Broadcast to Driver (if assigned)
-        if ($ticket->driver_id) {
-            $driver = Driver::find($ticket->driver_id);
-            if ($driver && $driver->user_id) {
+    /**
+     * Reconcile a trip (close it)
+     */
+    public function reconcileTrip(Request $request, $id)
+    {
+        try {
+            $user = $request->user();
+            
+            if (!$user->isGsoOffice()) {
+                return response()->json(['message' => 'Unauthorized'], 403);
+            }
+            
+            $validator = Validator::make($request->all(), [
+                'reconciliation_note' => 'nullable|string|max:500',
+            ]);
+            
+            if ($validator->fails()) {
+                return response()->json(['errors' => $validator->errors()], 422);
+            }
+            
+            $ticket = TripTicket::where('trip_ticket_id', $id)
+                ->where('status', TripTicket::STATUS_PENDING_RECONCILIATION)
+                ->first();
+            
+            if (!$ticket) {
+                return response()->json(['message' => 'Trip not found or not pending reconciliation'], 404);
+            }
+            
+            // Update gas slip reconciliation status
+            $gasSlip = GasSlip::where('trip_ticket_id', $id)->first();
+            if ($gasSlip) {
+                $gasSlip->reconciliation_status = 'verified';
+                $gasSlip->reconciled_by = $user->user_id;
+                $gasSlip->reconciled_at = now();
+                $gasSlip->reconciliation_note = $request->reconciliation_note;
+                $gasSlip->save();
+            }
+            
+            // Update ticket status
+            $ticket->status = TripTicket::STATUS_CLOSED;
+            $ticket->save();
+            
+            // Broadcast notifications
+            $deptStaff = User::where('department_id', $ticket->department_id)
+                ->where('status', 'active')
+                ->get();
+            
+            foreach ($deptStaff as $staff) {
                 NotificationHelper::send(
-                    $driver->user_id,
+                    $staff->user_id,
                     'trip_reconciled',
                     'trip_ticket',
                     $ticket->trip_ticket_id,
-                    "Trip {$ticket->trip_ticket_number} has been reconciled and closed"
+                    "Trip {$ticket->trip_ticket_number} has been reconciled and closed by GSO"
                 );
-                Log::info('📡 Broadcasted trip_reconciled to driver: ' . $driver->user_id);
             }
+            Log::info('📡 Broadcasted trip_reconciled to ' . $deptStaff->count() . ' department staff');
+            
+            $moStaff = User::where('role', 'mayors_office')->where('status', 'active')->get();
+            foreach ($moStaff as $mo) {
+                NotificationHelper::send(
+                    $mo->user_id,
+                    'trip_reconciled',
+                    'trip_ticket',
+                    $ticket->trip_ticket_id,
+                    "Trip {$ticket->trip_ticket_number} has been reconciled and closed by GSO"
+                );
+            }
+            Log::info('📡 Broadcasted trip_reconciled to ' . $moStaff->count() . ' MO staff');
+            
+            if ($ticket->driver_id) {
+                $driver = Driver::find($ticket->driver_id);
+                if ($driver && $driver->user_id) {
+                    NotificationHelper::send(
+                        $driver->user_id,
+                        'trip_reconciled',
+                        'trip_ticket',
+                        $ticket->trip_ticket_id,
+                        "Trip {$ticket->trip_ticket_number} has been reconciled and closed"
+                    );
+                    Log::info('📡 Broadcasted trip_reconciled to driver: ' . $driver->user_id);
+                }
+            }
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Trip reconciled and closed successfully',
+                'data' => [
+                    'trip_ticket_id' => $ticket->trip_ticket_id,
+                    'status' => $ticket->status,
+                ]
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Reconcile trip error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to reconcile trip: ' . $e->getMessage()
+            ], 500);
         }
-        
-        return response()->json([
-            'success' => true,
-            'message' => 'Trip reconciled and closed successfully',
-            'data' => [
-                'trip_ticket_id' => $ticket->trip_ticket_id,
-                'status' => $ticket->status,
-            ]
-        ]);
-    } catch (\Exception $e) {
-        Log::error('Reconcile trip error: ' . $e->getMessage());
-        return response()->json([
-            'success' => false,
-            'message' => 'Failed to reconcile trip: ' . $e->getMessage()
-        ], 500);
     }
-}
+
     /**
-     * Get completed trips for GSO - FIXED (No Odometer)
+     * Get completed trips for GSO
      */
     public function getCompletedTrips(Request $request)
     {
@@ -498,7 +656,7 @@ public function reconcileTrip(Request $request, $id)
     }
 
     /**
-     * Get fuel receipts for GSO - FIXED (Proper driver join)
+     * Get fuel receipts for GSO
      */
     public function getFuelReceipts(Request $request)
     {
@@ -512,7 +670,6 @@ public function reconcileTrip(Request $request, $id)
                 ->join('gas_slip as gs', 'fr.gas_slip_id', '=', 'gs.gas_slip_id')
                 ->join('trip_ticket as tt', 'gs.trip_ticket_id', '=', 'tt.trip_ticket_id')
                 ->join('vehicles as v', 'tt.vehicle_id', '=', 'v.vehicle_id')
-                // ✅ FIX: Join drivers table first, then users
                 ->join('drivers as d', 'tt.driver_id', '=', 'd.driver_id')
                 ->join('users as u', 'd.user_id', '=', 'u.user_id')
                 ->select(
@@ -562,7 +719,7 @@ public function reconcileTrip(Request $request, $id)
     }
 
     /**
-     * Get a single fuel receipt with details - FIXED (Proper driver join)
+     * Get a single fuel receipt with details
      */
     public function getFuelReceipt($request, $id)
     {
@@ -576,7 +733,6 @@ public function reconcileTrip(Request $request, $id)
                 ->join('gas_slip as gs', 'fr.gas_slip_id', '=', 'gs.gas_slip_id')
                 ->join('trip_ticket as tt', 'gs.trip_ticket_id', '=', 'tt.trip_ticket_id')
                 ->join('vehicles as v', 'tt.vehicle_id', '=', 'v.vehicle_id')
-                // ✅ FIX: Join drivers table first, then users
                 ->join('drivers as d', 'tt.driver_id', '=', 'd.driver_id')
                 ->join('users as u_driver', 'd.user_id', '=', 'u_driver.user_id')
                 ->join('users as u_submitter', 'tt.submitted_by', '=', 'u_submitter.user_id')
@@ -636,7 +792,7 @@ public function reconcileTrip(Request $request, $id)
     }
 
     /**
-     * Record receipt (GSO manually records a receipt) - FIXED (No Odometer)
+     * Record receipt (GSO manually records a receipt)
      */
     public function recordReceipt(Request $request)
     {
@@ -718,69 +874,66 @@ public function reconcileTrip(Request $request, $id)
 
     // ============ PRIVATE METHODS ============
 
-  private function sendMoNotification($tripTicket)
-{
-    Log::info('🔔 sendMoNotification CALLED', [
-        'ticket_id' => $tripTicket->trip_ticket_id,
-        'ticket_number' => $tripTicket->trip_ticket_number
-    ]);
-    
-    $moStaff = User::where('role', 'mayors_office')
-        ->where('status', 'active')
-        ->get();
-    
-    Log::info('🔔 MO Staff found: ' . $moStaff->count());
-    
-    foreach ($moStaff as $staff) {
-        Log::info('🔔 Sending to MO: ' . $staff->user_id);
+    private function sendMoNotification($tripTicket)
+    {
+        Log::info('🔔 sendMoNotification CALLED', [
+            'ticket_id' => $tripTicket->trip_ticket_id,
+            'ticket_number' => $tripTicket->trip_ticket_number
+        ]);
         
-        // ✅ Use NotificationHelper which already broadcasts
+        $moStaff = User::where('role', 'mayors_office')
+            ->where('status', 'active')
+            ->get();
+        
+        Log::info('🔔 MO Staff found: ' . $moStaff->count());
+        
+        foreach ($moStaff as $staff) {
+            Log::info('🔔 Sending to MO: ' . $staff->user_id);
+            
+            $result = NotificationHelper::send(
+                $staff->user_id,
+                'trip_created',
+                'trip_ticket',
+                $tripTicket->trip_ticket_id,
+                "Trip ticket {$tripTicket->trip_ticket_number} is ready for fund release"
+            );
+            
+            Log::info('📡 Result for user ' . $staff->user_id . ': ' . ($result ? 'SUCCESS' : 'FAILED'));
+        }
+    }
+
+    private function sendStaffNotification($tripTicket)
+    {
+        Log::info('🔔 sendStaffNotification CALLED', [
+            'ticket_id' => $tripTicket->trip_ticket_id,
+            'ticket_number' => $tripTicket->trip_ticket_number
+        ]);
+        
         $result = NotificationHelper::send(
-            $staff->user_id,
-            'trip_created',
+            $tripTicket->submitted_by,
+            'trip_submitted',
             'trip_ticket',
             $tripTicket->trip_ticket_id,
-            "Trip ticket {$tripTicket->trip_ticket_number} is ready for fund release"
+            "Trip ticket {$tripTicket->trip_ticket_number} has been created and sent to Mayor's Office"
         );
         
-        Log::info('📡 Result for user ' . $staff->user_id . ': ' . ($result ? 'SUCCESS' : 'FAILED'));
+        Log::info('📡 Staff notification result: ' . ($result ? 'SUCCESS' : 'FAILED'));
     }
-}
 
-private function sendStaffNotification($tripTicket)
-{
-    Log::info('🔔 sendStaffNotification CALLED', [
-        'ticket_id' => $tripTicket->trip_ticket_id,
-        'ticket_number' => $tripTicket->trip_ticket_number
-    ]);
-    
-    // ✅ Use NotificationHelper which already broadcasts
-    $result = NotificationHelper::send(
-        $tripTicket->submitted_by,
-        'trip_submitted',
-        'trip_ticket',
-        $tripTicket->trip_ticket_id,
-        "Trip ticket {$tripTicket->trip_ticket_number} has been created and sent to Mayor's Office"
-    );
-    
-    Log::info('📡 Staff notification result: ' . ($result ? 'SUCCESS' : 'FAILED'));
-}
+    private function sendRejectionNotification($tripTicket, $reason)
+    {
+        $deptOffice = User::find($tripTicket->submitted_by);
 
-private function sendRejectionNotification($tripTicket, $reason)
-{
-    $deptOffice = User::find($tripTicket->submitted_by);
-
-    if ($deptOffice) {
-        // ✅ Use NotificationHelper which already broadcasts
-        $result = NotificationHelper::send(
-            $deptOffice->user_id,
-            'gso_rejected',
-            'trip_ticket',
-            $tripTicket->trip_ticket_id,
-            "Trip ticket {$tripTicket->trip_ticket_number} was rejected: {$reason}"
-        );
-        
-        Log::info('📡 Rejection notification result: ' . ($result ? 'SUCCESS' : 'FAILED'));
+        if ($deptOffice) {
+            $result = NotificationHelper::send(
+                $deptOffice->user_id,
+                'gso_rejected',
+                'trip_ticket',
+                $tripTicket->trip_ticket_id,
+                "Trip ticket {$tripTicket->trip_ticket_number} was rejected: {$reason}"
+            );
+            
+            Log::info('📡 Rejection notification result: ' . ($result ? 'SUCCESS' : 'FAILED'));
+        }
     }
-}
 }

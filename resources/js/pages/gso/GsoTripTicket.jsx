@@ -23,7 +23,7 @@ const PRINT_STYLES = `
   }
 `;
 
-// ✅ Helper to format date properly
+// Helper to format date properly
 const formatDate = (dateString) => {
   if (!dateString) return "";
   try {
@@ -67,8 +67,15 @@ const GsoTripTicket = ({ ticket: propTicket, onClose }) => {
       
       const response = await gsoAPI.getTicketById(id);
       
-      const data = response.data?.data || response.data;
+      let data = response.data?.data || response.data;
+      
+      if (data?.ticket) {
+        data = data.ticket;
+      }
+      
       console.log('📋 Ticket data:', data);
+      console.log('📋 Department:', data?.department);
+      console.log('📋 Head of Office:', data?.department?.head_of_office);
       
       if (!data) {
         throw new Error("No data returned from API");
@@ -132,24 +139,22 @@ const GsoTripTicket = ({ ticket: propTicket, onClose }) => {
     );
   }
 
-  // ✅ EXTRACT DATA
+  // EXTRACT DATA
   const ticketNumber = ticket.trip_ticket_number || ticket.ticket_number || "";
   
-  // ✅ FIXED: Driver name extraction - combine first_name and last_name
   const driverName = 
-    ticket.driver?.user?.full_name ||          // ✅ If full_name exists
+    ticket.driver?.user?.full_name ||
     (ticket.driver?.user?.first_name && ticket.driver?.user?.last_name 
       ? `${ticket.driver.user.first_name} ${ticket.driver.user.last_name}` 
-      : "") ||                                 // ✅ Combine first + last
-    ticket.driver?.full_name ||                // ✅ Alternative: driver.full_name
-    ticket.driver?.name ||                     // ✅ Alternative: driver.name
-    ticket.driver_name ||                      // ✅ Alternative: direct driver_name
+      : "") ||
+    ticket.driver?.full_name ||
+    ticket.driver?.name ||
+    ticket.driver_name ||
     (ticket.user?.first_name && ticket.user?.last_name 
       ? `${ticket.user.first_name} ${ticket.user.last_name}` 
-      : "") ||                                 // ✅ Combine from user
+      : "") ||
     "";
   
-  // ✅ Debug log
   console.log('👤 Driver name found:', driverName);
   
   const vehicleModel = ticket.vehicle?.vehicle_model || "";
@@ -159,21 +164,26 @@ const GsoTripTicket = ({ ticket: propTicket, onClose }) => {
   const destination = ticket.destination || "";
   const purpose = ticket.purpose || "";
   
-  // ✅ Department name
-  const chargeToOffice = ticket.department?.name || 
+  const departmentName = ticket.department?.name || 
+                         ticket.department?.department_name || 
                          ticket.department_name || 
                          ticket.charge_to || 
                          "";
   
-  // ✅ Amount released
+  const headOfOffice = ticket.department?.head_of_office || 
+                       ticket.head_of_office || 
+                       "";
+  
+  console.log('🏢 Department:', departmentName);
+  console.log('👔 Head of Office:', headOfOffice);
+  
   const amountReleased = ticket.gas_slip?.amount_released || 
                          ticket.amount_released || 
                          0;
 
-  // ✅ Format the date
   const ticketDate = formatDate(ticket.submitted_at || ticket.created_at || ticket.trip_date);
 
-  // ✅ Styles (matching MayorTripTicket exactly)
+  // Styles
   const styles = {
     container: {
       width: "100%",
@@ -304,10 +314,34 @@ const GsoTripTicket = ({ ticket: propTicket, onClose }) => {
       flexDirection: "column",
       alignItems: "center",
       justifyContent: "center",
-      fontWeight: "bold",
       fontSize: "9px",
       textAlign: "center",
       padding: "4px 8px",
+    },
+    // ✅ FIXED: Head of Office Column with Signature Line
+    headOfficeColumn: {
+      width: "160px",
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: "8px 4px",
+    },
+    signatureLine: {
+      borderTop: "1px solid #000",
+      width: "140px",
+      paddingTop: "2px",
+      marginBottom: "2px",
+    },
+    headOfficeName: {
+      fontSize: "9px",
+      fontWeight: "bold",
+      marginBottom: "2px",
+    },
+    headOfficeLabel: {
+      fontSize: "7px",
+      fontWeight: "normal",
+      color: "#333",
     },
     fuelRow: {
       display: "flex",
@@ -376,7 +410,7 @@ const GsoTripTicket = ({ ticket: propTicket, onClose }) => {
     signatureBox: {
       textAlign: "center",
     },
-    signatureLine: {
+    signatureLineDriver: {
       borderTop: "1px solid #000",
       width: "200px",
       paddingTop: "2px",
@@ -553,6 +587,21 @@ const GsoTripTicket = ({ ticket: propTicket, onClose }) => {
             {ticketNumber}
           </span>
         </div>
+        {/* Head of Office Bar */}
+        {headOfOffice && (
+          <div style={styles.ticketBar}>
+            <span style={{ fontWeight: "bold" }}>Head of Office</span>
+            <span
+              style={{
+                borderLeft: "1.5px solid #000",
+                paddingLeft: "10px",
+                fontWeight: "bold",
+              }}
+            >
+              {headOfOffice}
+            </span>
+          </div>
+        )}
 
         {/* Section 1: Administrative */}
         <div style={{ ...styles.section, ...styles.sectionBorder }}>
@@ -577,19 +626,28 @@ const GsoTripTicket = ({ ticket: propTicket, onClose }) => {
             value={destination}
           />
 
-          {/* Fields 5 & 6 with HEAD OF OFFICE column */}
+          {/* ✅ FIXED: Fields 5 & 6 with HEAD OF OFFICE column - With Signature Line */}
           <div style={styles.twoColumnRow}>
             <div style={styles.leftColumn}>
               <FieldRow num="5." label="Purpose of Travel" value={purpose} />
               <FieldRow
                 num="6."
                 label="Charge to Project/Office"
-                value={chargeToOffice}
+                value={departmentName}
               />
             </div>
-            <div style={styles.rightColumn}>
-              <div style={{ fontWeight: "bold", fontSize: "10px" }}>
-                HEAD OF OFFICE
+            <div style={styles.headOfficeColumn}>
+              {/* ✅ Signature Line (for signature) */}
+              <div style={styles.signatureLine}></div>
+              
+              {/* ✅ Full Name of Head of Office */}
+              <div style={styles.headOfficeName}>
+                {headOfOffice || "_________________________"}
+              </div>
+              
+              {/* ✅ Label: Head of Office */}
+              <div style={styles.headOfficeLabel}>
+                Head of Office
               </div>
             </div>
           </div>
@@ -637,7 +695,7 @@ const GsoTripTicket = ({ ticket: propTicket, onClose }) => {
           <div style={{ display: "flex", justifyContent: "flex-end", paddingRight: "20px" }}>
             <div style={styles.signatureBox}>
               {driverName && <div style={styles.signatureName}>{driverName}</div>}
-              <div style={styles.signatureLine}>Signature of Driver</div>
+              <div style={styles.signatureLineDriver}>Signature of Driver</div>
             </div>
           </div>
         </div>
@@ -650,7 +708,7 @@ const GsoTripTicket = ({ ticket: propTicket, onClose }) => {
           <div style={{ display: "flex", justifyContent: "flex-end", paddingRight: "20px" }}>
             <div style={styles.signatureBox}>
               {passenger && <div style={styles.signatureName}>{passenger}</div>}
-              <div style={styles.signatureLine}>Signature of Authorized Passenger</div>
+              <div style={styles.signatureLineDriver}>Signature of Authorized Passenger</div>
             </div>
           </div>
         </div>

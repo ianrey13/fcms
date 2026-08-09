@@ -35,7 +35,6 @@ import {
   Search,
   X,
   AlertTriangle,
-  HelpCircle,
 } from "lucide-react";
 import {
   Dialog,
@@ -48,7 +47,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-// import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "react-hot-toast";
 
 // ============================================================
@@ -311,7 +309,7 @@ const MayorPending = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [departmentFilter, setDepartmentFilter] = useState("all");
 
-  // ✅ NEW: Cross-Department State
+  // Cross-Department State
   const [isCrossDepartment, setIsCrossDepartment] = useState(false);
   const [crossDepartmentReason, setCrossDepartmentReason] = useState("");
   const [showCrossDepartmentWarning, setShowCrossDepartmentWarning] = useState(false);
@@ -376,35 +374,96 @@ const MayorPending = () => {
   });
 
   // Fetch all departments for the selector
-  const fetchAllDepartments = useCallback(async () => {
+ const fetchAllDepartments = useCallback(async () => {
+  try {
+    // ✅ Get all departments with their budget info
+    const response = await mayorsOfficeAPI.getAllDepartmentsWithBudget();
+    const departments = response.data?.data || [];
+    
+    // ✅ Filter departments that have budget and are not the requesting department
+    const availableDepts = departments.filter(dept => 
+      dept.has_budget && 
+      dept.remaining_amount > 0 &&
+      dept.department_id?.toString() !== selectedTicket?.department_id?.toString()
+    );
+    
+    setAvailableDepartments(availableDepts);
+  } catch (error) {
+    console.error("Failed to fetch departments:", error);
+    // Fallback: use unique departments from tickets
     const uniqueDepts = [
       ...new Map(
         tickets.map((ticket) => [ticket.department_id, ticket.department_name]),
       ).entries(),
-    ].map(([id, name]) => ({ department_id: id, department_name: name }));
+    ].map(([id, name]) => ({ 
+      department_id: id, 
+      department_name: name,
+      has_budget: true,
+      remaining_amount: 0
+    }));
     setAvailableDepartments(uniqueDepts);
-  }, [tickets]);
+  }
+}, [tickets, selectedTicket]);
 
-  const openApproveDialog = async (ticket) => {
-    console.log("Opening approve dialog for ticket:", ticket);
-    setSelectedTicket(ticket);
-    setAmountReleased("0");
+const openApproveDialog = async (ticket) => {
+  console.log("Opening approve dialog for ticket:", ticket);
+  setSelectedTicket(ticket);
+  setAmountReleased("0");
+  
+  // Reset cross-department state
+  setIsCrossDepartment(false);
+  setCrossDepartmentReason("");
+  setShowCrossDepartmentWarning(false);
+
+  const requestingDeptId =
+    ticket.department_id?.toString() ||
+    ticket.department?.id?.toString() ||
+    ticket.department?.department_id?.toString();
+
+  setChargeToDepartmentId(requestingDeptId || "");
+  
+  // ✅ Fetch departments with budget
+  try {
+    // ✅ Use the API to get all departments with budget
+    const response = await mayorsOfficeAPI.getAllDepartmentsWithBudget();
+    const departments = response.data?.data || [];
     
-    // ✅ Reset cross-department state
-    setIsCrossDepartment(false);
-    setCrossDepartmentReason("");
-    setShowCrossDepartmentWarning(false);
-
-    const requestingDeptId =
-      ticket.department_id?.toString() ||
-      ticket.department?.id?.toString() ||
-      ticket.department?.department_id?.toString();
-
-    setChargeToDepartmentId(requestingDeptId || "");
-    await fetchAllDepartments();
-    setShowApproveDialog(true);
-  };
-
+    // ✅ Filter departments with budget, excluding the requesting department
+    const availableDepts = departments.filter(dept => 
+      dept.has_budget && 
+      dept.remaining_amount > 0 &&
+      dept.department_id?.toString() !== requestingDeptId
+    );
+    
+    // ✅ Also include the requesting department (with its remaining budget)
+    const requestingDept = departments.find(dept => 
+      dept.department_id?.toString() === requestingDeptId
+    );
+    
+    if (requestingDept) {
+      // Add requesting department at the top
+      setAvailableDepartments([requestingDept, ...availableDepts]);
+    } else {
+      setAvailableDepartments(availableDepts);
+    }
+  } catch (error) {
+    console.error("Failed to fetch departments:", error);
+    // Fallback: use unique departments from tickets
+    const uniqueDepts = [
+      ...new Map(
+        tickets.map((ticket) => [ticket.department_id, ticket.department_name]),
+      ).entries(),
+    ].map(([id, name]) => ({ 
+      department_id: id, 
+      department_name: name,
+      has_budget: true,
+      remaining_amount: 0
+    }));
+    setAvailableDepartments(uniqueDepts);
+  }
+  
+  setShowApproveDialog(true);
+};
   // Open Receipt Verification Modal
   const openReceiptModal = (ticket) => {
     const fuelLog = ticket.fuel_log || ticket.fuelLog || null;
@@ -468,7 +527,7 @@ const MayorPending = () => {
       return;
     }
 
-    // ✅ If cross-department, require a reason
+    // If cross-department, require a reason
     if (isCrossDepartment && !crossDepartmentReason.trim()) {
       toast.error("Please provide a reason for cross-department fuel usage");
       return;
@@ -482,14 +541,12 @@ const MayorPending = () => {
           amount_released: parseFloat(amountReleased),
           charge_to_department_id: finalChargeDeptId,
           review_note: null,
-          // ✅ NEW: Cross-department fields
           is_cross_department: isCrossDepartment,
           cross_department_reason: crossDepartmentReason || null,
         },
       );
 
       if (response.data.success) {
-        // ✅ Show appropriate success message
         let successMessage = response.data.message || "Funds released successfully!";
         if (isCrossDepartment) {
           successMessage = "✅ Funds released successfully (Cross-Department Usage)\n\n" +
@@ -508,15 +565,55 @@ const MayorPending = () => {
       }
     } catch (error) {
       console.error("API Error:", error);
-      const errorMessage =
-        error.response?.data?.message || "Failed to release funds";
-      toast.error(errorMessage);
-
-      if (error.response?.data?.budget_info) {
-        const budgetInfo = error.response.data.budget_info;
-        toast.error(
-          `Budget insufficient: ₱${budgetInfo.remaining?.toLocaleString()} remaining, ₱${budgetInfo.requested?.toLocaleString()} requested`,
-        );
+      const errorData = error.response?.data;
+      
+      // Check if it's a budget error with suggestions
+      if (errorData?.budget_info) {
+        const budgetInfo = errorData.budget_info;
+        const availableDepartments = errorData.available_departments || [];
+        
+        // Build detailed error message
+        let errorMsg = `⚠️ Insufficient Budget!\n\n`;
+        errorMsg += `Requested: ₱${budgetInfo.requested?.toLocaleString()}\n`;
+        
+        if (budgetInfo.weekly_remaining !== undefined) {
+          errorMsg += `Weekly Remaining: ₱${budgetInfo.weekly_remaining?.toLocaleString()}\n`;
+          errorMsg += `Shortage: ₱${budgetInfo.shortage?.toLocaleString()}\n\n`;
+        } else if (budgetInfo.annual_remaining !== undefined) {
+          errorMsg += `Annual Remaining: ₱${budgetInfo.annual_remaining?.toLocaleString()}\n`;
+          errorMsg += `Shortage: ₱${budgetInfo.shortage?.toLocaleString()}\n\n`;
+        }
+        
+        // Show available departments if any
+        if (availableDepartments && availableDepartments.length > 0) {
+          errorMsg += `📋 Departments with available budget:\n`;
+          availableDepartments.forEach((dept, index) => {
+            errorMsg += `  ${index + 1}. ${dept.department_name} (${dept.department_code}) - ₱${dept.weekly_remaining?.toLocaleString()} remaining\n`;
+          });
+          errorMsg += `\n👉 Please select one of these departments from the dropdown above.`;
+        } else {
+          errorMsg += `💡 Suggestions:\n`;
+          if (budgetInfo.weekly_remaining !== undefined) {
+            errorMsg += `• Reduce the amount to ₱${budgetInfo.weekly_remaining?.toLocaleString()}\n`;
+            errorMsg += `• Mark as cross-department usage (for recording only)\n`;
+            errorMsg += `• Wait for next week's allocation`;
+          } else {
+            errorMsg += `• Add more budget to annual allocation\n`;
+            errorMsg += `• Reduce the amount to ₱${budgetInfo.annual_remaining?.toLocaleString()}`;
+          }
+        }
+        
+        toast.error(errorMsg, {
+          duration: 8000,
+          style: {
+            whiteSpace: 'pre-line',
+            maxWidth: '500px',
+          },
+        });
+        
+      } else {
+        const errorMessage = errorData?.message || "Failed to release funds";
+        toast.error(errorMessage);
       }
     } finally {
       setSubmitting(false);
@@ -848,314 +945,276 @@ const MayorPending = () => {
         </CardContent>
       </Card>
 
-    {/* ========== APPROVE DIALOG ========== */}
-<Dialog open={showApproveDialog} onOpenChange={setShowApproveDialog}>
-  <DialogContent className="max-w-md dark:bg-slate-800 dark:border-slate-700">
-    <DialogHeader>
-      <DialogTitle className="flex items-center gap-2 text-slate-900 dark:text-white">
-        <DollarSign className="h-5 w-5 text-green-600" />
-        Release Funds
-      </DialogTitle>
-      <DialogDescription className="dark:text-slate-400">
-        {selectedTicket?.has_insufficient_budget
-          ? "Select which department's budget to charge. The requesting department has insufficient budget."
-          : "Funds will be deducted from the selected department's budget."}
-      </DialogDescription>
-    </DialogHeader>
+      {/* ========== APPROVE DIALOG ========== */}
+      <Dialog open={showApproveDialog} onOpenChange={setShowApproveDialog}>
+        <DialogContent className="max-w-lg dark:bg-slate-800 dark:border-slate-700 max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-slate-900 dark:text-white">
+              <DollarSign className="h-5 w-5 text-green-600" />
+              Release Funds
+            </DialogTitle>
+            <DialogDescription className="dark:text-slate-400">
+              {selectedTicket?.has_insufficient_budget
+                ? "⚠️ The requesting department has insufficient budget. Please select which department to charge."
+                : "Funds will be deducted from the selected department's budget."}
+            </DialogDescription>
+          </DialogHeader>
 
-    <div className="space-y-4">
-      {/* Info Box */}
-      <div className="bg-blue-50 dark:bg-blue-950/30 rounded-xl p-3 border border-blue-200 dark:border-blue-800">
-        <div className="flex items-start gap-2">
-          <Info className="h-4 w-4 text-blue-500 dark:text-blue-400 mt-0.5 flex-shrink-0" />
-          <div className="text-xs text-blue-700 dark:text-blue-300">
-            <p>
-              Funds will be deducted from the{" "}
-              <strong>SELECTED department's budget</strong>.
-            </p>
-            <p className="mt-1">
-              The requesting department's budget will NOT be affected.
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Budget Warning */}
-      {selectedTicket?.has_insufficient_budget && (
-        <div className="bg-yellow-50 dark:bg-yellow-950/30 border border-yellow-200 dark:border-yellow-800 rounded-xl p-3">
-          <div className="flex items-center gap-2">
-            <AlertCircle className="h-4 w-4 text-yellow-600 dark:text-yellow-400 flex-shrink-0" />
-            <div className="text-sm text-yellow-700 dark:text-yellow-300">
-              <p className="font-medium">Insufficient Budget Notice</p>
-              <p className="text-xs mt-1">
-                Shortage:{" "}
-                <strong>
-                  {formatCurrency(selectedTicket?.budget_shortage)}
-                </strong>
-              </p>
+          <div className="space-y-4">
+            {/* ============================================================ */}
+            {/* ✅ TICKET SUMMARY */}
+            {/* ============================================================ */}
+            <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-4 border border-slate-200 dark:border-slate-700">
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Ticket #</p>
+                  <p className="font-semibold text-slate-900 dark:text-white text-sm">
+                    {selectedTicket?.ticket_number || selectedTicket?.trip_ticket_number}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Requesting Dept</p>
+                  <p className="font-semibold text-slate-900 dark:text-white text-sm">
+                    {selectedTicket?.department_name}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Destination</p>
+                  <p className="text-slate-700 dark:text-slate-300 text-sm">
+                    {selectedTicket?.destination}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Driver</p>
+                  <p className="text-slate-700 dark:text-slate-300 text-sm">
+                    {selectedTicket?.driver?.full_name || "N/A"}
+                  </p>
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
-      )}
 
-      {/* Ticket Info */}
-      <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-3">
-        <div className="grid grid-cols-2 gap-2 text-sm">
-          <div>
-            <p className="text-slate-500 dark:text-slate-400 text-xs">
-              Ticket #
-            </p>
-            <p className="font-semibold text-slate-900 dark:text-white">
-              {selectedTicket?.ticket_number ||
-                selectedTicket?.trip_ticket_number}
-            </p>
-          </div>
-          <div>
-            <p className="text-slate-500 dark:text-slate-400 text-xs">
-              Requesting Dept
-            </p>
-            <p className="font-semibold text-slate-900 dark:text-white">
-              {selectedTicket?.department_name}
-            </p>
-          </div>
-          <div>
-            <p className="text-slate-500 dark:text-slate-400 text-xs">
-              Destination
-            </p>
-            <p className="text-slate-700 dark:text-slate-300">
-              {selectedTicket?.destination}
-            </p>
-          </div>
-          <div>
-            <p className="text-slate-500 dark:text-slate-400 text-xs">
-              Driver
-            </p>
-            <p className="text-slate-700 dark:text-slate-300">
-              {selectedTicket?.driver?.full_name || "N/A"}
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Department Selector */}
-      <div>
-        <Label
-          htmlFor="charge_to_department"
-          className="flex items-center gap-2 text-slate-700 dark:text-slate-300"
-        >
-          <Building2 className="h-4 w-4" />
-          Charge To Department <span className="text-red-500">*</span>
-        </Label>
-        <select
-          id="charge_to_department"
-          value={chargeToDepartmentId}
-          onChange={(e) => setChargeToDepartmentId(e.target.value)}
-          className="w-full mt-1.5 px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-900 dark:text-white"
-        >
-          <option value="">Select Department</option>
-          <option value={selectedTicket?.department_id}>
-            📍 {selectedTicket?.department_name} (Requesting)
-          </option>
-          {availableDepartments
-            .filter(
-              (dept) =>
-                dept.department_id?.toString() !==
-                selectedTicket?.department_id?.toString(),
-            )
-            .map((dept) => (
-              <option
-                key={dept.department_id}
-                value={dept.department_id}
-              >
-                🏛️ {dept.department_name}
-              </option>
-            ))}
-        </select>
-        <p className="text-xs text-orange-600 dark:text-orange-400 mt-1 flex items-center gap-1">
-          <AlertCircle className="h-3 w-3" />
-          Select which department's budget will cover this trip.
-        </p>
-      </div>
-
-      {/* ============================================================ */}
-      {/* ✅ Cross-Department Checkbox */}
-      {/* ============================================================ */}
-      <div className="border-t dark:border-slate-700 pt-4 mt-2">
-        <div className="flex items-start gap-3">
-          <input
-            type="checkbox"
-            id="cross-department"
-            checked={isCrossDepartment}
-            onChange={(e) => {
-              const checked = e.target.checked;
-              setIsCrossDepartment(checked);
-              if (checked) {
-                setShowCrossDepartmentWarning(true);
-              } else {
-                setShowCrossDepartmentWarning(false);
-                setCrossDepartmentReason("");
-              }
-            }}
-            className="mt-1 h-4 w-4 rounded border-slate-300 text-orange-600 focus:ring-orange-500 dark:border-slate-600 dark:bg-slate-700 dark:ring-offset-slate-800"
-          />
-          <div>
-            <Label
-              htmlFor="cross-department"
-              className="text-sm font-medium cursor-pointer flex items-center gap-2 text-slate-700 dark:text-slate-300"
-            >
-              <AlertTriangle className="h-4 w-4 text-orange-500" />
-              Mark as Cross-Department Usage
-              <span className="text-xs px-2 py-0.5 border border-orange-500 text-orange-500 rounded-full">
-                For Recording Only
-              </span>
-            </Label>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-              Select this if fuel is being used by a different department.
-              This will add an asterisk (*) to the gas slip for recording purposes.
-              No budget transfer will be made.
-            </p>
-          </div>
-        </div>
-
-        {/* Cross-Department Warning */}
-        {isCrossDepartment && (
-          <div className="mt-3 bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-800 rounded-lg p-3">
-            <div className="flex items-start gap-2">
-              <AlertTriangle className="h-4 w-4 text-orange-600 dark:text-orange-400 mt-0.5 flex-shrink-0" />
-              <div>
-                <p className="text-sm font-medium text-orange-700 dark:text-orange-300">
-                  Cross-Department Usage Notice
+            {/* ============================================================ */}
+            {/* ✅ BUDGET INFO (Weekly + Annual) */}
+            {/* ============================================================ */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-blue-50 dark:bg-blue-950/30 rounded-lg p-3 border border-blue-200 dark:border-blue-800 text-center">
+                <p className="text-xs text-blue-600 dark:text-blue-400">Weekly Remaining</p>
+                <p className={`text-lg font-bold ${
+                  (selectedTicket?.weekly_remaining || 0) < (selectedTicket?.estimated_cost || 0) 
+                    ? 'text-red-600 dark:text-red-400' 
+                    : 'text-green-600 dark:text-green-400'
+                }`}>
+                  {formatCurrency(selectedTicket?.weekly_remaining || 0)}
                 </p>
-                <p className="text-xs text-orange-600 dark:text-orange-400 mt-1">
-                  ⚠️ This fuel will be recorded under <strong>{selectedTicket?.department_name}</strong>'s budget.
-                  An asterisk (*) will appear on the gas slip to indicate cross-department usage.
-                  <br />
-                  <span className="font-medium">No budget transfer will be made.</span>
+                {(selectedTicket?.weekly_remaining || 0) < (selectedTicket?.estimated_cost || 0) && (
+                  <p className="text-xs text-red-500">⚠️ Insufficient</p>
+                )}
+              </div>
+              <div className="bg-green-50 dark:bg-green-950/30 rounded-lg p-3 border border-green-200 dark:border-green-800 text-center">
+                <p className="text-xs text-green-600 dark:text-green-400">Annual Remaining</p>
+                <p className="text-lg font-bold text-green-600 dark:text-green-400">
+                  {formatCurrency(selectedTicket?.remaining_budget || 0)}
                 </p>
               </div>
             </div>
-          </div>
-        )}
 
-        {/* Cross-Department Reason */}
-        {isCrossDepartment && (
-          <div className="mt-3">
-            <Label
-              htmlFor="cross_reason"
-              className="text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-1"
-            >
-              Reason for Cross-Department Usage
-              <span className="text-red-500">*</span>
-            </Label>
-            <Textarea
-              id="cross_reason"
-              placeholder="Why is this fuel being used by another department? (e.g., Emergency response, vehicle breakdown, etc.)"
-              value={crossDepartmentReason}
-              onChange={(e) => setCrossDepartmentReason(e.target.value)}
-              rows={2}
-              className="mt-1.5 resize-none dark:bg-slate-900 dark:border-slate-700"
-            />
-            <p className="text-xs text-slate-400 mt-1">
-              This reason will be recorded for tracking purposes.
-            </p>
-          </div>
-        )}
-      </div>
-
-    {/* ============================================================ */}
-{/* ✅ Amount Input with Suggested Display */}
+            {/* ============================================================ */}
+{/* ✅ DEPARTMENT SELECTOR - MAKITA KUNG ASA I-CHARGE */}
 {/* ============================================================ */}
 <div>
-  <Label
-    htmlFor="amount"
-    className="text-slate-700 dark:text-slate-300"
-  >
-    Amount to Release (₱)
+  <Label htmlFor="charge_to_department" className="flex items-center gap-2 text-slate-700 dark:text-slate-300">
+    <Building2 className="h-4 w-4" />
+    Charge To Department <span className="text-red-500">*</span>
   </Label>
-  <Input
-    id="amount"
-    type="number"
-    step="0.01"
-    min="0"
-    placeholder="Enter amount"
-    value={amountReleased}
-    onChange={(e) => setAmountReleased(e.target.value)}
-    className="mt-1.5 dark:bg-slate-900 dark:border-slate-700"
-  />
-  
-  {/* ✅ SUGGESTED AMOUNT - Display only, not input */}
-  {selectedTicket?.estimated_cost && (
-    <div className="mt-1.5 flex items-center gap-2">
-      <span className="text-xs text-slate-500 dark:text-slate-400">Suggested:</span>
-      <span className="text-xs font-medium text-blue-600 dark:text-blue-400">
-        {formatCurrency(selectedTicket.estimated_cost)}
-      </span>
-      <button
-        type="button"
-        onClick={() => setAmountReleased(selectedTicket.estimated_cost.toString())}
-        className="text-xs text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 underline"
-      >
-        Use suggested
-      </button>
-    </div>
-  )}
-  
-  {/* ✅ WEEKLY REMAINING BUDGET - Display only */}
-  {selectedTicket?.weekly_remaining !== undefined && (
-    <div className="mt-1 flex items-center gap-2">
-      <span className="text-xs text-slate-500 dark:text-slate-400">Weekly remaining:</span>
-      <span className={`text-xs font-medium ${
-        (selectedTicket.weekly_remaining || 0) < (selectedTicket.estimated_cost || 0) 
-          ? 'text-red-600 dark:text-red-400' 
-          : 'text-green-600 dark:text-green-400'
-      }`}>
-        {formatCurrency(selectedTicket.weekly_remaining || 0)}
-      </span>
-      {(selectedTicket.weekly_remaining || 0) < (selectedTicket.estimated_cost || 0) && (
-        <span className="text-xs text-red-500">⚠️ Insufficient weekly budget</span>
-      )}
-    </div>
-  )}
-  
-  {/* ✅ Annual Remaining (optional, for reference) */}
-  {selectedTicket?.remaining_budget !== undefined && (
-    <div className="mt-0.5 flex items-center gap-2">
-      <span className="text-xs text-slate-400 dark:text-slate-500">Annual remaining:</span>
-      <span className="text-xs text-slate-500 dark:text-slate-400">
-        {formatCurrency(selectedTicket.remaining_budget)}
-      </span>
-    </div>
-  )}
+  <select
+    id="charge_to_department"
+    value={chargeToDepartmentId}
+    onChange={(e) => setChargeToDepartmentId(e.target.value)}
+    className="w-full mt-1.5 px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-900 dark:text-white"
+  >
+    <option value="">Select Department</option>
+    {availableDepartments.length > 0 ? (
+      availableDepartments.map((dept) => {
+        const isRequesting = dept.department_id?.toString() === selectedTicket?.department_id?.toString();
+        return (
+          <option 
+            key={dept.department_id} 
+            value={dept.department_id}
+            className={isRequesting ? "font-medium text-blue-600" : ""}
+          >
+            {isRequesting ? "📍 " : "🏛️ "} {dept.department_name} 
+            {dept.department_code ? ` (${dept.department_code})` : ''}
+            {dept.remaining_amount !== undefined && dept.remaining_amount > 0 && (
+              ` - ₱${dept.remaining_amount.toLocaleString()} remaining`
+            )}
+            {isRequesting ? " (Requesting)" : ""}
+          </option>
+        );
+      })
+    ) : (
+      <option value="" disabled>No departments available</option>
+    )}
+  </select>
+  <p className="text-xs text-orange-600 dark:text-orange-400 mt-1 flex items-center gap-1">
+    <AlertCircle className="h-3 w-3" />
+    Select which department's budget will cover this trip.
+  </p>
 </div>
-    </div>
 
-    <DialogFooter className="gap-3">
-      <Button
-        variant="outline"
-        onClick={() => {
-          setShowApproveDialog(false);
-          setIsCrossDepartment(false);
-          setCrossDepartmentReason("");
-        }}
-        className="dark:border-slate-700 dark:text-slate-300"
-      >
-        Cancel
-      </Button>
-      <Button
-        className="bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800"
-        onClick={handleApprove}
-        disabled={submitting}
-      >
-        {submitting ? (
-          <Loader2 className="h-4 w-4 animate-spin mr-2" />
-        ) : (
-          <DollarSign className="h-4 w-4 mr-2" />
-        )}
-        {isCrossDepartment ? "Release (Cross-Dept)" : "Release Funds"}
-      </Button>
-    </DialogFooter>
-  </DialogContent>
-</Dialog>
+            {/* ============================================================ */}
+            {/* ✅ CROSS-DEPARTMENT SECTION */}
+            {/* ============================================================ */}
+            <div className="border-t dark:border-slate-700 pt-4 mt-2">
+              <div className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  id="cross-department"
+                  checked={isCrossDepartment}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setIsCrossDepartment(checked);
+                    if (checked) {
+                      setShowCrossDepartmentWarning(true);
+                    } else {
+                      setShowCrossDepartmentWarning(false);
+                      setCrossDepartmentReason("");
+                    }
+                  }}
+                  className="mt-1 h-4 w-4 rounded border-slate-300 text-orange-600 focus:ring-orange-500 dark:border-slate-600 dark:bg-slate-700 dark:ring-offset-slate-800"
+                />
+                <div>
+                  <Label
+                    htmlFor="cross-department"
+                    className="text-sm font-medium cursor-pointer flex items-center gap-2 text-slate-700 dark:text-slate-300"
+                  >
+                    <AlertTriangle className="h-4 w-4 text-orange-500" />
+                    Mark as Cross-Department Usage
+                    <span className="text-[10px] px-2 py-0.5 border border-orange-500 text-orange-500 rounded-full font-normal">
+                      For Recording Only
+                    </span>
+                  </Label>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                    Use this if fuel is being used by a different department.
+                    <span className="text-orange-500 font-medium"> No budget transfer will be made.</span>
+                  </p>
+                </div>
+              </div>
+
+              {/* Cross-Department Warning */}
+              {isCrossDepartment && (
+                <div className="mt-3 bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-800 rounded-lg p-3">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="h-4 w-4 text-orange-600 dark:text-orange-400 mt-0.5 flex-shrink-0" />
+                    <div>
+                      <p className="text-sm font-medium text-orange-700 dark:text-orange-300">
+                        ⚠️ Cross-Department Usage Notice
+                      </p>
+                      <ul className="text-xs text-orange-600 dark:text-orange-400 mt-1 space-y-1 list-disc list-inside">
+                        <li>This fuel will be recorded under <strong>{selectedTicket?.department_name}</strong>'s budget</li>
+                        <li>An asterisk (*) will appear on the gas slip</li>
+                        <li className="font-semibold text-orange-700 dark:text-orange-300">No budget transfer will be made</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Cross-Department Reason */}
+              {isCrossDepartment && (
+                <div className="mt-3 animate-slide-down">
+                  <Label
+                    htmlFor="cross_reason"
+                    className="text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-1"
+                  >
+                    Reason for Cross-Department Usage <span className="text-red-500">*</span>
+                  </Label>
+                  <Textarea
+                    id="cross_reason"
+                    placeholder="e.g., Emergency response, vehicle breakdown, temporary assignment, etc."
+                    value={crossDepartmentReason}
+                    onChange={(e) => setCrossDepartmentReason(e.target.value)}
+                    rows={2}
+                    className="mt-1.5 resize-none dark:bg-slate-900 dark:border-slate-700"
+                  />
+                  <p className="text-xs text-slate-400 mt-1">
+                    This reason will be recorded for tracking and audit purposes.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* ============================================================ */}
+            {/* ✅ AMOUNT INPUT */}
+            {/* ============================================================ */}
+            <div>
+              <Label htmlFor="amount" className="text-slate-700 dark:text-slate-300">
+                Amount to Release (₱)
+              </Label>
+              <Input
+                id="amount"
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="Enter amount"
+                value={amountReleased}
+                onChange={(e) => setAmountReleased(e.target.value)}
+                className="mt-1.5 dark:bg-slate-900 dark:border-slate-700"
+              />
+              
+              {/* Suggested Amount */}
+              {selectedTicket?.estimated_cost && (
+                <div className="mt-1.5 flex items-center gap-2">
+                  <span className="text-xs text-slate-500 dark:text-slate-400">Suggested:</span>
+                  <span className="text-xs font-medium text-blue-600 dark:text-blue-400">
+                    {formatCurrency(selectedTicket.estimated_cost)}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setAmountReleased(selectedTicket.estimated_cost.toString())}
+                    className="text-xs text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 underline"
+                  >
+                    Use suggested
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* ============================================================ */}
+          {/* ✅ FOOTER */}
+          {/* ============================================================ */}
+          <DialogFooter className="gap-3 pt-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowApproveDialog(false);
+                setIsCrossDepartment(false);
+                setCrossDepartmentReason("");
+                setAmountReleased("");
+              }}
+              className="dark:border-slate-700 dark:text-slate-300"
+            >
+              Cancel
+            </Button>
+            <Button
+              className={`${
+                isCrossDepartment 
+                  ? 'bg-orange-600 hover:bg-orange-700' 
+                  : 'bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800'
+              } text-white shadow-md`}
+              onClick={handleApprove}
+              disabled={submitting}
+            >
+              {submitting ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : (
+                <DollarSign className="h-4 w-4 mr-2" />
+              )}
+              {isCrossDepartment ? "Release (Cross-Dept)" : "Release Funds"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* ========== REJECT DIALOG ========== */}
       <Dialog open={showRejectDialog} onOpenChange={setShowRejectDialog}>

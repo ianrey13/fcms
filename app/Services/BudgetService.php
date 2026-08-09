@@ -6,6 +6,7 @@ use App\Models\AnnualBudget;
 use App\Models\GasSlip;
 use App\Models\WeeklyBudgetUsage;
 use App\Models\CrossDepartmentUsage;
+use App\Models\DeptBudgetPolicy;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -102,17 +103,17 @@ class BudgetService
                 throw new \Exception("Insufficient budget for department ID: {$departmentId}");
             }
             
-            // If cross-department, log it but don't deduct from the original department's budget
+            // ✅ If cross-department, still deduct from the charged department
             if ($isCrossDepartment && $originalDepartmentId) {
                 $this->logCrossDepartmentUsage($originalDepartmentId, $departmentId, $amount, $reason);
-            } else {
-                // Normal deduction
-                $budget->used_amount += $amount;
-                $budget->save();
-                
-                // Record weekly usage
-                $this->recordWeeklyUsage($departmentId, $amount);
             }
+            
+            // ✅ ALWAYS deduct from annual budget
+            $budget->used_amount += $amount;
+            $budget->save();
+            
+            // ✅ ALWAYS record weekly usage
+            $this->recordWeeklyUsage($departmentId, $amount);
             
             DB::commit();
             return true;
@@ -173,7 +174,7 @@ class BudgetService
     }
     
     /**
-     * Record weekly usage
+     * ✅ Record weekly usage (with weekly allocation)
      */
     private function recordWeeklyUsage($departmentId, $amount)
     {
@@ -181,6 +182,11 @@ class BudgetService
         $weekNumber = $now->weekOfYear;
         $year = $now->year;
         
+        // ✅ Get weekly allocation from policy
+        $policy = DeptBudgetPolicy::where('department_id', $departmentId)->first();
+        $weeklyAllocation = $policy ? $policy->default_weekly_allocation : 0;
+        
+        // ✅ Get or create weekly usage
         $usage = WeeklyBudgetUsage::firstOrCreate(
             [
                 'department_id' => $departmentId,
@@ -190,13 +196,34 @@ class BudgetService
             [
                 'week_start' => $now->startOfWeek()->toDateString(),
                 'week_end' => $now->endOfWeek()->toDateString(),
+                'weekly_allocation' => $weeklyAllocation,
+                'amount_used' => 0,
             ]
         );
         
+        // ✅ Update allocation if policy changed
+        if ($usage->weekly_allocation != $weeklyAllocation && $weeklyAllocation > 0) {
+            $usage->weekly_allocation = $weeklyAllocation;
+        }
+        
+        // ✅ Add to amount used
         $usage->amount_used += $amount;
         $usage->save();
+        
+        Log::info('📝 Weekly usage recorded', [
+            'department_id' => $departmentId,
+            'week' => $weekNumber,
+            'allocation' => $usage->weekly_allocation,
+            'amount_added' => $amount,
+            'total_used' => $usage->amount_used,
+            'remaining' => $usage->weekly_allocation - $usage->amount_used,
+            'utilization' => $usage->weekly_allocation > 0 
+                ? round(($usage->amount_used / $usage->weekly_allocation) * 100, 2) 
+                : 0,
+        ]);
     }
-     /**
+    
+    /**
      * Process weekly surplus - return to annual budget
      */
     public function processWeeklySurplus($departmentId, $weekNumber = null, $year = null)
@@ -301,21 +328,62 @@ class BudgetService
         
         return $results;
     }
-    /**
- * Get used amount for a department
- */
-public function getUsedAmount($departmentId, $year = null)
-{
-    $year = $year ?? Carbon::now()->year;
     
-    $budget = AnnualBudget::where('department_id', $departmentId)
-        ->where('fiscal_year', $year)
-        ->first();
+    /**
+     * Get used amount for a department
+     */
+    public function getUsedAmount($departmentId, $year = null)
+    {
+        $year = $year ?? Carbon::now()->year;
         
-    if (!$budget) {
-        return 0;
+        $budget = AnnualBudget::where('department_id', $departmentId)
+            ->where('fiscal_year', $year)
+            ->first();
+        
+        if (!$budget) {
+            return 0;
+        }
+        
+        return $budget->used_amount;
     }
     
-    return $budget->used_amount;
-}
+    /**
+     * ✅ Get weekly allocation for a department
+     */
+    public function getWeeklyAllocation($departmentId)
+    {
+        $policy = DeptBudgetPolicy::where('department_id', $departmentId)->first();
+        return $policy ? $policy->default_weekly_allocation : 0;
+    }
+    
+    /**
+     * ✅ Get weekly usage for current week
+     */
+    public function getCurrentWeekUsage($departmentId)
+    {
+        $now = Carbon::now();
+        $weekNumber = $now->weekOfYear;
+        $year = $now->year;
+        
+        $usage = WeeklyBudgetUsage::where('department_id', $departmentId)
+            ->where('week_number', $weekNumber)
+            ->where('year', $year)
+            ->first();
+        
+        return $usage;
+    }
+    
+    /**
+     * ✅ Get weekly remaining for current week
+     */
+    public function getWeeklyRemaining($departmentId)
+    {
+        $usage = $this->getCurrentWeekUsage($departmentId);
+        
+        if (!$usage) {
+            return $this->getWeeklyAllocation($departmentId);
+        }
+        
+        return $usage->weekly_allocation - $usage->amount_used;
+    }
 }

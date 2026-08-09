@@ -38,10 +38,77 @@ import {
   X,
   AlertCircle,
   Calculator,
+  FileText,
+  Calendar,
+  MapPin,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { format } from "date-fns";
 
+// ============================================
+// ✅ FIXED: Get receipt image URL - supports both storage and public
+// ============================================
+const getReceiptImageUrl = (receipt) => {
+  // Try to get URL from multiple sources
+  let url = receipt?.receipt_url || receipt?.receipt_photo_path || null;
+  
+  if (!url) {
+    console.log('❌ No image path found for receipt:', receipt?.id);
+    return null;
+  }
+  
+  console.log('🖼️ Original URL from API:', url);
+  
+  // ✅ Use the same host as the browser
+  const currentHost = window.location.hostname;
+  const baseUrl = `http://${currentHost}:8000`;
+  
+  console.log('📍 Current host:', currentHost);
+  console.log('📍 Base URL:', baseUrl);
+  
+  // ✅ If it's already a full URL
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    // Extract filename from URL
+    const filename = url.split('/').pop();
+    if (filename) {
+      // ✅ Try public/receipts first (no storage)
+      const publicUrl = `${baseUrl}/receipts/${filename}`;
+      console.log('✅ Trying public URL:', publicUrl);
+      return publicUrl;
+    }
+    return url;
+  }
+  
+  // ✅ If it's a relative path starting with receipts/
+  if (url.startsWith('receipts/')) {
+    const filename = url.replace('receipts/', '');
+    const fullUrl = `${baseUrl}/receipts/${filename}`;
+    console.log('✅ Constructed from receipts/:', fullUrl);
+    return fullUrl;
+  }
+  
+  // ✅ If it's a relative path starting with /storage
+  if (url.startsWith('/storage')) {
+    const filename = url.split('/').pop();
+    if (filename) {
+      const fullUrl = `${baseUrl}/receipts/${filename}`;
+      console.log('✅ Constructed from /storage:', fullUrl);
+      return fullUrl;
+    }
+    const fullUrl = `${baseUrl}${url}`;
+    console.log('✅ Constructed from /storage (fallback):', fullUrl);
+    return fullUrl;
+  }
+  
+  // ✅ If it's just a filename, construct full URL
+  const fullUrl = `${baseUrl}/receipts/${url}`;
+  console.log('✅ Constructed from filename:', fullUrl);
+  return fullUrl;
+};
+
+// ============================================
+// MAIN COMPONENT
+// ============================================
 const MayorReceiptVerification = () => {
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState("");
@@ -65,45 +132,44 @@ const MayorReceiptVerification = () => {
     queryKey: ["mayor-receipt-verification"],
     queryFn: async () => {
       const response = await mayorsOfficeAPI.getReceiptsForVerification();
-      return response.data?.data || [];
+      const data = response.data?.data || [];
+      console.log('📋 Receipts data:', data);
+      return data;
     },
   });
 
   // Verify receipt mutation
   const verifyMutation = useMutation({
-  mutationFn: async ({ receiptId, data }) => {
-    const response = await mayorsOfficeAPI.verifyReceipt(receiptId, data);
-    return response.data;
-  },
-  onSuccess: () => {
-    toast.success("Receipt verified and updated successfully!");
-    queryClient.invalidateQueries({ queryKey: ["mayor-receipt-verification"] });
-    setShowReceiptModal(false);
-    setSelectedReceipt(null);
-    setIsEditing(false);
-  },
-  onError: (error) => {
-    console.error('❌ Verify error:', error);
-    console.error('❌ Error response:', error.response);
-    
-    // ✅ Parse error message properly
-    let message = "Failed to verify receipt";
-    
-    if (error.response?.data?.errors) {
-      // Handle validation errors
-      const errors = error.response.data.errors;
-      if (typeof errors === 'object') {
-        const errorMessages = Object.values(errors).flat().join('\n');
-        message = errorMessages;
+    mutationFn: async ({ receiptId, data }) => {
+      const response = await mayorsOfficeAPI.verifyReceipt(receiptId, data);
+      return response.data;
+    },
+    onSuccess: () => {
+      toast.success("Receipt verified and updated successfully!");
+      queryClient.invalidateQueries({ queryKey: ["mayor-receipt-verification"] });
+      setShowReceiptModal(false);
+      setSelectedReceipt(null);
+      setIsEditing(false);
+    },
+    onError: (error) => {
+      console.error('❌ Verify error:', error);
+      console.error('❌ Error response:', error.response);
+      
+      let message = "Failed to verify receipt";
+      
+      if (error.response?.data?.errors) {
+        const errors = error.response.data.errors;
+        if (typeof errors === 'object') {
+          const errorMessages = Object.values(errors).flat().join('\n');
+          message = errorMessages;
+        }
+      } else if (error.response?.data?.message) {
+        message = error.response.data.message;
       }
-    } else if (error.response?.data?.message) {
-      message = error.response.data.message;
-    }
-    
-    toast.error(message);
-  },
-});
-
+      
+      toast.error(message);
+    },
+  });
 
   const handleRefresh = () => {
     refetch();
@@ -124,7 +190,6 @@ const MayorReceiptVerification = () => {
 
   const handleEditToggle = () => {
     if (isEditing) {
-      // Cancel edit - revert to original values
       setEditData({
         invoice_number: selectedReceipt?.invoice_number || "",
         amount_on_receipt: selectedReceipt?.amount || "",
@@ -135,9 +200,7 @@ const MayorReceiptVerification = () => {
     setIsEditing(!isEditing);
   };
 
-  // ✅ Auto-calculate liters when amount or unit price changes
   const handleInputChange = useCallback((field, value) => {
-    // If clearing the field, just update and return
     if (value === '' || value === null || value === undefined) {
       setEditData(prev => ({ ...prev, [field]: '' }));
       return;
@@ -145,7 +208,6 @@ const MayorReceiptVerification = () => {
 
     const updatedData = { ...editData, [field]: value };
     
-    // If amount or unit price changes, recalculate liters
     if (field === 'amount_on_receipt' || field === 'unit_price') {
       const amount = parseFloat(field === 'amount_on_receipt' ? value : updatedData.amount_on_receipt);
       const unitPrice = parseFloat(field === 'unit_price' ? value : updatedData.unit_price);
@@ -159,42 +221,79 @@ const MayorReceiptVerification = () => {
     setEditData(updatedData);
   }, [editData]);
 
-const handleVerify = () => {
-  // ✅ Parse values with proper handling
-  const amount = parseFloat(editData.amount_on_receipt) || 0;
-  const unitPrice = parseFloat(editData.unit_price) || 0;
-  const liters = parseFloat(editData.liters_availed) || 0;
+  const handleVerify = () => {
+    const amount = parseFloat(editData.amount_on_receipt) || 0;
+    const unitPrice = parseFloat(editData.unit_price) || 0;
+    const liters = parseFloat(editData.liters_availed) || 0;
 
-  // ✅ Validate with clear messages
-  if (!editData.amount_on_receipt || amount <= 0) {
-    toast.error("Please enter a valid amount");
-    return;
-  }
-  if (!editData.unit_price || unitPrice <= 0) {
-    toast.error("Please enter a valid unit price");
-    return;
-  }
-  if (!editData.liters_availed || liters <= 0) {
-    toast.error("Liters calculation failed. Please check amount and unit price.");
-    return;
-  }
+    if (!editData.amount_on_receipt || amount <= 0) {
+      toast.error("Please enter a valid amount");
+      return;
+    }
+    if (!editData.unit_price || unitPrice <= 0) {
+      toast.error("Please enter a valid unit price");
+      return;
+    }
+    if (!editData.liters_availed || liters <= 0) {
+      toast.error("Liters calculation failed. Please check amount and unit price.");
+      return;
+    }
 
-  // ✅ Log the data being sent
-  const payload = {
-    invoice_number: editData.invoice_number || null,
-    amount_on_receipt: amount,
-    unit_price: unitPrice,
-    liters_availed: liters,
+    const payload = {
+      invoice_number: editData.invoice_number || null,
+      amount_on_receipt: amount,
+      unit_price: unitPrice,
+      liters_availed: liters,
+    };
+    
+    console.log('📤 Verifying receipt with data:', payload);
+
+    verifyMutation.mutate({
+      receiptId: selectedReceipt.id || selectedReceipt.fuel_receipt_id,
+      data: payload,
+    });
   };
-  
-  console.log('📤 Verifying receipt with data:', payload);
 
-  // ✅ Call API with correct parameters
-  verifyMutation.mutate({
-    receiptId: selectedReceipt.id || selectedReceipt.fuel_receipt_id,
-    data: payload,
-  });
-};
+  // ✅ FIXED: Render receipt image with fallback
+  const renderReceiptImage = (receipt) => {
+    const imageUrl = getReceiptImageUrl(receipt);
+    
+    console.log('🖼️ Final image URL:', imageUrl);
+    
+    if (!imageUrl) {
+      return (
+        <div className="border rounded-xl p-8 text-center bg-slate-50 dark:bg-slate-900/50">
+          <ImageIcon className="h-12 w-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
+          <p className="text-slate-500 dark:text-slate-400">No receipt image uploaded</p>
+          <p className="text-xs text-slate-400 mt-1 break-all">{receipt.receipt_photo_path || 'No path'}</p>
+        </div>
+      );
+    }
+
+    return (
+      <div className="border rounded-xl overflow-hidden bg-slate-50 dark:bg-slate-900/50">
+        <img
+          src={imageUrl}
+          alt="Fuel Receipt"
+          className="w-full max-h-64 object-contain"
+          onError={(e) => {
+            console.log('❌ Failed to load image:', e.target.src);
+            e.target.onerror = null;
+            e.target.style.display = 'none';
+            const parent = e.target.parentElement;
+            parent.innerHTML = `
+              <div class="flex flex-col items-center justify-center p-8 text-center">
+                <ImageIcon class="h-12 w-12 text-slate-300 mx-auto mb-3" />
+                <p class="text-slate-500 dark:text-slate-400">Cannot load receipt image</p>
+                <p class="text-xs text-slate-400 mt-1 break-all">${receipt.receipt_photo_path || receipt.receipt_url || 'No image path'}</p>
+              </div>
+            `;
+          }}
+        />
+      </div>
+    );
+  };
+
   const filteredReceipts = receipts.filter((receipt) => {
     const search = searchTerm.toLowerCase();
     return (
@@ -242,8 +341,8 @@ const handleVerify = () => {
   }
 
   return (
-    <div className="space-y-6 animate-fade-in-up">
-      {/* Header */}
+    <div className="space-y-6 p-4 md:p-6 animate-fade-in-up">
+      {/* ========== HEADER ========== */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold bg-gradient-to-r from-slate-800 to-slate-600 dark:from-white dark:to-slate-300 bg-clip-text text-transparent">
@@ -264,8 +363,8 @@ const handleVerify = () => {
         </Button>
       </div>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      {/* ========== STATS CARDS ========== */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card className="dark:bg-slate-800/80 dark:border-slate-700">
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
@@ -273,7 +372,9 @@ const handleVerify = () => {
                 <p className="text-sm text-slate-500 dark:text-slate-400">Total Receipts</p>
                 <p className="text-2xl font-bold text-slate-800 dark:text-white">{receipts.length}</p>
               </div>
-              <Receipt className="h-8 w-8 text-blue-500" />
+              <div className="p-3 bg-blue-100 dark:bg-blue-900/30 rounded-full">
+                <Receipt className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -281,10 +382,12 @@ const handleVerify = () => {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-slate-500 dark:text-slate-400">Pending Verification</p>
+                <p className="text-sm text-slate-500 dark:text-slate-400">Pending</p>
                 <p className="text-2xl font-bold text-yellow-600 dark:text-yellow-400">{pendingCount}</p>
               </div>
-              <Clock className="h-8 w-8 text-yellow-500" />
+              <div className="p-3 bg-yellow-100 dark:bg-yellow-900/30 rounded-full">
+                <Clock className="h-6 w-6 text-yellow-600 dark:text-yellow-400" />
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -295,13 +398,30 @@ const handleVerify = () => {
                 <p className="text-sm text-slate-500 dark:text-slate-400">Verified</p>
                 <p className="text-2xl font-bold text-green-600 dark:text-green-400">{verifiedCount}</p>
               </div>
-              <CheckCircle className="h-8 w-8 text-green-500" />
+              <div className="p-3 bg-green-100 dark:bg-green-900/30 rounded-full">
+                <CheckCircle className="h-6 w-6 text-green-600 dark:text-green-400" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="dark:bg-slate-800/80 dark:border-slate-700">
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-slate-500 dark:text-slate-400">Total Amount</p>
+                <p className="text-2xl font-bold text-purple-600 dark:text-purple-400">
+                  {formatCurrency(receipts.reduce((sum, r) => sum + parseFloat(r.amount || 0), 0))}
+                </p>
+              </div>
+              <div className="p-3 bg-purple-100 dark:bg-purple-900/30 rounded-full">
+                <DollarSign className="h-6 w-6 text-purple-600 dark:text-purple-400" />
+              </div>
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Search */}
+      {/* ========== SEARCH ========== */}
       <div className="relative">
         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
         <Input
@@ -312,7 +432,7 @@ const handleVerify = () => {
         />
       </div>
 
-      {/* Receipts Table */}
+      {/* ========== RECEIPTS TABLE ========== */}
       <Card className="dark:bg-slate-800/80 dark:border-slate-700 overflow-hidden">
         <CardHeader className="border-b dark:border-slate-700">
           <CardTitle className="flex items-center gap-2 text-slate-900 dark:text-white">
@@ -336,68 +456,78 @@ const handleVerify = () => {
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
-                  <TableRow>
-                    <TableHead>Ticket #</TableHead>
-                    <TableHead>Driver</TableHead>
-                    <TableHead>Vehicle</TableHead>
-                    <TableHead>Department</TableHead>
-                    <TableHead>Liters</TableHead>
-                    <TableHead>Amount</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
+                  <TableRow className="bg-slate-50 dark:bg-slate-900/50">
+                    <TableHead className="font-semibold min-w-[100px]">Ticket #</TableHead>
+                    <TableHead className="font-semibold min-w-[120px]">Driver</TableHead>
+                    <TableHead className="font-semibold min-w-[100px]">Vehicle</TableHead>
+                    <TableHead className="font-semibold min-w-[120px]">Department</TableHead>
+                    <TableHead className="text-right font-semibold min-w-[80px]">Liters</TableHead>
+                    <TableHead className="text-right font-semibold min-w-[100px]">Amount</TableHead>
+                    <TableHead className="font-semibold min-w-[100px]">Status</TableHead>
+                    <TableHead className="text-right font-semibold min-w-[180px]">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredReceipts.map((receipt, index) => (
                     <TableRow 
                       key={receipt.id || receipt.fuel_receipt_id}
-                      className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors animate-fade-in"
-                      style={{ animationDelay: `${index * 50}ms` }}
+                      className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors"
                     >
                       <TableCell className="font-mono font-semibold text-slate-900 dark:text-white">
                         {receipt.ticket_number}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
-                          <User className="h-3 w-3 text-slate-400" />
-                          <span className="text-slate-700 dark:text-slate-300">{receipt.driver_name}</span>
+                          <User className="h-3 w-3 text-slate-400 flex-shrink-0" />
+                          <span className="text-slate-700 dark:text-slate-300 truncate max-w-[100px]">
+                            {receipt.driver_name}
+                          </span>
                         </div>
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
-                          <Truck className="h-3 w-3 text-slate-400" />
+                          <Truck className="h-3 w-3 text-slate-400 flex-shrink-0" />
                           <span className="text-slate-700 dark:text-slate-300">{receipt.plate_number}</span>
                         </div>
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
-                          <Building2 className="h-3 w-3 text-slate-400" />
-                          <span className="text-slate-700 dark:text-slate-300">{receipt.department_name}</span>
+                          <Building2 className="h-3 w-3 text-slate-400 flex-shrink-0" />
+                          <span className="text-slate-700 dark:text-slate-300 truncate max-w-[100px]">
+                            {receipt.department_name}
+                          </span>
                         </div>
                       </TableCell>
-                      <TableCell className="font-medium text-slate-700 dark:text-slate-300">
+                      <TableCell className="text-right font-medium text-slate-700 dark:text-slate-300">
                         {receipt.liters} L
                       </TableCell>
-                      <TableCell className="font-semibold text-green-600 dark:text-green-400">
+                      <TableCell className="text-right font-semibold text-green-600 dark:text-green-400">
                         {formatCurrency(receipt.amount)}
                       </TableCell>
-                      <TableCell>{getStatusBadge(receipt.status)}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1">
+                          {getStatusBadge(receipt.status)}
+                          {receipt.status === "verified" && (
+                            <CheckCircle className="h-3 w-3 text-green-500" />
+                          )}
+                        </div>
+                      </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-2">
                           <Button
                             variant="ghost"
                             size="sm"
                             onClick={() => openReceiptModal(receipt)}
-                            className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:text-blue-300 dark:hover:bg-blue-950/30 h-8 w-8 p-0"
+                            className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:text-blue-300 dark:hover:bg-blue-950/30 h-8 px-3"
                             title="View & Edit Receipt"
                           >
-                            <Eye className="h-4 w-4" />
+                            <Eye className="h-4 w-4 mr-1" />
+                            View
                           </Button>
                           {receipt.status !== "verified" && (
                             <Button
                               size="sm"
                               onClick={() => {
-                                // Quick verify without editing
                                 const quickData = {
                                   invoice_number: receipt.invoice_number || null,
                                   amount_on_receipt: parseFloat(receipt.amount) || 0,
@@ -409,7 +539,7 @@ const handleVerify = () => {
                                   data: quickData,
                                 });
                               }}
-                              className="bg-green-600 hover:bg-green-700 text-white"
+                              className="bg-green-600 hover:bg-green-700 text-white h-8 px-3"
                               disabled={verifyMutation.isPending}
                             >
                               {verifyMutation.isPending ? (
@@ -431,7 +561,7 @@ const handleVerify = () => {
         </CardContent>
       </Card>
 
-      {/* Receipt Detail Modal with Edit Fields */}
+      {/* ========== RECEIPT DETAIL MODAL ========== */}
       <Dialog open={showReceiptModal} onOpenChange={setShowReceiptModal}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto dark:bg-slate-800 dark:border-slate-700">
           <DialogHeader>
@@ -450,7 +580,7 @@ const handleVerify = () => {
                   {isEditing ? (
                     <>
                       <X className="h-4 w-4 mr-1" />
-                      Cancel
+                      Cancel Edit
                     </>
                   ) : (
                     <>
@@ -466,64 +596,65 @@ const handleVerify = () => {
           {selectedReceipt && (
             <div className="space-y-4">
               {/* Receipt Image */}
-              {selectedReceipt.receipt_url ? (
-                <div className="border rounded-xl overflow-hidden bg-slate-50 dark:bg-slate-900/50">
-                  <img
-                    src={selectedReceipt.receipt_url}
-                    alt="Fuel Receipt"
-                    className="w-full max-h-64 object-contain"
-                    onError={(e) => {
-                      e.target.src = "/placeholder-receipt.png";
-                      e.target.alt = "Receipt image not available";
-                    }}
-                  />
-                </div>
-              ) : (
-                <div className="border rounded-xl p-8 text-center bg-slate-50 dark:bg-slate-900/50">
-                  <ImageIcon className="h-12 w-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
-                  <p className="text-slate-500 dark:text-slate-400">No receipt image uploaded</p>
-                </div>
-              )}
+              {renderReceiptImage(selectedReceipt)}
 
               {/* Receipt Details Grid with Edit Fields */}
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                {/* Ticket Number - Read Only */}
+                {/* Ticket Number */}
                 <div>
                   <p className="text-xs text-slate-500 dark:text-slate-400">Ticket Number</p>
-                  <p className="font-medium text-slate-900 dark:text-white">{selectedReceipt.ticket_number}</p>
+                  <p className="font-medium text-slate-900 dark:text-white flex items-center gap-1">
+                    <FileText className="h-3 w-3 text-slate-400" />
+                    {selectedReceipt.ticket_number}
+                  </p>
                 </div>
 
-                {/* Driver - Read Only */}
+                {/* Driver */}
                 <div>
                   <p className="text-xs text-slate-500 dark:text-slate-400">Driver</p>
-                  <p className="font-medium text-slate-900 dark:text-white">{selectedReceipt.driver_name}</p>
+                  <p className="font-medium text-slate-900 dark:text-white flex items-center gap-1">
+                    <User className="h-3 w-3 text-slate-400" />
+                    {selectedReceipt.driver_name}
+                  </p>
                 </div>
 
-                {/* Vehicle - Read Only */}
+                {/* Vehicle */}
                 <div>
                   <p className="text-xs text-slate-500 dark:text-slate-400">Vehicle</p>
-                  <p className="font-medium text-slate-900 dark:text-white">{selectedReceipt.plate_number}</p>
+                  <p className="font-medium text-slate-900 dark:text-white flex items-center gap-1">
+                    <Truck className="h-3 w-3 text-slate-400" />
+                    {selectedReceipt.plate_number}
+                  </p>
                 </div>
 
-                {/* Department - Read Only */}
+                {/* Department */}
                 <div>
                   <p className="text-xs text-slate-500 dark:text-slate-400">Department</p>
-                  <p className="font-medium text-slate-900 dark:text-white">{selectedReceipt.department_name}</p>
+                  <p className="font-medium text-slate-900 dark:text-white flex items-center gap-1">
+                    <Building2 className="h-3 w-3 text-slate-400" />
+                    {selectedReceipt.department_name}
+                  </p>
                 </div>
 
-                {/* Fuel Type - Read Only */}
+                {/* Fuel Type */}
                 <div>
                   <p className="text-xs text-slate-500 dark:text-slate-400">Fuel Type</p>
-                  <p className="font-medium text-slate-900 dark:text-white">{selectedReceipt.fuel_type || "N/A"}</p>
+                  <p className="font-medium text-slate-900 dark:text-white flex items-center gap-1">
+                    <Fuel className="h-3 w-3 text-slate-400" />
+                    {selectedReceipt.fuel_type || "N/A"}
+                  </p>
                 </div>
 
-                {/* Trip Date - Read Only */}
+                {/* Trip Date */}
                 <div>
                   <p className="text-xs text-slate-500 dark:text-slate-400">Trip Date</p>
-                  <p className="font-medium text-slate-900 dark:text-white">{formatDate(selectedReceipt.trip_date)}</p>
+                  <p className="font-medium text-slate-900 dark:text-white flex items-center gap-1">
+                    <Calendar className="h-3 w-3 text-slate-400" />
+                    {formatDate(selectedReceipt.trip_date)}
+                  </p>
                 </div>
 
-                {/* Invoice Number - Editable */}
+                {/* Invoice Number */}
                 <div className="col-span-1">
                   <p className="text-xs text-slate-500 dark:text-slate-400">Invoice Number</p>
                   {isEditing ? (
@@ -540,7 +671,7 @@ const handleVerify = () => {
                   )}
                 </div>
 
-                {/* ✅ AMOUNT - Editable (Manual Entry) */}
+                {/* Amount */}
                 <div>
                   <p className="text-xs text-slate-500 dark:text-slate-400">Amount (₱)</p>
                   {isEditing ? (
@@ -563,7 +694,7 @@ const handleVerify = () => {
                   )}
                 </div>
 
-                {/* ✅ UNIT PRICE - Editable (Manual Entry) */}
+                {/* Unit Price */}
                 <div>
                   <p className="text-xs text-slate-500 dark:text-slate-400">Unit Price (₱/L)</p>
                   {isEditing ? (
@@ -586,12 +717,12 @@ const handleVerify = () => {
                   )}
                 </div>
 
-                {/* ✅ LITERS - Auto-Calculated */}
+                {/* Liters */}
                 <div>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
                     Liters (L)
                     {isEditing && (
-                      <span className="ml-1 text-blue-500">
+                      <span className="ml-1 text-blue-500" title="Auto-calculated">
                         <Calculator className="h-3 w-3 inline" />
                       </span>
                     )}
@@ -603,7 +734,7 @@ const handleVerify = () => {
                         step="0.01"
                         min="0"
                         value={editData.liters_availed}
-                        className="mt-1 dark:bg-slate-900 dark:border-slate-700 bg-slate-50 dark:bg-slate-800"
+                        className="mt-1 dark:bg-slate-900 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 cursor-not-allowed"
                         placeholder="Auto-calculated"
                         disabled={true}
                       />
@@ -621,10 +752,13 @@ const handleVerify = () => {
                 </div>
               </div>
 
-              {/* Distance Details - Read Only */}
+              {/* Distance Details */}
               {selectedReceipt.gps_distance_km && (
                 <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-4">
-                  <h4 className="text-sm font-medium mb-2 text-slate-700 dark:text-slate-300">Distance Details</h4>
+                  <h4 className="text-sm font-medium mb-2 text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                    <MapPin className="h-4 w-4 text-slate-400" />
+                    Distance Details
+                  </h4>
                   <div className="grid grid-cols-2 gap-4 text-sm">
                     <div>
                       <p className="text-xs text-slate-500 dark:text-slate-400">Method</p>
@@ -632,12 +766,12 @@ const handleVerify = () => {
                         {selectedReceipt.distance_calculation_method || "N/A"}
                       </p>
                     </div>
-                    {selectedReceipt.gps_distance_km && (
-                      <div>
-                        <p className="text-xs text-slate-500 dark:text-slate-400">GPS Distance</p>
-                        <p className="font-medium text-slate-900 dark:text-white">{selectedReceipt.gps_distance_km} km</p>
-                      </div>
-                    )}
+                    <div>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">GPS Distance</p>
+                      <p className="font-medium text-slate-900 dark:text-white">
+                        {selectedReceipt.gps_distance_km} km
+                      </p>
+                    </div>
                   </div>
                 </div>
               )}
@@ -698,7 +832,7 @@ const handleVerify = () => {
 
               {/* Edit Help Text */}
               {isEditing && (
-                <div className="text-xs text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-slate-900/50 p-3 rounded-lg">
+                <div className="text-xs text-slate-400 dark:text-slate-500 bg-blue-50 dark:bg-blue-950/30 p-3 rounded-lg border border-blue-200 dark:border-blue-800">
                   <AlertCircle className="h-4 w-4 inline mr-1 text-blue-500" />
                   Enter the <strong>Amount (₱)</strong> and <strong>Unit Price (₱/L)</strong>. 
                   Liters will be auto-calculated using: <strong>Liters = Amount ÷ Unit Price</strong>
