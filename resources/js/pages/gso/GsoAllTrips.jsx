@@ -44,11 +44,12 @@ import {
   Clock,
   AlertCircle,
   User,
+  ChevronRight,
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
 // ============================================
-// HELPERS - FIXED for nested data
+// HELPERS
 // ============================================
 
 const getTicketId = (trip) => {
@@ -59,9 +60,7 @@ const getTicketNumber = (trip) => {
   return trip?.trip_ticket_number || trip?.ticket_number || 'N/A';
 };
 
-// ✅ FIXED: Handle nested department data
 const getDepartmentName = (trip) => {
-  // Check various possible locations for department name
   if (trip?.department?.name) return trip.department.name;
   if (trip?.department_name) return trip.department_name;
   if (trip?.department?.department_name) return trip.department.department_name;
@@ -69,9 +68,7 @@ const getDepartmentName = (trip) => {
   return 'N/A';
 };
 
-// ✅ FIXED: Handle nested driver data
 const getDriverName = (trip) => {
-  // Check various possible locations for driver name
   if (trip?.driver?.user?.full_name) return trip.driver.user.full_name;
   if (trip?.driver?.full_name) return trip.driver.full_name;
   if (trip?.driver?.user?.name) return trip.driver.user.name;
@@ -85,17 +82,6 @@ const getDriverName = (trip) => {
   return 'N/A';
 };
 
-// ✅ FIXED: Handle nested driver ID
-const getDriverId = (trip) => {
-  return trip?.driver?.driver_id || trip?.driver_id || null;
-};
-
-// ✅ FIXED: Handle nested department ID
-const getDepartmentId = (trip) => {
-  return trip?.department?.department_id || trip?.department_id || null;
-};
-
-// ✅ FIXED: Handle nested vehicle data
 const getVehicleInfo = (trip) => {
   if (trip?.vehicle) {
     return `${trip.vehicle.plate_number || ''} ${trip.vehicle.vehicle_model || ''}`.trim() || 'N/A';
@@ -213,15 +199,6 @@ const GsoAllTrips = () => {
 
   const trips = Array.isArray(tripsData) ? tripsData : [];
 
-  // ✅ DEBUG: Log first trip to see structure
-  React.useEffect(() => {
-    if (trips.length > 0) {
-      console.log('🔍 Sample trip data structure:', trips[0]);
-      console.log('🔍 Driver data:', trips[0]?.driver);
-      console.log('🔍 Department data:', trips[0]?.department);
-    }
-  }, [trips]);
-
   // ============ FILTER OPTIONS ============
   const departments = useMemo(() => {
     const depts = new Set();
@@ -285,7 +262,8 @@ const GsoAllTrips = () => {
       toast.error('Invalid trip ID');
       return;
     }
-    navigate(`/gso/trip/${ticketId}`);
+    // ✅ Redirect to GSO trip ticket view
+    navigate(`/gso/tickets/${ticketId}`);
   };
 
   const handleExport = () => {
@@ -484,7 +462,7 @@ const GsoAllTrips = () => {
                     <TableHead className="font-semibold">Vehicle</TableHead>
                     <TableHead className="font-semibold text-right">Amount</TableHead>
                     <TableHead className="font-semibold">Status</TableHead>
-                    <TableHead className="font-semibold text-right">Actions</TableHead>
+                    <TableHead className="font-semibold text-center">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -541,15 +519,15 @@ const GsoAllTrips = () => {
                         <TableCell>
                           <StatusBadge status={trip.status} />
                         </TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="text-center">
+                          {/* ✅ FIXED: View button instead of Eye icon */}
                           <Button
-                            variant="ghost"
                             size="sm"
                             onClick={() => handleViewTrip(trip)}
-                            className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:text-blue-300 dark:hover:bg-blue-950/30 h-8 w-8 p-0"
-                            title="View Trip Details"
+                            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 h-8 flex items-center gap-1.5 rounded-lg"
                           >
-                            <Eye className="h-4 w-4" />
+                            <Eye className="h-3.5 w-3.5" />
+                            <span className="text-sm font-medium">View</span>
                           </Button>
                         </TableCell>
                       </TableRow>

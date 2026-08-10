@@ -907,80 +907,33 @@ const renderFuelReceiptTable = () => {
     );
   };
 
-  // ============================================
-  // RENDER BUDGET UTILIZATION TAB
-  // ============================================
+ // src/pages/gso/GsoReports.jsx
 
-  const renderBudgetUtilization = () => {
-    const periods = budgetData?.periods || [];
-    const summary = budgetData?.summary || {};
+// ============================================
+// RENDER BUDGET UTILIZATION TAB - FIXED
+// ============================================
 
-    console.log('💰 Budget Periods:', periods);
-    console.log('💰 Budget Summary:', summary);
+const renderBudgetUtilization = () => {
+  const periods = budgetData?.periods || [];
+  const summary = budgetData?.summary || {};
 
-    const totalAllocated = periods.reduce((sum, p) => {
-      const val = parseFloat(p.allocated) || 0;
-      return sum + val;
-    }, 0);
+  console.log('💰 Budget Periods:', periods);
+  console.log('💰 Budget Summary:', summary);
 
-    const totalUsed = periods.reduce((sum, p) => {
-      const val = parseFloat(p.used) || 0;
-      return sum + val;
-    }, 0);
+  // ✅ Calculate totals from grouped data (no duplicates)
+  const totalAllocated = periods.reduce((sum, p) => {
+    const val = parseFloat(p.allocated) || 0;
+    return sum + val;
+  }, 0);
 
-    const totalRemaining = totalAllocated - totalUsed;
+  const totalUsed = periods.reduce((sum, p) => {
+    const val = parseFloat(p.used) || 0;
+    return sum + val;
+  }, 0);
 
-    if (periods.length === 0 && !summary.total_allocated) {
-      return (
-        <div className="space-y-4 mt-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-              <CardContent className="pt-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-slate-500 dark:text-slate-400">Total Allocated</p>
-                    <p className="text-2xl font-bold text-blue-600">{formatCurrency(0)}</p>
-                  </div>
-                  <DollarSign className="h-8 w-8 text-blue-500" />
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-              <CardContent className="pt-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-slate-500 dark:text-slate-400">Used</p>
-                    <p className="text-2xl font-bold text-yellow-600">{formatCurrency(0)}</p>
-                  </div>
-                  <TrendingDown className="h-8 w-8 text-yellow-500" />
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-              <CardContent className="pt-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-slate-500 dark:text-slate-400">Remaining</p>
-                    <p className="text-2xl font-bold text-green-600">{formatCurrency(0)}</p>
-                  </div>
-                  <TrendingUp className="h-8 w-8 text-green-500" />
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-          <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-            <CardContent className="py-12 text-center">
-              <DollarSign className="h-12 w-12 text-slate-400 mx-auto mb-4" />
-              <p className="text-slate-500 dark:text-slate-400">No budget data available</p>
-              <p className="text-sm text-slate-400 dark:text-slate-500">
-                Try adjusting your filters or date range
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-      );
-    }
+  const totalRemaining = totalAllocated - totalUsed;
 
+  if (periods.length === 0 && !summary.total_allocated) {
     return (
       <div className="space-y-4 mt-6">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -989,162 +942,240 @@ const renderFuelReceiptTable = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-slate-500 dark:text-slate-400">Total Allocated</p>
-                  <p className="text-2xl font-bold text-blue-600">{formatCurrency(totalAllocated || summary.total_allocated)}</p>
+                  <p className="text-2xl font-bold text-blue-600">{formatCurrency(0)}</p>
                 </div>
-                <div className="p-3 bg-blue-100 dark:bg-blue-900/30 rounded-full">
-                  <DollarSign className="h-8 w-8 text-blue-600 dark:text-blue-400" />
-                </div>
+                <DollarSign className="h-8 w-8 text-blue-500" />
               </div>
             </CardContent>
           </Card>
-
           <Card className="dark:bg-slate-800/80 dark:border-slate-700">
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-slate-500 dark:text-slate-400">Used</p>
-                  <p className="text-2xl font-bold text-yellow-600">{formatCurrency(totalUsed || summary.total_used)}</p>
+                  <p className="text-2xl font-bold text-yellow-600">{formatCurrency(0)}</p>
                 </div>
-                <div className="p-3 bg-yellow-100 dark:bg-yellow-900/30 rounded-full">
-                  <TrendingDown className="h-8 w-8 text-yellow-600 dark:text-yellow-400" />
-                </div>
+                <TrendingDown className="h-8 w-8 text-yellow-500" />
               </div>
             </CardContent>
           </Card>
-
           <Card className="dark:bg-slate-800/80 dark:border-slate-700">
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-slate-500 dark:text-slate-400">Remaining</p>
-                  <p className="text-2xl font-bold text-green-600">{formatCurrency(totalRemaining || summary.total_remaining)}</p>
+                  <p className="text-2xl font-bold text-green-600">{formatCurrency(0)}</p>
                 </div>
-                <div className="p-3 bg-green-100 dark:bg-green-900/30 rounded-full">
-                  <TrendingUp className="h-8 w-8 text-green-600 dark:text-green-400" />
-                </div>
+                <TrendingUp className="h-8 w-8 text-green-500" />
               </div>
             </CardContent>
           </Card>
         </div>
-
         <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-          <CardHeader className="cursor-pointer" onClick={() => toggleSection('departmentBreakdown')}>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Building2 className="h-5 w-5 text-purple-500" />
-                <CardTitle>Budget Utilization by Department</CardTitle>
-                <Badge variant="secondary">{periods.length} Departments</Badge>
-              </div>
-              {expandedSections.departmentBreakdown ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-            </div>
-          </CardHeader>
-          {expandedSections.departmentBreakdown && (
-            <CardContent>
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Department</TableHead>
-                      <TableHead className="text-right">Allocated</TableHead>
-                      <TableHead className="text-right">Used</TableHead>
-                      <TableHead className="text-right">Remaining</TableHead>
-                      <TableHead className="text-right">Utilization</TableHead>
-                      <TableHead>Status</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {periods.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan="6" className="text-center text-slate-500 py-4">No department budget data available</TableCell>
-                      </TableRow>
-                    ) : (
-                      periods.map((period) => {
-                        const key = period.period_id || `period-${Math.random()}`;
-                        const allocated = parseFloat(period.allocated) || 0;
-                        const used = parseFloat(period.used) || 0;
-                        const remaining = allocated - used;
-                        const utilPercent = allocated > 0 ? ((used / allocated) * 100) : 0;
-                        
-                        let statusLabel = 'On Track';
-                        let statusColor = 'bg-green-500';
-                        
-                        if (remaining < 0) {
-                          statusLabel = 'Over Budget';
-                          statusColor = 'bg-red-500';
-                        } else if (utilPercent > 80) {
-                          statusLabel = 'Near Limit';
-                          statusColor = 'bg-yellow-500';
-                        }
-                        
-                        return (
-                          <TableRow key={key}>
-                            <TableCell className="font-medium">{period.department_name || 'Unknown'}</TableCell>
-                            <TableCell className="text-right">{formatCurrency(allocated)}</TableCell>
-                            <TableCell className="text-right">{formatCurrency(used)}</TableCell>
-                            <TableCell className={`text-right font-medium ${remaining < 0 ? 'text-red-600' : 'text-green-600'}`}>
-                              {formatCurrency(remaining)}
-                            </TableCell>
-                            <TableCell className="text-right">{utilPercent.toFixed(1)}%</TableCell>
-                            <TableCell>
-                              <Badge className={statusColor}>{statusLabel}</Badge>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
-            </CardContent>
-          )}
-        </Card>
-
-        <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-          <CardHeader 
-            className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors"
-            onClick={() => setShowBudgetChart(!showBudgetChart)}
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <BarChart3 className="h-5 w-5 text-emerald-500" />
-                <CardTitle>Budget Visualization</CardTitle>
-                <Badge variant="secondary" className="ml-2">
-                  {showBudgetChart ? 'Hide' : 'Show'}
-                </Badge>
-              </div>
-              <div className="flex items-center gap-2 text-sm text-slate-500">
-                {showBudgetChart ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                {showBudgetChart ? 'Hide Chart' : 'Show Chart'}
-              </div>
-            </div>
-          </CardHeader>
-          {showBudgetChart && (
-            <CardContent>
-              <div className="h-80">
-                {periods.length === 0 ? (
-                  <div className="flex items-center justify-center h-full">
-                    <p className="text-slate-500 dark:text-slate-400">No data to visualize</p>
-                  </div>
-                ) : (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={periods}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="department_name" angle={-45} textAnchor="end" height={80} />
-                      <YAxis />
-                      <Tooltip formatter={(value) => formatCurrency(value)} />
-                      <Legend />
-                      <Bar dataKey="allocated" fill="#3b82f6" name="Allocated" />
-                      <Bar dataKey="used" fill="#f59e0b" name="Used" />
-                    </BarChart>
-                  </ResponsiveContainer>
-                )}
-              </div>
-            </CardContent>
-          )}
+          <CardContent className="py-12 text-center">
+            <DollarSign className="h-12 w-12 text-slate-400 mx-auto mb-4" />
+            <p className="text-slate-500 dark:text-slate-400">No budget data available</p>
+            <p className="text-sm text-slate-400 dark:text-slate-500">
+              Try adjusting your filters or date range
+            </p>
+          </CardContent>
         </Card>
       </div>
     );
-  };
+  }
+
+  return (
+    <div className="space-y-4 mt-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Card className="dark:bg-slate-800/80 dark:border-slate-700">
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-slate-500 dark:text-slate-400">Total Allocated</p>
+                <p className="text-2xl font-bold text-blue-600">
+                  {formatCurrency(totalAllocated || summary.total_allocated)}
+                </p>
+              </div>
+              <div className="p-3 bg-blue-100 dark:bg-blue-900/30 rounded-full">
+                <DollarSign className="h-8 w-8 text-blue-600 dark:text-blue-400" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="dark:bg-slate-800/80 dark:border-slate-700">
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-slate-500 dark:text-slate-400">Used</p>
+                <p className="text-2xl font-bold text-yellow-600">
+                  {formatCurrency(totalUsed || summary.total_used)}
+                </p>
+              </div>
+              <div className="p-3 bg-yellow-100 dark:bg-yellow-900/30 rounded-full">
+                <TrendingDown className="h-8 w-8 text-yellow-600 dark:text-yellow-400" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="dark:bg-slate-800/80 dark:border-slate-700">
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-slate-500 dark:text-slate-400">Remaining</p>
+                <p className="text-2xl font-bold text-green-600">
+                  {formatCurrency(totalRemaining || summary.total_remaining)}
+                </p>
+              </div>
+              <div className="p-3 bg-green-100 dark:bg-green-900/30 rounded-full">
+                <TrendingUp className="h-8 w-8 text-green-600 dark:text-green-400" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card className="dark:bg-slate-800/80 dark:border-slate-700">
+        <CardHeader className="cursor-pointer" onClick={() => toggleSection('departmentBreakdown')}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Building2 className="h-5 w-5 text-purple-500" />
+              <CardTitle>Budget Utilization by Department</CardTitle>
+              <Badge variant="secondary">{periods.length} Departments</Badge>
+            </div>
+            {expandedSections.departmentBreakdown ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+          </div>
+        </CardHeader>
+        {expandedSections.departmentBreakdown && (
+          <CardContent>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-slate-50 dark:bg-slate-900/50">
+                    <TableHead className="font-semibold">Department</TableHead>
+                    <TableHead className="font-semibold">Code</TableHead>
+                    <TableHead className="text-right font-semibold">Allocated</TableHead>
+                    <TableHead className="text-right font-semibold">Used</TableHead>
+                    <TableHead className="text-right font-semibold">Remaining</TableHead>
+                    <TableHead className="text-right font-semibold">Utilization</TableHead>
+                    <TableHead className="text-center font-semibold">Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {periods.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan="7" className="text-center text-slate-500 py-4">
+                        No department budget data available
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    periods.map((period, index) => {
+                      const key = period.period_id || `period-${index}`;
+                      const allocated = parseFloat(period.allocated) || 0;
+                      const used = parseFloat(period.used) || 0;
+                      const remaining = allocated - used;
+                      const utilPercent = allocated > 0 ? ((used / allocated) * 100) : 0;
+                      
+                      let statusLabel = 'On Track';
+                      let statusColor = 'bg-green-500';
+                      
+                      if (remaining < 0) {
+                        statusLabel = 'Over Budget';
+                        statusColor = 'bg-red-500';
+                      } else if (utilPercent > 80) {
+                        statusLabel = 'Near Limit';
+                        statusColor = 'bg-yellow-500';
+                      }
+                      
+                      return (
+                        <TableRow key={key} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
+                          <TableCell className="font-medium text-slate-900 dark:text-white">
+                            {period.department_name || 'Unknown'}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline">{period.department_code || 'N/A'}</Badge>
+                          </TableCell>
+                          <TableCell className="text-right font-medium text-blue-600 dark:text-blue-400">
+                            {formatCurrency(allocated)}
+                          </TableCell>
+                          <TableCell className="text-right text-yellow-600 dark:text-yellow-400">
+                            {formatCurrency(used)}
+                          </TableCell>
+                          <TableCell className={`text-right font-medium ${remaining < 0 ? 'text-red-600' : 'text-green-600'}`}>
+                            {formatCurrency(remaining)}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              <span className="font-medium">{utilPercent.toFixed(1)}%</span>
+                              <div className="w-16 bg-slate-200 dark:bg-slate-700 rounded-full h-1.5">
+                                <div 
+                                  className={`h-1.5 rounded-full ${utilPercent > 80 ? 'bg-red-500' : utilPercent > 50 ? 'bg-yellow-500' : 'bg-green-500'}`}
+                                  style={{ width: `${Math.min(utilPercent, 100)}%` }}
+                                />
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <Badge className={statusColor}>{statusLabel}</Badge>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        )}
+      </Card>
+
+      <Card className="dark:bg-slate-800/80 dark:border-slate-700">
+        <CardHeader 
+          className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors"
+          onClick={() => setShowBudgetChart(!showBudgetChart)}
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <BarChart3 className="h-5 w-5 text-emerald-500" />
+              <CardTitle>Budget Visualization</CardTitle>
+              <Badge variant="secondary" className="ml-2">
+                {showBudgetChart ? 'Hide' : 'Show'}
+              </Badge>
+            </div>
+            <div className="flex items-center gap-2 text-sm text-slate-500">
+              {showBudgetChart ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              {showBudgetChart ? 'Hide Chart' : 'Show Chart'}
+            </div>
+          </div>
+        </CardHeader>
+        {showBudgetChart && (
+          <CardContent>
+            <div className="h-80">
+              {periods.length === 0 ? (
+                <div className="flex items-center justify-center h-full">
+                  <p className="text-slate-500 dark:text-slate-400">No data to visualize</p>
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={periods}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <XAxis dataKey="department_name" angle={-45} textAnchor="end" height={80} stroke="#94a3b8" />
+                    <YAxis stroke="#94a3b8" />
+                    <Tooltip formatter={(value) => formatCurrency(value)} />
+                    <Legend />
+                    <Bar dataKey="allocated" fill="#3b82f6" name="Allocated" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="used" fill="#f59e0b" name="Used" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+          </CardContent>
+        )}
+      </Card>
+    </div>
+  );
+};
 
   // ============================================
   // RENDER - LOADING

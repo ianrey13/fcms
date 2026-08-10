@@ -49,6 +49,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
+import { icon } from "leaflet";
 
 // Sub-menu component for expandable items
 const SubMenuItem = ({ item, isOpen, isMobile, setIsMobile }) => {
@@ -181,13 +182,15 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
     const roleSpecificItems = {
       gso_office: [
         { name: "Dashboard", href: "/gso/dashboard", icon: LayoutDashboard },
+        {name: "All Trips", href:'/gso/all-trips', icon: FileText},
+
         { name: "Live Tracking", href: "/gso/live-tracking", icon: Satellite },
-        { name: "Fuel Receipts", href: "/gso/fuel-receipts", icon: Receipt },
+        { name: "Fuel Receipts ", href: "/gso/fuel-receipts", icon: Receipt },
         {
           name: "Reports",
           icon: FileBarChart,
           submenu: [
-            { name: "Fuel Receipts", href: "/gso/reports", icon: Receipt },
+            { name: "Fuel Receipts Report", href: "/gso/reports", icon: Receipt },
             { name: "Weekly Monitoring", href: "/gso/reports/weekly-monitoring", icon: Calendar },
             { name: "Fuel Without Trip", href: "/gso/reports/fuel-without-trip", icon: AlertTriangle },
           ],

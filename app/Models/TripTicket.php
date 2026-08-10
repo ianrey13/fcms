@@ -75,7 +75,7 @@ class TripTicket extends Model
     public const STATUS_RETURNED_FOR_REVISION = 'returned_for_revision';
     public const STATUS_FUNDS_ISSUED = 'funds_issued';
     public const STATUS_IN_TRANSIT = 'in_transit';
-    public const STATUS_PENDING_RECONCILIATION = 'pending_reconciliation';
+    // public const STATUS_PENDING_RECONCILIATION = 'pending_reconciliation';
     public const STATUS_CLOSED = 'closed';
     public const STATUS_REJECTED = 'rejected';
     public const STATUS_CANCELLED = 'cancelled';
@@ -199,7 +199,7 @@ class TripTicket extends Model
             self::STATUS_RETURNED_FOR_REVISION => 'Returned for Revision',
             self::STATUS_FUNDS_ISSUED => 'Funds Issued',
             self::STATUS_IN_TRANSIT => 'In Transit',
-            self::STATUS_PENDING_RECONCILIATION => 'Pending Reconciliation',
+            // self::STATUS_PENDING_RECONCILIATION => 'Pending Reconciliation',
             self::STATUS_CLOSED => 'Closed',
             self::STATUS_REJECTED => 'Rejected',
             self::STATUS_CANCELLED => 'Cancelled',
@@ -216,7 +216,7 @@ class TripTicket extends Model
             self::STATUS_RETURNED_FOR_REVISION => 'purple',
             self::STATUS_FUNDS_ISSUED => 'green',
             self::STATUS_IN_TRANSIT => 'blue',
-            self::STATUS_PENDING_RECONCILIATION => 'teal',
+            // self::STATUS_PENDING_RECONCILIATION => 'teal',
             self::STATUS_CLOSED => 'dark-green',
             self::STATUS_REJECTED => 'red',
             self::STATUS_CANCELLED => 'gray',

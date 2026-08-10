@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { 
   AlertTriangle, Fuel, Truck, Calendar, FileSpreadsheet, 
-  Printer, RefreshCw, Loader2, Search, Filter, X,CheckCircle
+  Printer, RefreshCw, Loader2, Search, Filter, X, CheckCircle
 } from 'lucide-react';
 import { reportsAPI } from '../../services/api';
 import { saveAs } from 'file-saver';
@@ -79,6 +79,16 @@ const FuelWithoutTripReport = ({ departmentId, dateRange }) => {
       end_date: '',
       department_id: 'all',
     });
+  };
+
+  // ✅ Format currency
+  const formatCurrency = (amount) => {
+    if (!amount || amount === 0) return '₱0.00';
+    return new Intl.NumberFormat('en-PH', {
+      style: 'currency',
+      currency: 'PHP',
+      minimumFractionDigits: 2,
+    }).format(amount);
   };
 
   const hasActiveFilters = filters.start_date || filters.end_date || filters.department_id !== 'all';
@@ -205,7 +215,7 @@ const FuelWithoutTripReport = ({ departmentId, dateRange }) => {
               <Fuel className="h-8 w-8 text-orange-500" />
               <div>
                 <p className="text-sm text-gray-600 dark:text-gray-400">Total Fuel</p>
-                <p className="text-2xl font-bold">{summary.total_fuel || 0} L</p>
+                <p className="text-2xl font-bold">{formatCurrency(summary.total_fuel_issued || 0)}</p>
               </div>
             </div>
           </CardContent>
@@ -278,8 +288,9 @@ const FuelWithoutTripReport = ({ departmentId, dateRange }) => {
                       <td className="px-4 py-2 text-sm">{item.plate_number}</td>
                       <td className="px-4 py-2 text-sm">{item.driver}</td>
                       <td className="px-4 py-2 text-sm">{item.department}</td>
+                      {/* ✅ FIXED: Fuel Issued as Currency */}
                       <td className="px-4 py-2 text-right font-semibold text-red-600 dark:text-red-400">
-                        {item.fuel_issued} L
+                        {formatCurrency(item.fuel_issued)}
                       </td>
                       <td className="px-4 py-2">
                         <Badge className={

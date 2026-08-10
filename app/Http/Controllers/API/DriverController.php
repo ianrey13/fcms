@@ -293,7 +293,7 @@ class DriverController extends Controller
             
             // Get completed trips count
             $completedTrips = TripTicket::where('driver_id', $driver->driver_id)
-                ->whereIn('status', ['closed', 'pending_reconciliation'])
+                ->whereIn('status', ['closed', ])
                 ->count();
             
             // Get total trips
@@ -556,7 +556,7 @@ class DriverController extends Controller
             
             $trips = TripTicket::with(['vehicle', 'department', 'gasSlip.fuelReceipt'])
                 ->where('driver_id', $driver->driver_id)
-                ->whereIn('status', ['closed', 'pending_reconciliation'])
+                ->whereIn('status', ['closed', ])
                 ->orderBy('created_at', 'desc')
                 ->paginate($limit, ['*'], 'page', $page);
             
@@ -886,7 +886,7 @@ class DriverController extends Controller
                     'funds_issued',
                     'acknowledged',
                     'in_transit',
-                    'pending_reconciliation',
+                    // 'pending_reconciliation',
                     'closed'
                 ]);
             }
@@ -1274,8 +1274,8 @@ public function startTrip(Request $request, $id)
     }
 }
     
-    /**
- * Complete trip - FIXED (No Odometer)
+/**
+ * Complete trip - FIXED (No Odometer) - Directly closes trip
  */
 public function completeTrip(Request $request, $id)
 {
@@ -1319,7 +1319,8 @@ public function completeTrip(Request $request, $id)
             'current_status' => $ticket->status
         ]);
         
-        if ($ticket->status === 'pending_reconciliation') {
+        // ✅ If already closed, return success
+        if ($ticket->status === 'closed') {
             return response()->json([
                 'success' => true,
                 'message' => 'Trip already completed',
@@ -1339,7 +1340,8 @@ public function completeTrip(Request $request, $id)
         
         DB::beginTransaction();
         
-        $ticket->status = 'pending_reconciliation';
+        // ✅ CHANGE: Directly close the trip (skip reconciliation)
+        $ticket->status = 'closed';
         $ticket->save();
         
         $gasSlip = GasSlip::where('trip_ticket_id', $id)->first();
@@ -1384,7 +1386,7 @@ public function completeTrip(Request $request, $id)
             "Trip {$ticket->trip_ticket_number} has been completed by driver " . $user->full_name
         );
         
-        // ✅ NEW: Broadcast to Mayor's Office
+        // ✅ Broadcast to Mayor's Office
         $moStaff = User::where('role', 'mayors_office')->where('status', 'active')->get();
         foreach ($moStaff as $mo) {
             NotificationHelper::send(
@@ -1397,7 +1399,7 @@ public function completeTrip(Request $request, $id)
         }
         Log::info('📡 Broadcasted trip_completed to ' . $moStaff->count() . ' MO staff');
         
-        // ✅ NEW: Broadcast to all GSO staff (not just submitter)
+        // ✅ Broadcast to all GSO staff (not just submitter)
         $gsoStaff = User::where('role', 'gso_office')->where('status', 'active')->get();
         foreach ($gsoStaff as $gso) {
             NotificationHelper::send(

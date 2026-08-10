@@ -587,22 +587,7 @@ const GsoTripTicket = ({ ticket: propTicket, onClose }) => {
             {ticketNumber}
           </span>
         </div>
-        {/* Head of Office Bar */}
-        {headOfOffice && (
-          <div style={styles.ticketBar}>
-            <span style={{ fontWeight: "bold" }}>Head of Office</span>
-            <span
-              style={{
-                borderLeft: "1.5px solid #000",
-                paddingLeft: "10px",
-                fontWeight: "bold",
-              }}
-            >
-              {headOfOffice}
-            </span>
-          </div>
-        )}
-
+      
         {/* Section 1: Administrative */}
         <div style={{ ...styles.section, ...styles.sectionBorder }}>
           <div style={styles.italicNote}>

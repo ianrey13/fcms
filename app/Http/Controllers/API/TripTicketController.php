@@ -44,7 +44,7 @@ class TripTicketController extends Controller
                 TripTicket::STATUS_RETURNED_FOR_REVISION,
                 TripTicket::STATUS_FUNDS_ISSUED,
                 TripTicket::STATUS_IN_TRANSIT,
-                TripTicket::STATUS_PENDING_RECONCILIATION,
+                // TripTicket::STATUS_PENDING_RECONCILIATION,
                 TripTicket::STATUS_CLOSED,
                 TripTicket::STATUS_REJECTED,
                 TripTicket::STATUS_CANCELLED,
@@ -55,7 +55,7 @@ class TripTicketController extends Controller
             $query->whereIn('status', [
                 TripTicket::STATUS_PENDING_MAYORS_OFFICE,
                 TripTicket::STATUS_FUNDS_ISSUED,
-                TripTicket::STATUS_PENDING_RECONCILIATION
+                // TripTicket::STATUS_PENDING_RECONCILIATION
             ]);
         }
 
