@@ -14,7 +14,7 @@ import {
     Printer,
     Calendar,
 } from 'lucide-react';
-import { reportsAPI } from '../../services/api';
+import { reportsAPI } from '../../../services/api';
 import { toast } from 'react-hot-toast';
 import { format } from 'date-fns';
 
