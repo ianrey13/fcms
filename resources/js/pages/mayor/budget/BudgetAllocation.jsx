@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -38,11 +38,62 @@ import {
     Info,
     CalendarRange,
     Clock,
+    ArrowLeft,
+    Zap,
+    Shield,
+    Wallet,
+    Gauge,
+    Activity,
+    CheckCircle,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
+import { useNavigate } from "react-router-dom";
 import api from "../../../services/api";
+import { cn } from "@/lib/utils";
+
+// ============================================
+// STATS CARD COMPONENT
+// ============================================
+
+const StatsCard = ({ title, value, icon: Icon, color, subtitle, trend }) => (
+    <Card className="dark:bg-slate-800/80 dark:border-slate-700 hover:shadow-lg transition-all duration-300">
+        <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+                <div>
+                    <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">{title}</p>
+                    <p className="text-2xl font-bold text-slate-900 dark:text-white mt-1">{value}</p>
+                    {subtitle && (
+                        <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">{subtitle}</p>
+                    )}
+                    {trend !== undefined && (
+                        <div className="flex items-center gap-1 mt-1 text-[10px]">
+                            {trend > 0 ? (
+                                <TrendingUp className="h-3 w-3 text-emerald-500" />
+                            ) : trend < 0 ? (
+                                <TrendingDown className="h-3 w-3 text-red-500" />
+                            ) : (
+                                <Activity className="h-3 w-3 text-slate-400" />
+                            )}
+                            <span className={trend > 0 ? 'text-emerald-600 dark:text-emerald-400' : trend < 0 ? 'text-red-600 dark:text-red-400' : 'text-slate-400'}>
+                                {trend > 0 ? '+' : ''}{trend}%
+                            </span>
+                        </div>
+                    )}
+                </div>
+                <div className={`p-3 rounded-xl bg-gradient-to-br ${color} shadow-lg`}>
+                    <Icon className="h-6 w-6 text-white" />
+                </div>
+            </div>
+        </CardContent>
+    </Card>
+);
+
+// ============================================
+// MAIN COMPONENT
+// ============================================
 
 const BudgetAllocation = () => {
+    const navigate = useNavigate();
     const queryClient = useQueryClient();
     const [selectedYear, setSelectedYear] = useState(2026);
     const [editingBudget, setEditingBudget] = useState(null);
@@ -62,7 +113,7 @@ const BudgetAllocation = () => {
     const [isBulkMode, setIsBulkMode] = useState(false);
     const [bulkData, setBulkData] = useState({});
 
-    // ✅ NEW: Separate state for Weekly Ceiling modal
+    // Weekly Ceiling state
     const [showWeeklyDialog, setShowWeeklyDialog] = useState(false);
     const [weeklyData, setWeeklyData] = useState({
         department_id: "",
@@ -71,14 +122,16 @@ const BudgetAllocation = () => {
     });
     const [weeklyDepartment, setWeeklyDepartment] = useState(null);
 
+    // ============================================
+    // QUERIES
+    // ============================================
+
     // Fetch active fiscal years
     const { data: yearsData, isLoading: yearsLoading } = useQuery({
         queryKey: ["fiscal-years-active"],
         queryFn: async () => {
             try {
-                const response = await api.get(
-                    "/mayors-office/fiscal-years?is_active=1",
-                );
+                const response = await api.get("/mayors-office/fiscal-years?is_active=1");
                 return response.data.data || [];
             } catch (error) {
                 console.error("Error fetching fiscal years:", error);
@@ -110,9 +163,7 @@ const BudgetAllocation = () => {
         queryKey: ["annual-budgets", selectedYear],
         queryFn: async () => {
             try {
-                const response = await api.get(
-                    `/mayors-office/annual-budgets/year/${selectedYear}`,
-                );
+                const response = await api.get(`/mayors-office/annual-budgets/year/${selectedYear}`);
                 return response.data;
             } catch (error) {
                 console.error("Error fetching budgets:", error);
@@ -122,6 +173,10 @@ const BudgetAllocation = () => {
         enabled: !!selectedYear,
         retry: 1,
     });
+
+    // ============================================
+    // MUTATIONS
+    // ============================================
 
     // Set budget mutation (Annual Budget only)
     const setBudgetMutation = useMutation({
@@ -139,22 +194,17 @@ const BudgetAllocation = () => {
             queryClient.invalidateQueries(["annual-budgets"]);
         },
         onError: (error) => {
-            toast.error(
-                error.response?.data?.message || "Failed to set budget",
-            );
+            toast.error(error.response?.data?.message || "Failed to set budget");
         },
     });
 
-    // ✅ NEW: Weekly Ceiling Update Mutation
+    // Weekly Ceiling Update Mutation
     const updateWeeklyMutation = useMutation({
         mutationFn: async ({ departmentId, data }) => {
-            const response = await api.put(
-                `/mayors-office/budget/weekly/${departmentId}`,
-                {
-                    weekly_allocation: data.weekly_ceiling,
-                    reason: data.reason || "Weekly ceiling update",
-                }
-            );
+            const response = await api.put(`/mayors-office/budget/weekly/${departmentId}`, {
+                weekly_allocation: data.weekly_ceiling,
+                reason: data.reason || "Weekly ceiling update",
+            });
             return response.data;
         },
         onSuccess: () => {
@@ -169,22 +219,17 @@ const BudgetAllocation = () => {
             queryClient.invalidateQueries(["annual-budgets"]);
         },
         onError: (error) => {
-            toast.error(
-                error.response?.data?.message || "Failed to update weekly ceiling",
-            );
+            toast.error(error.response?.data?.message || "Failed to update weekly ceiling");
         },
     });
 
     // Add Budget Mutation
     const addBudgetMutation = useMutation({
         mutationFn: async (data) => {
-            const response = await api.post(
-                "/mayors-office/annual-budgets/add",
-                {
-                    fiscal_year: selectedYear,
-                    ...data,
-                },
-            );
+            const response = await api.post("/mayors-office/annual-budgets/add", {
+                fiscal_year: selectedYear,
+                ...data,
+            });
             return response.data;
         },
         onSuccess: () => {
@@ -198,30 +243,23 @@ const BudgetAllocation = () => {
             queryClient.invalidateQueries(["annual-budgets"]);
         },
         onError: (error) => {
-            toast.error(
-                error.response?.data?.message || "Failed to add budget",
-            );
+            toast.error(error.response?.data?.message || "Failed to add budget");
         },
     });
 
     // Bulk update mutation
     const bulkUpdateMutation = useMutation({
         mutationFn: async () => {
-            const budgets = Object.entries(bulkData).map(
-                ([departmentId, data]) => ({
-                    department_id: parseInt(departmentId),
-                    annual_amount: parseFloat(data.annual_amount) || 0,
-                    weekly_ceiling: parseFloat(data.weekly_ceiling) || 0,
-                }),
-            );
+            const budgets = Object.entries(bulkData).map(([departmentId, data]) => ({
+                department_id: parseInt(departmentId),
+                annual_amount: parseFloat(data.annual_amount) || 0,
+                weekly_ceiling: parseFloat(data.weekly_ceiling) || 0,
+            }));
 
-            const response = await api.post(
-                "/mayors-office/annual-budgets/bulk",
-                {
-                    fiscal_year: selectedYear,
-                    budgets,
-                },
-            );
+            const response = await api.post("/mayors-office/annual-budgets/bulk", {
+                fiscal_year: selectedYear,
+                budgets,
+            });
             return response.data;
         },
         onSuccess: () => {
@@ -231,11 +269,13 @@ const BudgetAllocation = () => {
             queryClient.invalidateQueries(["annual-budgets"]);
         },
         onError: (error) => {
-            toast.error(
-                error.response?.data?.message || "Failed to save budgets",
-            );
+            toast.error(error.response?.data?.message || "Failed to save budgets");
         },
     });
+
+    // ============================================
+    // HELPERS
+    // ============================================
 
     const budgets = budgetData?.data || [];
     const summary = budgetData?.summary || {};
@@ -250,7 +290,17 @@ const BudgetAllocation = () => {
         }).format(amount);
     };
 
-    // ✅ Open Weekly Ceiling Modal
+    const getStatusBadge = (status) => {
+        if (status === "not_set" || !status) {
+            return <Badge className="bg-slate-400">Not Set</Badge>;
+        }
+        return <Badge className="bg-green-500">Active</Badge>;
+    };
+
+    // ============================================
+    // HANDLERS
+    // ============================================
+
     const openWeeklyDialog = (budget) => {
         setWeeklyDepartment(budget);
         setWeeklyData({
@@ -261,7 +311,6 @@ const BudgetAllocation = () => {
         setShowWeeklyDialog(true);
     };
 
-    // ✅ Handle Weekly Ceiling Update
     const handleWeeklyUpdate = () => {
         if (!weeklyData.department_id) {
             toast.error("Please select a department");
@@ -281,7 +330,6 @@ const BudgetAllocation = () => {
         });
     };
 
-    // Handle Edit (Annual Budget only)
     const handleEdit = (budget) => {
         setEditingBudget(budget);
         setFormData({
@@ -302,7 +350,6 @@ const BudgetAllocation = () => {
         const data = {
             department_id: editingBudget.department_id,
             annual_amount: parseFloat(formData.annual_amount) || 0,
-            // Weekly ceiling is NOT included here - it's separate
         };
         setBudgetMutation.mutate({ data });
     };
@@ -312,10 +359,7 @@ const BudgetAllocation = () => {
             toast.error("Please select a department");
             return;
         }
-        if (
-            !addBudgetData.additional_amount ||
-            parseFloat(addBudgetData.additional_amount) <= 0
-        ) {
+        if (!addBudgetData.additional_amount || parseFloat(addBudgetData.additional_amount) <= 0) {
             toast.error("Please enter a valid amount");
             return;
         }
@@ -352,13 +396,6 @@ const BudgetAllocation = () => {
         setBulkData({});
     };
 
-    const getStatusBadge = (status) => {
-        if (status === "not_set" || !status) {
-            return <Badge className="bg-slate-400">Not Set</Badge>;
-        }
-        return <Badge className="bg-green-500">Active</Badge>;
-    };
-
     // Initialize bulk data
     useEffect(() => {
         if (budgets.length > 0 && isBulkMode) {
@@ -373,631 +410,498 @@ const BudgetAllocation = () => {
         }
     }, [budgets, isBulkMode]);
 
+    // ============================================
+    // LOADING & ERROR STATES
+    // ============================================
+
     if (budgetError) {
         return (
             <div className="flex flex-col items-center justify-center py-12">
-                <AlertCircle className="h-12 w-12 text-red-400 mb-4" />
-                <p className="text-red-600 mb-2">Failed to load budget data</p>
-                <p className="text-slate-500 text-sm mb-4">
+                <div className="w-20 h-20 rounded-2xl bg-red-100 dark:bg-red-900/30 flex items-center justify-center mx-auto mb-4">
+                    <AlertCircle className="h-10 w-10 text-red-500" />
+                </div>
+                <p className="text-red-600 dark:text-red-400 font-medium mb-2">Failed to load budget data</p>
+                <p className="text-slate-500 dark:text-slate-400 text-sm mb-4">
                     {budgetError.response?.data?.message || budgetError.message}
                 </p>
-                <Button onClick={() => refetch()}>Retry</Button>
+                <Button onClick={() => refetch()} className="bg-blue-600 hover:bg-blue-700">
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    Retry
+                </Button>
             </div>
         );
     }
 
     if (yearsLoading || isLoading) {
         return (
-            <div className="flex justify-center py-12">
-                <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+            <div className="flex justify-center items-center h-96">
+                <div className="text-center">
+                    <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-500/20">
+                        <Loader2 className="h-8 w-8 text-white animate-spin" />
+                    </div>
+                    <p className="text-slate-600 dark:text-slate-400 font-medium">Loading budget data...</p>
+                    <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">Please wait while we fetch your data</p>
+                </div>
             </div>
         );
     }
 
+    // ============================================
+    // RENDER
+    // ============================================
+
     return (
-        <div className="space-y-6">
-            {/* ========== HEADER ========== */}
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                <div>
-                    <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
-                        Annual Budget Allocation
-                    </h1>
-                    <p className="text-slate-500 dark:text-slate-400 mt-1">
-                        Set annual fuel budget and weekly ceiling per department
-                    </p>
-                </div>
-                <div className="flex gap-2 flex-wrap">
-                    <Button
-                        variant="outline"
-                        onClick={() => refetch()}
-                        disabled={isLoading || isFetching}
-                    >
-                        <RefreshCw
-                            className={`h-4 w-4 mr-2 ${isFetching ? "animate-spin" : ""}`}
-                        />
-                        Refresh
-                    </Button>
-                    {budgets.length > 0 && (
-                        <>
-                            <Button
-                                variant="outline"
-                                onClick={() => setShowAddBudgetDialog(true)}
-                                className="bg-emerald-600 hover:bg-emerald-700 text-white"
-                            >
-                                <Plus className="h-4 w-4 mr-2" />
-                                Add Budget
-                            </Button>
-                            <Button
-                                variant={isBulkMode ? "default" : "outline"}
-                                onClick={() => setIsBulkMode(!isBulkMode)}
-                                className={
-                                    isBulkMode
-                                        ? "bg-blue-600 hover:bg-blue-700"
-                                        : ""
-                                }
-                            >
-                                {isBulkMode ? "Exit Bulk Edit" : "Bulk Edit"}
-                            </Button>
-                        </>
-                    )}
-                    {isBulkMode && (
-                        <>
-                            <Button
-                                onClick={handleBulkSave}
-                                disabled={bulkUpdateMutation.isPending}
-                                className="bg-green-600 hover:bg-green-700"
-                            >
-                                {bulkUpdateMutation.isPending ? (
-                                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                                ) : (
-                                    <Save className="h-4 w-4 mr-2" />
-                                )}
-                                Save All
-                            </Button>
-                            <Button
-                                variant="outline"
-                                onClick={handleBulkCancel}
-                                className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400"
-                            >
-                                <X className="h-4 w-4 mr-2" />
-                                Cancel
-                            </Button>
-                        </>
-                    )}
-                </div>
-            </div>
-
-            {/* ========== YEAR SELECTOR ========== */}
-            <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-                <CardContent className="pt-6">
-                    <div className="flex flex-wrap items-center gap-4">
-                        <div className="flex items-center gap-2">
-                            <Calendar className="h-5 w-5 text-slate-400" />
-                            <span className="font-medium text-slate-700 dark:text-slate-300">
-                                Select Fiscal Year:
-                            </span>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                            {yearsData?.length > 0 ? (
-                                yearsData.map((year) => {
-                                    const yearValue =
-                                        typeof year === "object"
-                                            ? year.year
-                                            : year;
-                                    const isActive =
-                                        typeof year === "object"
-                                            ? year.is_active
-                                            : true;
-                                    const key =
-                                        typeof year === "object"
-                                            ? year.fiscal_year_id || yearValue
-                                            : yearValue;
-
-                                    return (
-                                        <Button
-                                            key={key}
-                                            variant={
-                                                selectedYear === yearValue
-                                                    ? "default"
-                                                    : "outline"
-                                            }
-                                            size="sm"
-                                            onClick={() =>
-                                                setSelectedYear(yearValue)
-                                            }
-                                            className={
-                                                selectedYear === yearValue
-                                                    ? "bg-blue-600 hover:bg-blue-700 text-white"
-                                                    : "dark:border-slate-700 dark:text-slate-300"
-                                            }
-                                        >
-                                            {yearValue}
-                                            {isActive && (
-                                                <span className="ml-1 text-xs text-green-400">
-                                                    ●
-                                                </span>
-                                            )}
-                                        </Button>
-                                    );
-                                })
-                            ) : (
-                                <p className="text-slate-500 dark:text-slate-400 text-sm">
-                                    No fiscal years available. Please ask GSO to
-                                    add years.
-                                </p>
-                            )}
+        <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
+            <div className="space-y-6 p-4 md:p-6 animate-fade-in-up">
+                {/* Header */}
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => navigate('/mo/dashboard')}
+                            className="rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 h-10 w-10"
+                        >
+                            <ArrowLeft className="h-5 w-5" />
+                        </Button>
+                        <div>
+                            <div className="flex items-center gap-3">
+                                <div className="p-2.5 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 shadow-lg shadow-blue-500/20">
+                                    <DollarSign className="h-5 w-5 text-white" />
+                                </div>
+                                <div>
+                                    <h1 className="text-2xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 bg-clip-text text-transparent">
+                                        Annual Budget Allocation
+                                    </h1>
+                                    <p className="text-sm text-slate-500 dark:text-slate-400">
+                                        Set annual fuel budget and weekly ceiling per department
+                                    </p>
+                                </div>
+                            </div>
                         </div>
                     </div>
-                </CardContent>
-            </Card>
-
-            {/* ========== SUMMARY CARDS ========== */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-                    <CardContent className="pt-6">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <p className="text-sm text-slate-500 dark:text-slate-400">
-                                    Total Annual Budget
-                                </p>
-                                <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-                                    {formatCurrency(summary.total_allocated)}
-                                </p>
-                            </div>
-                            <div className="p-3 bg-blue-100 dark:bg-blue-900/30 rounded-full">
-                                <DollarSign className="h-6 w-6 text-blue-600 dark:text-blue-400" />
-                            </div>
-                        </div>
-                    </CardContent>
-                </Card>
-
-                <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-                    <CardContent className="pt-6">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <p className="text-sm text-slate-500 dark:text-slate-400">
-                                    Used
-                                </p>
-                                <p className="text-2xl font-bold text-yellow-600 dark:text-yellow-400">
-                                    {formatCurrency(summary.total_used)}
-                                </p>
-                                <p className="text-xs text-slate-400 dark:text-slate-500">
-                                    Total spent so far
-                                </p>
-                            </div>
-                            <div className="p-3 bg-yellow-100 dark:bg-yellow-900/30 rounded-full">
-                                <TrendingDown className="h-6 w-6 text-yellow-600 dark:text-yellow-400" />
-                            </div>
-                        </div>
-                    </CardContent>
-                </Card>
-
-                <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-                    <CardContent className="pt-6">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <p className="text-sm text-slate-500 dark:text-slate-400">
-                                    Remaining Annual
-                                </p>
-                                <p className="text-2xl font-bold text-green-600 dark:text-green-400">
-                                    {formatCurrency(summary.total_remaining)}
-                                </p>
-                                <p className="text-xs text-slate-400 dark:text-slate-500">
-                                    Available for future allocation
-                                </p>
-                            </div>
-                            <div className="p-3 bg-green-100 dark:bg-green-900/30 rounded-full">
-                                <TrendingUp className="h-6 w-6 text-green-600 dark:text-green-400" />
-                            </div>
-                        </div>
-                    </CardContent>
-                </Card>
-
-                <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-                    <CardContent className="pt-6">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <p className="text-sm text-slate-500 dark:text-slate-400">
-                                    Departments
-                                </p>
-                                <p className="text-2xl font-bold text-purple-600 dark:text-purple-400">
-                                    {summary.departments_with_budget || 0} /{" "}
-                                    {summary.total_departments || 0}
-                                </p>
-                                <p className="text-xs text-slate-400 dark:text-slate-500">
-                                    {summary.departments_without_budget || 0}{" "}
-                                    without budget
-                                </p>
-                            </div>
-                            <div className="p-3 bg-purple-100 dark:bg-purple-900/30 rounded-full">
-                                <Building2 className="h-6 w-6 text-purple-600 dark:text-purple-400" />
-                            </div>
-                        </div>
-                    </CardContent>
-                </Card>
-            </div>
-
-            {/* ========== BUDGET TABLE ========== */}
-            <Card className="dark:bg-slate-800/80 dark:border-slate-700 overflow-hidden">
-                <CardHeader className="border-b dark:border-slate-700">
-                    <div className="flex items-center justify-between">
-                        <CardTitle className="flex items-center gap-2 text-slate-900 dark:text-white">
-                            <DollarSign className="h-5 w-5 text-green-500" />
-                            Budget Details for {selectedYear}
-                            <Badge variant="secondary" className="ml-2">
-                                {budgets.length} departments
-                            </Badge>
-                        </CardTitle>
-                        {fiscalYear?.is_active === false && (
-                            <Badge className="bg-yellow-500">
-                                <AlertCircle className="h-3 w-3 mr-1" />
-                                Inactive
-                            </Badge>
+                    <div className="flex flex-wrap gap-3">
+                        <Button
+                            variant="outline"
+                            onClick={() => refetch()}
+                            disabled={isLoading || isFetching}
+                            className="dark:border-slate-700 dark:text-slate-300"
+                        >
+                            <RefreshCw className={`h-4 w-4 mr-2 ${isFetching ? "animate-spin" : ""}`} />
+                            Refresh
+                        </Button>
+                        {budgets.length > 0 && (
+                            <>
+                                <Button
+                                    variant="outline"
+                                    onClick={() => setShowAddBudgetDialog(true)}
+                                    className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                                >
+                                    <Plus className="h-4 w-4 mr-2" />
+                                    Add Budget
+                                </Button>
+                                <Button
+                                    variant={isBulkMode ? "default" : "outline"}
+                                    onClick={() => setIsBulkMode(!isBulkMode)}
+                                    className={isBulkMode ? "bg-blue-600 hover:bg-blue-700 text-white" : "dark:border-slate-700 dark:text-slate-300"}
+                                >
+                                    {isBulkMode ? "Exit Bulk Edit" : "Bulk Edit"}
+                                </Button>
+                            </>
+                        )}
+                        {isBulkMode && (
+                            <>
+                                <Button
+                                    onClick={handleBulkSave}
+                                    disabled={bulkUpdateMutation.isPending}
+                                    className="bg-green-600 hover:bg-green-700 text-white"
+                                >
+                                    {bulkUpdateMutation.isPending ? (
+                                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                    ) : (
+                                        <Save className="h-4 w-4 mr-2" />
+                                    )}
+                                    Save All
+                                </Button>
+                                <Button
+                                    variant="outline"
+                                    onClick={handleBulkCancel}
+                                    className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30"
+                                >
+                                    <X className="h-4 w-4 mr-2" />
+                                    Cancel
+                                </Button>
+                            </>
                         )}
                     </div>
-                </CardHeader>
-                <CardContent className="p-0">
-                    {budgets.length === 0 ? (
-                        <div className="text-center py-12">
-                            <AlertCircle className="h-12 w-12 text-slate-400 mx-auto mb-4" />
-                            <p className="text-slate-500 dark:text-slate-400">
-                                No departments found for {selectedYear}
-                            </p>
-                            <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">
-                                Please ask GSO to add departments or select a
-                                different year
-                            </p>
-                        </div>
-                    ) : (
-                        <div className="overflow-x-auto">
-                            <Table>
-                                <TableHeader>
-                                    <TableRow className="bg-slate-50 dark:bg-slate-900/50">
-                                        <TableHead className="font-semibold">
-                                            Department
-                                        </TableHead>
-                                        <TableHead className="font-semibold">
-                                            Code
-                                        </TableHead>
-                                        <TableHead className="text-right font-semibold">
-                                            Annual Budget
-                                        </TableHead>
-                                        <TableHead className="text-right font-semibold">
-                                            Weekly Ceiling
-                                        </TableHead>
-                                        <TableHead className="text-right font-semibold">
-                                            Used
-                                        </TableHead>
-                                        <TableHead className="text-right font-semibold">
-                                            Remaining
-                                        </TableHead>
-                                        <TableHead className="text-right font-semibold">
-                                            Weekly Used
-                                        </TableHead>
-                                        <TableHead className="text-right font-semibold">
-                                            Weekly Remaining
-                                        </TableHead>
-                                        <TableHead className="text-center font-semibold">
-                                            Status
-                                        </TableHead>
-                                        <TableHead className="text-right font-semibold">
-                                            Actions
-                                        </TableHead>
-                                    </TableRow>
-                                </TableHeader>
+                </div>
 
-                                <TableBody>
-                                    {budgets.map((budget) => {
-                                        const isEditing =
-                                            isBulkMode &&
-                                            bulkData[budget.department_id];
-                                        const isNew = !budget.has_budget;
-
-                                        const weeklyUsedPercent =
-                                            budget.weekly_ceiling > 0
-                                                ? Math.round(
-                                                      ((budget.weekly_used ||
-                                                          0) /
-                                                          budget.weekly_ceiling) *
-                                                          100,
-                                                  )
-                                                : 0;
+                {/* Year Selector */}
+                <Card className="dark:bg-slate-800/80 dark:border-slate-700">
+                    <CardContent className="pt-6">
+                        <div className="flex flex-wrap items-center gap-4">
+                            <div className="flex items-center gap-2">
+                                <Calendar className="h-5 w-5 text-slate-400" />
+                                <span className="font-medium text-slate-700 dark:text-slate-300">
+                                    Select Fiscal Year:
+                                </span>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                                {yearsData?.length > 0 ? (
+                                    yearsData.map((year) => {
+                                        const yearValue = typeof year === "object" ? year.year : year;
+                                        const isActive = typeof year === "object" ? year.is_active : true;
+                                        const key = typeof year === "object" ? year.fiscal_year_id || yearValue : yearValue;
 
                                         return (
-                                            <TableRow
-                                                key={budget.department_id}
-                                                className={`hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors ${
-                                                    isNew
-                                                        ? "bg-yellow-50/50 dark:bg-yellow-950/20"
-                                                        : ""
-                                                }`}
+                                            <Button
+                                                key={key}
+                                                variant={selectedYear === yearValue ? "default" : "outline"}
+                                                size="sm"
+                                                onClick={() => setSelectedYear(yearValue)}
+                                                className={
+                                                    selectedYear === yearValue
+                                                        ? "bg-blue-600 hover:bg-blue-700 text-white"
+                                                        : "dark:border-slate-700 dark:text-slate-300"
+                                                }
                                             >
-                                                <TableCell className="font-medium text-slate-900 dark:text-white">
-                                                    {budget.department_name}
-                                                    {isNew && (
-                                                        <Badge
-                                                            variant="outline"
-                                                            className="ml-2 text-yellow-600 border-yellow-300 text-xs"
-                                                        >
-                                                            New
-                                                        </Badge>
-                                                    )}
-                                                </TableCell>
-                                                <TableCell>
-                                                    <Badge variant="outline">
-                                                        {budget.department_code}
-                                                    </Badge>
-                                                </TableCell>
-                                                <TableCell className="text-right">
-                                                    {isBulkMode ? (
-                                                        <Input
-                                                            type="number"
-                                                            step="0.01"
-                                                            min="0"
-                                                            value={
-                                                                isEditing
-                                                                    ? bulkData[
-                                                                          budget
-                                                                              .department_id
-                                                                      ]
-                                                                          ?.annual_amount
-                                                                    : ""
-                                                            }
-                                                            onChange={(e) =>
-                                                                handleBulkChange(
-                                                                    budget.department_id,
-                                                                    "annual_amount",
-                                                                    e.target
-                                                                        .value,
-                                                                )
-                                                            }
-                                                            className="w-32 ml-auto text-right dark:bg-slate-900 dark:border-slate-700"
-                                                            placeholder="0.00"
-                                                        />
-                                                    ) : (
-                                                        <span className="font-medium text-blue-600 dark:text-blue-400">
-                                                            {formatCurrency(
-                                                                budget.annual_amount,
-                                                            )}
-                                                        </span>
-                                                    )}
-                                                </TableCell>
-                                                <TableCell className="text-right">
-                                                    {isBulkMode ? (
-                                                        <Input
-                                                            type="number"
-                                                            step="0.01"
-                                                            min="0"
-                                                            value={
-                                                                isEditing
-                                                                    ? bulkData[
-                                                                          budget
-                                                                              .department_id
-                                                                      ]
-                                                                          ?.weekly_ceiling
-                                                                    : ""
-                                                            }
-                                                            onChange={(e) =>
-                                                                handleBulkChange(
-                                                                    budget.department_id,
-                                                                    "weekly_ceiling",
-                                                                    e.target
-                                                                        .value,
-                                                                )
-                                                            }
-                                                            className="w-32 ml-auto text-right dark:bg-slate-900 dark:border-slate-700"
-                                                            placeholder="Auto"
-                                                        />
-                                                    ) : (
-                                                        <div>
-                                                            <span
-                                                                className={`font-medium ${
-                                                                    (budget.weekly_used ||
-                                                                        0) > 0
-                                                                        ? "text-orange-600 dark:text-orange-400"
-                                                                        : "text-slate-700 dark:text-slate-300"
-                                                                }`}
-                                                            >
-                                                                {formatCurrency(
-                                                                    budget.weekly_ceiling ||
-                                                                        0,
-                                                                )}
-                                                            </span>
-                                                            {budget.suggested_ceiling >
-                                                                0 && (
-                                                                <div className="text-xs text-slate-400 dark:text-slate-500">
-                                                                    Suggested:{" "}
-                                                                    {formatCurrency(
-                                                                        budget.suggested_ceiling,
-                                                                    )}
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    )}
-                                                </TableCell>
-                                                <TableCell className="text-right">
-                                                    <span className="font-medium text-yellow-600 dark:text-yellow-400">
-                                                        {formatCurrency(
-                                                            budget.used_amount ||
-                                                                0,
-                                                        )}
-                                                    </span>
-                                                    {(budget.total_used_this_year ||
-                                                        0) > 0 && (
-                                                        <div className="text-xs text-slate-400 dark:text-slate-500">
-                                                            Total:{" "}
-                                                            {formatCurrency(
-                                                                budget.total_used_this_year,
-                                                            )}
-                                                        </div>
-                                                    )}
-                                                </TableCell>
-                                                <TableCell className="text-right">
-                                                    <span className="font-medium text-green-600 dark:text-green-400">
-                                                        {formatCurrency(
-                                                            budget.remaining_amount ||
-                                                                0,
-                                                        )}
-                                                    </span>
-                                                    {budget.remaining_after_weekly !==
-                                                        undefined && (
-                                                        <div className="text-xs text-slate-400 dark:text-slate-500">
-                                                            After weekly:{" "}
-                                                            {formatCurrency(
-                                                                budget.remaining_after_weekly,
-                                                            )}
-                                                        </div>
-                                                    )}
-                                                </TableCell>
-                                                <TableCell className="text-right">
-                                                    <span
-                                                        className={`font-medium ${
-                                                            (budget.weekly_used ||
-                                                                0) > 0
-                                                                ? "text-red-600 dark:text-red-400"
-                                                                : "text-slate-400"
-                                                        }`}
-                                                    >
-                                                        {formatCurrency(
-                                                            budget.weekly_used ||
-                                                                0,
-                                                        )}
-                                                    </span>
-                                                    {(budget.weekly_used || 0) >
-                                                        0 &&
-                                                        budget.weekly_ceiling >
-                                                            0 && (
-                                                            <div className="text-xs text-slate-400 dark:text-slate-500">
-                                                                {
-                                                                    weeklyUsedPercent
-                                                                }
-                                                                % used
-                                                            </div>
-                                                        )}
-                                                </TableCell>
-                                                <TableCell className="text-right">
-                                                    <span
-                                                        className={`font-medium ${
-                                                            (budget.weekly_remaining ||
-                                                                0) <= 0
-                                                                ? "text-red-600 dark:text-red-400"
-                                                                : (budget.weekly_remaining ||
-                                                                        0) <
-                                                                    (budget.weekly_ceiling ||
-                                                                        0) *
-                                                                        0.2
-                                                                  ? "text-yellow-600 dark:text-yellow-400"
-                                                                  : "text-green-600 dark:text-green-400"
-                                                        }`}
-                                                    >
-                                                        {formatCurrency(
-                                                            budget.weekly_remaining ||
-                                                                0,
-                                                        )}
-                                                    </span>
-                                                    {(budget.weekly_remaining ||
-                                                        0) > 0 &&
-                                                        budget.weekly_ceiling >
-                                                            0 && (
-                                                            <div className="text-xs text-slate-400 dark:text-slate-500">
-                                                                {formatCurrency(
-                                                                    budget.weekly_ceiling -
-                                                                        budget.weekly_remaining,
-                                                                )}{" "}
-                                                                used
-                                                            </div>
-                                                        )}
-                                                </TableCell>
-                                                <TableCell className="text-center">
-                                                    {getStatusBadge(
-                                                        budget.status,
-                                                    )}
-                                                </TableCell>
-                                                <TableCell className="text-right">
-                                                    <div className="flex items-center justify-end gap-1">
-                                                        <Button
-                                                            variant="ghost"
-                                                            size="sm"
-                                                            onClick={() =>
-                                                                handleView(
-                                                                    budget,
-                                                                )
-                                                            }
-                                                            className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:text-blue-300 dark:hover:bg-blue-950/30 h-8 w-8 p-0"
-                                                            title="View Details"
-                                                        >
-                                                            <Eye className="h-4 w-4" />
-                                                        </Button>
-                                                        {!isBulkMode && (
-                                                            <>
-                                                                <Button
-                                                                    variant="ghost"
-                                                                    size="sm"
-                                                                    onClick={() =>
-                                                                        openWeeklyDialog(
-                                                                            budget,
-                                                                        )
-                                                                    }
-                                                                    className="text-purple-600 hover:text-purple-700 hover:bg-purple-50 dark:text-purple-400 dark:hover:text-purple-300 dark:hover:bg-purple-950/30 h-8 w-8 p-0"
-                                                                    title="Set Weekly Ceiling"
-                                                                >
-                                                                    <Clock className="h-4 w-4" />
-                                                                </Button>
-                                                                <Button
-                                                                    variant="ghost"
-                                                                    size="sm"
-                                                                    onClick={() => {
-                                                                        setAddBudgetData(
-                                                                            {
-                                                                                department_id:
-                                                                                    budget.department_id.toString(),
-                                                                                additional_amount:
-                                                                                    "",
-                                                                                reason: "",
-                                                                            },
-                                                                        );
-                                                                        setShowAddBudgetDialog(
-                                                                            true,
-                                                                        );
-                                                                    }}
-                                                                    className="text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:text-emerald-300 dark:hover:bg-emerald-950/30 h-8 w-8 p-0"
-                                                                    title="Add Budget"
-                                                                >
-                                                                    <Plus className="h-4 w-4" />
-                                                                </Button>
-                                                                <Button
-                                                                    variant="ghost"
-                                                                    size="sm"
-                                                                    onClick={() =>
-                                                                        handleEdit(
-                                                                            budget,
-                                                                        )
-                                                                    }
-                                                                    className="text-green-600 hover:text-green-700 hover:bg-green-50 dark:text-green-400 dark:hover:text-green-300 dark:hover:bg-green-950/30 h-8 w-8 p-0"
-                                                                    title="Edit Annual Budget"
-                                                                >
-                                                                    <Edit className="h-4 w-4" />
-                                                                </Button>
-                                                            </>
-                                                        )}
-                                                    </div>
-                                                </TableCell>
-                                            </TableRow>
+                                                {yearValue}
+                                                {isActive && (
+                                                    <span className="ml-1 text-xs text-green-400">●</span>
+                                                )}
+                                            </Button>
                                         );
-                                    })}
-                                </TableBody>
-                            </Table>
+                                    })
+                                ) : (
+                                    <p className="text-slate-500 dark:text-slate-400 text-sm">
+                                        No fiscal years available. Please ask GSO to add years.
+                                    </p>
+                                )}
+                            </div>
                         </div>
-                    )}
-                </CardContent>
-            </Card>
+                    </CardContent>
+                </Card>
+
+                {/* Stats Cards */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <StatsCard
+                        title="Total Annual Budget"
+                        value={formatCurrency(summary.total_allocated)}
+                        icon={DollarSign}
+                        color="from-blue-500 to-blue-600"
+                        subtitle="Total allocation"
+                        trend={summary.total_allocated > 0 ? 5 : 0}
+                    />
+                    <StatsCard
+                        title="Used"
+                        value={formatCurrency(summary.total_used)}
+                        icon={TrendingDown}
+                        color="from-yellow-500 to-yellow-600"
+                        subtitle="Total spent so far"
+                        trend={summary.total_used > 0 ? 8 : 0}
+                    />
+                    <StatsCard
+                        title="Remaining Annual"
+                        value={formatCurrency(summary.total_remaining)}
+                        icon={TrendingUp}
+                        color="from-emerald-500 to-emerald-600"
+                        subtitle="Available for allocation"
+                        trend={summary.total_remaining > 0 ? -3 : 0}
+                    />
+                    <StatsCard
+                        title="Departments"
+                        value={`${summary.departments_with_budget || 0} / ${summary.total_departments || 0}`}
+                        icon={Building2}
+                        color="from-purple-500 to-purple-600"
+                        subtitle={`${summary.departments_without_budget || 0} without budget`}
+                        trend={summary.departments_with_budget > 0 ? 2 : 0}
+                    />
+                </div>
+
+                {/* Budget Table */}
+                <Card className="dark:bg-slate-800/80 dark:border-slate-700 shadow-xl shadow-black/5">
+                    <CardHeader className="border-b border-slate-200/60 dark:border-slate-700/60">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <CardTitle className="flex items-center gap-2 text-slate-800 dark:text-white">
+                                    <DollarSign className="h-5 w-5 text-green-500" />
+                                    Budget Details for {selectedYear}
+                                </CardTitle>
+                                <CardDescription className="dark:text-slate-400">
+                                    {budgets.length} departments
+                                    {fiscalYear?.is_active === false && (
+                                        <Badge className="ml-2 bg-yellow-500 text-white">
+                                            <AlertCircle className="h-3 w-3 mr-1" />
+                                            Inactive
+                                        </Badge>
+                                    )}
+                                </CardDescription>
+                            </div>
+                            {budgets.length > 0 && (
+                                <Badge className="bg-blue-500/20 text-blue-600 dark:text-blue-400 border-blue-500/30">
+                                    <Zap className="h-3 w-3 mr-1" />
+                                    {budgets.length} records
+                                </Badge>
+                            )}
+                        </div>
+                    </CardHeader>
+
+<CardContent className="pt-6 p-0">
+    {budgets.length === 0 ? (
+        <div className="text-center py-16">
+            <div className="w-20 h-20 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto mb-4">
+                <AlertCircle className="h-10 w-10 text-slate-400 dark:text-slate-500" />
+            </div>
+            <p className="text-slate-600 dark:text-slate-400 font-medium text-lg">No departments found</p>
+            <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">
+                Please ask GSO to add departments or select a different year
+            </p>
+        </div>
+    ) : (
+        <div className="overflow-x-auto max-h-[500px] overflow-y-auto relative">
+            <Table>
+                <TableHeader className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-900/50">
+                    <TableRow className="bg-slate-50 dark:bg-slate-900/50">
+                        <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
+                            Department
+                        </TableHead>
+                        <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
+                            Code
+                        </TableHead>
+                        <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
+                            Annual Budget
+                        </TableHead>
+                        <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
+                            Weekly Ceiling
+                        </TableHead>
+                        <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
+                            Used
+                        </TableHead>
+                        <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
+                            Remaining
+                        </TableHead>
+                        <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
+                            Weekly Used
+                        </TableHead>
+                        <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
+                            Weekly Remaining
+                        </TableHead>
+                        <TableHead className="text-center font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
+                            Status
+                        </TableHead>
+                        <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
+                            Actions
+                        </TableHead>
+                    </TableRow>
+                </TableHeader>
+                <TableBody>
+                    {budgets.map((budget) => {
+                        const isEditing = isBulkMode && bulkData[budget.department_id];
+                        const isNew = !budget.has_budget;
+                        const weeklyUsedPercent = budget.weekly_ceiling > 0
+                            ? Math.round(((budget.weekly_used || 0) / budget.weekly_ceiling) * 100)
+                            : 0;
+
+                        return (
+                            <TableRow
+                                key={budget.department_id}
+                                className={cn(
+                                    "hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors",
+                                    isNew ? "bg-yellow-50/50 dark:bg-yellow-950/20" : ""
+                                )}
+                            >
+                                <TableCell className="font-medium text-slate-900 dark:text-white">
+                                    {budget.department_name}
+                                    {isNew && (
+                                        <Badge variant="outline" className="ml-2 text-yellow-600 border-yellow-300 text-xs">
+                                            New
+                                        </Badge>
+                                    )}
+                                </TableCell>
+                                <TableCell>
+                                    <Badge variant="outline">{budget.department_code}</Badge>
+                                </TableCell>
+                                <TableCell className="text-right">
+                                    {isBulkMode ? (
+                                        <Input
+                                            type="number"
+                                            step="0.01"
+                                            min="0"
+                                            value={isEditing ? bulkData[budget.department_id]?.annual_amount : ""}
+                                            onChange={(e) =>
+                                                handleBulkChange(budget.department_id, "annual_amount", e.target.value)
+                                            }
+                                            className="w-32 ml-auto text-right dark:bg-slate-900 dark:border-slate-700 dark:text-white"
+                                            placeholder="0.00"
+                                        />
+                                    ) : (
+                                        <span className="font-medium text-blue-600 dark:text-blue-400">
+                                            {formatCurrency(budget.annual_amount)}
+                                        </span>
+                                    )}
+                                </TableCell>
+                                <TableCell className="text-right">
+                                    {isBulkMode ? (
+                                        <Input
+                                            type="number"
+                                            step="0.01"
+                                            min="0"
+                                            value={isEditing ? bulkData[budget.department_id]?.weekly_ceiling : ""}
+                                            onChange={(e) =>
+                                                handleBulkChange(budget.department_id, "weekly_ceiling", e.target.value)
+                                            }
+                                            className="w-32 ml-auto text-right dark:bg-slate-900 dark:border-slate-700 dark:text-white"
+                                            placeholder="Auto"
+                                        />
+                                    ) : (
+                                        <div>
+                                            <span className={cn(
+                                                "font-medium",
+                                                (budget.weekly_used || 0) > 0
+                                                    ? "text-orange-600 dark:text-orange-400"
+                                                    : "text-slate-700 dark:text-slate-300"
+                                            )}>
+                                                {formatCurrency(budget.weekly_ceiling || 0)}
+                                            </span>
+                                            {budget.suggested_ceiling > 0 && (
+                                                <div className="text-xs text-slate-400 dark:text-slate-500">
+                                                    Suggested: {formatCurrency(budget.suggested_ceiling)}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </TableCell>
+                                <TableCell className="text-right">
+                                    <span className="font-medium text-yellow-600 dark:text-yellow-400">
+                                        {formatCurrency(budget.used_amount || 0)}
+                                    </span>
+                                    {(budget.total_used_this_year || 0) > 0 && (
+                                        <div className="text-xs text-slate-400 dark:text-slate-500">
+                                            Total: {formatCurrency(budget.total_used_this_year)}
+                                        </div>
+                                    )}
+                                </TableCell>
+                                <TableCell className="text-right">
+                                    <span className="font-medium text-emerald-600 dark:text-emerald-400">
+                                        {formatCurrency(budget.remaining_amount || 0)}
+                                    </span>
+                                    {budget.remaining_after_weekly !== undefined && (
+                                        <div className="text-xs text-slate-400 dark:text-slate-500">
+                                            After weekly: {formatCurrency(budget.remaining_after_weekly)}
+                                        </div>
+                                    )}
+                                </TableCell>
+                                <TableCell className="text-right">
+                                    <span className={cn(
+                                        "font-medium",
+                                        (budget.weekly_used || 0) > 0
+                                            ? "text-red-600 dark:text-red-400"
+                                            : "text-slate-400"
+                                    )}>
+                                        {formatCurrency(budget.weekly_used || 0)}
+                                    </span>
+                                    {(budget.weekly_used || 0) > 0 && budget.weekly_ceiling > 0 && (
+                                        <div className="text-xs text-slate-400 dark:text-slate-500">
+                                            {weeklyUsedPercent}% used
+                                        </div>
+                                    )}
+                                </TableCell>
+                                <TableCell className="text-right">
+                                    <span className={cn(
+                                        "font-medium",
+                                        (budget.weekly_remaining || 0) <= 0
+                                            ? "text-red-600 dark:text-red-400"
+                                            : (budget.weekly_remaining || 0) < (budget.weekly_ceiling || 0) * 0.2
+                                                ? "text-yellow-600 dark:text-yellow-400"
+                                                : "text-emerald-600 dark:text-emerald-400"
+                                    )}>
+                                        {formatCurrency(budget.weekly_remaining || 0)}
+                                    </span>
+                                    {(budget.weekly_remaining || 0) > 0 && budget.weekly_ceiling > 0 && (
+                                        <div className="text-xs text-slate-400 dark:text-slate-500">
+                                            {formatCurrency(budget.weekly_ceiling - budget.weekly_remaining)} used
+                                        </div>
+                                    )}
+                                </TableCell>
+                                <TableCell className="text-center">
+                                    {getStatusBadge(budget.status)}
+                                </TableCell>
+                                <TableCell className="text-right">
+                                    <div className="flex items-center justify-end gap-1">
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => handleView(budget)}
+                                            className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:text-blue-300 dark:hover:bg-blue-950/30 h-9 w-9 p-0 rounded-lg transition-all duration-200 group-hover:scale-110"
+                                            title="View Details"
+                                        >
+                                            <Eye className="h-4 w-4" />
+                                        </Button>
+                                        {!isBulkMode && (
+                                            <>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    onClick={() => openWeeklyDialog(budget)}
+                                                    className="text-purple-600 hover:text-purple-700 hover:bg-purple-50 dark:text-purple-400 dark:hover:text-purple-300 dark:hover:bg-purple-950/30 h-9 w-9 p-0 rounded-lg transition-all duration-200 group-hover:scale-110"
+                                                    title="Set Weekly Ceiling"
+                                                >
+                                                    <Clock className="h-4 w-4" />
+                                                </Button>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    onClick={() => {
+                                                        setAddBudgetData({
+                                                            department_id: budget.department_id.toString(),
+                                                            additional_amount: "",
+                                                            reason: "",
+                                                        });
+                                                        setShowAddBudgetDialog(true);
+                                                    }}
+                                                    className="text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:text-emerald-300 dark:hover:bg-emerald-950/30 h-9 w-9 p-0 rounded-lg transition-all duration-200 group-hover:scale-110"
+                                                    title="Add Budget"
+                                                >
+                                                    <Plus className="h-4 w-4" />
+                                                </Button>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    onClick={() => handleEdit(budget)}
+                                                    className="text-green-600 hover:text-green-700 hover:bg-green-50 dark:text-green-400 dark:hover:text-green-300 dark:hover:bg-green-950/30 h-9 w-9 p-0 rounded-lg transition-all duration-200 group-hover:scale-110"
+                                                    title="Edit Annual Budget"
+                                                >
+                                                    <Edit className="h-4 w-4" />
+                                                </Button>
+                                            </>
+                                        )}
+                                    </div>
+                                </TableCell>
+                            </TableRow>
+                        );
+                    })}
+                </TableBody>
+            </Table>
+        </div>
+    )}
+</CardContent>
+                </Card>
+
+                {/* Footer */}
+                <div className="text-center text-xs text-slate-400 dark:text-slate-500 pt-2 border-t border-slate-200 dark:border-slate-700">
+                    <p>FCMS - Mayor's Office • Annual Budget Allocation</p>
+                    <p className="mt-0.5">FY {selectedYear} • {budgets.length} departments • {summary.departments_with_budget || 0} with budget</p>
+                </div>
+            </div>
 
             {/* ========== ANNUAL BUDGET EDIT DIALOG ========== */}
             <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
                 <DialogContent className="dark:bg-slate-800 dark:border-slate-700 max-w-md">
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2 text-slate-900 dark:text-white">
-                            <DollarSign className="h-5 w-5 text-green-600" />
+                            <div className="p-2 rounded-xl bg-green-500/10">
+                                <DollarSign className="h-5 w-5 text-green-600 dark:text-green-400" />
+                            </div>
                             Edit Annual Budget
                         </DialogTitle>
                         <DialogDescription className="dark:text-slate-400">
@@ -1006,40 +910,30 @@ const BudgetAllocation = () => {
                     </DialogHeader>
 
                     <div className="space-y-4">
-                        <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-3">
+                        <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-4 border border-slate-200 dark:border-slate-700">
                             <div className="grid grid-cols-2 gap-2 text-sm">
                                 <div>
-                                    <p className="text-slate-500 dark:text-slate-400 text-xs">
-                                        Department
-                                    </p>
+                                    <p className="text-xs text-slate-500 dark:text-slate-400">Department</p>
                                     <p className="font-semibold text-slate-900 dark:text-white">
                                         {editingBudget?.department_name}
                                     </p>
                                 </div>
                                 <div>
-                                    <p className="text-slate-500 dark:text-slate-400 text-xs">
-                                        Code
-                                    </p>
+                                    <p className="text-xs text-slate-500 dark:text-slate-400">Code</p>
                                     <p className="font-semibold text-slate-900 dark:text-white">
                                         {editingBudget?.department_code}
                                     </p>
                                 </div>
                                 <div>
-                                    <p className="text-slate-500 dark:text-slate-400 text-xs">
-                                        Fiscal Year
-                                    </p>
+                                    <p className="text-xs text-slate-500 dark:text-slate-400">Fiscal Year</p>
                                     <p className="font-semibold text-slate-900 dark:text-white">
                                         {selectedYear}
                                     </p>
                                 </div>
                                 <div>
-                                    <p className="text-slate-500 dark:text-slate-400 text-xs">
-                                        Current Used
-                                    </p>
-                                    <p className="font-semibold text-yellow-600">
-                                        {formatCurrency(
-                                            editingBudget?.used_amount,
-                                        )}
+                                    <p className="text-xs text-slate-500 dark:text-slate-400">Current Used</p>
+                                    <p className="font-semibold text-yellow-600 dark:text-yellow-400">
+                                        {formatCurrency(editingBudget?.used_amount)}
                                     </p>
                                 </div>
                             </div>
@@ -1047,8 +941,7 @@ const BudgetAllocation = () => {
 
                         <div>
                             <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                                Annual Budget (₱){" "}
-                                <span className="text-red-500">*</span>
+                                Annual Budget (₱) <span className="text-red-500">*</span>
                             </label>
                             <Input
                                 type="number"
@@ -1056,28 +949,26 @@ const BudgetAllocation = () => {
                                 min="0"
                                 value={formData.annual_amount}
                                 onChange={(e) => {
-                                    const value = e.target.value;
                                     setFormData({
                                         ...formData,
-                                        annual_amount: value,
+                                        annual_amount: e.target.value,
                                     });
                                 }}
-                                className="mt-1.5 dark:bg-slate-900 dark:border-slate-700"
+                                className="mt-1.5 dark:bg-slate-900 dark:border-slate-700 dark:text-white"
                                 placeholder="Enter annual budget"
                             />
                         </div>
 
-                        {/* Show current weekly ceiling for reference */}
-                        <div className="bg-purple-50 dark:bg-purple-950/30 rounded-lg p-3 border border-purple-200 dark:border-purple-800">
-                            <p className="text-xs text-purple-700 dark:text-purple-300">
-                                📌 Current Weekly Ceiling:{" "}
-                                <span className="font-semibold">
+                        <div className="bg-purple-50 dark:bg-purple-950/30 rounded-xl p-3 border border-purple-200 dark:border-purple-800">
+                            <p className="text-xs text-purple-700 dark:text-purple-300 flex items-center gap-1">
+                                <Info className="h-3 w-3 text-purple-500 dark:text-purple-400" />
+                                Current Weekly Ceiling:{" "}
+                                <span className="font-semibold text-purple-800 dark:text-purple-200">
                                     {formatCurrency(editingBudget?.weekly_ceiling || 0)}
                                 </span>
                             </p>
                             <p className="text-xs text-purple-600 dark:text-purple-400 mt-1">
-                                💡 To change weekly ceiling, use the{" "}
-                                <span className="font-medium">Clock icon</span> in the actions column
+                                💡 To change weekly ceiling, use the <span className="font-medium">Clock icon</span> in the actions column
                             </p>
                         </div>
                     </div>
@@ -1096,7 +987,7 @@ const BudgetAllocation = () => {
                         <Button
                             onClick={handleSetBudget}
                             disabled={setBudgetMutation.isPending}
-                            className="bg-green-600 hover:bg-green-700"
+                            className="bg-green-600 hover:bg-green-700 text-white"
                         >
                             {setBudgetMutation.isPending ? (
                                 <Loader2 className="h-4 w-4 animate-spin mr-2" />
@@ -1109,12 +1000,14 @@ const BudgetAllocation = () => {
                 </DialogContent>
             </Dialog>
 
-            {/* ========== WEEKLY CEILING DIALOG (NEW) ========== */}
+            {/* ========== WEEKLY CEILING DIALOG ========== */}
             <Dialog open={showWeeklyDialog} onOpenChange={setShowWeeklyDialog}>
                 <DialogContent className="dark:bg-slate-800 dark:border-slate-700 max-w-md">
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2 text-slate-900 dark:text-white">
-                            <Clock className="h-5 w-5 text-purple-600" />
+                            <div className="p-2 rounded-xl bg-purple-500/10">
+                                <Clock className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+                            </div>
                             Set Weekly Ceiling
                         </DialogTitle>
                         <DialogDescription className="dark:text-slate-400">
@@ -1123,37 +1016,29 @@ const BudgetAllocation = () => {
                     </DialogHeader>
 
                     <div className="space-y-4">
-                        <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-3">
+                        <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-4 border border-slate-200 dark:border-slate-700">
                             <div className="grid grid-cols-2 gap-2 text-sm">
                                 <div>
-                                    <p className="text-slate-500 dark:text-slate-400 text-xs">
-                                        Department
-                                    </p>
+                                    <p className="text-xs text-slate-500 dark:text-slate-400">Department</p>
                                     <p className="font-semibold text-slate-900 dark:text-white">
                                         {weeklyDepartment?.department_name}
                                     </p>
                                 </div>
                                 <div>
-                                    <p className="text-slate-500 dark:text-slate-400 text-xs">
-                                        Code
-                                    </p>
+                                    <p className="text-xs text-slate-500 dark:text-slate-400">Code</p>
                                     <p className="font-semibold text-slate-900 dark:text-white">
                                         {weeklyDepartment?.department_code}
                                     </p>
                                 </div>
                                 <div>
-                                    <p className="text-slate-500 dark:text-slate-400 text-xs">
-                                        Annual Budget
-                                    </p>
-                                    <p className="font-semibold text-blue-600">
+                                    <p className="text-xs text-slate-500 dark:text-slate-400">Annual Budget</p>
+                                    <p className="font-semibold text-blue-600 dark:text-blue-400">
                                         {formatCurrency(weeklyDepartment?.annual_amount)}
                                     </p>
                                 </div>
                                 <div>
-                                    <p className="text-slate-500 dark:text-slate-400 text-xs">
-                                        Suggested Ceiling
-                                    </p>
-                                    <p className="font-semibold text-purple-600">
+                                    <p className="text-xs text-slate-500 dark:text-slate-400">Suggested Ceiling</p>
+                                    <p className="font-semibold text-purple-600 dark:text-purple-400">
                                         {formatCurrency(weeklyDepartment?.suggested_ceiling || 0)}
                                     </p>
                                 </div>
@@ -1162,8 +1047,7 @@ const BudgetAllocation = () => {
 
                         <div>
                             <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                                Weekly Fueling Ceiling (₱){" "}
-                                <span className="text-red-500">*</span>
+                                Weekly Fueling Ceiling (₱) <span className="text-red-500">*</span>
                             </label>
                             <Input
                                 type="number"
@@ -1176,7 +1060,7 @@ const BudgetAllocation = () => {
                                         weekly_ceiling: e.target.value,
                                     })
                                 }
-                                className="mt-1.5 dark:bg-slate-900 dark:border-slate-700"
+                                className="mt-1.5 dark:bg-slate-900 dark:border-slate-700 dark:text-white"
                                 placeholder="Enter weekly ceiling"
                             />
                             <div className="flex items-center gap-2 mt-1.5">
@@ -1194,7 +1078,7 @@ const BudgetAllocation = () => {
                                 >
                                     Use suggested ({formatCurrency(weeklyDepartment?.suggested_ceiling || 0)})
                                 </button>
-                                <span className="text-xs text-slate-400">|</span>
+                                <span className="text-xs text-slate-400 dark:text-slate-500">|</span>
                                 <button
                                     type="button"
                                     onClick={() => {
@@ -1225,14 +1109,14 @@ const BudgetAllocation = () => {
                                         reason: e.target.value,
                                     })
                                 }
-                                className="mt-1.5 dark:bg-slate-900 dark:border-slate-700"
+                                className="mt-1.5 dark:bg-slate-900 dark:border-slate-700 dark:text-white"
                                 placeholder="e.g., Adjust weekly fuel allocation"
                             />
                         </div>
 
-                        {/* Show impact */}
+                        {/* Impact Preview */}
                         {weeklyData.weekly_ceiling && weeklyDepartment && (
-                            <div className="bg-blue-50 dark:bg-blue-950/30 rounded-lg p-3 border border-blue-200 dark:border-blue-800">
+                            <div className="bg-blue-50 dark:bg-blue-950/30 rounded-xl p-3 border border-blue-200 dark:border-blue-800">
                                 <p className="text-xs font-medium text-blue-700 dark:text-blue-300 mb-1">📊 Impact:</p>
                                 <div className="grid grid-cols-2 gap-2 text-xs">
                                     <div>
@@ -1249,13 +1133,14 @@ const BudgetAllocation = () => {
                                     </div>
                                     <div className="col-span-2">
                                         <span className="text-slate-500 dark:text-slate-400">Change:</span>
-                                        <span className={`font-semibold ml-1 ${
+                                        <span className={cn(
+                                            "font-semibold ml-1",
                                             parseFloat(weeklyData.weekly_ceiling) > (weeklyDepartment?.weekly_ceiling || 0)
-                                                ? 'text-green-600'
+                                                ? 'text-emerald-600 dark:text-emerald-400'
                                                 : parseFloat(weeklyData.weekly_ceiling) < (weeklyDepartment?.weekly_ceiling || 0)
-                                                ? 'text-red-600'
-                                                : 'text-slate-600'
-                                        }`}>
+                                                    ? 'text-red-600 dark:text-red-400'
+                                                    : 'text-slate-600 dark:text-slate-400'
+                                        )}>
                                             {formatCurrency(
                                                 (parseFloat(weeklyData.weekly_ceiling) || 0) - (weeklyDepartment?.weekly_ceiling || 0)
                                             )}
@@ -1285,7 +1170,7 @@ const BudgetAllocation = () => {
                         <Button
                             onClick={handleWeeklyUpdate}
                             disabled={updateWeeklyMutation.isPending}
-                            className="bg-purple-600 hover:bg-purple-700"
+                            className="bg-purple-600 hover:bg-purple-700 text-white"
                         >
                             {updateWeeklyMutation.isPending ? (
                                 <Loader2 className="h-4 w-4 animate-spin mr-2" />
@@ -1299,14 +1184,13 @@ const BudgetAllocation = () => {
             </Dialog>
 
             {/* ========== ADD BUDGET DIALOG ========== */}
-            <Dialog
-                open={showAddBudgetDialog}
-                onOpenChange={setShowAddBudgetDialog}
-            >
+            <Dialog open={showAddBudgetDialog} onOpenChange={setShowAddBudgetDialog}>
                 <DialogContent className="dark:bg-slate-800 dark:border-slate-700 max-w-md">
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2 text-slate-900 dark:text-white">
-                            <Plus className="h-5 w-5 text-emerald-600" />
+                            <div className="p-2 rounded-xl bg-emerald-500/10">
+                                <Plus className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+                            </div>
                             Add Additional Budget
                         </DialogTitle>
                         <DialogDescription className="dark:text-slate-400">
@@ -1315,23 +1199,15 @@ const BudgetAllocation = () => {
                     </DialogHeader>
 
                     <div className="space-y-4">
-                        <div className="bg-blue-50 dark:bg-blue-950/30 rounded-lg p-3 border border-blue-200 dark:border-blue-800">
+                        <div className="bg-blue-50 dark:bg-blue-950/30 rounded-xl p-3 border border-blue-200 dark:border-blue-800">
                             <div className="flex items-start gap-2">
                                 <Info className="h-4 w-4 text-blue-500 dark:text-blue-400 mt-0.5 flex-shrink-0" />
                                 <div className="text-xs text-blue-700 dark:text-blue-300">
                                     <p>Adding budget will:</p>
                                     <ul className="list-disc list-inside mt-1 space-y-1">
-                                        <li>
-                                            Increase the annual budget of the
-                                            department
-                                        </li>
-                                        <li>
-                                            Automatically update the weekly
-                                            ceiling suggestion
-                                        </li>
-                                        <li>
-                                            Be recorded in the budget history
-                                        </li>
+                                        <li>Increase the annual budget of the department</li>
+                                        <li>Automatically update the weekly ceiling suggestion</li>
+                                        <li>Be recorded in the budget history</li>
                                     </ul>
                                 </div>
                             </div>
@@ -1339,8 +1215,7 @@ const BudgetAllocation = () => {
 
                         <div>
                             <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                                Department{" "}
-                                <span className="text-red-500">*</span>
+                                Department <span className="text-red-500">*</span>
                             </label>
                             <select
                                 value={addBudgetData.department_id}
@@ -1354,14 +1229,9 @@ const BudgetAllocation = () => {
                             >
                                 <option value="">Select Department</option>
                                 {budgets.map((budget) => (
-                                    <option
-                                        key={budget.department_id}
-                                        value={budget.department_id}
-                                    >
-                                        {budget.department_name} (
-                                        {budget.department_code})
-                                        {budget.has_budget &&
-                                            ` - Current: ${formatCurrency(budget.annual_amount)}`}
+                                    <option key={budget.department_id} value={budget.department_id}>
+                                        {budget.department_name} ({budget.department_code})
+                                        {budget.has_budget && ` - Current: ${formatCurrency(budget.annual_amount)}`}
                                     </option>
                                 ))}
                             </select>
@@ -1369,8 +1239,7 @@ const BudgetAllocation = () => {
 
                         <div>
                             <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                                Additional Amount (₱){" "}
-                                <span className="text-red-500">*</span>
+                                Additional Amount (₱) <span className="text-red-500">*</span>
                             </label>
                             <Input
                                 type="number"
@@ -1383,7 +1252,7 @@ const BudgetAllocation = () => {
                                         additional_amount: e.target.value,
                                     })
                                 }
-                                className="mt-1.5 dark:bg-slate-900 dark:border-slate-700"
+                                className="mt-1.5 dark:bg-slate-900 dark:border-slate-700 dark:text-white"
                                 placeholder="Enter amount to add"
                             />
                         </div>
@@ -1401,43 +1270,24 @@ const BudgetAllocation = () => {
                                         reason: e.target.value,
                                     })
                                 }
-                                className="mt-1.5 dark:bg-slate-900 dark:border-slate-700"
-                                placeholder="e.g., Mayor's Memo No. 2026-001, Additional fuel allocation"
+                                className="mt-1.5 dark:bg-slate-900 dark:border-slate-700 dark:text-white"
+                                placeholder="e.g., Mayor's Memo No. 2026-001"
                             />
                         </div>
 
-                        {addBudgetData.department_id &&
-                            addBudgetData.additional_amount && (
-                                <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-3">
-                                    <p className="text-sm text-slate-600 dark:text-slate-300">
-                                        {
-                                            budgets.find(
-                                                (b) =>
-                                                    b.department_id ===
-                                                    parseInt(
-                                                        addBudgetData.department_id,
-                                                    ),
-                                            )?.department_name
-                                        }{" "}
-                                        will receive:
-                                    </p>
-                                    <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400">
-                                        {formatCurrency(
-                                            parseFloat(
-                                                addBudgetData.additional_amount,
-                                            ) || 0,
-                                        )}
-                                    </p>
-                                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                                        New suggested weekly ceiling:{" "}
-                                        {formatCurrency(
-                                            (parseFloat(
-                                                addBudgetData.additional_amount,
-                                            ) || 0) / 52,
-                                        )}
-                                    </p>
-                                </div>
-                            )}
+                        {addBudgetData.department_id && addBudgetData.additional_amount && (
+                            <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-3 border border-slate-200 dark:border-slate-700">
+                                <p className="text-sm text-slate-600 dark:text-slate-300">
+                                    {budgets.find(b => b.department_id === parseInt(addBudgetData.department_id))?.department_name} will receive:
+                                </p>
+                                <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400">
+                                    {formatCurrency(parseFloat(addBudgetData.additional_amount) || 0)}
+                                </p>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                                    New suggested weekly ceiling: {formatCurrency((parseFloat(addBudgetData.additional_amount) || 0) / 52)}
+                                </p>
+                            </div>
+                        )}
                     </div>
 
                     <DialogFooter className="mt-6">
@@ -1458,7 +1308,7 @@ const BudgetAllocation = () => {
                         <Button
                             onClick={handleAddBudget}
                             disabled={addBudgetMutation.isPending}
-                            className="bg-emerald-600 hover:bg-emerald-700"
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white"
                         >
                             {addBudgetMutation.isPending ? (
                                 <Loader2 className="h-4 w-4 animate-spin mr-2" />
@@ -1476,7 +1326,9 @@ const BudgetAllocation = () => {
                 <DialogContent className="dark:bg-slate-800 dark:border-slate-700 max-w-lg">
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2 text-slate-900 dark:text-white">
-                            <Eye className="h-5 w-5 text-blue-600" />
+                            <div className="p-2 rounded-xl bg-blue-500/10">
+                                <Eye className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                            </div>
                             Budget Details
                         </DialogTitle>
                         <DialogDescription className="dark:text-slate-400">
@@ -1486,339 +1338,191 @@ const BudgetAllocation = () => {
 
                     {viewingBudget && (
                         <div className="space-y-4">
-                            <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-3">
+                            {/* Department Info */}
+                            <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-4 border border-slate-200 dark:border-slate-700">
                                 <div className="grid grid-cols-2 gap-2 text-sm">
                                     <div>
-                                        <p className="text-xs text-slate-500 dark:text-slate-400">
-                                            Department
-                                        </p>
+                                        <p className="text-xs text-slate-500 dark:text-slate-400">Department</p>
                                         <p className="font-semibold text-slate-900 dark:text-white">
                                             {viewingBudget.department_name}
                                         </p>
                                     </div>
                                     <div>
-                                        <p className="text-xs text-slate-500 dark:text-slate-400">
-                                            Code
-                                        </p>
+                                        <p className="text-xs text-slate-500 dark:text-slate-400">Code</p>
                                         <p className="font-semibold text-slate-900 dark:text-white">
                                             {viewingBudget.department_code}
                                         </p>
                                     </div>
                                     <div>
-                                        <p className="text-xs text-slate-500 dark:text-slate-400">
-                                            Fiscal Year
-                                        </p>
+                                        <p className="text-xs text-slate-500 dark:text-slate-400">Fiscal Year</p>
                                         <p className="font-semibold text-slate-900 dark:text-white">
                                             {selectedYear}
                                         </p>
                                     </div>
                                     <div>
-                                        <p className="text-xs text-slate-500 dark:text-slate-400">
-                                            Status
-                                        </p>
-                                        <p>
-                                            {getStatusBadge(
-                                                viewingBudget.status,
-                                            )}
-                                        </p>
+                                        <p className="text-xs text-slate-500 dark:text-slate-400">Status</p>
+                                        <p>{getStatusBadge(viewingBudget.status)}</p>
                                     </div>
                                 </div>
                             </div>
 
+                            {/* Annual Stats */}
                             <div className="grid grid-cols-3 gap-3">
-                                <div className="bg-blue-50 dark:bg-blue-950/30 rounded-lg p-3 text-center border border-blue-200 dark:border-blue-800">
-                                    <p className="text-xs text-blue-600 dark:text-blue-400 font-medium">
-                                        Annual Budget
-                                    </p>
+                                <div className="bg-blue-50 dark:bg-blue-950/30 rounded-xl p-3 text-center border border-blue-200 dark:border-blue-800">
+                                    <p className="text-xs text-blue-600 dark:text-blue-400 font-medium">Annual Budget</p>
                                     <p className="text-lg font-bold text-blue-600 dark:text-blue-400">
-                                        {formatCurrency(
-                                            viewingBudget.annual_amount,
-                                        )}
+                                        {formatCurrency(viewingBudget.annual_amount)}
                                     </p>
                                 </div>
-                                <div className="bg-yellow-50 dark:bg-yellow-950/30 rounded-lg p-3 text-center border border-yellow-200 dark:border-yellow-800">
-                                    <p className="text-xs text-yellow-600 dark:text-yellow-400 font-medium">
-                                        Total Used
-                                    </p>
+                                <div className="bg-yellow-50 dark:bg-yellow-950/30 rounded-xl p-3 text-center border border-yellow-200 dark:border-yellow-800">
+                                    <p className="text-xs text-yellow-600 dark:text-yellow-400 font-medium">Total Used</p>
                                     <p className="text-lg font-bold text-yellow-600 dark:text-yellow-400">
-                                        {formatCurrency(
-                                            viewingBudget.used_amount || 0,
-                                        )}
+                                        {formatCurrency(viewingBudget.used_amount || 0)}
                                     </p>
-                                    {(viewingBudget.total_used_this_year || 0) >
-                                        0 && (
-                                        <p className="text-xs text-yellow-500">
-                                            Total:{" "}
-                                            {formatCurrency(
-                                                viewingBudget.total_used_this_year,
-                                            )}
+                                    {(viewingBudget.total_used_this_year || 0) > 0 && (
+                                        <p className="text-xs text-yellow-500 dark:text-yellow-400">
+                                            Total: {formatCurrency(viewingBudget.total_used_this_year)}
                                         </p>
                                     )}
                                 </div>
-                                <div className="bg-green-50 dark:bg-green-950/30 rounded-lg p-3 text-center border border-green-200 dark:border-green-800">
-                                    <p className="text-xs text-green-600 dark:text-green-400 font-medium">
-                                        Annual Remaining
+                                <div className="bg-emerald-50 dark:bg-emerald-950/30 rounded-xl p-3 text-center border border-emerald-200 dark:border-emerald-800">
+                                    <p className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">Annual Remaining</p>
+                                    <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400">
+                                        {formatCurrency(viewingBudget.remaining_amount || 0)}
                                     </p>
-                                    <p className="text-lg font-bold text-green-600 dark:text-green-400">
-                                        {formatCurrency(
-                                            viewingBudget.remaining_amount || 0,
-                                        )}
-                                    </p>
-                                    {viewingBudget.remaining_after_weekly !==
-                                        undefined && (
-                                        <p className="text-xs text-green-500">
-                                            After weekly:{" "}
-                                            {formatCurrency(
-                                                viewingBudget.remaining_after_weekly,
-                                            )}
+                                    {viewingBudget.remaining_after_weekly !== undefined && (
+                                        <p className="text-xs text-emerald-500 dark:text-emerald-400">
+                                            After weekly: {formatCurrency(viewingBudget.remaining_after_weekly)}
                                         </p>
                                     )}
                                 </div>
                             </div>
 
+                            {/* Weekly Stats */}
                             <div className="grid grid-cols-3 gap-3">
-                                <div className="bg-purple-50 dark:bg-purple-950/30 rounded-lg p-3 text-center border border-purple-200 dark:border-purple-800">
-                                    <p className="text-xs text-purple-600 dark:text-purple-400 font-medium">
-                                        Weekly Ceiling
-                                    </p>
+                                <div className="bg-purple-50 dark:bg-purple-950/30 rounded-xl p-3 text-center border border-purple-200 dark:border-purple-800">
+                                    <p className="text-xs text-purple-600 dark:text-purple-400 font-medium">Weekly Ceiling</p>
                                     <p className="text-lg font-bold text-purple-600 dark:text-purple-400">
-                                        {formatCurrency(
-                                            viewingBudget.weekly_ceiling || 0,
-                                        )}
+                                        {formatCurrency(viewingBudget.weekly_ceiling || 0)}
                                     </p>
                                     {viewingBudget.suggested_ceiling > 0 && (
-                                        <p className="text-xs text-purple-500">
-                                            Suggested:{" "}
-                                            {formatCurrency(
-                                                viewingBudget.suggested_ceiling,
-                                            )}
+                                        <p className="text-xs text-purple-500 dark:text-purple-400">
+                                            Suggested: {formatCurrency(viewingBudget.suggested_ceiling)}
                                         </p>
                                     )}
                                 </div>
-                                <div className="bg-orange-50 dark:bg-orange-950/30 rounded-lg p-3 text-center border border-orange-200 dark:border-orange-800">
-                                    <p className="text-xs text-orange-600 dark:text-orange-400 font-medium">
-                                        Weekly Used
-                                    </p>
+                                <div className="bg-orange-50 dark:bg-orange-950/30 rounded-xl p-3 text-center border border-orange-200 dark:border-orange-800">
+                                    <p className="text-xs text-orange-600 dark:text-orange-400 font-medium">Weekly Used</p>
                                     <p className="text-lg font-bold text-orange-600 dark:text-orange-400">
-                                        {formatCurrency(
-                                            viewingBudget.weekly_used || 0,
-                                        )}
+                                        {formatCurrency(viewingBudget.weekly_used || 0)}
                                     </p>
                                     {viewingBudget.weekly_ceiling > 0 && (
-                                        <p className="text-xs text-orange-500">
-                                            {Math.round(
-                                                ((viewingBudget.weekly_used ||
-                                                    0) /
-                                                    viewingBudget.weekly_ceiling) *
-                                                    100,
-                                            )}
-                                            % used
+                                        <p className="text-xs text-orange-500 dark:text-orange-400">
+                                            {Math.round(((viewingBudget.weekly_used || 0) / viewingBudget.weekly_ceiling) * 100)}% used
                                         </p>
                                     )}
                                 </div>
-                                <div
-                                    className={`rounded-lg p-3 text-center border ${
-                                        (viewingBudget.weekly_remaining || 0) <=
-                                        0
-                                            ? "bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800"
-                                            : (viewingBudget.weekly_remaining ||
-                                                    0) <
-                                                (viewingBudget.weekly_ceiling ||
-                                                    0) *
-                                                    0.2
-                                              ? "bg-yellow-50 dark:bg-yellow-950/30 border-yellow-200 dark:border-yellow-800"
-                                              : "bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-800"
-                                    }`}
-                                >
-                                    <p
-                                        className={`text-xs font-medium ${
-                                            (viewingBudget.weekly_remaining ||
-                                                0) <= 0
-                                                ? "text-red-600 dark:text-red-400"
-                                                : (viewingBudget.weekly_remaining ||
-                                                        0) <
-                                                    (viewingBudget.weekly_ceiling ||
-                                                        0) *
-                                                        0.2
-                                                  ? "text-yellow-600 dark:text-yellow-400"
-                                                  : "text-green-600 dark:text-green-400"
-                                        }`}
-                                    >
+                                <div className={cn(
+                                    "rounded-xl p-3 text-center border",
+                                    (viewingBudget.weekly_remaining || 0) <= 0
+                                        ? "bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800"
+                                        : (viewingBudget.weekly_remaining || 0) < (viewingBudget.weekly_ceiling || 0) * 0.2
+                                            ? "bg-yellow-50 dark:bg-yellow-950/30 border-yellow-200 dark:border-yellow-800"
+                                            : "bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800"
+                                )}>
+                                    <p className={cn(
+                                        "text-xs font-medium",
+                                        (viewingBudget.weekly_remaining || 0) <= 0
+                                            ? "text-red-600 dark:text-red-400"
+                                            : (viewingBudget.weekly_remaining || 0) < (viewingBudget.weekly_ceiling || 0) * 0.2
+                                                ? "text-yellow-600 dark:text-yellow-400"
+                                                : "text-emerald-600 dark:text-emerald-400"
+                                    )}>
                                         Weekly Remaining
                                     </p>
-                                    <p
-                                        className={`text-lg font-bold ${
-                                            (viewingBudget.weekly_remaining ||
-                                                0) <= 0
-                                                ? "text-red-600 dark:text-red-400"
-                                                : (viewingBudget.weekly_remaining ||
-                                                        0) <
-                                                    (viewingBudget.weekly_ceiling ||
-                                                        0) *
-                                                        0.2
-                                                  ? "text-yellow-600 dark:text-yellow-400"
-                                                  : "text-green-600 dark:text-green-400"
-                                        }`}
-                                    >
-                                        {formatCurrency(
-                                            viewingBudget.weekly_remaining || 0,
-                                        )}
+                                    <p className={cn(
+                                        "text-lg font-bold",
+                                        (viewingBudget.weekly_remaining || 0) <= 0
+                                            ? "text-red-600 dark:text-red-400"
+                                            : (viewingBudget.weekly_remaining || 0) < (viewingBudget.weekly_ceiling || 0) * 0.2
+                                                ? "text-yellow-600 dark:text-yellow-400"
+                                                : "text-emerald-600 dark:text-emerald-400"
+                                    )}>
+                                        {formatCurrency(viewingBudget.weekly_remaining || 0)}
                                     </p>
-                                    {(viewingBudget.weekly_remaining || 0) >
-                                        0 && (
+                                    {(viewingBudget.weekly_remaining || 0) > 0 && (
                                         <p className="text-xs text-slate-500 dark:text-slate-400">
-                                            {formatCurrency(
-                                                (viewingBudget.weekly_ceiling ||
-                                                    0) -
-                                                    (viewingBudget.weekly_remaining ||
-                                                        0),
-                                            )}{" "}
-                                            used
+                                            {formatCurrency((viewingBudget.weekly_ceiling || 0) - (viewingBudget.weekly_remaining || 0))} used
                                         </p>
                                     )}
-                                    {(viewingBudget.weekly_remaining || 0) <=
-                                        0 && (
-                                        <p className="text-xs text-red-500">
-                                            ⚠️ Exceeded!
-                                        </p>
+                                    {(viewingBudget.weekly_remaining || 0) <= 0 && (
+                                        <p className="text-xs text-red-500 dark:text-red-400">⚠️ Exceeded!</p>
                                     )}
                                 </div>
                             </div>
 
+                            {/* Utilization Bars */}
                             <div className="space-y-3">
-                                <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-3">
+                                <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-3 border border-slate-200 dark:border-slate-700">
                                     <div className="flex justify-between items-center">
-                                        <span className="text-xs text-slate-500 dark:text-slate-400">
-                                            Annual Utilization
-                                        </span>
-                                        <span className="text-xs font-semibold">
-                                            {viewingBudget.utilization_percentage ||
-                                                0}
-                                            %
+                                        <span className="text-xs text-slate-500 dark:text-slate-400">Annual Utilization</span>
+                                        <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                                            {viewingBudget.utilization_percentage || 0}%
                                         </span>
                                     </div>
                                     <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2 mt-1">
                                         <div
-                                            className={`h-2 rounded-full transition-all ${
-                                                (viewingBudget.utilization_percentage ||
-                                                    0) > 80
+                                            className={cn(
+                                                "h-2 rounded-full transition-all",
+                                                (viewingBudget.utilization_percentage || 0) > 80
                                                     ? "bg-red-500"
-                                                    : (viewingBudget.utilization_percentage ||
-                                                            0) > 50
-                                                      ? "bg-yellow-500"
-                                                      : "bg-green-500"
-                                            }`}
-                                            style={{
-                                                width: `${Math.min(viewingBudget.utilization_percentage || 0, 100)}%`,
-                                            }}
+                                                    : (viewingBudget.utilization_percentage || 0) > 50
+                                                        ? "bg-yellow-500"
+                                                        : "bg-emerald-500"
+                                            )}
+                                            style={{ width: `${Math.min(viewingBudget.utilization_percentage || 0, 100)}%` }}
                                         />
                                     </div>
                                 </div>
 
                                 {viewingBudget.weekly_ceiling > 0 && (
-                                    <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-3">
+                                    <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-3 border border-slate-200 dark:border-slate-700">
                                         <div className="flex justify-between items-center">
-                                            <span className="text-xs text-slate-500 dark:text-slate-400">
-                                                Weekly Utilization
-                                            </span>
-                                            <span className="text-xs font-semibold">
-                                                {viewingBudget.weekly_ceiling >
-                                                0
+                                            <span className="text-xs text-slate-500 dark:text-slate-400">Weekly Utilization</span>
+                                            <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                                                {viewingBudget.weekly_ceiling > 0
                                                     ? `${Math.round(((viewingBudget.weekly_used || 0) / viewingBudget.weekly_ceiling) * 100)}%`
                                                     : "0%"}
                                             </span>
                                         </div>
                                         <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2 mt-1">
                                             <div
-                                                className={`h-2 rounded-full transition-all ${
-                                                    (viewingBudget.weekly_used ||
-                                                        0) /
-                                                        viewingBudget.weekly_ceiling >
-                                                    0.8
+                                                className={cn(
+                                                    "h-2 rounded-full transition-all",
+                                                    (viewingBudget.weekly_used || 0) / viewingBudget.weekly_ceiling > 0.8
                                                         ? "bg-red-500"
-                                                        : (viewingBudget.weekly_used ||
-                                                                0) /
-                                                                viewingBudget.weekly_ceiling >
-                                                            0.5
-                                                          ? "bg-yellow-500"
-                                                          : "bg-green-500"
-                                                }`}
+                                                        : (viewingBudget.weekly_used || 0) / viewingBudget.weekly_ceiling > 0.5
+                                                            ? "bg-yellow-500"
+                                                            : "bg-emerald-500"
+                                                )}
                                                 style={{
                                                     width: `${Math.min(((viewingBudget.weekly_used || 0) / viewingBudget.weekly_ceiling) * 100, 100)}%`,
                                                 }}
                                             />
                                         </div>
+                                        {(viewingBudget.weekly_remaining || 0) > 0 && (
+                                            <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-1">
+                                                ✅ {formatCurrency(viewingBudget.weekly_remaining)} remaining this week
+                                            </p>
+                                        )}
+                                        {(viewingBudget.weekly_remaining || 0) <= 0 && (
+                                            <p className="text-xs text-red-600 dark:text-red-400 mt-1">
+                                                ⚠️ Weekly budget exceeded!
+                                            </p>
+                                        )}
                                     </div>
                                 )}
                             </div>
-
-                            {viewingBudget.weekly_ceiling > 0 && (
-                                <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-3">
-                                    <div className="flex justify-between items-center mb-1">
-                                        <span className="text-xs text-slate-500 dark:text-slate-400">
-                                            Weekly Progress
-                                        </span>
-                                        <span className="text-xs font-semibold">
-                                            {formatCurrency(
-                                                viewingBudget.weekly_used || 0,
-                                            )}{" "}
-                                            /{" "}
-                                            {formatCurrency(
-                                                viewingBudget.weekly_ceiling,
-                                            )}
-                                        </span>
-                                    </div>
-                                    <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-4 relative overflow-hidden">
-                                        <div
-                                            className={`h-4 rounded-full transition-all flex items-center justify-end pr-1 ${
-                                                (viewingBudget.weekly_used ||
-                                                    0) /
-                                                    viewingBudget.weekly_ceiling >
-                                                0.8
-                                                    ? "bg-red-500"
-                                                    : (viewingBudget.weekly_used ||
-                                                            0) /
-                                                            viewingBudget.weekly_ceiling >
-                                                        0.5
-                                                      ? "bg-yellow-500"
-                                                      : "bg-green-500"
-                                            }`}
-                                            style={{
-                                                width: `${Math.min(((viewingBudget.weekly_used || 0) / viewingBudget.weekly_ceiling) * 100, 100)}%`,
-                                            }}
-                                        >
-                                            <span className="text-[10px] text-white font-bold">
-                                                {Math.round(
-                                                    Math.min(
-                                                        ((viewingBudget.weekly_used ||
-                                                            0) /
-                                                            viewingBudget.weekly_ceiling) *
-                                                            100,
-                                                        100,
-                                                    ),
-                                                )}
-                                                %
-                                            </span>
-                                        </div>
-                                    </div>
-                                    {(viewingBudget.weekly_remaining || 0) >
-                                        0 && (
-                                        <p className="text-xs text-green-600 dark:text-green-400 mt-1">
-                                            ✅{" "}
-                                            {formatCurrency(
-                                                viewingBudget.weekly_remaining,
-                                            )}{" "}
-                                            remaining this week
-                                        </p>
-                                    )}
-                                    {(viewingBudget.weekly_remaining || 0) <=
-                                        0 && (
-                                        <p className="text-xs text-red-600 dark:text-red-400 mt-1">
-                                            ⚠️ Weekly budget exceeded!
-                                        </p>
-                                    )}
-                                </div>
-                            )}
                         </div>
                     )}
 

@@ -1,9 +1,9 @@
-// src/pages/mayor/MayorPending.jsx
+// src/pages/mayor/MayorPending.jsx - SINGLE COLUMN APPROVE DIALOG
 import React, { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { mayorsOfficeAPI } from "../../services/api";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,
@@ -35,6 +35,18 @@ import {
   Search,
   X,
   AlertTriangle,
+  HelpCircle,
+  Calendar,
+  CalendarCheck,
+  CalendarDays,
+  ArrowLeft,
+  Zap,
+  Shield,
+  Gauge,
+  Fuel,
+  TrendingUp,
+  TrendingDown,
+  Minus,
 } from "lucide-react";
 import {
   Dialog,
@@ -48,10 +60,111 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "react-hot-toast";
+import { cn } from "@/lib/utils";
 
 // ============================================================
-// 1. RECEIPT VERIFICATION MODAL
+// STATS CARD COMPONENT
 // ============================================================
+
+const StatsCard = ({ title, value, icon: Icon, color, subtitle, trend }) => (
+  <Card className="dark:bg-slate-800/80 dark:border-slate-700 hover:shadow-lg transition-all duration-300">
+    <CardContent className="pt-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">{title}</p>
+          <p className="text-2xl font-bold text-slate-900 dark:text-white mt-1">{value}</p>
+          {subtitle && (
+            <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">{subtitle}</p>
+          )}
+          {trend !== undefined && (
+            <div className="flex items-center gap-1 mt-1 text-[10px]">
+              {trend > 0 ? (
+                <TrendingUp className="h-3 w-3 text-emerald-500" />
+              ) : trend < 0 ? (
+                <TrendingDown className="h-3 w-3 text-red-500" />
+              ) : (
+                <Minus className="h-3 w-3 text-slate-400" />
+              )}
+              <span className={trend > 0 ? 'text-emerald-600 dark:text-emerald-400' : trend < 0 ? 'text-red-600 dark:text-red-400' : 'text-slate-400'}>
+                {trend > 0 ? '+' : ''}{trend}%
+              </span>
+            </div>
+          )}
+        </div>
+        <div className={`p-3 rounded-xl bg-gradient-to-br ${color} shadow-lg`}>
+          <Icon className="h-6 w-6 text-white" />
+        </div>
+      </div>
+    </CardContent>
+  </Card>
+);
+
+// ============================================================
+// TRIP DATE BADGE COMPONENT
+// ============================================================
+
+const TripDateBadge = ({ ticket }) => {
+  if (!ticket?.trip_date) return null;
+  
+  const tripDate = new Date(ticket.trip_date);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  tripDate.setHours(0, 0, 0, 0);
+  
+  const isToday = tripDate.getTime() === today.getTime();
+  const isPast = tripDate.getTime() < today.getTime();
+  const isFuture = tripDate.getTime() > today.getTime();
+  const isTripFriday = tripDate.getDay() === 5;
+  
+  const daysUntil = Math.ceil((tripDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  
+  let label = '';
+  let color = '';
+  let icon = Calendar;
+  
+  if (isToday) {
+    label = 'Today';
+    color = 'bg-green-100 text-green-700 border-green-300 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800';
+    icon = CalendarCheck;
+  } else if (isPast) {
+    label = 'Past Trip';
+    color = 'bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800';
+    icon = CalendarDays;
+  } else if (isFuture && isTripFriday) {
+    label = `Friday (${daysUntil}d)`;
+    color = 'bg-purple-100 text-purple-700 border-purple-300 dark:bg-purple-900/30 dark:text-purple-400 dark:border-purple-800';
+    icon = Calendar;
+  } else if (isFuture && daysUntil === 1) {
+    label = '⚠️ Tomorrow';
+    color = 'bg-orange-100 text-orange-700 border-orange-300 dark:bg-orange-900/30 dark:text-orange-400 dark:border-orange-800';
+    icon = AlertTriangle;
+  } else if (isFuture && daysUntil <= 7) {
+    label = `📅 ${daysUntil}d`;
+    color = 'bg-yellow-100 text-yellow-700 border-yellow-300 dark:bg-yellow-900/30 dark:text-yellow-400 dark:border-yellow-800';
+    icon = AlertCircle;
+  } else if (isFuture) {
+    label = `📅 ${daysUntil}d`;
+    color = 'bg-red-100 text-red-700 border-red-300 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800';
+    icon = AlertTriangle;
+  } else {
+    label = 'N/A';
+    color = 'bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700';
+    icon = Clock;
+  }
+  
+  const Icon = icon;
+  return (
+    <Badge variant="outline" className={`${color} text-xs font-medium flex items-center gap-1`}>
+      <Icon className="h-3 w-3" />
+      {label}
+    </Badge>
+  );
+};
+
+// ============================================================
+// RECEIPT VERIFICATION MODAL
+// ============================================================
+
 const ReceiptVerificationModal = ({
   isOpen,
   onClose,
@@ -103,7 +216,9 @@ const ReceiptVerificationModal = ({
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto dark:bg-slate-800 dark:border-slate-700">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-slate-900 dark:text-white">
-            <Receipt className="h-5 w-5 text-green-600" />
+            <div className="p-2 rounded-xl bg-green-500/10">
+              <Receipt className="h-5 w-5 text-green-600" />
+            </div>
             Fuel Receipt Verification
           </DialogTitle>
           <DialogDescription className="dark:text-slate-400">
@@ -134,134 +249,85 @@ const ReceiptVerificationModal = ({
             </div>
           )}
 
-          {/* Receipt Details */}
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-            <div>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Ticket Number
-              </p>
-              <p className="font-medium text-slate-900 dark:text-white">
-                {receipt.ticket_number}
-              </p>
+          {/* Receipt Details Grid */}
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
+            <div className="p-2 rounded-lg bg-slate-50 dark:bg-slate-900/50">
+              <p className="text-xs text-slate-500 dark:text-slate-400">Ticket Number</p>
+              <p className="font-medium text-slate-900 dark:text-white">{receipt.ticket_number}</p>
             </div>
-            <div>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Driver
-              </p>
-              <p className="font-medium text-slate-900 dark:text-white">
-                {receipt.driver_name}
-              </p>
+            <div className="p-2 rounded-lg bg-slate-50 dark:bg-slate-900/50">
+              <p className="text-xs text-slate-500 dark:text-slate-400">Driver</p>
+              <p className="font-medium text-slate-900 dark:text-white">{receipt.driver_name}</p>
             </div>
-            <div>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Vehicle
-              </p>
-              <p className="font-medium text-slate-900 dark:text-white">
-                {receipt.plate_number}
-              </p>
+            <div className="p-2 rounded-lg bg-slate-50 dark:bg-slate-900/50">
+              <p className="text-xs text-slate-500 dark:text-slate-400">Vehicle</p>
+              <p className="font-medium text-slate-900 dark:text-white">{receipt.plate_number}</p>
             </div>
-            <div>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Liters
-              </p>
-              <p className="font-medium text-slate-900 dark:text-white">
-                {receipt.liters} L
-              </p>
+            <div className="p-2 rounded-lg bg-slate-50 dark:bg-slate-900/50">
+              <p className="text-xs text-slate-500 dark:text-slate-400">Liters</p>
+              <p className="font-medium text-slate-900 dark:text-white">{receipt.liters} L</p>
             </div>
-            <div>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Amount
-              </p>
-              <p className="font-medium text-green-600 dark:text-green-400">
-                {formatCurrency(receipt.amount)}
-              </p>
+            <div className="p-2 rounded-lg bg-slate-50 dark:bg-slate-900/50">
+              <p className="text-xs text-slate-500 dark:text-slate-400">Amount</p>
+              <p className="font-medium text-green-600 dark:text-green-400">{formatCurrency(receipt.amount)}</p>
             </div>
-            <div>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Trip Date
-              </p>
-              <p className="font-medium text-slate-900 dark:text-white">
-                {formatDate(receipt.trip_date)}
-              </p>
+            <div className="p-2 rounded-lg bg-slate-50 dark:bg-slate-900/50">
+              <p className="text-xs text-slate-500 dark:text-slate-400">Trip Date</p>
+              <p className="font-medium text-slate-900 dark:text-white">{formatDate(receipt.trip_date)}</p>
             </div>
-            <div>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Status
-              </p>
+            <div className="p-2 rounded-lg bg-slate-50 dark:bg-slate-900/50">
+              <p className="text-xs text-slate-500 dark:text-slate-400">Status</p>
               <Badge className={isVerified ? "bg-green-500" : "bg-yellow-500"}>
                 {isVerified ? "Verified" : "Pending"}
               </Badge>
             </div>
-            <div>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Fuel Type
-              </p>
-              <p className="font-medium text-slate-900 dark:text-white">
-                {receipt.fuel_type || "N/A"}
-              </p>
+            <div className="p-2 rounded-lg bg-slate-50 dark:bg-slate-900/50">
+              <p className="text-xs text-slate-500 dark:text-slate-400">Fuel Type</p>
+              <p className="font-medium text-slate-900 dark:text-white">{receipt.fuel_type || "N/A"}</p>
             </div>
-            <div>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Uploaded
-              </p>
-              <p className="font-medium text-slate-900 dark:text-white">
-                {formatDate(receipt.uploaded_at)}
-              </p>
+            <div className="p-2 rounded-lg bg-slate-50 dark:bg-slate-900/50">
+              <p className="text-xs text-slate-500 dark:text-slate-400">Uploaded</p>
+              <p className="font-medium text-slate-900 dark:text-white">{formatDate(receipt.uploaded_at)}</p>
             </div>
           </div>
 
           {/* Distance Details */}
-          {(receipt.odometer_start ||
-            receipt.odometer_end ||
-            receipt.gps_distance_km) && (
-            <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-4">
-              <h4 className="text-sm font-medium mb-2 text-slate-700 dark:text-slate-300">
+          {(receipt.odometer_start || receipt.odometer_end || receipt.gps_distance_km) && (
+            <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-4 border border-slate-200 dark:border-slate-700">
+              <h4 className="text-sm font-medium mb-2 text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                <Gauge className="h-4 w-4 text-blue-500" />
                 Distance Details
               </h4>
-              <div className="grid grid-cols-3 gap-4 text-sm">
+              <div className="grid grid-cols-3 gap-3 text-sm">
                 <div>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">
-                    Method
-                  </p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Method</p>
                   <p className="font-medium text-slate-900 dark:text-white">
                     {receipt.distance_calculation_method || "N/A"}
                   </p>
                 </div>
                 {receipt.odometer_start && (
                   <div>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">
-                      Odometer Start
-                    </p>
-                    <p className="font-medium text-slate-900 dark:text-white">
-                      {receipt.odometer_start} km
-                    </p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">Odometer Start</p>
+                    <p className="font-medium text-slate-900 dark:text-white">{receipt.odometer_start} km</p>
                   </div>
                 )}
                 {receipt.odometer_end && (
                   <div>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">
-                      Odometer End
-                    </p>
-                    <p className="font-medium text-slate-900 dark:text-white">
-                      {receipt.odometer_end} km
-                    </p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">Odometer End</p>
+                    <p className="font-medium text-slate-900 dark:text-white">{receipt.odometer_end} km</p>
                   </div>
                 )}
                 {receipt.gps_distance_km && (
                   <div>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">
-                      GPS Distance
-                    </p>
-                    <p className="font-medium text-slate-900 dark:text-white">
-                      {receipt.gps_distance_km} km
-                    </p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">GPS Distance</p>
+                    <p className="font-medium text-slate-900 dark:text-white">{receipt.gps_distance_km} km</p>
                   </div>
                 )}
               </div>
             </div>
           )}
 
-          {/* Action Buttons */}
+          {/* Actions */}
           <div className="flex gap-3 pt-4 border-t dark:border-slate-700">
             <Button
               onClick={handleVerify}
@@ -290,8 +356,9 @@ const ReceiptVerificationModal = ({
 };
 
 // ============================================================
-// 2. MAIN COMPONENT (MayorPending)
+// MAIN COMPONENT
 // ============================================================
+
 const MayorPending = () => {
   const navigate = useNavigate();
   const [tickets, setTickets] = useState([]);
@@ -309,12 +376,14 @@ const MayorPending = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [departmentFilter, setDepartmentFilter] = useState("all");
 
-  // Cross-Department State
   const [isCrossDepartment, setIsCrossDepartment] = useState(false);
   const [crossDepartmentReason, setCrossDepartmentReason] = useState("");
   const [showCrossDepartmentWarning, setShowCrossDepartmentWarning] = useState(false);
 
-  // Department Selector State
+  const [tripDateValidation, setTripDateValidation] = useState(null);
+  const [isForceApprove, setIsForceApprove] = useState(false);
+  const [forceApproveReason, setForceApproveReason] = useState("");
+
   const [chargeToDepartmentId, setChargeToDepartmentId] = useState("");
   const [availableDepartments, setAvailableDepartments] = useState([]);
 
@@ -348,14 +417,12 @@ const MayorPending = () => {
     setDepartmentFilter("all");
   };
 
-  // Get unique departments for filter
   const uniqueDepartments = [
     ...new Map(
       tickets.map((ticket) => [ticket.department_id, ticket.department_name]),
     ).entries(),
   ].map(([id, name]) => ({ department_id: id, department_name: name }));
 
-  // Filter tickets
   const filteredTickets = tickets.filter((ticket) => {
     const matchesSearch =
       searchTerm === "" ||
@@ -373,98 +440,155 @@ const MayorPending = () => {
     return matchesSearch && matchesDepartment;
   });
 
-  // Fetch all departments for the selector
- const fetchAllDepartments = useCallback(async () => {
-  try {
-    // ✅ Get all departments with their budget info
-    const response = await mayorsOfficeAPI.getAllDepartmentsWithBudget();
-    const departments = response.data?.data || [];
-    
-    // ✅ Filter departments that have budget and are not the requesting department
-    const availableDepts = departments.filter(dept => 
-      dept.has_budget && 
-      dept.remaining_amount > 0 &&
-      dept.department_id?.toString() !== selectedTicket?.department_id?.toString()
-    );
-    
-    setAvailableDepartments(availableDepts);
-  } catch (error) {
-    console.error("Failed to fetch departments:", error);
-    // Fallback: use unique departments from tickets
-    const uniqueDepts = [
-      ...new Map(
-        tickets.map((ticket) => [ticket.department_id, ticket.department_name]),
-      ).entries(),
-    ].map(([id, name]) => ({ 
-      department_id: id, 
-      department_name: name,
-      has_budget: true,
-      remaining_amount: 0
-    }));
-    setAvailableDepartments(uniqueDepts);
-  }
-}, [tickets, selectedTicket]);
+  // ============================================================
+  // STATS
+  // ============================================================
 
-const openApproveDialog = async (ticket) => {
-  console.log("Opening approve dialog for ticket:", ticket);
-  setSelectedTicket(ticket);
-  setAmountReleased("0");
-  
-  // Reset cross-department state
-  setIsCrossDepartment(false);
-  setCrossDepartmentReason("");
-  setShowCrossDepartmentWarning(false);
+  const stats = [
+    {
+      title: "Total Pending",
+      value: tickets.length,
+      icon: Clock,
+      color: "from-yellow-500 to-yellow-600",
+      subtitle: "Awaiting approval",
+      trend: tickets.length > 0 ? 5 : 0,
+    },
+    {
+      title: "Today's Trips",
+      value: tickets.filter(t => {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const tripDate = new Date(t.trip_date);
+        tripDate.setHours(0, 0, 0, 0);
+        return tripDate.getTime() === today.getTime();
+      }).length,
+      icon: CalendarCheck,
+      color: "from-green-500 to-green-600",
+      subtitle: "Can be released today",
+    },
+    {
+      title: "Past Trips",
+      value: tickets.filter(t => {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const tripDate = new Date(t.trip_date);
+        tripDate.setHours(0, 0, 0, 0);
+        return tripDate.getTime() < today.getTime();
+      }).length,
+      icon: CalendarDays,
+      color: "from-blue-500 to-blue-600",
+      subtitle: "Past due trips",
+    },
+    {
+      title: "Future Trips",
+      value: tickets.filter(t => {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const tripDate = new Date(t.trip_date);
+        tripDate.setHours(0, 0, 0, 0);
+        return tripDate.getTime() > today.getTime();
+      }).length,
+      icon: Calendar,
+      color: "from-purple-500 to-purple-600",
+      subtitle: "Scheduled ahead",
+    },
+  ];
 
-  const requestingDeptId =
-    ticket.department_id?.toString() ||
-    ticket.department?.id?.toString() ||
-    ticket.department?.department_id?.toString();
+  // ============================================================
+  // HELPERS
+  // ============================================================
 
-  setChargeToDepartmentId(requestingDeptId || "");
-  
-  // ✅ Fetch departments with budget
-  try {
-    // ✅ Use the API to get all departments with budget
-    const response = await mayorsOfficeAPI.getAllDepartmentsWithBudget();
-    const departments = response.data?.data || [];
+  const checkTripDateValidation = (ticket) => {
+    if (!ticket?.trip_date) return null;
     
-    // ✅ Filter departments with budget, excluding the requesting department
-    const availableDepts = departments.filter(dept => 
-      dept.has_budget && 
-      dept.remaining_amount > 0 &&
-      dept.department_id?.toString() !== requestingDeptId
-    );
+    const tripDate = new Date(ticket.trip_date);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    tripDate.setHours(0, 0, 0, 0);
     
-    // ✅ Also include the requesting department (with its remaining budget)
-    const requestingDept = departments.find(dept => 
-      dept.department_id?.toString() === requestingDeptId
-    );
+    const isToday = tripDate.getTime() === today.getTime();
+    const isPast = tripDate.getTime() < today.getTime();
+    const isFuture = tripDate.getTime() > today.getTime();
+    const isTripFriday = tripDate.getDay() === 5;
     
-    if (requestingDept) {
-      // Add requesting department at the top
-      setAvailableDepartments([requestingDept, ...availableDepts]);
-    } else {
-      setAvailableDepartments(availableDepts);
+    const daysUntil = Math.ceil((tripDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+    
+    let category = 'today';
+    let canApprove = true;
+    
+    if (isToday) {
+      category = 'today';
+      canApprove = true;
+    } else if (isPast) {
+      category = 'past';
+      canApprove = true;
+    } else if (isFuture && isTripFriday) {
+      category = 'future_friday';
+      canApprove = true;
+    } else if (isFuture && daysUntil === 1) {
+      category = 'tomorrow';
+      canApprove = false;
+    } else if (isFuture && daysUntil <= 7) {
+      category = 'this_week';
+      canApprove = false;
+    } else if (isFuture) {
+      category = 'future_long';
+      canApprove = false;
     }
-  } catch (error) {
-    console.error("Failed to fetch departments:", error);
-    // Fallback: use unique departments from tickets
+    
+    return {
+      category,
+      canApprove,
+      isToday,
+      isPast,
+      isFuture,
+      isTripFriday,
+      tripDate,
+      daysUntil,
+      dayName: tripDate.toLocaleDateString('en-US', { weekday: 'long' }),
+      formattedDate: tripDate.toLocaleDateString('en-US', { 
+        month: 'short', 
+        day: 'numeric', 
+        year: 'numeric' 
+      }),
+    };
+  };
+
+  const fetchAllDepartments = useCallback(async () => {
     const uniqueDepts = [
       ...new Map(
         tickets.map((ticket) => [ticket.department_id, ticket.department_name]),
       ).entries(),
-    ].map(([id, name]) => ({ 
-      department_id: id, 
-      department_name: name,
-      has_budget: true,
-      remaining_amount: 0
-    }));
+    ].map(([id, name]) => ({ department_id: id, department_name: name }));
     setAvailableDepartments(uniqueDepts);
-  }
-  
-  setShowApproveDialog(true);
-};
-  // Open Receipt Verification Modal
+  }, [tickets]);
+
+  const openApproveDialog = async (ticket) => {
+    setSelectedTicket(ticket);
+    setAmountReleased(ticket.estimated_cost?.toString() || "");
+    
+    setIsCrossDepartment(false);
+    setCrossDepartmentReason("");
+    setShowCrossDepartmentWarning(false);
+    setIsForceApprove(false);
+    setForceApproveReason("");
+
+    const validation = checkTripDateValidation(ticket);
+    setTripDateValidation(validation);
+    
+    if (validation && !validation.canApprove) {
+      toast.error(`This trip is scheduled for ${validation.formattedDate}.`, { duration: 6000 });
+    }
+
+    const requestingDeptId = ticket.department_id?.toString() ||
+      ticket.department?.id?.toString() ||
+      ticket.department?.department_id?.toString();
+
+    setChargeToDepartmentId(requestingDeptId || "");
+    await fetchAllDepartments();
+    setShowApproveDialog(true);
+  };
+
   const openReceiptModal = (ticket) => {
     const fuelLog = ticket.fuel_log || ticket.fuelLog || null;
 
@@ -495,7 +619,6 @@ const openApproveDialog = async (ticket) => {
     setShowReceiptModal(true);
   };
 
-  // Verify Receipt Handler
   const handleVerifyReceipt = async (receiptId) => {
     try {
       await mayorsOfficeAPI.verifyReceipt(receiptId);
@@ -517,6 +640,11 @@ const openApproveDialog = async (ticket) => {
       return;
     }
 
+    if (isForceApprove && !forceApproveReason.trim()) {
+      toast.error("Please provide a reason for early fund release");
+      return;
+    }
+
     let finalChargeDeptId = chargeToDepartmentId;
     if (!finalChargeDeptId && selectedTicket?.department_id) {
       finalChargeDeptId = selectedTicket.department_id;
@@ -527,7 +655,6 @@ const openApproveDialog = async (ticket) => {
       return;
     }
 
-    // If cross-department, require a reason
     if (isCrossDepartment && !crossDepartmentReason.trim()) {
       toast.error("Please provide a reason for cross-department fuel usage");
       return;
@@ -543,15 +670,18 @@ const openApproveDialog = async (ticket) => {
           review_note: null,
           is_cross_department: isCrossDepartment,
           cross_department_reason: crossDepartmentReason || null,
+          force_approve: isForceApprove,
+          force_approve_reason: forceApproveReason || null,
         },
       );
 
       if (response.data.success) {
         let successMessage = response.data.message || "Funds released successfully!";
-        if (isCrossDepartment) {
-          successMessage = "✅ Funds released successfully (Cross-Department Usage)\n\n" +
-            "⚠️ This fuel will be recorded under the selected department's budget.\n" +
-            "No budget transfer was made. This is for recording purposes only.";
+        if (isForceApprove) {
+          successMessage = "⚠️ Funds released EARLY!\n\n" +
+            "Trip Date: " + selectedTicket.trip_date + "\n" +
+            "Reason: " + forceApproveReason + "\n\n" +
+            "✅ This action has been recorded in the audit log.";
         }
         toast.success(successMessage);
         
@@ -561,59 +691,20 @@ const openApproveDialog = async (ticket) => {
         setChargeToDepartmentId("");
         setIsCrossDepartment(false);
         setCrossDepartmentReason("");
+        setIsForceApprove(false);
+        setForceApproveReason("");
         fetchTickets();
       }
     } catch (error) {
       console.error("API Error:", error);
-      const errorData = error.response?.data;
+      const errorMessage = error.response?.data?.message || "Failed to release funds";
+      toast.error(errorMessage);
       
-      // Check if it's a budget error with suggestions
-      if (errorData?.budget_info) {
-        const budgetInfo = errorData.budget_info;
-        const availableDepartments = errorData.available_departments || [];
-        
-        // Build detailed error message
-        let errorMsg = `⚠️ Insufficient Budget!\n\n`;
-        errorMsg += `Requested: ₱${budgetInfo.requested?.toLocaleString()}\n`;
-        
-        if (budgetInfo.weekly_remaining !== undefined) {
-          errorMsg += `Weekly Remaining: ₱${budgetInfo.weekly_remaining?.toLocaleString()}\n`;
-          errorMsg += `Shortage: ₱${budgetInfo.shortage?.toLocaleString()}\n\n`;
-        } else if (budgetInfo.annual_remaining !== undefined) {
-          errorMsg += `Annual Remaining: ₱${budgetInfo.annual_remaining?.toLocaleString()}\n`;
-          errorMsg += `Shortage: ₱${budgetInfo.shortage?.toLocaleString()}\n\n`;
-        }
-        
-        // Show available departments if any
-        if (availableDepartments && availableDepartments.length > 0) {
-          errorMsg += `📋 Departments with available budget:\n`;
-          availableDepartments.forEach((dept, index) => {
-            errorMsg += `  ${index + 1}. ${dept.department_name} (${dept.department_code}) - ₱${dept.weekly_remaining?.toLocaleString()} remaining\n`;
-          });
-          errorMsg += `\n👉 Please select one of these departments from the dropdown above.`;
-        } else {
-          errorMsg += `💡 Suggestions:\n`;
-          if (budgetInfo.weekly_remaining !== undefined) {
-            errorMsg += `• Reduce the amount to ₱${budgetInfo.weekly_remaining?.toLocaleString()}\n`;
-            errorMsg += `• Mark as cross-department usage (for recording only)\n`;
-            errorMsg += `• Wait for next week's allocation`;
-          } else {
-            errorMsg += `• Add more budget to annual allocation\n`;
-            errorMsg += `• Reduce the amount to ₱${budgetInfo.annual_remaining?.toLocaleString()}`;
-          }
-        }
-        
-        toast.error(errorMsg, {
-          duration: 8000,
-          style: {
-            whiteSpace: 'pre-line',
-            maxWidth: '500px',
-          },
-        });
-        
-      } else {
-        const errorMessage = errorData?.message || "Failed to release funds";
-        toast.error(errorMessage);
+      if (error.response?.data?.budget_info) {
+        const budgetInfo = error.response.data.budget_info;
+        toast.error(
+          `Budget insufficient: ₱${budgetInfo.remaining?.toLocaleString()} remaining, ₱${budgetInfo.requested?.toLocaleString()} requested`,
+        );
       }
     } finally {
       setSubmitting(false);
@@ -687,603 +778,624 @@ const openApproveDialog = async (ticket) => {
     );
   };
 
+  const hasActiveFilters = searchTerm !== "" || departmentFilter !== "all";
+
   // ============================================================
-  // 3. RENDER
+  // RENDER
   // ============================================================
+
   if (loading) {
     return (
-      <div className="flex justify-center items-center h-64">
-        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+      <div className="flex justify-center items-center h-96">
+        <div className="text-center">
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-yellow-500 to-yellow-600 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-yellow-500/20">
+            <Loader2 className="h-8 w-8 text-white animate-spin" />
+          </div>
+          <p className="text-slate-600 dark:text-slate-400 font-medium">Loading pending tickets...</p>
+          <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">Please wait while we fetch your data</p>
+        </div>
       </div>
     );
   }
 
-  const hasActiveFilters = searchTerm !== "" || departmentFilter !== "all";
-
   return (
-    <div className="space-y-6">
-      {/* ========== HEADER ========== */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
-            Pending Fund Release
-          </h1>
-          <p className="text-slate-500 dark:text-slate-400 mt-1">
-            Review and approve trip tickets awaiting fund release
-          </p>
-        </div>
-        <Button
-          variant="outline"
-          onClick={handleRefresh}
-          disabled={refreshing}
-          className="dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
-        >
-          {refreshing ? (
-            <Loader2 className="h-4 w-4 animate-spin mr-2" />
-          ) : (
-            <RefreshCw className="h-4 w-4 mr-2" />
-          )}
-          Refresh
-        </Button>
-      </div>
-
-      {/* ========== FILTERS ========== */}
-      <Card className="dark:bg-slate-800/80 dark:border-slate-700 overflow-hidden">
-        <div
-          className="px-6 py-4 border-b dark:border-slate-700 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors"
-          onClick={() => setShowFilters(!showFilters)}
-        >
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Filter className="h-4 w-4 text-slate-500" />
-              <span className="font-medium text-slate-700 dark:text-slate-300">
-                Filters
-              </span>
-              {hasActiveFilters && (
-                <span className="px-2 py-0.5 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-full">
-                  Active
-                </span>
-              )}
-            </div>
-            {showFilters ? (
-              <ChevronUp className="h-4 w-4 text-slate-500" />
-            ) : (
-              <ChevronDown className="h-4 w-4 text-slate-500" />
-            )}
-          </div>
-        </div>
-
-        {showFilters && (
-          <div className="p-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                <Input
-                  placeholder="Search tickets..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10 dark:bg-slate-900 dark:border-slate-700"
-                />
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
+      <div className="space-y-6 p-4 md:p-6 animate-fade-in-up">
+        {/* Header */}
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => navigate('/mo/dashboard')}
+              className="rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 h-10 w-10"
+            >
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
+            <div>
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-gradient-to-br from-yellow-500 to-yellow-600 shadow-lg shadow-yellow-500/20">
+                  <Clock className="h-5 w-5 text-white" />
+                </div>
+                <div>
+                  <h1 className="text-2xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 bg-clip-text text-transparent">
+                    Pending Fund Release
+                  </h1>
+                  <p className="text-sm text-slate-500 dark:text-slate-400">
+                    Review and approve trip tickets awaiting fund release
+                  </p>
+                </div>
               </div>
-              <select
-                value={departmentFilter}
-                onChange={(e) => setDepartmentFilter(e.target.value)}
-                className="px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-900 dark:text-white"
-              >
-                <option value="all">All Departments</option>
-                {uniqueDepartments.map((dept) => (
-                  <option key={dept.department_id} value={dept.department_id}>
-                    {dept.department_name}
-                  </option>
-                ))}
-              </select>
-              {hasActiveFilters && (
-                <Button
-                  variant="outline"
-                  onClick={clearFilters}
-                  className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30"
-                >
-                  <X className="h-4 w-4 mr-2" />
-                  Clear Filters
-                </Button>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <Button
+              variant="outline"
+              onClick={handleRefresh}
+              disabled={refreshing}
+              className="dark:border-slate-700 dark:text-slate-300"
+            >
+              <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+              Refresh
+            </Button>
+          </div>
+        </div>
+
+        {/* Stats Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {stats.map((stat, index) => (
+            <StatsCard key={index} {...stat} />
+          ))}
+        </div>
+
+        {/* Filters */}
+        <Card className="dark:bg-slate-800/80 dark:border-slate-700">
+          <div
+            className="px-6 py-4 border-b dark:border-slate-700 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors rounded-t-2xl"
+            onClick={() => setShowFilters(!showFilters)}
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Filter className="h-4 w-4 text-slate-500" />
+                <span className="font-medium text-slate-700 dark:text-slate-300">
+                  Filters
+                </span>
+                {hasActiveFilters && (
+                  <Badge className="bg-blue-500/20 text-blue-600 dark:text-blue-400 border-blue-500/30">
+                    Active
+                  </Badge>
+                )}
+              </div>
+              {showFilters ? (
+                <ChevronUp className="h-4 w-4 text-slate-500" />
+              ) : (
+                <ChevronDown className="h-4 w-4 text-slate-500" />
               )}
             </div>
           </div>
-        )}
-      </Card>
 
-      {/* ========== TICKETS TABLE ========== */}
-      <Card className="dark:bg-slate-800/80 dark:border-slate-700 overflow-hidden">
-        <CardHeader className="border-b dark:border-slate-700">
-          <CardTitle className="flex items-center gap-2 text-slate-900 dark:text-white">
-            <Clock className="h-5 w-5 text-yellow-500" />
-            Pending Tickets
-            <span className="ml-2 text-sm font-normal text-slate-500 dark:text-slate-400">
-              ({filteredTickets.length}{" "}
-              {filteredTickets.length === 1 ? "ticket" : "tickets"})
-            </span>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
-          {filteredTickets.length === 0 ? (
-            <div className="text-center py-16">
-              <CheckCircle className="h-12 w-12 text-green-500 mx-auto mb-3" />
-              <p className="text-slate-500 dark:text-slate-400">
-                No pending tickets
-              </p>
-              {hasActiveFilters && (
-                <Button variant="link" onClick={clearFilters} className="mt-2">
-                  Clear filters
-                </Button>
+          {showFilters && (
+            <div className="p-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                  <Input
+                    placeholder="Search tickets..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-10 dark:bg-slate-900 dark:border-slate-700 dark:text-white"
+                  />
+                </div>
+                <select
+                  value={departmentFilter}
+                  onChange={(e) => setDepartmentFilter(e.target.value)}
+                  className="px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-900 dark:text-white"
+                >
+                  <option value="all">All Departments</option>
+                  {uniqueDepartments.map((dept) => (
+                    <option key={dept.department_id} value={dept.department_id}>
+                      {dept.department_name}
+                    </option>
+                  ))}
+                </select>
+                {hasActiveFilters && (
+                  <Button
+                    variant="outline"
+                    onClick={clearFilters}
+                    className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30"
+                  >
+                    <X className="h-4 w-4 mr-2" />
+                    Clear Filters
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
+        </Card>
+
+        {/* Tickets Table */}
+        <Card className="dark:bg-slate-800/80 dark:border-slate-700 shadow-xl shadow-black/5">
+          <CardHeader className="border-b border-slate-200/60 dark:border-slate-700/60">
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2 text-slate-800 dark:text-white">
+                  <Clock className="h-5 w-5 text-yellow-500" />
+                  Pending Tickets
+                </CardTitle>
+                <CardDescription className="dark:text-slate-400">
+                  {filteredTickets.length} ticket{filteredTickets.length !== 1 ? 's' : ''} found
+                  {filteredTickets.length !== tickets.length && ` (filtered from ${tickets.length} total)`}
+                </CardDescription>
+              </div>
+              {filteredTickets.length > 0 && (
+                <Badge className="bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 border-yellow-500/30">
+                  <Zap className="h-3 w-3 mr-1" />
+                  {filteredTickets.length} records
+                </Badge>
               )}
             </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-slate-50 dark:bg-slate-900/50">
-                    <TableHead className="font-semibold">Ticket #</TableHead>
-                    <TableHead className="font-semibold">Date</TableHead>
-                    <TableHead className="font-semibold">Destination</TableHead>
-                    <TableHead className="font-semibold">Department</TableHead>
-                    <TableHead className="font-semibold">Vehicle</TableHead>
-                    <TableHead className="font-semibold">Driver</TableHead>
-                    <TableHead className="font-semibold">Status</TableHead>
-                    <TableHead className="text-right font-semibold">
-                      Actions
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredTickets.map((ticket, index) => (
-                    <TableRow
-                      key={ticket.id || ticket.trip_ticket_id}
-                      className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors"
-                    >
-                      <TableCell className="font-mono text-sm font-semibold text-slate-900 dark:text-white">
-                        {ticket.ticket_number || ticket.trip_ticket_number}
-                      </TableCell>
-                      <TableCell className="text-slate-600 dark:text-slate-400">
-                        {formatDate(ticket.trip_date)}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1">
-                          <MapPin className="h-3 w-3 text-slate-400 flex-shrink-0" />
-                          <span className="text-slate-600 dark:text-slate-400">
-                            {ticket.destination}
-                          </span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1">
-                          <Building2 className="h-3 w-3 text-slate-400 flex-shrink-0" />
-                          <span className="text-slate-600 dark:text-slate-400">
-                            {ticket.department_name}
-                          </span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1">
-                          <Truck className="h-3 w-3 text-slate-400 flex-shrink-0" />
-                          <span className="text-slate-600 dark:text-slate-400">
-                            {ticket.vehicle?.plate_number || "N/A"}
-                          </span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1">
-                          <User className="h-3 w-3 text-slate-400 flex-shrink-0" />
-                          <span className="text-slate-600 dark:text-slate-400">
-                            {ticket.driver?.full_name || "N/A"}
-                          </span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        {getStatusBadge(ticket.has_insufficient_budget)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          {/* View Details */}
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                              const ticketId =
-                                ticket.id || ticket.trip_ticket_id;
-                              navigate(`/mayor/trip-ticket/${ticketId}`);
-                            }}
-                            className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:text-blue-300 dark:hover:bg-blue-950/30 h-8 w-8 p-0"
-                            title="View Details"
-                          >
-                            <Eye className="h-4 w-4" />
-                          </Button>
-
-                          {/* View Receipt */}
-                          {hasFuelReceipt(ticket) && (
+          </CardHeader>
+          <CardContent className="pt-6 p-0">
+            {filteredTickets.length === 0 ? (
+              <div className="text-center py-16">
+                <div className="w-20 h-20 rounded-2xl bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center mx-auto mb-4">
+                  <CheckCircle className="h-10 w-10 text-emerald-500" />
+                </div>
+                <p className="text-slate-600 dark:text-slate-400 font-medium text-lg">No pending tickets</p>
+                <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">
+                  {hasActiveFilters ? 'Try adjusting your filters' : 'All tickets have been processed'}
+                </p>
+                {hasActiveFilters && (
+                  <Button variant="link" onClick={clearFilters} className="mt-2">
+                    Clear filters
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-slate-50 dark:bg-slate-900/50">
+                      <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Ticket #</TableHead>
+                      <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Date</TableHead>
+                      <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Destination</TableHead>
+                      <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Department</TableHead>
+                      <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Vehicle</TableHead>
+                      <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Driver</TableHead>
+                      <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Trip Date</TableHead>
+                      <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Status</TableHead>
+                      <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredTickets.map((ticket, index) => (
+                      <TableRow
+                        key={ticket.id || ticket.trip_ticket_id}
+                        className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors group"
+                      >
+                        <TableCell className="font-mono text-sm font-semibold text-slate-800 dark:text-white">
+                          {ticket.ticket_number || ticket.trip_ticket_number}
+                        </TableCell>
+                        <TableCell className="text-slate-600 dark:text-slate-400">
+                          {formatDate(ticket.trip_date)}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            <MapPin className="h-3 w-3 text-slate-400 flex-shrink-0" />
+                            <span className="text-slate-600 dark:text-slate-400">
+                              {ticket.destination}
+                            </span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            <Building2 className="h-3 w-3 text-slate-400 flex-shrink-0" />
+                            <span className="text-slate-600 dark:text-slate-400">
+                              {ticket.department_name}
+                            </span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            <Truck className="h-3 w-3 text-slate-400 flex-shrink-0" />
+                            <span className="text-slate-600 dark:text-slate-400">
+                              {ticket.vehicle?.plate_number || "N/A"}
+                            </span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            <User className="h-3 w-3 text-slate-400 flex-shrink-0" />
+                            <span className="text-slate-600 dark:text-slate-400">
+                              {ticket.driver?.full_name || "N/A"}
+                            </span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <TripDateBadge ticket={ticket} />
+                        </TableCell>
+                        <TableCell>
+                          {getStatusBadge(ticket.has_insufficient_budget)}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            {/* View Details */}
                             <Button
                               variant="ghost"
                               size="sm"
-                              onClick={() => openReceiptModal(ticket)}
-                              className="text-green-600 hover:text-green-700 hover:bg-green-50 dark:text-green-400 dark:hover:text-green-300 dark:hover:bg-green-950/30 h-8 w-8 p-0"
-                              title="View Fuel Receipt"
+                              onClick={() => {
+                                const ticketId = ticket.id || ticket.trip_ticket_id;
+                                navigate(`/mayor/trip-ticket/${ticketId}`);
+                              }}
+                              className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:text-blue-300 dark:hover:bg-blue-950/30 h-9 w-9 p-0 rounded-lg transition-all duration-200 group-hover:scale-110"
+                              title="View Details"
                             >
-                              <Receipt className="h-4 w-4" />
+                              <Eye className="h-4 w-4" />
                             </Button>
-                          )}
 
-                          {/* Release Fund */}
-                          <Button
-                            size="sm"
-                            onClick={() => openApproveDialog(ticket)}
-                            className="bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white shadow-md h-8 px-3"
-                          >
-                            <DollarSign className="h-3 w-3 mr-1" />
-                            Release
-                          </Button>
+                            {/* View Receipt */}
+                            {hasFuelReceipt(ticket) && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => openReceiptModal(ticket)}
+                                className="text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:text-emerald-300 dark:hover:bg-emerald-950/30 h-9 w-9 p-0 rounded-lg transition-all duration-200 group-hover:scale-110"
+                                title="View Fuel Receipt"
+                              >
+                                <Receipt className="h-4 w-4" />
+                              </Button>
+                            )}
 
-                          {/* Reject - Commented Out */}
-                          {/* <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => {
-                              setSelectedTicket(ticket);
-                              setShowRejectDialog(true);
-                            }}
-                            className="text-red-600 border-red-300 hover:bg-red-50 dark:text-red-400 dark:border-red-800 dark:hover:bg-red-950/30 h-8 px-3"
-                          >
-                            <XCircle className="h-3 w-3 mr-1" />
-                            Reject
-                          </Button> */}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* ========== APPROVE DIALOG ========== */}
-      <Dialog open={showApproveDialog} onOpenChange={setShowApproveDialog}>
-        <DialogContent className="max-w-lg dark:bg-slate-800 dark:border-slate-700 max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-slate-900 dark:text-white">
-              <DollarSign className="h-5 w-5 text-green-600" />
-              Release Funds
-            </DialogTitle>
-            <DialogDescription className="dark:text-slate-400">
-              {selectedTicket?.has_insufficient_budget
-                ? "⚠️ The requesting department has insufficient budget. Please select which department to charge."
-                : "Funds will be deducted from the selected department's budget."}
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4">
-            {/* ============================================================ */}
-            {/* ✅ TICKET SUMMARY */}
-            {/* ============================================================ */}
-            <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-4 border border-slate-200 dark:border-slate-700">
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                <div>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">Ticket #</p>
-                  <p className="font-semibold text-slate-900 dark:text-white text-sm">
-                    {selectedTicket?.ticket_number || selectedTicket?.trip_ticket_number}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">Requesting Dept</p>
-                  <p className="font-semibold text-slate-900 dark:text-white text-sm">
-                    {selectedTicket?.department_name}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">Destination</p>
-                  <p className="text-slate-700 dark:text-slate-300 text-sm">
-                    {selectedTicket?.destination}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">Driver</p>
-                  <p className="text-slate-700 dark:text-slate-300 text-sm">
-                    {selectedTicket?.driver?.full_name || "N/A"}
-                  </p>
-                </div>
+                            {/* Release Fund */}
+                            <Button
+                              size="sm"
+                              onClick={() => openApproveDialog(ticket)}
+                              className={`h-9 px-4 rounded-lg shadow-md transition-all duration-200 hover:scale-105 active:scale-95 ${
+                                checkTripDateValidation(ticket)?.canApprove
+                                  ? 'bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 text-white'
+                                  : 'bg-gradient-to-r from-orange-600 to-orange-700 hover:from-orange-700 hover:to-orange-800 text-white'
+                              }`}
+                            >
+                              <DollarSign className="h-3.5 w-3.5 mr-1.5" />
+                              Release
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
               </div>
-            </div>
-
-            {/* ============================================================ */}
-            {/* ✅ BUDGET INFO (Weekly + Annual) */}
-            {/* ============================================================ */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="bg-blue-50 dark:bg-blue-950/30 rounded-lg p-3 border border-blue-200 dark:border-blue-800 text-center">
-                <p className="text-xs text-blue-600 dark:text-blue-400">Weekly Remaining</p>
-                <p className={`text-lg font-bold ${
-                  (selectedTicket?.weekly_remaining || 0) < (selectedTicket?.estimated_cost || 0) 
-                    ? 'text-red-600 dark:text-red-400' 
-                    : 'text-green-600 dark:text-green-400'
-                }`}>
-                  {formatCurrency(selectedTicket?.weekly_remaining || 0)}
-                </p>
-                {(selectedTicket?.weekly_remaining || 0) < (selectedTicket?.estimated_cost || 0) && (
-                  <p className="text-xs text-red-500">⚠️ Insufficient</p>
-                )}
-              </div>
-              <div className="bg-green-50 dark:bg-green-950/30 rounded-lg p-3 border border-green-200 dark:border-green-800 text-center">
-                <p className="text-xs text-green-600 dark:text-green-400">Annual Remaining</p>
-                <p className="text-lg font-bold text-green-600 dark:text-green-400">
-                  {formatCurrency(selectedTicket?.remaining_budget || 0)}
-                </p>
-              </div>
-            </div>
-
-            {/* ============================================================ */}
-{/* ✅ DEPARTMENT SELECTOR - MAKITA KUNG ASA I-CHARGE */}
-{/* ============================================================ */}
-<div>
-  <Label htmlFor="charge_to_department" className="flex items-center gap-2 text-slate-700 dark:text-slate-300">
-    <Building2 className="h-4 w-4" />
-    Charge To Department <span className="text-red-500">*</span>
-  </Label>
-  <select
-    id="charge_to_department"
-    value={chargeToDepartmentId}
-    onChange={(e) => setChargeToDepartmentId(e.target.value)}
-    className="w-full mt-1.5 px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-900 dark:text-white"
-  >
-    <option value="">Select Department</option>
-    {availableDepartments.length > 0 ? (
-      availableDepartments.map((dept) => {
-        const isRequesting = dept.department_id?.toString() === selectedTicket?.department_id?.toString();
-        return (
-          <option 
-            key={dept.department_id} 
-            value={dept.department_id}
-            className={isRequesting ? "font-medium text-blue-600" : ""}
-          >
-            {isRequesting ? "📍 " : "🏛️ "} {dept.department_name} 
-            {dept.department_code ? ` (${dept.department_code})` : ''}
-            {dept.remaining_amount !== undefined && dept.remaining_amount > 0 && (
-              ` - ₱${dept.remaining_amount.toLocaleString()} remaining`
             )}
-            {isRequesting ? " (Requesting)" : ""}
-          </option>
-        );
-      })
-    ) : (
-      <option value="" disabled>No departments available</option>
-    )}
-  </select>
-  <p className="text-xs text-orange-600 dark:text-orange-400 mt-1 flex items-center gap-1">
-    <AlertCircle className="h-3 w-3" />
-    Select which department's budget will cover this trip.
-  </p>
-</div>
+          </CardContent>
+        </Card>
 
-            {/* ============================================================ */}
-            {/* ✅ CROSS-DEPARTMENT SECTION */}
-            {/* ============================================================ */}
-            <div className="border-t dark:border-slate-700 pt-4 mt-2">
-              <div className="flex items-start gap-3">
-                <input
-                  type="checkbox"
-                  id="cross-department"
-                  checked={isCrossDepartment}
-                  onChange={(e) => {
-                    const checked = e.target.checked;
-                    setIsCrossDepartment(checked);
-                    if (checked) {
-                      setShowCrossDepartmentWarning(true);
-                    } else {
-                      setShowCrossDepartmentWarning(false);
-                      setCrossDepartmentReason("");
-                    }
-                  }}
-                  className="mt-1 h-4 w-4 rounded border-slate-300 text-orange-600 focus:ring-orange-500 dark:border-slate-600 dark:bg-slate-700 dark:ring-offset-slate-800"
-                />
-                <div>
-                  <Label
-                    htmlFor="cross-department"
-                    className="text-sm font-medium cursor-pointer flex items-center gap-2 text-slate-700 dark:text-slate-300"
-                  >
-                    <AlertTriangle className="h-4 w-4 text-orange-500" />
-                    Mark as Cross-Department Usage
-                    <span className="text-[10px] px-2 py-0.5 border border-orange-500 text-orange-500 rounded-full font-normal">
-                      For Recording Only
-                    </span>
-                  </Label>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                    Use this if fuel is being used by a different department.
-                    <span className="text-orange-500 font-medium"> No budget transfer will be made.</span>
-                  </p>
+        {/* ============================================================ */}
+        {/* APPROVE DIALOG - SINGLE COLUMN LAYOUT */}
+        {/* ============================================================ */}
+        <Dialog open={showApproveDialog} onOpenChange={setShowApproveDialog}>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto dark:bg-slate-800 dark:border-slate-700 p-6">
+            <DialogHeader className="pb-3">
+              <DialogTitle className="flex items-center gap-2 text-slate-900 dark:text-white text-lg">
+                <div className="p-1.5 rounded-xl bg-green-500/10">
+                  <DollarSign className="h-5 w-5 text-green-600" />
+                </div>
+                Release Funds
+              </DialogTitle>
+              <DialogDescription className="dark:text-slate-400 text-sm">
+                {selectedTicket?.has_insufficient_budget
+                  ? "Select which department's budget to charge. The requesting department has insufficient budget."
+                  : "Funds will be deducted from the selected department's budget."}
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4">
+              {/* Info Box */}
+              <div className="bg-blue-50 dark:bg-blue-950/30 rounded-lg p-2.5 border border-blue-200 dark:border-blue-800">
+                <div className="flex items-center gap-2">
+                  <Info className="h-4 w-4 text-blue-500 dark:text-blue-400 flex-shrink-0" />
+                  <span className="text-xs text-blue-700 dark:text-blue-300">
+                    Charge to <strong>SELECTED department</strong>
+                  </span>
                 </div>
               </div>
 
-              {/* Cross-Department Warning */}
-              {isCrossDepartment && (
-                <div className="mt-3 bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-800 rounded-lg p-3">
+              {/* Budget Warning */}
+              {selectedTicket?.has_insufficient_budget && (
+                <div className="bg-yellow-50 dark:bg-yellow-950/30 border border-yellow-200 dark:border-yellow-800 rounded-lg p-2.5">
+                  <div className="flex items-center gap-2">
+                    <AlertCircle className="h-4 w-4 text-yellow-600 dark:text-yellow-400 flex-shrink-0" />
+                    <span className="text-xs text-yellow-700 dark:text-yellow-300">
+                      Insufficient Budget. Shortage: <strong>{formatCurrency(selectedTicket?.budget_shortage)}</strong>
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Trip Date Validation - Simple Badge */}
+              {tripDateValidation && (
+                <div className="flex items-center gap-2">
+                  {tripDateValidation.category === 'today' && (
+                    <Badge className="bg-green-500 text-white">Today's Trip</Badge>
+                  )}
+                  {tripDateValidation.category === 'past' && (
+                    <Badge className="bg-blue-500 text-white">Past Trip</Badge>
+                  )}
+                  {(tripDateValidation.category === 'future_friday' || tripDateValidation.category === 'future_friday_today') && (
+                    <Badge className="bg-purple-500 text-white">Friday Trip</Badge>
+                  )}
+                  {tripDateValidation.category === 'tomorrow' && (
+                    <Badge className="bg-orange-500 text-white">⚠️ Tomorrow</Badge>
+                  )}
+                  {tripDateValidation.category === 'this_week' && (
+                    <Badge className="bg-yellow-500 text-white">⚠️ This Week</Badge>
+                  )}
+                  {tripDateValidation.category === 'future_long' && (
+                    <Badge className="bg-red-500 text-white">⚠️ Future Trip</Badge>
+                  )}
+                  <span className="text-xs text-slate-500 dark:text-slate-400">
+                    {tripDateValidation.formattedDate}
+                  </span>
+                </div>
+              )}
+
+              {/* Force Approve */}
+              {tripDateValidation && !tripDateValidation.canApprove && (
+                <div className="border-t dark:border-slate-700 pt-3 mt-1">
                   <div className="flex items-start gap-2">
-                    <AlertTriangle className="h-4 w-4 text-orange-600 dark:text-orange-400 mt-0.5 flex-shrink-0" />
-                    <div>
-                      <p className="text-sm font-medium text-orange-700 dark:text-orange-300">
-                        ⚠️ Cross-Department Usage Notice
-                      </p>
-                      <ul className="text-xs text-orange-600 dark:text-orange-400 mt-1 space-y-1 list-disc list-inside">
-                        <li>This fuel will be recorded under <strong>{selectedTicket?.department_name}</strong>'s budget</li>
-                        <li>An asterisk (*) will appear on the gas slip</li>
-                        <li className="font-semibold text-orange-700 dark:text-orange-300">No budget transfer will be made</li>
-                      </ul>
+                    <input
+                      type="checkbox"
+                      id="force-approve"
+                      checked={isForceApprove}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setIsForceApprove(checked);
+                        if (!checked) setForceApproveReason("");
+                      }}
+                      className="mt-1 h-4 w-4 rounded border-slate-300 text-orange-600 focus:ring-orange-500 dark:border-slate-600 dark:bg-slate-700"
+                    />
+                    <div className="flex-1">
+                      <Label htmlFor="force-approve" className="text-sm font-medium cursor-pointer flex items-center gap-2 text-slate-700 dark:text-slate-300">
+                        <AlertTriangle className="h-4 w-4 text-orange-500" />
+                        Force Approve
+                        <span className="text-[10px] px-1.5 py-0.5 border border-orange-500 text-orange-500 rounded-full">Override</span>
+                      </Label>
+                      {isForceApprove && (
+                        <Textarea
+                          placeholder="Reason for early release..."
+                          value={forceApproveReason}
+                          onChange={(e) => setForceApproveReason(e.target.value)}
+                          rows={2}
+                          className="mt-1.5 text-sm resize-none dark:bg-slate-900 dark:border-slate-700 dark:text-white"
+                        />
+                      )}
                     </div>
                   </div>
                 </div>
               )}
 
-              {/* Cross-Department Reason */}
-              {isCrossDepartment && (
-                <div className="mt-3 animate-slide-down">
-                  <Label
-                    htmlFor="cross_reason"
-                    className="text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-1"
-                  >
-                    Reason for Cross-Department Usage <span className="text-red-500">*</span>
-                  </Label>
-                  <Textarea
-                    id="cross_reason"
-                    placeholder="e.g., Emergency response, vehicle breakdown, temporary assignment, etc."
-                    value={crossDepartmentReason}
-                    onChange={(e) => setCrossDepartmentReason(e.target.value)}
-                    rows={2}
-                    className="mt-1.5 resize-none dark:bg-slate-900 dark:border-slate-700"
+              {/* Ticket Info */}
+              <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-3 border border-slate-200 dark:border-slate-700">
+                <div className="grid grid-cols-2 gap-1.5 text-sm">
+                  <div>
+                    <p className="text-xs text-slate-400">Ticket #</p>
+                    <p className="font-semibold text-slate-900 dark:text-white text-sm truncate">
+                      {selectedTicket?.ticket_number || selectedTicket?.trip_ticket_number}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-400">Dept</p>
+                    <p className="font-semibold text-slate-900 dark:text-white text-sm truncate">
+                      {selectedTicket?.department_name}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-400">Destination</p>
+                    <p className="text-sm text-slate-700 dark:text-slate-300 truncate">
+                      {selectedTicket?.destination}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-400">Driver</p>
+                    <p className="text-sm text-slate-700 dark:text-slate-300 truncate">
+                      {selectedTicket?.driver?.full_name || "N/A"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-400">Vehicle</p>
+                    <p className="text-sm text-slate-700 dark:text-slate-300 truncate">
+                      {selectedTicket?.vehicle?.plate_number || "N/A"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-400">Trip Date</p>
+                    <p className="text-sm text-slate-700 dark:text-slate-300 truncate">
+                      {selectedTicket?.trip_date ? formatDate(selectedTicket.trip_date) : "N/A"}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Department Selector */}
+              <div>
+                <Label htmlFor="charge_to_department" className="text-sm text-slate-700 dark:text-slate-300">
+                  Charge To Department <span className="text-red-500">*</span>
+                </Label>
+                <select
+                  id="charge_to_department"
+                  value={chargeToDepartmentId}
+                  onChange={(e) => setChargeToDepartmentId(e.target.value)}
+                  className="w-full mt-1 px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-900 dark:text-white text-sm"
+                >
+                  <option value="">Select Department</option>
+                  <option value={selectedTicket?.department_id}>
+                    {selectedTicket?.department_name} (Requesting)
+                  </option>
+                  {availableDepartments
+                    .filter((dept) => dept.department_id?.toString() !== selectedTicket?.department_id?.toString())
+                    .map((dept) => (
+                      <option key={dept.department_id} value={dept.department_id}>
+                        {dept.department_name}
+                      </option>
+                    ))}
+                </select>
+              </div>
+
+              {/* Cross-Department */}
+              <div className="border-t dark:border-slate-700 pt-3">
+                <div className="flex items-start gap-2">
+                  <input
+                    type="checkbox"
+                    id="cross-department"
+                    checked={isCrossDepartment}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setIsCrossDepartment(checked);
+                      if (!checked) {
+                        setCrossDepartmentReason("");
+                      }
+                    }}
+                    className="mt-1 h-4 w-4 rounded border-slate-300 text-orange-600 focus:ring-orange-500 dark:border-slate-600 dark:bg-slate-700"
                   />
-                  <p className="text-xs text-slate-400 mt-1">
-                    This reason will be recorded for tracking and audit purposes.
-                  </p>
+                  <div className="flex-1">
+                    <Label htmlFor="cross-department" className="text-sm font-medium cursor-pointer flex items-center gap-2 text-slate-700 dark:text-slate-300">
+                      <AlertTriangle className="h-4 w-4 text-orange-500" />
+                      Cross-Department Usage
+                    </Label>
+                    {isCrossDepartment && (
+                      <Textarea
+                        placeholder="Reason for cross-department usage..."
+                        value={crossDepartmentReason}
+                        onChange={(e) => setCrossDepartmentReason(e.target.value)}
+                        rows={2}
+                        className="mt-1.5 text-sm resize-none dark:bg-slate-900 dark:border-slate-700 dark:text-white"
+                      />
+                    )}
+                  </div>
                 </div>
-              )}
+              </div>
+
+              {/* Amount */}
+              <div>
+                <Label htmlFor="amount" className="text-sm text-slate-700 dark:text-slate-300">Amount (₱)</Label>
+                <Input
+                  id="amount"
+                  type="number"
+                  step="0.01"
+                  placeholder="0.00"
+                  value={amountReleased}
+                  onChange={(e) => setAmountReleased(e.target.value)}
+                  className="mt-1 dark:bg-slate-900 dark:border-slate-700 dark:text-white"
+                />
+              </div>
             </div>
 
-            {/* ============================================================ */}
-            {/* ✅ AMOUNT INPUT */}
-            {/* ============================================================ */}
-            <div>
-              <Label htmlFor="amount" className="text-slate-700 dark:text-slate-300">
-                Amount to Release (₱)
-              </Label>
-              <Input
-                id="amount"
-                type="number"
-                step="0.01"
-                min="0"
-                placeholder="Enter amount"
-                value={amountReleased}
-                onChange={(e) => setAmountReleased(e.target.value)}
-                className="mt-1.5 dark:bg-slate-900 dark:border-slate-700"
+            {/* Footer */}
+            <DialogFooter className="gap-3 pt-4 border-t dark:border-slate-700 mt-4">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowApproveDialog(false);
+                  setIsCrossDepartment(false);
+                  setCrossDepartmentReason("");
+                  setIsForceApprove(false);
+                  setForceApproveReason("");
+                }}
+                className="dark:border-slate-700 dark:text-slate-300"
+              >
+                Cancel
+              </Button>
+              <Button
+                className={`${
+                  tripDateValidation?.canApprove
+                    ? 'bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800'
+                    : isForceApprove
+                    ? 'bg-gradient-to-r from-orange-600 to-orange-700 hover:from-orange-700 hover:to-orange-800'
+                    : 'bg-slate-400 cursor-not-allowed'
+                } text-white`}
+                onClick={handleApprove}
+                disabled={submitting || (!tripDateValidation?.canApprove && !isForceApprove)}
+              >
+                {submitting ? (
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                ) : (
+                  <DollarSign className="h-4 w-4 mr-2" />
+                )}
+                {isForceApprove ? "Force Approve" : tripDateValidation?.canApprove ? "Release Funds" : "Restricted"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Reject Dialog */}
+        <Dialog open={showRejectDialog} onOpenChange={setShowRejectDialog}>
+          <DialogContent className="dark:bg-slate-800 dark:border-slate-700">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-slate-900 dark:text-white">
+                <XCircle className="h-5 w-5 text-red-600" />
+                Reject Trip Ticket
+              </DialogTitle>
+              <DialogDescription className="dark:text-slate-400">
+                Please provide a reason for rejection. This will be sent back to
+                the department.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3">
+              <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-3">
+                <p className="text-sm text-slate-700 dark:text-slate-300">
+                  <strong>Ticket:</strong>{" "}
+                  {selectedTicket?.ticket_number ||
+                    selectedTicket?.trip_ticket_number}
+                  <br />
+                  <strong>Department:</strong> {selectedTicket?.department_name}
+                  <br />
+                  <strong>Destination:</strong> {selectedTicket?.destination}
+                </p>
+              </div>
+              <Textarea
+                placeholder="Enter rejection reason..."
+                value={rejectionNote}
+                onChange={(e) => setRejectionNote(e.target.value)}
+                rows={4}
+                className="resize-none dark:bg-slate-900 dark:border-slate-700 dark:text-white"
               />
-              
-              {/* Suggested Amount */}
-              {selectedTicket?.estimated_cost && (
-                <div className="mt-1.5 flex items-center gap-2">
-                  <span className="text-xs text-slate-500 dark:text-slate-400">Suggested:</span>
-                  <span className="text-xs font-medium text-blue-600 dark:text-blue-400">
-                    {formatCurrency(selectedTicket.estimated_cost)}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setAmountReleased(selectedTicket.estimated_cost.toString())}
-                    className="text-xs text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 underline"
-                  >
-                    Use suggested
-                  </button>
-                </div>
-              )}
             </div>
-          </div>
+            <DialogFooter className="gap-3">
+              <Button
+                variant="outline"
+                onClick={() => setShowRejectDialog(false)}
+                className="dark:border-slate-700 dark:text-slate-300"
+              >
+                Cancel
+              </Button>
+              <Button
+                className="bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800"
+                onClick={handleReject}
+                disabled={submitting}
+              >
+                {submitting ? (
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                ) : (
+                  <XCircle className="h-4 w-4 mr-2" />
+                )}
+                Reject Ticket
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
-          {/* ============================================================ */}
-          {/* ✅ FOOTER */}
-          {/* ============================================================ */}
-          <DialogFooter className="gap-3 pt-2">
-            <Button
-              variant="outline"
-              onClick={() => {
-                setShowApproveDialog(false);
-                setIsCrossDepartment(false);
-                setCrossDepartmentReason("");
-                setAmountReleased("");
-              }}
-              className="dark:border-slate-700 dark:text-slate-300"
-            >
-              Cancel
-            </Button>
-            <Button
-              className={`${
-                isCrossDepartment 
-                  ? 'bg-orange-600 hover:bg-orange-700' 
-                  : 'bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800'
-              } text-white shadow-md`}
-              onClick={handleApprove}
-              disabled={submitting}
-            >
-              {submitting ? (
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-              ) : (
-                <DollarSign className="h-4 w-4 mr-2" />
-              )}
-              {isCrossDepartment ? "Release (Cross-Dept)" : "Release Funds"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* ========== REJECT DIALOG ========== */}
-      <Dialog open={showRejectDialog} onOpenChange={setShowRejectDialog}>
-        <DialogContent className="dark:bg-slate-800 dark:border-slate-700">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-slate-900 dark:text-white">
-              <XCircle className="h-5 w-5 text-red-600" />
-              Reject Trip Ticket
-            </DialogTitle>
-            <DialogDescription className="dark:text-slate-400">
-              Please provide a reason for rejection. This will be sent back to
-              the department.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-3">
-              <p className="text-sm text-slate-700 dark:text-slate-300">
-                <strong>Ticket:</strong>{" "}
-                {selectedTicket?.ticket_number ||
-                  selectedTicket?.trip_ticket_number}
-                <br />
-                <strong>Department:</strong> {selectedTicket?.department_name}
-                <br />
-                <strong>Destination:</strong> {selectedTicket?.destination}
-              </p>
-            </div>
-            <Textarea
-              placeholder="Enter rejection reason..."
-              value={rejectionNote}
-              onChange={(e) => setRejectionNote(e.target.value)}
-              rows={4}
-              className="resize-none dark:bg-slate-900 dark:border-slate-700 dark:text-white"
-            />
-          </div>
-          <DialogFooter className="gap-3">
-            <Button
-              variant="outline"
-              onClick={() => setShowRejectDialog(false)}
-              className="dark:border-slate-700 dark:text-slate-300"
-            >
-              Cancel
-            </Button>
-            <Button
-              className="bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800"
-              onClick={handleReject}
-              disabled={submitting}
-            >
-              {submitting ? (
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-              ) : (
-                <XCircle className="h-4 w-4 mr-2" />
-              )}
-              Reject Ticket
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* ========== RECEIPT VERIFICATION MODAL ========== */}
-      <ReceiptVerificationModal
-        isOpen={showReceiptModal}
-        onClose={() => {
-          setShowReceiptModal(false);
-          setReceiptData(null);
-        }}
-        receipt={receiptData}
-        onVerify={handleVerifyReceipt}
-        onRefresh={fetchTickets}
-      />
+        {/* Receipt Verification Modal */}
+        <ReceiptVerificationModal
+          isOpen={showReceiptModal}
+          onClose={() => {
+            setShowReceiptModal(false);
+            setReceiptData(null);
+          }}
+          receipt={receiptData}
+          onVerify={handleVerifyReceipt}
+          onRefresh={fetchTickets}
+        />
+      </div>
     </div>
   );
 };

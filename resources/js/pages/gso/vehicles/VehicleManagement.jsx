@@ -1,9 +1,10 @@
 // src/pages/gso/vehicles/VehicleManagement.jsx
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import {
   Car,
   Plus,
@@ -18,21 +19,102 @@ import {
   XCircle,
   Wrench,
   Check,
+  ArrowLeft,
+  Zap,
+  Shield,
+  Filter,
+  ChevronDown,
+  ChevronUp,
+  Gauge,
+  Calendar,
+  AlertTriangle,
+  Eye,
+  MoreHorizontal,
+  Users,
+  Clock,
+  MapPin,
 } from "lucide-react";
 import { useVehicles, useDeleteVehicle, useToggleVehicleStatus } from "../../../hooks/useVehicleManagement";
 import { useQuery } from "@tanstack/react-query";
 import { adminDepartmentAPI } from "../../../services/api";
 import { toast } from "react-hot-toast";
+import { cn } from "@/lib/utils";
+
+// ============================================
+// STATS CARD COMPONENT
+// ============================================
+
+const StatsCard = ({ title, value, icon: Icon, color, subtitle }) => (
+  <Card className="dark:bg-slate-800/80 dark:border-slate-700 hover:shadow-lg transition-all duration-300">
+    <CardContent className="pt-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">{title}</p>
+          <p className="text-2xl font-bold text-slate-900 dark:text-white mt-1">{value}</p>
+          {subtitle && (
+            <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">{subtitle}</p>
+          )}
+        </div>
+        <div className={`p-3 rounded-xl bg-gradient-to-br ${color} shadow-lg`}>
+          <Icon className="h-6 w-6 text-white" />
+        </div>
+      </div>
+    </CardContent>
+  </Card>
+);
+
+// ============================================
+// STATUS BADGE COMPONENT
+// ============================================
+
+const StatusBadge = ({ status }) => {
+  if (status === "active") {
+    return (
+      <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800 flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-medium">
+        <CheckCircle className="h-3 w-3" />
+        Active
+      </Badge>
+    );
+  }
+  return (
+    <Badge className="bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 border-red-200 dark:border-red-800 flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-medium">
+      <XCircle className="h-3 w-3" />
+      Inactive
+    </Badge>
+  );
+};
+
+// ============================================
+// LOADING SKELETON
+// ============================================
+
+const LoadingSkeleton = () => (
+  <div className="space-y-4">
+    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      {[1, 2, 3, 4].map((i) => (
+        <div key={i} className="h-24 bg-slate-200 dark:bg-slate-700 rounded-xl animate-pulse" />
+      ))}
+    </div>
+    <div className="h-64 bg-slate-200 dark:bg-slate-700 rounded-xl animate-pulse" />
+  </div>
+);
+
+// ============================================
+// MAIN COMPONENT
+// ============================================
 
 const VehicleManagement = () => {
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [fuelFilter, setFuelFilter] = useState("all");
+  const [showFilters, setShowFilters] = useState(false);
   
   const { data: vehicles = [], isLoading, refetch } = useVehicles();
   const deleteVehicle = useDeleteVehicle();
   const toggleStatus = useToggleVehicleStatus();
 
-  // ✅ Fetch departments to map department_id to department_name
+  // Fetch departments
   const { data: departments = [] } = useQuery({
     queryKey: ["departments"],
     queryFn: async () => {
@@ -48,185 +130,440 @@ const VehicleManagement = () => {
     staleTime: 5 * 60 * 1000,
   });
 
-  // ✅ Get department name from department_id
+  // ============ STATS ============
+  const stats = useMemo(() => {
+    const total = vehicles.length;
+    const active = vehicles.filter(v => v.status === "active").length;
+    const inactive = vehicles.filter(v => v.status === "inactive").length;
+    const diesel = vehicles.filter(v => v.fuel_type === "diesel").length;
+    const gasoline = vehicles.filter(v => v.fuel_type === "gasoline").length;
+    
+    return [
+      {
+        title: "Total Vehicles",
+        value: total,
+        icon: Car,
+        color: "from-blue-500 to-blue-600",
+        subtitle: `${active} active • ${inactive} inactive`,
+      },
+      {
+        title: "Active",
+        value: active,
+        icon: CheckCircle,
+        color: "from-emerald-500 to-emerald-600",
+        subtitle: `${total > 0 ? Math.round((active / total) * 100) : 0}% of fleet`,
+      },
+      {
+        title: "Diesel",
+        value: diesel,
+        icon: Fuel,
+        color: "from-orange-500 to-orange-600",
+        subtitle: `${diesel + gasoline > 0 ? Math.round((diesel / (diesel + gasoline)) * 100) : 0}% of fleet`,
+      },
+      {
+        title: "Gasoline",
+        value: gasoline,
+        icon: Fuel,
+        color: "from-cyan-500 to-cyan-600",
+        subtitle: `${diesel + gasoline > 0 ? Math.round((gasoline / (diesel + gasoline)) * 100) : 0}% of fleet`,
+      },
+    ];
+  }, [vehicles]);
+
+  // ============ HELPERS ============
   const getDepartmentName = (departmentId) => {
     if (!departmentId) return "N/A";
     const dept = departments.find(d => d.department_id === parseInt(departmentId));
     return dept?.department_name || dept?.name || "N/A";
   };
 
-  // ✅ Get department color
   const getDepartmentColor = (departmentId) => {
     const colors = {
-      1: "bg-purple-100 text-purple-700",
-      2: "bg-blue-100 text-blue-700",
-      3: "bg-orange-100 text-orange-700",
-      4: "bg-green-100 text-green-700",
-      5: "bg-red-100 text-red-700",
-      6: "bg-indigo-100 text-indigo-700",
+      1: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300",
+      2: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
+      3: "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300",
+      4: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300",
+      5: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300",
+      6: "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300",
     };
-    return colors[departmentId] || "bg-gray-100 text-gray-700";
+    return colors[departmentId] || "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300";
   };
 
-  const filteredVehicles = vehicles.filter((vehicle) =>
-    vehicle.vehicle_model?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    vehicle.plate_number?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const getFuelTypeColor = (fuelType) => {
+    return fuelType === "diesel" 
+      ? "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300"
+      : "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300";
+  };
 
-  const handleDelete = (id, name) => {
-    if (window.confirm(`Are you sure you want to delete "${name}"?`)) {
-      deleteVehicle.mutate(id, {
-        onSuccess: () => toast.success("Vehicle deleted!"),
-        onError: () => toast.error("Failed to delete vehicle"),
-      });
+  // ============ FILTERS ============
+  const filteredVehicles = useMemo(() => {
+    let filtered = vehicles;
+    
+    if (searchTerm) {
+      const search = searchTerm.toLowerCase();
+      filtered = filtered.filter((v) =>
+        v.vehicle_model?.toLowerCase().includes(search) ||
+        v.plate_number?.toLowerCase().includes(search) ||
+        v.vehicle_type?.toLowerCase().includes(search) ||
+        getDepartmentName(v.department_id).toLowerCase().includes(search)
+      );
+    }
+    
+    if (statusFilter !== "all") {
+      filtered = filtered.filter((v) => v.status === statusFilter);
+    }
+    
+    if (fuelFilter !== "all") {
+      filtered = filtered.filter((v) => v.fuel_type === fuelFilter);
+    }
+    
+    return filtered;
+  }, [vehicles, searchTerm, statusFilter, fuelFilter]);
+
+  // ============ HANDLERS ============
+  const handleToggleStatus = (id, currentStatus) => {
+    const newStatus = currentStatus === "active" ? "inactive" : "active";
+    const action = newStatus === "active" ? "activate" : "deactivate";
+    
+    if (window.confirm(`Are you sure you want to ${action} this vehicle?`)) {
+      toggleStatus.mutate(
+        { vehicleId: id, status: newStatus },
+        {
+          onSuccess: () => toast.success(`Vehicle ${action}d successfully!`),
+          onError: () => toast.error(`Failed to ${action} vehicle`),
+        }
+      );
     }
   };
 
-  const handleToggleStatus = (id, currentStatus) => {
-    const newStatus = currentStatus === "active" ? "inactive" : "active";
-    toggleStatus.mutate(
-      { vehicleId: id, status: newStatus },
-      {
-        onSuccess: () => toast.success(`Vehicle ${newStatus === "active" ? "activated" : "deactivated"}!`),
-        onError: () => toast.error("Failed to update status"),
-      }
-    );
+  const clearFilters = () => {
+    setSearchTerm("");
+    setStatusFilter("all");
+    setFuelFilter("all");
   };
+
+  const hasActiveFilters = searchTerm || statusFilter !== "all" || fuelFilter !== "all";
+
+  // ============================================
+  // RENDER
+  // ============================================
 
   if (isLoading) {
     return (
-      <div className="flex justify-center items-center h-64">
-        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 p-4 md:p-6">
+        <LoadingSkeleton />
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800 dark:text-white">Vehicle Management</h1>
-          <p className="text-slate-500 dark:text-slate-400">Manage fleet vehicles, track status, and maintenance</p>
-        </div>
-        <Button onClick={() => navigate("/admin/vehicles/add")} className="bg-blue-600 hover:bg-blue-700">
-          <Plus className="h-4 w-4 mr-2" />
-          Register Vehicle
-        </Button>
-      </div>
-
-      <div className="flex flex-col sm:flex-row gap-4">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
-          <Input
-            placeholder="Search by model or plate..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-10"
-          />
-        </div>
-        <Button variant="outline" onClick={() => refetch()} className="flex items-center gap-2">
-          <RefreshCw className="h-4 w-4" />
-          Refresh
-        </Button>
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Car className="h-5 w-5" />
-            Fleet Vehicles ({filteredVehicles.length})
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {filteredVehicles.length === 0 ? (
-            <div className="text-center py-12 text-slate-500">No vehicles found</div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-slate-50 dark:bg-slate-900/50">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Vehicle</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Plate #</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Department</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Fuel</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Status</th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-                  {filteredVehicles.map((vehicle) => {
-                    const deptName = getDepartmentName(vehicle.department_id);
-                    return (
-                      <tr key={vehicle.vehicle_id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2">
-                            <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center">
-                              <Car className="h-4 w-4 text-white" />
-                            </div>
-                            <span className="font-semibold">{vehicle.vehicle_model}</span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 font-mono text-sm">{vehicle.plate_number}</td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-1">
-                            <Building2 className="h-3 w-3 text-slate-400" />
-                            <span className={`text-sm px-2 py-0.5 rounded-full ${getDepartmentColor(vehicle.department_id)}`}>
-                              {deptName}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-1">
-                            <Fuel className="h-3 w-3" />
-                            <span className="text-sm capitalize">{vehicle.fuel_type}</span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3">
-                          <button
-                            onClick={() => handleToggleStatus(vehicle.vehicle_id, vehicle.status)}
-                            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium ${
-                              vehicle.status === "active"
-                                ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
-                                : "bg-red-100 text-red-700 hover:bg-red-200"
-                            }`}
-                          >
-                            {vehicle.status === "active" ? (
-                              <CheckCircle className="h-3 w-3" />
-                            ) : (
-                              <XCircle className="h-3 w-3" />
-                            )}
-                            {vehicle.status === "active" ? "Active" : "Inactive"}
-                          </button>
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <div className="flex items-center justify-end gap-1">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => navigate(`/admin/vehicles/edit/${vehicle.vehicle_id}`)}
-                              className="text-blue-600 hover:bg-blue-50 h-8 w-8 p-0"
-                            >
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                            {/* <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleDelete(vehicle.vehicle_id, vehicle.vehicle_model)}
-                              className="text-red-600 hover:bg-red-50 h-8 w-8 p-0"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button> */}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
+      <div className="p-4 md:p-6 space-y-6">
+        {/* Header Section */}
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => navigate('/admin/dashboard')}
+              className="rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 h-10 w-10"
+            >
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
+            <div>
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 shadow-lg shadow-blue-500/20">
+                  <Car className="h-5 w-5 text-white" />
+                </div>
+                <div>
+                  <h1 className="text-2xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 bg-clip-text text-transparent">
+                    Vehicle Management
+                  </h1>
+                  <p className="text-sm text-slate-500 dark:text-slate-400">
+                    Manage fleet vehicles, track status, and maintenance
+                  </p>
+                </div>
+              </div>
             </div>
-          )}
-        </CardContent>
-      </Card>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <Button
+              onClick={() => navigate("/admin/vehicles/add")}
+              className="bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 shadow-lg shadow-blue-500/20"
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Register Vehicle
+            </Button>
+          </div>
+        </div>
+
+        {/* Stats Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {stats.map((stat, index) => (
+            <StatsCard key={index} {...stat} />
+          ))}
+        </div>
+
+        {/* Search and Filters */}
+        <Card className="dark:bg-slate-800/80 dark:border-slate-700">
+          <CardContent className="pt-6">
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-col md:flex-row gap-3">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
+                  <Input
+                    placeholder="Search by model, plate, type, or department..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-10 h-11 bg-white dark:bg-slate-900 dark:border-slate-700 rounded-xl"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowFilters(!showFilters)}
+                    className="dark:border-slate-700 dark:text-slate-300"
+                  >
+                    <Filter className="h-4 w-4 mr-2" />
+                    Filters
+                    {hasActiveFilters && (
+                      <Badge className="ml-2 bg-blue-500 text-white text-[10px] px-1.5 py-0.5">
+                        {Object.values({ statusFilter, fuelFilter }).filter(v => v !== "all").length + (searchTerm ? 1 : 0)}
+                      </Badge>
+                    )}
+                    {showFilters ? (
+                      <ChevronUp className="h-4 w-4 ml-2" />
+                    ) : (
+                      <ChevronDown className="h-4 w-4 ml-2" />
+                    )}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => refetch()}
+                    className="dark:border-slate-700 dark:text-slate-300"
+                  >
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    Refresh
+                  </Button>
+                </div>
+              </div>
+
+              {showFilters && (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-3 border-t border-slate-200/60 dark:border-slate-700/60">
+                  <div>
+                    <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Status</label>
+                    <select
+                      value={statusFilter}
+                      onChange={(e) => setStatusFilter(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
+                    >
+                      <option value="all">All Statuses</option>
+                      <option value="active">Active</option>
+                      <option value="inactive">Inactive</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Fuel Type</label>
+                    <select
+                      value={fuelFilter}
+                      onChange={(e) => setFuelFilter(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
+                    >
+                      <option value="all">All Fuel Types</option>
+                      <option value="diesel">Diesel</option>
+                      <option value="gasoline">Gasoline</option>
+                    </select>
+                  </div>
+                  <div className="flex items-end">
+                    {hasActiveFilters && (
+                      <Button
+                        variant="ghost"
+                        onClick={clearFilters}
+                        className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30"
+                      >
+                        <XCircle className="h-4 w-4 mr-1.5" />
+                        Clear All Filters
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Table Card */}
+        <Card className="dark:bg-slate-800/80 dark:border-slate-700 shadow-xl shadow-black/5">
+          <CardHeader className="border-b border-slate-200/60 dark:border-slate-700/60">
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2 text-slate-800 dark:text-white">
+                  <Car className="h-5 w-5 text-blue-500" />
+                  Fleet Vehicles
+                </CardTitle>
+                <CardDescription className="dark:text-slate-400">
+                  {filteredVehicles.length} vehicle{filteredVehicles.length !== 1 ? 's' : ''} found
+                  {filteredVehicles.length !== vehicles.length && ` (filtered from ${vehicles.length} total)`}
+                </CardDescription>
+              </div>
+              {filteredVehicles.length > 0 && (
+                <Badge className="bg-blue-500/20 text-blue-600 dark:text-blue-400 border-blue-500/30">
+                  <Zap className="h-3 w-3 mr-1" />
+                  {filteredVehicles.length} records
+                </Badge>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent className="pt-6">
+            {filteredVehicles.length === 0 ? (
+              <div className="text-center py-16">
+                <div className="w-20 h-20 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto mb-4">
+                  <Car className="h-10 w-10 text-slate-400 dark:text-slate-500" />
+                </div>
+                <p className="text-slate-600 dark:text-slate-400 font-medium text-lg">No vehicles found</p>
+                <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">
+                  {vehicles.length === 0 
+                    ? 'Register your first vehicle to get started'
+                    : 'Try adjusting your search or filters'}
+                </p>
+                {vehicles.length === 0 && (
+                  <Button 
+                    onClick={() => navigate("/admin/vehicles/add")} 
+                    className="mt-4 bg-gradient-to-r from-blue-600 to-blue-500 shadow-lg shadow-blue-500/20"
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Register First Vehicle
+                  </Button>
+                )}
+                {vehicles.length > 0 && hasActiveFilters && (
+                  <Button
+                    variant="outline"
+                    onClick={clearFilters}
+                    className="mt-4 dark:border-slate-700 dark:text-slate-300"
+                  >
+                    Clear Filters
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-slate-50 dark:bg-slate-900/50">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
+                        Vehicle
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
+                        Plate #
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
+                        Department
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
+                        Fuel
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
+                        Status
+                      </th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
+                        Actions
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                    {filteredVehicles.map((vehicle) => {
+                      const deptName = getDepartmentName(vehicle.department_id);
+                      const deptColor = getDepartmentColor(vehicle.department_id);
+                      const fuelColor = getFuelTypeColor(vehicle.fuel_type);
+                      return (
+                        <tr 
+                          key={vehicle.vehicle_id} 
+                          className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors group"
+                        >
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-3">
+                              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
+                                <Car className="h-4 w-4 text-white" />
+                              </div>
+                              <div>
+                                <span className="font-semibold text-slate-700 dark:text-slate-300">
+                                  {vehicle.vehicle_model}
+                                </span>
+                                {vehicle.vehicle_type && (
+                                  <p className="text-xs text-slate-400 dark:text-slate-500">
+                                    {vehicle.vehicle_type}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className="font-mono text-sm font-semibold text-slate-800 dark:text-white">
+                              {vehicle.plate_number}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-1.5">
+                              <Building2 className="h-3.5 w-3.5 text-slate-400" />
+                              <Badge className={`${deptColor} text-[10px] font-medium`}>
+                                {deptName}
+                              </Badge>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <Badge className={`${fuelColor} flex items-center gap-1 text-[10px] font-medium`}>
+                              <Fuel className="h-3 w-3" />
+                              {vehicle.fuel_type || "N/A"}
+                            </Badge>
+                          </td>
+                          <td className="px-4 py-3">
+                            <button
+                              onClick={() => handleToggleStatus(vehicle.vehicle_id, vehicle.status)}
+                              className={cn(
+                                "px-3 py-1.5 rounded-lg text-xs font-medium inline-flex items-center gap-1.5 transition-all duration-200",
+                                "hover:scale-105 active:scale-95",
+                                vehicle.status === "active"
+                                  ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:hover:bg-emerald-900/50"
+                                  : "bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50"
+                              )}
+                            >
+                              {vehicle.status === "active" ? (
+                                <CheckCircle className="h-3 w-3" />
+                              ) : (
+                                <XCircle className="h-3 w-3" />
+                              )}
+                              {vehicle.status === "active" ? "Active" : "Inactive"}
+                            </button>
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => navigate(`/admin/vehicles/edit/${vehicle.vehicle_id}`)}
+                                className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:text-blue-300 dark:hover:bg-blue-950/30 h-9 w-9 p-0 rounded-lg transition-all duration-200 group-hover:scale-110"
+                                title="Edit Vehicle"
+                              >
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Footer */}
+        <div className="text-center text-xs text-slate-400 dark:text-slate-500 pt-2 border-t border-slate-200 dark:border-slate-700">
+          <p>FCMS - Vehicle Management • Laguindingan Municipality</p>
+          <p className="mt-0.5">{vehicles.length} total vehicles • {vehicles.filter(v => v.status === "active").length} active</p>
+        </div>
+      </div>
     </div>
   );
 };

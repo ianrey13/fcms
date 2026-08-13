@@ -70,9 +70,14 @@ import {
   Eye,
   EyeOff,
   BarChart3,
+  Zap,
+  Shield,
+  ArrowLeft,
+  Minus,
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, endOfYear } from 'date-fns';
+import { cn } from '@/lib/utils';
 
 // ============================================
 // CONSTANTS & HELPERS
@@ -120,13 +125,55 @@ const getStatusBadge = (status) => {
     'closed': { label: 'Completed', color: 'bg-green-500' },
     'completed': { label: 'Completed', color: 'bg-green-500' },
     'pending_reconciliation': { label: 'Pending', color: 'bg-yellow-500' },
-    'pending_mayors_office': { label: 'Pending', color: 'bg-yellow-500' },
+    'pending_mayors_office': { label: 'Pending MO', color: 'bg-yellow-500' },
     'funds_issued': { label: 'Active', color: 'bg-blue-500' },
     'in_transit': { label: 'In Transit', color: 'bg-purple-500' },
     'active': { label: 'Active', color: 'bg-blue-500' },
     'rejected': { label: 'Rejected', color: 'bg-red-500' },
+    'verified': { label: 'Verified', color: 'bg-emerald-500' },
+    'discrepancy': { label: 'Discrepancy', color: 'bg-red-500' },
   };
   return statusMap[status?.toLowerCase()] || { label: status || 'N/A', color: 'bg-slate-400' };
+};
+
+// ============================================
+// STATS CARD COMPONENT
+// ============================================
+
+const StatsCard = ({ title, value, icon: Icon, color, subtitle, trend }) => {
+  return (
+    <Card className="dark:bg-slate-800/80 dark:border-slate-700 hover:shadow-lg transition-all duration-300">
+      <CardContent className="pt-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">{title}</p>
+            <p className="text-2xl font-bold text-slate-900 dark:text-white mt-1">{value}</p>
+            {subtitle && (
+              <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">{subtitle}</p>
+            )}
+          </div>
+          <div className={`p-3 rounded-xl bg-gradient-to-br ${color} shadow-lg shadow-blue-500/20`}>
+            <Icon className="h-6 w-6 text-white" />
+          </div>
+        </div>
+        {trend !== undefined && trend !== null && (
+          <div className="flex items-center gap-1 mt-2 text-[10px]">
+            {trend > 0 ? (
+              <TrendingUp className="h-3 w-3 text-emerald-500" />
+            ) : trend < 0 ? (
+              <TrendingDown className="h-3 w-3 text-red-500" />
+            ) : (
+              <Minus className="h-3 w-3 text-slate-400" />
+            )}
+            <span className={trend > 0 ? 'text-emerald-600 dark:text-emerald-400' : trend < 0 ? 'text-red-600 dark:text-red-400' : 'text-slate-400'}>
+              {trend > 0 ? '+' : ''}{trend}%
+            </span>
+            <span className="text-slate-400">vs last period</span>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
 };
 
 // ============================================
@@ -239,7 +286,6 @@ const GsoReports = () => {
           department_id: departmentFilter !== 'all' ? departmentFilter : undefined,
         };
         const response = await reportsAPI.getTripReport(params);
-        console.log('🚗 Trip Data:', response.data);
         return response.data?.data || response.data || {};
       } catch (error) {
         console.error('Error fetching trip report:', error);
@@ -265,7 +311,6 @@ const GsoReports = () => {
           department_id: departmentFilter !== 'all' ? departmentFilter : undefined,
         };
         const response = await reportsAPI.getVehicleReport(params);
-        console.log('🚛 Vehicle Efficiency Data:', response.data);
         return response.data?.data || response.data || [];
       } catch (error) {
         console.error('Error fetching vehicle report:', error);
@@ -290,7 +335,6 @@ const GsoReports = () => {
           department_id: departmentFilter !== 'all' ? departmentFilter : undefined,
         };
         const response = await reportsAPI.getBudgetReport(params);
-        console.log('💰 Budget Data:', response.data);
         return response.data?.data || response.data || {};
       } catch (error) {
         console.error('Error fetching budget report:', error);
@@ -318,7 +362,6 @@ const GsoReports = () => {
           vehicle_id: vehicleFilter !== 'all' ? vehicleFilter : undefined,
         };
         const response = await reportsAPI.getFuelReceiptReport(params);
-        console.log('🧾 Fuel Receipt Data:', response.data);
         return response.data?.data || response.data || {};
       } catch (error) {
         console.error('Error fetching fuel receipt report:', error);
@@ -407,61 +450,38 @@ const GsoReports = () => {
     if (type === 'consumption') {
       return (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-slate-500 dark:text-slate-400">Total Trips</p>
-                  <p className="text-2xl font-bold text-slate-900 dark:text-white">{formatNumber(summary.total_trips)}</p>
-                </div>
-                <div className="p-3 bg-blue-100 dark:bg-blue-900/30 rounded-full">
-                  <Truck className="h-6 w-6 text-blue-600 dark:text-blue-400" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-slate-500 dark:text-slate-400">Total Fuel (Liters)</p>
-                  <p className="text-2xl font-bold text-slate-900 dark:text-white">{formatNumber(summary.total_fuel_liters)}</p>
-                </div>
-                <div className="p-3 bg-emerald-100 dark:bg-emerald-900/30 rounded-full">
-                  <Fuel className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-slate-500 dark:text-slate-400">Total Cost</p>
-                  <p className="text-2xl font-bold text-slate-900 dark:text-white">{formatCurrency(summary.total_fuel_cost)}</p>
-                </div>
-                <div className="p-3 bg-yellow-100 dark:bg-yellow-900/30 rounded-full">
-                  <DollarSign className="h-6 w-6 text-yellow-600 dark:text-yellow-400" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-slate-500 dark:text-slate-400">Avg. Km/L</p>
-                  <p className="text-2xl font-bold text-slate-900 dark:text-white">{summary.average_km_per_liter || 0}</p>
-                </div>
-                <div className="p-3 bg-purple-100 dark:bg-purple-900/30 rounded-full">
-                  <TrendingUp className="h-6 w-6 text-purple-600 dark:text-purple-400" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          <StatsCard
+            title="Total Trips"
+            value={formatNumber(summary.total_trips)}
+            icon={Truck}
+            color="from-blue-500 to-blue-600"
+            subtitle="Completed trips"
+            trend={summary.total_trips > 0 ? 12 : 0}
+          />
+          <StatsCard
+            title="Total Fuel"
+            value={`${formatNumber(summary.total_fuel_liters)} L`}
+            icon={Fuel}
+            color="from-emerald-500 to-emerald-600"
+            subtitle="Liters consumed"
+            trend={summary.total_fuel_liters > 0 ? 8 : 0}
+          />
+          <StatsCard
+            title="Total Cost"
+            value={formatCurrency(summary.total_fuel_cost)}
+            icon={DollarSign}
+            color="from-yellow-500 to-yellow-600"
+            subtitle="Fuel expenses"
+            trend={summary.total_fuel_cost > 0 ? 5 : 0}
+          />
+          <StatsCard
+            title="Avg. Efficiency"
+            value={`${summary.average_km_per_liter || 0} km/L`}
+            icon={TrendingUp}
+            color="from-purple-500 to-purple-600"
+            subtitle="Fuel efficiency"
+            trend={summary.average_km_per_liter > 0 ? 3 : 0}
+          />
         </div>
       );
     }
@@ -469,63 +489,38 @@ const GsoReports = () => {
     // Receipt summary
     return (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-slate-500 dark:text-slate-400">Total Receipts</p>
-                <p className="text-2xl font-bold text-slate-900 dark:text-white">{formatNumber(summary.total_receipts)}</p>
-              </div>
-              <div className="p-3 bg-blue-100 dark:bg-blue-900/30 rounded-full">
-                <Receipt className="h-6 w-6 text-blue-600 dark:text-blue-400" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-slate-500 dark:text-slate-400">Total Fuel (Liters)</p>
-                <p className="text-2xl font-bold text-slate-900 dark:text-white">{formatNumber(summary.total_liters)}</p>
-              </div>
-              <div className="p-3 bg-emerald-100 dark:bg-emerald-900/30 rounded-full">
-                <Fuel className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-slate-500 dark:text-slate-400">Total Cost</p>
-                <p className="text-2xl font-bold text-slate-900 dark:text-white">{formatCurrency(summary.total_cost)}</p>
-              </div>
-              <div className="p-3 bg-yellow-100 dark:bg-yellow-900/30 rounded-full">
-                <DollarSign className="h-6 w-6 text-yellow-600 dark:text-yellow-400" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-slate-500 dark:text-slate-400">Avg. Unit Price</p>
-                <p className="text-2xl font-bold text-slate-900 dark:text-white">
-                  {summary.total_liters > 0 ? formatCurrency(summary.total_cost / summary.total_liters) : '₱0.00'}
-                </p>
-              </div>
-              <div className="p-3 bg-purple-100 dark:bg-purple-900/30 rounded-full">
-                <TrendingUp className="h-6 w-6 text-purple-600 dark:text-purple-400" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <StatsCard
+          title="Total Receipts"
+          value={formatNumber(summary.total_receipts)}
+          icon={Receipt}
+          color="from-blue-500 to-blue-600"
+          subtitle="Uploaded receipts"
+          trend={summary.total_receipts > 0 ? 10 : 0}
+        />
+        <StatsCard
+          title="Total Fuel"
+          value={`${formatNumber(summary.total_liters)} L`}
+          icon={Fuel}
+          color="from-emerald-500 to-emerald-600"
+          subtitle="Liters purchased"
+          trend={summary.total_liters > 0 ? 7 : 0}
+        />
+        <StatsCard
+          title="Total Cost"
+          value={formatCurrency(summary.total_cost)}
+          icon={DollarSign}
+          color="from-yellow-500 to-yellow-600"
+          subtitle="Total expenses"
+          trend={summary.total_cost > 0 ? 6 : 0}
+        />
+        <StatsCard
+          title="Avg. Unit Price"
+          value={summary.total_liters > 0 ? formatCurrency(summary.total_cost / summary.total_liters) : '₱0.00'}
+          icon={TrendingUp}
+          color="from-purple-500 to-purple-600"
+          subtitle="Price per liter"
+          trend={summary.total_liters > 0 ? -2 : 0}
+        />
       </div>
     );
   };
@@ -534,92 +529,108 @@ const GsoReports = () => {
   // RENDER FUEL RECEIPT TABLE
   // ============================================
 
-const renderFuelReceiptTable = () => {
-  const receipts = receiptData?.receipts || [];
+  const renderFuelReceiptTable = () => {
+    const receipts = receiptData?.receipts || [];
 
-  if (receipts.length === 0) {
+    if (receipts.length === 0) {
+      return (
+        <Card className="dark:bg-slate-800/80 dark:border-slate-700">
+          <CardContent className="py-16 text-center">
+            <div className="w-20 h-20 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto mb-4">
+              <Receipt className="h-10 w-10 text-slate-400 dark:text-slate-500" />
+            </div>
+            <p className="text-slate-600 dark:text-slate-400 font-medium">No fuel receipt records found</p>
+            <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">
+              Try adjusting your filters or date range
+            </p>
+          </CardContent>
+        </Card>
+      );
+    }
+
     return (
       <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-        <CardContent className="py-12 text-center">
-          <Receipt className="h-12 w-12 text-slate-400 mx-auto mb-4" />
-          <p className="text-slate-500 dark:text-slate-400">No fuel receipt records found</p>
-          <p className="text-sm text-slate-400 dark:text-slate-500">
-            Try adjusting your filters or date range
-          </p>
+        <CardHeader className="border-b border-slate-200/60 dark:border-slate-700/60">
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2 text-slate-800 dark:text-white">
+                <Receipt className="h-5 w-5 text-blue-500" />
+                Fuel Receipt Details
+              </CardTitle>
+              <CardDescription className="dark:text-slate-400">
+                Showing {receipts.length} receipt{receipts.length !== 1 ? 's' : ''}
+              </CardDescription>
+            </div>
+            <Badge className="bg-blue-500/20 text-blue-600 dark:text-blue-400 border-blue-500/30">
+              <Zap className="h-3 w-3 mr-1" />
+              {receipts.length} records
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardContent className="pt-6">
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-slate-50 dark:bg-slate-900/50">
+                  <TableHead className="font-semibold text-slate-600 dark:text-slate-400">Invoice #</TableHead>
+                  <TableHead className="font-semibold text-slate-600 dark:text-slate-400">Date</TableHead>
+                  <TableHead className="font-semibold text-slate-600 dark:text-slate-400">Driver</TableHead>
+                  <TableHead className="font-semibold text-slate-600 dark:text-slate-400">Vehicle</TableHead>
+                  <TableHead className="font-semibold text-slate-600 dark:text-slate-400">Plate No.</TableHead>
+                  <TableHead className="font-semibold text-slate-600 dark:text-slate-400">Fuel</TableHead>
+                  <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400">Unit Price</TableHead>
+                  <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400">Amount</TableHead>
+                  <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400">Qty (L)</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {receipts.map((receipt, index) => {
+                  const invoiceNumber = receipt.invoice_number || receipt.charge_invoice_no || 'N/A';
+                  const unitPrice = receipt.unit_price || 0;
+                  const key = receipt.fuel_receipt_id || receipt.gas_slip_id || `receipt-${index}`;
+                  
+                  return (
+                    <TableRow key={key} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors group">
+                      <TableCell className="font-mono text-sm font-semibold text-blue-600 dark:text-blue-400">
+                        {invoiceNumber}
+                      </TableCell>
+                      <TableCell className="text-slate-600 dark:text-slate-400">
+                        {receipt.date || 'N/A'}
+                      </TableCell>
+                      <TableCell className="font-medium text-slate-700 dark:text-slate-300">
+                        {receipt.driver || 'N/A'}
+                      </TableCell>
+                      <TableCell className="text-slate-600 dark:text-slate-400">
+                        {receipt.vehicle || 'N/A'}
+                      </TableCell>
+                      <TableCell className="font-mono text-sm text-slate-700 dark:text-slate-300">
+                        {receipt.plate_no || 'N/A'}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="text-xs">
+                          {receipt.lubricant || 'N/A'}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-slate-600 dark:text-slate-400">
+                        {formatCurrency(unitPrice)}
+                      </TableCell>
+                      <TableCell className="text-right font-medium font-mono text-emerald-600 dark:text-emerald-400">
+                        {formatCurrency(receipt.amount)}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-slate-700 dark:text-slate-300">
+                        {formatNumber(receipt.quantity)}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
         </CardContent>
       </Card>
     );
-  }
+  };
 
-  return (
-    <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Receipt className="h-5 w-5 text-blue-500" />
-          Fuel Receipt Details
-        </CardTitle>
-        <CardDescription>
-          Showing {receipts.length} receipt{receipts.length !== 1 ? 's' : ''}
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="font-bold text-blue-600">Invoice #</TableHead>
-                <TableHead>Date</TableHead>
-                <TableHead>Driver</TableHead>
-                <TableHead>Vehicle</TableHead>
-                <TableHead>Plate No.</TableHead>
-                <TableHead>Fuel</TableHead>
-                <TableHead className="text-right">Unit Price</TableHead>
-                <TableHead className="text-right">Amount</TableHead>
-                <TableHead className="text-right">Qty (L)</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {receipts.map((receipt, index) => {
-                const status = getStatusBadge(receipt.status);
-                // ✅ Use invoice_number from backend
-                const invoiceNumber = receipt.invoice_number || receipt.charge_invoice_no || 'N/A';
-                const unitPrice = receipt.unit_price || 0;
-                const key = receipt.fuel_receipt_id || receipt.gas_slip_id || `receipt-${index}`;
-                
-                return (
-                  <TableRow key={key} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
-                    <TableCell className="font-mono text-sm font-bold text-blue-600 dark:text-blue-400">
-                      {invoiceNumber}
-                    </TableCell>
-                    <TableCell>{receipt.date || 'N/A'}</TableCell>
-                    <TableCell>{receipt.driver || 'N/A'}</TableCell>
-                    <TableCell>{receipt.vehicle || 'N/A'}</TableCell>
-                    <TableCell className="font-mono text-sm">{receipt.plate_no || 'N/A'}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className="text-xs">
-                        {receipt.lubricant || 'N/A'}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right font-mono">
-                      {formatCurrency(unitPrice)}
-                    </TableCell>
-                    <TableCell className="text-right font-medium font-mono">
-                      {formatCurrency(receipt.amount)}
-                    </TableCell>
-                    <TableCell className="text-right font-mono">
-                      {formatNumber(receipt.quantity)}
-                    </TableCell>
-                  
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </div>
-      </CardContent>
-    </Card>
-  );
-};
   // ============================================
   // RENDER TRIP SUMMARY TAB
   // ============================================
@@ -641,67 +652,40 @@ const renderFuelReceiptTable = () => {
     return (
       <div className="space-y-4 mt-6">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-slate-500 dark:text-slate-400">Total Trips</p>
-                  <p className="text-2xl font-bold">{formatNumber(totalTrips)}</p>
-                </div>
-                <div className="p-3 bg-blue-100 dark:bg-blue-900/30 rounded-full">
-                  <Truck className="h-8 w-8 text-blue-600 dark:text-blue-400" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-slate-500 dark:text-slate-400">Pending</p>
-                  <p className="text-2xl font-bold text-yellow-500">{formatNumber(pending)}</p>
-                </div>
-                <div className="p-3 bg-yellow-100 dark:bg-yellow-900/30 rounded-full">
-                  <Clock className="h-8 w-8 text-yellow-600 dark:text-yellow-400" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-slate-500 dark:text-slate-400">In Transit</p>
-                  <p className="text-2xl font-bold text-blue-500">{formatNumber(inTransit)}</p>
-                </div>
-                <div className="p-3 bg-blue-100 dark:bg-blue-900/30 rounded-full">
-                  <TrendingUp className="h-8 w-8 text-blue-600 dark:text-blue-400" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-slate-500 dark:text-slate-400">Completed</p>
-                  <p className="text-2xl font-bold text-green-500">{formatNumber(completed)}</p>
-                </div>
-                <div className="p-3 bg-green-100 dark:bg-green-900/30 rounded-full">
-                  <CheckCircle className="h-8 w-8 text-green-600 dark:text-green-400" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          <StatsCard
+            title="Total Trips"
+            value={formatNumber(totalTrips)}
+            icon={Truck}
+            color="from-blue-500 to-blue-600"
+            subtitle="All trips"
+          />
+          <StatsCard
+            title="Pending"
+            value={formatNumber(pending)}
+            icon={Clock}
+            color="from-yellow-500 to-yellow-600"
+            subtitle="Awaiting approval"
+          />
+          <StatsCard
+            title="In Transit"
+            value={formatNumber(inTransit)}
+            icon={TrendingUp}
+            color="from-purple-500 to-purple-600"
+            subtitle="On the road"
+          />
+          <StatsCard
+            title="Completed"
+            value={formatNumber(completed)}
+            icon={CheckCircle}
+            color="from-emerald-500 to-emerald-600"
+            subtitle="Closed trips"
+          />
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <Card className="dark:bg-slate-800/80 dark:border-slate-700">
             <CardHeader>
-              <CardTitle>Status Distribution</CardTitle>
+              <CardTitle className="text-slate-800 dark:text-white">Status Distribution</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="h-80">
@@ -726,7 +710,7 @@ const renderFuelReceiptTable = () => {
                           <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                         ))}
                       </Pie>
-                      <Tooltip />
+                      <Tooltip formatter={(value) => formatNumber(value)} />
                       <Legend />
                     </PieChart>
                   </ResponsiveContainer>
@@ -737,15 +721,15 @@ const renderFuelReceiptTable = () => {
 
           <Card className="dark:bg-slate-800/80 dark:border-slate-700">
             <CardHeader>
-              <CardTitle>Status Breakdown</CardTitle>
+              <CardTitle className="text-slate-800 dark:text-white">Status Breakdown</CardTitle>
             </CardHeader>
             <CardContent>
               <Table>
                 <TableHeader>
-                  <TableRow>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Count</TableHead>
-                    <TableHead className="text-right">Percentage</TableHead>
+                  <TableRow className="bg-slate-50 dark:bg-slate-900/50">
+                    <TableHead className="font-semibold text-slate-600 dark:text-slate-400">Status</TableHead>
+                    <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400">Count</TableHead>
+                    <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400">Percentage</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -758,9 +742,9 @@ const renderFuelReceiptTable = () => {
                       const key = item.name || `status-${index}`;
                       return (
                         <TableRow key={key}>
-                          <TableCell className="font-medium">{item.name}</TableCell>
-                          <TableCell className="text-right">{formatNumber(item.value)}</TableCell>
-                          <TableCell className="text-right">
+                          <TableCell className="font-medium text-slate-700 dark:text-slate-300">{item.name}</TableCell>
+                          <TableCell className="text-right text-slate-600 dark:text-slate-400">{formatNumber(item.value)}</TableCell>
+                          <TableCell className="text-right font-medium text-slate-700 dark:text-slate-300">
                             {totalTrips > 0 ? ((item.value / totalTrips) * 100).toFixed(1) : 0}%
                           </TableCell>
                         </TableRow>
@@ -792,74 +776,57 @@ const renderFuelReceiptTable = () => {
     return (
       <div className="space-y-4 mt-6">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-slate-500 dark:text-slate-400">Total Vehicles</p>
-                  <p className="text-2xl font-bold">{formatNumber(totalVehicles)}</p>
-                </div>
-                <div className="p-3 bg-blue-100 dark:bg-blue-900/30 rounded-full">
-                  <Truck className="h-8 w-8 text-blue-600 dark:text-blue-400" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-slate-500 dark:text-slate-400">Excellent Rating</p>
-                  <p className="text-2xl font-bold text-green-500">{formatNumber(excellent)}</p>
-                </div>
-                <div className="p-3 bg-green-100 dark:bg-green-900/30 rounded-full">
-                  <Award className="h-8 w-8 text-green-600 dark:text-green-400" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-slate-500 dark:text-slate-400">Needs Attention</p>
-                  <p className="text-2xl font-bold text-red-500">{formatNumber(needsAttention)}</p>
-                </div>
-                <div className="p-3 bg-red-100 dark:bg-red-900/30 rounded-full">
-                  <AlertCircle className="h-8 w-8 text-red-600 dark:text-red-400" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          <StatsCard
+            title="Total Vehicles"
+            value={formatNumber(totalVehicles)}
+            icon={Truck}
+            color="from-blue-500 to-blue-600"
+            subtitle="Active vehicles"
+          />
+          <StatsCard
+            title="Excellent Rating"
+            value={formatNumber(excellent)}
+            icon={Award}
+            color="from-emerald-500 to-emerald-600"
+            subtitle="≥ 10 km/L"
+          />
+          <StatsCard
+            title="Needs Attention"
+            value={formatNumber(needsAttention)}
+            icon={AlertCircle}
+            color="from-red-500 to-red-600"
+            subtitle="< 5 km/L"
+          />
         </div>
 
         <Card className="dark:bg-slate-800/80 dark:border-slate-700">
           <CardHeader>
-            <CardTitle>Vehicle Efficiency Rankings</CardTitle>
-            <CardDescription>Sorted by fuel efficiency (km/L)</CardDescription>
+            <CardTitle className="text-slate-800 dark:text-white">Vehicle Efficiency Rankings</CardTitle>
+            <CardDescription className="dark:text-slate-400">Sorted by fuel efficiency (km/L)</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto">
               {sortedVehicles.length === 0 ? (
-                <div className="text-center py-8 text-slate-500 dark:text-slate-400">
-                  <p>No vehicle data available</p>
-                  <p className="text-sm">Try adjusting your filters or date range</p>
+                <div className="text-center py-12">
+                  <div className="w-16 h-16 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto mb-4">
+                    <Truck className="h-8 w-8 text-slate-400 dark:text-slate-500" />
+                  </div>
+                  <p className="text-slate-500 dark:text-slate-400">No vehicle data available</p>
+                  <p className="text-sm text-slate-400 dark:text-slate-500">Try adjusting your filters or date range</p>
                 </div>
               ) : (
                 <Table>
                   <TableHeader>
-                    <TableRow>
-                      <TableHead>Rank</TableHead>
-                      <TableHead>Vehicle</TableHead>
-                      <TableHead>Model</TableHead>
-                      <TableHead>Fuel Type</TableHead>
-                      <TableHead className="text-right">Trips</TableHead>
-                      <TableHead className="text-right">Total Distance</TableHead>
-                      <TableHead className="text-right">Total Fuel</TableHead>
-                      <TableHead className="text-right">Km/L</TableHead>
-                      <TableHead>Efficiency</TableHead>
+                    <TableRow className="bg-slate-50 dark:bg-slate-900/50">
+                      <TableHead className="font-semibold text-slate-600 dark:text-slate-400">Rank</TableHead>
+                      <TableHead className="font-semibold text-slate-600 dark:text-slate-400">Vehicle</TableHead>
+                      <TableHead className="font-semibold text-slate-600 dark:text-slate-400">Model</TableHead>
+                      <TableHead className="font-semibold text-slate-600 dark:text-slate-400">Fuel Type</TableHead>
+                      <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400">Trips</TableHead>
+                      <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400">Distance</TableHead>
+                      <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400">Fuel</TableHead>
+                      <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400">Km/L</TableHead>
+                      <TableHead className="font-semibold text-slate-600 dark:text-slate-400">Efficiency</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -867,32 +834,34 @@ const renderFuelReceiptTable = () => {
                       const efficiency = getEfficiencyBadge(vehicle.km_per_liter);
                       const key = vehicle.vehicle_id || `vehicle-${index}`;
                       return (
-                        <TableRow key={key}>
+                        <TableRow key={key} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
                           <TableCell>
                             <Badge 
                               variant={index < 3 ? 'default' : 'secondary'} 
                               className={
                                 index === 0 ? 'bg-yellow-500' : 
                                 index === 1 ? 'bg-slate-400' : 
-                                index === 2 ? 'bg-amber-600' : ''
+                                index === 2 ? 'bg-amber-600' : 'bg-slate-200 dark:bg-slate-700'
                               }
                             >
                               #{index + 1}
                             </Badge>
                           </TableCell>
-                          <TableCell className="font-medium">{vehicle.plate_number || 'N/A'}</TableCell>
-                          <TableCell>{vehicle.model || 'N/A'}</TableCell>
+                          <TableCell className="font-medium text-slate-700 dark:text-slate-300">
+                            {vehicle.plate_number || 'N/A'}
+                          </TableCell>
+                          <TableCell className="text-slate-600 dark:text-slate-400">{vehicle.model || 'N/A'}</TableCell>
                           <TableCell>
                             <Badge variant="outline" className="text-xs">
                               {vehicle.fuel_type || 'N/A'}
                             </Badge>
                           </TableCell>
-                          <TableCell className="text-right">{vehicle.trip_count || 0}</TableCell>
-                          <TableCell className="text-right">{formatNumber(vehicle.total_distance_km)} km</TableCell>
-                          <TableCell className="text-right">{formatNumber(vehicle.total_liters)} L</TableCell>
-                          <TableCell className="text-right font-medium">{vehicle.km_per_liter || 0}</TableCell>
+                          <TableCell className="text-right text-slate-600 dark:text-slate-400">{vehicle.trip_count || 0}</TableCell>
+                          <TableCell className="text-right text-slate-600 dark:text-slate-400">{formatNumber(vehicle.total_distance_km)} km</TableCell>
+                          <TableCell className="text-right text-slate-600 dark:text-slate-400">{formatNumber(vehicle.total_liters)} L</TableCell>
+                          <TableCell className="text-right font-medium text-slate-700 dark:text-slate-300">{vehicle.km_per_liter || 0}</TableCell>
                           <TableCell>
-                            <Badge className={efficiency.color}>{efficiency.label}</Badge>
+                            <Badge className={`${efficiency.color} text-white`}>{efficiency.label}</Badge>
                           </TableCell>
                         </TableRow>
                       );
@@ -907,170 +876,120 @@ const renderFuelReceiptTable = () => {
     );
   };
 
- // src/pages/gso/GsoReports.jsx
+  // ============================================
+  // RENDER BUDGET UTILIZATION TAB
+  // ============================================
 
-// ============================================
-// RENDER BUDGET UTILIZATION TAB - FIXED
-// ============================================
+  const renderBudgetUtilization = () => {
+    const periods = budgetData?.periods || [];
+    const summary = budgetData?.summary || {};
 
-const renderBudgetUtilization = () => {
-  const periods = budgetData?.periods || [];
-  const summary = budgetData?.summary || {};
+    const totalAllocated = periods.reduce((sum, p) => sum + (parseFloat(p.allocated) || 0), 0);
+    const totalUsed = periods.reduce((sum, p) => sum + (parseFloat(p.used) || 0), 0);
+    const totalRemaining = totalAllocated - totalUsed;
 
-  console.log('💰 Budget Periods:', periods);
-  console.log('💰 Budget Summary:', summary);
-
-  // ✅ Calculate totals from grouped data (no duplicates)
-  const totalAllocated = periods.reduce((sum, p) => {
-    const val = parseFloat(p.allocated) || 0;
-    return sum + val;
-  }, 0);
-
-  const totalUsed = periods.reduce((sum, p) => {
-    const val = parseFloat(p.used) || 0;
-    return sum + val;
-  }, 0);
-
-  const totalRemaining = totalAllocated - totalUsed;
-
-  if (periods.length === 0 && !summary.total_allocated) {
-    return (
-      <div className="space-y-4 mt-6">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+    if (periods.length === 0 && !summary.total_allocated) {
+      return (
+        <div className="space-y-4 mt-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <StatsCard
+              title="Total Allocated"
+              value={formatCurrency(0)}
+              icon={DollarSign}
+              color="from-blue-500 to-blue-600"
+              subtitle="Budget allocation"
+            />
+            <StatsCard
+              title="Used"
+              value={formatCurrency(0)}
+              icon={TrendingDown}
+              color="from-yellow-500 to-yellow-600"
+              subtitle="Amount used"
+            />
+            <StatsCard
+              title="Remaining"
+              value={formatCurrency(0)}
+              icon={TrendingUp}
+              color="from-emerald-500 to-emerald-600"
+              subtitle="Budget remaining"
+            />
+          </div>
           <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-slate-500 dark:text-slate-400">Total Allocated</p>
-                  <p className="text-2xl font-bold text-blue-600">{formatCurrency(0)}</p>
-                </div>
-                <DollarSign className="h-8 w-8 text-blue-500" />
+            <CardContent className="py-16 text-center">
+              <div className="w-20 h-20 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto mb-4">
+                <DollarSign className="h-10 w-10 text-slate-400 dark:text-slate-500" />
               </div>
-            </CardContent>
-          </Card>
-          <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-slate-500 dark:text-slate-400">Used</p>
-                  <p className="text-2xl font-bold text-yellow-600">{formatCurrency(0)}</p>
-                </div>
-                <TrendingDown className="h-8 w-8 text-yellow-500" />
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-slate-500 dark:text-slate-400">Remaining</p>
-                  <p className="text-2xl font-bold text-green-600">{formatCurrency(0)}</p>
-                </div>
-                <TrendingUp className="h-8 w-8 text-green-500" />
-              </div>
+              <p className="text-slate-600 dark:text-slate-400 font-medium">No budget data available</p>
+              <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">
+                Try adjusting your filters or date range
+              </p>
             </CardContent>
           </Card>
         </div>
-        <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-          <CardContent className="py-12 text-center">
-            <DollarSign className="h-12 w-12 text-slate-400 mx-auto mb-4" />
-            <p className="text-slate-500 dark:text-slate-400">No budget data available</p>
-            <p className="text-sm text-slate-400 dark:text-slate-500">
-              Try adjusting your filters or date range
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
+      );
+    }
 
-  return (
-    <div className="space-y-4 mt-6">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+    return (
+      <div className="space-y-4 mt-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <StatsCard
+            title="Total Allocated"
+            value={formatCurrency(totalAllocated || summary.total_allocated)}
+            icon={DollarSign}
+            color="from-blue-500 to-blue-600"
+            subtitle="Budget allocation"
+          />
+          <StatsCard
+            title="Used"
+            value={formatCurrency(totalUsed || summary.total_used)}
+            icon={TrendingDown}
+            color="from-yellow-500 to-yellow-600"
+            subtitle="Amount used"
+          />
+          <StatsCard
+            title="Remaining"
+            value={formatCurrency(totalRemaining || summary.total_remaining)}
+            icon={TrendingUp}
+            color="from-emerald-500 to-emerald-600"
+            subtitle="Budget remaining"
+          />
+        </div>
+
         <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-          <CardContent className="pt-6">
+          <CardHeader 
+            className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors rounded-t-2xl"
+            onClick={() => toggleSection('departmentBreakdown')}
+          >
             <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-slate-500 dark:text-slate-400">Total Allocated</p>
-                <p className="text-2xl font-bold text-blue-600">
-                  {formatCurrency(totalAllocated || summary.total_allocated)}
-                </p>
+              <div className="flex items-center gap-2">
+                <Building2 className="h-5 w-5 text-purple-500" />
+                <CardTitle className="text-slate-800 dark:text-white">Budget Utilization by Department</CardTitle>
+                <Badge variant="secondary" className="ml-2">{periods.length} Departments</Badge>
               </div>
-              <div className="p-3 bg-blue-100 dark:bg-blue-900/30 rounded-full">
-                <DollarSign className="h-8 w-8 text-blue-600 dark:text-blue-400" />
-              </div>
+              {expandedSections.departmentBreakdown ? (
+                <ChevronUp className="h-4 w-4 text-slate-400" />
+              ) : (
+                <ChevronDown className="h-4 w-4 text-slate-400" />
+              )}
             </div>
-          </CardContent>
-        </Card>
-
-        <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-slate-500 dark:text-slate-400">Used</p>
-                <p className="text-2xl font-bold text-yellow-600">
-                  {formatCurrency(totalUsed || summary.total_used)}
-                </p>
-              </div>
-              <div className="p-3 bg-yellow-100 dark:bg-yellow-900/30 rounded-full">
-                <TrendingDown className="h-8 w-8 text-yellow-600 dark:text-yellow-400" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-slate-500 dark:text-slate-400">Remaining</p>
-                <p className="text-2xl font-bold text-green-600">
-                  {formatCurrency(totalRemaining || summary.total_remaining)}
-                </p>
-              </div>
-              <div className="p-3 bg-green-100 dark:bg-green-900/30 rounded-full">
-                <TrendingUp className="h-8 w-8 text-green-600 dark:text-green-400" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-        <CardHeader className="cursor-pointer" onClick={() => toggleSection('departmentBreakdown')}>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Building2 className="h-5 w-5 text-purple-500" />
-              <CardTitle>Budget Utilization by Department</CardTitle>
-              <Badge variant="secondary">{periods.length} Departments</Badge>
-            </div>
-            {expandedSections.departmentBreakdown ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-          </div>
-        </CardHeader>
-        {expandedSections.departmentBreakdown && (
-          <CardContent>
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-slate-50 dark:bg-slate-900/50">
-                    <TableHead className="font-semibold">Department</TableHead>
-                    <TableHead className="font-semibold">Code</TableHead>
-                    <TableHead className="text-right font-semibold">Allocated</TableHead>
-                    <TableHead className="text-right font-semibold">Used</TableHead>
-                    <TableHead className="text-right font-semibold">Remaining</TableHead>
-                    <TableHead className="text-right font-semibold">Utilization</TableHead>
-                    <TableHead className="text-center font-semibold">Status</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {periods.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan="7" className="text-center text-slate-500 py-4">
-                        No department budget data available
-                      </TableCell>
+          </CardHeader>
+          {expandedSections.departmentBreakdown && (
+            <CardContent>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-slate-50 dark:bg-slate-900/50">
+                      <TableHead className="font-semibold text-slate-600 dark:text-slate-400">Department</TableHead>
+                      <TableHead className="font-semibold text-slate-600 dark:text-slate-400">Code</TableHead>
+                      <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400">Allocated</TableHead>
+                      <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400">Used</TableHead>
+                      <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400">Remaining</TableHead>
+                      <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400">Utilization</TableHead>
+                      <TableHead className="text-center font-semibold text-slate-600 dark:text-slate-400">Status</TableHead>
                     </TableRow>
-                  ) : (
-                    periods.map((period, index) => {
+                  </TableHeader>
+                  <TableBody>
+                    {periods.map((period, index) => {
                       const key = period.period_id || `period-${index}`;
                       const allocated = parseFloat(period.allocated) || 0;
                       const used = parseFloat(period.used) || 0;
@@ -1078,7 +997,7 @@ const renderBudgetUtilization = () => {
                       const utilPercent = allocated > 0 ? ((used / allocated) * 100) : 0;
                       
                       let statusLabel = 'On Track';
-                      let statusColor = 'bg-green-500';
+                      let statusColor = 'bg-emerald-500';
                       
                       if (remaining < 0) {
                         statusLabel = 'Over Budget';
@@ -1090,7 +1009,7 @@ const renderBudgetUtilization = () => {
                       
                       return (
                         <TableRow key={key} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
-                          <TableCell className="font-medium text-slate-900 dark:text-white">
+                          <TableCell className="font-medium text-slate-700 dark:text-slate-300">
                             {period.department_name || 'Unknown'}
                           </TableCell>
                           <TableCell>
@@ -1102,15 +1021,15 @@ const renderBudgetUtilization = () => {
                           <TableCell className="text-right text-yellow-600 dark:text-yellow-400">
                             {formatCurrency(used)}
                           </TableCell>
-                          <TableCell className={`text-right font-medium ${remaining < 0 ? 'text-red-600' : 'text-green-600'}`}>
+                          <TableCell className={`text-right font-medium ${remaining < 0 ? 'text-red-600' : 'text-emerald-600'}`}>
                             {formatCurrency(remaining)}
                           </TableCell>
                           <TableCell className="text-right">
                             <div className="flex items-center justify-end gap-2">
-                              <span className="font-medium">{utilPercent.toFixed(1)}%</span>
+                              <span className="font-medium text-slate-700 dark:text-slate-300">{utilPercent.toFixed(1)}%</span>
                               <div className="w-16 bg-slate-200 dark:bg-slate-700 rounded-full h-1.5">
                                 <div 
-                                  className={`h-1.5 rounded-full ${utilPercent > 80 ? 'bg-red-500' : utilPercent > 50 ? 'bg-yellow-500' : 'bg-green-500'}`}
+                                  className={`h-1.5 rounded-full ${utilPercent > 80 ? 'bg-red-500' : utilPercent > 50 ? 'bg-yellow-500' : 'bg-emerald-500'}`}
                                   style={{ width: `${Math.min(utilPercent, 100)}%` }}
                                 />
                               </div>
@@ -1121,61 +1040,60 @@ const renderBudgetUtilization = () => {
                           </TableCell>
                         </TableRow>
                       );
-                    })
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        )}
-      </Card>
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          )}
+        </Card>
 
-      <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-        <CardHeader 
-          className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors"
-          onClick={() => setShowBudgetChart(!showBudgetChart)}
-        >
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <BarChart3 className="h-5 w-5 text-emerald-500" />
-              <CardTitle>Budget Visualization</CardTitle>
-              <Badge variant="secondary" className="ml-2">
-                {showBudgetChart ? 'Hide' : 'Show'}
-              </Badge>
+        <Card className="dark:bg-slate-800/80 dark:border-slate-700">
+          <CardHeader 
+            className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors rounded-t-2xl"
+            onClick={() => setShowBudgetChart(!showBudgetChart)}
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <BarChart3 className="h-5 w-5 text-emerald-500" />
+                <CardTitle className="text-slate-800 dark:text-white">Budget Visualization</CardTitle>
+                <Badge variant="secondary" className="ml-2">
+                  {showBudgetChart ? 'Hide' : 'Show'}
+                </Badge>
+              </div>
+              <div className="flex items-center gap-2 text-sm text-slate-500">
+                {showBudgetChart ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                {showBudgetChart ? 'Hide Chart' : 'Show Chart'}
+              </div>
             </div>
-            <div className="flex items-center gap-2 text-sm text-slate-500">
-              {showBudgetChart ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              {showBudgetChart ? 'Hide Chart' : 'Show Chart'}
-            </div>
-          </div>
-        </CardHeader>
-        {showBudgetChart && (
-          <CardContent>
-            <div className="h-80">
-              {periods.length === 0 ? (
-                <div className="flex items-center justify-center h-full">
-                  <p className="text-slate-500 dark:text-slate-400">No data to visualize</p>
-                </div>
-              ) : (
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={periods}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                    <XAxis dataKey="department_name" angle={-45} textAnchor="end" height={80} stroke="#94a3b8" />
-                    <YAxis stroke="#94a3b8" />
-                    <Tooltip formatter={(value) => formatCurrency(value)} />
-                    <Legend />
-                    <Bar dataKey="allocated" fill="#3b82f6" name="Allocated" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="used" fill="#f59e0b" name="Used" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              )}
-            </div>
-          </CardContent>
-        )}
-      </Card>
-    </div>
-  );
-};
+          </CardHeader>
+          {showBudgetChart && (
+            <CardContent>
+              <div className="h-80">
+                {periods.length === 0 ? (
+                  <div className="flex items-center justify-center h-full">
+                    <p className="text-slate-500 dark:text-slate-400">No data to visualize</p>
+                  </div>
+                ) : (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={periods}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                      <XAxis dataKey="department_name" angle={-45} textAnchor="end" height={80} stroke="#94a3b8" />
+                      <YAxis stroke="#94a3b8" />
+                      <Tooltip formatter={(value) => formatCurrency(value)} />
+                      <Legend />
+                      <Bar dataKey="allocated" fill="#3b82f6" name="Allocated" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="used" fill="#f59e0b" name="Used" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+              </div>
+            </CardContent>
+          )}
+        </Card>
+      </div>
+    );
+  };
 
   // ============================================
   // RENDER - LOADING
@@ -1187,8 +1105,11 @@ const renderBudgetUtilization = () => {
     return (
       <div className="flex justify-center items-center h-96">
         <div className="text-center">
-          <Loader2 className="h-12 w-12 animate-spin text-blue-600 mx-auto mb-4" />
-          <p className="text-slate-500 dark:text-slate-400">Loading reports...</p>
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-500/20">
+            <Loader2 className="h-8 w-8 text-white animate-spin" />
+          </div>
+          <p className="text-slate-600 dark:text-slate-400 font-medium">Loading reports...</p>
+          <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">Please wait while we fetch your data</p>
         </div>
       </div>
     );
@@ -1199,15 +1120,15 @@ const renderBudgetUtilization = () => {
   // ============================================
 
   return (
-    <div className="space-y-6 p-4 md:p-6 print:p-4">
+    <div className="space-y-6 p-4 md:p-6 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 min-h-screen print:p-4">
       {/* ========== HEADER ========== */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 print:hidden">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+          <h1 className="text-2xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 bg-clip-text text-transparent flex items-center gap-2">
             <FileText className="h-6 w-6 text-blue-600" />
-            {activeTab === 'fuel-receipt' ? 'Fuel Receipt Report' : 'Fuel Consumption Monitoring Report'}
+            {activeTab === 'fuel-receipt' ? 'Fuel Receipt Report' : 'Fuel Consumption Report'}
           </h1>
-          <p className="text-slate-600 dark:text-slate-400">
+          <p className="text-slate-500 dark:text-slate-400 text-sm">
             {periodType.charAt(0).toUpperCase() + periodType.slice(1)} report from {dateRange.startDate} to {dateRange.endDate}
           </p>
         </div>
@@ -1216,7 +1137,7 @@ const renderBudgetUtilization = () => {
             variant="outline"
             onClick={handleRefresh}
             disabled={receiptFetching || budgetFetching}
-            className="flex items-center gap-2"
+            className="flex items-center gap-2 dark:border-slate-700 dark:text-slate-300"
           >
             <RefreshCw className={`h-4 w-4 ${receiptFetching || budgetFetching ? 'animate-spin' : ''}`} />
             Refresh
@@ -1224,7 +1145,7 @@ const renderBudgetUtilization = () => {
           <Button
             onClick={handlePrint}
             variant="outline"
-            className="flex items-center gap-2"
+            className="flex items-center gap-2 dark:border-slate-700 dark:text-slate-300"
           >
             <Printer className="h-4 w-4" />
             Print
@@ -1240,7 +1161,7 @@ const renderBudgetUtilization = () => {
           <Button
             onClick={() => handleExport('excel')}
             disabled={exportLoading}
-            className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white"
+            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white"
           >
             <FileSpreadsheet className="h-4 w-4" />
             Excel
@@ -1305,7 +1226,7 @@ const renderBudgetUtilization = () => {
               </Select>
             </div>
 
-            {/* Vehicle Filter - Filtered by Department */}
+            {/* Vehicle Filter */}
             <div>
               <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Vehicle</label>
               <Select value={vehicleFilter} onValueChange={setVehicleFilter}>
@@ -1335,7 +1256,7 @@ const renderBudgetUtilization = () => {
                 setCustomEndDate(range.endDate);
                 setPeriodType('weekly');
               }}
-              className="text-xs"
+              className="text-xs dark:border-slate-700 dark:text-slate-300"
             >
               This Week
             </Button>
@@ -1348,7 +1269,7 @@ const renderBudgetUtilization = () => {
                 setCustomEndDate(range.endDate);
                 setPeriodType('monthly');
               }}
-              className="text-xs"
+              className="text-xs dark:border-slate-700 dark:text-slate-300"
             >
               This Month
             </Button>
@@ -1361,7 +1282,7 @@ const renderBudgetUtilization = () => {
                 setCustomEndDate(range.endDate);
                 setPeriodType('yearly');
               }}
-              className="text-xs"
+              className="text-xs dark:border-slate-700 dark:text-slate-300"
             >
               This Year
             </Button>
@@ -1372,7 +1293,7 @@ const renderBudgetUtilization = () => {
                 setCustomStartDate('');
                 setCustomEndDate('');
               }}
-              className="text-xs"
+              className="text-xs dark:border-slate-700 dark:text-slate-300"
             >
               Clear Dates
             </Button>
@@ -1383,19 +1304,19 @@ const renderBudgetUtilization = () => {
       {/* ========== TABS ========== */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="grid w-full grid-cols-4 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl print:hidden">
-          <TabsTrigger value="fuel-receipt" className="rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900">
+          <TabsTrigger value="fuel-receipt" className="rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900 data-[state=active]:shadow-sm transition-all duration-200">
             <Receipt className="h-4 w-4 mr-2" />
             Receipts
           </TabsTrigger>
-          <TabsTrigger value="trip-summary" className="rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900">
+          <TabsTrigger value="trip-summary" className="rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900 data-[state=active]:shadow-sm transition-all duration-200">
             <Truck className="h-4 w-4 mr-2" />
             Trip Summary
           </TabsTrigger>
-          <TabsTrigger value="vehicle-efficiency" className="rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900">
+          <TabsTrigger value="vehicle-efficiency" className="rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900 data-[state=active]:shadow-sm transition-all duration-200">
             <TrendingUp className="h-4 w-4 mr-2" />
             Vehicle Efficiency
           </TabsTrigger>
-          <TabsTrigger value="budget-utilization" className="rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900">
+          <TabsTrigger value="budget-utilization" className="rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900 data-[state=active]:shadow-sm transition-all duration-200">
             <DollarSign className="h-4 w-4 mr-2" />
             Budget
           </TabsTrigger>

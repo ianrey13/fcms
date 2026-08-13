@@ -41,6 +41,12 @@ import {
   ChevronDown,
   ChevronUp,
   EyeOff,
+  ArrowUpRight,
+  ArrowDownRight,
+  Minus,
+  Route,
+  Gauge,
+  Target,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -120,7 +126,6 @@ const formatDateShort = (dateString) => {
   } catch { return 'N/A'; }
 };
 
-// FIXED: formatTime function that shows "Just now", "5 minutes ago", etc.
 const formatTime = (dateString) => {
   if (!dateString) return 'Just now';
   
@@ -132,34 +137,14 @@ const formatTime = (dateString) => {
   const diffDays = Math.floor(diffMs / 86400000);
 
   if (diffMins < 1) return 'Just now';
-  if (diffMins < 60) return `${diffMins} minute${diffMins > 1 ? 's' : ''} ago`;
+  if (diffMins < 60) return `${diffMins}m ago`;
   if (diffHours < 24) {
     const remainingMins = diffMins % 60;
-    if (remainingMins === 0) {
-      return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
-    }
+    if (remainingMins === 0) return `${diffHours}h ago`;
     return `${diffHours}h ${remainingMins}m ago`;
   }
-  if (diffDays < 7) return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
-  return date.toLocaleDateString('en-PH', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric'
-  });
-};
-
-//  Keep formatDateTime for other uses if needed
-const formatDateTime = (dateString) => {
-  if (!dateString) return 'N/A';
-  try {
-    return new Date(dateString).toLocaleString('en-US', { 
-      month: 'short', 
-      day: 'numeric', 
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  } catch { return 'N/A'; }
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return date.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
 };
 
 const getTicketId = (ticket) => ticket?.trip_ticket_id || ticket?.id || ticket?.ticket_id;
@@ -202,9 +187,8 @@ const getAuditActionIcon = (action) => {
 };
 
 // ============================================
-//  GSO REAL-TIME NOTIFICATIONS
+// REAL-TIME NOTIFICATIONS SETUP
 // ============================================
-
 
 const setupGsoRealtimeNotifications = (user, fetchAllDataRef, setForceUpdate) => {
   if (!user) return;
@@ -223,14 +207,9 @@ const setupGsoRealtimeNotifications = (user, fetchAllDataRef, setForceUpdate) =>
     try {
       const channel = echo.private(`notifications.${user.user_id}`);
       
-      // SINGLE listener for private notifications
       channel.listen('.notification.new', (data) => {
         console.log('🔔 GSO Private notification received:', data);
-        
-        //  Emit to event bus for NotificationBell
         eventBus.emit('notification-received', data);
-
-        //  Handle notification by type (refresh only, NO TOAST)
         handleNotificationByType(data);
       });
 
@@ -251,7 +230,6 @@ const setupGsoRealtimeNotifications = (user, fetchAllDataRef, setForceUpdate) =>
     const type = data.notification_type;
     const refreshDelay = 500;
     
-    //  REFRESH DATA ONLY
     switch (type) {
       case 'fund_released':
       case 'fund_issued':
@@ -261,31 +239,15 @@ const setupGsoRealtimeNotifications = (user, fetchAllDataRef, setForceUpdate) =>
           setForceUpdate(prev => prev + 1);
         }, refreshDelay);
         break;
-
       case 'trip_started':
-        console.log('🚗 Trip started - refreshing data');
-        setTimeout(() => {
-          fetchAllDataRef.current?.();
-          setForceUpdate(prev => prev + 1);
-        }, refreshDelay);
-        break;
-
       case 'trip_completed':
-        console.log('🏁 Trip completed - refreshing data');
-        setTimeout(() => {
-          fetchAllDataRef.current?.();
-          setForceUpdate(prev => prev + 1);
-        }, refreshDelay);
-        break;
-
       case 'trip_created':
-        console.log('📋 New trip created - refreshing data');
+        console.log('🚗 Trip update detected - refreshing data');
         setTimeout(() => {
           fetchAllDataRef.current?.();
           setForceUpdate(prev => prev + 1);
         }, refreshDelay);
         break;
-
       default:
         setTimeout(() => {
           fetchAllDataRef.current?.();
@@ -310,8 +272,9 @@ const setupGsoRealtimeNotifications = (user, fetchAllDataRef, setForceUpdate) =>
     }
   }
 };
+
 // ============================================
-//  LIVE TRACKING MAP COMPONENT
+// LIVE TRACKING MAP COMPONENT
 // ============================================
 
 const LiveTrackingMap = ({ activeTrips, loading }) => {
@@ -458,7 +421,7 @@ const LiveTrackingMap = ({ activeTrips, loading }) => {
 };
 
 // ============================================
-//  AUDIT LOG TABLE COMPONENT 
+// AUDIT LOG TABLE COMPONENT
 // ============================================
 
 const AuditLogTable = ({ logs, loading }) => {
@@ -550,7 +513,6 @@ const AuditLogTable = ({ logs, loading }) => {
                   <TableCell>
                     <div className="flex items-center gap-1.5">
                       <ClockIcon className="h-3 w-3 text-slate-400" />
-                      {/* ✅ FIXED: Using formatTime instead of formatDateTime */}
                       <span className="text-xs text-slate-600 dark:text-slate-400">
                         {formatTime(log.created_at)}
                       </span>
@@ -572,6 +534,195 @@ const AuditLogTable = ({ logs, loading }) => {
 };
 
 // ============================================
+// STATS CARD COMPONENT
+// ============================================
+
+const StatsCard = ({ title, value, icon: Icon, gradient, subtitle, onClick, trend }) => {
+  const getTrendIcon = () => {
+    if (!trend) return null;
+    if (trend > 0) return <ArrowUpRight className="h-3 w-3 text-emerald-500" />;
+    if (trend < 0) return <ArrowDownRight className="h-3 w-3 text-red-500" />;
+    return <Minus className="h-3 w-3 text-slate-400" />;
+  };
+
+  return (
+    <div
+      className="cursor-pointer transform transition-all duration-300 hover:scale-105 hover:shadow-xl"
+      onClick={onClick}
+    >
+      <Card className="relative overflow-hidden group dark:bg-slate-800/80 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 transition-all duration-300">
+        <div className={`absolute top-0 right-0 w-32 h-32 bg-gradient-to-br ${gradient} opacity-10 rounded-full -translate-y-1/2 translate-x-1/2 group-hover:scale-150 transition-transform duration-500`} />
+        <CardContent className="p-5">
+          <div className="flex items-start justify-between mb-3">
+            <div className={`p-2.5 rounded-xl bg-gradient-to-br ${gradient} shadow-lg shadow-blue-500/20`}>
+              <Icon className="h-5 w-5 text-white" />
+            </div>
+            {trend !== undefined && (
+              <div className="flex items-center gap-1 text-xs font-medium">
+                {getTrendIcon()}
+                <span className={trend > 0 ? 'text-emerald-600 dark:text-emerald-400' : trend < 0 ? 'text-red-600 dark:text-red-400' : 'text-slate-400'}>
+                  {trend > 0 ? '+' : ''}{trend}%
+                </span>
+              </div>
+            )}
+          </div>
+          <div>
+            <p className="text-2xl font-bold text-slate-900 dark:text-white">{value}</p>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">{title}</p>
+            <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">{subtitle}</p>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+};
+
+// ============================================
+// TICKET TABLE COMPONENT
+// ============================================
+
+const TicketTable = ({ 
+  tickets, 
+  showReconcile = false, 
+  onView, 
+  onReconcile, 
+  isLoading: tableLoading,
+  showActions = true,
+  maxHeight = "400px",
+}) => {
+  if (tableLoading) {
+    return (
+      <div className="flex justify-center py-16">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-blue-600 dark:text-blue-400 mx-auto mb-3" />
+          <p className="text-slate-500 dark:text-slate-400 text-sm">Loading tickets...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!Array.isArray(tickets) || tickets.length === 0) {
+    return (
+      <div className="text-center py-16">
+        <div className="w-16 h-16 bg-slate-100 dark:bg-slate-800 rounded-2xl flex items-center justify-center mx-auto mb-4">
+          <CheckCircle className="h-8 w-8 text-slate-400 dark:text-slate-500" />
+        </div>
+        <p className="text-slate-600 dark:text-slate-400 font-medium">No tickets found</p>
+        <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">Tickets will appear here once available</p>
+      </div>
+    );
+  }
+
+  return (
+    <div 
+      className="overflow-x-auto overflow-y-auto border rounded-lg dark:border-slate-700"
+      style={{ maxHeight: maxHeight }}
+    >
+      <Table>
+        <TableHeader className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-900/50 shadow-sm">
+          <TableRow className="border-b dark:border-slate-700">
+            <TableHead className="font-semibold text-slate-600 dark:text-slate-400 whitespace-nowrap">Ticket #</TableHead>
+            <TableHead className="font-semibold text-slate-600 dark:text-slate-400 whitespace-nowrap">Date</TableHead>
+            <TableHead className="font-semibold text-slate-600 dark:text-slate-400 whitespace-nowrap">Destination</TableHead>
+            <TableHead className="font-semibold text-slate-600 dark:text-slate-400 whitespace-nowrap">Department</TableHead>
+            <TableHead className="font-semibold text-slate-600 dark:text-slate-400 whitespace-nowrap">Status</TableHead>
+            {showActions && (
+              <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-right whitespace-nowrap">Actions</TableHead>
+            )}
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {tickets.map((ticket, index) => {
+            const ticketId = getTicketId(ticket);
+            return (
+              <TableRow 
+                key={ticketId || index} 
+                className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors"
+              >
+                <TableCell className="font-medium">
+                  <span className="font-mono text-sm font-semibold text-slate-800 dark:text-white">
+                    {getTicketNumber(ticket)}
+                  </span>
+                </TableCell>
+                <TableCell>
+                  <div className="flex items-center gap-1.5">
+                    <Calendar className="h-3.5 w-3.5 text-slate-400" />
+                    <span className="text-sm text-slate-600 dark:text-slate-400">
+                      {formatDateShort(ticket?.trip_date)}
+                    </span>
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <div className="flex items-center gap-1.5">
+                    <MapPin className="h-3.5 w-3.5 text-slate-400" />
+                    <span className="text-sm text-slate-600 dark:text-slate-400 truncate max-w-[200px]">
+                      {ticket?.destination || 'N/A'}
+                    </span>
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <div className="flex items-center gap-1.5">
+                    <Building2 className="h-3.5 w-3.5 text-slate-400" />
+                    <span className="text-sm text-slate-600 dark:text-slate-400">
+                      {ticket?.department_name || ticket?.department?.department_name || 'N/A'}
+                    </span>
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <StatusBadge status={ticket?.status} />
+                </TableCell>
+                {showActions && (
+                  <TableCell className="text-right">
+                    <div className="flex items-center justify-end gap-2">
+                      {onView && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => onView(ticketId)}
+                          className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:text-blue-300 dark:hover:bg-blue-950/30 h-8 w-8 p-0"
+                          title="View Details"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                      )}
+                      {showReconcile && ticket?.status === 'pending_reconciliation' && (
+                        <Button
+                          size="sm"
+                          className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm h-8 px-3"
+                          onClick={() => onReconcile?.(ticket)}
+                        >
+                          <Check className="h-3.5 w-3.5 mr-1" />
+                          Reconcile
+                        </Button>
+                      )}
+                    </div>
+                  </TableCell>
+                )}
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
+    </div>
+  );
+};
+
+// ============================================
+// STATUS BADGE COMPONENT
+// ============================================
+
+const StatusBadge = ({ status }) => {
+  const config = getStatusConfig(status);
+  const Icon = config.icon;
+  return (
+    <Badge className={`${config.color} text-white flex items-center gap-1 px-2.5 py-1.5 rounded-lg`}>
+      <Icon className="h-3 w-3" />
+      {config.label}
+    </Badge>
+  );
+};
+
+// ============================================
 // MAIN COMPONENT
 // ============================================
 
@@ -586,14 +737,13 @@ const GsoDashboard = () => {
   const [showLiveTracking, setShowLiveTracking] = useState(true);
   const [showAuditLog, setShowAuditLog] = useState(false);
   const [forceUpdate, setForceUpdate] = useState(0);
-  const [newNotificationCount, setNewNotificationCount] = useState(0);
 
   const fetchAllDataRef = useRef(null);
 
   const departmentName = user?.department_name?.replace('Philippine National Police - ', '').replace('PNP - ', '') || 'General Services Office';
 
   // ============================================
-  // ✅ AUDIT LOG QUERY - Auto-refresh every 10 seconds
+  // QUERIES
   // ============================================
 
   const { 
@@ -615,10 +765,6 @@ const GsoDashboard = () => {
     enabled: showAuditLog,
   });
 
-  // ============================================
-  // ✅ GPS LIVE TRACKING QUERY
-  // ============================================
-
   const { 
     data: activeTrips = [], 
     isLoading: gpsLoading,
@@ -638,10 +784,6 @@ const GsoDashboard = () => {
     refetchInterval: 10000,
     staleTime: 5000,
   });
-
-  // ============================================
-  // TRIP QUERIES
-  // ============================================
 
   const { data: pendingTickets = [], isLoading: pendingLoading, refetch: refetchPending } = useQuery({
     queryKey: ['gso-pending-mo'],
@@ -699,7 +841,6 @@ const GsoDashboard = () => {
     },
   });
 
-  // Admin Stats Queries
   const { data: users = [], isLoading: usersLoading } = useQuery({
     queryKey: ['admin-users-stats'],
     queryFn: async () => {
@@ -760,7 +901,6 @@ const GsoDashboard = () => {
     const activeUsers = Array.isArray(users) ? users.filter(u => u?.status === 'active').length : 0;
     const totalVehicles = Array.isArray(vehicles) ? vehicles.length : 0;
     const activeVehicles = Array.isArray(vehicles) ? vehicles.filter(v => v?.status === 'active').length : 0;
-    const totalDepartments = Array.isArray(departments) ? departments.length : 0;
 
     return [
       {
@@ -768,8 +908,9 @@ const GsoDashboard = () => {
         value: allTrips.length,
         icon: Truck,
         gradient: 'from-blue-500 to-blue-600',
-        subtitle: 'All time',
+        subtitle: `${allTrips.filter(t => t?.status === 'closed').length} completed`,
         onClick: () => setActiveTab('all'),
+        trend: allTrips.length > 0 ? 12 : 0,
       },
       {
         title: 'Pending MO',
@@ -778,6 +919,7 @@ const GsoDashboard = () => {
         gradient: 'from-yellow-500 to-yellow-600',
         subtitle: 'Awaiting fund release',
         onClick: () => setActiveTab('pending'),
+        trend: pendingTickets.length > 0 ? -8 : 0,
       },
       {
         title: 'Active GPS',
@@ -786,25 +928,28 @@ const GsoDashboard = () => {
         gradient: 'from-green-500 to-emerald-600',
         subtitle: 'Live tracking',
         onClick: () => setShowLiveTracking(!showLiveTracking),
+        trend: activeTrips.length > 0 ? 5 : 0,
       },
       {
-        title: 'Users',
+        title: 'Active Users',
         value: activeUsers,
         icon: Users,
         gradient: 'from-purple-500 to-purple-600',
         subtitle: `${totalUsers} total users`,
         onClick: () => navigate('/admin/users'),
+        trend: totalUsers > 0 ? Math.round((activeUsers / totalUsers) * 100) : 0,
       },
       {
-        title: 'Vehicles',
+        title: 'Active Vehicles',
         value: activeVehicles,
         icon: Car,
         gradient: 'from-emerald-500 to-emerald-600',
         subtitle: `${totalVehicles} total vehicles`,
         onClick: () => navigate('/admin/vehicles'),
+        trend: totalVehicles > 0 ? Math.round((activeVehicles / totalVehicles) * 100) : 0,
       },
     ];
-  }, [allTrips, pendingTickets, users, vehicles, departments, activeTrips.length, navigate]);
+  }, [allTrips, pendingTickets, users, vehicles, activeTrips.length, navigate]);
 
   // ============================================
   // FILTER FUNCTIONS
@@ -864,195 +1009,31 @@ const GsoDashboard = () => {
   }, [allTrips]);
 
   // ============================================
-  // ✅ SETUP REAL-TIME NOTIFICATIONS
+  // SETUP REAL-TIME NOTIFICATIONS
   // ============================================
 
-useEffect(() => {
-  fetchAllDataRef.current = fetchAllData;
-  
- 
-  if (user) {
-    setupGsoRealtimeNotifications(user, fetchAllDataRef, setForceUpdate);
-  }
+  useEffect(() => {
+    fetchAllDataRef.current = fetchAllData;
+    
+    if (user) {
+      setupGsoRealtimeNotifications(user, fetchAllDataRef, setForceUpdate);
+    }
 
-  // ✅ Cleanup on unmount - leave channels
-  return () => {
-    try {
-      if (user) {
-        echo.leave(`notifications.${user.user_id}`);
-        echo.leave('gso.dashboard');
+    return () => {
+      try {
+        if (user) {
+          echo.leave(`notifications.${user.user_id}`);
+          echo.leave('gso.dashboard');
+        }
+      } catch (e) {
+        // Ignore cleanup errors
       }
-    } catch (e) {
-      
-    }
-  };
-}, [user]); // ✅
+    };
+  }, [user]);
 
   // ============================================
-  // COMPONENTS
+  // FETCH ALL DATA
   // ============================================
-
-  const StatusBadge = ({ status }) => {
-    const config = getStatusConfig(status);
-    const Icon = config.icon;
-    return (
-      <Badge className={`${config.color} text-white flex items-center gap-1 px-2.5 py-1.5 rounded-lg`}>
-        <Icon className="h-3 w-3" />
-        {config.label}
-      </Badge>
-    );
-  };
-
-const TicketTable = ({ 
-  tickets, 
-  showReconcile = false, 
-  onView, 
-  onReconcile, 
-  isLoading: tableLoading,
-  showActions = true,
-  maxHeight = "400px",
-}) => {
-  if (tableLoading) {
-    return (
-      <div className="flex justify-center py-16">
-        <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin text-blue-600 dark:text-blue-400 mx-auto mb-3" />
-          <p className="text-slate-500 dark:text-slate-400 text-sm">Loading tickets...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!Array.isArray(tickets) || tickets.length === 0) {
-    return (
-      <div className="text-center py-16">
-        <div className="w-16 h-16 bg-slate-100 dark:bg-slate-800 rounded-2xl flex items-center justify-center mx-auto mb-4">
-          <CheckCircle className="h-8 w-8 text-slate-400 dark:text-slate-500" />
-        </div>
-        <p className="text-slate-600 dark:text-slate-400 font-medium">No tickets found</p>
-        <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">Tickets will appear here once available</p>
-      </div>
-    );
-  }
-
-  // ✅ Helper to get department name from various sources
-  const getDepartmentName = (ticket) => {
-    // Try different possible locations for department name
-    if (ticket?.department_name) return ticket.department_name;
-    if (ticket?.department?.department_name) return ticket.department.department_name;
-    if (ticket?.department?.name) return ticket.department.name;
-    if (ticket?.dept_name) return ticket.dept_name;
-    if (ticket?.charged_to_department) return ticket.charged_to_department;
-    if (ticket?.charge_to_department) return ticket.charge_to_department;
-    if (ticket?.charge_to) {
-      // If charge_to is a department code, try to find the name
-      const dept = departments?.find(d => d.department_code === ticket.charge_to);
-      if (dept) return dept.department_name;
-    }
-    
-    // If department_id is available, try to match with departments list
-    const deptId = ticket?.department_id || ticket?.department?.department_id;
-    if (deptId && departmentMap) {
-      return departmentMap[deptId] || 'N/A';
-    }
-    
-    return 'N/A';
-  };
-
-  return (
-    <div 
-      className="overflow-x-auto overflow-y-auto border rounded-lg dark:border-slate-700"
-      style={{ maxHeight: maxHeight }}
-    >
-      <Table>
-        <TableHeader className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-900/50 shadow-sm">
-          <TableRow className="border-b dark:border-slate-700">
-            <TableHead className="font-semibold text-slate-600 dark:text-slate-400 whitespace-nowrap">Ticket #</TableHead>
-            <TableHead className="font-semibold text-slate-600 dark:text-slate-400 whitespace-nowrap">Date</TableHead>
-            <TableHead className="font-semibold text-slate-600 dark:text-slate-400 whitespace-nowrap">Destination</TableHead>
-            <TableHead className="font-semibold text-slate-600 dark:text-slate-400 whitespace-nowrap">Department</TableHead>
-            <TableHead className="font-semibold text-slate-600 dark:text-slate-400 whitespace-nowrap">Status</TableHead>
-            {showActions && (
-              <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-right whitespace-nowrap">Actions</TableHead>
-            )}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {tickets.map((ticket, index) => {
-            const ticketId = getTicketId(ticket);
-            const deptName = getDepartmentName(ticket);
-            return (
-              <TableRow 
-                key={ticketId || index} 
-                className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors"
-              >
-                <TableCell className="font-medium">
-                  <span className="font-mono text-sm font-semibold text-slate-800 dark:text-white">
-                    {getTicketNumber(ticket)}
-                  </span>
-                </TableCell>
-                <TableCell>
-                  <div className="flex items-center gap-1.5">
-                    <Calendar className="h-3.5 w-3.5 text-slate-400" />
-                    <span className="text-sm text-slate-600 dark:text-slate-400">
-                      {formatDateShort(ticket?.trip_date)}
-                    </span>
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <div className="flex items-center gap-1.5">
-                    <MapPin className="h-3.5 w-3.5 text-slate-400" />
-                    <span className="text-sm text-slate-600 dark:text-slate-400 truncate max-w-[200px]">
-                      {ticket?.destination || 'N/A'}
-                    </span>
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <div className="flex items-center gap-1.5">
-                    <Building2 className="h-3.5 w-3.5 text-slate-400" />
-                    <span className="text-sm text-slate-600 dark:text-slate-400">
-                      {deptName}
-                    </span>
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <StatusBadge status={ticket?.status} />
-                </TableCell>
-                {showActions && (
-                  <TableCell className="text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      {onView && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => onView(ticketId)}
-                          className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:text-blue-300 dark:hover:bg-blue-950/30 h-8 w-8 p-0"
-                          title="View Details"
-                        >
-                          <Eye className="h-4 w-4" />
-                        </Button>
-                      )}
-                      {showReconcile && ticket?.status === 'pending_reconciliation' && (
-                        <Button
-                          size="sm"
-                          className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm h-8 px-3"
-                          onClick={() => onReconcile?.(ticket)}
-                        >
-                          <Check className="h-3.5 w-3.5 mr-1" />
-                          Reconcile
-                        </Button>
-                      )}
-                    </div>
-                  </TableCell>
-                )}
-              </TableRow>
-            );
-          })}
-        </TableBody>
-      </Table>
-    </div>
-  );
-};
 
   const fetchAllData = () => {
     refetchPending();
@@ -1089,37 +1070,39 @@ const TicketTable = ({
   // ============================================
 
   return (
-    <div className="space-y-6 p-6 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 min-h-screen">
-      {/* Header Section */}
-      <div className="relative overflow-hidden bg-gradient-to-r from-slate-900 via-slate-800 to-blue-900 rounded-2xl p-6 text-white shadow-xl">
+    <div className="space-y-6 p-4 md:p-6 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 min-h-screen">
+      {/* Hero Header Section */}
+      <div className="relative overflow-hidden bg-gradient-to-r from-slate-900 via-slate-800 to-blue-900 rounded-2xl p-6 md:p-8 text-white shadow-xl">
         <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/20 rounded-full blur-3xl" />
         <div className="absolute bottom-0 left-0 w-64 h-64 bg-emerald-500/20 rounded-full blur-3xl" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl" />
 
         <div className="relative z-10 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 mb-3 flex-wrap">
-              <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/30 rounded-full px-3 py-1">
+              <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/30 rounded-full px-3 py-1 backdrop-blur-sm">
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 mr-1.5 animate-pulse" />
                 GSO Office
               </Badge>
-              <Badge className="bg-blue-500/20 text-blue-300 border-blue-500/30 rounded-full px-3 py-1">
+              <Badge className="bg-blue-500/20 text-blue-300 border-blue-500/30 rounded-full px-3 py-1 backdrop-blur-sm">
                 {departmentName}
               </Badge>
-              <Badge className="bg-purple-500/20 text-purple-300 border-purple-500/30 rounded-full px-3 py-1">
+              <Badge className="bg-purple-500/20 text-purple-300 border-purple-500/30 rounded-full px-3 py-1 backdrop-blur-sm">
+                <Shield className="h-3 w-3 mr-1" />
                 Super Admin
               </Badge>
             </div>
-            <h1 className="text-3xl font-bold bg-gradient-to-r from-white to-slate-300 bg-clip-text text-transparent">
+            <h1 className="text-2xl md:text-3xl font-bold bg-gradient-to-r from-white to-slate-300 bg-clip-text text-transparent">
               GSO Dashboard
             </h1>
-            <p className="text-slate-300 mt-1">
-              Manage trip tickets, users, departments, and vehicles
+            <p className="text-slate-300 mt-1 text-sm md:text-base">
+              Manage trip tickets, users, departments, and vehicles in one place
             </p>
           </div>
           <div className="flex gap-3 flex-wrap">
             <Button
               onClick={() => navigate('/gso/create-trip')}
-              className="bg-white text-slate-900 hover:bg-slate-100 rounded-xl shadow-lg"
+              className="bg-white text-slate-900 hover:bg-slate-100 rounded-xl shadow-lg shadow-blue-500/20 transition-all duration-300 hover:scale-105 active:scale-95"
             >
               <PlusCircle className="h-4 w-4 mr-2" />
               Create Trip
@@ -1130,7 +1113,7 @@ const TicketTable = ({
                 fetchAllData();
                 toast.success('Dashboard refreshed');
               }}
-              className="bg-white/10 border-white/20 text-white hover:bg-white/20 rounded-xl"
+              className="bg-white/10 border-white/20 text-white hover:bg-white/20 rounded-xl backdrop-blur-sm transition-all duration-300"
             >
               <RefreshCw className="h-4 w-4 mr-2" />
               Refresh
@@ -1140,33 +1123,68 @@ const TicketTable = ({
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 md:gap-5">
         {stats.map((stat, index) => (
-          <div
-            key={index}
-            className="cursor-pointer transform transition-all duration-300 hover:scale-105 hover:shadow-xl"
-            onClick={stat.onClick}
-          >
-            <Card className="relative overflow-hidden group dark:bg-slate-800/80 dark:border-slate-700">
-              <div className={`absolute top-0 right-0 w-32 h-32 bg-gradient-to-br ${stat.gradient} opacity-10 rounded-full -translate-y-1/2 translate-x-1/2 group-hover:scale-150 transition-transform duration-500`} />
-              <CardContent className="p-5">
-                <div className="flex items-start justify-between mb-3">
-                  <div className={`p-2 rounded-xl bg-gradient-to-br ${stat.gradient} shadow-lg`}>
-                    <stat.icon className="h-5 w-5 text-white" />
-                  </div>
-                </div>
-                <div>
-                  <p className="text-3xl font-bold text-slate-900 dark:text-white">{stat.value}</p>
-                  <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">{stat.title}</p>
-                  <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">{stat.subtitle}</p>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
+          <StatsCard key={index} {...stat} />
         ))}
       </div>
 
-      {/* ✅ LIVE TRACKING SECTION */}
+      {/* Chart Section */}
+      <Card className="dark:bg-slate-800/80 dark:border-slate-700">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2 text-slate-800 dark:text-white">
+                <TrendingUp className="h-5 w-5 text-blue-500" />
+                Trip Trends
+              </CardTitle>
+              <CardDescription className="dark:text-slate-400">
+                Monthly trip volume for the last 6 months
+              </CardDescription>
+            </div>
+            <Badge className="bg-blue-500/20 text-blue-600 dark:text-blue-400 border-blue-500/30">
+              <Activity className="h-3 w-3 mr-1" />
+              {allTrips.length} total trips
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="h-[300px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={chartData}>
+                <defs>
+                  <linearGradient id="colorTrips" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" className="stroke-slate-200 dark:stroke-slate-700" />
+                <XAxis dataKey="month" className="text-slate-600 dark:text-slate-400 text-xs" />
+                <YAxis className="text-slate-600 dark:text-slate-400 text-xs" />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: 'hsl(var(--card))',
+                    borderColor: 'hsl(var(--border))',
+                    borderRadius: '12px',
+                    boxShadow: '0 10px 40px -10px rgba(0,0,0,0.15)',
+                  }}
+                  labelClassName="text-slate-600 dark:text-slate-400"
+                />
+                <Area
+                  type="monotone"
+                  dataKey="trips"
+                  stroke="#3b82f6"
+                  strokeWidth={3}
+                  fill="url(#colorTrips)"
+                  className="transition-all duration-300"
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Live Tracking Section */}
       <Card className="dark:bg-slate-800/80 dark:border-slate-700">
         <CardHeader>
           <div className="flex items-center justify-between">
@@ -1174,10 +1192,17 @@ const TicketTable = ({
               <CardTitle className="flex items-center gap-2 text-slate-800 dark:text-white">
                 <Satellite className="h-5 w-5 text-green-500" />
                 Live GPS Tracking
+                {gpsFetching && (
+                  <Loader2 className="h-4 w-4 animate-spin text-blue-500 ml-2" />
+                )}
               </CardTitle>
               <CardDescription className="dark:text-slate-400">
-                Real-time location of active trips 
-                {gpsFetching && <span className="ml-2 text-blue-500">(Updating...)</span>}
+                Real-time location of active trips
+                {activeTrips.length > 0 && (
+                  <span className="ml-2 text-emerald-500 font-medium">
+                    {activeTrips.length} active
+                  </span>
+                )}
               </CardDescription>
             </div>
             <div className="flex gap-2">
@@ -1188,8 +1213,8 @@ const TicketTable = ({
                 disabled={gpsFetching}
                 className="dark:border-slate-700"
               >
-                {/* <RefreshCw className={`h-4 w-4 mr-1 ${gpsFetching ? 'animate-spin' : ''}`} />
-                Refresh */}
+                <RefreshCw className={`h-4 w-4 mr-1 ${gpsFetching ? 'animate-spin' : ''}`} />
+                Refresh
               </Button>
               <Button
                 variant="outline"
@@ -1211,153 +1236,157 @@ const TicketTable = ({
 
       {/* Search Bar */}
       <div className="relative">
-        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
+        <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
         <Input
-          placeholder="Search by ticket number, destination, or department..."
+          placeholder="Search by ticket number, destination, department, or vehicle plate..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="pl-9 bg-white dark:bg-slate-800 dark:border-slate-700 rounded-xl"
+          className="pl-10 bg-white dark:bg-slate-800 dark:border-slate-700 rounded-xl h-12 text-sm shadow-sm"
         />
       </div>
 
-     {/* Tabs for Trip Management */}
-<Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-  <TabsList className="grid w-full max-w-2xl grid-cols-4 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
-    <TabsTrigger value="pending" className="rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900 data-[state=active]:shadow-sm">
-      <Clock className="h-4 w-4 mr-2" />
-      Pending MO ({pendingTickets.length})
-    </TabsTrigger>
-    <TabsTrigger value="reconciliation" className="rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900 data-[state=active]:shadow-sm">
-      <FileCheck className="h-4 w-4 mr-2" />
-      Reconcile ({reconciliationTickets.length})
-    </TabsTrigger>
-    {/* <TabsTrigger value="returned" className="rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900 data-[state=active]:shadow-sm">
-      <AlertCircle className="h-4 w-4 mr-2" />
-      Returned ({returnedTickets.length})
-    </TabsTrigger> */}
-    <TabsTrigger value="all" className="rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900 data-[state=active]:shadow-sm">
-      <Truck className="h-4 w-4 mr-2" />
-      All Trips ({allTrips.length})
-    </TabsTrigger>
-  </TabsList>
+      {/* Tabs for Trip Management */}
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <TabsList className="grid w-full max-w-3xl grid-cols-4 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
+          <TabsTrigger value="pending" className="rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900 data-[state=active]:shadow-sm transition-all duration-200">
+            <Clock className="h-4 w-4 mr-2" />
+            Pending MO
+            <Badge className="ml-2 bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 border-yellow-500/30 text-[10px]">
+              {pendingTickets.length}
+            </Badge>
+          </TabsTrigger>
+          <TabsTrigger value="reconciliation" className="rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900 data-[state=active]:shadow-sm transition-all duration-200">
+            <FileCheck className="h-4 w-4 mr-2" />
+            Reconcile
+            <Badge className="ml-2 bg-orange-500/20 text-orange-600 dark:text-orange-400 border-orange-500/30 text-[10px]">
+              {reconciliationTickets.length}
+            </Badge>
+          </TabsTrigger>
+          <TabsTrigger value="all" className="rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900 data-[state=active]:shadow-sm transition-all duration-200">
+            <Truck className="h-4 w-4 mr-2" />
+            All Trips
+            <Badge className="ml-2 bg-blue-500/20 text-blue-600 dark:text-blue-400 border-blue-500/30 text-[10px]">
+              {allTrips.length}
+            </Badge>
+          </TabsTrigger>
+        </TabsList>
 
-  {/* Pending MO Tab */}
-  <TabsContent value="pending" className="space-y-4 mt-6">
-    <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-slate-800 dark:text-white">
-          <Clock className="h-5 w-5 text-yellow-500" />
-          Trip Tickets Awaiting Fund Release
-        </CardTitle>
-        <CardDescription className="dark:text-slate-400">
-          These trips are pending approval from Mayor's Office
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <TicketTable
-          tickets={filteredPending}
-          onView={(id) => navigate(`/gso/tickets/${id}`)}
-          isLoading={pendingLoading}
-          showActions={true}
-          maxHeight="450px"
-        />
-      </CardContent>
-    </Card>
-  </TabsContent>
+        {/* Pending MO Tab */}
+        <TabsContent value="pending" className="space-y-4 mt-6">
+          <Card className="dark:bg-slate-800/80 dark:border-slate-700">
+            <CardHeader className="border-b dark:border-slate-700">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2 text-slate-800 dark:text-white">
+                    <Clock className="h-5 w-5 text-yellow-500" />
+                    Trip Tickets Awaiting Fund Release
+                  </CardTitle>
+                  <CardDescription className="dark:text-slate-400 mt-1">
+                    These trips are pending approval from Mayor's Office
+                  </CardDescription>
+                </div>
+                <Badge className="bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 border-yellow-500/30">
+                  {filteredPending.length} tickets
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-6">
+              <TicketTable
+                tickets={filteredPending}
+                onView={(id) => navigate(`/gso/tickets/${id}`)}
+                isLoading={pendingLoading}
+                showActions={true}
+                maxHeight="450px"
+              />
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-  {/* Reconciliation Tab */}
-  <TabsContent value="reconciliation" className="space-y-4 mt-6">
-    <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-slate-800 dark:text-white">
-          <FileCheck className="h-5 w-5 text-orange-500" />
-          Pending Reconciliation
-        </CardTitle>
-        <CardDescription className="dark:text-slate-400">
-          These trips are completed and need to be closed
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <TicketTable
-          tickets={filteredReconciliation}
-          showReconcile={true}
-          onView={(id) => navigate(`/gso/trip/${id}`)}
-          onReconcile={(ticket) => {
-            setSelectedTicket(ticket);
-            setShowReconcileDialog(true);
-          }}
-          isLoading={reconciliationLoading}
-          showActions={true}
-          maxHeight="450px"
-        />
-      </CardContent>
-    </Card>
-  </TabsContent>
+        {/* Reconciliation Tab */}
+        <TabsContent value="reconciliation" className="space-y-4 mt-6">
+          <Card className="dark:bg-slate-800/80 dark:border-slate-700">
+            <CardHeader className="border-b dark:border-slate-700">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2 text-slate-800 dark:text-white">
+                    <FileCheck className="h-5 w-5 text-orange-500" />
+                    Pending Reconciliation
+                  </CardTitle>
+                  <CardDescription className="dark:text-slate-400 mt-1">
+                    These trips are completed and need to be closed
+                  </CardDescription>
+                </div>
+                <Badge className="bg-orange-500/20 text-orange-600 dark:text-orange-400 border-orange-500/30">
+                  {filteredReconciliation.length} tickets
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-6">
+              <TicketTable
+                tickets={filteredReconciliation}
+                showReconcile={true}
+                onView={(id) => navigate(`/gso/trip/${id}`)}
+                onReconcile={(ticket) => {
+                  setSelectedTicket(ticket);
+                  setShowReconcileDialog(true);
+                }}
+                isLoading={reconciliationLoading}
+                showActions={true}
+                maxHeight="450px"
+              />
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-  {/* Returned Tab
-  <TabsContent value="returned" className="space-y-4 mt-6">
-    <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-slate-800 dark:text-white">
-          <AlertCircle className="h-5 w-5 text-purple-500" />
-          Returned for Revision
-        </CardTitle>
-        <CardDescription className="dark:text-slate-400">
-          These trips were rejected and need revision
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <TicketTable
-          tickets={filteredReturned}
-          onView={(id) => navigate(`/gso/trip/${id}`)}
-          isLoading={returnedLoading}
-          showActions={true}
-          maxHeight="450px"
-        />
-      </CardContent>
-    </Card>
-  </TabsContent> */}
+        {/* All Trips Tab */}
+        <TabsContent value="all" className="space-y-4 mt-6">
+          <Card className="dark:bg-slate-800/80 dark:border-slate-700">
+            <CardHeader className="border-b dark:border-slate-700">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2 text-slate-800 dark:text-white">
+                    <Truck className="h-5 w-5 text-blue-500" />
+                    All Trip Tickets
+                  </CardTitle>
+                  <CardDescription className="dark:text-slate-400 mt-1">
+                    Complete history of all trips
+                  </CardDescription>
+                </div>
+                <Badge className="bg-blue-500/20 text-blue-600 dark:text-blue-400 border-blue-500/30">
+                  {filteredAllTrips.length} tickets
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-6">
+              <TicketTable
+                tickets={filteredAllTrips}
+                onView={(id) => {
+                  if (id) {
+                    navigate(`/gso/trip/${id}`);
+                  } else {
+                    toast.error('Invalid ticket ID');
+                  }
+                }}
+                isLoading={allTripsLoading}
+                showActions={true}
+                maxHeight="450px"
+              />
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
 
-  {/* All Trips Tab */}
-  <TabsContent value="all" className="space-y-4 mt-6">
-    <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-slate-800 dark:text-white">
-          <Truck className="h-5 w-5 text-blue-500" />
-          All Trip Tickets
-        </CardTitle>
-        <CardDescription className="dark:text-slate-400">
-          Complete history of all trips
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <TicketTable
-          tickets={filteredAllTrips}
-          onView={(id) => {
-            if (id) {
-              navigate(`/gso/trip/${id}`);
-            } else {
-              toast.error('Invalid ticket ID');
-            }
-          }}
-          isLoading={allTripsLoading}
-          showActions={true}
-          maxHeight="450px"
-        />
-      </CardContent>
-    </Card>
-  </TabsContent>
-</Tabs>
-
-      {/* ✅ AUDIT LOG SECTION - Toggle with Chevron */}
+      {/* Audit Log Section */}
       <Card className="dark:bg-slate-800/80 dark:border-slate-700">
         <CardHeader 
-          className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors"
+          className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors rounded-t-2xl"
           onClick={() => setShowAuditLog(!showAuditLog)}
         >
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <History className="h-5 w-5 text-indigo-500" />
+              <div className="p-2 rounded-xl bg-indigo-500/10">
+                <History className="h-5 w-5 text-indigo-500" />
+              </div>
               <div>
                 <CardTitle className="text-slate-800 dark:text-white">
                   Audit Log
@@ -1371,7 +1400,7 @@ const TicketTable = ({
                   {showAuditLog ? 'System activities and user actions' : 'Click to expand'}
                 </CardDescription>
               </div>
-              <Badge className="bg-indigo-500/20 text-indigo-400 border-indigo-500/30 ml-2">
+              <Badge className="bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 border-indigo-500/30 ml-2">
                 <Database className="h-3 w-3 mr-1" />
                 {auditLogs?.length || 0} entries
               </Badge>
@@ -1389,7 +1418,7 @@ const TicketTable = ({
           </div>
         </CardHeader>
         {showAuditLog && (
-          <CardContent>
+          <CardContent className="pt-6">
             <AuditLogTable 
               logs={auditLogs} 
               loading={auditLoading} 
@@ -1403,7 +1432,9 @@ const TicketTable = ({
         <DialogContent className="sm:max-w-md dark:bg-slate-800 dark:border-slate-700">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-slate-800 dark:text-white">
-              <FileCheck className="h-5 w-5 text-emerald-600" />
+              <div className="p-2 rounded-xl bg-emerald-500/10">
+                <FileCheck className="h-5 w-5 text-emerald-600" />
+              </div>
               Reconcile Trip
             </DialogTitle>
             <DialogDescription className="dark:text-slate-400">
@@ -1413,29 +1444,29 @@ const TicketTable = ({
           <div className="bg-blue-50 dark:bg-blue-950/30 rounded-xl p-4 space-y-2 border border-blue-200 dark:border-blue-800">
             <p className="text-sm font-medium text-blue-800 dark:text-blue-400">Trip Details</p>
             <div className="space-y-1 text-sm">
-              <p>
-                <span className="text-slate-600 dark:text-slate-400">Number:</span> 
-                <span className="font-mono font-semibold dark:text-white ml-2">
+              <div className="flex justify-between">
+                <span className="text-slate-600 dark:text-slate-400">Number:</span>
+                <span className="font-mono font-semibold dark:text-white">
                   {getTicketNumber(selectedTicket)}
                 </span>
-              </p>
-              <p>
-                <span className="text-slate-600 dark:text-slate-400">Destination:</span> 
-                <span className="dark:text-white ml-2">{selectedTicket?.destination || 'N/A'}</span>
-              </p>
-              <p>
-                <span className="text-slate-600 dark:text-slate-400">Department:</span> 
-                <span className="dark:text-white ml-2">{selectedTicket?.department_name || 'N/A'}</span>
-              </p>
-              <p>
-                <span className="text-slate-600 dark:text-slate-400">Amount Released:</span> 
-                <span className="font-semibold dark:text-white ml-2">
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-600 dark:text-slate-400">Destination:</span>
+                <span className="dark:text-white">{selectedTicket?.destination || 'N/A'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-600 dark:text-slate-400">Department:</span>
+                <span className="dark:text-white">{selectedTicket?.department_name || 'N/A'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-600 dark:text-slate-400">Amount Released:</span>
+                <span className="font-semibold dark:text-white">
                   ₱{selectedTicket?.amount_released || selectedTicket?.gas_slip?.amount_released || 0}
                 </span>
-              </p>
+              </div>
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="gap-2">
             <Button 
               variant="outline" 
               onClick={() => {
@@ -1447,7 +1478,7 @@ const TicketTable = ({
               Cancel
             </Button>
             <Button
-              className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-500/20"
               onClick={() => {
                 const ticketId = getTicketId(selectedTicket);
                 if (!ticketId) {

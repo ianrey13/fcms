@@ -1177,99 +1177,123 @@ public function getReceiptsForVerification(Request $request)
         }
     }
 
-    public function getAllDepartmentsWithBudget(Request $request)
-    {
-        try {
-            $user = $request->user();
 
-            if (!$user->isMayorsOffice()) {
-                return response()->json(['message' => 'Unauthorized'], 403);
-            }
+public function getAllDepartmentsWithBudget(Request $request)
+{
+    try {
+        $user = $request->user();
 
-            $year = Carbon::now()->year;
-
-            $departments = Department::select('department_id', 'department_name', 'department_code')
-                ->orderBy('department_name')
-                ->get();
-
-            $departmentsWithBudget = $departments->map(function ($department) use ($year) {
-                // ✅ Get annual budget
-                $budget = AnnualBudget::where('department_id', $department->department_id)
-                    ->where('fiscal_year', $year)
-                    ->first();
-
-                // ✅ Get current week usage
-                $currentWeek = WeeklyBudgetUsage::where('department_id', $department->department_id)
-                    ->where('week_number', date('W'))
-                    ->where('year', $year)
-                    ->first();
-
-                // ✅ Get policy (fallback)
-                $policy = DB::table('dept_budget_policy')
-                    ->where('department_id', $department->department_id)
-                    ->first();
-
-                if ($budget) {
-                    // ✅ Weekly allocation from current week or policy
-                    $weeklyAllocation = 0;
-                    $weeklyUsed = 0;
-
-                    if ($currentWeek) {
-                        $weeklyAllocation = (float) $currentWeek->weekly_allocation;
-                        $weeklyUsed = (float) $currentWeek->amount_used;
-                    } elseif ($policy) {
-                        $weeklyAllocation = (float) $policy->default_weekly_allocation;
-                    }
-
-                    return [
-                        'department_id' => $department->department_id,
-                        'department_name' => $department->department_name,
-                        'department_code' => $department->department_code,
-                        // ✅ ANNUAL BUDGET (Primary)
-                        'annual_amount' => (float) $budget->annual_amount,
-                        'used_amount' => (float) $budget->used_amount,
-                        'remaining_amount' => (float) $budget->remaining_amount,
-                        // ✅ WEEKLY ALLOCATION
-                        'weekly_allocation' => $weeklyAllocation,
-                        'weekly_used' => $weeklyUsed,
-                        // ✅ Other fields
-                        'has_budget' => true,
-                        'budget_type' => 'annual',
-                        'fiscal_year' => $budget->fiscal_year,
-                        'utilization_percentage' => $budget->utilization_percentage,
-                        'status' => $budget->status,
-                    ];
-                } else {
-                    return [
-                        'department_id' => $department->department_id,
-                        'department_name' => $department->department_name,
-                        'department_code' => $department->department_code,
-                        'annual_amount' => 0,
-                        'used_amount' => 0,
-                        'remaining_amount' => 0,
-                        'weekly_allocation' => 0,
-                        'weekly_used' => 0,
-                        'has_budget' => false,
-                        'budget_type' => 'annual',
-                        'fiscal_year' => $year,
-                        'utilization_percentage' => 0,
-                        'status' => 'inactive',
-                    ];
-                }
-            });
-
-            return response()->json([
-                'success' => true,
-                'data' => $departmentsWithBudget
-            ]);
-        } catch (\Exception $e) {
-            Log::error('Get all departments with budget error: ' . $e->getMessage());
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to fetch departments: ' . $e->getMessage()
-            ], 500);
+        if (!$user->isMayorsOffice()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
         }
+
+        $year = Carbon::now()->year;
+
+        // ✅ Get ALL departments (active and inactive)
+        $departments = Department::select('department_id', 'department_name', 'department_code')
+            ->orderBy('department_name')
+            ->get();
+
+        $departmentsWithBudget = $departments->map(function ($department) use ($year) {
+            // ✅ Get annual budget
+            $budget = AnnualBudget::where('department_id', $department->department_id)
+                ->where('fiscal_year', $year)
+                ->first();
+
+            // ✅ Get current week usage
+            $currentWeek = WeeklyBudgetUsage::where('department_id', $department->department_id)
+                ->where('week_number', date('W'))
+                ->where('year', $year)
+                ->first();
+
+            // ✅ Get policy (fallback)
+            $policy = DB::table('dept_budget_policy')
+                ->where('department_id', $department->department_id)
+                ->first();
+
+            if ($budget) {
+                // ✅ Weekly allocation from current week or policy
+                $weeklyAllocation = 0;
+                $weeklyUsed = 0;
+
+                if ($currentWeek) {
+                    $weeklyAllocation = (float) $currentWeek->weekly_allocation;
+                    $weeklyUsed = (float) $currentWeek->amount_used;
+                } elseif ($policy) {
+                    $weeklyAllocation = (float) $policy->default_weekly_allocation;
+                }
+
+                return [
+                    'department_id' => $department->department_id,
+                    'department_name' => $department->department_name,
+                    'department_code' => $department->department_code,
+                    // ✅ ANNUAL BUDGET (Primary)
+                    'annual_amount' => (float) $budget->annual_amount,
+                    'allocated_amount' => (float) $budget->annual_amount,  // ✅ Alias for frontend
+                    'used_amount' => (float) $budget->used_amount,
+                    'spent_amount' => (float) $budget->used_amount,       // ✅ Alias for frontend
+                    'remaining_amount' => (float) $budget->remaining_amount,
+                    // ✅ WEEKLY ALLOCATION
+                    'weekly_allocation' => $weeklyAllocation,
+                    'weekly_used' => $weeklyUsed,
+                    // ✅ Other fields
+                    'has_budget' => true,
+                    'budget_type' => 'annual',
+                    'fiscal_year' => $budget->fiscal_year,
+                    'utilization_percentage' => $budget->utilization_percentage,
+                    'utilization' => $budget->utilization_percentage,     // ✅ Alias for frontend
+                    'status' => $budget->status,
+                    'allocated' => (float) $budget->annual_amount,        // ✅ Alias for frontend
+                    'spent' => (float) $budget->used_amount,              // ✅ Alias for frontend
+                ];
+            } else {
+                return [
+                    'department_id' => $department->department_id,
+                    'department_name' => $department->department_name,
+                    'department_code' => $department->department_code,
+                    'annual_amount' => 0,
+                    'allocated_amount' => 0,   // ✅ Alias
+                    'used_amount' => 0,
+                    'spent_amount' => 0,       // ✅ Alias
+                    'remaining_amount' => 0,
+                    'weekly_allocation' => 0,
+                    'weekly_used' => 0,
+                    'has_budget' => false,
+                    'budget_type' => 'annual',
+                    'fiscal_year' => $year,
+                    'utilization_percentage' => 0,
+                    'utilization' => 0,        // ✅ Alias
+                    'status' => 'inactive',
+                    'allocated' => 0,          // ✅ Alias
+                    'spent' => 0,              // ✅ Alias
+                ];
+            }
+        });
+
+        // ✅ Calculate summary
+        $totalAllocated = $departmentsWithBudget->sum('allocated_amount');
+        $totalUsed = $departmentsWithBudget->sum('used_amount');
+
+        return response()->json([
+            'success' => true,
+            'data' => $departmentsWithBudget,
+            'summary' => [
+                'total_allocated' => $totalAllocated,
+                'total_used' => $totalUsed,
+                'total_remaining' => $totalAllocated - $totalUsed,
+                'total_departments' => $departmentsWithBudget->count(),
+                'departments_with_budget' => $departmentsWithBudget->filter(fn($d) => $d['has_budget'])->count(),
+            ]
+        ]);
+        
+    } catch (\Exception $e) {
+        Log::error('Get all departments with budget error: ' . $e->getMessage());
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to fetch departments: ' . $e->getMessage()
+        ], 500);
     }
+}
 
     public function getAllDepartmentsForSelector(Request $request)
     {

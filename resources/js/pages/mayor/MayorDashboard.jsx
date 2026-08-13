@@ -34,11 +34,211 @@ import {
   Bell,
   TrendingDown,
   Fuel,
+  AlertTriangle,
+  Users,
+  FileCheck,
+  Receipt,
+  Gauge,
+  Navigation,
+  Sun,
+  Moon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { cn } from "@/lib/utils";
+
+// ============================================
+// STAT CARD COMPONENT
+// ============================================
+
+const StatCard = ({ title, value, icon: Icon, color, subtitle, trend, trendValue }) => (
+  <Card className="overflow-hidden border-0 shadow-sm hover:shadow-md transition-all duration-300 dark:bg-slate-800/80">
+    <CardContent className="p-6">
+      <div className="flex items-start justify-between">
+        <div>
+          <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
+            {title}
+          </p>
+          <p className="mt-2 text-3xl font-bold text-slate-900 dark:text-white">
+            {value}
+          </p>
+          {subtitle && (
+            <p className="mt-1 text-xs text-slate-400">{subtitle}</p>
+          )}
+          {trend && (
+            <div className="mt-2 flex items-center gap-1">
+              {trendValue > 0 ? (
+                <TrendingUp className="h-3 w-3 text-emerald-500" />
+              ) : trendValue < 0 ? (
+                <TrendingDown className="h-3 w-3 text-red-500" />
+              ) : (
+                <Activity className="h-3 w-3 text-slate-400" />
+              )}
+              <span className={cn(
+                "text-xs",
+                trendValue > 0 ? "text-emerald-600 dark:text-emerald-400" :
+                trendValue < 0 ? "text-red-600 dark:text-red-400" :
+                "text-slate-400"
+              )}>
+                {trendValue > 0 ? '+' : ''}{trendValue}%
+              </span>
+              <span className="text-xs text-slate-400">vs last period</span>
+            </div>
+          )}
+        </div>
+        <div className={`rounded-xl ${color} p-3 shadow-lg`}>
+          <Icon className="h-6 w-6 text-white" />
+        </div>
+      </div>
+    </CardContent>
+  </Card>
+);
+
+// ============================================
+// QUICK LINK CARD COMPONENT
+// ============================================
+
+const QuickLinkCard = ({ title, description, icon: Icon, href, color, count, onClick }) => (
+  <button
+    onClick={onClick || (() => window.location.href = href)}
+    className="group relative overflow-hidden rounded-xl bg-white dark:bg-slate-800 p-4 text-left transition-all duration-300 hover:shadow-lg hover:-translate-y-1 border border-slate-100 dark:border-slate-700"
+  >
+    <div
+      className={`absolute right-0 top-0 h-20 w-20 -translate-y-8 translate-x-8 rounded-full bg-gradient-to-br ${color} opacity-10 transition-transform duration-300 group-hover:scale-150`}
+    />
+    <div className="relative flex items-start justify-between">
+      <div className="flex-1">
+        <div
+          className={`inline-flex rounded-lg ${color.replace("from-", "bg-").replace("to-", "bg-")}/10 p-2.5`}
+        >
+          <Icon
+            className={`h-5 w-5 ${color.replace("from-", "text-").split(" ")[0]}`}
+          />
+        </div>
+        <h3 className="mt-3 font-semibold text-slate-900 dark:text-white">
+          {title}
+        </h3>
+        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+          {description}
+        </p>
+        {count !== undefined && (
+          <div className="mt-2 flex items-center gap-1 text-xs font-medium text-blue-600 dark:text-blue-400">
+            <span>{count} items</span>
+            <ChevronRight className="h-3 w-3" />
+          </div>
+        )}
+      </div>
+      <ChevronRight className="mt-1 h-4 w-4 text-slate-400 transition-transform duration-300 group-hover:translate-x-1" />
+    </div>
+  </button>
+);
+
+// ============================================
+// BUDGET PROGRESS BAR COMPONENT
+// ============================================
+
+const BudgetProgressBar = ({ department }) => {
+  const utilization = parseFloat(department.utilization);
+  const isCritical = utilization >= 80;
+  const isWarning = utilization >= 60 && utilization < 80;
+  const isGood = utilization < 60 && department.has_budget;
+
+  const getStatusColor = () => {
+    if (isCritical) return "text-red-600 dark:text-red-400";
+    if (isWarning) return "text-amber-600 dark:text-amber-400";
+    return "text-emerald-600 dark:text-emerald-400";
+  };
+
+  const getProgressColor = () => {
+    if (isCritical) return "bg-gradient-to-r from-red-500 to-red-600";
+    if (isWarning) return "bg-gradient-to-r from-amber-500 to-amber-600";
+    return "bg-gradient-to-r from-emerald-500 to-emerald-600";
+  };
+
+  const getStatusIcon = () => {
+    if (isCritical) return <AlertCircle className="h-4 w-4 text-red-500" />;
+    if (isWarning) return <Activity className="h-4 w-4 text-amber-500" />;
+    return <CheckCircle className="h-4 w-4 text-emerald-500" />;
+  };
+
+  const getStatusMessage = () => {
+    if (isCritical) return "⚠️ Approaching or exceeding annual budget limit";
+    if (isWarning) return "📊 Moderate budget utilization";
+    if (isGood) return "✅ Good budget utilization";
+    return null;
+  };
+
+  return (
+    <div className="group">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <Building2 className="h-4 w-4 text-slate-400" />
+          <span className="font-medium text-slate-800 dark:text-slate-200">
+            {department.department_name}
+          </span>
+          {getStatusIcon()}
+          <Badge variant="outline" className="text-xs text-slate-400 border-slate-300 dark:border-slate-600">
+            {department.fiscal_year || 'Annual'}
+          </Badge>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-slate-500 dark:text-slate-400">
+            ₱{department.spent.toLocaleString()} / ₱{department.allocated.toLocaleString()}
+          </span>
+          <span className={`text-sm font-semibold ${getStatusColor()}`}>
+            {department.utilization}%
+          </span>
+        </div>
+      </div>
+      <div className="relative">
+        <Progress
+          value={Math.min(utilization, 100)}
+          className="h-2.5 rounded-full bg-slate-100 dark:bg-slate-700"
+        />
+        <div
+          className={`absolute top-0 left-0 h-2.5 rounded-full transition-all duration-500 ${getProgressColor()}`}
+          style={{
+            width: `${Math.min(utilization, 100)}%`,
+          }}
+        />
+      </div>
+      {department.has_budget && getStatusMessage() && (
+        <p className={`mt-1.5 text-xs flex items-center gap-1 ${
+          isCritical ? 'text-amber-600 dark:text-amber-400' :
+          isWarning ? 'text-blue-600 dark:text-blue-400' :
+          'text-emerald-600 dark:text-emerald-400'
+        }`}>
+          {getStatusMessage()}
+        </p>
+      )}
+    </div>
+  );
+};
+
+// ============================================
+// LOADING SKELETON
+// ============================================
+
+const LoadingSkeleton = () => (
+  <div className="space-y-6 p-6 bg-slate-50 dark:bg-slate-900 min-h-screen">
+    <div className="h-32 rounded-2xl bg-gradient-to-r from-slate-800 to-slate-900 animate-pulse" />
+    <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
+      {[1, 2, 3, 4].map((i) => (
+        <div
+          key={i}
+          className="h-32 bg-slate-200 dark:bg-slate-700 rounded-xl animate-pulse"
+        />
+      ))}
+    </div>
+    <div className="h-96 bg-slate-200 dark:bg-slate-700 rounded-xl animate-pulse" />
+  </div>
+);
+
+// ============================================
+// MAIN COMPONENT
+// ============================================
 
 const MayorDashboard = () => {
   const { user } = useAuth();
@@ -59,7 +259,6 @@ const MayorDashboard = () => {
     totalAmount: 0,
     avgUtilization: 0,
     criticalDepartments: 0,
-    // ✅ NEW: Annual budget stats
     totalAnnualBudget: 0,
     totalAnnualUsed: 0,
     totalAnnualRemaining: 0,
@@ -71,7 +270,10 @@ const MayorDashboard = () => {
   const fetchPendingTicketsRef = useRef();
   const fetchDepartmentBudgetsRef = useRef();
 
-  // ✅ FETCH FUNCTIONS - Wrapped with useCallback
+  // ============================================
+  // FETCH FUNCTIONS
+  // ============================================
+
   const fetchPendingTickets = useCallback(async () => {
     try {
       const response = await mayorsOfficeAPI.getPendingTickets();
@@ -82,7 +284,6 @@ const MayorDashboard = () => {
           ...prev,
           pendingCount: ticketsData.length || 0,
         }));
-        console.log("✅ Pending tickets updated:", ticketsData.length);
       }
     } catch (error) {
       console.error("Failed to fetch pending tickets:", error);
@@ -96,7 +297,6 @@ const MayorDashboard = () => {
       const ticketsData = response.data?.data || response.data || [];
       if (isMounted) {
         setApprovedTickets(Array.isArray(ticketsData) ? ticketsData : []);
-
         const total = ticketsData.reduce((sum, t) => {
           let amount = 0;
           if (t.amount_released) amount = parseFloat(t.amount_released);
@@ -110,11 +310,7 @@ const MayorDashboard = () => {
           releasedCount: ticketsData.length || 0,
           totalAmount: total,
         }));
-
-        setRecentReleases(
-          Array.isArray(ticketsData) ? ticketsData.slice(0, 5) : [],
-        );
-        console.log("✅ Approved tickets updated:", ticketsData.length);
+        setRecentReleases(Array.isArray(ticketsData) ? ticketsData.slice(0, 5) : []);
       }
     } catch (error) {
       console.error("Failed to fetch approved tickets:", error);
@@ -125,69 +321,68 @@ const MayorDashboard = () => {
     }
   }, [isMounted]);
 
-  const fetchDepartmentBudgets = useCallback(async () => {
-    try {
-      const response = await mayorsOfficeAPI.getAllDepartmentsWithBudget();
-      const budgetData = response.data?.data || response.data || [];
+
+// ✅ Update the fetchDepartmentBudgets function
+const fetchDepartmentBudgets = useCallback(async () => {
+  try {
+    const response = await mayorsOfficeAPI.getAllDepartmentsWithBudget();
+    const budgetData = response.data?.data || response.data || [];
+    
+    console.log('📊 Budget Data:', budgetData); // ✅ Debug log
+    
+    if (isMounted) {
+      const formatted = budgetData.map((dept) => ({
+        department_id: dept.department_id,
+        department_name: dept.department_name,
+        // ✅ Use both field names for compatibility
+        allocated: parseFloat(dept.allocated_amount || dept.annual_amount || dept.allocated || 0),
+        spent: parseFloat(dept.spent_amount || dept.used_amount || dept.spent || 0),
+        remaining: parseFloat(dept.remaining_amount || 0),
+        has_budget: dept.has_budget || false,
+        utilization: dept.utilization_percentage || dept.utilization || 0,
+        fiscal_year: dept.fiscal_year || new Date().getFullYear(),
+        budget_type: dept.budget_type || 'annual',
+        // ✅ Additional fields for display
+        allocated_amount: parseFloat(dept.allocated_amount || dept.annual_amount || 0),
+        used_amount: parseFloat(dept.used_amount || 0),
+        annual_amount: parseFloat(dept.annual_amount || 0),
+      }));
+
+      // ✅ Calculate totals
+      const totalAllocated = formatted.reduce((sum, d) => sum + d.allocated, 0);
+      const totalUsed = formatted.reduce((sum, d) => sum + d.spent, 0);
+      const totalRemaining = totalAllocated - totalUsed;
+      const deptsWithBudget = formatted.filter(d => d.has_budget).length;
+
+      // ✅ Sort by utilization
+      formatted.sort((a, b) => parseFloat(b.utilization) - parseFloat(a.utilization));
       
-      if (isMounted) {
-        // ✅ Format data for annual budget display
-        const formatted = budgetData.map((dept) => ({
-          department_id: dept.department_id,
-          department_name: dept.department_name,
-          allocated: parseFloat(dept.allocated_amount) || 0,
-          spent: parseFloat(dept.spent_amount) || 0,
-          remaining: parseFloat(dept.remaining_amount) || 0,
-          has_budget: dept.has_budget || false,
-          utilization: dept.allocated_amount > 0
-            ? ((dept.spent_amount / dept.allocated_amount) * 100).toFixed(1)
-            : 0,
-          // ✅ Annual budget specific
-          fiscal_year: dept.fiscal_year || new Date().getFullYear(),
-          budget_type: dept.budget_type || 'annual',
-        }));
+      setDepartmentBudgets(formatted);
 
-        // ✅ Calculate totals
-        const totalAllocated = formatted.reduce((sum, d) => sum + d.allocated, 0);
-        const totalUsed = formatted.reduce((sum, d) => sum + d.spent, 0);
-        const totalRemaining = totalAllocated - totalUsed;
-        const deptsWithBudget = formatted.filter(d => d.has_budget).length;
+      const avgUtil = formatted.filter(d => d.has_budget).length > 0
+        ? formatted.filter(d => d.has_budget).reduce((sum, d) => sum + parseFloat(d.utilization), 0) /
+          (formatted.filter(d => d.has_budget).length || 1)
+        : 0;
 
-        // Sort by utilization
-        formatted.sort(
-          (a, b) => parseFloat(b.utilization) - parseFloat(a.utilization),
-        );
-        
-        setDepartmentBudgets(formatted);
-
-        const avgUtil = formatted.filter(d => d.has_budget).length > 0
-          ? formatted.filter(d => d.has_budget).reduce((sum, d) => sum + parseFloat(d.utilization), 0) /
-            (formatted.filter(d => d.has_budget).length || 1)
-          : 0;
-
-        setStats((prev) => ({
-          ...prev,
-          avgUtilization: avgUtil.toFixed(1),
-          criticalDepartments: formatted.filter(
-            (d) => parseFloat(d.utilization) >= 80 && d.has_budget,
-          ).length,
-          // ✅ NEW: Annual budget stats
-          totalAnnualBudget: totalAllocated,
-          totalAnnualUsed: totalUsed,
-          totalAnnualRemaining: totalRemaining,
-          departmentsWithBudget: deptsWithBudget,
-        }));
-        console.log("✅ Budget data updated:", formatted.length);
-      }
-    } catch (error) {
-      console.error("Failed to fetch department budgets:", error);
-      if (isMounted) setDepartmentBudgets([]);
+      setStats((prev) => ({
+        ...prev,
+        avgUtilization: avgUtil.toFixed(1),
+        criticalDepartments: formatted.filter(
+          (d) => parseFloat(d.utilization) >= 80 && d.has_budget,
+        ).length,
+        totalAnnualBudget: totalAllocated,
+        totalAnnualUsed: totalUsed,
+        totalAnnualRemaining: totalRemaining,
+        departmentsWithBudget: deptsWithBudget,
+      }));
     }
-  }, [isMounted]);
+  } catch (error) {
+    console.error("Failed to fetch department budgets:", error);
+    if (isMounted) setDepartmentBudgets([]);
+  }
+}, [isMounted]);
 
-  // ✅ MAIN FETCH FUNCTION
   const fetchAllData = useCallback(async () => {
-    console.log("🔄 Fetching all dashboard data...");
     setLoading(true);
     try {
       await Promise.all([
@@ -195,7 +390,6 @@ const MayorDashboard = () => {
         fetchApprovedTickets(),
         fetchDepartmentBudgets(),
       ]);
-      console.log("✅ All data fetched successfully");
     } catch (error) {
       console.error("Error fetching dashboard data:", error);
       toast.error("Failed to load dashboard data");
@@ -205,12 +399,7 @@ const MayorDashboard = () => {
         setRefreshing(false);
       }
     }
-  }, [
-    fetchPendingTickets,
-    fetchApprovedTickets,
-    fetchDepartmentBudgets,
-    isMounted,
-  ]);
+  }, [fetchPendingTickets, fetchApprovedTickets, fetchDepartmentBudgets, isMounted]);
 
   // Store refs for event listeners
   useEffect(() => {
@@ -220,59 +409,39 @@ const MayorDashboard = () => {
   }, [fetchAllData, fetchPendingTickets, fetchDepartmentBudgets]);
 
   // ============================================
-  // ✅ HANDLE NOTIFICATION BY TYPE - FIXED
+  // HANDLE NOTIFICATION
   // ============================================
 
   const handleNotificationByType = useCallback((data) => {
     const type = data.notification_type;
-    console.log(`📨 Processing notification type: ${type}`);
     
-    // ✅ Update notification count
     setNewNotificationCount(prev => prev + 1);
     
-    // ✅ Refresh data based on notification type
     if (type === 'trip_created' || type === 'trip_submitted') {
-      console.log('🔄 Refreshing pending tickets due to new trip');
       fetchPendingTicketsRef.current?.();
       setForceUpdate(prev => prev + 1);
     }
 
     if (type === 'fund_issued' || type === 'fund_released') {
-      console.log('🔄 Refreshing all data due to fund release');
       fetchAllDataRef.current?.();
       setForceUpdate(prev => prev + 1);
     }
 
-    if (type === 'trip_completed' || type === 'trip_started') {
-      console.log(`🔄 Refreshing all data due to ${type}`);
-      fetchAllDataRef.current?.();
-      setForceUpdate(prev => prev + 1);
-    }
-
-    if (type === 'driver_acknowledged') {
-      console.log('🔄 Refreshing all data due to driver acknowledged');
-      fetchAllDataRef.current?.();
-      setForceUpdate(prev => prev + 1);
-    }
-
-    if (type === 'trip_reconciled') {
-      console.log('🔄 Refreshing all data due to trip reconciled');
+    if (type === 'trip_completed' || type === 'trip_started' || 
+        type === 'driver_acknowledged' || type === 'trip_reconciled') {
       fetchAllDataRef.current?.();
       setForceUpdate(prev => prev + 1);
     }
   }, []);
 
   // ============================================
-  // ✅ SETUP REAL-TIME NOTIFICATIONS
+  // SETUP REAL-TIME NOTIFICATIONS
   // ============================================
 
   const setupRealtimeNotifications = useCallback(() => {
     if (!user) return;
 
-    console.log("🔔 Setting up real-time notifications for Mayor Dashboard:", user.user_id);
-
     if (!echo.connector || !echo.connector.pusher) {
-      console.warn("⚠️ Echo connector not available, retrying in 2s...");
       setTimeout(setupRealtimeNotifications, 2000);
       return;
     }
@@ -284,12 +453,11 @@ const MayorDashboard = () => {
         const channel = echo.private(`notifications.${user.user_id}`);
         
         channel.listen('.notification.new', (data) => {
-          console.log('🔔 Mayor: Private notification received:', data);
           handleNotificationByType(data);
         });
 
         channel.subscribed(() => {
-          console.log(`✅ Subscribed to PRIVATE notifications.${user.user_id}`);
+          console.log(`✅ Subscribed to notifications.${user.user_id}`);
         });
 
         channel.error((error) => {
@@ -302,35 +470,30 @@ const MayorDashboard = () => {
     };
 
     if (connection.state === "connected") {
-      console.log("✅ Already connected, subscribing to private channel...");
       subscribeToPrivateChannel();
     } else {
       connection.bind("connected", () => {
-        console.log("✅ WebSocket connected!");
         subscribeToPrivateChannel();
       });
       
       if (connection.state === "disconnected" || connection.state === "unavailable") {
-        console.log("🔄 Attempting to connect...");
         connection.connect();
       }
     }
   }, [user, handleNotificationByType]);
 
   // ============================================
-  // ✅ SETUP - Runs once on mount
+  // SETUP
   // ============================================
 
   useEffect(() => {
     setIsMounted(true);
     fetchAllData();
     
-    // ✅ Setup real-time notifications
     if (user) {
       setupRealtimeNotifications();
     }
 
-    // ✅ Cleanup on unmount
     return () => {
       setIsMounted(false);
       try {
@@ -353,27 +516,6 @@ const MayorDashboard = () => {
   // ============================================
   // HELPERS
   // ============================================
-
-  const getUtilizationColor = (utilization) => {
-    const percent = parseFloat(utilization);
-    if (percent >= 80) return "text-red-600 dark:text-red-400";
-    if (percent >= 60) return "text-amber-600 dark:text-amber-400";
-    return "text-emerald-600 dark:text-emerald-400";
-  };
-
-  const getProgressColor = (utilization) => {
-    const percent = parseFloat(utilization);
-    if (percent >= 80) return "bg-gradient-to-r from-red-500 to-red-600";
-    if (percent >= 60) return "bg-gradient-to-r from-amber-500 to-amber-600";
-    return "bg-gradient-to-r from-emerald-500 to-emerald-600";
-  };
-
-  const getStatusIcon = (utilization) => {
-    const percent = parseFloat(utilization);
-    if (percent >= 80) return <AlertCircle className="h-4 w-4 text-red-500" />;
-    if (percent >= 60) return <Activity className="h-4 w-4 text-amber-500" />;
-    return <CheckCircle className="h-4 w-4 text-emerald-500" />;
-  };
 
   const formatDate = (dateString) => {
     if (!dateString) return "N/A";
@@ -408,113 +550,19 @@ const MayorDashboard = () => {
     return "Good Evening";
   };
 
-  // ============================================
-  // QUICK LINK CARD
-  // ============================================
-
-  const QuickLinkCard = ({
-    title,
-    description,
-    icon: Icon,
-    href,
-    color,
-    count,
-  }) => (
-    <button
-      onClick={() => navigate(href)}
-      className="group relative overflow-hidden rounded-xl bg-white dark:bg-slate-800 p-4 text-left transition-all duration-300 hover:shadow-lg hover:-translate-y-1 border border-slate-100 dark:border-slate-700"
-    >
-      <div
-        className={`absolute right-0 top-0 h-20 w-20 -translate-y-8 translate-x-8 rounded-full bg-gradient-to-br ${color} opacity-10 transition-transform duration-300 group-hover:scale-150`}
-      />
-      <div className="relative flex items-start justify-between">
-        <div className="flex-1">
-          <div
-            className={`inline-flex rounded-lg ${color.replace("from-", "bg-").replace("to-", "bg-")}/10 p-2.5`}
-          >
-            <Icon
-              className={`h-5 w-5 ${color.replace("from-", "text-").split(" ")[0]}`}
-            />
-          </div>
-          <h3 className="mt-3 font-semibold text-slate-900 dark:text-white">
-            {title}
-          </h3>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            {description}
-          </p>
-          {count !== undefined && (
-            <div className="mt-2 flex items-center gap-1 text-xs font-medium text-blue-600 dark:text-blue-400">
-              <span>{count} items</span>
-              <ChevronRight className="h-3 w-3" />
-            </div>
-          )}
-        </div>
-        <ChevronRight className="mt-1 h-4 w-4 text-slate-400 transition-transform duration-300 group-hover:translate-x-1" />
-      </div>
-    </button>
-  );
-
-  const StatCard = ({ title, value, icon: Icon, color, subtitle, trend }) => (
-    <Card className="overflow-hidden border-0 shadow-sm hover:shadow-md transition-all duration-300 dark:bg-slate-800/80">
-      <CardContent className="p-6">
-        <div className="flex items-start justify-between">
-          <div>
-            <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
-              {title}
-            </p>
-            <p className="mt-2 text-3xl font-bold text-slate-900 dark:text-white">
-              {value}
-            </p>
-            {subtitle && (
-              <p className="mt-1 text-xs text-slate-400">{subtitle}</p>
-            )}
-            {trend && (
-              <div className="mt-2 flex items-center gap-1">
-                <TrendingUp className="h-3 w-3 text-emerald-500" />
-                <span className="text-xs text-emerald-600 dark:text-emerald-400">
-                  {trend}
-                </span>
-              </div>
-            )}
-          </div>
-          <div className={`rounded-xl ${color} p-3 shadow-lg`}>
-            <Icon className="h-6 w-6 text-white" />
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-
   const topDepartments = departmentBudgets.slice(0, 6);
-
-  // ============================================
-  // LOADING
-  // ============================================
-
-  if (loading) {
-    return (
-      <div className="space-y-6 p-6 bg-slate-50 dark:bg-slate-900 min-h-screen">
-        <div className="h-32 rounded-2xl bg-gradient-to-r from-slate-800 to-slate-900 animate-pulse" />
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
-          {[1, 2, 3, 4].map((i) => (
-            <div
-              key={i}
-              className="h-32 bg-slate-200 dark:bg-slate-700 rounded-xl animate-pulse"
-            />
-          ))}
-        </div>
-        <div className="h-96 bg-slate-200 dark:bg-slate-700 rounded-xl animate-pulse" />
-      </div>
-    );
-  }
 
   // ============================================
   // RENDER
   // ============================================
 
+  if (loading) {
+    return <LoadingSkeleton />;
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
-      <div className="space-y-6 p-6 animate-fade-in-up">
+      <div className="space-y-6 p-4 md:p-6 animate-fade-in-up">
         {/* Hero Header */}
         <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 p-6 text-white shadow-xl">
           <div className="absolute -top-24 -right-24 h-48 w-48 rounded-full bg-blue-500/20 blur-3xl" />
@@ -523,7 +571,7 @@ const MayorDashboard = () => {
 
           <div className="relative z-10 flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
             <div>
-              <div className="mb-2 flex items-center gap-2">
+              <div className="mb-2 flex items-center gap-2 flex-wrap">
                 <Badge className="border-green-500/30 bg-green-500/20 text-green-300">
                   <span className="mr-1.5 h-1.5 w-1.5 rounded-full bg-green-400 animate-pulse" />
                   Mayor's Office
@@ -553,12 +601,22 @@ const MayorDashboard = () => {
                 Monitor fund releases and department budget utilization for FY {new Date().getFullYear()}
               </p>
             </div>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleRefresh}
+                disabled={refreshing}
+                className="bg-white/10 border-white/20 text-white hover:bg-white/20"
+              >
+                <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+                Refresh
+              </Button>
+            </div>
           </div>
         </div>
 
-        {/* ============================================================ */}
-        {/* ✅ ANNUAL BUDGET SUMMARY CARD - NEW */}
-        {/* ============================================================ */}
+        {/* Annual Budget Summary */}
         <Card className="border-0 shadow-sm overflow-hidden dark:bg-slate-800/80 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30">
           <CardContent className="p-6">
             <div className="flex items-center gap-3 mb-4">
@@ -616,6 +674,8 @@ const MayorDashboard = () => {
             icon={Clock}
             color="bg-gradient-to-r from-amber-500 to-amber-600"
             subtitle="Awaiting fund release"
+            trend
+            trendValue={stats.pendingCount > 0 ? 12 : 0}
           />
           <StatCard
             title="Total Released"
@@ -623,6 +683,8 @@ const MayorDashboard = () => {
             icon={CheckCircle}
             color="bg-gradient-to-r from-emerald-500 to-emerald-600"
             subtitle="Completed transactions"
+            trend
+            trendValue={stats.releasedCount > 0 ? 8 : 0}
           />
           <StatCard
             title="Total Amount"
@@ -630,6 +692,8 @@ const MayorDashboard = () => {
             icon={Wallet}
             color="bg-gradient-to-r from-blue-500 to-blue-600"
             subtitle={formatCurrency(stats.totalAmount)}
+            trend
+            trendValue={stats.totalAmount > 0 ? 5 : 0}
           />
           <StatCard
             title="Avg Utilization"
@@ -637,7 +701,8 @@ const MayorDashboard = () => {
             icon={Target}
             color="bg-gradient-to-r from-purple-500 to-purple-600"
             subtitle={`${stats.criticalDepartments} departments >80%`}
-            trend="Across all departments"
+            trend
+            trendValue={stats.avgUtilization > 0 ? -3 : 0}
           />
         </div>
 
@@ -653,9 +718,9 @@ const MayorDashboard = () => {
                   <CardTitle className="text-lg font-semibold text-slate-900 dark:text-white">
                     Annual Budget Utilization
                   </CardTitle>
-                  <p className="text-sm text-slate-500 dark:text-slate-400">
+                  <CardDescription className="text-sm text-slate-500 dark:text-slate-400">
                     Real-time budget consumption across departments for FY {new Date().getFullYear()}
-                  </p>
+                  </CardDescription>
                 </div>
               </div>
               <Button
@@ -683,55 +748,7 @@ const MayorDashboard = () => {
             ) : (
               <div className="space-y-5">
                 {topDepartments.filter(d => d.has_budget).map((dept) => (
-                  <div key={dept.department_id} className="group">
-                    <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <Building2 className="h-4 w-4 text-slate-400" />
-                        <span className="font-medium text-slate-800 dark:text-slate-200">
-                          {dept.department_name}
-                        </span>
-                        {getStatusIcon(dept.utilization)}
-                        <Badge variant="outline" className="text-xs text-slate-400 border-slate-300 dark:border-slate-600">
-                          Annual
-                        </Badge>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <span className="text-sm text-slate-500 dark:text-slate-400">
-                          ₱{dept.spent.toLocaleString()} / ₱
-                          {dept.allocated.toLocaleString()}
-                        </span>
-                        <span
-                          className={`text-sm font-semibold ${getUtilizationColor(dept.utilization)}`}
-                        >
-                          {dept.utilization}%
-                        </span>
-                      </div>
-                    </div>
-                    <div className="relative">
-                      <Progress
-                        value={parseFloat(dept.utilization)}
-                        className="h-2.5 rounded-full bg-slate-100 dark:bg-slate-700"
-                      />
-                      <div
-                        className={`absolute top-0 left-0 h-2.5 rounded-full transition-all duration-500 ${getProgressColor(dept.utilization)}`}
-                        style={{
-                          width: `${Math.min(parseFloat(dept.utilization), 100)}%`,
-                        }}
-                      />
-                    </div>
-                    {parseFloat(dept.utilization) >= 80 && (
-                      <p className="mt-1.5 text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
-                        <AlertCircle className="h-3 w-3" />
-                        Approaching or exceeding annual budget limit
-                      </p>
-                    )}
-                    {parseFloat(dept.utilization) < 20 && dept.has_budget && (
-                      <p className="mt-1.5 text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                        <TrendingUp className="h-3 w-3" />
-                        Good budget utilization
-                      </p>
-                    )}
-                  </div>
+                  <BudgetProgressBar key={dept.department_id} department={dept} />
                 ))}
                 {departmentBudgets.filter(d => d.has_budget).length > 6 && (
                   <div className="pt-3 text-center">
@@ -763,9 +780,9 @@ const MayorDashboard = () => {
                   <CardTitle className="text-lg font-semibold text-slate-900 dark:text-white">
                     Recent Fund Releases
                   </CardTitle>
-                  <p className="text-sm text-slate-500 dark:text-slate-400">
+                  <CardDescription className="text-sm text-slate-500 dark:text-slate-400">
                     Last 5 transactions
-                  </p>
+                  </CardDescription>
                 </div>
               </div>
             </CardHeader>
@@ -784,16 +801,11 @@ const MayorDashboard = () => {
                       key={ticket.id || ticket.trip_ticket_id}
                       className="group flex items-center justify-between py-3 first:pt-0 last:pb-0"
                     >
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-mono text-sm font-medium text-slate-900 dark:text-white">
                             {ticket.ticket_number || ticket.trip_ticket_number}
                           </span>
-                          {ticket.is_cross_department && (
-                            <span className="text-red-500 font-bold text-sm" title={ticket.cross_department_reason || "Cross-department usage"}>
-                              *
-                            </span>
-                          )}
                           <Badge
                             variant="outline"
                             className="text-xs dark:border-slate-600 dark:text-slate-400"
@@ -825,7 +837,7 @@ const MayorDashboard = () => {
                           </span>
                         </div>
                       </div>
-                      <div className="text-right">
+                      <div className="text-right flex-shrink-0 ml-4">
                         <div className="font-semibold text-emerald-600 dark:text-emerald-400">
                           {formatCurrency(ticket.amount_released)}
                         </div>
@@ -873,9 +885,9 @@ const MayorDashboard = () => {
                   <CardTitle className="text-lg font-semibold text-slate-900 dark:text-white">
                     Quick Navigation
                   </CardTitle>
-                  <p className="text-sm text-slate-500 dark:text-slate-400">
+                  <CardDescription className="text-sm text-slate-500 dark:text-slate-400">
                     Access key management features
-                  </p>
+                  </CardDescription>
                 </div>
               </div>
             </CardHeader>
@@ -888,6 +900,7 @@ const MayorDashboard = () => {
                   href="/mo/pending"
                   color="from-amber-500 to-amber-600"
                   count={stats.pendingCount}
+                  onClick={() => navigate("/mo/pending")}
                 />
                 <QuickLinkCard
                   title="Financial Reports"
@@ -895,6 +908,7 @@ const MayorDashboard = () => {
                   icon={BarChart3}
                   href="/mo/reports"
                   color="from-blue-500 to-blue-600"
+                  onClick={() => navigate("/mo/reports")}
                 />
                 <QuickLinkCard
                   title="Released Tickets"
@@ -903,13 +917,15 @@ const MayorDashboard = () => {
                   href="/mo/approved"
                   color="from-purple-500 to-purple-600"
                   count={stats.releasedCount}
+                  onClick={() => navigate("/mo/approved")}
                 />
                 <QuickLinkCard
                   title="Receipt Verification"
                   description="Verify fuel receipts"
-                  icon={FileText}
+                  icon={Receipt}
                   href="/mo/receipt-verification"
                   color="from-emerald-500 to-emerald-600"
+                  onClick={() => navigate("/mo/receipt-verification")}
                 />
               </div>
 
@@ -925,11 +941,9 @@ const MayorDashboard = () => {
                   <div className="flex gap-4">
                     <div className="text-center">
                       <div className="text-lg font-bold text-emerald-600 dark:text-emerald-400">
-                        {
-                          departmentBudgets.filter(
-                            (d) => parseFloat(d.utilization) < 60 && d.has_budget,
-                          ).length
-                        }
+                        {departmentBudgets.filter(
+                          (d) => parseFloat(d.utilization) < 60 && d.has_budget,
+                        ).length}
                       </div>
                       <div className="text-xs text-slate-500 dark:text-slate-400">
                         Good Standing
@@ -937,14 +951,12 @@ const MayorDashboard = () => {
                     </div>
                     <div className="text-center">
                       <div className="text-lg font-bold text-amber-600 dark:text-amber-400">
-                        {
-                          departmentBudgets.filter(
-                            (d) =>
-                              parseFloat(d.utilization) >= 60 &&
-                              parseFloat(d.utilization) < 80 &&
-                              d.has_budget,
-                          ).length
-                        }
+                        {departmentBudgets.filter(
+                          (d) =>
+                            parseFloat(d.utilization) >= 60 &&
+                            parseFloat(d.utilization) < 80 &&
+                            d.has_budget,
+                        ).length}
                       </div>
                       <div className="text-xs text-slate-500 dark:text-slate-400">
                         Warning
@@ -952,11 +964,9 @@ const MayorDashboard = () => {
                     </div>
                     <div className="text-center">
                       <div className="text-lg font-bold text-red-600 dark:text-red-400">
-                        {
-                          departmentBudgets.filter(
-                            (d) => parseFloat(d.utilization) >= 80 && d.has_budget,
-                          ).length
-                        }
+                        {departmentBudgets.filter(
+                          (d) => parseFloat(d.utilization) >= 80 && d.has_budget,
+                        ).length}
                       </div>
                       <div className="text-xs text-slate-500 dark:text-slate-400">
                         Critical
@@ -971,6 +981,12 @@ const MayorDashboard = () => {
               </div>
             </CardContent>
           </Card>
+        </div>
+
+        {/* Footer */}
+        <div className="text-center text-xs text-slate-400 dark:text-slate-500 pt-2 border-t border-slate-200 dark:border-slate-700">
+          <p>FCMS - Mayor's Office Dashboard • Laguindingan Municipality</p>
+          <p className="mt-0.5">FY {new Date().getFullYear()} • {stats.departmentsWithBudget} departments with active budgets</p>
         </div>
       </div>
     </div>

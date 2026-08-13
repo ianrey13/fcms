@@ -66,9 +66,17 @@ import {
   Eye,
   EyeOff,
   BarChart3,
+  ArrowLeft,
+  Zap,
+  Shield,
+  Wallet,
+  Gauge,
+  Activity,
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, endOfYear } from 'date-fns';
+import { useNavigate } from 'react-router-dom';
+import { cn } from '@/lib/utils';
 
 // ============================================
 // CONSTANTS & HELPERS
@@ -115,6 +123,43 @@ const getStatusBadge = (status) => {
 };
 
 // ============================================
+// STATS CARD COMPONENT
+// ============================================
+
+const StatsCard = ({ title, value, icon: Icon, color, subtitle, trend }) => (
+    <Card className="dark:bg-slate-800/80 dark:border-slate-700 hover:shadow-lg transition-all duration-300">
+        <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+                <div>
+                    <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">{title}</p>
+                    <p className="text-2xl font-bold text-slate-900 dark:text-white mt-1">{value}</p>
+                    {subtitle && (
+                        <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">{subtitle}</p>
+                    )}
+                    {trend !== undefined && (
+                        <div className="flex items-center gap-1 mt-1 text-[10px]">
+                            {trend > 0 ? (
+                                <TrendingUp className="h-3 w-3 text-emerald-500" />
+                            ) : trend < 0 ? (
+                                <TrendingDown className="h-3 w-3 text-red-500" />
+                            ) : (
+                                <Activity className="h-3 w-3 text-slate-400" />
+                            )}
+                            <span className={trend > 0 ? 'text-emerald-600 dark:text-emerald-400' : trend < 0 ? 'text-red-600 dark:text-red-400' : 'text-slate-400'}>
+                                {trend > 0 ? '+' : ''}{trend}%
+                            </span>
+                        </div>
+                    )}
+                </div>
+                <div className={`p-3 rounded-xl bg-gradient-to-br ${color} shadow-lg`}>
+                    <Icon className="h-6 w-6 text-white" />
+                </div>
+            </div>
+        </CardContent>
+    </Card>
+);
+
+// ============================================
 // DATE RANGE HELPER
 // ============================================
 
@@ -154,6 +199,8 @@ const getDateRange = (periodType, customStart, customEnd) => {
 // ============================================
 
 const MayorReports = () => {
+  const navigate = useNavigate();
+  
   // ============ STATE ============
   const [activeTab, setActiveTab] = useState('fuel-receipt');
   const [periodType, setPeriodType] = useState('weekly');
@@ -220,9 +267,6 @@ const MayorReports = () => {
           department_id: departmentFilter !== 'all' ? departmentFilter : undefined,
         };
         const response = await mayorsOfficeAPI.getBudgetOverview();
-        console.log('💰 Budget API Response:', response.data);
-        
-        // ✅ Handle different response formats
         let data = response.data?.data || response.data || [];
         if (!Array.isArray(data)) {
           data = [];
@@ -254,7 +298,6 @@ const MayorReports = () => {
           vehicle_id: vehicleFilter !== 'all' ? vehicleFilter : undefined,
         };
         const response = await reportsAPI.getFuelReceiptReport(params);
-        console.log('🧾 Fuel Receipt API Response:', response.data);
         return response.data?.data || response.data || {};
       } catch (error) {
         console.error('Error fetching fuel receipt report:', error);
@@ -338,65 +381,46 @@ const MayorReports = () => {
   const renderSummaryCards = (data) => {
     const summary = data?.summary || {};
     
+    const stats = [
+      {
+        title: "Total Receipts",
+        value: formatNumber(summary.total_receipts),
+        icon: Receipt,
+        color: "from-blue-500 to-blue-600",
+        subtitle: "Uploaded receipts",
+        trend: summary.total_receipts > 0 ? 10 : 0,
+      },
+      {
+        title: "Total Fuel",
+        value: `${formatNumber(summary.total_liters)} L`,
+        icon: Fuel,
+        color: "from-emerald-500 to-emerald-600",
+        subtitle: "Liters purchased",
+        trend: summary.total_liters > 0 ? 7 : 0,
+      },
+      {
+        title: "Total Cost",
+        value: formatCurrency(summary.total_cost),
+        icon: DollarSign,
+        color: "from-yellow-500 to-yellow-600",
+        subtitle: "Total expenses",
+        trend: summary.total_cost > 0 ? 6 : 0,
+      },
+      {
+        title: "Avg. Unit Price",
+        value: summary.total_liters > 0 ? formatCurrency(summary.total_cost / summary.total_liters) : '₱0.00',
+        icon: TrendingUp,
+        color: "from-purple-500 to-purple-600",
+        subtitle: "Price per liter",
+        trend: summary.total_liters > 0 ? -2 : 0,
+      },
+    ];
+
     return (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-slate-500 dark:text-slate-400">Total Receipts</p>
-                <p className="text-2xl font-bold text-slate-900 dark:text-white">{formatNumber(summary.total_receipts)}</p>
-              </div>
-              <div className="p-3 bg-blue-100 dark:bg-blue-900/30 rounded-full">
-                <Receipt className="h-6 w-6 text-blue-600 dark:text-blue-400" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-slate-500 dark:text-slate-400">Total Fuel (Liters)</p>
-                <p className="text-2xl font-bold text-slate-900 dark:text-white">{formatNumber(summary.total_liters)}</p>
-              </div>
-              <div className="p-3 bg-emerald-100 dark:bg-emerald-900/30 rounded-full">
-                <Fuel className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-slate-500 dark:text-slate-400">Total Cost</p>
-                <p className="text-2xl font-bold text-slate-900 dark:text-white">{formatCurrency(summary.total_cost)}</p>
-              </div>
-              <div className="p-3 bg-yellow-100 dark:bg-yellow-900/30 rounded-full">
-                <DollarSign className="h-6 w-6 text-yellow-600 dark:text-yellow-400" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-slate-500 dark:text-slate-400">Avg. Unit Price</p>
-                <p className="text-2xl font-bold text-slate-900 dark:text-white">
-                  {summary.total_liters > 0 ? formatCurrency(summary.total_cost / summary.total_liters) : '₱0.00'}
-                </p>
-              </div>
-              <div className="p-3 bg-purple-100 dark:bg-purple-900/30 rounded-full">
-                <TrendingUp className="h-6 w-6 text-purple-600 dark:text-purple-400" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        {stats.map((stat, index) => (
+          <StatsCard key={index} {...stat} />
+        ))}
       </div>
     );
   };
@@ -411,10 +435,12 @@ const MayorReports = () => {
     if (receipts.length === 0) {
       return (
         <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-          <CardContent className="py-12 text-center">
-            <Receipt className="h-12 w-12 text-slate-400 mx-auto mb-4" />
-            <p className="text-slate-500 dark:text-slate-400">No fuel receipt records found</p>
-            <p className="text-sm text-slate-400 dark:text-slate-500">
+          <CardContent className="py-16 text-center">
+            <div className="w-20 h-20 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto mb-4">
+              <Receipt className="h-10 w-10 text-slate-400 dark:text-slate-500" />
+            </div>
+            <p className="text-slate-600 dark:text-slate-400 font-medium text-lg">No fuel receipt records found</p>
+            <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">
               Try adjusting your filters or date range
             </p>
           </CardContent>
@@ -423,30 +449,40 @@ const MayorReports = () => {
     }
 
     return (
-      <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Receipt className="h-5 w-5 text-blue-500" />
-            Fuel Receipt Details
-          </CardTitle>
-          <CardDescription>
-            Showing {receipts.length} receipt{receipts.length !== 1 ? 's' : ''}
-          </CardDescription>
+      <Card className="dark:bg-slate-800/80 dark:border-slate-700 shadow-xl shadow-black/5">
+        <CardHeader className="border-b border-slate-200/60 dark:border-slate-700/60">
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2 text-slate-800 dark:text-white">
+                <Receipt className="h-5 w-5 text-blue-500" />
+                Fuel Receipt Details
+              </CardTitle>
+              <CardDescription className="dark:text-slate-400">
+                Showing {receipts.length} receipt{receipts.length !== 1 ? 's' : ''}
+              </CardDescription>
+            </div>
+            {receipts.length > 0 && (
+              <Badge className="bg-blue-500/20 text-blue-600 dark:text-blue-400 border-blue-500/30">
+                <Zap className="h-3 w-3 mr-1" />
+                {receipts.length} records
+              </Badge>
+            )}
+          </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="pt-6">
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead className="font-bold text-blue-600">Invoice #</TableHead>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Driver</TableHead>
-                  <TableHead>Vehicle</TableHead>
-                  <TableHead>Plate No.</TableHead>
-                  <TableHead>Fuel (Lubricant)</TableHead>
-                  <TableHead className="text-right">Unit Price</TableHead>
-                  <TableHead className="text-right">Amount</TableHead>
-                  <TableHead className="text-right">Qty (L)</TableHead>
+                <TableRow className="bg-slate-50 dark:bg-slate-900/50">
+                  <TableHead className="font-bold text-blue-600 dark:text-blue-400 text-xs uppercase tracking-wider">Invoice #</TableHead>
+                  <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Date</TableHead>
+                  <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Driver</TableHead>
+                  <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Vehicle</TableHead>
+                  <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Plate No.</TableHead>
+                  <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Fuel</TableHead>
+                  <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Unit Price</TableHead>
+                  <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Amount</TableHead>
+                  <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Qty (L)</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -456,26 +492,26 @@ const MayorReports = () => {
                   const key = receipt.fuel_receipt_id || receipt.gas_slip_id || `receipt-${index}`;
                   
                   return (
-                    <TableRow key={key} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
+                    <TableRow key={key} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors group">
                       <TableCell className="font-mono text-sm font-bold text-blue-600 dark:text-blue-400">
                         {invoiceNumber}
                       </TableCell>
-                      <TableCell>{receipt.date || 'N/A'}</TableCell>
-                      <TableCell>{receipt.driver || 'N/A'}</TableCell>
-                      <TableCell>{receipt.vehicle || 'N/A'}</TableCell>
-                      <TableCell className="font-mono text-sm">{receipt.plate_no || 'N/A'}</TableCell>
+                      <TableCell className="text-slate-600 dark:text-slate-400">{receipt.date || 'N/A'}</TableCell>
+                      <TableCell className="text-slate-600 dark:text-slate-400">{receipt.driver || 'N/A'}</TableCell>
+                      <TableCell className="text-slate-600 dark:text-slate-400">{receipt.vehicle || 'N/A'}</TableCell>
+                      <TableCell className="font-mono text-sm text-slate-700 dark:text-slate-300">{receipt.plate_no || 'N/A'}</TableCell>
                       <TableCell>
-                        <Badge variant="outline" className="text-xs">
+                        <Badge variant="outline" className="text-xs dark:border-slate-600">
                           {receipt.lubricant || 'N/A'}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-right font-mono">
+                      <TableCell className="text-right font-mono text-slate-600 dark:text-slate-400">
                         {formatCurrency(unitPrice)}
                       </TableCell>
-                      <TableCell className="text-right font-medium font-mono">
+                      <TableCell className="text-right font-medium font-mono text-emerald-600 dark:text-emerald-400">
                         {formatCurrency(receipt.amount)}
                       </TableCell>
-                      <TableCell className="text-right font-mono">
+                      <TableCell className="text-right font-mono text-slate-700 dark:text-slate-300">
                         {formatNumber(receipt.quantity)}
                       </TableCell>
                     </TableRow>
@@ -494,54 +530,41 @@ const MayorReports = () => {
   // ============================================
 
   const renderBudgetUtilization = () => {
-    // ✅ Ensure budgetData is an array
     const periods = Array.isArray(budgetData) ? budgetData : [];
-    
-    console.log('💰 Budget periods for rendering:', periods);
 
     if (periods.length === 0) {
       return (
         <div className="space-y-4 mt-6">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-              <CardContent className="pt-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-slate-500 dark:text-slate-400">Total Allocated</p>
-                    <p className="text-2xl font-bold text-blue-600">{formatCurrency(0)}</p>
-                  </div>
-                  <DollarSign className="h-8 w-8 text-blue-500" />
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-              <CardContent className="pt-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-slate-500 dark:text-slate-400">Used</p>
-                    <p className="text-2xl font-bold text-yellow-600">{formatCurrency(0)}</p>
-                  </div>
-                  <TrendingDown className="h-8 w-8 text-yellow-500" />
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-              <CardContent className="pt-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-slate-500 dark:text-slate-400">Remaining</p>
-                    <p className="text-2xl font-bold text-green-600">{formatCurrency(0)}</p>
-                  </div>
-                  <TrendingUp className="h-8 w-8 text-green-500" />
-                </div>
-              </CardContent>
-            </Card>
+            <StatsCard
+              title="Total Allocated"
+              value={formatCurrency(0)}
+              icon={DollarSign}
+              color="from-blue-500 to-blue-600"
+              subtitle="Budget allocation"
+            />
+            <StatsCard
+              title="Used"
+              value={formatCurrency(0)}
+              icon={TrendingDown}
+              color="from-yellow-500 to-yellow-600"
+              subtitle="Amount used"
+            />
+            <StatsCard
+              title="Remaining"
+              value={formatCurrency(0)}
+              icon={TrendingUp}
+              color="from-emerald-500 to-emerald-600"
+              subtitle="Budget remaining"
+            />
           </div>
           <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-            <CardContent className="py-12 text-center">
-              <DollarSign className="h-12 w-12 text-slate-400 mx-auto mb-4" />
-              <p className="text-slate-500 dark:text-slate-400">No budget data available</p>
-              <p className="text-sm text-slate-400 dark:text-slate-500">
+            <CardContent className="py-16 text-center">
+              <div className="w-20 h-20 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto mb-4">
+                <DollarSign className="h-10 w-10 text-slate-400 dark:text-slate-500" />
+              </div>
+              <p className="text-slate-600 dark:text-slate-400 font-medium text-lg">No budget data available</p>
+              <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">
                 Try adjusting your filters or date range
               </p>
             </CardContent>
@@ -551,19 +574,11 @@ const MayorReports = () => {
     }
 
     // Calculate totals
-    const totalAllocated = periods.reduce((sum, p) => {
-      const val = parseFloat(p.allocated_amount) || 0;
-      return sum + val;
-    }, 0);
-
-    const totalUsed = periods.reduce((sum, p) => {
-      const val = parseFloat(p.spent_amount) || 0;
-      return sum + val;
-    }, 0);
-
+    const totalAllocated = periods.reduce((sum, p) => sum + (parseFloat(p.allocated_amount) || 0), 0);
+    const totalUsed = periods.reduce((sum, p) => sum + (parseFloat(p.spent_amount) || 0), 0);
     const totalRemaining = totalAllocated - totalUsed;
 
-    // Prepare data for charts - ensure we have the right field names
+    // Prepare data for charts
     const chartData = periods.map(p => ({
       department_name: p.department_name || 'Unknown',
       allocated: parseFloat(p.allocated_amount) || 0,
@@ -581,50 +596,40 @@ const MayorReports = () => {
         value: parseFloat(p.allocated_amount) || 0,
       }));
 
+    // Stats
+    const budgetStats = [
+      {
+        title: "Total Allocated",
+        value: formatCurrency(totalAllocated),
+        icon: DollarSign,
+        color: "from-blue-500 to-blue-600",
+        subtitle: "Total budget",
+        trend: totalAllocated > 0 ? 5 : 0,
+      },
+      {
+        title: "Used",
+        value: formatCurrency(totalUsed),
+        icon: TrendingDown,
+        color: "from-yellow-500 to-yellow-600",
+        subtitle: "Amount spent",
+        trend: totalUsed > 0 ? 8 : 0,
+      },
+      {
+        title: "Remaining",
+        value: formatCurrency(totalRemaining),
+        icon: TrendingUp,
+        color: totalRemaining > 0 ? "from-emerald-500 to-emerald-600" : "from-red-500 to-red-600",
+        subtitle: "Budget remaining",
+        trend: totalRemaining > 0 ? -3 : 0,
+      },
+    ];
+
     return (
       <div className="space-y-4 mt-6">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-slate-500 dark:text-slate-400">Total Allocated</p>
-                  <p className="text-2xl font-bold text-blue-600">{formatCurrency(totalAllocated)}</p>
-                </div>
-                <div className="p-3 bg-blue-100 dark:bg-blue-900/30 rounded-full">
-                  <DollarSign className="h-8 w-8 text-blue-600 dark:text-blue-400" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-slate-500 dark:text-slate-400">Used</p>
-                  <p className="text-2xl font-bold text-yellow-600">{formatCurrency(totalUsed)}</p>
-                </div>
-                <div className="p-3 bg-yellow-100 dark:bg-yellow-900/30 rounded-full">
-                  <TrendingDown className="h-8 w-8 text-yellow-600 dark:text-yellow-400" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-slate-500 dark:text-slate-400">Remaining</p>
-                  <p className="text-2xl font-bold text-green-600">{formatCurrency(totalRemaining)}</p>
-                </div>
-                <div className="p-3 bg-green-100 dark:bg-green-900/30 rounded-full">
-                  <TrendingUp className="h-8 w-8 text-green-600 dark:text-green-400" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          {budgetStats.map((stat, index) => (
+            <StatsCard key={index} {...stat} />
+          ))}
         </div>
 
         {/* Budget Allocation Pie Chart */}
@@ -635,6 +640,9 @@ const MayorReports = () => {
                 <PieChart className="h-5 w-5 text-blue-500" />
                 Budget Allocation by Department
               </CardTitle>
+              <CardDescription className="dark:text-slate-400">
+                {pieData.length} departments with active budgets
+              </CardDescription>
             </CardHeader>
             <CardContent>
               <ResponsiveContainer width="100%" height={300}>
@@ -665,16 +673,20 @@ const MayorReports = () => {
         {/* Department Budget Table */}
         <Card className="dark:bg-slate-800/80 dark:border-slate-700">
           <CardHeader 
-            className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors"
+            className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors rounded-t-2xl"
             onClick={() => toggleSection('departmentBreakdown')}
           >
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Building2 className="h-5 w-5 text-purple-500" />
-                <CardTitle>Budget Utilization by Department</CardTitle>
-                <Badge variant="secondary">{periods.length} Departments</Badge>
+                <CardTitle className="text-slate-800 dark:text-white">Budget Utilization by Department</CardTitle>
+                <Badge variant="secondary" className="ml-2">{periods.length} Departments</Badge>
               </div>
-              {expandedSections.departmentBreakdown ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+              {expandedSections.departmentBreakdown ? (
+                <ChevronUp className="h-4 w-4 text-slate-400" />
+              ) : (
+                <ChevronDown className="h-4 w-4 text-slate-400" />
+              )}
             </div>
           </CardHeader>
           {expandedSections.departmentBreakdown && (
@@ -682,13 +694,13 @@ const MayorReports = () => {
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
-                    <TableRow>
-                      <TableHead>Department</TableHead>
-                      <TableHead className="text-right">Allocated</TableHead>
-                      <TableHead className="text-right">Used</TableHead>
-                      <TableHead className="text-right">Remaining</TableHead>
-                      <TableHead className="text-right">Utilization</TableHead>
-                      <TableHead>Status</TableHead>
+                    <TableRow className="bg-slate-50 dark:bg-slate-900/50">
+                      <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Department</TableHead>
+                      <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Allocated</TableHead>
+                      <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Used</TableHead>
+                      <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Remaining</TableHead>
+                      <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Utilization</TableHead>
+                      <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Status</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -699,7 +711,7 @@ const MayorReports = () => {
                       const utilPercent = allocated > 0 ? ((used / allocated) * 100) : 0;
                       
                       let statusLabel = 'On Track';
-                      let statusColor = 'bg-green-500';
+                      let statusColor = 'bg-emerald-500';
                       
                       if (remaining < 0 || utilPercent > 100) {
                         statusLabel = 'Over Budget';
@@ -710,14 +722,25 @@ const MayorReports = () => {
                       }
                       
                       return (
-                        <TableRow key={index} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
-                          <TableCell className="font-medium">{period.department_name || 'Unknown'}</TableCell>
-                          <TableCell className="text-right">{formatCurrency(allocated)}</TableCell>
-                          <TableCell className="text-right">{formatCurrency(used)}</TableCell>
-                          <TableCell className={`text-right font-medium ${remaining < 0 ? 'text-red-600' : 'text-green-600'}`}>
+                        <TableRow key={index} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
+                          <TableCell className="font-medium text-slate-800 dark:text-white">
+                            {period.department_name || 'Unknown'}
+                          </TableCell>
+                          <TableCell className="text-right text-blue-600 dark:text-blue-400">
+                            {formatCurrency(allocated)}
+                          </TableCell>
+                          <TableCell className="text-right text-yellow-600 dark:text-yellow-400">
+                            {formatCurrency(used)}
+                          </TableCell>
+                          <TableCell className={cn(
+                            "text-right font-medium",
+                            remaining < 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'
+                          )}>
                             {formatCurrency(remaining)}
                           </TableCell>
-                          <TableCell className="text-right">{utilPercent.toFixed(1)}%</TableCell>
+                          <TableCell className="text-right text-slate-700 dark:text-slate-300">
+                            {utilPercent.toFixed(1)}%
+                          </TableCell>
                           <TableCell>
                             <Badge className={statusColor}>{statusLabel}</Badge>
                           </TableCell>
@@ -734,13 +757,13 @@ const MayorReports = () => {
         {/* Budget Bar Chart */}
         <Card className="dark:bg-slate-800/80 dark:border-slate-700">
           <CardHeader 
-            className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors"
+            className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors rounded-t-2xl"
             onClick={() => setShowBudgetChart(!showBudgetChart)}
           >
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <BarChart3 className="h-5 w-5 text-emerald-500" />
-                <CardTitle>Budget Visualization</CardTitle>
+                <CardTitle className="text-slate-800 dark:text-white">Budget Visualization</CardTitle>
                 <Badge variant="secondary" className="ml-2">
                   {showBudgetChart ? 'Hide' : 'Show'}
                 </Badge>
@@ -761,14 +784,14 @@ const MayorReports = () => {
                 ) : (
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={chartData}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="department_name" angle={-45} textAnchor="end" height={80} />
-                      <YAxis />
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                      <XAxis dataKey="department_name" angle={-45} textAnchor="end" height={80} stroke="#94a3b8" />
+                      <YAxis stroke="#94a3b8" />
                       <Tooltip formatter={(value) => formatCurrency(value)} />
                       <Legend />
-                      <Bar dataKey="allocated" fill="#3b82f6" name="Allocated" />
-                      <Bar dataKey="used" fill="#f59e0b" name="Used" />
-                      <Bar dataKey="remaining" fill="#10b981" name="Remaining" />
+                      <Bar dataKey="allocated" fill="#3b82f6" name="Allocated" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="used" fill="#f59e0b" name="Used" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="remaining" fill="#10b981" name="Remaining" radius={[4, 4, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 )}
@@ -790,8 +813,11 @@ const MayorReports = () => {
     return (
       <div className="flex justify-center items-center h-96">
         <div className="text-center">
-          <Loader2 className="h-12 w-12 animate-spin text-blue-600 mx-auto mb-4" />
-          <p className="text-slate-500 dark:text-slate-400">Loading reports...</p>
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-500/20">
+            <Loader2 className="h-8 w-8 text-white animate-spin" />
+          </div>
+          <p className="text-slate-600 dark:text-slate-400 font-medium">Loading reports...</p>
+          <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">Please wait while we fetch your data</p>
         </div>
       </div>
     );
@@ -802,216 +828,234 @@ const MayorReports = () => {
   // ============================================
 
   return (
-    <div className="space-y-6 p-4 md:p-6 print:p-4">
-      {/* ========== HEADER ========== */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 print:hidden">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
-            <FileText className="h-6 w-6 text-blue-600" />
-            {activeTab === 'fuel-receipt' ? 'Fuel Receipt Report' : 'Budget & Receipt Report'}
-          </h1>
-          <p className="text-slate-600 dark:text-slate-400">
-            {periodType.charAt(0).toUpperCase() + periodType.slice(1)} report from {dateRange.startDate} to {dateRange.endDate}
-          </p>
-        </div>
-        <div className="flex gap-2 flex-wrap">
-          <Button
-            variant="outline"
-            onClick={handleRefresh}
-            disabled={receiptFetching || budgetFetching}
-            className="flex items-center gap-2"
-          >
-            <RefreshCw className={`h-4 w-4 ${receiptFetching || budgetFetching ? 'animate-spin' : ''}`} />
-            Refresh
-          </Button>
-          <Button
-            onClick={handlePrint}
-            variant="outline"
-            className="flex items-center gap-2"
-          >
-            <Printer className="h-4 w-4" />
-            Print
-          </Button>
-          <Button
-            onClick={() => handleExport('pdf')}
-            disabled={exportLoading}
-            className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white"
-          >
-            <FileSpreadsheet className="h-4 w-4" />
-            PDF
-          </Button>
-          <Button
-            onClick={() => handleExport('excel')}
-            disabled={exportLoading}
-            className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white"
-          >
-            <FileSpreadsheet className="h-4 w-4" />
-            Excel
-          </Button>
-        </div>
-      </div>
-
-      {/* ========== FILTERS ========== */}
-      <Card className="dark:bg-slate-800/80 dark:border-slate-700 print:hidden">
-        <CardContent className="pt-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
-            {/* Period Type */}
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
+      <div className="space-y-6 p-4 md:p-6 print:p-4 animate-fade-in-up">
+        {/* ========== HEADER ========== */}
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 print:hidden">
+          <div className="flex items-center gap-3">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => navigate('/mo/dashboard')}
+              className="rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 h-10 w-10"
+            >
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
             <div>
-              <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Period</label>
-              <Select value={periodType} onValueChange={setPeriodType}>
-                <SelectTrigger className="mt-1 dark:bg-slate-900 dark:border-slate-700">
-                  <SelectValue placeholder="Select Period" />
-                </SelectTrigger>
-                <SelectContent>
-                  {PERIOD_TYPES.map(p => (
-                    <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Date Range */}
-            <div>
-              <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Start Date</label>
-              <Input
-                type="date"
-                value={customStartDate}
-                onChange={(e) => setCustomStartDate(e.target.value)}
-                className="mt-1 dark:bg-slate-900 dark:border-slate-700"
-              />
-            </div>
-            <div>
-              <label className="text-sm font-medium text-slate-700 dark:text-slate-300">End Date</label>
-              <Input
-                type="date"
-                value={customEndDate}
-                onChange={(e) => setCustomEndDate(e.target.value)}
-                className="mt-1 dark:bg-slate-900 dark:border-slate-700"
-              />
-            </div>
-
-            {/* Department Filter */}
-            <div>
-              <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Department</label>
-              <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
-                <SelectTrigger className="mt-1 dark:bg-slate-900 dark:border-slate-700">
-                  <SelectValue placeholder="All Departments" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Departments</SelectItem>
-                  {departments.map((dept) => (
-                    <SelectItem key={dept.department_id} value={String(dept.department_id)}>
-                      {dept.department_name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Vehicle Filter - Filtered by Department */}
-            <div>
-              <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Vehicle</label>
-              <Select value={vehicleFilter} onValueChange={setVehicleFilter}>
-                <SelectTrigger className="mt-1 dark:bg-slate-900 dark:border-slate-700">
-                  <SelectValue placeholder="All Vehicles" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Vehicles</SelectItem>
-                  {vehicles.map((vehicle) => (
-                    <SelectItem key={vehicle.vehicle_id} value={String(vehicle.vehicle_id)}>
-                      {vehicle.plate_number} - {vehicle.vehicle_model}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 shadow-lg shadow-blue-500/20">
+                  <FileText className="h-5 w-5 text-white" />
+                </div>
+                <div>
+                  <h1 className="text-2xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 bg-clip-text text-transparent">
+                    {activeTab === 'fuel-receipt' ? 'Fuel Receipt Report' : 'Budget & Receipt Report'}
+                  </h1>
+                  <p className="text-sm text-slate-500 dark:text-slate-400">
+                    {periodType.charAt(0).toUpperCase() + periodType.slice(1)} report from {dateRange.startDate} to {dateRange.endDate}
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
-
-          {/* Quick Date Buttons */}
-          <div className="flex gap-2 mt-4 flex-wrap">
+          <div className="flex gap-2 flex-wrap">
             <Button
               variant="outline"
-              size="sm"
-              onClick={() => {
-                const range = getDateRange('weekly');
-                setCustomStartDate(range.startDate);
-                setCustomEndDate(range.endDate);
-                setPeriodType('weekly');
-              }}
-              className="text-xs"
+              onClick={handleRefresh}
+              disabled={receiptFetching || budgetFetching}
+              className="dark:border-slate-700 dark:text-slate-300"
             >
-              This Week
+              <RefreshCw className={`h-4 w-4 mr-2 ${receiptFetching || budgetFetching ? 'animate-spin' : ''}`} />
+              Refresh
             </Button>
             <Button
+              onClick={handlePrint}
               variant="outline"
-              size="sm"
-              onClick={() => {
-                const range = getDateRange('monthly');
-                setCustomStartDate(range.startDate);
-                setCustomEndDate(range.endDate);
-                setPeriodType('monthly');
-              }}
-              className="text-xs"
+              className="dark:border-slate-700 dark:text-slate-300"
             >
-              This Month
+              <Printer className="h-4 w-4 mr-2" />
+              Print
             </Button>
             <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                const range = getDateRange('yearly');
-                setCustomStartDate(range.startDate);
-                setCustomEndDate(range.endDate);
-                setPeriodType('yearly');
-              }}
-              className="text-xs"
+              onClick={() => handleExport('pdf')}
+              disabled={exportLoading}
+              className="bg-red-600 hover:bg-red-700 text-white"
             >
-              This Year
+              <FileSpreadsheet className="h-4 w-4 mr-2" />
+              PDF
             </Button>
             <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setCustomStartDate('');
-                setCustomEndDate('');
-              }}
-              className="text-xs"
+              onClick={() => handleExport('excel')}
+              disabled={exportLoading}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
             >
-              Clear Dates
+              <FileSpreadsheet className="h-4 w-4 mr-2" />
+              Excel
             </Button>
           </div>
-        </CardContent>
-      </Card>
+        </div>
 
-      {/* ========== TABS ========== */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-2 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl print:hidden">
-          <TabsTrigger value="fuel-receipt" className="rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900">
-            <Receipt className="h-4 w-4 mr-2" />
-            Receipts
-          </TabsTrigger>
-          <TabsTrigger value="budget-utilization" className="rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900">
-            <DollarSign className="h-4 w-4 mr-2" />
-            Budget
-          </TabsTrigger>
-        </TabsList>
+        {/* ========== FILTERS ========== */}
+        <Card className="dark:bg-slate-800/80 dark:border-slate-700 print:hidden">
+          <CardContent className="pt-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
+              {/* Period Type */}
+              <div>
+                <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Period</label>
+                <Select value={periodType} onValueChange={setPeriodType}>
+                  <SelectTrigger className="mt-1 dark:bg-slate-900 dark:border-slate-700">
+                    <SelectValue placeholder="Select Period" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PERIOD_TYPES.map(p => (
+                      <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
-        {/* TAB 1: FUEL RECEIPT */}
-        <TabsContent value="fuel-receipt" className="space-y-4 mt-6">
-          {renderSummaryCards(receiptData)}
-          {renderFuelReceiptTable()}
-        </TabsContent>
+              {/* Date Range */}
+              <div>
+                <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Start Date</label>
+                <Input
+                  type="date"
+                  value={customStartDate}
+                  onChange={(e) => setCustomStartDate(e.target.value)}
+                  className="mt-1 dark:bg-slate-900 dark:border-slate-700"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-slate-700 dark:text-slate-300">End Date</label>
+                <Input
+                  type="date"
+                  value={customEndDate}
+                  onChange={(e) => setCustomEndDate(e.target.value)}
+                  className="mt-1 dark:bg-slate-900 dark:border-slate-700"
+                />
+              </div>
 
-        {/* TAB 2: BUDGET UTILIZATION */}
-        <TabsContent value="budget-utilization">
-          {renderBudgetUtilization()}
-        </TabsContent>
-      </Tabs>
+              {/* Department Filter */}
+              <div>
+                <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Department</label>
+                <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
+                  <SelectTrigger className="mt-1 dark:bg-slate-900 dark:border-slate-700">
+                    <SelectValue placeholder="All Departments" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Departments</SelectItem>
+                    {departments.map((dept) => (
+                      <SelectItem key={dept.department_id} value={String(dept.department_id)}>
+                        {dept.department_name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
-      {/* Footer */}
-      <div className="text-center text-xs text-slate-400 dark:text-slate-500 pt-4 border-t border-slate-200 dark:border-slate-700 print:block hidden">
-        <p>Generated on {format(new Date(), 'MMMM d, yyyy h:mm a')}</p>
-        <p>FCMS - {activeTab === 'fuel-receipt' ? 'Fuel Receipt Report' : 'Budget & Receipt Report'} • Laguindingan Municipality</p>
+              {/* Vehicle Filter */}
+              <div>
+                <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Vehicle</label>
+                <Select value={vehicleFilter} onValueChange={setVehicleFilter}>
+                  <SelectTrigger className="mt-1 dark:bg-slate-900 dark:border-slate-700">
+                    <SelectValue placeholder="All Vehicles" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Vehicles</SelectItem>
+                    {vehicles.map((vehicle) => (
+                      <SelectItem key={vehicle.vehicle_id} value={String(vehicle.vehicle_id)}>
+                        {vehicle.plate_number} - {vehicle.vehicle_model}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* Quick Date Buttons */}
+            <div className="flex gap-2 mt-4 flex-wrap">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  const range = getDateRange('weekly');
+                  setCustomStartDate(range.startDate);
+                  setCustomEndDate(range.endDate);
+                  setPeriodType('weekly');
+                }}
+                className="text-xs dark:border-slate-700 dark:text-slate-300"
+              >
+                This Week
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  const range = getDateRange('monthly');
+                  setCustomStartDate(range.startDate);
+                  setCustomEndDate(range.endDate);
+                  setPeriodType('monthly');
+                }}
+                className="text-xs dark:border-slate-700 dark:text-slate-300"
+              >
+                This Month
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  const range = getDateRange('yearly');
+                  setCustomStartDate(range.startDate);
+                  setCustomEndDate(range.endDate);
+                  setPeriodType('yearly');
+                }}
+                className="text-xs dark:border-slate-700 dark:text-slate-300"
+              >
+                This Year
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setCustomStartDate('');
+                  setCustomEndDate('');
+                }}
+                className="text-xs dark:border-slate-700 dark:text-slate-300"
+              >
+                Clear Dates
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* ========== TABS ========== */}
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <TabsList className="grid w-full grid-cols-2 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl print:hidden">
+            <TabsTrigger value="fuel-receipt" className="rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900 data-[state=active]:shadow-sm transition-all duration-200">
+              <Receipt className="h-4 w-4 mr-2" />
+              Receipts
+            </TabsTrigger>
+            <TabsTrigger value="budget-utilization" className="rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900 data-[state=active]:shadow-sm transition-all duration-200">
+              <DollarSign className="h-4 w-4 mr-2" />
+              Budget
+            </TabsTrigger>
+          </TabsList>
+
+          {/* TAB 1: FUEL RECEIPT */}
+          <TabsContent value="fuel-receipt" className="space-y-4 mt-6">
+            {renderSummaryCards(receiptData)}
+            {renderFuelReceiptTable()}
+          </TabsContent>
+
+          {/* TAB 2: BUDGET UTILIZATION */}
+          <TabsContent value="budget-utilization">
+            {renderBudgetUtilization()}
+          </TabsContent>
+        </Tabs>
+
+        {/* Footer */}
+        <div className="text-center text-xs text-slate-400 dark:text-slate-500 pt-2 border-t border-slate-200 dark:border-slate-700 print:block hidden">
+          <p>Generated on {format(new Date(), 'MMMM d, yyyy h:mm a')}</p>
+          <p>FCMS - {activeTab === 'fuel-receipt' ? 'Fuel Receipt Report' : 'Budget & Receipt Report'} • Laguindingan Municipality</p>
+        </div>
       </div>
     </div>
   );

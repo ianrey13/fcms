@@ -1,6 +1,6 @@
 // src/pages/mayor/budget/WeeklyTracking.jsx
 import React, { useState, useEffect } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,12 +14,114 @@ import {
     TrendingDown,
     AlertCircle,
     CheckCircle,
+    ArrowLeft,
+    Zap,
+    Shield,
+    Wallet,
+    Gauge,
+    Activity,
+    Info,
+    Clock,
+    DollarSign,
+    Building2,
+    Target,
+    PieChart,
 } from "lucide-react";
 import { mayorsOfficeAPI } from "../../../services/api";
 import { toast } from "react-hot-toast";
 import { format, addDays, startOfWeek, endOfWeek, subWeeks, addWeeks, getWeek } from "date-fns";
+import { useNavigate } from "react-router-dom";
+import { cn } from "@/lib/utils";
+
+// ============================================
+// STATS CARD COMPONENT
+// ============================================
+
+const StatsCard = ({ title, value, icon: Icon, color, subtitle, trend }) => (
+    <Card className="dark:bg-slate-800/80 dark:border-slate-700 hover:shadow-lg transition-all duration-300">
+        <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+                <div>
+                    <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">{title}</p>
+                    <p className="text-2xl font-bold text-slate-900 dark:text-white mt-1">{value}</p>
+                    {subtitle && (
+                        <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">{subtitle}</p>
+                    )}
+                    {trend !== undefined && (
+                        <div className="flex items-center gap-1 mt-1 text-[10px]">
+                            {trend > 0 ? (
+                                <TrendingUp className="h-3 w-3 text-emerald-500" />
+                            ) : trend < 0 ? (
+                                <TrendingDown className="h-3 w-3 text-red-500" />
+                            ) : (
+                                <Activity className="h-3 w-3 text-slate-400" />
+                            )}
+                            <span className={trend > 0 ? 'text-emerald-600 dark:text-emerald-400' : trend < 0 ? 'text-red-600 dark:text-red-400' : 'text-slate-400'}>
+                                {trend > 0 ? '+' : ''}{trend}%
+                            </span>
+                        </div>
+                    )}
+                </div>
+                <div className={`p-3 rounded-xl bg-gradient-to-br ${color} shadow-lg`}>
+                    <Icon className="h-6 w-6 text-white" />
+                </div>
+            </div>
+        </CardContent>
+    </Card>
+);
+
+// ============================================
+// STATUS BADGE COMPONENT
+// ============================================
+
+const StatusBadge = ({ status, label }) => {
+    const configs = {
+        'on_track': { color: 'bg-emerald-500', icon: CheckCircle },
+        'moderate': { color: 'bg-yellow-500', icon: Activity },
+        'near_limit': { color: 'bg-orange-500', icon: AlertCircle },
+        'exhausted': { color: 'bg-red-500', icon: AlertCircle },
+        'no_budget': { color: 'bg-slate-400', icon: Info },
+    };
+    const config = configs[status] || configs['no_budget'];
+    const Icon = config.icon;
+    return (
+        <Badge className={`${config.color} text-white flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-medium`}>
+            <Icon className="h-3 w-3" />
+            {label || status?.replace(/_/g, ' ') || 'Unknown'}
+        </Badge>
+    );
+};
+
+// ============================================
+// LOADING SKELETON
+// ============================================
+
+const LoadingSkeleton = () => (
+    <div className="space-y-6 p-4 md:p-6 bg-slate-50 dark:bg-slate-900 min-h-screen">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="h-12 w-48 bg-slate-200 dark:bg-slate-700 rounded animate-pulse" />
+            <div className="h-10 w-32 bg-slate-200 dark:bg-slate-700 rounded animate-pulse" />
+        </div>
+        <div className="flex items-center justify-between gap-4">
+            <div className="h-10 w-24 bg-slate-200 dark:bg-slate-700 rounded animate-pulse" />
+            <div className="h-10 w-48 bg-slate-200 dark:bg-slate-700 rounded animate-pulse" />
+            <div className="h-10 w-24 bg-slate-200 dark:bg-slate-700 rounded animate-pulse" />
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            {[1, 2, 3, 4].map((i) => (
+                <div key={i} className="h-28 bg-slate-200 dark:bg-slate-700 rounded-xl animate-pulse" />
+            ))}
+        </div>
+        <div className="h-96 bg-slate-200 dark:bg-slate-700 rounded-xl animate-pulse" />
+    </div>
+);
+
+// ============================================
+// MAIN COMPONENT
+// ============================================
 
 const WeeklyTracking = () => {
+    const navigate = useNavigate();
     const [trackingData, setTrackingData] = useState([]);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
@@ -74,26 +176,18 @@ const WeeklyTracking = () => {
             const weekNumber = getWeek(weekStart);
             const year = format(weekStart, 'yyyy');
             
-            console.log(`📅 Fetching weekly usage for Week ${weekNumber}, ${year}`);
-            
-            // ✅ Get weekly usage for all departments
             const response = await mayorsOfficeAPI.getBudgetPeriods();
-            console.log("📊 Budget Periods Response:", response);
-            
             let data = response?.data?.data || response?.data || [];
             
-            // ✅ Filter by week_start
             const filteredData = data.filter(item => item.week_start === weekStartStr);
             
             if (filteredData.length === 0) {
-                console.log(`⚠️ No data for week ${weekStartStr}`);
                 setDisplayData(null);
                 setTrackingData([]);
                 setLoading(false);
                 return;
             }
 
-            // ✅ Group and calculate per department
             const departmentUsage = filteredData.map((item) => {
                 const deptInfo = budgetData.find(d => d.department_id === item.department_id);
                 const allocated = parseFloat(item.allocated_amount || 0);
@@ -101,10 +195,9 @@ const WeeklyTracking = () => {
                 const remaining = allocated - used;
                 const utilization = allocated > 0 ? (used / allocated) * 100 : 0;
                 
-                // Determine status
                 let status = 'on_track';
                 let statusLabel = 'On Track';
-                let statusColor = 'bg-green-500';
+                let statusColor = 'bg-emerald-500';
                 
                 if (allocated === 0) {
                     status = 'no_budget';
@@ -140,7 +233,6 @@ const WeeklyTracking = () => {
                 };
             });
 
-            // ✅ Calculate totals
             const totalAllocated = departmentUsage.reduce((sum, d) => sum + d.allocated, 0);
             const totalUsed = departmentUsage.reduce((sum, d) => sum + d.used, 0);
             const totalRemaining = totalAllocated - totalUsed;
@@ -159,7 +251,6 @@ const WeeklyTracking = () => {
                 departments_with_budget: departmentUsage.filter(d => d.allocated > 0).length,
             };
 
-            console.log('✅ Week Data:', weekData);
             setDisplayData(weekData);
             setTrackingData([weekData]);
             
@@ -209,297 +300,339 @@ const WeeklyTracking = () => {
         }
     };
 
-    const getWeekNumber = (dateString) => {
-        if (!dateString) return "N/A";
-        try {
-            return getWeek(new Date(dateString));
-        } catch {
-            return "N/A";
-        }
-    };
-
-    const getWeekRange = (weekStart) => {
-        if (!weekStart) return "N/A";
-        try {
-            const start = new Date(weekStart);
-            const end = addDays(start, 6);
-            return `${formatDate(start)} - ${formatDate(end)}`;
-        } catch {
-            return "N/A";
-        }
-    };
-
-    // ✅ Get utilization badge
-    const getUtilizationBadge = (percentage) => {
-        if (percentage === 0) return <Badge className="bg-slate-400">No Usage</Badge>;
-        if (percentage >= 100) return <Badge className="bg-red-500">Exhausted</Badge>;
-        if (percentage >= 80) return <Badge className="bg-orange-500">Near Limit</Badge>;
-        if (percentage >= 50) return <Badge className="bg-yellow-500">Moderate</Badge>;
-        return <Badge className="bg-green-500">On Track</Badge>;
-    };
-
     const weekStart = startOfWeek(currentWeek, { weekStartsOn: 1 });
     const weekEnd = endOfWeek(currentWeek, { weekStartsOn: 1 });
     const currentWeekNumber = getWeek(weekStart);
 
+    // Stats
+    const stats = [
+        {
+            title: "Total Departments",
+            value: displayData?.department_count || 0,
+            icon: Building2,
+            color: "from-blue-500 to-blue-600",
+            subtitle: `${displayData?.departments_with_budget || 0} with budget`,
+            trend: displayData?.department_count > 0 ? 3 : 0,
+        },
+        {
+            title: "Total Allocated",
+            value: formatCurrency(displayData?.total_allocated || 0),
+            icon: Wallet,
+            color: "from-purple-500 to-purple-600",
+            subtitle: "Weekly budget",
+            trend: displayData?.total_allocated > 0 ? 5 : 0,
+        },
+        {
+            title: "Total Used",
+            value: formatCurrency(displayData?.total_used || 0),
+            icon: TrendingDown,
+            color: "from-yellow-500 to-yellow-600",
+            subtitle: "Consumed this week",
+            trend: displayData?.total_used > 0 ? 8 : 0,
+        },
+        {
+            title: "Total Remaining",
+            value: formatCurrency(displayData?.total_remaining || 0),
+            icon: TrendingUp,
+            color: (displayData?.total_remaining || 0) > 0 ? "from-emerald-500 to-emerald-600" : "from-red-500 to-red-600",
+            subtitle: "Available balance",
+            trend: (displayData?.total_remaining || 0) > 0 ? -2 : 0,
+        },
+    ];
+
     if (loading) {
-        return (
-            <div className="flex justify-center items-center h-64">
-                <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
-            </div>
-        );
+        return <LoadingSkeleton />;
     }
 
     const weekData = displayData || trackingData[0] || null;
     const departmentsList = weekData?.departments || [];
+    const totalUtilization = weekData?.total_allocated > 0 
+        ? Math.round((weekData.total_used / weekData.total_allocated) * 100) 
+        : 0;
 
     return (
-        <div className="space-y-6">
-            {/* Header */}
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                <div>
-                    <h1 className="text-2xl font-bold text-slate-800 dark:text-white">
-                        Weekly Budget Tracking
-                    </h1>
-                    <p className="text-slate-500 dark:text-slate-400 mt-1">
-                        Track weekly budget consumption per department
-                    </p>
-                </div>
-                <Button
-                    variant="outline"
-                    onClick={handleRefresh}
-                    disabled={refreshing}
-                    className="flex items-center gap-2"
-                >
-                    <RefreshCw
-                        className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`}
-                    />
-                    Refresh
-                </Button>
-            </div>
-
-            {/* Navigation */}
-            <div className="flex items-center justify-between gap-4">
-                <Button variant="outline" size="sm" onClick={handlePrevWeek}>
-                    <ChevronLeft className="h-4 w-4 mr-1" />
-                    Previous
-                </Button>
-                <div className="flex items-center gap-2">
-                    <Calendar className="h-5 w-5 text-purple-500" />
-                    <span className="font-medium">
-                        {formatDate(weekStart)} - {formatDate(weekEnd)}
-                    </span>
-                    <Badge variant="outline" className="ml-2">
-                        Week {currentWeekNumber}
-                    </Badge>
-                    {weekData?.is_active && (
-                        <Badge className="bg-green-100 text-green-700">
-                            Active
-                        </Badge>
-                    )}
-                </div>
-                <Button variant="outline" size="sm" onClick={handleNextWeek}>
-                    Next
-                    <ChevronRight className="h-4 w-4 ml-1" />
-                </Button>
-            </div>
-
-            {/* Stats Summary */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <Card>
-                    <CardContent className="pt-6">
-                        <p className="text-sm text-slate-500">Total Departments</p>
-                        <p className="text-2xl font-bold">
-                            {weekData?.department_count || 0}
-                        </p>
-                        <p className="text-xs text-slate-400">
-                            {weekData?.departments_with_budget || 0} with budget
-                        </p>
-                    </CardContent>
-                </Card>
-                <Card>
-                    <CardContent className="pt-6">
-                        <p className="text-sm text-slate-500">Total Allocated</p>
-                        <p className="text-2xl font-bold text-blue-600">
-                            {formatCurrency(weekData?.total_allocated || 0)}
-                        </p>
-                    </CardContent>
-                </Card>
-                <Card>
-                    <CardContent className="pt-6">
-                        <p className="text-sm text-slate-500">Total Used</p>
-                        <p className="text-2xl font-bold text-yellow-600">
-                            {formatCurrency(weekData?.total_used || 0)}
-                        </p>
-                    </CardContent>
-                </Card>
-                <Card>
-                    <CardContent className="pt-6">
-                        <p className="text-sm text-slate-500">Total Remaining</p>
-                        <p className={`text-2xl font-bold ${
-                            (weekData?.total_remaining || 0) > 0 
-                                ? 'text-green-600' 
-                                : 'text-red-600'
-                        }`}>
-                            {formatCurrency(weekData?.total_remaining || 0)}
-                        </p>
-                    </CardContent>
-                </Card>
-            </div>
-
-            {/* Weekly Data Table */}
-            <Card>
-                <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                        <RotateCcw className="h-5 w-5 text-purple-500" />
-                        Department-wise Weekly Usage
-                        <span className="ml-2 text-sm font-normal text-slate-500">
-                            Week {currentWeekNumber}
-                        </span>
-                    </CardTitle>
-                </CardHeader>
-                <CardContent>
-                    {!weekData || departmentsList.length === 0 ? (
-                        <div className="text-center py-12">
-                            <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                                <RotateCcw className="h-8 w-8 text-slate-400" />
+        <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
+            <div className="space-y-6 p-4 md:p-6 animate-fade-in-up">
+                {/* Header */}
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => navigate('/mo/dashboard')}
+                            className="rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 h-10 w-10"
+                        >
+                            <ArrowLeft className="h-5 w-5" />
+                        </Button>
+                        <div>
+                            <div className="flex items-center gap-3">
+                                <div className="p-2.5 rounded-xl bg-gradient-to-br from-purple-500 to-purple-600 shadow-lg shadow-purple-500/20">
+                                    <RotateCcw className="h-5 w-5 text-white" />
+                                </div>
+                                <div>
+                                    <h1 className="text-2xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 bg-clip-text text-transparent">
+                                        Weekly Budget Tracking
+                                    </h1>
+                                    <p className="text-sm text-slate-500 dark:text-slate-400">
+                                        Track weekly budget consumption per department
+                                    </p>
+                                </div>
                             </div>
-                            <p className="text-slate-500 font-medium">No budget allocation for this week</p>
-                            <p className="text-sm text-slate-400 mt-2 max-w-md mx-auto">
-                                This week has not been set up yet. Please go to <strong>Budget Allocation</strong> to set a weekly budget.
-                            </p>
+                        </div>
+                    </div>
+                    <Button
+                        variant="outline"
+                        onClick={handleRefresh}
+                        disabled={refreshing}
+                        className="dark:border-slate-700 dark:text-slate-300"
+                    >
+                        <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? "animate-spin" : ""}`} />
+                        Refresh
+                    </Button>
+                </div>
+
+                {/* Navigation */}
+                <Card className="dark:bg-slate-800/80 dark:border-slate-700">
+                    <CardContent className="pt-6">
+                        <div className="flex flex-wrap items-center justify-between gap-4">
                             <Button 
                                 variant="outline" 
-                                className="mt-4"
-                                onClick={() => window.location.href = '/mo/budget-allocation'}
+                                size="sm" 
+                                onClick={handlePrevWeek}
+                                className="dark:border-slate-700 dark:text-slate-300"
                             >
-                                Go to Budget Allocation
+                                <ChevronLeft className="h-4 w-4 mr-1" />
+                                Previous
                             </Button>
-                        </div>
-                    ) : (
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-sm">
-                                <thead>
-                                    <tr className="border-b bg-slate-50 dark:bg-slate-800">
-                                        <th className="text-left py-3 px-4 font-semibold text-slate-600">Department</th>
-                                        <th className="text-left py-3 px-4 font-semibold text-slate-600">Code</th>
-                                        <th className="text-right py-3 px-4 font-semibold text-slate-600">Allocated</th>
-                                        <th className="text-right py-3 px-4 font-semibold text-slate-600">Used</th>
-                                        <th className="text-right py-3 px-4 font-semibold text-slate-600">Remaining</th>
-                                        <th className="text-right py-3 px-4 font-semibold text-slate-600">Utilization</th>
-                                        <th className="text-center py-3 px-4 font-semibold text-slate-600">Status</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {departmentsList.map((dept, idx) => (
-                                        <tr 
-                                            key={dept.department_id || idx} 
-                                            className={`border-b hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors ${
-                                                dept.status === 'exhausted' ? 'bg-red-50/50 dark:bg-red-950/20' :
-                                                dept.status === 'near_limit' ? 'bg-orange-50/50 dark:bg-orange-950/20' :
-                                                dept.status === 'moderate' ? 'bg-yellow-50/50 dark:bg-yellow-950/20' :
-                                                ''
-                                            }`}
-                                        >
-                                            <td className="py-3 px-4 font-medium">
-                                                {dept.department_name}
-                                                {dept.allocated === 0 && (
-                                                    <span className="text-xs text-slate-400 ml-2">(No Budget)</span>
-                                                )}
-                                            </td>
-                                            <td className="py-3 px-4 text-slate-500">
-                                                {dept.department_code}
-                                            </td>
-                                            <td className="py-3 px-4 text-right font-medium text-blue-600">
-                                                {formatCurrency(dept.allocated)}
-                                            </td>
-                                            <td className="py-3 px-4 text-right font-medium text-yellow-600">
-                                                {formatCurrency(dept.used)}
-                                            </td>
-                                            <td className={`py-3 px-4 text-right font-medium ${
-                                                dept.remaining > 0 ? 'text-green-600' : 
-                                                dept.remaining < 0 ? 'text-red-600' : 'text-slate-400'
-                                            }`}>
-                                                {formatCurrency(dept.remaining)}
-                                            </td>
-                                            <td className="py-3 px-4 text-right">
-                                                <div className="flex items-center justify-end gap-2">
-                                                    <span className="font-medium">
-                                                        {dept.utilization}%
-                                                    </span>
-                                                    <div className="w-16 bg-slate-200 rounded-full h-1.5">
-                                                        <div 
-                                                            className={`h-1.5 rounded-full ${
-                                                                dept.utilization >= 100 ? 'bg-red-500' :
-                                                                dept.utilization >= 80 ? 'bg-orange-500' :
-                                                                dept.utilization >= 50 ? 'bg-yellow-500' :
-                                                                dept.utilization > 0 ? 'bg-green-500' :
-                                                                'bg-slate-300'
-                                                            }`}
-                                                            style={{ width: `${Math.min(dept.utilization, 100)}%` }}
-                                                        />
-                                                    </div>
-                                                </div>
-                                            </td>
-                                            <td className="py-3 px-4 text-center">
-                                                <Badge className={dept.status_color}>
-                                                    {dept.status_label}
-                                                </Badge>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                                {/* Footer with Totals */}
-                                <tfoot>
-                                    <tr className="border-t-2 bg-slate-50 dark:bg-slate-800 font-semibold">
-                                        <td className="py-3 px-4" colSpan="2">TOTAL</td>
-                                        <td className="py-3 px-4 text-right text-blue-600">
-                                            {formatCurrency(weekData?.total_allocated || 0)}
-                                        </td>
-                                        <td className="py-3 px-4 text-right text-yellow-600">
-                                            {formatCurrency(weekData?.total_used || 0)}
-                                        </td>
-                                        <td className={`py-3 px-4 text-right ${
-                                            (weekData?.total_remaining || 0) > 0 ? 'text-green-600' : 'text-red-600'
-                                        }`}>
-                                            {formatCurrency(weekData?.total_remaining || 0)}
-                                        </td>
-                                        <td className="py-3 px-4 text-right" colSpan="2"></td>
-                                    </tr>
-                                </tfoot>
-                            </table>
-
-                            {/* Overall Status Bar */}
-                            <div className="mt-4 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
-                                <div className="flex items-center justify-between text-sm">
-                                    <span className="text-slate-500">Overall Weekly Utilization</span>
-                                    <span className="font-semibold">
-                                        {weekData?.total_allocated > 0 
-                                            ? `${Math.round((weekData.total_used / weekData.total_allocated) * 100)}%`
-                                            : '0%'}
+                            <div className="flex items-center gap-3 flex-wrap">
+                                <div className="flex items-center gap-2">
+                                    <Calendar className="h-5 w-5 text-purple-500" />
+                                    <span className="font-medium text-slate-700 dark:text-slate-300">
+                                        {formatDate(weekStart)} - {formatDate(weekEnd)}
                                     </span>
                                 </div>
-                                <div className="w-full bg-slate-200 rounded-full h-2 mt-1">
-                                    <div 
-                                        className={`h-2 rounded-full ${
-                                            (weekData?.total_used / weekData?.total_allocated) >= 0.8 ? 'bg-red-500' :
-                                            (weekData?.total_used / weekData?.total_allocated) >= 0.5 ? 'bg-yellow-500' :
-                                            'bg-green-500'
-                                        }`}
-                                        style={{ 
-                                            width: `${Math.min((weekData?.total_used / weekData?.total_allocated) * 100, 100)}%` 
-                                        }}
-                                    />
+                                <Badge variant="outline" className="text-slate-600 dark:text-slate-400">
+                                    Week {currentWeekNumber}
+                                </Badge>
+                                {weekData?.is_active && (
+                                    <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+                                        <Activity className="h-3 w-3 mr-1" />
+                                        Active
+                                    </Badge>
+                                )}
+                                {!weekData && (
+                                    <Badge className="bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400">
+                                        No Data
+                                    </Badge>
+                                )}
+                            </div>
+                            <Button 
+                                variant="outline" 
+                                size="sm" 
+                                onClick={handleNextWeek}
+                                className="dark:border-slate-700 dark:text-slate-300"
+                            >
+                                Next
+                                <ChevronRight className="h-4 w-4 ml-1" />
+                            </Button>
+                        </div>
+                    </CardContent>
+                </Card>
+
+                {/* Stats Cards */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {stats.map((stat, index) => (
+                        <StatsCard key={index} {...stat} />
+                    ))}
+                </div>
+
+                {/* Weekly Data Table */}
+                <Card className="dark:bg-slate-800/80 dark:border-slate-700 shadow-xl shadow-black/5">
+                    <CardHeader className="border-b border-slate-200/60 dark:border-slate-700/60">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <CardTitle className="flex items-center gap-2 text-slate-800 dark:text-white">
+                                    <RotateCcw className="h-5 w-5 text-purple-500" />
+                                    Department-wise Weekly Usage
+                                </CardTitle>
+                                <CardDescription className="dark:text-slate-400">
+                                    Week {currentWeekNumber} • {departmentsList.length} departments
+                                    {departmentsList.length > 0 && ` • ${weekData?.departments_with_budget || 0} with budget`}
+                                </CardDescription>
+                            </div>
+                            {departmentsList.length > 0 && (
+                                <Badge className="bg-purple-500/20 text-purple-600 dark:text-purple-400 border-purple-500/30">
+                                    <Zap className="h-3 w-3 mr-1" />
+                                    {departmentsList.length} records
+                                </Badge>
+                            )}
+                        </div>
+                    </CardHeader>
+                    <CardContent className="pt-6">
+                        {!weekData || departmentsList.length === 0 ? (
+                            <div className="text-center py-16">
+                                <div className="w-20 h-20 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto mb-4">
+                                    <RotateCcw className="h-10 w-10 text-slate-400 dark:text-slate-500" />
                                 </div>
-                                <div className="flex justify-between text-xs text-slate-400 mt-1">
-                                    <span>Used: {formatCurrency(weekData?.total_used || 0)}</span>
-                                    <span>Remaining: {formatCurrency(weekData?.total_remaining || 0)}</span>
+                                <p className="text-slate-600 dark:text-slate-400 font-medium text-lg">No budget allocation for this week</p>
+                                <p className="text-sm text-slate-400 dark:text-slate-500 mt-1 max-w-md mx-auto">
+                                    This week has not been set up yet. Please go to <strong className="text-purple-600 dark:text-purple-400">Budget Allocation</strong> to set a weekly budget.
+                                </p>
+                                <Button 
+                                    variant="outline" 
+                                    className="mt-4 dark:border-slate-700 dark:text-slate-300"
+                                    onClick={() => navigate('/mo/budget-allocation')}
+                                >
+                                    Go to Budget Allocation
+                                </Button>
+                            </div>
+                        ) : (
+                            <div className="space-y-4">
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-sm">
+                                        <thead>
+                                            <tr className="border-b bg-slate-50 dark:bg-slate-900/50">
+                                                <th className="text-left py-3 px-4 font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
+                                                    Department
+                                                </th>
+                                                <th className="text-left py-3 px-4 font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
+                                                    Code
+                                                </th>
+                                                <th className="text-right py-3 px-4 font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
+                                                    Allocated
+                                                </th>
+                                                <th className="text-right py-3 px-4 font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
+                                                    Used
+                                                </th>
+                                                <th className="text-right py-3 px-4 font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
+                                                    Remaining
+                                                </th>
+                                                <th className="text-right py-3 px-4 font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
+                                                    Utilization
+                                                </th>
+                                                <th className="text-center py-3 px-4 font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
+                                                    Status
+                                                </th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {departmentsList.map((dept, idx) => (
+                                                <tr 
+                                                    key={dept.department_id || idx} 
+                                                    className={cn(
+                                                        "border-b hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors",
+                                                        dept.status === 'exhausted' ? 'bg-red-50/50 dark:bg-red-950/20' :
+                                                        dept.status === 'near_limit' ? 'bg-orange-50/50 dark:bg-orange-950/20' :
+                                                        dept.status === 'moderate' ? 'bg-yellow-50/50 dark:bg-yellow-950/20' :
+                                                        ''
+                                                    )}
+                                                >
+                                                    <td className="py-3 px-4 font-medium text-slate-800 dark:text-white">
+                                                        {dept.department_name}
+                                                        {dept.allocated === 0 && (
+                                                            <span className="text-xs text-slate-400 dark:text-slate-500 ml-2">(No Budget)</span>
+                                                        )}
+                                                    </td>
+                                                    <td className="py-3 px-4 text-slate-500 dark:text-slate-400">
+                                                        {dept.department_code}
+                                                    </td>
+                                                    <td className="py-3 px-4 text-right font-medium text-blue-600 dark:text-blue-400">
+                                                        {formatCurrency(dept.allocated)}
+                                                    </td>
+                                                    <td className="py-3 px-4 text-right font-medium text-yellow-600 dark:text-yellow-400">
+                                                        {formatCurrency(dept.used)}
+                                                    </td>
+                                                    <td className={cn(
+                                                        "py-3 px-4 text-right font-medium",
+                                                        dept.remaining > 0 ? 'text-emerald-600 dark:text-emerald-400' : 
+                                                        dept.remaining < 0 ? 'text-red-600 dark:text-red-400' : 'text-slate-400'
+                                                    )}>
+                                                        {formatCurrency(dept.remaining)}
+                                                    </td>
+                                                    <td className="py-3 px-4 text-right">
+                                                        <div className="flex items-center justify-end gap-2">
+                                                            <span className="font-medium text-slate-700 dark:text-slate-300">
+                                                                {dept.utilization}%
+                                                            </span>
+                                                            <div className="w-16 bg-slate-200 dark:bg-slate-700 rounded-full h-1.5">
+                                                                <div 
+                                                                    className={cn(
+                                                                        "h-1.5 rounded-full",
+                                                                        dept.utilization >= 100 ? 'bg-red-500' :
+                                                                        dept.utilization >= 80 ? 'bg-orange-500' :
+                                                                        dept.utilization >= 50 ? 'bg-yellow-500' :
+                                                                        dept.utilization > 0 ? 'bg-emerald-500' :
+                                                                        'bg-slate-300'
+                                                                    )}
+                                                                    style={{ width: `${Math.min(dept.utilization, 100)}%` }}
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                    </td>
+                                                    <td className="py-3 px-4 text-center">
+                                                        <StatusBadge status={dept.status} label={dept.status_label} />
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                        <tfoot>
+                                            <tr className="border-t-2 bg-slate-50 dark:bg-slate-900/50 font-semibold">
+                                                <td className="py-3 px-4 text-slate-800 dark:text-white" colSpan="2">TOTAL</td>
+                                                <td className="py-3 px-4 text-right text-blue-600 dark:text-blue-400">
+                                                    {formatCurrency(weekData?.total_allocated || 0)}
+                                                </td>
+                                                <td className="py-3 px-4 text-right text-yellow-600 dark:text-yellow-400">
+                                                    {formatCurrency(weekData?.total_used || 0)}
+                                                </td>
+                                                <td className={cn(
+                                                    "py-3 px-4 text-right",
+                                                    (weekData?.total_remaining || 0) > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'
+                                                )}>
+                                                    {formatCurrency(weekData?.total_remaining || 0)}
+                                                </td>
+                                                <td className="py-3 px-4 text-right text-slate-700 dark:text-slate-300" colSpan="2">
+                                                    {totalUtilization}% utilized
+                                                </td>
+                                            </tr>
+                                        </tfoot>
+                                    </table>
+                                </div>
+
+                                {/* Overall Status Bar */}
+                                <div className="p-4 bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-slate-200 dark:border-slate-700">
+                                    <div className="flex items-center justify-between text-sm">
+                                        <span className="text-slate-600 dark:text-slate-400">Overall Weekly Utilization</span>
+                                        <span className="font-semibold text-slate-800 dark:text-white">
+                                            {totalUtilization}%
+                                        </span>
+                                    </div>
+                                    <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2 mt-1">
+                                        <div 
+                                            className={cn(
+                                                "h-2 rounded-full transition-all duration-500",
+                                                totalUtilization >= 80 ? 'bg-red-500' :
+                                                totalUtilization >= 50 ? 'bg-yellow-500' :
+                                                'bg-emerald-500'
+                                            )}
+                                            style={{ width: `${Math.min(totalUtilization, 100)}%` }}
+                                        />
+                                    </div>
+                                    <div className="flex justify-between text-xs text-slate-400 dark:text-slate-500 mt-1">
+                                        <span>Used: {formatCurrency(weekData?.total_used || 0)}</span>
+                                        <span>Remaining: {formatCurrency(weekData?.total_remaining || 0)}</span>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                    )}
-                </CardContent>
-            </Card>
+                        )}
+                    </CardContent>
+                </Card>
+
+                {/* Footer */}
+                <div className="text-center text-xs text-slate-400 dark:text-slate-500 pt-2 border-t border-slate-200 dark:border-slate-700">
+                    <p>FCMS - Mayor's Office • Weekly Budget Tracking</p>
+                    <p className="mt-0.5">Week {currentWeekNumber} • {departmentsList.length} departments • {weekData?.departments_with_budget || 0} with budget</p>
+                </div>
+            </div>
         </div>
     );
 };
