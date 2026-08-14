@@ -109,12 +109,12 @@ const getStatusConfig = (status) => {
     'funds_issued': { color: 'bg-blue-500', label: 'Funds Issued', icon: DollarSign },
     'acknowledged': { color: 'bg-cyan-500', label: 'Acknowledged', icon: CheckCircle },
     'in_transit': { color: 'bg-indigo-500', label: 'In Transit', icon: Truck },
-    'pending_reconciliation': { color: 'bg-orange-500', label: 'Pending Reconciliation', icon: FileCheck },
     'closed': { color: 'bg-green-600', label: 'Closed', icon: CheckCircle },
     'rejected': { color: 'bg-red-500', label: 'Rejected', icon: XCircle },
     'cancelled': { color: 'bg-slate-500', label: 'Cancelled', icon: XCircle },
     'returned_for_revision': { color: 'bg-purple-500', label: 'Returned', icon: AlertCircle },
     'draft': { color: 'bg-slate-400', label: 'Draft', icon: AlertCircle },
+    'pending_gso_validation': { color: 'bg-indigo-500', label: 'Pending Validation', icon: FileCheck },
   };
   return configs[status] || { color: 'bg-slate-500', label: status || 'Unknown', icon: Clock };
 };
@@ -242,6 +242,7 @@ const setupGsoRealtimeNotifications = (user, fetchAllDataRef, setForceUpdate) =>
       case 'trip_started':
       case 'trip_completed':
       case 'trip_created':
+      case 'trip_pending_validation':
         console.log('🚗 Trip update detected - refreshing data');
         setTimeout(() => {
           fetchAllDataRef.current?.();
@@ -583,9 +584,9 @@ const StatsCard = ({ title, value, icon: Icon, gradient, subtitle, onClick, tren
 
 const TicketTable = ({ 
   tickets, 
-  showReconcile = false, 
+  showValidate = false,
   onView, 
-  onReconcile, 
+  onValidate,
   isLoading: tableLoading,
   showActions = true,
   maxHeight = "400px",
@@ -685,14 +686,14 @@ const TicketTable = ({
                           <Eye className="h-4 w-4" />
                         </Button>
                       )}
-                      {showReconcile && ticket?.status === 'pending_reconciliation' && (
+                      {showValidate && ticket?.status === 'pending_gso_validation' && (
                         <Button
                           size="sm"
-                          className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm h-8 px-3"
-                          onClick={() => onReconcile?.(ticket)}
+                          className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm h-8 px-3"
+                          onClick={() => onValidate?.(ticket)}
                         >
-                          <Check className="h-3.5 w-3.5 mr-1" />
-                          Reconcile
+                          <FileCheck className="h-3.5 w-3.5 mr-1" />
+                          Validate
                         </Button>
                       )}
                     </div>
@@ -731,12 +732,13 @@ const GsoDashboard = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [selectedTicket, setSelectedTicket] = useState(null);
-  const [showReconcileDialog, setShowReconcileDialog] = useState(false);
+  const [showValidateDialog, setShowValidateDialog] = useState(false);
   const [activeTab, setActiveTab] = useState('pending');
   const [searchQuery, setSearchQuery] = useState('');
   const [showLiveTracking, setShowLiveTracking] = useState(true);
   const [showAuditLog, setShowAuditLog] = useState(false);
   const [forceUpdate, setForceUpdate] = useState(0);
+  const [validationNote, setValidationNote] = useState('');
 
   const fetchAllDataRef = useRef(null);
 
@@ -813,15 +815,15 @@ const GsoDashboard = () => {
     },
   });
 
-  const { data: reconciliationTickets = [], isLoading: reconciliationLoading, refetch: refetchReconciliation } = useQuery({
-    queryKey: ['gso-reconciliation'],
+  const { data: pendingValidation = [], isLoading: validationLoading, refetch: refetchValidation } = useQuery({
+    queryKey: ['gso-pending-validation'],
     queryFn: async () => {
       try {
-        const response = await gsoAPI.getPendingReconciliation();
+        const response = await gsoAPI.getPendingValidation();
         const data = response?.data?.data || response?.data || [];
         return Array.isArray(data) ? data : [];
       } catch (error) {
-        console.error('Error fetching reconciliation tickets:', error);
+        console.error('Error fetching pending validation:', error);
         return [];
       }
     },
@@ -875,20 +877,21 @@ const GsoDashboard = () => {
   // MUTATIONS
   // ============================================
 
-  const reconcileMutation = useMutation({
+  const validateMutation = useMutation({
     mutationFn: async ({ ticketId, data }) => {
-      const response = await gsoAPI.reconcileTrip(ticketId, data);
+      const response = await gsoAPI.validateTrip(ticketId, data);
       return response.data;
     },
-    onSuccess: () => {
-      toast.success('Trip reconciled successfully!');
-      queryClient.invalidateQueries({ queryKey: ['gso-reconciliation'] });
+    onSuccess: (data) => {
+      toast.success(data.message || 'Trip validated successfully!');
+      queryClient.invalidateQueries({ queryKey: ['gso-pending-validation'] });
       queryClient.invalidateQueries({ queryKey: ['gso-all-trips'] });
-      setShowReconcileDialog(false);
+      setShowValidateDialog(false);
       setSelectedTicket(null);
+      setValidationNote('');
     },
     onError: (error) => {
-      toast.error(error?.response?.data?.message || 'Failed to reconcile trip');
+      toast.error(error?.response?.data?.message || 'Failed to validate trip');
     },
   });
 
@@ -948,8 +951,17 @@ const GsoDashboard = () => {
         onClick: () => navigate('/admin/vehicles'),
         trend: totalVehicles > 0 ? Math.round((activeVehicles / totalVehicles) * 100) : 0,
       },
+      {
+        title: 'Pending Validation',
+        value: pendingValidation.length,
+        icon: FileCheck,
+        gradient: 'from-indigo-500 to-indigo-600',
+        subtitle: 'Ready for GSO review',
+        onClick: () => setActiveTab('validation'),
+        trend: pendingValidation.length > 0 ? 3 : 0,
+      },
     ];
-  }, [allTrips, pendingTickets, users, vehicles, activeTrips.length, navigate]);
+  }, [allTrips, pendingTickets, users, vehicles, activeTrips.length, pendingValidation.length, navigate]);
 
   // ============================================
   // FILTER FUNCTIONS
@@ -968,8 +980,8 @@ const GsoDashboard = () => {
 
   const filteredPending = useMemo(() => filterTickets(pendingTickets), [pendingTickets, searchQuery]);
   const filteredReturned = useMemo(() => filterTickets(returnedTickets), [returnedTickets, searchQuery]);
-  const filteredReconciliation = useMemo(() => filterTickets(reconciliationTickets), [reconciliationTickets, searchQuery]);
   const filteredAllTrips = useMemo(() => filterTickets(allTrips), [allTrips, searchQuery]);
+  const filteredValidation = useMemo(() => filterTickets(pendingValidation), [pendingValidation, searchQuery]);
 
   // ============================================
   // CHART DATA
@@ -1038,7 +1050,7 @@ const GsoDashboard = () => {
   const fetchAllData = () => {
     refetchPending();
     refetchReturned();
-    refetchReconciliation();
+    refetchValidation();
     refetchAllTrips();
     refetchGps();
     refetchAudit();
@@ -1052,7 +1064,7 @@ const GsoDashboard = () => {
   // LOADING STATE
   // ============================================
 
-  const isLoading = pendingLoading || returnedLoading || reconciliationLoading || allTripsLoading || gpsLoading;
+  const isLoading = pendingLoading || returnedLoading || allTripsLoading || gpsLoading;
 
   if (isLoading && allTrips.length === 0 && activeTrips.length === 0) {
     return (
@@ -1123,7 +1135,7 @@ const GsoDashboard = () => {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 md:gap-5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4 md:gap-5">
         {stats.map((stat, index) => (
           <StatsCard key={index} {...stat} />
         ))}
@@ -1247,7 +1259,7 @@ const GsoDashboard = () => {
 
       {/* Tabs for Trip Management */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full max-w-3xl grid-cols-4 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
+        <TabsList className="grid w-full max-w-4xl grid-cols-4 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
           <TabsTrigger value="pending" className="rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900 data-[state=active]:shadow-sm transition-all duration-200">
             <Clock className="h-4 w-4 mr-2" />
             Pending MO
@@ -1255,18 +1267,25 @@ const GsoDashboard = () => {
               {pendingTickets.length}
             </Badge>
           </TabsTrigger>
-          <TabsTrigger value="reconciliation" className="rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900 data-[state=active]:shadow-sm transition-all duration-200">
-            <FileCheck className="h-4 w-4 mr-2" />
-            Reconcile
-            <Badge className="ml-2 bg-orange-500/20 text-orange-600 dark:text-orange-400 border-orange-500/30 text-[10px]">
-              {reconciliationTickets.length}
-            </Badge>
-          </TabsTrigger>
           <TabsTrigger value="all" className="rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900 data-[state=active]:shadow-sm transition-all duration-200">
             <Truck className="h-4 w-4 mr-2" />
             All Trips
             <Badge className="ml-2 bg-blue-500/20 text-blue-600 dark:text-blue-400 border-blue-500/30 text-[10px]">
               {allTrips.length}
+            </Badge>
+          </TabsTrigger>
+          <TabsTrigger value="validation" className="rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900 data-[state=active]:shadow-sm transition-all duration-200">
+            <FileCheck className="h-4 w-4 mr-2" />
+            Validate
+            <Badge className="ml-2 bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 border-indigo-500/30 text-[10px]">
+              {pendingValidation.length}
+            </Badge>
+          </TabsTrigger>
+          <TabsTrigger value="returned" className="rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900 data-[state=active]:shadow-sm transition-all duration-200">
+            <AlertCircle className="h-4 w-4 mr-2" />
+            Returned
+            <Badge className="ml-2 bg-purple-500/20 text-purple-600 dark:text-purple-400 border-purple-500/30 text-[10px]">
+              {returnedTickets.length}
             </Badge>
           </TabsTrigger>
         </TabsList>
@@ -1295,42 +1314,6 @@ const GsoDashboard = () => {
                 tickets={filteredPending}
                 onView={(id) => navigate(`/gso/tickets/${id}`)}
                 isLoading={pendingLoading}
-                showActions={true}
-                maxHeight="450px"
-              />
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Reconciliation Tab */}
-        <TabsContent value="reconciliation" className="space-y-4 mt-6">
-          <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-            <CardHeader className="border-b dark:border-slate-700">
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="flex items-center gap-2 text-slate-800 dark:text-white">
-                    <FileCheck className="h-5 w-5 text-orange-500" />
-                    Pending Reconciliation
-                  </CardTitle>
-                  <CardDescription className="dark:text-slate-400 mt-1">
-                    These trips are completed and need to be closed
-                  </CardDescription>
-                </div>
-                <Badge className="bg-orange-500/20 text-orange-600 dark:text-orange-400 border-orange-500/30">
-                  {filteredReconciliation.length} tickets
-                </Badge>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-6">
-              <TicketTable
-                tickets={filteredReconciliation}
-                showReconcile={true}
-                onView={(id) => navigate(`/gso/trip/${id}`)}
-                onReconcile={(ticket) => {
-                  setSelectedTicket(ticket);
-                  setShowReconcileDialog(true);
-                }}
-                isLoading={reconciliationLoading}
                 showActions={true}
                 maxHeight="450px"
               />
@@ -1368,6 +1351,73 @@ const GsoDashboard = () => {
                   }
                 }}
                 isLoading={allTripsLoading}
+                showActions={true}
+                maxHeight="450px"
+              />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Validation Tab */}
+        <TabsContent value="validation" className="space-y-4 mt-6">
+          <Card className="dark:bg-slate-800/80 dark:border-slate-700">
+            <CardHeader className="border-b dark:border-slate-700">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2 text-slate-800 dark:text-white">
+                    <FileCheck className="h-5 w-5 text-indigo-500" />
+                    Pending GSO Validation
+                  </CardTitle>
+                  <CardDescription className="dark:text-slate-400 mt-1">
+                    These trips are completed and need GSO validation to close
+                  </CardDescription>
+                </div>
+                <Badge className="bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 border-indigo-500/30">
+                  {filteredValidation.length} trips
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-6">
+              <TicketTable
+                tickets={filteredValidation}
+                showValidate={true}
+                onView={(id) => navigate(`/gso/trip/${id}`)}
+                onValidate={(ticket) => {
+                  setSelectedTicket(ticket);
+                  setShowValidateDialog(true);
+                }}
+                isLoading={validationLoading}
+                showActions={true}
+                maxHeight="450px"
+              />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Returned Tab */}
+        <TabsContent value="returned" className="space-y-4 mt-6">
+          <Card className="dark:bg-slate-800/80 dark:border-slate-700">
+            <CardHeader className="border-b dark:border-slate-700">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2 text-slate-800 dark:text-white">
+                    <AlertCircle className="h-5 w-5 text-purple-500" />
+                    Returned for Revision
+                  </CardTitle>
+                  <CardDescription className="dark:text-slate-400 mt-1">
+                    These trips were returned and need revision
+                  </CardDescription>
+                </div>
+                <Badge className="bg-purple-500/20 text-purple-600 dark:text-purple-400 border-purple-500/30">
+                  {filteredReturned.length} tickets
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-6">
+              <TicketTable
+                tickets={filteredReturned}
+                onView={(id) => navigate(`/gso/trip/${id}`)}
+                isLoading={returnedLoading}
                 showActions={true}
                 maxHeight="450px"
               />
@@ -1427,18 +1477,18 @@ const GsoDashboard = () => {
         )}
       </Card>
 
-      {/* Reconcile Dialog */}
-      <Dialog open={showReconcileDialog} onOpenChange={setShowReconcileDialog}>
+      {/* Validation Dialog */}
+      <Dialog open={showValidateDialog} onOpenChange={setShowValidateDialog}>
         <DialogContent className="sm:max-w-md dark:bg-slate-800 dark:border-slate-700">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-slate-800 dark:text-white">
-              <div className="p-2 rounded-xl bg-emerald-500/10">
-                <FileCheck className="h-5 w-5 text-emerald-600" />
+              <div className="p-2 rounded-xl bg-indigo-500/10">
+                <FileCheck className="h-5 w-5 text-indigo-600" />
               </div>
-              Reconcile Trip
+              Validate Trip
             </DialogTitle>
             <DialogDescription className="dark:text-slate-400">
-              Confirm that this trip is complete and ready to be closed.
+              Review trip details and validate completion before closing.
             </DialogDescription>
           </DialogHeader>
           <div className="bg-blue-50 dark:bg-blue-950/30 rounded-xl p-4 space-y-2 border border-blue-200 dark:border-blue-800">
@@ -1464,41 +1514,102 @@ const GsoDashboard = () => {
                   ₱{selectedTicket?.amount_released || selectedTicket?.gas_slip?.amount_released || 0}
                 </span>
               </div>
+              {selectedTicket?.gps_distance_km && (
+                <div className="flex justify-between">
+                  <span className="text-slate-600 dark:text-slate-400">GPS Distance:</span>
+                  <span className="font-semibold dark:text-white">
+                    {selectedTicket.gps_distance_km} km
+                  </span>
+                </div>
+              )}
+              {selectedTicket?.has_receipt && (
+                <div className="flex justify-between">
+                  <span className="text-slate-600 dark:text-slate-400">Receipt:</span>
+                  <span className="font-semibold text-emerald-600 dark:text-emerald-400">✅ Uploaded</span>
+                </div>
+              )}
             </div>
           </div>
+          
+          {/* Validation Note Input */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Validation Note (Optional)</label>
+            <Textarea
+              placeholder="Add a note about this validation..."
+              className="resize-none dark:bg-slate-900 dark:border-slate-700"
+              rows={2}
+              value={validationNote}
+              onChange={(e) => setValidationNote(e.target.value)}
+            />
+          </div>
+
           <DialogFooter className="gap-2">
             <Button 
               variant="outline" 
               onClick={() => {
-                setShowReconcileDialog(false);
+                setShowValidateDialog(false);
                 setSelectedTicket(null);
+                setValidationNote('');
               }} 
               className="dark:border-slate-700 dark:text-slate-300"
             >
               Cancel
             </Button>
-            <Button
-              className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-500/20"
-              onClick={() => {
-                const ticketId = getTicketId(selectedTicket);
-                if (!ticketId) {
-                  toast.error('Invalid ticket');
-                  return;
-                }
-                reconcileMutation.mutate({
-                  ticketId: ticketId,
-                  data: { status: 'closed' },
-                });
-              }}
-              disabled={reconcileMutation.isPending}
-            >
-              {reconcileMutation.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-              ) : (
-                <Check className="h-4 w-4 mr-2" />
-              )}
-              Reconcile & Close
-            </Button>
+            <>
+              <Button
+                variant="outline"
+                className="text-red-600 border-red-300 hover:bg-red-50 dark:text-red-400 dark:border-red-800 dark:hover:bg-red-950/30"
+                onClick={() => {
+                  const ticketId = getTicketId(selectedTicket);
+                  if (!ticketId) {
+                    toast.error('Invalid ticket');
+                    return;
+                  }
+                  validateMutation.mutate({
+                    ticketId: ticketId,
+                    data: { 
+                      validated: false,
+                      validation_note: validationNote || 'Trip validation failed'
+                    },
+                  });
+                  setValidationNote('');
+                }}
+                disabled={validateMutation.isPending}
+              >
+                {validateMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                ) : (
+                  <X className="h-4 w-4 mr-2" />
+                )}
+                Reject
+              </Button>
+              <Button
+                className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg shadow-indigo-500/20"
+                onClick={() => {
+                  const ticketId = getTicketId(selectedTicket);
+                  if (!ticketId) {
+                    toast.error('Invalid ticket');
+                    return;
+                  }
+                  validateMutation.mutate({
+                    ticketId: ticketId,
+                    data: { 
+                      validated: true,
+                      validation_note: validationNote || 'Trip validated by GSO'
+                    },
+                  });
+                  setValidationNote('');
+                }}
+                disabled={validateMutation.isPending}
+              >
+                {validateMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                ) : (
+                  <Check className="h-4 w-4 mr-2" />
+                )}
+                Validate & Close
+              </Button>
+            </>
           </DialogFooter>
         </DialogContent>
       </Dialog>

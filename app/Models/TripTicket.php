@@ -75,11 +75,16 @@ class TripTicket extends Model
     public const STATUS_RETURNED_FOR_REVISION = 'returned_for_revision';
     public const STATUS_FUNDS_ISSUED = 'funds_issued';
     public const STATUS_IN_TRANSIT = 'in_transit';
+    public const STATUS_COMPLETED = 'completed';  
+
     // public const STATUS_PENDING_RECONCILIATION = 'pending_reconciliation';
     public const STATUS_CLOSED = 'closed';
     public const STATUS_REJECTED = 'rejected';
     public const STATUS_CANCELLED = 'cancelled';
     public const STATUS_ACKNOWLEDGED = 'acknowledged';
+
+public const STATUS_PENDING_GSO_VALIDATION = 'pending_gso_validation';
+
 
     // ❌ REMOVED: STATUS_PENDING_HEAD_APPROVAL, STATUS_PENDING_GSO_REVIEW, STATUS_WITH_MAYORS_OFFICE
 
@@ -191,40 +196,42 @@ class TripTicket extends Model
         return $this->submitted_by_staff;
     }
 
-    public function getStatusLabelAttribute()
-    {
-        $labels = [
-            self::STATUS_DRAFT => 'Draft',
-            self::STATUS_PENDING_MAYORS_OFFICE => 'Pending Mayor\'s Office',
-            self::STATUS_RETURNED_FOR_REVISION => 'Returned for Revision',
-            self::STATUS_FUNDS_ISSUED => 'Funds Issued',
-            self::STATUS_IN_TRANSIT => 'In Transit',
-            // self::STATUS_PENDING_RECONCILIATION => 'Pending Reconciliation',
-            self::STATUS_CLOSED => 'Closed',
-            self::STATUS_REJECTED => 'Rejected',
-            self::STATUS_CANCELLED => 'Cancelled',
-            self::STATUS_ACKNOWLEDGED => 'Acknowledged',
-        ];
-        return $labels[$this->status] ?? $this->status;
-    }
+   public function getStatusLabelAttribute()
+{
+    $labels = [
+        self::STATUS_DRAFT => 'Draft',
+        self::STATUS_PENDING_MAYORS_OFFICE => 'Pending Mayor\'s Office',
+        self::STATUS_RETURNED_FOR_REVISION => 'Returned for Revision',
+        self::STATUS_FUNDS_ISSUED => 'Funds Issued',
+        self::STATUS_IN_TRANSIT => 'In Transit',
+        self::STATUS_PENDING_GSO_VALIDATION => 'Pending GSO Validation',  // ✅ NEW
+                self::STATUS_COMPLETED => 'Completed (Pending GSO)',  // ✅ NEW
 
-    public function getStatusColorAttribute()
-    {
-        $colors = [
-            self::STATUS_DRAFT => 'gray',
-            self::STATUS_PENDING_MAYORS_OFFICE => 'yellow',
-            self::STATUS_RETURNED_FOR_REVISION => 'purple',
-            self::STATUS_FUNDS_ISSUED => 'green',
-            self::STATUS_IN_TRANSIT => 'blue',
-            // self::STATUS_PENDING_RECONCILIATION => 'teal',
-            self::STATUS_CLOSED => 'dark-green',
-            self::STATUS_REJECTED => 'red',
-            self::STATUS_CANCELLED => 'gray',
-            self::STATUS_ACKNOWLEDGED => 'cyan',
-        ];
-        return $colors[$this->status] ?? 'gray';
-    }
+        self::STATUS_CLOSED => 'Closed',
+        self::STATUS_REJECTED => 'Rejected',
+        self::STATUS_CANCELLED => 'Cancelled',
+        self::STATUS_ACKNOWLEDGED => 'Acknowledged',
+    ];
+    return $labels[$this->status] ?? $this->status;
+}
 
+public function getStatusColorAttribute()
+{
+    $colors = [
+        self::STATUS_DRAFT => 'gray',
+        self::STATUS_PENDING_MAYORS_OFFICE => 'yellow',
+        self::STATUS_RETURNED_FOR_REVISION => 'purple',
+        self::STATUS_FUNDS_ISSUED => 'green',
+        self::STATUS_IN_TRANSIT => 'blue',
+        // self::STATUS_PENDING_RECONCILIATION => 'teal',
+        self::STATUS_PENDING_GSO_VALIDATION => 'indigo',  // ✅ NEW
+        self::STATUS_CLOSED => 'dark-green',
+        self::STATUS_REJECTED => 'red',
+        self::STATUS_CANCELLED => 'gray',
+        self::STATUS_ACKNOWLEDGED => 'cyan',
+    ];
+    return $colors[$this->status] ?? 'gray';
+}
     /**
  * Calculate fuel efficiency (km per liter)
  */
@@ -285,4 +292,5 @@ public function getMovementStatusAttribute(): string
     
     return 'Normal Trip';
 }
+
 }

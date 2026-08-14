@@ -156,6 +156,12 @@ export const gsoAPI = {
 
    getAvailableVehicles: (params = {}) => 
     api.get("/gso/vehicles/available", { params }),
+
+
+    getPendingValidation: (params) => 
+        api.get("/gso/pending-validation", { params }),
+    validateTrip: (id, data) => 
+        api.post(`/gso/tickets/${id}/validate`, data),
 };
 
 // ============ MAYOR'S OFFICE API ============

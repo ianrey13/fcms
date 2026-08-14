@@ -45,6 +45,8 @@ class TripTicketController extends Controller
                 TripTicket::STATUS_FUNDS_ISSUED,
                 TripTicket::STATUS_IN_TRANSIT,
                 // TripTicket::STATUS_PENDING_RECONCILIATION,
+                            TripTicket::STATUS_PENDING_GSO_VALIDATION,  // ✅ ADD THIS
+
                 TripTicket::STATUS_CLOSED,
                 TripTicket::STATUS_REJECTED,
                 TripTicket::STATUS_CANCELLED,

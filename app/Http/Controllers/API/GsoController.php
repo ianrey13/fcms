@@ -16,6 +16,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Log;
 use App\Helpers\NotificationHelper;
+use Illuminate\Support\Facades\Storage;
 
 class GsoController extends Controller
 {
@@ -936,4 +937,185 @@ class GsoController extends Controller
             Log::info('📡 Rejection notification result: ' . ($result ? 'SUCCESS' : 'FAILED'));
         }
     }
+
+/**
+ * GSO validates and CLOSES the trip (final step)
+ */
+public function validateTrip(Request $request, $id)
+{
+    try {
+        $user = $request->user();
+        
+        if (!$user->isGsoOffice()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+        
+        $validator = Validator::make($request->all(), [
+            'validated' => 'required|boolean',
+            'validation_note' => 'nullable|string|max:500',
+        ]);
+        
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+        
+        // ✅ Allow validation from 'completed' status (driver finished all trips)
+        $ticket = TripTicket::where('trip_ticket_id', $id)
+            ->whereIn('status', ['completed', 'pending_gso_validation'])
+            ->first();
+        
+        if (!$ticket) {
+            return response()->json([
+                'message' => 'Trip not found or not ready for validation'
+            ], 404);
+        }
+        
+        DB::beginTransaction();
+        
+        if ($request->validated) {
+            // ✅ GSO APPROVED - Close the trip
+            $ticket->status = 'closed';
+            $ticket->closed_by = $user->user_id;
+            $ticket->closed_at = now();
+            
+            $gasSlip = GasSlip::where('trip_ticket_id', $id)->first();
+            if ($gasSlip) {
+                $gasSlip->reconciliation_status = 'verified';
+                $gasSlip->reconciled_by = $user->user_id;
+                $gasSlip->reconciled_at = now();
+                $gasSlip->reconciliation_note = $request->validation_note ?? 'Validated by GSO';
+                $gasSlip->save();
+            }
+            
+            $message = "Trip {$ticket->trip_ticket_number} has been validated and CLOSED by GSO";
+            $notificationType = 'trip_validated';
+            $success = true;
+            
+        } else {
+            // ❌ GSO REJECTED - Return for revision
+            $ticket->status = 'returned_for_revision';
+            
+            TripTicketReturn::create([
+                'trip_ticket_id' => $ticket->trip_ticket_id,
+                'return_type' => 'rejected_by_gso',
+                'return_note' => $request->validation_note ?? 'GSO validation failed. Please revise.',
+                'actioned_by' => $user->user_id,
+                'actioned_at' => now(),
+            ]);
+            
+            $message = "Trip {$ticket->trip_ticket_number} was rejected: " . ($request->validation_note ?? 'Please revise and resubmit');
+            $notificationType = 'gso_rejected';
+            $success = false;
+        }
+        
+        $ticket->save();
+        
+        DB::commit();
+        
+        // ✅ Notify driver
+        if ($ticket->driver_id) {
+            $driver = Driver::find($ticket->driver_id);
+            if ($driver && $driver->user_id) {
+                NotificationHelper::send(
+                    $driver->user_id,
+                    $notificationType,
+                    'trip_ticket',
+                    $ticket->trip_ticket_id,
+                    $message
+                );
+            }
+        }
+        
+        // ✅ Notify Mayor's Office
+        $moStaff = User::where('role', 'mayors_office')->where('status', 'active')->get();
+        foreach ($moStaff as $mo) {
+            NotificationHelper::send(
+                $mo->user_id,
+                $notificationType,
+                'trip_ticket',
+                $ticket->trip_ticket_id,
+                $message
+            );
+        }
+        
+        return response()->json([
+            'success' => true,
+            'message' => $message,
+            'data' => [
+                'trip_ticket_id' => $ticket->trip_ticket_id,
+                'status' => $ticket->status,
+                'validated' => $success,
+                'is_closed' => $success,
+            ]
+        ]);
+        
+    } catch (\Exception $e) {
+        DB::rollBack();
+        Log::error('Validate trip error: ' . $e->getMessage());
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to validate trip: ' . $e->getMessage()
+        ], 500);
+    }
+}
+
+/**
+ * Get trips pending GSO validation
+ */
+public function getPendingValidation(Request $request)
+{
+    try {
+        $user = $request->user();
+        
+        if (!$user->isGsoOffice()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+        
+        $trips = TripTicket::with(['vehicle', 'department', 'driver.user', 'gasSlip', 'gasSlip.fuelReceipt'])
+            ->where('status', 'pending_gso_validation')
+            ->orderBy('submitted_at', 'desc')
+            ->get()
+            ->map(function ($ticket) {
+                $fuelReceipt = $ticket->gasSlip?->fuelReceipt;
+                return [
+                    'id' => $ticket->trip_ticket_id,
+                    'ticket_number' => $ticket->trip_ticket_number,
+                    'trip_date' => $ticket->trip_date,
+                    'destination' => $ticket->destination,
+                    'purpose' => $ticket->purpose,
+                    'status' => $ticket->status,
+                    'submitted_at' => $ticket->submitted_at,
+                    'driver_name' => $ticket->driver?->user?->full_name,
+                    'department_name' => $ticket->department?->department_name,
+                    'amount_released' => $ticket->gasSlip?->amount_released,
+                    'gps_distance_km' => $fuelReceipt?->gps_distance_km,
+                    'trip_started_at' => $fuelReceipt?->trip_started_at,
+                    'trip_ended_at' => $fuelReceipt?->trip_ended_at,
+                    'start_lat' => $fuelReceipt?->trip_start_gps_lat,
+                    'start_lng' => $fuelReceipt?->trip_start_gps_lng,
+                    'end_lat' => $fuelReceipt?->trip_end_gps_lat,
+                    'end_lng' => $fuelReceipt?->trip_end_gps_lng,
+                    'has_receipt' => $fuelReceipt && $fuelReceipt->receipt_photo_path ? true : false,
+                    'receipt_url' => $fuelReceipt && $fuelReceipt->receipt_photo_path ? 
+                        Storage::url($fuelReceipt->receipt_photo_path) : null,
+                ];
+            });
+        
+        return response()->json([
+            'success' => true,
+            'data' => $trips,
+            'meta' => [
+                'pending_count' => $trips->count()
+            ]
+        ]);
+        
+    } catch (\Exception $e) {
+        Log::error('Get pending validation error: ' . $e->getMessage());
+        Log::error('Stack trace: ' . $e->getTraceAsString()); // ✅ Add this to see the error
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to fetch pending validation: ' . $e->getMessage()
+        ], 500);
+    }
+}
 }

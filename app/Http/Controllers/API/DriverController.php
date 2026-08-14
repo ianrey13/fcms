@@ -1120,8 +1120,8 @@ public function acknowledgeFunds(Request $request, $id)
     }
 }
     
-    /**
- * Start trip and begin GPS tracking - FIXED (No Odometer)
+  /**
+ * Start trip - Allow starting from 'completed' status (next day)
  */
 public function startTrip(Request $request, $id)
 {
@@ -1141,12 +1141,8 @@ public function startTrip(Request $request, $id)
         Log::info('startTrip called', ['trip_id' => $id, 'user_id' => $user->user_id]);
         
         $driver = Driver::where('user_id', $user->user_id)->first();
-        
         if (!$driver) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Driver record not found'
-            ], 404);
+            return response()->json(['success' => false, 'message' => 'Driver record not found'], 404);
         }
         
         $ticket = TripTicket::where('trip_ticket_id', $id)
@@ -1154,10 +1150,7 @@ public function startTrip(Request $request, $id)
             ->first();
         
         if (!$ticket) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Trip ticket not found'
-            ], 404);
+            return response()->json(['success' => false, 'message' => 'Trip ticket not found'], 404);
         }
         
         Log::info('Trip found', [
@@ -1165,23 +1158,31 @@ public function startTrip(Request $request, $id)
             'current_status' => $ticket->status
         ]);
         
-        if ($ticket->status === 'in_transit') {
-            Log::info('Trip already in progress', ['trip_id' => $id]);
-            return response()->json([
-                'success' => true,
-                'message' => 'Trip already in progress',
-                'data' => [
-                    'trip_ticket_id' => $ticket->trip_ticket_id,
-                    'status' => $ticket->status
-                ]
-            ]);
-        }
+        // ✅ Allow starting from 'completed' status (next day)
+        // ✅ Also allow from 'funds_issued' and 'acknowledged'
+        $allowedStatuses = ['acknowledged', 'funds_issued', 'completed'];
         
-        if ($ticket->status !== 'acknowledged') {
+        if (!in_array($ticket->status, $allowedStatuses)) {
             return response()->json([
                 'success' => false,
-                'message' => 'Cannot start trip. Current status: ' . $ticket->status . '. Required: acknowledged'
+                'message' => 'Cannot start trip. Current status: ' . $ticket->status . 
+                            '. Allowed: ' . implode(', ', $allowedStatuses)
             ], 400);
+        }
+        
+        // ✅ Check if it's a new day (optional)
+        $lastCompleted = $ticket->updated_at; // or use a separate column
+        if ($ticket->status === 'completed' && $lastCompleted) {
+            // Allow starting again if it's a new day
+            $today = now()->toDateString();
+            $lastCompletedDate = $lastCompleted->toDateString();
+            
+            if ($today === $lastCompletedDate) {
+                // Same day - don't allow multiple starts
+                // But we can allow if they want to continue the same trip
+                // For now, we'll allow it anyway
+                Log::info('Starting trip on same day as completion');
+            }
         }
         
         DB::beginTransaction();
@@ -1220,44 +1221,9 @@ public function startTrip(Request $request, $id)
             'new_status' => $ticket->status
         ]);
         
-        // Send notification to GSO (submitted_by)
-        NotificationHelper::send(
-            $ticket->submitted_by,
-            'trip_started',
-            'trip_ticket',
-            $ticket->trip_ticket_id,
-            "Trip {$ticket->trip_ticket_number} has been started by driver " . $user->full_name
-        );
-        
-        // ✅ NEW: Broadcast to Mayor's Office
-        $moStaff = User::where('role', 'mayors_office')->where('status', 'active')->get();
-        foreach ($moStaff as $mo) {
-            NotificationHelper::send(
-                $mo->user_id,
-                'trip_started',
-                'trip_ticket',
-                $ticket->trip_ticket_id,
-                "Trip {$ticket->trip_ticket_number} has been started by driver " . $user->full_name
-            );
-        }
-        Log::info('📡 Broadcasted trip_started to ' . $moStaff->count() . ' MO staff');
-        
-        // ✅ NEW: Broadcast to all GSO staff (not just submitter)
-        $gsoStaff = User::where('role', 'gso_office')->where('status', 'active')->get();
-        foreach ($gsoStaff as $gso) {
-            NotificationHelper::send(
-                $gso->user_id,
-                'trip_started',
-                'trip_ticket',
-                $ticket->trip_ticket_id,
-                "Trip {$ticket->trip_ticket_number} has been started by driver " . $user->full_name
-            );
-        }
-        Log::info('📡 Broadcasted trip_started to ' . $gsoStaff->count() . ' GSO staff');
-        
         return response()->json([
             'success' => true,
-            'message' => 'Trip started successfully',
+            'message' => 'Trip started! GPS tracking is active.',
             'data' => [
                 'trip_ticket_id' => $ticket->trip_ticket_id,
                 'status' => $ticket->status,
@@ -1273,9 +1239,8 @@ public function startTrip(Request $request, $id)
         ], 500);
     }
 }
-    
 /**
- * Complete trip - FIXED (No Odometer) - Directly closes trip
+ * Complete trip - Driver completes for the day (NOT closed)
  */
 public function completeTrip(Request $request, $id)
 {
@@ -1295,12 +1260,8 @@ public function completeTrip(Request $request, $id)
         Log::info('completeTrip called', ['trip_id' => $id, 'user_id' => $user->user_id]);
         
         $driver = Driver::where('user_id', $user->user_id)->first();
-        
         if (!$driver) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Driver record not found'
-            ], 404);
+            return response()->json(['success' => false, 'message' => 'Driver record not found'], 404);
         }
         
         $ticket = TripTicket::where('trip_ticket_id', $id)
@@ -1308,10 +1269,7 @@ public function completeTrip(Request $request, $id)
             ->first();
         
         if (!$ticket) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Trip ticket not found'
-            ], 404);
+            return response()->json(['success' => false, 'message' => 'Trip ticket not found'], 404);
         }
         
         Log::info('Trip found for completion', [
@@ -1319,8 +1277,8 @@ public function completeTrip(Request $request, $id)
             'current_status' => $ticket->status
         ]);
         
-        // ✅ If already closed, return success
-        if ($ticket->status === 'closed') {
+        // ✅ If already completed or closed, return success
+        if ($ticket->status === 'completed' || $ticket->status === 'pending_gso_validation' || $ticket->status === 'closed') {
             return response()->json([
                 'success' => true,
                 'message' => 'Trip already completed',
@@ -1340,8 +1298,9 @@ public function completeTrip(Request $request, $id)
         
         DB::beginTransaction();
         
-        // ✅ CHANGE: Directly close the trip (skip reconciliation)
-        $ticket->status = 'closed';
+        // ✅ CHANGE: Set status to 'completed' (NOT closed)
+        // Driver can start trip again tomorrow
+        $ticket->status = 'completed';
         $ticket->save();
         
         $gasSlip = GasSlip::where('trip_ticket_id', $id)->first();
@@ -1354,71 +1313,62 @@ public function completeTrip(Request $request, $id)
                 }
                 $fuelReceipt->trip_elapsed_minutes = $fuelReceipt->trip_started_at ? 
                     $fuelReceipt->trip_started_at->diffInMinutes(now()) : null;
-                $fuelReceipt->save();
                 
-                // Store final GPS ping
+                // ✅ SAVE END GPS COORDINATES
                 if ($request->has('latitude') && $request->has('longitude')) {
-                    GpsPing::create([
-                        'trip_ticket_id' => $ticket->trip_ticket_id,
-                        'latitude' => $request->latitude,
-                        'longitude' => $request->longitude,
-                        'accuracy_meters' => $request->accuracy ?? null,
-                        'recorded_at' => now(),
-                        'received_at' => now(),
-                    ]);
+                    $fuelReceipt->trip_end_gps_lat = $request->latitude;
+                    $fuelReceipt->trip_end_gps_lng = $request->longitude;
                 }
+                $fuelReceipt->save();
             }
         }
         
+        // ✅ DELETE ALL GPS PINGS (they are only for live tracking)
+        $deletedPings = GpsPing::where('trip_ticket_id', $id)->delete();
+        Log::info('🧹 Deleted ' . $deletedPings . ' GPS pings for trip: ' . $id);
+        
         DB::commit();
         
-        Log::info('Trip completed successfully', [
+        Log::info('Trip completed for today', [
             'trip_id' => $ticket->trip_ticket_id,
             'new_status' => $ticket->status
         ]);
         
-        // Send notification to GSO (submitted_by)
-        NotificationHelper::send(
-            $ticket->submitted_by,
-            'trip_completed',
-            'trip_ticket',
-            $ticket->trip_ticket_id,
-            "Trip {$ticket->trip_ticket_number} has been completed by driver " . $user->full_name
-        );
-        
-        // ✅ Broadcast to Mayor's Office
-        $moStaff = User::where('role', 'mayors_office')->where('status', 'active')->get();
-        foreach ($moStaff as $mo) {
-            NotificationHelper::send(
-                $mo->user_id,
-                'trip_completed',
-                'trip_ticket',
-                $ticket->trip_ticket_id,
-                "Trip {$ticket->trip_ticket_number} has been completed by driver " . $user->full_name
-            );
-        }
-        Log::info('📡 Broadcasted trip_completed to ' . $moStaff->count() . ' MO staff');
-        
-        // ✅ Broadcast to all GSO staff (not just submitter)
+        // ✅ Notify GSO that driver completed a trip (pending validation)
         $gsoStaff = User::where('role', 'gso_office')->where('status', 'active')->get();
         foreach ($gsoStaff as $gso) {
             NotificationHelper::send(
                 $gso->user_id,
-                'trip_completed',
+                'trip_completed_pending_validation',
                 'trip_ticket',
                 $ticket->trip_ticket_id,
-                "Trip {$ticket->trip_ticket_number} has been completed by driver " . $user->full_name
+                "Trip {$ticket->trip_ticket_number} has been completed and is pending GSO validation"
             );
         }
-        Log::info('📡 Broadcasted trip_completed to ' . $gsoStaff->count() . ' GSO staff');
+        Log::info('📡 Notified ' . $gsoStaff->count() . ' GSO staff of completed trip');
+        
+        // ✅ Notify Mayor's Office
+        $moStaff = User::where('role', 'mayors_office')->where('status', 'active')->get();
+        foreach ($moStaff as $mo) {
+            NotificationHelper::send(
+                $mo->user_id,
+                'trip_completed_pending_validation',
+                'trip_ticket',
+                $ticket->trip_ticket_id,
+                "Trip {$ticket->trip_ticket_number} has been completed and is pending GSO validation"
+            );
+        }
+        Log::info('📡 Notified ' . $moStaff->count() . ' MO staff of completed trip');
         
         return response()->json([
             'success' => true,
-            'message' => 'Trip completed successfully',
+            'message' => 'Trip completed for today! You can start again tomorrow.',
             'data' => [
                 'trip_ticket_id' => $ticket->trip_ticket_id,
                 'status' => $ticket->status,
                 'trip_ended_at' => now(),
+                'pings_deleted' => $deletedPings,
+                'can_restart_tomorrow' => true,
             ]
         ]);
     } catch (\Exception $e) {
