@@ -184,6 +184,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
         // GSO can view fiscal years
         Route::get('fiscal-years', [FiscalYearController::class, 'index']);
+        Route::get('tickets/{id}/history', [GsoController::class, 'getTripHistory']);
     });
 
     // ============ MAYOR'S OFFICE ============
@@ -310,6 +311,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('reports/trips', [ReportsController::class, 'getTripReport']);
         Route::get('reports/fuel', [ReportsController::class, 'getFuelReport']);
         Route::get('reports/summary', [ReportsController::class, 'getReportSummary']);
+        Route::get('trips/{id}/history', [DriverController::class, 'getTripHistory']);
+        Route::get('trips/history/all', [DriverController::class, 'getAllTripHistory']);
+          Route::get('trips/{id}/history', [DriverController::class, 'getTripHistoryByTicket']);
     });
 
     // ============ GPS ============

@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Models\Department;
 use App\Models\Vehicle;
 use App\Models\Driver;
+use App\Models\TripHistory;
 use App\Models\FuelReceipt;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -35,7 +36,7 @@ class GsoController extends Controller
             'pending_mayors_office' => TripTicket::where('status', TripTicket::STATUS_PENDING_MAYORS_OFFICE)->count(),
             'funds_issued' => TripTicket::where('status', TripTicket::STATUS_FUNDS_ISSUED)->count(),
             'in_transit' => TripTicket::where('status', TripTicket::STATUS_IN_TRANSIT)->count(),
-            'pending_reconciliation' => TripTicket::where('status', TripTicket::STATUS_PENDING_RECONCILIATION)->count(),
+            // 'pending_reconciliation' => TripTicket::where('status', TripTicket::STATUS_PENDING_RECONCILIATION)->count(),
             'returned' => TripTicket::where('status', TripTicket::STATUS_RETURNED_FOR_REVISION)->count(),
             'closed' => TripTicket::where('status', TripTicket::STATUS_CLOSED)->count(),
             'total_trips_this_month' => TripTicket::whereMonth('submitted_at', now()->month)->count(),
@@ -508,106 +509,106 @@ class GsoController extends Controller
         }
     }
 
-    /**
-     * Reconcile a trip (close it)
-     */
-    public function reconcileTrip(Request $request, $id)
-    {
-        try {
-            $user = $request->user();
+    // /**
+    //  * Reconcile a trip (close it)
+    //  */
+    // public function reconcileTrip(Request $request, $id)
+    // {
+    //     try {
+    //         $user = $request->user();
             
-            if (!$user->isGsoOffice()) {
-                return response()->json(['message' => 'Unauthorized'], 403);
-            }
+    //         if (!$user->isGsoOffice()) {
+    //             return response()->json(['message' => 'Unauthorized'], 403);
+    //         }
             
-            $validator = Validator::make($request->all(), [
-                'reconciliation_note' => 'nullable|string|max:500',
-            ]);
+    //         $validator = Validator::make($request->all(), [
+    //             'reconciliation_note' => 'nullable|string|max:500',
+    //         ]);
             
-            if ($validator->fails()) {
-                return response()->json(['errors' => $validator->errors()], 422);
-            }
+    //         if ($validator->fails()) {
+    //             return response()->json(['errors' => $validator->errors()], 422);
+    //         }
             
-            $ticket = TripTicket::where('trip_ticket_id', $id)
-                ->where('status', TripTicket::STATUS_PENDING_RECONCILIATION)
-                ->first();
+    //         $ticket = TripTicket::where('trip_ticket_id', $id)
+    //             ->where('status', TripTicket::STATUS_PENDING_RECONCILIATION)
+    //             ->first();
             
-            if (!$ticket) {
-                return response()->json(['message' => 'Trip not found or not pending reconciliation'], 404);
-            }
+    //         if (!$ticket) {
+    //             return response()->json(['message' => 'Trip not found or not pending reconciliation'], 404);
+    //         }
             
-            // Update gas slip reconciliation status
-            $gasSlip = GasSlip::where('trip_ticket_id', $id)->first();
-            if ($gasSlip) {
-                $gasSlip->reconciliation_status = 'verified';
-                $gasSlip->reconciled_by = $user->user_id;
-                $gasSlip->reconciled_at = now();
-                $gasSlip->reconciliation_note = $request->reconciliation_note;
-                $gasSlip->save();
-            }
+    //         // Update gas slip reconciliation status
+    //         $gasSlip = GasSlip::where('trip_ticket_id', $id)->first();
+    //         if ($gasSlip) {
+    //             $gasSlip->reconciliation_status = 'verified';
+    //             $gasSlip->reconciled_by = $user->user_id;
+    //             $gasSlip->reconciled_at = now();
+    //             $gasSlip->reconciliation_note = $request->reconciliation_note;
+    //             $gasSlip->save();
+    //         }
             
-            // Update ticket status
-            $ticket->status = TripTicket::STATUS_CLOSED;
-            $ticket->save();
+    //         // Update ticket status
+    //         $ticket->status = TripTicket::STATUS_CLOSED;
+    //         $ticket->save();
             
-            // Broadcast notifications
-            $deptStaff = User::where('department_id', $ticket->department_id)
-                ->where('status', 'active')
-                ->get();
+    //         // Broadcast notifications
+    //         $deptStaff = User::where('department_id', $ticket->department_id)
+    //             ->where('status', 'active')
+    //             ->get();
             
-            foreach ($deptStaff as $staff) {
-                NotificationHelper::send(
-                    $staff->user_id,
-                    'trip_reconciled',
-                    'trip_ticket',
-                    $ticket->trip_ticket_id,
-                    "Trip {$ticket->trip_ticket_number} has been reconciled and closed by GSO"
-                );
-            }
-            Log::info('📡 Broadcasted trip_reconciled to ' . $deptStaff->count() . ' department staff');
+    //         foreach ($deptStaff as $staff) {
+    //             NotificationHelper::send(
+    //                 $staff->user_id,
+    //                 'trip_reconciled',
+    //                 'trip_ticket',
+    //                 $ticket->trip_ticket_id,
+    //                 "Trip {$ticket->trip_ticket_number} has been reconciled and closed by GSO"
+    //             );
+    //         }
+    //         Log::info('📡 Broadcasted trip_reconciled to ' . $deptStaff->count() . ' department staff');
             
-            $moStaff = User::where('role', 'mayors_office')->where('status', 'active')->get();
-            foreach ($moStaff as $mo) {
-                NotificationHelper::send(
-                    $mo->user_id,
-                    'trip_reconciled',
-                    'trip_ticket',
-                    $ticket->trip_ticket_id,
-                    "Trip {$ticket->trip_ticket_number} has been reconciled and closed by GSO"
-                );
-            }
-            Log::info('📡 Broadcasted trip_reconciled to ' . $moStaff->count() . ' MO staff');
+    //         $moStaff = User::where('role', 'mayors_office')->where('status', 'active')->get();
+    //         foreach ($moStaff as $mo) {
+    //             NotificationHelper::send(
+    //                 $mo->user_id,
+    //                 'trip_reconciled',
+    //                 'trip_ticket',
+    //                 $ticket->trip_ticket_id,
+    //                 "Trip {$ticket->trip_ticket_number} has been reconciled and closed by GSO"
+    //             );
+    //         }
+    //         Log::info('📡 Broadcasted trip_reconciled to ' . $moStaff->count() . ' MO staff');
             
-            if ($ticket->driver_id) {
-                $driver = Driver::find($ticket->driver_id);
-                if ($driver && $driver->user_id) {
-                    NotificationHelper::send(
-                        $driver->user_id,
-                        'trip_reconciled',
-                        'trip_ticket',
-                        $ticket->trip_ticket_id,
-                        "Trip {$ticket->trip_ticket_number} has been reconciled and closed"
-                    );
-                    Log::info('📡 Broadcasted trip_reconciled to driver: ' . $driver->user_id);
-                }
-            }
+    //         if ($ticket->driver_id) {
+    //             $driver = Driver::find($ticket->driver_id);
+    //             if ($driver && $driver->user_id) {
+    //                 NotificationHelper::send(
+    //                     $driver->user_id,
+    //                     'trip_reconciled',
+    //                     'trip_ticket',
+    //                     $ticket->trip_ticket_id,
+    //                     "Trip {$ticket->trip_ticket_number} has been reconciled and closed"
+    //                 );
+    //                 Log::info('📡 Broadcasted trip_reconciled to driver: ' . $driver->user_id);
+    //             }
+    //         }
             
-            return response()->json([
-                'success' => true,
-                'message' => 'Trip reconciled and closed successfully',
-                'data' => [
-                    'trip_ticket_id' => $ticket->trip_ticket_id,
-                    'status' => $ticket->status,
-                ]
-            ]);
-        } catch (\Exception $e) {
-            Log::error('Reconcile trip error: ' . $e->getMessage());
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to reconcile trip: ' . $e->getMessage()
-            ], 500);
-        }
-    }
+    //         return response()->json([
+    //             'success' => true,
+    //             'message' => 'Trip reconciled and closed successfully',
+    //             'data' => [
+    //                 'trip_ticket_id' => $ticket->trip_ticket_id,
+    //                 'status' => $ticket->status,
+    //             ]
+    //         ]);
+    //     } catch (\Exception $e) {
+    //         Log::error('Reconcile trip error: ' . $e->getMessage());
+    //         return response()->json([
+    //             'success' => false,
+    //             'message' => 'Failed to reconcile trip: ' . $e->getMessage()
+    //         ], 500);
+    //     }
+    // }
 
     /**
      * Get completed trips for GSO
@@ -1115,6 +1116,45 @@ public function getPendingValidation(Request $request)
         return response()->json([
             'success' => false,
             'message' => 'Failed to fetch pending validation: ' . $e->getMessage()
+        ], 500);
+    }
+}
+
+/**
+ * Get trip history for a specific ticket
+ */
+public function getTripHistory(Request $request, $id)
+{
+    try {
+        $user = $request->user();
+        
+        if (!$user->isGsoOffice()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+        
+        $ticket = TripTicket::find($id);
+        if (!$ticket) {
+            return response()->json(['message' => 'Trip not found'], 404);
+        }
+        
+        $history = TripHistory::where('trip_ticket_id', $id)
+            ->orderBy('trip_number', 'asc')
+            ->get();
+        
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'trip_ticket_id' => $ticket->trip_ticket_id,
+                'trip_ticket_number' => $ticket->trip_ticket_number,
+                'total_trips' => $ticket->trip_count ?? 0,
+                'history' => $history,
+            ]
+        ]);
+    } catch (\Exception $e) {
+        Log::error('Get trip history error: ' . $e->getMessage());
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to fetch trip history: ' . $e->getMessage()
         ], 500);
     }
 }

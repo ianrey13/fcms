@@ -48,6 +48,7 @@ class TripTicket extends Model
         'odometer_start',
         'odometer_end',
         'is_fuel_issued_without_trip',
+        'trip_count',
     ];
 
     protected $casts = [
@@ -292,5 +293,26 @@ public function getMovementStatusAttribute(): string
     
     return 'Normal Trip';
 }
+
+public function tripHistory()
+{
+    return $this->hasMany(TripHistory::class, 'trip_ticket_id', 'trip_ticket_id')
+        ->orderBy('trip_number', 'desc');
+}
+
+public function latestTrip()
+{
+    return $this->hasOne(TripHistory::class, 'trip_ticket_id', 'trip_ticket_id')
+        ->where('status', 'completed')
+        ->orderBy('trip_number', 'desc');
+}
+
+public function currentTrip()
+{
+    return $this->hasOne(TripHistory::class, 'trip_ticket_id', 'trip_ticket_id')
+        ->where('status', 'in_progress')
+        ->orderBy('trip_number', 'desc');
+}
+
 
 }

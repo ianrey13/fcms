@@ -11,6 +11,7 @@ use App\Models\GpsPing;
 use App\Models\FuelReceipt;
 use App\Models\Notification;
 use App\Models\SystemSetting;
+use App\Models\TripHistory;
 use App\Helpers\NotificationHelper;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -602,6 +603,70 @@ class DriverController extends Controller
     }
 
     /**
+ * Get trip history for a specific ticket (with coordinates)
+ */
+public function getTripHistoryByTicket(Request $request, $id)
+{
+    try {
+        $user = $request->user();
+        $driver = Driver::where('user_id', $user->user_id)->first();
+        
+        if (!$driver) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Driver record not found'
+            ], 404);
+        }
+        
+        $ticket = TripTicket::where('trip_ticket_id', $id)
+            ->where('driver_id', $driver->driver_id)
+            ->first();
+        
+        if (!$ticket) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Trip ticket not found'
+            ], 404);
+        }
+        
+        $history = TripHistory::where('trip_ticket_id', $id)
+            ->orderBy('trip_number', 'asc')
+            ->get();
+        
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'trip_ticket_id' => $ticket->trip_ticket_id,
+                'trip_ticket_number' => $ticket->trip_ticket_number,
+                'trip_count' => $ticket->trip_count ?? 0,
+                'history' => $history->map(function ($trip) {
+                    return [
+                        'history_id' => $trip->history_id,
+                        'trip_number' => $trip->trip_number,
+                        'start_lat' => $trip->start_lat,
+                        'start_lng' => $trip->start_lng,
+                        'started_at' => $trip->started_at,
+                        'end_lat' => $trip->end_lat,
+                        'end_lng' => $trip->end_lng,
+                        'ended_at' => $trip->ended_at,
+                        'distance_km' => $trip->distance_km,
+                        'status' => $trip->status,
+                        'duration_minutes' => $trip->started_at && $trip->ended_at ? 
+                            $trip->started_at->diffInMinutes($trip->ended_at) : null,
+                    ];
+                }),
+            ]
+        ]);
+    } catch (\Exception $e) {
+        Log::error('Get trip history by ticket error: ' . $e->getMessage());
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to fetch trip history: ' . $e->getMessage()
+        ], 500);
+    }
+}
+
+    /**
      * Get detailed trip information - FIXED (No Odometer)
      */
     public function getTripDetails(Request $request, $id)
@@ -775,68 +840,67 @@ class DriverController extends Controller
         }
     }
 
-    /**
-     * Get receipt status for a trip
-     */
-    public function getReceiptStatus(Request $request, $id)
-    {
-        try {
-            $user = $request->user();
-            $driver = Driver::where('user_id', $user->user_id)->first();
-            
-            if (!$driver) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Driver record not found'
-                ], 404);
-            }
-            
-            $ticket = TripTicket::where('trip_ticket_id', $id)
-                ->where('driver_id', $driver->driver_id)
-                ->first();
-            
-            if (!$ticket) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Trip ticket not found'
-                ], 404);
-            }
-            
-            $gasSlip = GasSlip::where('trip_ticket_id', $id)->first();
-            
-            if (!$gasSlip) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Gas slip not found'
-                ], 404);
-            }
-            
-            $fuelReceipt = FuelReceipt::where('gas_slip_id', $gasSlip->gas_slip_id)->first();
-            
+   /**
+ * Get receipt status for a trip
+ */
+public function getReceiptStatus(Request $request, $id)
+{
+    try {
+        $user = $request->user();
+        $driver = Driver::where('user_id', $user->user_id)->first();
+        
+        if (!$driver) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Driver record not found'
+            ], 404);
+        }
+        
+        $ticket = TripTicket::where('trip_ticket_id', $id)
+            ->where('driver_id', $driver->driver_id)
+            ->first();
+        
+        if (!$ticket) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Trip ticket not found'
+            ], 404);
+        }
+        
+        $gasSlip = GasSlip::where('trip_ticket_id', $id)->first();
+        
+        if (!$gasSlip) {
             return response()->json([
                 'success' => true,
                 'data' => [
-                    'is_uploaded' => $fuelReceipt && $fuelReceipt->receipt_photo_path ? true : false,
-                    'receipt_photo_path' => $fuelReceipt ? $fuelReceipt->receipt_photo_path : null,
-                    'receipt_url' => $fuelReceipt && $fuelReceipt->receipt_photo_path ? 
-                        Storage::url($fuelReceipt->receipt_photo_path) : null,
-                    'liters_availed' => $fuelReceipt ? $fuelReceipt->liters_availed : null,
-                    'amount_on_receipt' => $fuelReceipt ? $fuelReceipt->amount_on_receipt : null,
-                    'uploaded_at' => $fuelReceipt ? $fuelReceipt->receipt_uploaded_at : null,
-                    'is_acknowledged' => $gasSlip->receipt_acknowledged_by ? true : false,
-                    'acknowledged_at' => $gasSlip->receipt_acknowledged_at,
-                    'amount_released' => $gasSlip->amount_released,
-                    'remaining_amount' => $gasSlip->amount_released - ($fuelReceipt ? $fuelReceipt->amount_on_receipt : 0),
+                    'is_uploaded' => false,
+                    'message' => 'No gas slip found for this trip'
                 ]
             ]);
-        } catch (\Exception $e) {
-            Log::error('Get receipt status error: ' . $e->getMessage());
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to fetch receipt status: ' . $e->getMessage()
-            ], 500);
         }
+        
+        $fuelReceipt = FuelReceipt::where('gas_slip_id', $gasSlip->gas_slip_id)->first();
+        
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'is_uploaded' => $fuelReceipt && $fuelReceipt->receipt_photo_path ? true : false,
+                'receipt_photo_path' => $fuelReceipt ? $fuelReceipt->receipt_photo_path : null,
+                'receipt_url' => $fuelReceipt && $fuelReceipt->receipt_photo_path ? 
+                    Storage::url($fuelReceipt->receipt_photo_path) : null,
+                'liters_availed' => $fuelReceipt ? $fuelReceipt->liters_availed : null,
+                'amount_on_receipt' => $fuelReceipt ? $fuelReceipt->amount_on_receipt : null,
+                'uploaded_at' => $fuelReceipt ? $fuelReceipt->receipt_uploaded_at : null,
+            ]
+        ]);
+    } catch (\Exception $e) {
+        Log::error('Get receipt status error: ' . $e->getMessage());
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to fetch receipt status: ' . $e->getMessage()
+        ], 500);
     }
+}
 
     /**
      * Get current fuel prices
@@ -887,7 +951,9 @@ class DriverController extends Controller
                     'acknowledged',
                     'in_transit',
                     // 'pending_reconciliation',
-                    'closed'
+                    'closed',
+                     'completed',             
+                'pending_gso_validation'
                 ]);
             }
             
@@ -1121,7 +1187,7 @@ public function acknowledgeFunds(Request $request, $id)
 }
     
   /**
- * Start trip - Allow starting from 'completed' status (next day)
+ * Start trip - Save start coordinates in trip_history
  */
 public function startTrip(Request $request, $id)
 {
@@ -1160,7 +1226,7 @@ public function startTrip(Request $request, $id)
         
         // ✅ Allow starting from 'completed' status (next day)
         // ✅ Also allow from 'funds_issued' and 'acknowledged'
-        $allowedStatuses = ['acknowledged', 'funds_issued', 'completed'];
+        $allowedStatuses = ['acknowledged', 'funds_issued', 'completed', 'pending_gso_validation'];
         
         if (!in_array($ticket->status, $allowedStatuses)) {
             return response()->json([
@@ -1170,26 +1236,24 @@ public function startTrip(Request $request, $id)
             ], 400);
         }
         
-        // ✅ Check if it's a new day (optional)
-        $lastCompleted = $ticket->updated_at; // or use a separate column
-        if ($ticket->status === 'completed' && $lastCompleted) {
-            // Allow starting again if it's a new day
-            $today = now()->toDateString();
-            $lastCompletedDate = $lastCompleted->toDateString();
-            
-            if ($today === $lastCompletedDate) {
-                // Same day - don't allow multiple starts
-                // But we can allow if they want to continue the same trip
-                // For now, we'll allow it anyway
-                Log::info('Starting trip on same day as completion');
-            }
-        }
-        
         DB::beginTransaction();
         
+        // ✅ Increment trip count
+        $ticket->trip_count = ($ticket->trip_count ?? 0) + 1;
         $ticket->status = 'in_transit';
         $ticket->save();
         
+        // ✅ Save start coordinates to trip_history
+        $tripHistory = TripHistory::create([
+            'trip_ticket_id' => $ticket->trip_ticket_id,
+            'trip_number' => $ticket->trip_count,
+            'start_lat' => $request->latitude,
+            'start_lng' => $request->longitude,
+            'started_at' => now(),
+            'status' => 'in_progress',
+        ]);
+        
+        // ✅ Also update gas slip (for compatibility)
         $gasSlip = GasSlip::where('trip_ticket_id', $id)->first();
         if ($gasSlip) {
             $fuelReceipt = FuelReceipt::firstOrNew(['gas_slip_id' => $gasSlip->gas_slip_id]);
@@ -1200,25 +1264,26 @@ public function startTrip(Request $request, $id)
                 $fuelReceipt->trip_start_gps_accuracy = $request->accuracy ?? null;
             }
             $fuelReceipt->save();
-            
-            // Store initial GPS ping
-            if ($request->has('latitude') && $request->has('longitude')) {
-                GpsPing::create([
-                    'trip_ticket_id' => $ticket->trip_ticket_id,
-                    'latitude' => $request->latitude,
-                    'longitude' => $request->longitude,
-                    'accuracy_meters' => $request->accuracy ?? null,
-                    'recorded_at' => now(),
-                    'received_at' => now(),
-                ]);
-            }
+        }
+        
+        // ✅ Store initial GPS ping for live tracking
+        if ($request->has('latitude') && $request->has('longitude')) {
+            GpsPing::create([
+                'trip_ticket_id' => $ticket->trip_ticket_id,
+                'latitude' => $request->latitude,
+                'longitude' => $request->longitude,
+                'accuracy_meters' => $request->accuracy ?? null,
+                'recorded_at' => now(),
+                'received_at' => now(),
+            ]);
         }
         
         DB::commit();
         
         Log::info('Trip started successfully', [
             'trip_id' => $ticket->trip_ticket_id,
-            'new_status' => $ticket->status
+            'new_status' => $ticket->status,
+            'trip_number' => $ticket->trip_count,
         ]);
         
         return response()->json([
@@ -1227,6 +1292,7 @@ public function startTrip(Request $request, $id)
             'data' => [
                 'trip_ticket_id' => $ticket->trip_ticket_id,
                 'status' => $ticket->status,
+                'trip_number' => $ticket->trip_count,
                 'trip_started_at' => now(),
             ]
         ]);
@@ -1240,7 +1306,7 @@ public function startTrip(Request $request, $id)
     }
 }
 /**
- * Complete trip - Driver completes for the day (NOT closed)
+ * Complete trip - Save end coordinates in trip_history, delete GPS pings
  */
 public function completeTrip(Request $request, $id)
 {
@@ -1298,11 +1364,27 @@ public function completeTrip(Request $request, $id)
         
         DB::beginTransaction();
         
-        // ✅ CHANGE: Set status to 'completed' (NOT closed)
+        // ✅ Update trip history with end coordinates
+        $tripHistory = TripHistory::where('trip_ticket_id', $id)
+            ->where('status', 'in_progress')
+            ->orderBy('trip_number', 'desc')
+            ->first();
+        
+        if ($tripHistory) {
+            $tripHistory->end_lat = $request->latitude;
+            $tripHistory->end_lng = $request->longitude;
+            $tripHistory->ended_at = now();
+            $tripHistory->distance_km = $request->gps_distance_km ?? 0;
+            $tripHistory->status = 'completed';
+            $tripHistory->save();
+        }
+        
+        // ✅ Set status to 'completed' (NOT closed)
         // Driver can start trip again tomorrow
         $ticket->status = 'completed';
         $ticket->save();
         
+        // ✅ Update fuel_receipt (for compatibility)
         $gasSlip = GasSlip::where('trip_ticket_id', $id)->first();
         if ($gasSlip) {
             $fuelReceipt = FuelReceipt::where('gas_slip_id', $gasSlip->gas_slip_id)->first();
@@ -1314,7 +1396,6 @@ public function completeTrip(Request $request, $id)
                 $fuelReceipt->trip_elapsed_minutes = $fuelReceipt->trip_started_at ? 
                     $fuelReceipt->trip_started_at->diffInMinutes(now()) : null;
                 
-                // ✅ SAVE END GPS COORDINATES
                 if ($request->has('latitude') && $request->has('longitude')) {
                     $fuelReceipt->trip_end_gps_lat = $request->latitude;
                     $fuelReceipt->trip_end_gps_lng = $request->longitude;
@@ -1331,34 +1412,12 @@ public function completeTrip(Request $request, $id)
         
         Log::info('Trip completed for today', [
             'trip_id' => $ticket->trip_ticket_id,
-            'new_status' => $ticket->status
+            'new_status' => $ticket->status,
+            'trip_number' => $ticket->trip_count,
         ]);
         
-        // ✅ Notify GSO that driver completed a trip (pending validation)
-        $gsoStaff = User::where('role', 'gso_office')->where('status', 'active')->get();
-        foreach ($gsoStaff as $gso) {
-            NotificationHelper::send(
-                $gso->user_id,
-                'trip_completed_pending_validation',
-                'trip_ticket',
-                $ticket->trip_ticket_id,
-                "Trip {$ticket->trip_ticket_number} has been completed and is pending GSO validation"
-            );
-        }
-        Log::info('📡 Notified ' . $gsoStaff->count() . ' GSO staff of completed trip');
-        
-        // ✅ Notify Mayor's Office
-        $moStaff = User::where('role', 'mayors_office')->where('status', 'active')->get();
-        foreach ($moStaff as $mo) {
-            NotificationHelper::send(
-                $mo->user_id,
-                'trip_completed_pending_validation',
-                'trip_ticket',
-                $ticket->trip_ticket_id,
-                "Trip {$ticket->trip_ticket_number} has been completed and is pending GSO validation"
-            );
-        }
-        Log::info('📡 Notified ' . $moStaff->count() . ' MO staff of completed trip');
+        // ✅ Notify GSO and Mayor
+        $this->notifyTripCompleted($ticket);
         
         return response()->json([
             'success' => true,
@@ -1366,6 +1425,7 @@ public function completeTrip(Request $request, $id)
             'data' => [
                 'trip_ticket_id' => $ticket->trip_ticket_id,
                 'status' => $ticket->status,
+                'trip_number' => $ticket->trip_count,
                 'trip_ended_at' => now(),
                 'pings_deleted' => $deletedPings,
                 'can_restart_tomorrow' => true,
@@ -1380,7 +1440,36 @@ public function completeTrip(Request $request, $id)
         ], 500);
     }
 }
+
+/**
+ * Notify GSO and Mayor that trip is completed
+ */
+private function notifyTripCompleted($ticket)
+{
+    // Notify GSO
+    $gsoStaff = User::where('role', 'gso_office')->where('status', 'active')->get();
+    foreach ($gsoStaff as $gso) {
+        NotificationHelper::send(
+            $gso->user_id,
+            'trip_completed_pending_validation',
+            'trip_ticket',
+            $ticket->trip_ticket_id,
+            "Trip {$ticket->trip_ticket_number} (#{$ticket->trip_count}) has been completed and is pending GSO validation"
+        );
+    }
     
+    // Notify Mayor's Office
+    $moStaff = User::where('role', 'mayors_office')->where('status', 'active')->get();
+    foreach ($moStaff as $mo) {
+        NotificationHelper::send(
+            $mo->user_id,
+            'trip_completed_pending_validation',
+            'trip_ticket',
+            $ticket->trip_ticket_id,
+            "Trip {$ticket->trip_ticket_number} (#{$ticket->trip_count}) has been completed and is pending GSO validation"
+        );
+    }
+}
     /**
      * Upload fuel receipt - WITH AMOUNT VALIDATION
      */

@@ -304,6 +304,9 @@ export const driverAPI = {
   getTripReport: (params) => api.get("/driver/reports/trips", { params }),
   getFuelReport: (params) => api.get("/driver/reports/fuel", { params }),
   getReportSummary: (params) => api.get("/driver/reports/summary", { params }),
+
+  getTripHistory: (tripId) => 
+    api.get(`/driver/trips/${tripId}/history`),
 };
 
 // ============ DEPARTMENT API ============

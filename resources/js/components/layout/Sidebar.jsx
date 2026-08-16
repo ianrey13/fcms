@@ -42,6 +42,8 @@ import {
   History,
   Target,
   PieChart,
+  MapPin,
+  Navigation,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -203,6 +205,7 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
       gso_office: [
         { name: "Dashboard", href: "/gso/dashboard", icon: LayoutDashboard },
         { name: "All Trips", href: '/gso/all-trips', icon: FileText },
+        { name: "Trip History", href: "/gso/trip-history", icon: History },
         { name: "Live Tracking", href: "/gso/live-tracking", icon: Satellite },
         { name: "Fuel Receipts", href: "/gso/fuel-receipts", icon: Receipt },
         {
@@ -225,6 +228,8 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
             { name: "Calendar Year", href: "/gso/annual-budget", icon: Calendar },
           ],
         },
+        // ✅ NEW: Trip History - Separate item (not a submenu)
+        
       ],
       mayors_office: [
         { name: "Dashboard", href: "/mo/dashboard", icon: LayoutDashboard },
