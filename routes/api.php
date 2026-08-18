@@ -184,7 +184,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
         // GSO can view fiscal years
         Route::get('fiscal-years', [FiscalYearController::class, 'index']);
-        Route::get('tickets/{id}/history', [GsoController::class, 'getTripHistory']);
+         Route::get('tickets/{id}/history', [GsoController::class, 'getTripHistory']);
     });
 
     // ============ MAYOR'S OFFICE ============

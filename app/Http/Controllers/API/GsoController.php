@@ -16,6 +16,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Carbon;
 use App\Helpers\NotificationHelper;
 use Illuminate\Support\Facades\Storage;
 
@@ -1120,8 +1121,11 @@ public function getPendingValidation(Request $request)
     }
 }
 
+
+
+
 /**
- * Get trip history for a specific ticket
+ * Get trip history for a specific ticket (GSO view)
  */
 public function getTripHistory(Request $request, $id)
 {
@@ -1147,7 +1151,20 @@ public function getTripHistory(Request $request, $id)
                 'trip_ticket_id' => $ticket->trip_ticket_id,
                 'trip_ticket_number' => $ticket->trip_ticket_number,
                 'total_trips' => $ticket->trip_count ?? 0,
-                'history' => $history,
+                'history' => $history->map(function ($trip) {
+                    return [
+                        'history_id' => $trip->history_id,
+                        'trip_number' => $trip->trip_number,
+                        'start_lat' => $trip->start_lat,
+                        'start_lng' => $trip->start_lng,
+                        'started_at' => $trip->started_at,
+                        'end_lat' => $trip->end_lat,
+                        'end_lng' => $trip->end_lng,
+                        'ended_at' => $trip->ended_at,
+                        'distance_km' => $trip->distance_km,
+                        'status' => $trip->status,
+                    ];
+                }),
             ]
         ]);
     } catch (\Exception $e) {

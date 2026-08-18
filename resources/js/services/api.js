@@ -162,6 +162,8 @@ export const gsoAPI = {
         api.get("/gso/pending-validation", { params }),
     validateTrip: (id, data) => 
         api.post(`/gso/tickets/${id}/validate`, data),
+     getTripHistory: (tripId) => 
+        api.get(`/gso/tickets/${tripId}/history`), 
 };
 
 // ============ MAYOR'S OFFICE API ============
@@ -305,8 +307,12 @@ export const driverAPI = {
   getFuelReport: (params) => api.get("/driver/reports/fuel", { params }),
   getReportSummary: (params) => api.get("/driver/reports/summary", { params }),
 
-  getTripHistory: (tripId) => 
-    api.get(`/driver/trips/${tripId}/history`),
+  // getTripHistory: (tripId) => 
+  //   api.get(`/driver/trips/${tripId}/history`),
+   getTripHistory: (tripId) => 
+        api.get(`/gso/tickets/${tripId}/history`),
+
+
 };
 
 // ============ DEPARTMENT API ============
