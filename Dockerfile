@@ -1,135 +1,51 @@
-events {
-    worker_connections 1024;
-}
+FROM php:8.3-fpm-alpine
 
-http {
-    include /etc/nginx/mime.types;
-    default_type application/octet-stream;
+# Install nginx, supervisor, and dependencies
+RUN apk add --no-cache nginx bash curl supervisor
 
-    access_log /dev/stdout;
-    error_log /dev/stderr;
+# Install PHP extensions - pcntl is required for Reverb
+RUN docker-php-ext-install pdo pdo_mysql bcmath pcntl
 
-    server {
-        listen 8000;
-        server_name _;
-        root /var/www/html/public;
+# Install Composer
+COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
-        add_header X-Frame-Options "SAMEORIGIN";
-        add_header X-Content-Type-Options "nosniff";
+# Install Node.js and npm
+RUN apk add --no-cache nodejs npm
 
-        index index.php;
+WORKDIR /var/www/html
 
-        charset utf-8;
+COPY . .
 
-        location / {
-            try_files $uri $uri/ /index.php?$query_string;
-        }
+ENV COMPOSER_ALLOW_SUPERUSER=1
 
-        location = /favicon.ico { access_log off; log_not_found off; }
-        location = /robots.txt  { access_log off; log_not_found off; }
+# Install PHP dependencies
+RUN composer install --no-dev --optimize-autoloader
 
-        error_page 404 /index.php;
+# Install Reverb explicitly
+RUN composer require laravel/reverb
 
-        location ~ \.php$ {
-            fastcgi_pass 127.0.0.1:9000;
-            fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
-            fastcgi_param PATH_INFO $fastcgi_path_info;
-            include fastcgi_params;
-        }
+# Install and build frontend
+RUN npm install --legacy-peer-deps
+RUN npm install react-is@18.2.0 --legacy-peer-deps
+RUN npm run build
 
-        # ✅ WebSocket proxy for Reverb (port 8080)
-        location /reverb/ {
-            proxy_pass http://127.0.0.1:8080;
-            proxy_http_version 1.1;
-            proxy_set_header Upgrade $http_upgrade;
-            proxy_set_header Connection "Upgrade";
-            proxy_set_header Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto $scheme;
-            proxy_read_timeout 86400;
-            proxy_send_timeout 86400;
-        }
+# Create storage directories
+RUN mkdir -p storage/framework/views storage/framework/cache storage/framework/sessions
+RUN mkdir -p storage/logs storage/app/public
+RUN touch storage/logs/laravel.log
 
-        location /ws/ {
-            proxy_pass http://127.0.0.1:8080;
-            proxy_http_version 1.1;
-            proxy_set_header Upgrade $http_upgrade;
-            proxy_set_header Connection "Upgrade";
-            proxy_set_header Host $host;
-            proxy_read_timeout 86400;
-            proxy_send_timeout 86400;
-        }
+# Set permissions
+RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache
+RUN chmod -R 777 /var/www/html/storage /var/www/html/bootstrap/cache
+RUN chmod -R 777 /var/www/html/public
 
-        location ~ /\.(?!well-known).* {
-            deny all;
-        }
-    }
-}events {
-    worker_connections 1024;
-}
+# Copy nginx config to the correct location
+COPY nginx.conf /etc/nginx/http.d/default.conf
 
-http {
-    include /etc/nginx/mime.types;
-    default_type application/octet-stream;
+# Copy supervisor config
+COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
-    access_log /dev/stdout;
-    error_log /dev/stderr;
+EXPOSE 8000 8080
 
-    server {
-        listen 8000;
-        server_name _;
-        root /var/www/html/public;
-
-        add_header X-Frame-Options "SAMEORIGIN";
-        add_header X-Content-Type-Options "nosniff";
-
-        index index.php;
-
-        charset utf-8;
-
-        location / {
-            try_files $uri $uri/ /index.php?$query_string;
-        }
-
-        location = /favicon.ico { access_log off; log_not_found off; }
-        location = /robots.txt  { access_log off; log_not_found off; }
-
-        error_page 404 /index.php;
-
-        location ~ \.php$ {
-            fastcgi_pass 127.0.0.1:9000;
-            fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
-            fastcgi_param PATH_INFO $fastcgi_path_info;
-            include fastcgi_params;
-        }
-
-        # ✅ WebSocket proxy for Reverb (port 8080)
-        location /reverb/ {
-            proxy_pass http://127.0.0.1:8080;
-            proxy_http_version 1.1;
-            proxy_set_header Upgrade $http_upgrade;
-            proxy_set_header Connection "Upgrade";
-            proxy_set_header Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto $scheme;
-            proxy_read_timeout 86400;
-            proxy_send_timeout 86400;
-        }
-
-        location /ws/ {
-            proxy_pass http://127.0.0.1:8080;
-            proxy_http_version 1.1;
-            proxy_set_header Upgrade $http_upgrade;
-            proxy_set_header Connection "Upgrade";
-            proxy_set_header Host $host;
-            proxy_read_timeout 86400;
-            proxy_send_timeout 86400;
-        }
-
-        location ~ /\.(?!well-known).* {
-            deny all;
-        }
-    }
-}
+# Start Supervisor (manages all processes)
+CMD ["/usr/bin/supervisord", "-n", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
