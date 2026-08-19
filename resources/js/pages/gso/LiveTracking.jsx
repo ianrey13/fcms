@@ -330,7 +330,7 @@ const TripPopupContent = ({ trip, onViewTrip, onCenter, onFocus }) => {
 // 🎯 FOCUS MODAL - Live tracking for single vehicle
 // ============================================
 
-const FocusModal = ({ trip, onClose, allTrips, onFocusAll }) => {
+const FocusModal = ({ trip, onClose, allTrips, onFocusAll, isOpen }) => {
   const [focusMode, setFocusMode] = useState('single');
   const [selectedTrip, setSelectedTrip] = useState(trip);
   
@@ -340,6 +340,9 @@ const FocusModal = ({ trip, onClose, allTrips, onFocusAll }) => {
   const hasMultiple = tripsWithLocation.length > 1;
   
   const tripsToShow = focusMode === 'all' ? tripsWithLocation : [selectedTrip || trip].filter(t => t && t.current_location);
+  
+  // ✅ If modal is not open, don't render
+  if (!isOpen) return null;
   
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[2000] flex items-center justify-center p-4">
@@ -725,6 +728,11 @@ export default function LiveTracking() {
   const handleFocusAll = () => {
     setFocusedTrip(null);
     setFocusModalOpen(true);
+  };
+
+  const handleCloseModal = () => {
+    setFocusModalOpen(false);
+    setFocusedTrip(null);
   };
 
   const handleFitBounds = () => {
@@ -1205,7 +1213,8 @@ export default function LiveTracking() {
       <FocusModal 
         trip={focusedTrip} 
         allTrips={tripsWithLocation}
-        onClose={() => setFocusModalOpen(false)} 
+        isOpen={focusModalOpen}
+        onClose={handleCloseModal}
         onFocusAll={handleFocusAll}
       />
     </div>
