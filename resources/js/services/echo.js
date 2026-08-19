@@ -51,7 +51,8 @@ if (isProduction) {
     console.log('💻 Desktop detected - using:', wsHost);
 }
 
-const wsPort = isProduction ? 8000 : (parseInt(import.meta.env.VITE_REVERB_PORT) || 8080);
+// ✅ FIXED: In production, use port 443 (HTTPS) instead of 8000
+const wsPort = isProduction ? 443 : (parseInt(import.meta.env.VITE_REVERB_PORT) || 8080);
 const wsKey = import.meta.env.VITE_REVERB_APP_KEY || 'tvv4dolwfj6x4radqf76';
 const wsScheme = isProduction ? 'https' : (import.meta.env.VITE_REVERB_SCHEME || 'http');
 
