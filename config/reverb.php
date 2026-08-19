@@ -13,7 +13,7 @@ return [
     |
     */
 
-    'default' => env('REVERB_SERVER', 'reverb'),  // ✅ Changed from 'main' to 'reverb'
+    'default' => env('REVERB_SERVER', 'reverb'),
 
     /*
     |--------------------------------------------------------------------------
@@ -28,7 +28,7 @@ return [
 
     'servers' => [
 
-        'reverb' => [  // ✅ This name must match the default above
+        'reverb' => [
             'host' => env('REVERB_SERVER_HOST', '0.0.0.0'),
             'port' => env('REVERB_SERVER_PORT', 8080),
             'path' => env('REVERB_SERVER_PATH', ''),
@@ -73,13 +73,13 @@ return [
 
         'apps' => [
             [
-                'key' => env('REVERB_APP_KEY'),
-                'secret' => env('REVERB_APP_SECRET'),
-                'app_id' => env('REVERB_APP_ID'),
+                'key' => env('REVERB_APP_KEY', 'tvv4dolwfj6x4radqf76'),        // ✅ Added fallback
+                'secret' => env('REVERB_APP_SECRET', 'ecttsihbeywvb8pzqcuv'),  // ✅ Added fallback
+                'app_id' => env('REVERB_APP_ID', '205798'),                   // ✅ Added fallback
                 'options' => [
-                    'host' => env('REVERB_HOST', 'localhost'),
-                    'port' => env('REVERB_PORT', 8080),
-                    'scheme' => env('REVERB_SCHEME', 'http'),
+                    'host' => env('REVERB_HOST', '0.0.0.0'),                  // ✅ Added fallback
+                    'port' => env('REVERB_PORT', 8080),                      // ✅ Added fallback
+                    'scheme' => env('REVERB_SCHEME', 'https'),               // ✅ Added fallback
                     'useTLS' => env('REVERB_SCHEME', 'https') === 'https',
                 ],
                 'allowed_origins' => ['*'],
