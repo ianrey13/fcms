@@ -35,6 +35,7 @@ import {
   WifiOff,
   Eye,
   Compass,
+  X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -60,10 +61,10 @@ const getDirection = (heading) => {
 };
 
 // ============================================
-// 🚗 VEHICLE ICON - With Compass/Heading
+// 🚗 VEHICLE ICON - Clean & Normal
 // ============================================
 
-const createVehicleIcon = (status, isSelected, isOnline = true, heading = 0) => {
+const createVehicleIcon = (status, isSelected, isOnline = true) => {
   const colors = {
     in_transit: '#22c55e',
     funds_issued: '#f59e0b',
@@ -76,22 +77,21 @@ const createVehicleIcon = (status, isSelected, isOnline = true, heading = 0) => 
     returned_for_revision: '#ef4444',
   };
   const color = colors[status] || '#6b7280';
-  const size = isSelected ? 42 : 36;
-  const dir = getDirection(heading);
+  const size = isSelected ? 38 : 32;
   
   return L.divIcon({
     className: 'custom-vehicle-icon',
     html: `
       <div style="
         position: relative;
-        width: ${size + 20}px;
-        height: ${size + 20}px;
+        width: ${size + 8}px;
+        height: ${size + 8}px;
         cursor: pointer;
       ">
         ${isSelected ? `
           <div style="
             position: absolute;
-            inset: -6px;
+            inset: -4px;
             border-radius: 50%;
             background: rgba(59, 130, 246, 0.15);
             border: 2px solid rgba(59, 130, 246, 0.3);
@@ -99,44 +99,7 @@ const createVehicleIcon = (status, isSelected, isOnline = true, heading = 0) => 
           "></div>
         ` : ''}
         
-        <!-- 🧭 Compass/Flashlight Beam -->
-        <div style="
-          position: absolute;
-          top: 50%;
-          left: 50%;
-          transform: translate(-50%, -50%) rotate(${heading || 0}deg);
-          width: ${size + 30}px;
-          height: ${size + 30}px;
-          pointer-events: none;
-          z-index: 0;
-        ">
-          <div style="
-            position: absolute;
-            top: -${size/2 + 10}px;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 0;
-            height: 0;
-            border-left: 10px solid transparent;
-            border-right: 10px solid transparent;
-            border-bottom: 25px solid rgba(255, 255, 200, 0.25);
-            filter: blur(3px);
-          "></div>
-          <div style="
-            position: absolute;
-            top: -${size/2 + 6}px;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 0;
-            height: 0;
-            border-left: 6px solid transparent;
-            border-right: 6px solid transparent;
-            border-bottom: 16px solid rgba(255, 255, 200, 0.4);
-            filter: blur(1px);
-          "></div>
-        </div>
-
-        <!-- 🚗 Car Icon - Rotated -->
+        <!-- 🚗 Car Icon -->
         <div style="
           width: ${size}px;
           height: ${size}px;
@@ -152,8 +115,7 @@ const createVehicleIcon = (status, isSelected, isOnline = true, heading = 0) => 
           position: relative;
           z-index: 1;
           transition: all 0.3s ease;
-          transform: rotate(${heading || 0}deg);
-          ${isSelected ? 'transform: rotate(' + (heading || 0) + 'deg) scale(1.1); box-shadow: 0 4px 20px rgba(59,130,246,0.4);' : ''}
+          ${isSelected ? 'transform: scale(1.1); box-shadow: 0 4px 20px rgba(59,130,246,0.4);' : ''}
           ${!isOnline ? 'opacity: 0.5;' : ''}
         ">
           🚗
@@ -164,78 +126,19 @@ const createVehicleIcon = (status, isSelected, isOnline = true, heading = 0) => 
           position: absolute;
           bottom: -2px;
           right: -2px;
-          width: 14px;
-          height: 14px;
+          width: 12px;
+          height: 12px;
           background: ${isOnline ? '#22c55e' : '#ef4444'};
           border-radius: 50%;
           border: 2px solid white;
           z-index: 2;
           ${isOnline ? 'animation: pulse-dot 2s ease-in-out infinite;' : ''}
         "></div>
-
-        <!-- Heading Badge -->
-        <div style="
-          position: absolute;
-          top: -10px;
-          right: -10px;
-          background: rgba(0,0,0,0.85);
-          color: white;
-          font-size: 9px;
-          font-weight: bold;
-          padding: 2px 7px;
-          border-radius: 10px;
-          border: 1px solid rgba(255,255,255,0.3);
-          z-index: 3;
-          white-space: nowrap;
-          font-family: monospace;
-        ">
-          ${heading ? Math.round(heading) + '°' : '--'}
-        </div>
-
-        <!-- Direction Label (N/S/E/W) -->
-        <div style="
-          position: absolute;
-          top: -10px;
-          left: -10px;
-          background: rgba(0,0,0,0.75);
-          color: ${heading > 0 ? '#4ade80' : '#94a3b8'};
-          font-size: 9px;
-          font-weight: bold;
-          padding: 2px 8px;
-          border-radius: 10px;
-          z-index: 3;
-          font-family: monospace;
-          border: 1px solid rgba(255,255,255,0.15);
-        ">
-          ${dir}
-        </div>
-
-        <!-- Speed Badge -->
-        ${isOnline ? `
-          <div style="
-            position: absolute;
-            bottom: -10px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(0,0,0,0.8);
-            color: #4ade80;
-            font-size: 8px;
-            font-weight: bold;
-            padding: 1px 6px;
-            border-radius: 8px;
-            border: 1px solid rgba(255,255,255,0.15);
-            z-index: 3;
-            white-space: nowrap;
-            font-family: monospace;
-          ">
-            ${Math.round((window._speedData?.[status] || 0))}km/h
-          </div>
-        ` : ''}
       </div>
     `,
-    iconSize: [size + 20, size + 20],
-    iconAnchor: [(size + 20) / 2, (size + 20) / 2],
-    popupAnchor: [0, -(size + 20) / 2 - 5],
+    iconSize: [size + 8, size + 8],
+    iconAnchor: [(size + 8) / 2, (size + 8) / 2],
+    popupAnchor: [0, -(size + 8) / 2 - 5],
   });
 };
 
@@ -372,7 +275,7 @@ const StatsCard = ({ title, value, icon: Icon, color, subtitle }) => (
 // 🗺️ POPUP CONTENT COMPONENT
 // ============================================
 
-const TripPopupContent = ({ trip, onViewTrip, onCenter }) => {
+const TripPopupContent = ({ trip, onViewTrip, onCenter, onFocus }) => {
   const { current_location } = trip;
   const heading = current_location?.heading_degrees || 0;
   const dir = getDirection(heading);
@@ -448,6 +351,159 @@ const TripPopupContent = ({ trip, onViewTrip, onCenter }) => {
           <Navigation className="h-3 w-3" />
           Center
         </button>
+        <button
+          onClick={() => onFocus(trip)}
+          className="text-xs bg-emerald-600 text-white px-3 py-1.5 rounded-lg hover:bg-emerald-700 transition-colors flex items-center justify-center gap-1"
+        >
+          <Maximize2 className="h-3 w-3" />
+          Focus
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// ============================================
+// 🎯 FOCUS MONITORING MODAL
+// ============================================
+
+const FocusModal = ({ trip, onClose }) => {
+  if (!trip) return null;
+  
+  const { current_location } = trip;
+  const heading = current_location?.heading_degrees || 0;
+  const dir = getDirection(heading);
+  
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[2000] flex items-center justify-center p-4">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto border border-slate-200/60 dark:border-slate-700/60">
+        {/* Header */}
+        <div className="flex items-center justify-between p-4 border-b border-slate-200/60 dark:border-slate-700/60">
+          <div className="flex items-center gap-3">
+            <div className={`w-3 h-3 rounded-full ${getStatusDot(trip.status)} animate-pulse`} />
+            <h2 className="text-lg font-bold text-slate-900 dark:text-white">
+              {trip.ticket_number}
+            </h2>
+            <Badge className={`${getStatusColor(trip.status)} text-white text-[10px]`}>
+              {getStatusLabel(trip.status)}
+            </Badge>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+          >
+            <X className="h-5 w-5 text-slate-500" />
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="p-4 space-y-4">
+          {/* Location */}
+          <div className="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4">
+            <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">📍 Current Location</h3>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <p className="text-xs text-slate-400">Latitude</p>
+                <p className="text-sm font-mono text-slate-900 dark:text-white">
+                  {current_location?.latitude.toFixed(6) || '--'}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-400">Longitude</p>
+                <p className="text-sm font-mono text-slate-900 dark:text-white">
+                  {current_location?.longitude.toFixed(6) || '--'}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Stats Grid */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-3">
+              <p className="text-xs text-slate-400">Speed</p>
+              <p className="text-lg font-bold text-slate-900 dark:text-white">
+                {current_location?.speed_kmh || 0} <span className="text-sm font-normal text-slate-400">km/h</span>
+              </p>
+            </div>
+            <div className="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-3">
+              <p className="text-xs text-slate-400">Heading</p>
+              <p className="text-lg font-bold text-slate-900 dark:text-white">
+                {heading ? `${Math.round(heading)}°` : '--'} <span className="text-sm font-normal text-slate-400">{dir}</span>
+              </p>
+            </div>
+            <div className="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-3">
+              <p className="text-xs text-slate-400">Accuracy</p>
+              <p className="text-lg font-bold text-slate-900 dark:text-white">
+                {current_location?.accuracy_meters || 0} <span className="text-sm font-normal text-slate-400">m</span>
+              </p>
+            </div>
+            <div className="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-3">
+              <p className="text-xs text-slate-400">Last Update</p>
+              <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                {formatTime(current_location?.recorded_at)}
+              </p>
+            </div>
+          </div>
+
+          {/* Trip Info */}
+          <div className="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4">
+            <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Trip Details</h3>
+            <div className="space-y-2">
+              <div className="flex justify-between">
+                <span className="text-sm text-slate-500">Destination</span>
+                <span className="text-sm font-medium text-slate-900 dark:text-white">{trip.destination || 'N/A'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-sm text-slate-500">Vehicle</span>
+                <span className="text-sm font-medium text-slate-900 dark:text-white">
+                  {trip.vehicle?.plate_number || 'N/A'} • {trip.vehicle?.vehicle_model || 'N/A'}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-sm text-slate-500">Driver</span>
+                <span className="text-sm font-medium text-slate-900 dark:text-white">{trip.driver?.name || 'N/A'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-sm text-slate-500">Department</span>
+                <span className="text-sm font-medium text-slate-900 dark:text-white">{trip.department || 'N/A'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-sm text-slate-500">Pings</span>
+                <span className="text-sm font-medium text-slate-900 dark:text-white">{trip.ping_count || 0}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div className="flex gap-2 pt-2">
+            <button
+              onClick={() => window.open(`/gso/trip/${trip.trip_id}`, '_blank')}
+              className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-colors flex items-center justify-center gap-2"
+            >
+              <Eye className="h-4 w-4" />
+              View Full Trip
+            </button>
+            <button
+              onClick={() => {
+                if (trip.current_location) {
+                  onClose();
+                  // Center map on this trip
+                  const map = document.querySelector('.leaflet-container')?._leaflet_map;
+                  if (map) {
+                    map.setView(
+                      [trip.current_location.latitude, trip.current_location.longitude],
+                      16
+                    );
+                  }
+                }
+              }}
+              className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-colors flex items-center justify-center gap-2"
+            >
+              <Navigation className="h-4 w-4" />
+              Center Map
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -460,6 +516,7 @@ const TripPopupContent = ({ trip, onViewTrip, onCenter }) => {
 export default function LiveTracking() {
   const navigate = useNavigate();
   const [selectedTrip, setSelectedTrip] = useState(null);
+  const [focusedTrip, setFocusedTrip] = useState(null);
   const [mapCenter, setMapCenter] = useState([8.5833, 124.6667]);
   const [mapZoom, setMapZoom] = useState(13);
   const [mapType, setMapType] = useState('street');
@@ -554,7 +611,7 @@ export default function LiveTracking() {
                 longitude: data.longitude,
                 speed_kmh: data.speed_kmh || 0,
                 accuracy_meters: data.accuracy_meters || 0,
-                heading_degrees: data.heading_degrees || 0, // ✅ Added heading
+                heading_degrees: data.heading_degrees || 0,
                 recorded_at: data.timestamp || new Date().toISOString(),
               }
             };
@@ -573,13 +630,27 @@ export default function LiveTracking() {
               longitude: data.longitude,
               speed_kmh: data.speed_kmh || 0,
               accuracy_meters: data.accuracy_meters || 0,
-              heading_degrees: data.heading_degrees || 0, // ✅ Added heading
+              heading_degrees: data.heading_degrees || 0,
               recorded_at: data.timestamp || new Date().toISOString(),
             }
           };
         }
         return prev;
       });
+
+      if (focusedTrip && focusedTrip.trip_id === data.trip_id) {
+        setFocusedTrip(prev => ({
+          ...prev,
+          current_location: {
+            latitude: data.latitude,
+            longitude: data.longitude,
+            speed_kmh: data.speed_kmh || 0,
+            accuracy_meters: data.accuracy_meters || 0,
+            heading_degrees: data.heading_degrees || 0,
+            recorded_at: data.timestamp || new Date().toISOString(),
+          }
+        }));
+      }
 
       setLastUpdate(new Date());
     });
@@ -690,6 +761,10 @@ export default function LiveTracking() {
       setMapZoom(16);
       setSelectedTrip(trip);
     }
+  };
+
+  const handleFocus = (trip) => {
+    setFocusedTrip(trip);
   };
 
   const handleFitBounds = () => {
@@ -942,7 +1017,6 @@ export default function LiveTracking() {
               {tripsWithLocation.map((trip) => {
                 const isSelected = selectedTrip?.trip_id === trip.trip_id;
                 const { current_location } = trip;
-                const heading = current_location?.heading_degrees || 0;
 
                 return (
                   <div key={trip.trip_id}>
@@ -960,7 +1034,7 @@ export default function LiveTracking() {
                     {/* Vehicle Marker - Clickable with Popup */}
                     <Marker
                       position={[current_location.latitude, current_location.longitude]}
-                      icon={createVehicleIcon(trip.status, isSelected, true, heading)}
+                      icon={createVehicleIcon(trip.status, isSelected, true)}
                       eventHandlers={{
                         click: () => handleTripSelect(trip),
                       }}
@@ -970,6 +1044,7 @@ export default function LiveTracking() {
                           trip={trip}
                           onViewTrip={handleViewTrip}
                           onCenter={handleCenter}
+                          onFocus={handleFocus}
                         />
                       </Popup>
                     </Marker>
@@ -1022,7 +1097,7 @@ export default function LiveTracking() {
                 </div>
               </div>
               <div className="text-[10px] text-slate-400 border-t border-slate-200 dark:border-slate-700 pt-1 mt-1">
-                🧭 Car rotates with compass • GPS ping: 10s
+                🚗 Click car for details • GPS ping: 10s
               </div>
             </div>
           </div>
@@ -1066,8 +1141,6 @@ export default function LiveTracking() {
               tripsWithLocation.map((trip) => {
                 const isSelected = selectedTrip?.trip_id === trip.trip_id;
                 const { current_location } = trip;
-                const heading = current_location?.heading_degrees || 0;
-                const dir = getDirection(heading);
 
                 return (
                   <div
@@ -1107,10 +1180,23 @@ export default function LiveTracking() {
                           {current_location?.speed_kmh || 0} km/h
                         </div>
                         <div className="text-xs text-slate-400 dark:text-slate-500 flex items-center gap-1 justify-end">
-                          <Compass className="h-3 w-3" />
-                          {heading ? `${Math.round(heading)}° ${dir}` : '--'}
+                          <Clock className="h-3 w-3" />
+                          {formatTime(current_location?.recorded_at)}
                         </div>
                       </div>
+                    </div>
+
+                    <div className="mt-2 flex gap-2">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleFocus(trip);
+                        }}
+                        className="flex-1 text-[10px] bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg transition-colors flex items-center justify-center gap-1"
+                      >
+                        <Maximize2 className="h-3 w-3" />
+                        Focus Monitor
+                      </button>
                     </div>
 
                     {isSelected && current_location && (
@@ -1139,6 +1225,12 @@ export default function LiveTracking() {
           </div>
         </div>
       </div>
+
+      {/* Focus Monitoring Modal */}
+      <FocusModal 
+        trip={focusedTrip} 
+        onClose={() => setFocusedTrip(null)} 
+      />
     </div>
   );
 }
