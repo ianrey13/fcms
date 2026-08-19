@@ -38,23 +38,10 @@ const isProduction = window.location.hostname !== 'localhost' && window.location
 
 const PC_IP = import.meta.env.VITE_PC_IP || '192.168.1.5';
 
-let wsHost = import.meta.env.VITE_REVERB_HOST || 'localhost';
-
-if (isProduction) {
-    wsHost = window.location.hostname;
-    console.log('🌐 Production detected - using host:', wsHost);
-} else if (isMobile) {
-    wsHost = PC_IP;
-    console.log('📱 Mobile device detected - using IP:', wsHost);
-} else {
-    wsHost = 'localhost';
-    console.log('💻 Desktop detected - using:', wsHost);
-}
-
-// ✅ FIXED: In production, use port 443 (HTTPS) instead of 8000
-const wsPort = isProduction ? 443 : (parseInt(import.meta.env.VITE_REVERB_PORT) || 8080);
-const wsKey = import.meta.env.VITE_REVERB_APP_KEY || 'tvv4dolwfj6x4radqf76';
-const wsScheme = isProduction ? 'https' : (import.meta.env.VITE_REVERB_SCHEME || 'http');
+// ✅ Pusher config
+const pusherKey = import.meta.env.VITE_PUSHER_APP_KEY || 'b43d9e40bc001ffe1de6';
+const pusherCluster = import.meta.env.VITE_PUSHER_APP_CLUSTER || 'ap1';
+const pusherHost = import.meta.env.VITE_PUSHER_HOST || 'api-ap1.pusher.com';
 
 const apiUrl = isProduction 
     ? `https://${window.location.hostname}/api`
@@ -65,26 +52,20 @@ const apiUrl = isProduction
 console.log('🔊 ===== ECHO CONFIG =====');
 console.log('📱 Platform:', isMobile ? 'Mobile' : 'Desktop');
 console.log('🌐 Environment:', isProduction ? 'Production' : 'Local');
-console.log('🏠 Host:', wsHost);
-console.log('🔌 Port:', wsPort);
-console.log('🔑 Key:', wsKey);
-console.log('📡 Scheme:', wsScheme);
+console.log('🔑 Key:', pusherKey);
+console.log('🗺️ Cluster:', pusherCluster);
 console.log('🔗 API:', apiUrl);
 console.log('===========================');
 
 // ============================================
-// ✅ CREATE ECHO INSTANCE
+// ✅ CREATE ECHO INSTANCE (PUSHER)
 // ============================================
 
 const echo = new Echo({
-    broadcaster: 'reverb',
-    key: wsKey,
-    wsHost: wsHost,
-    wsPort: wsPort,
-    wssPort: wsPort,
-    forceTLS: wsScheme === 'https',
-    enabledTransports: ['ws', 'wss'],
-    timeout: 30000,
+    broadcaster: 'pusher',
+    key: pusherKey,
+    cluster: pusherCluster,
+    forceTLS: true,
     authEndpoint: '/api/broadcasting/auth',
     auth: {
         headers: {
@@ -108,8 +89,6 @@ window.echo = echo;
 
 let retryCount = 0;
 const maxRetries = 20;
-let subscriptionAttempts = 0;
-const maxSubscriptionAttempts = 5;
 let isSubscribed = false;
 
 const tryConnect = () => {
@@ -122,8 +101,8 @@ const tryConnect = () => {
                 console.log('📊 Connection state:', connection.state);
                 
                 if (connection.state === 'connected') {
-                    console.log('✅ Reverb WebSocket connected!');
-                    console.log('🔗 Connected to:', wsHost, ':', wsPort);
+                    console.log('✅ Pusher WebSocket connected!');
+                    console.log('🔗 Connected to:', pusherHost);
                     
                     retryCount = 0;
                     
@@ -146,8 +125,7 @@ const tryConnect = () => {
             console.log(`🔄 Retry ${retryCount}/${maxRetries}...`);
             setTimeout(tryConnect, 1000);
         } else {
-            console.error('❌ Failed to connect to Reverb');
-            console.log('💡 Run: php artisan reverb:start');
+            console.error('❌ Failed to connect to Pusher');
         }
     } catch (error) {
         console.error('❌ Connection error:', error);
@@ -206,22 +184,10 @@ function subscribeToNotifications() {
         channel.subscribed(() => {
             console.log(`✅ Subscribed to notifications.${userId}`);
             isSubscribed = true;
-            subscriptionAttempts = 0;
         });
         
         channel.error((error) => {
             console.error(`❌ Subscription error for notifications.${userId}:`, error);
-            
-            subscriptionAttempts++;
-            if (subscriptionAttempts < maxSubscriptionAttempts) {
-                console.log(`🔄 Retrying subscription (${subscriptionAttempts}/${maxSubscriptionAttempts})...`);
-                setTimeout(() => {
-                    isSubscribed = false;
-                    subscribeToNotifications();
-                }, 5000);
-            } else {
-                console.error('❌ Max subscription attempts reached');
-            }
         });
         
     } catch (error) {
