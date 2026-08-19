@@ -18,10 +18,11 @@ COPY . .
 
 ENV COMPOSER_ALLOW_SUPERUSER=1
 
-# ✅ CRITICAL: Set BROADCAST_DRIVER to null during build to bypass broadcaster check
+# ✅ Set BROADCAST_DRIVER to null to bypass broadcaster check during build
 ENV BROADCAST_DRIVER=null
+ENV BROADCAST_CONNECTION=null
 
-# Install PHP dependencies (skip scripts, we'll run them manually)
+# Install PHP dependencies (skip scripts)
 RUN composer install --no-dev --optimize-autoloader --no-scripts
 
 # ✅ Run scripts with BROADCAST_DRIVER=null
@@ -45,11 +46,13 @@ RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cac
 RUN chmod -R 777 /var/www/html/storage /var/www/html/bootstrap/cache
 RUN chmod -R 777 /var/www/html/public
 
-# Copy configs
+# Copy nginx config to the correct location
 COPY nginx.conf /etc/nginx/http.d/default.conf
+
+# Copy supervisor config
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
 EXPOSE 8000 8080
 
-# Start Supervisor - BROADCAST_DRIVER will be overridden by Render env vars
+# Start Supervisor (manages all processes)
 CMD ["/usr/bin/supervisord", "-n", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
