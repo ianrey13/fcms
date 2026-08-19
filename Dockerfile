@@ -3,7 +3,7 @@ FROM php:8.3-fpm-alpine
 # Install nginx, supervisor, and dependencies
 RUN apk add --no-cache nginx bash curl supervisor
 
-# Install PHP extensions - pcntl is required for Reverb
+# Install PHP extensions
 RUN docker-php-ext-install pdo pdo_mysql bcmath pcntl
 
 # Install Composer
@@ -18,10 +18,13 @@ COPY . .
 
 ENV COMPOSER_ALLOW_SUPERUSER=1
 
-# ✅ Install PHP dependencies WITHOUT running scripts
+# ✅ CRITICAL: Set BROADCAST_DRIVER to null during build to bypass broadcaster check
+ENV BROADCAST_DRIVER=null
+
+# Install PHP dependencies (skip scripts, we'll run them manually)
 RUN composer install --no-dev --optimize-autoloader --no-scripts
 
-# ✅ Then run scripts separately with environment variables set
+# ✅ Run scripts with BROADCAST_DRIVER=null
 RUN composer run-script post-autoload-dump
 
 # Install Reverb explicitly
@@ -42,13 +45,11 @@ RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cac
 RUN chmod -R 777 /var/www/html/storage /var/www/html/bootstrap/cache
 RUN chmod -R 777 /var/www/html/public
 
-# Copy nginx config to the correct location
+# Copy configs
 COPY nginx.conf /etc/nginx/http.d/default.conf
-
-# Copy supervisor config
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
 EXPOSE 8000 8080
 
-# Start Supervisor (manages all processes)
+# Start Supervisor - BROADCAST_DRIVER will be overridden by Render env vars
 CMD ["/usr/bin/supervisord", "-n", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
