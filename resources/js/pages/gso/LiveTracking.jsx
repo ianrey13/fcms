@@ -34,6 +34,7 @@ import {
   Wifi,
   WifiOff,
   Eye,
+  Compass,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -48,10 +49,21 @@ L.Icon.Default.mergeOptions({
 });
 
 // ============================================
-// 🚗 VEHICLE ICON - Clean car only
+// 🧭 HELPER: Get cardinal direction
 // ============================================
 
-const createVehicleIcon = (status, isSelected, isOnline = true) => {
+const getDirection = (heading) => {
+  if (heading === null || heading === undefined) return '--';
+  const dirs = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+  const idx = Math.round(((heading % 360) / 45)) % 8;
+  return dirs[idx];
+};
+
+// ============================================
+// 🚗 VEHICLE ICON - With Compass/Heading
+// ============================================
+
+const createVehicleIcon = (status, isSelected, isOnline = true, heading = 0) => {
   const colors = {
     in_transit: '#22c55e',
     funds_issued: '#f59e0b',
@@ -65,14 +77,15 @@ const createVehicleIcon = (status, isSelected, isOnline = true) => {
   };
   const color = colors[status] || '#6b7280';
   const size = isSelected ? 42 : 36;
+  const dir = getDirection(heading);
   
   return L.divIcon({
     className: 'custom-vehicle-icon',
     html: `
       <div style="
         position: relative;
-        width: ${size}px;
-        height: ${size}px;
+        width: ${size + 20}px;
+        height: ${size + 20}px;
         cursor: pointer;
       ">
         ${isSelected ? `
@@ -85,12 +98,50 @@ const createVehicleIcon = (status, isSelected, isOnline = true) => {
             animation: pulse-ring 2s ease-out infinite;
           "></div>
         ` : ''}
-        <!-- 🚗 Car Icon -->
+        
+        <!-- 🧭 Compass/Flashlight Beam -->
+        <div style="
+          position: absolute;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%) rotate(${heading || 0}deg);
+          width: ${size + 30}px;
+          height: ${size + 30}px;
+          pointer-events: none;
+          z-index: 0;
+        ">
+          <div style="
+            position: absolute;
+            top: -${size/2 + 10}px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 0;
+            height: 0;
+            border-left: 10px solid transparent;
+            border-right: 10px solid transparent;
+            border-bottom: 25px solid rgba(255, 255, 200, 0.25);
+            filter: blur(3px);
+          "></div>
+          <div style="
+            position: absolute;
+            top: -${size/2 + 6}px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 0;
+            height: 0;
+            border-left: 6px solid transparent;
+            border-right: 6px solid transparent;
+            border-bottom: 16px solid rgba(255, 255, 200, 0.4);
+            filter: blur(1px);
+          "></div>
+        </div>
+
+        <!-- 🚗 Car Icon - Rotated -->
         <div style="
           width: ${size}px;
           height: ${size}px;
           background: ${color};
-          border-radius: 12px;
+          border-radius: 10px;
           border: 2px solid white;
           box-shadow: 0 4px 12px rgba(0,0,0,0.25);
           display: flex;
@@ -101,12 +152,14 @@ const createVehicleIcon = (status, isSelected, isOnline = true) => {
           position: relative;
           z-index: 1;
           transition: all 0.3s ease;
-          ${isSelected ? 'transform: scale(1.1); box-shadow: 0 4px 20px rgba(59,130,246,0.4);' : ''}
+          transform: rotate(${heading || 0}deg);
+          ${isSelected ? 'transform: rotate(' + (heading || 0) + 'deg) scale(1.1); box-shadow: 0 4px 20px rgba(59,130,246,0.4);' : ''}
           ${!isOnline ? 'opacity: 0.5;' : ''}
         ">
           🚗
         </div>
-        <!-- Status Indicator (small dot at bottom-right) -->
+
+        <!-- Status Dot -->
         <div style="
           position: absolute;
           bottom: -2px;
@@ -119,19 +172,58 @@ const createVehicleIcon = (status, isSelected, isOnline = true) => {
           z-index: 2;
           ${isOnline ? 'animation: pulse-dot 2s ease-in-out infinite;' : ''}
         "></div>
-        <!-- Speed indicator (small badge) -->
+
+        <!-- Heading Badge -->
+        <div style="
+          position: absolute;
+          top: -10px;
+          right: -10px;
+          background: rgba(0,0,0,0.85);
+          color: white;
+          font-size: 9px;
+          font-weight: bold;
+          padding: 2px 7px;
+          border-radius: 10px;
+          border: 1px solid rgba(255,255,255,0.3);
+          z-index: 3;
+          white-space: nowrap;
+          font-family: monospace;
+        ">
+          ${heading ? Math.round(heading) + '°' : '--'}
+        </div>
+
+        <!-- Direction Label (N/S/E/W) -->
+        <div style="
+          position: absolute;
+          top: -10px;
+          left: -10px;
+          background: rgba(0,0,0,0.75);
+          color: ${heading > 0 ? '#4ade80' : '#94a3b8'};
+          font-size: 9px;
+          font-weight: bold;
+          padding: 2px 8px;
+          border-radius: 10px;
+          z-index: 3;
+          font-family: monospace;
+          border: 1px solid rgba(255,255,255,0.15);
+        ">
+          ${dir}
+        </div>
+
+        <!-- Speed Badge -->
         ${isOnline ? `
           <div style="
             position: absolute;
-            top: -8px;
-            right: -8px;
+            bottom: -10px;
+            left: 50%;
+            transform: translateX(-50%);
             background: rgba(0,0,0,0.8);
-            color: white;
-            font-size: 9px;
+            color: #4ade80;
+            font-size: 8px;
             font-weight: bold;
             padding: 1px 6px;
-            border-radius: 10px;
-            border: 1px solid rgba(255,255,255,0.3);
+            border-radius: 8px;
+            border: 1px solid rgba(255,255,255,0.15);
             z-index: 3;
             white-space: nowrap;
             font-family: monospace;
@@ -141,9 +233,9 @@ const createVehicleIcon = (status, isSelected, isOnline = true) => {
         ` : ''}
       </div>
     `,
-    iconSize: [size + 8, size + 8],
-    iconAnchor: [(size + 8) / 2, (size + 8) / 2],
-    popupAnchor: [0, -(size + 8) / 2 - 5],
+    iconSize: [size + 20, size + 20],
+    iconAnchor: [(size + 20) / 2, (size + 20) / 2],
+    popupAnchor: [0, -(size + 20) / 2 - 5],
   });
 };
 
@@ -282,6 +374,8 @@ const StatsCard = ({ title, value, icon: Icon, color, subtitle }) => (
 
 const TripPopupContent = ({ trip, onViewTrip, onCenter }) => {
   const { current_location } = trip;
+  const heading = current_location?.heading_degrees || 0;
+  const dir = getDirection(heading);
   
   return (
     <div className="p-2 min-w-[240px] max-w-[300px]">
@@ -321,6 +415,13 @@ const TripPopupContent = ({ trip, onViewTrip, onCenter }) => {
           <span className="text-slate-500">Speed:</span>
           <span className="font-medium text-slate-700 dark:text-slate-300">
             {current_location?.speed_kmh || 0} km/h
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <Compass className="h-3.5 w-3.5 text-slate-400" />
+          <span className="text-slate-500">Heading:</span>
+          <span className="font-medium text-slate-700 dark:text-slate-300">
+            {heading ? `${Math.round(heading)}° ${dir}` : '--'}
           </span>
         </div>
         <div className="flex items-center gap-2 text-xs text-slate-400 border-t border-slate-100 dark:border-slate-700 pt-2 mt-1">
@@ -453,6 +554,7 @@ export default function LiveTracking() {
                 longitude: data.longitude,
                 speed_kmh: data.speed_kmh || 0,
                 accuracy_meters: data.accuracy_meters || 0,
+                heading_degrees: data.heading_degrees || 0, // ✅ Added heading
                 recorded_at: data.timestamp || new Date().toISOString(),
               }
             };
@@ -471,6 +573,7 @@ export default function LiveTracking() {
               longitude: data.longitude,
               speed_kmh: data.speed_kmh || 0,
               accuracy_meters: data.accuracy_meters || 0,
+              heading_degrees: data.heading_degrees || 0, // ✅ Added heading
               recorded_at: data.timestamp || new Date().toISOString(),
             }
           };
@@ -577,9 +680,7 @@ export default function LiveTracking() {
   };
 
   const handleViewTrip = (trip) => {
-    // Close popup first
     setSelectedTrip(null);
-    // Navigate to trip detail
     navigate(`/gso/trip/${trip.trip_id}`);
   };
 
@@ -841,6 +942,7 @@ export default function LiveTracking() {
               {tripsWithLocation.map((trip) => {
                 const isSelected = selectedTrip?.trip_id === trip.trip_id;
                 const { current_location } = trip;
+                const heading = current_location?.heading_degrees || 0;
 
                 return (
                   <div key={trip.trip_id}>
@@ -858,7 +960,7 @@ export default function LiveTracking() {
                     {/* Vehicle Marker - Clickable with Popup */}
                     <Marker
                       position={[current_location.latitude, current_location.longitude]}
-                      icon={createVehicleIcon(trip.status, isSelected, true)}
+                      icon={createVehicleIcon(trip.status, isSelected, true, heading)}
                       eventHandlers={{
                         click: () => handleTripSelect(trip),
                       }}
@@ -920,7 +1022,7 @@ export default function LiveTracking() {
                 </div>
               </div>
               <div className="text-[10px] text-slate-400 border-t border-slate-200 dark:border-slate-700 pt-1 mt-1">
-                🚗 Click car for details • GPS ping: 10s
+                🧭 Car rotates with compass • GPS ping: 10s
               </div>
             </div>
           </div>
@@ -964,6 +1066,8 @@ export default function LiveTracking() {
               tripsWithLocation.map((trip) => {
                 const isSelected = selectedTrip?.trip_id === trip.trip_id;
                 const { current_location } = trip;
+                const heading = current_location?.heading_degrees || 0;
+                const dir = getDirection(heading);
 
                 return (
                   <div
@@ -1003,8 +1107,8 @@ export default function LiveTracking() {
                           {current_location?.speed_kmh || 0} km/h
                         </div>
                         <div className="text-xs text-slate-400 dark:text-slate-500 flex items-center gap-1 justify-end">
-                          <Clock className="h-3 w-3" />
-                          {formatTime(current_location?.recorded_at)}
+                          <Compass className="h-3 w-3" />
+                          {heading ? `${Math.round(heading)}° ${dir}` : '--'}
                         </div>
                       </div>
                     </div>

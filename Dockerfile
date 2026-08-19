@@ -1,58 +1,45 @@
-FROM php:8.3-fpm-alpine
+server {
+    listen 8000;
+    server_name localhost;
+    root /var/www/html/public;
 
-# Install nginx and dependencies
-RUN apk add --no-cache nginx bash curl
+    index index.php;
 
-# Install PHP extensions - ADD pcntl
-RUN docker-php-ext-install pdo pdo_mysql bcmath pcntl
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
 
-# Install Composer
-COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
+    location ~ \.php$ {
+        fastcgi_pass 127.0.0.1:9000;
+        fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
+        include fastcgi_params;
+    }
 
-# Install Node.js and npm
-RUN apk add --no-cache nodejs npm
+    # ✅ WebSocket proxy for Reverb (port 8080)
+    location /reverb/ {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "Upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 86400;
+        proxy_send_timeout 86400;
+    }
 
-WORKDIR /var/www/html
+    location /ws/ {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "Upgrade";
+        proxy_set_header Host $host;
+        proxy_read_timeout 86400;
+        proxy_send_timeout 86400;
+    }
 
-COPY . .
-
-ENV BROADCAST_DRIVER=reverb
-ENV REVERB_APP_KEY=temp
-ENV REVERB_APP_SECRET=temp
-ENV REVERB_APP_ID=temp
-ENV COMPOSER_ALLOW_SUPERUSER=1
-
-# Install PHP dependencies
-RUN composer install --no-dev --optimize-autoloader
-
-# ✅ Install Reverb explicitly
-RUN composer require laravel/reverb
-
-# ✅ Check if Reverb is installed
-RUN php artisan list | grep reverb || echo "⚠️ Reverb not found!"
-
-# Install and build frontend
-RUN npm install --legacy-peer-deps
-RUN npm install react-is@18.2.0 --legacy-peer-deps
-RUN npm run build
-
-# Verify manifest was created
-RUN ls -la /var/www/html/public/build/ || echo "Build failed!"
-
-# Create storage directories
-RUN mkdir -p storage/framework/views storage/framework/cache storage/framework/sessions
-RUN mkdir -p storage/logs storage/app/public
-RUN touch storage/logs/laravel.log
-
-# Set permissions
-RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache
-RUN chmod -R 777 /var/www/html/storage /var/www/html/bootstrap/cache
-RUN chmod -R 777 /var/www/html/public
-
-# Copy nginx config
-COPY nginx.conf /etc/nginx/nginx.conf
-
-EXPOSE 8000
-
-# ✅ DEBUG: Run Reverb with logs visible
-CMD sh -c "php artisan config:clear && php artisan route:clear && php artisan view:clear && php artisan cache:clear && php artisan config:cache && php artisan route:cache && php artisan view:cache && php artisan schedule:work > /dev/null 2>&1 & php artisan queue:work --sleep=3 --tries=3 > /dev/null 2>&1 & php artisan reverb:start --host=0.0.0.0 --port=8000 2>&1 & php-fpm -D && nginx -g 'daemon off;'"
+    location ~ /\. {
+        deny all;
+    }
+}
