@@ -20,8 +20,6 @@ import {
   ArrowLeft, 
   RefreshCw, 
   Maximize2, 
-  Minus, 
-  Plus, 
   Truck, 
   User, 
   MapPin, 
@@ -30,22 +28,18 @@ import {
   Navigation,
   Satellite,
   Layers,
-  Eye,
   Activity,
-  Zap,
-  Shield,
   ChevronDown,
   Check,
   X,
   Wifi,
   WifiOff,
-  Compass,
   Focus,
   Map,
+  Eye,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Card } from '@/components/ui/card';
 import { toast } from 'react-hot-toast';
 
 // Fix for default markers
@@ -57,7 +51,7 @@ L.Icon.Default.mergeOptions({
 });
 
 // ============================================
-// 🚗 VEHICLE ICON - Clean car only (no extra dots)
+// 🚗 VEHICLE ICON - Clean car only
 // ============================================
 
 const createVehicleIcon = (status, isSelected, isOnline = true) => {
@@ -254,17 +248,17 @@ const StatsCard = ({ title, value, icon: Icon, color, subtitle }) => (
 // ============================================
 
 const TripPopupContent = ({ trip, onViewTrip, onCenter, onFocus }) => {
-  const { current_location } = trip;
+  const current_location = trip?.current_location;
   
   return (
     <div className="p-2 min-w-[240px] max-w-[300px]">
       <div className="flex items-center gap-2 mb-3">
-        <div className={`w-2.5 h-2.5 rounded-full ${getStatusDot(trip.status)} animate-pulse`} />
+        <div className={`w-2.5 h-2.5 rounded-full ${getStatusDot(trip?.status)} animate-pulse`} />
         <span className="font-semibold text-sm text-slate-800 dark:text-white">
-          {trip.ticket_number}
+          {trip?.ticket_number || 'N/A'}
         </span>
-        <Badge className={`${getStatusColor(trip.status)} text-white text-[10px] ml-auto`}>
-          {getStatusLabel(trip.status)}
+        <Badge className={`${getStatusColor(trip?.status)} text-white text-[10px] ml-auto`}>
+          {getStatusLabel(trip?.status)}
         </Badge>
       </div>
       <div className="space-y-2 text-sm">
@@ -272,21 +266,21 @@ const TripPopupContent = ({ trip, onViewTrip, onCenter, onFocus }) => {
           <Truck className="h-3.5 w-3.5 text-slate-400" />
           <span className="text-slate-500">Vehicle:</span>
           <span className="font-medium text-slate-700 dark:text-slate-300">
-            {trip.vehicle?.plate_number || 'N/A'}
+            {trip?.vehicle?.plate_number || 'N/A'}
           </span>
         </div>
         <div className="flex items-center gap-2">
           <User className="h-3.5 w-3.5 text-slate-400" />
           <span className="text-slate-500">Driver:</span>
           <span className="font-medium text-slate-700 dark:text-slate-300">
-            {trip.driver?.name || 'N/A'}
+            {trip?.driver?.name || 'N/A'}
           </span>
         </div>
         <div className="flex items-center gap-2">
           <MapPin className="h-3.5 w-3.5 text-slate-400" />
           <span className="text-slate-500">Destination:</span>
           <span className="font-medium text-slate-700 dark:text-slate-300 truncate max-w-[150px]">
-            {trip.destination || 'N/A'}
+            {trip?.destination || 'N/A'}
           </span>
         </div>
         <div className="flex items-center gap-2">
@@ -337,13 +331,15 @@ const TripPopupContent = ({ trip, onViewTrip, onCenter, onFocus }) => {
 // ============================================
 
 const FocusModal = ({ trip, onClose, allTrips, onFocusAll }) => {
-  const [focusMode, setFocusMode] = useState('single'); // 'single' | 'all'
+  const [focusMode, setFocusMode] = useState('single');
   const [selectedTrip, setSelectedTrip] = useState(trip);
   
-  if (!trip && !allTrips) return null;
+  // ✅ Safe check for trips
+  const safeTrips = allTrips || [];
+  const tripsWithLocation = safeTrips.filter(t => t && t.current_location);
+  const hasMultiple = tripsWithLocation.length > 1;
   
-  const tripsToShow = focusMode === 'all' ? allTrips : [selectedTrip || trip];
-  const hasMultiple = allTrips && allTrips.length > 1;
+  const tripsToShow = focusMode === 'all' ? tripsWithLocation : [selectedTrip || trip].filter(t => t && t.current_location);
   
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[2000] flex items-center justify-center p-4">
@@ -360,7 +356,7 @@ const FocusModal = ({ trip, onClose, allTrips, onFocusAll }) => {
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400">
                 {focusMode === 'all' 
-                  ? `${allTrips?.length || 0} vehicles active` 
+                  ? `${tripsWithLocation.length} vehicles active` 
                   : `Live tracking • ${selectedTrip?.destination || 'No destination'}`}
               </p>
             </div>
@@ -400,21 +396,24 @@ const FocusModal = ({ trip, onClose, allTrips, onFocusAll }) => {
                 attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
               />
               
-              {tripsToShow.filter(t => t.current_location).map((t) => (
-                <Marker
-                  key={t.trip_id}
-                  position={[t.current_location.latitude, t.current_location.longitude]}
-                  icon={createVehicleIcon(t.status, false, true)}
-                >
-                  <Popup>
-                    <div className="p-1 min-w-[180px]">
-                      <p className="font-semibold text-sm">{t.ticket_number}</p>
-                      <p className="text-xs text-slate-500">{t.destination}</p>
-                      <p className="text-xs text-slate-400">Speed: {t.current_location?.speed_kmh || 0} km/h</p>
-                    </div>
-                  </Popup>
-                </Marker>
-              ))}
+              {tripsToShow.map((t) => {
+                if (!t || !t.current_location) return null;
+                return (
+                  <Marker
+                    key={t.trip_id}
+                    position={[t.current_location.latitude, t.current_location.longitude]}
+                    icon={createVehicleIcon(t.status, false, true)}
+                  >
+                    <Popup>
+                      <div className="p-1 min-w-[180px]">
+                        <p className="font-semibold text-sm">{t.ticket_number}</p>
+                        <p className="text-xs text-slate-500">{t.destination}</p>
+                        <p className="text-xs text-slate-400">Speed: {t.current_location?.speed_kmh || 0} km/h</p>
+                      </div>
+                    </Popup>
+                  </Marker>
+                );
+              })}
             </MapContainer>
             
             {/* Focus Mode Badge */}
@@ -426,9 +425,9 @@ const FocusModal = ({ trip, onClose, allTrips, onFocusAll }) => {
           </div>
 
           {/* Vehicle List (for all mode) */}
-          {focusMode === 'all' && allTrips && allTrips.length > 0 && (
+          {focusMode === 'all' && tripsWithLocation.length > 0 && (
             <div className="mt-4 grid grid-cols-2 md:grid-cols-3 gap-2 max-h-32 overflow-y-auto">
-              {allTrips.map((t) => (
+              {tripsWithLocation.map((t) => (
                 <div 
                   key={t.trip_id}
                   className="flex items-center gap-2 p-2 rounded-lg bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors cursor-pointer"
@@ -510,9 +509,11 @@ export default function LiveTracking() {
           data = response;
         }
         
-        setTripsData(data);
+        // ✅ Ensure data is an array and filter out any invalid entries
+        const safeData = Array.isArray(data) ? data : [];
+        setTripsData(safeData);
         setLastUpdate(new Date());
-        return data;
+        return safeData;
       } catch (error) {
         console.error('❌ Error fetching active trips:', error);
         toast.error('Failed to load active trips. Please refresh.');
@@ -548,8 +549,9 @@ export default function LiveTracking() {
       setPingCount(pingCounterRef.current);
       
       setTripsData(prev => {
+        if (!Array.isArray(prev)) return [];
         const updated = prev.map(trip => {
-          if (trip.trip_id === data.trip_id) {
+          if (trip && trip.trip_id === data.trip_id) {
             return {
               ...trip,
               current_location: {
@@ -584,20 +586,22 @@ export default function LiveTracking() {
         return prev;
       });
 
-      // Update focused trip if modal is open
-      if (focusedTrip && focusedTrip.trip_id === data.trip_id) {
-        setFocusedTrip(prev => ({
-          ...prev,
-          current_location: {
-            latitude: data.latitude,
-            longitude: data.longitude,
-            speed_kmh: data.speed_kmh || 0,
-            accuracy_meters: data.accuracy_meters || 0,
-            heading_degrees: data.heading_degrees || 0,
-            recorded_at: data.timestamp || new Date().toISOString(),
-          }
-        }));
-      }
+      setFocusedTrip(prev => {
+        if (prev && prev.trip_id === data.trip_id) {
+          return {
+            ...prev,
+            current_location: {
+              latitude: data.latitude,
+              longitude: data.longitude,
+              speed_kmh: data.speed_kmh || 0,
+              accuracy_meters: data.accuracy_meters || 0,
+              heading_degrees: data.heading_degrees || 0,
+              recorded_at: data.timestamp || new Date().toISOString(),
+            }
+          };
+        }
+        return prev;
+      });
 
       setLastUpdate(new Date());
     });
@@ -652,7 +656,10 @@ export default function LiveTracking() {
   // FILTER: Trips with location data
   // ============================================
 
-  const tripsWithLocation = tripsData.filter(trip => trip.current_location);
+  // ✅ SAFE: Filter only trips that have current_location
+  const tripsWithLocation = Array.isArray(tripsData) 
+    ? tripsData.filter(trip => trip && trip.current_location) 
+    : [];
   const activeCount = tripsWithLocation.length;
 
   // ============================================
@@ -670,7 +677,7 @@ export default function LiveTracking() {
     {
       title: 'Average Speed',
       value: activeCount > 0 
-        ? Math.round(tripsWithLocation.reduce((acc, t) => acc + (t.current_location?.speed_kmh || 0), 0) / activeCount)
+        ? Math.round(tripsWithLocation.reduce((acc, t) => acc + (t?.current_location?.speed_kmh || 0), 0) / activeCount)
         : 0,
       icon: Gauge,
       color: 'from-blue-500 to-blue-600',
@@ -691,7 +698,7 @@ export default function LiveTracking() {
 
   const handleTripSelect = (trip) => {
     setSelectedTrip(trip);
-    if (trip.current_location) {
+    if (trip && trip.current_location) {
       setMapCenter([trip.current_location.latitude, trip.current_location.longitude]);
       setMapZoom(16);
     }
@@ -699,11 +706,11 @@ export default function LiveTracking() {
 
   const handleViewTrip = (trip) => {
     setSelectedTrip(null);
-    navigate(`/gso/trip/${trip.trip_id}`);
+    navigate(`/gso/trip/${trip?.trip_id}`);
   };
 
   const handleCenter = (trip) => {
-    if (trip.current_location) {
+    if (trip && trip.current_location) {
       setMapCenter([trip.current_location.latitude, trip.current_location.longitude]);
       setMapZoom(16);
       setSelectedTrip(trip);
@@ -726,8 +733,14 @@ export default function LiveTracking() {
       return;
     }
     
+    const validTrips = tripsWithLocation.filter(t => t && t.current_location);
+    if (validTrips.length === 0) {
+      toast.error('No valid vehicle locations');
+      return;
+    }
+    
     const bounds = L.latLngBounds(
-      tripsWithLocation.map(trip => [
+      validTrips.map(trip => [
         trip.current_location.latitude,
         trip.current_location.longitude,
       ])
@@ -968,8 +981,8 @@ export default function LiveTracking() {
               <ZoomControl position="bottomright" />
 
               {tripsWithLocation.map((trip) => {
+                if (!trip || !trip.current_location) return null;
                 const isSelected = selectedTrip?.trip_id === trip.trip_id;
-                const { current_location } = trip;
 
                 return (
                   <div key={trip.trip_id}>
@@ -986,7 +999,7 @@ export default function LiveTracking() {
 
                     {/* Vehicle Marker - Clean car icon only */}
                     <Marker
-                      position={[current_location.latitude, current_location.longitude]}
+                      position={[trip.current_location.latitude, trip.current_location.longitude]}
                       icon={createVehicleIcon(trip.status, isSelected, true)}
                       eventHandlers={{
                         click: () => handleTripSelect(trip),
@@ -1003,10 +1016,10 @@ export default function LiveTracking() {
                     </Marker>
 
                     {/* Accuracy Circle */}
-                    {current_location.accuracy_meters && current_location.accuracy_meters < 100 && (
+                    {trip.current_location.accuracy_meters && trip.current_location.accuracy_meters < 100 && (
                       <Circle
-                        center={[current_location.latitude, current_location.longitude]}
-                        radius={current_location.accuracy_meters}
+                        center={[trip.current_location.latitude, trip.current_location.longitude]}
+                        radius={trip.current_location.accuracy_meters}
                         color={isSelected ? '#2563eb' : '#94a3b8'}
                         fillColor={isSelected ? '#2563eb' : '#94a3b8'}
                         fillOpacity={0.1}
@@ -1100,6 +1113,7 @@ export default function LiveTracking() {
               </div>
             ) : (
               tripsWithLocation.map((trip) => {
+                if (!trip) return null;
                 const isSelected = selectedTrip?.trip_id === trip.trip_id;
                 const { current_location } = trip;
 
