@@ -20,6 +20,8 @@ import {
   ArrowLeft, 
   RefreshCw, 
   Maximize2, 
+  Minus, 
+  Plus, 
   Truck, 
   User, 
   MapPin, 
@@ -28,17 +30,22 @@ import {
   Navigation,
   Satellite,
   Layers,
+  Eye,
   Activity,
+  Zap,
+  Shield,
   ChevronDown,
   Check,
+  X,
   Wifi,
   WifiOff,
-  Eye,
   Compass,
-  X,
+  Focus,
+  Map,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Card } from '@/components/ui/card';
 import { toast } from 'react-hot-toast';
 
 // Fix for default markers
@@ -50,18 +57,7 @@ L.Icon.Default.mergeOptions({
 });
 
 // ============================================
-// 🧭 HELPER: Get cardinal direction
-// ============================================
-
-const getDirection = (heading) => {
-  if (heading === null || heading === undefined) return '--';
-  const dirs = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
-  const idx = Math.round(((heading % 360) / 45)) % 8;
-  return dirs[idx];
-};
-
-// ============================================
-// 🚗 VEHICLE ICON - Clean & Normal
+// 🚗 VEHICLE ICON - Clean car only (no extra dots)
 // ============================================
 
 const createVehicleIcon = (status, isSelected, isOnline = true) => {
@@ -99,7 +95,7 @@ const createVehicleIcon = (status, isSelected, isOnline = true) => {
           "></div>
         ` : ''}
         
-        <!-- 🚗 Car Icon -->
+        <!-- 🚗 Car Icon Only -->
         <div style="
           width: ${size}px;
           height: ${size}px;
@@ -120,20 +116,6 @@ const createVehicleIcon = (status, isSelected, isOnline = true) => {
         ">
           🚗
         </div>
-
-        <!-- Status Dot -->
-        <div style="
-          position: absolute;
-          bottom: -2px;
-          right: -2px;
-          width: 12px;
-          height: 12px;
-          background: ${isOnline ? '#22c55e' : '#ef4444'};
-          border-radius: 50%;
-          border: 2px solid white;
-          z-index: 2;
-          ${isOnline ? 'animation: pulse-dot 2s ease-in-out infinite;' : ''}
-        "></div>
       </div>
     `,
     iconSize: [size + 8, size + 8],
@@ -148,10 +130,6 @@ styleSheet.textContent = `
   @keyframes pulse-ring {
     0% { transform: scale(1); opacity: 0.8; }
     100% { transform: scale(1.8); opacity: 0; }
-  }
-  @keyframes pulse-dot {
-    0%, 100% { transform: scale(1); }
-    50% { transform: scale(1.4); }
   }
   .custom-vehicle-icon:hover {
     filter: brightness(1.1);
@@ -277,8 +255,6 @@ const StatsCard = ({ title, value, icon: Icon, color, subtitle }) => (
 
 const TripPopupContent = ({ trip, onViewTrip, onCenter, onFocus }) => {
   const { current_location } = trip;
-  const heading = current_location?.heading_degrees || 0;
-  const dir = getDirection(heading);
   
   return (
     <div className="p-2 min-w-[240px] max-w-[300px]">
@@ -320,13 +296,6 @@ const TripPopupContent = ({ trip, onViewTrip, onCenter, onFocus }) => {
             {current_location?.speed_kmh || 0} km/h
           </span>
         </div>
-        <div className="flex items-center gap-2">
-          <Compass className="h-3.5 w-3.5 text-slate-400" />
-          <span className="text-slate-500">Heading:</span>
-          <span className="font-medium text-slate-700 dark:text-slate-300">
-            {heading ? `${Math.round(heading)}° ${dir}` : '--'}
-          </span>
-        </div>
         <div className="flex items-center gap-2 text-xs text-slate-400 border-t border-slate-100 dark:border-slate-700 pt-2 mt-1">
           <Clock className="h-3 w-3" />
           Updated: {formatTime(current_location?.recorded_at)}
@@ -355,7 +324,7 @@ const TripPopupContent = ({ trip, onViewTrip, onCenter, onFocus }) => {
           onClick={() => onFocus(trip)}
           className="text-xs bg-emerald-600 text-white px-3 py-1.5 rounded-lg hover:bg-emerald-700 transition-colors flex items-center justify-center gap-1"
         >
-          <Maximize2 className="h-3 w-3" />
+          <Focus className="h-3 w-3" />
           Focus
         </button>
       </div>
@@ -364,145 +333,121 @@ const TripPopupContent = ({ trip, onViewTrip, onCenter, onFocus }) => {
 };
 
 // ============================================
-// 🎯 FOCUS MONITORING MODAL
+// 🎯 FOCUS MODAL - Live tracking for single vehicle
 // ============================================
 
-const FocusModal = ({ trip, onClose }) => {
-  if (!trip) return null;
+const FocusModal = ({ trip, onClose, allTrips, onFocusAll }) => {
+  const [focusMode, setFocusMode] = useState('single'); // 'single' | 'all'
+  const [selectedTrip, setSelectedTrip] = useState(trip);
   
-  const { current_location } = trip;
-  const heading = current_location?.heading_degrees || 0;
-  const dir = getDirection(heading);
+  if (!trip && !allTrips) return null;
+  
+  const tripsToShow = focusMode === 'all' ? allTrips : [selectedTrip || trip];
+  const hasMultiple = allTrips && allTrips.length > 1;
   
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[2000] flex items-center justify-center p-4">
-      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto border border-slate-200/60 dark:border-slate-700/60">
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[2000] flex items-center justify-center p-4">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden border border-slate-200/60 dark:border-slate-700/60">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-slate-200/60 dark:border-slate-700/60">
           <div className="flex items-center gap-3">
-            <div className={`w-3 h-3 rounded-full ${getStatusDot(trip.status)} animate-pulse`} />
-            <h2 className="text-lg font-bold text-slate-900 dark:text-white">
-              {trip.ticket_number}
-            </h2>
-            <Badge className={`${getStatusColor(trip.status)} text-white text-[10px]`}>
-              {getStatusLabel(trip.status)}
-            </Badge>
+            <div className="p-2 rounded-xl bg-emerald-500/10">
+              <Focus className="h-5 w-5 text-emerald-500" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-slate-900 dark:text-white">
+                {focusMode === 'all' ? '📍 All Vehicles Monitoring' : `📍 ${selectedTrip?.ticket_number || 'Vehicle'}`}
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                {focusMode === 'all' 
+                  ? `${allTrips?.length || 0} vehicles active` 
+                  : `Live tracking • ${selectedTrip?.destination || 'No destination'}`}
+              </p>
+            </div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-          >
-            <X className="h-5 w-5 text-slate-500" />
-          </button>
+          <div className="flex items-center gap-2">
+            {hasMultiple && (
+              <button
+                onClick={() => setFocusMode(focusMode === 'all' ? 'single' : 'all')}
+                className="px-3 py-1.5 text-xs rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors flex items-center gap-1.5"
+              >
+                <Map className="h-3.5 w-3.5" />
+                {focusMode === 'all' ? 'Focus Single' : 'Focus All'}
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            >
+              <X className="h-5 w-5 text-slate-500" />
+            </button>
+          </div>
         </div>
 
         {/* Content */}
-        <div className="p-4 space-y-4">
-          {/* Location */}
-          <div className="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4">
-            <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">📍 Current Location</h3>
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <p className="text-xs text-slate-400">Latitude</p>
-                <p className="text-sm font-mono text-slate-900 dark:text-white">
-                  {current_location?.latitude.toFixed(6) || '--'}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-slate-400">Longitude</p>
-                <p className="text-sm font-mono text-slate-900 dark:text-white">
-                  {current_location?.longitude.toFixed(6) || '--'}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Stats Grid */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-3">
-              <p className="text-xs text-slate-400">Speed</p>
-              <p className="text-lg font-bold text-slate-900 dark:text-white">
-                {current_location?.speed_kmh || 0} <span className="text-sm font-normal text-slate-400">km/h</span>
-              </p>
-            </div>
-            <div className="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-3">
-              <p className="text-xs text-slate-400">Heading</p>
-              <p className="text-lg font-bold text-slate-900 dark:text-white">
-                {heading ? `${Math.round(heading)}°` : '--'} <span className="text-sm font-normal text-slate-400">{dir}</span>
-              </p>
-            </div>
-            <div className="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-3">
-              <p className="text-xs text-slate-400">Accuracy</p>
-              <p className="text-lg font-bold text-slate-900 dark:text-white">
-                {current_location?.accuracy_meters || 0} <span className="text-sm font-normal text-slate-400">m</span>
-              </p>
-            </div>
-            <div className="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-3">
-              <p className="text-xs text-slate-400">Last Update</p>
-              <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                {formatTime(current_location?.recorded_at)}
-              </p>
-            </div>
-          </div>
-
-          {/* Trip Info */}
-          <div className="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4">
-            <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Trip Details</h3>
-            <div className="space-y-2">
-              <div className="flex justify-between">
-                <span className="text-sm text-slate-500">Destination</span>
-                <span className="text-sm font-medium text-slate-900 dark:text-white">{trip.destination || 'N/A'}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-sm text-slate-500">Vehicle</span>
-                <span className="text-sm font-medium text-slate-900 dark:text-white">
-                  {trip.vehicle?.plate_number || 'N/A'} • {trip.vehicle?.vehicle_model || 'N/A'}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-sm text-slate-500">Driver</span>
-                <span className="text-sm font-medium text-slate-900 dark:text-white">{trip.driver?.name || 'N/A'}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-sm text-slate-500">Department</span>
-                <span className="text-sm font-medium text-slate-900 dark:text-white">{trip.department || 'N/A'}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-sm text-slate-500">Pings</span>
-                <span className="text-sm font-medium text-slate-900 dark:text-white">{trip.ping_count || 0}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Actions */}
-          <div className="flex gap-2 pt-2">
-            <button
-              onClick={() => window.open(`/gso/trip/${trip.trip_id}`, '_blank')}
-              className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-colors flex items-center justify-center gap-2"
+        <div className="p-4">
+          {/* Mini Map */}
+          <div className="relative rounded-xl overflow-hidden border border-slate-200/60 dark:border-slate-700/60 h-[400px]">
+            <MapContainer
+              center={[8.5833, 124.6667]}
+              zoom={14}
+              style={{ height: '100%', width: '100%' }}
+              zoomControl={false}
+              className="z-0"
             >
-              <Eye className="h-4 w-4" />
-              View Full Trip
-            </button>
-            <button
-              onClick={() => {
-                if (trip.current_location) {
-                  onClose();
-                  // Center map on this trip
-                  const map = document.querySelector('.leaflet-container')?._leaflet_map;
-                  if (map) {
-                    map.setView(
-                      [trip.current_location.latitude, trip.current_location.longitude],
-                      16
-                    );
-                  }
-                }
-              }}
-              className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-colors flex items-center justify-center gap-2"
-            >
-              <Navigation className="h-4 w-4" />
-              Center Map
-            </button>
+              <TileLayer
+                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+              />
+              
+              {tripsToShow.filter(t => t.current_location).map((t) => (
+                <Marker
+                  key={t.trip_id}
+                  position={[t.current_location.latitude, t.current_location.longitude]}
+                  icon={createVehicleIcon(t.status, false, true)}
+                >
+                  <Popup>
+                    <div className="p-1 min-w-[180px]">
+                      <p className="font-semibold text-sm">{t.ticket_number}</p>
+                      <p className="text-xs text-slate-500">{t.destination}</p>
+                      <p className="text-xs text-slate-400">Speed: {t.current_location?.speed_kmh || 0} km/h</p>
+                    </div>
+                  </Popup>
+                </Marker>
+              ))}
+            </MapContainer>
+            
+            {/* Focus Mode Badge */}
+            <div className="absolute top-3 left-3 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm rounded-lg px-3 py-1.5 text-xs shadow-lg border border-slate-200/60 dark:border-slate-700/60 z-[1000]">
+              <span className="font-semibold text-slate-700 dark:text-slate-300">
+                {focusMode === 'all' ? `📍 ${tripsToShow.length} vehicles` : '🎯 Single focus'}
+              </span>
+            </div>
           </div>
+
+          {/* Vehicle List (for all mode) */}
+          {focusMode === 'all' && allTrips && allTrips.length > 0 && (
+            <div className="mt-4 grid grid-cols-2 md:grid-cols-3 gap-2 max-h-32 overflow-y-auto">
+              {allTrips.map((t) => (
+                <div 
+                  key={t.trip_id}
+                  className="flex items-center gap-2 p-2 rounded-lg bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors cursor-pointer"
+                  onClick={() => {
+                    setSelectedTrip(t);
+                    setFocusMode('single');
+                  }}
+                >
+                  <div className={`w-2 h-2 rounded-full ${getStatusDot(t.status)} animate-pulse`} />
+                  <span className="text-xs font-medium text-slate-700 dark:text-slate-300 truncate">
+                    {t.ticket_number}
+                  </span>
+                  <span className="text-[10px] text-slate-400 ml-auto">
+                    {t.current_location?.speed_kmh || 0} km/h
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -517,6 +462,7 @@ export default function LiveTracking() {
   const navigate = useNavigate();
   const [selectedTrip, setSelectedTrip] = useState(null);
   const [focusedTrip, setFocusedTrip] = useState(null);
+  const [focusModalOpen, setFocusModalOpen] = useState(false);
   const [mapCenter, setMapCenter] = useState([8.5833, 124.6667]);
   const [mapZoom, setMapZoom] = useState(13);
   const [mapType, setMapType] = useState('street');
@@ -638,6 +584,7 @@ export default function LiveTracking() {
         return prev;
       });
 
+      // Update focused trip if modal is open
       if (focusedTrip && focusedTrip.trip_id === data.trip_id) {
         setFocusedTrip(prev => ({
           ...prev,
@@ -765,6 +712,12 @@ export default function LiveTracking() {
 
   const handleFocus = (trip) => {
     setFocusedTrip(trip);
+    setFocusModalOpen(true);
+  };
+
+  const handleFocusAll = () => {
+    setFocusedTrip(null);
+    setFocusModalOpen(true);
   };
 
   const handleFitBounds = () => {
@@ -1031,7 +984,7 @@ export default function LiveTracking() {
                       />
                     )}
 
-                    {/* Vehicle Marker - Clickable with Popup */}
+                    {/* Vehicle Marker - Clean car icon only */}
                     <Marker
                       position={[current_location.latitude, current_location.longitude]}
                       icon={createVehicleIcon(trip.status, isSelected, true)}
@@ -1117,15 +1070,23 @@ export default function LiveTracking() {
         {/* Sidebar - Trip List */}
         <div className="w-full lg:w-80 bg-white dark:bg-slate-900 border-t lg:border-t-0 lg:border-l border-slate-200/60 dark:border-slate-800/60 overflow-y-auto">
           <div className="p-4 border-b border-slate-200/60 dark:border-slate-800/60">
-            <h2 className="font-semibold text-slate-800 dark:text-white flex items-center gap-2">
-              <Truck className="h-4 w-4 text-blue-500" />
-              Active Vehicles
-              <span className="text-xs text-emerald-500 font-normal ml-2">● Live</span>
-            </h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center justify-between">
-              <span>Click a vehicle to focus on map</span>
-              <span className="text-[10px] text-slate-400">Ping: 10s</span>
-            </p>
+            <div className="flex items-center justify-between">
+              <h2 className="font-semibold text-slate-800 dark:text-white flex items-center gap-2">
+                <Truck className="h-4 w-4 text-blue-500" />
+                Active Vehicles
+                <span className="text-xs text-emerald-500 font-normal ml-2">● Live</span>
+              </h2>
+              {tripsWithLocation.length > 0 && (
+                <button
+                  onClick={handleFocusAll}
+                  className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1"
+                >
+                  <Focus className="h-3 w-3" />
+                  Focus All
+                </button>
+              )}
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400">Click a vehicle to focus on map</p>
           </div>
 
           <div className="p-3 space-y-2">
@@ -1194,7 +1155,7 @@ export default function LiveTracking() {
                         }}
                         className="flex-1 text-[10px] bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg transition-colors flex items-center justify-center gap-1"
                       >
-                        <Maximize2 className="h-3 w-3" />
+                        <Focus className="h-3 w-3" />
                         Focus Monitor
                       </button>
                     </div>
@@ -1229,7 +1190,9 @@ export default function LiveTracking() {
       {/* Focus Monitoring Modal */}
       <FocusModal 
         trip={focusedTrip} 
-        onClose={() => setFocusedTrip(null)} 
+        allTrips={tripsWithLocation}
+        onClose={() => setFocusModalOpen(false)} 
+        onFocusAll={handleFocusAll}
       />
     </div>
   );
