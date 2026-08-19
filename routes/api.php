@@ -142,9 +142,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('audit-logs/summary', [AuditLogController::class, 'getSummary']);
         Route::get('audit-logs/model/{modelType}/{modelId}', [AuditLogController::class, 'getModelLogs']);
 
-        // ============================================================
-        // ✅ FISCAL YEAR MANAGEMENT (GSO only)
-        // ============================================================
+        // Fiscal Year Management
         Route::prefix('fiscal-years')->group(function () {
             Route::get('/', [FiscalYearController::class, 'index']);
             Route::post('/', [FiscalYearController::class, 'store']);
@@ -152,9 +150,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::delete('/{id}', [FiscalYearController::class, 'destroy']);
         });
 
-        // ============================================================
-        // ✅ ANNUAL BUDGET - Full CRUD (GSO can view/delete)
-        // ============================================================
+        // Annual Budget
         Route::prefix('annual-budgets')->group(function () {
             Route::get('/', [AnnualBudgetController::class, 'index']);
             Route::get('/years', [AnnualBudgetController::class, 'getYears']);
@@ -177,14 +173,15 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('create-trip', [TripTicketController::class, 'gsoCreate']);
         Route::post('tickets/{id}/reconcile', [GsoController::class, 'reconcileTrip']);
         Route::get('budget-overview', [GsoController::class, 'getBudgetOverview']);
-            Route::get('/vehicles/available', [TripTicketController::class, 'getAvailableVehicles']);
-
-              Route::get('pending-validation', [GsoController::class, 'getPendingValidation']);
-    Route::post('tickets/{id}/validate', [GsoController::class, 'validateTrip']);
-
-        // GSO can view fiscal years
+        Route::get('/vehicles/available', [TripTicketController::class, 'getAvailableVehicles']);
+        Route::get('pending-validation', [GsoController::class, 'getPendingValidation']);
+        Route::post('tickets/{id}/validate', [GsoController::class, 'validateTrip']);
         Route::get('fiscal-years', [FiscalYearController::class, 'index']);
-         Route::get('tickets/{id}/history', [GsoController::class, 'getTripHistory']);
+        Route::get('tickets/{id}/history', [GsoController::class, 'getTripHistory']);
+        
+        // ✅ GSO GPS Live Tracking
+        Route::get('live-tracking', [GpsPingController::class, 'getActiveTrips']);
+        Route::get('trip/{id}/location', [GpsPingController::class, 'getTripWithLocations']);
     });
 
     // ============ MAYOR'S OFFICE ============
@@ -239,32 +236,17 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/budget/process-surplus/{departmentId}', [BudgetPolicyController::class, 'processSurplus']);
         Route::get('/budget/surplus-history', [BudgetPolicyController::class, 'getSurplusHistory']);
 
-        // ============================================================
-        // ✅ FISCAL YEARS - View only (MO)
-        // ============================================================
+        // Fiscal Years - View only
         Route::get('fiscal-years', [FiscalYearController::class, 'index']);
         Route::get('fiscal-years/active', [FiscalYearController::class, 'getActiveYears']);
 
-        // ============================================================
-        // ✅ ANNUAL BUDGET - MO sets the budget
-        // ============================================================
+        // Annual Budget
         Route::prefix('annual-budgets')->group(function () {
-            // Get budgets for a specific fiscal year
             Route::get('/year/{year}', [AnnualBudgetController::class, 'getByFiscalYear']);
-            
-            // ✅ Create or update annual budget
             Route::post('/', [AnnualBudgetController::class, 'store']);
-            
-            // ✅ ADD additional budget (Mayor's Memo)
             Route::post('/add', [AnnualBudgetController::class, 'addBudget']);
-            
-            // ✅ Bulk update budgets
             Route::post('/bulk', [AnnualBudgetController::class, 'bulkUpdate']);
-            
-            // ✅ Update existing budget
             Route::put('/{id}', [AnnualBudgetController::class, 'update']);
-            
-            // View budget details
             Route::get('/{departmentId}', [AnnualBudgetController::class, 'show']);
         });
     });
@@ -290,10 +272,21 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('trips/{id}/receipt', [DriverController::class, 'getReceiptStatus']);
         Route::post('trips/{id}/receipt/acknowledge', [DriverController::class, 'acknowledgeReceipt']);
 
+        // ✅ GPS Routes - Driver specific
         Route::post('gps/start', [GpsPingController::class, 'startTracking']);
         Route::post('gps/stop', [GpsPingController::class, 'stopTracking']);
         Route::post('gps/ping', [GpsPingController::class, 'store']);
         Route::post('gps/batch', [GpsPingController::class, 'storeBatch']);
+        
+        // ✅ NEW: Driver can check their own trip location data
+        Route::get('gps/trips/{id}/pings', [GpsPingController::class, 'getPings']);
+        Route::get('gps/trips/{id}/latest', [GpsPingController::class, 'getLatestPing']);
+        Route::get('gps/trips/{id}/track', [GpsPingController::class, 'getTrack']);
+        Route::get('gps/trips/{id}/summary', [GpsPingController::class, 'getTripSummary']);
+        Route::get('gps/trips/{id}/distance', [GpsPingController::class, 'calculateDistance']);
+        
+        // ✅ NEW: Driver can check deviation
+        Route::post('gps/check-deviation', [GpsPingController::class, 'checkDeviation']);
 
         Route::get('notifications', [NotificationController::class, 'driverNotifications']);
         Route::get('notifications/unread-count', [NotificationController::class, 'unreadCount']);
@@ -313,19 +306,32 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('reports/summary', [ReportsController::class, 'getReportSummary']);
         Route::get('trips/{id}/history', [DriverController::class, 'getTripHistory']);
         Route::get('trips/history/all', [DriverController::class, 'getAllTripHistory']);
-          Route::get('trips/{id}/history', [DriverController::class, 'getTripHistoryByTicket']);
+        Route::get('trips/{id}/history', [DriverController::class, 'getTripHistoryByTicket']);
     });
 
-    // ============ GPS ============
-    Route::post('gps-pings', [GpsPingController::class, 'store']);
+    // ============ GPS (General Access - Authenticated Users) ============
     Route::prefix('gps')->group(function () {
-        Route::get('active-trips', [GpsPingController::class, 'getActiveTrips'])
-            ->middleware(['role:gso_office']);
+        // POST endpoints
+        Route::post('pings', [GpsPingController::class, 'store']);
+        Route::post('pings/batch', [GpsPingController::class, 'storeBatch']);
+        
+        // GET endpoints - accessible by authenticated users with proper authorization
         Route::get('trips/{id}/route', [GpsPingController::class, 'getTripRoute']);
         Route::get('trips/{id}/track', [GpsPingController::class, 'getTrack']);
         Route::get('trips/{id}/pings', [GpsPingController::class, 'getPings']);
         Route::get('trips/{id}/latest', [GpsPingController::class, 'getLatestPing']);
         Route::get('trips/{id}/summary', [GpsPingController::class, 'getTripSummary']);
+        Route::get('trips/{id}/distance', [GpsPingController::class, 'calculateDistance']);
+        Route::get('trips/{id}/locations', [GpsPingController::class, 'getTripWithLocations']);
+        
+        // ✅ NEW: Geofencing / Deviation check
+        Route::post('check-deviation', [GpsPingController::class, 'checkDeviation']);
+        
+        // Active trips - GSO only
+        Route::get('active-trips', [GpsPingController::class, 'getActiveTrips'])
+            ->middleware(['role:gso_office']);
+        
+        // Delete - GSO only
         Route::delete('trips/{id}/pings', [GpsPingController::class, 'deletePings'])
             ->middleware(['role:gso_office']);
     });

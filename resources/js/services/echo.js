@@ -128,6 +128,7 @@ const tryConnect = () => {
                     
                     setTimeout(() => {
                         subscribeToNotifications();
+                        subscribeToGsoLiveTracking();
                     }, 500);
                     return;
                 } else if (connection.state === 'connecting') {
@@ -228,6 +229,71 @@ function subscribeToNotifications() {
 }
 
 // ============================================
+// ✅ SUBSCRIBE TO GSO LIVE TRACKING
+// ============================================
+
+function subscribeToGsoLiveTracking() {
+    try {
+        const token = getToken();
+        if (!token) {
+            console.log('⚠️ No token found, skipping GSO live tracking');
+            return;
+        }
+        
+        const userStr = localStorage.getItem('fcms_user');
+        if (!userStr) {
+            console.log('⚠️ No user found, skipping GSO live tracking');
+            return;
+        }
+        
+        const user = JSON.parse(userStr);
+        const role = user.role;
+        
+        // Only GSO can subscribe to live tracking
+        if (role !== 'gso_office') {
+            console.log('⏭️ User is not GSO, skipping live tracking');
+            return;
+        }
+        
+        console.log('🗺️ Subscribing to GSO live tracking...');
+        
+        const channel = echo.channel('gso-live-tracking');
+        
+        channel.listen('.location.updated', (data) => {
+            console.log('📍 Live location update:', data);
+            window.dispatchEvent(new CustomEvent('gps-location-updated', {
+                detail: data
+            }));
+        });
+        
+        channel.listen('.trip.completed', (data) => {
+            console.log('🏁 Trip completed:', data);
+            window.dispatchEvent(new CustomEvent('gps-trip-completed', {
+                detail: data
+            }));
+        });
+        
+        channel.listen('.trip.started', (data) => {
+            console.log('🚗 Trip started:', data);
+            window.dispatchEvent(new CustomEvent('gps-trip-started', {
+                detail: data
+            }));
+        });
+        
+        channel.subscribed(() => {
+            console.log('✅ Subscribed to gso-live-tracking');
+        });
+        
+        channel.error((error) => {
+            console.error('❌ gso-live-tracking subscription error:', error);
+        });
+        
+    } catch (error) {
+        console.error('❌ Failed to subscribe to GSO live tracking:', error);
+    }
+}
+
+// ============================================
 // ✅ UPDATE NOTIFICATION BADGE
 // ============================================
 
@@ -261,14 +327,12 @@ localStorage.setItem = function(key, value) {
 export default echo;
 
 // ============================================
-// ✅ CONSOLE HELPERS - UPDATED
+// ✅ CONSOLE HELPERS
 // ============================================
 
-// ✅ FIXED: testNotification now shows a toast directly
 window.testNotification = () => {
     console.log('🔔 Testing notification...');
     
-    // ✅ Show toast directly using react-hot-toast
     import('react-hot-toast').then((module) => {
         const toast = module.default || module;
         toast.success('🔔 Test toast from window.testNotification!', {
@@ -278,13 +342,11 @@ window.testNotification = () => {
         console.log('✅ Toast displayed!');
     }).catch((err) => {
         console.warn('⚠️ Failed to import react-hot-toast:', err);
-        // Fallback: try using window.toast
         if (window.toast) {
             window.toast.success('🔔 Test toast from window.testNotification!');
         }
     });
     
-    // ✅ Also dispatch the custom event for NotificationBell
     window.dispatchEvent(new CustomEvent('new-notification', {
         detail: {
             message: '🔔 Test notification from browser!',
@@ -300,7 +362,7 @@ window.checkEchoConnection = () => {
     if (echo.connector && echo.connector.pusher) {
         const state = echo.connector.pusher.connection.state;
         console.log('📊 Connection state:', state);
-        console.log('📊 Is subscribed:', isSubscribed);
+        console.log('📊 Is subscribed to notifications:', isSubscribed);
         return state;
     }
     console.log('❌ Echo not initialized');
@@ -318,7 +380,22 @@ window.reconnectEcho = () => {
     }
 };
 
+window.testGpsUpdate = () => {
+    console.log('📍 Testing GPS update...');
+    window.dispatchEvent(new CustomEvent('gps-location-updated', {
+        detail: {
+            trip_id: 1,
+            latitude: 8.5833,
+            longitude: 124.6667,
+            speed_kmh: 45,
+            accuracy_meters: 10,
+            timestamp: new Date().toISOString()
+        }
+    }));
+};
+
 console.log('🔧 Available commands:');
 console.log('  - window.testNotification()');
+console.log('  - window.testGpsUpdate()');
 console.log('  - window.checkEchoConnection()');
 console.log('  - window.reconnectEcho()');

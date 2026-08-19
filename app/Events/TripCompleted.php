@@ -8,25 +8,19 @@ use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;  // ✅ Changed from S
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
-class DriverLocationUpdated implements ShouldBroadcastNow  // ✅ Changed
+class TripCompleted implements ShouldBroadcastNow  // ✅ Changed
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
     public $tripId;
     public $latitude;
     public $longitude;
-    public $speed;
-    public $accuracy;
-    public $timestamp;
 
-    public function __construct($tripId, $latitude, $longitude, $speed = null, $accuracy = null)
+    public function __construct($tripId, $latitude, $longitude)
     {
         $this->tripId = $tripId;
         $this->latitude = $latitude;
         $this->longitude = $longitude;
-        $this->speed = $speed;
-        $this->accuracy = $accuracy;
-        $this->timestamp = now()->toISOString();
     }
 
     public function broadcastOn()
@@ -39,18 +33,16 @@ class DriverLocationUpdated implements ShouldBroadcastNow  // ✅ Changed
 
     public function broadcastAs()
     {
-        return 'location.updated';
+        return 'trip.completed';
     }
 
     public function broadcastWith()
     {
         return [
             'trip_id' => $this->tripId,
-            'latitude' => (float) $this->latitude,
-            'longitude' => (float) $this->longitude,
-            'speed_kmh' => (float) ($this->speed ?? 0),
-            'accuracy_meters' => (float) ($this->accuracy ?? 0),
-            'timestamp' => $this->timestamp,
+            'end_latitude' => (float) $this->latitude,
+            'end_longitude' => (float) $this->longitude,
+            'timestamp' => now()->toISOString(),
         ];
     }
 }

@@ -4,12 +4,12 @@ namespace App\Events;
 
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Broadcasting\InteractsWithSockets;
-use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;  // ✅ Changed from ShouldBroadcast
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 
-class NewNotification implements ShouldBroadcast
+class NewNotification implements ShouldBroadcastNow  // ✅ Changed
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 

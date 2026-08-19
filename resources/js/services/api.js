@@ -531,6 +531,15 @@ export const gpsAPI = {
   getLatestPing: (tripId) => api.get(`/gps/trips/${tripId}/latest`),
   getTripSummary: (tripId) => api.get(`/gps/trips/${tripId}/summary`),
   deletePings: (tripId) => api.delete(`/gps/trips/${tripId}/pings`),
+
+   getTripWithLocations: (tripId) => 
+    api.get(`/gps/trips/${tripId}/locations`),
+   calculateDistance: (tripId) => 
+    api.get(`/gps/trips/${tripId}/distance`),
+    checkDeviation: (data) => 
+    api.post('/gps/check-deviation', data),
+     storeBatch: (data) => 
+    api.post('/gps/pings/batch', data),
 };
 
 // ============ LOCATION API ============

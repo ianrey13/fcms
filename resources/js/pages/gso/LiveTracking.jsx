@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { gpsAPI } from '../../services/api';
+import echo from '../../services/echo';
 import {
   MapContainer,
   TileLayer,
@@ -19,8 +20,6 @@ import {
   ArrowLeft, 
   RefreshCw, 
   Maximize2, 
-  Minus, 
-  Plus, 
   Truck, 
   User, 
   MapPin, 
@@ -29,16 +28,15 @@ import {
   Navigation,
   Satellite,
   Layers,
-  Eye,
   Activity,
-  Zap,
-  Shield,
   ChevronDown,
   Check,
+  Wifi,
+  WifiOff,
+  Eye,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Card } from '@/components/ui/card';
 import { toast } from 'react-hot-toast';
 
 // Fix for default markers
@@ -50,7 +48,7 @@ L.Icon.Default.mergeOptions({
 });
 
 // ============================================
-// VEHICLE ICONS
+// 🚗 VEHICLE ICON - Clean car only
 // ============================================
 
 const createVehicleIcon = (status, isSelected, isOnline = true) => {
@@ -60,89 +58,108 @@ const createVehicleIcon = (status, isSelected, isOnline = true) => {
     acknowledged: '#3b82f6',
     pending_mayors_office: '#8b5cf6',
     pending_reconciliation: '#f97316',
+    completed: '#6366f1',
+    pending_gso_validation: '#818cf8',
     closed: '#6b7280',
+    returned_for_revision: '#ef4444',
   };
   const color = colors[status] || '#6b7280';
-  const size = isSelected ? 36 : 30;
-  const glowSize = isSelected ? 44 : 36;
+  const size = isSelected ? 42 : 36;
   
   return L.divIcon({
     className: 'custom-vehicle-icon',
     html: `
-      <div style="position: relative; width: ${glowSize}px; height: ${glowSize}px;">
+      <div style="
+        position: relative;
+        width: ${size}px;
+        height: ${size}px;
+        cursor: pointer;
+      ">
         ${isSelected ? `
           <div style="
             position: absolute;
-            inset: -4px;
+            inset: -6px;
             border-radius: 50%;
-            background: rgba(59, 130, 246, 0.2);
+            background: rgba(59, 130, 246, 0.15);
+            border: 2px solid rgba(59, 130, 246, 0.3);
             animation: pulse-ring 2s ease-out infinite;
           "></div>
         ` : ''}
+        <!-- 🚗 Car Icon -->
         <div style="
           width: ${size}px;
           height: ${size}px;
           background: ${color};
-          border-radius: 50%;
-          border: 3px solid white;
-          box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+          border-radius: 12px;
+          border: 2px solid white;
+          box-shadow: 0 4px 12px rgba(0,0,0,0.25);
           display: flex;
           align-items: center;
           justify-content: center;
-          font-size: ${size * 0.45}px;
+          font-size: ${size * 0.5}px;
           color: white;
           position: relative;
           z-index: 1;
-          ${isSelected ? 'box-shadow: 0 0 0 4px rgba(59,130,246,0.5);' : ''}
-          ${!isOnline ? 'opacity: 0.6;' : ''}
+          transition: all 0.3s ease;
+          ${isSelected ? 'transform: scale(1.1); box-shadow: 0 4px 20px rgba(59,130,246,0.4);' : ''}
+          ${!isOnline ? 'opacity: 0.5;' : ''}
         ">
           🚗
         </div>
-        ${!isOnline ? `
-          <div style="
-            position: absolute;
-            bottom: -2px;
-            right: -2px;
-            width: 12px;
-            height: 12px;
-            background: #ef4444;
-            border-radius: 50%;
-            border: 2px solid white;
-            z-index: 2;
-          "></div>
-        ` : ''}
+        <!-- Status Indicator (small dot at bottom-right) -->
+        <div style="
+          position: absolute;
+          bottom: -2px;
+          right: -2px;
+          width: 14px;
+          height: 14px;
+          background: ${isOnline ? '#22c55e' : '#ef4444'};
+          border-radius: 50%;
+          border: 2px solid white;
+          z-index: 2;
+          ${isOnline ? 'animation: pulse-dot 2s ease-in-out infinite;' : ''}
+        "></div>
+        <!-- Speed indicator (small badge) -->
         ${isOnline ? `
           <div style="
             position: absolute;
-            bottom: -2px;
-            right: -2px;
-            width: 12px;
-            height: 12px;
-            background: #22c55e;
-            border-radius: 50%;
-            border: 2px solid white;
-            z-index: 2;
-            animation: pulse-dot 2s ease-in-out infinite;
-          "></div>
+            top: -8px;
+            right: -8px;
+            background: rgba(0,0,0,0.8);
+            color: white;
+            font-size: 9px;
+            font-weight: bold;
+            padding: 1px 6px;
+            border-radius: 10px;
+            border: 1px solid rgba(255,255,255,0.3);
+            z-index: 3;
+            white-space: nowrap;
+            font-family: monospace;
+          ">
+            ${Math.round((window._speedData?.[status] || 0))}km/h
+          </div>
         ` : ''}
       </div>
     `,
-    iconSize: [glowSize, glowSize],
-    iconAnchor: [glowSize/2, glowSize/2],
-    popupAnchor: [0, -glowSize/2],
+    iconSize: [size + 8, size + 8],
+    iconAnchor: [(size + 8) / 2, (size + 8) / 2],
+    popupAnchor: [0, -(size + 8) / 2 - 5],
   });
 };
 
-// Add keyframe animations for the icon
+// Add keyframe animations
 const styleSheet = document.createElement("style");
 styleSheet.textContent = `
   @keyframes pulse-ring {
     0% { transform: scale(1); opacity: 0.8; }
-    100% { transform: scale(1.5); opacity: 0; }
+    100% { transform: scale(1.8); opacity: 0; }
   }
   @keyframes pulse-dot {
     0%, 100% { transform: scale(1); }
-    50% { transform: scale(1.3); }
+    50% { transform: scale(1.4); }
+  }
+  .custom-vehicle-icon:hover {
+    filter: brightness(1.1);
   }
 `;
 document.head.appendChild(styleSheet);
@@ -185,7 +202,7 @@ const MAP_TILES = {
 };
 
 // ============================================
-// HELPER FUNCTIONS (MOVED BEFORE STATS)
+// HELPER FUNCTIONS
 // ============================================
 
 const formatTime = (dateString) => {
@@ -202,19 +219,6 @@ const formatTime = (dateString) => {
   }
 };
 
-const formatDate = (dateString) => {
-  if (!dateString) return 'N/A';
-  try {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    });
-  } catch {
-    return 'N/A';
-  }
-};
-
 const getStatusLabel = (status) => {
   const labels = {
     in_transit: 'In Transit',
@@ -222,7 +226,10 @@ const getStatusLabel = (status) => {
     acknowledged: 'Acknowledged',
     pending_mayors_office: 'Pending MO',
     pending_reconciliation: 'Pending Recon',
+    completed: 'Completed',
+    pending_gso_validation: 'Pending Validation',
     closed: 'Closed',
+    returned_for_revision: 'Returned',
   };
   return labels[status] || status || 'Unknown';
 };
@@ -234,25 +241,18 @@ const getStatusColor = (status) => {
     acknowledged: 'bg-blue-500',
     pending_mayors_office: 'bg-purple-500',
     pending_reconciliation: 'bg-orange-500',
+    completed: 'bg-indigo-500',
+    pending_gso_validation: 'bg-indigo-400',
     closed: 'bg-slate-500',
+    returned_for_revision: 'bg-red-400',
   };
   return colors[status] || 'bg-slate-500';
 };
+
+const getStatusDot = getStatusColor;
 
 const getMapTypeLabel = (type) => {
   return MAP_TILES[type]?.name || 'Street Map';
-};
-
-const getStatusDot = (status) => {
-  const colors = {
-    in_transit: 'bg-green-500',
-    funds_issued: 'bg-yellow-500',
-    acknowledged: 'bg-blue-500',
-    pending_mayors_office: 'bg-purple-500',
-    pending_reconciliation: 'bg-orange-500',
-    closed: 'bg-slate-500',
-  };
-  return colors[status] || 'bg-slate-500';
 };
 
 // ============================================
@@ -277,6 +277,82 @@ const StatsCard = ({ title, value, icon: Icon, color, subtitle }) => (
 );
 
 // ============================================
+// 🗺️ POPUP CONTENT COMPONENT
+// ============================================
+
+const TripPopupContent = ({ trip, onViewTrip, onCenter }) => {
+  const { current_location } = trip;
+  
+  return (
+    <div className="p-2 min-w-[240px] max-w-[300px]">
+      <div className="flex items-center gap-2 mb-3">
+        <div className={`w-2.5 h-2.5 rounded-full ${getStatusDot(trip.status)} animate-pulse`} />
+        <span className="font-semibold text-sm text-slate-800 dark:text-white">
+          {trip.ticket_number}
+        </span>
+        <Badge className={`${getStatusColor(trip.status)} text-white text-[10px] ml-auto`}>
+          {getStatusLabel(trip.status)}
+        </Badge>
+      </div>
+      <div className="space-y-2 text-sm">
+        <div className="flex items-center gap-2">
+          <Truck className="h-3.5 w-3.5 text-slate-400" />
+          <span className="text-slate-500">Vehicle:</span>
+          <span className="font-medium text-slate-700 dark:text-slate-300">
+            {trip.vehicle?.plate_number || 'N/A'}
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <User className="h-3.5 w-3.5 text-slate-400" />
+          <span className="text-slate-500">Driver:</span>
+          <span className="font-medium text-slate-700 dark:text-slate-300">
+            {trip.driver?.name || 'N/A'}
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <MapPin className="h-3.5 w-3.5 text-slate-400" />
+          <span className="text-slate-500">Destination:</span>
+          <span className="font-medium text-slate-700 dark:text-slate-300 truncate max-w-[150px]">
+            {trip.destination || 'N/A'}
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <Gauge className="h-3.5 w-3.5 text-slate-400" />
+          <span className="text-slate-500">Speed:</span>
+          <span className="font-medium text-slate-700 dark:text-slate-300">
+            {current_location?.speed_kmh || 0} km/h
+          </span>
+        </div>
+        <div className="flex items-center gap-2 text-xs text-slate-400 border-t border-slate-100 dark:border-slate-700 pt-2 mt-1">
+          <Clock className="h-3 w-3" />
+          Updated: {formatTime(current_location?.recorded_at)}
+          <span className="text-emerald-500 text-[10px] font-medium ml-auto">● Live</span>
+        </div>
+        <div className="text-[10px] text-slate-400">
+          GPS ping interval: 10s
+        </div>
+      </div>
+      <div className="mt-3 flex gap-2">
+        <button
+          onClick={() => onViewTrip(trip)}
+          className="flex-1 text-xs bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-1"
+        >
+          <Eye className="h-3 w-3" />
+          View Trip
+        </button>
+        <button
+          onClick={() => onCenter(trip)}
+          className="text-xs bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 px-3 py-1.5 rounded-lg hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors flex items-center justify-center gap-1"
+        >
+          <Navigation className="h-3 w-3" />
+          Center
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// ============================================
 // MAIN COMPONENT
 // ============================================
 
@@ -288,8 +364,12 @@ export default function LiveTracking() {
   const [mapType, setMapType] = useState('street');
   const [isMapTypeDropdownOpen, setIsMapTypeDropdownOpen] = useState(false);
   const [lastUpdate, setLastUpdate] = useState(null);
+  const [tripsData, setTripsData] = useState([]);
+  const [isWsConnected, setIsWsConnected] = useState(false);
+  const [pingCount, setPingCount] = useState(0);
   const mapRef = useRef(null);
   const dropdownRef = useRef(null);
+  const pingCounterRef = useRef(0);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -316,27 +396,146 @@ export default function LiveTracking() {
     queryFn: async () => {
       try {
         const response = await gpsAPI.getActiveTrips();
-        const data = response?.data?.data || [];
+        
+        let data = [];
+        if (response?.data?.data) {
+          data = response.data.data;
+        } else if (response?.data) {
+          data = response.data;
+        } else if (Array.isArray(response)) {
+          data = response;
+        }
+        
+        setTripsData(data);
         setLastUpdate(new Date());
         return data;
       } catch (error) {
-        console.error('Error fetching active trips:', error);
+        console.error('❌ Error fetching active trips:', error);
+        toast.error('Failed to load active trips. Please refresh.');
         return [];
       }
     },
     refetchInterval: 10000,
     staleTime: 5000,
+    retry: 2,
+    retryDelay: 1000,
   });
+
+  // ============================================
+  // WEBSOCKET: Real-time location updates
+  // ============================================
+
+  useEffect(() => {
+    if (!echo.connector || !echo.connector.pusher) {
+      console.warn('⚠️ Echo not ready, will retry...');
+      return;
+    }
+
+    console.log('🗺️ Setting up GSO live tracking WebSocket...');
+
+    const channel = echo.channel('gso-live-tracking');
+
+    setIsWsConnected(true);
+
+    channel.listen('.location.updated', (data) => {
+      console.log('📍 Real-time location update:', data);
+      
+      pingCounterRef.current += 1;
+      setPingCount(pingCounterRef.current);
+      
+      setTripsData(prev => {
+        const updated = prev.map(trip => {
+          if (trip.trip_id === data.trip_id) {
+            return {
+              ...trip,
+              current_location: {
+                latitude: data.latitude,
+                longitude: data.longitude,
+                speed_kmh: data.speed_kmh || 0,
+                accuracy_meters: data.accuracy_meters || 0,
+                recorded_at: data.timestamp || new Date().toISOString(),
+              }
+            };
+          }
+          return trip;
+        });
+        return updated;
+      });
+
+      setSelectedTrip(prev => {
+        if (prev && prev.trip_id === data.trip_id) {
+          return {
+            ...prev,
+            current_location: {
+              latitude: data.latitude,
+              longitude: data.longitude,
+              speed_kmh: data.speed_kmh || 0,
+              accuracy_meters: data.accuracy_meters || 0,
+              recorded_at: data.timestamp || new Date().toISOString(),
+            }
+          };
+        }
+        return prev;
+      });
+
+      setLastUpdate(new Date());
+    });
+
+    channel.listen('.trip.completed', (data) => {
+      console.log('🏁 Trip completed:', data);
+      toast.success(`Trip ${data.trip_id || 'unknown'} has been completed`);
+      refetch();
+    });
+
+    channel.listen('.trip.started', (data) => {
+      console.log('🚗 Trip started:', data);
+      toast.info(`Trip ${data.trip_id || 'unknown'} has started`);
+      refetch();
+    });
+
+    channel.subscribed(() => {
+      console.log('✅ Subscribed to gso-live-tracking');
+      setIsWsConnected(true);
+    });
+
+    channel.error((error) => {
+      console.error('❌ gso-live-tracking subscription error:', error);
+      setIsWsConnected(false);
+    });
+
+    if (echo.connector && echo.connector.pusher) {
+      const connection = echo.connector.pusher.connection;
+      connection.bind('connected', () => {
+        console.log('✅ WebSocket connected');
+        setIsWsConnected(true);
+      });
+      connection.bind('disconnected', () => {
+        console.log('🔌 WebSocket disconnected');
+        setIsWsConnected(false);
+      });
+    }
+
+    return () => {
+      try {
+        channel.stopListening('.location.updated');
+        channel.stopListening('.trip.completed');
+        channel.stopListening('.trip.started');
+        echo.leave('gso-live-tracking');
+      } catch (e) {
+        // Ignore cleanup errors
+      }
+    };
+  }, []);
 
   // ============================================
   // FILTER: Trips with location data
   // ============================================
 
-  const tripsWithLocation = activeTrips.filter(trip => trip.current_location);
+  const tripsWithLocation = tripsData.filter(trip => trip.current_location);
   const activeCount = tripsWithLocation.length;
 
   // ============================================
-  // STATS (NOW formatTime IS DEFINED)
+  // STATS
   // ============================================
 
   const stats = [
@@ -361,7 +560,7 @@ export default function LiveTracking() {
       value: lastUpdate ? formatTime(lastUpdate) : '--',
       icon: Clock,
       color: 'from-purple-500 to-purple-600',
-      subtitle: 'Auto-refresh every 10s',
+      subtitle: `Pings: ${pingCount}`,
     },
   ];
 
@@ -374,6 +573,21 @@ export default function LiveTracking() {
     if (trip.current_location) {
       setMapCenter([trip.current_location.latitude, trip.current_location.longitude]);
       setMapZoom(16);
+    }
+  };
+
+  const handleViewTrip = (trip) => {
+    // Close popup first
+    setSelectedTrip(null);
+    // Navigate to trip detail
+    navigate(`/gso/trip/${trip.trip_id}`);
+  };
+
+  const handleCenter = (trip) => {
+    if (trip.current_location) {
+      setMapCenter([trip.current_location.latitude, trip.current_location.longitude]);
+      setMapZoom(16);
+      setSelectedTrip(trip);
     }
   };
 
@@ -482,10 +696,27 @@ export default function LiveTracking() {
               <Satellite className="h-5 w-5 text-blue-500" />
               Live Tracking
             </h1>
-            <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2">
-              <span>{activeCount} active vehicle{activeCount !== 1 ? 's' : ''} tracking</span>
+            <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2 flex-wrap">
+              <span className="flex items-center gap-1">
+                <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+                {activeCount} active vehicle{activeCount !== 1 ? 's' : ''} tracking
+              </span>
+              <span className="text-blue-500 text-[10px] font-medium">● Live</span>
+              <span className="flex items-center gap-1">
+                {isWsConnected ? (
+                  <Wifi className="h-3 w-3 text-emerald-500" />
+                ) : (
+                  <WifiOff className="h-3 w-3 text-red-500" />
+                )}
+                <span className={isWsConnected ? 'text-emerald-500' : 'text-red-500'}>
+                  {isWsConnected ? 'Connected' : 'Disconnected'}
+                </span>
+              </span>
+              <span className="text-slate-400 text-[10px]">
+                Pings: {pingCount}
+              </span>
               {isFetching && (
-                <span className="flex items-center gap-1 text-blue-500">
+                <span className="flex items-center gap-1 text-slate-400">
                   <RefreshCw className="h-3 w-3 animate-spin" />
                   Updating...
                 </span>
@@ -586,6 +817,12 @@ export default function LiveTracking() {
                 <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">
                   Vehicles with GPS tracking will appear here
                 </p>
+                <p className="text-xs text-blue-500 mt-2">
+                  ● Waiting for real-time updates
+                </p>
+                <p className="text-xs text-slate-400 mt-1">
+                  Mobile GPS pings every 10 seconds
+                </p>
               </div>
             </div>
           ) : (
@@ -618,7 +855,7 @@ export default function LiveTracking() {
                       />
                     )}
 
-                    {/* Vehicle Marker */}
+                    {/* Vehicle Marker - Clickable with Popup */}
                     <Marker
                       position={[current_location.latitude, current_location.longitude]}
                       icon={createVehicleIcon(trip.status, isSelected, true)}
@@ -627,69 +864,11 @@ export default function LiveTracking() {
                       }}
                     >
                       <Popup>
-                        <div className="p-2 min-w-[240px] max-w-[300px]">
-                          <div className="flex items-center gap-2 mb-3">
-                            <div className={`w-2.5 h-2.5 rounded-full ${getStatusDot(trip.status)} animate-pulse`} />
-                            <span className="font-semibold text-sm text-slate-800 dark:text-white">
-                              {trip.ticket_number}
-                            </span>
-                            <Badge className={`${getStatusColor(trip.status)} text-white text-[10px] ml-auto`}>
-                              {getStatusLabel(trip.status)}
-                            </Badge>
-                          </div>
-                          <div className="space-y-2 text-sm">
-                            <div className="flex items-center gap-2">
-                              <Truck className="h-3.5 w-3.5 text-slate-400" />
-                              <span className="text-slate-500">Vehicle:</span>
-                              <span className="font-medium text-slate-700 dark:text-slate-300">
-                                {trip.vehicle?.plate_number}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <User className="h-3.5 w-3.5 text-slate-400" />
-                              <span className="text-slate-500">Driver:</span>
-                              <span className="font-medium text-slate-700 dark:text-slate-300">
-                                {trip.driver?.name}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <MapPin className="h-3.5 w-3.5 text-slate-400" />
-                              <span className="text-slate-500">Destination:</span>
-                              <span className="font-medium text-slate-700 dark:text-slate-300 truncate max-w-[150px]">
-                                {trip.destination}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <Gauge className="h-3.5 w-3.5 text-slate-400" />
-                              <span className="text-slate-500">Speed:</span>
-                              <span className="font-medium text-slate-700 dark:text-slate-300">
-                                {current_location.speed_kmh || 0} km/h
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-2 text-xs text-slate-400 border-t border-slate-100 dark:border-slate-700 pt-2 mt-1">
-                              <Clock className="h-3 w-3" />
-                              Updated: {formatTime(current_location.recorded_at)}
-                            </div>
-                          </div>
-                          <div className="mt-3 flex gap-2">
-                            <button
-                              onClick={() => navigate(`/gso/trip/${trip.trip_id}`)}
-                              className="flex-1 text-xs bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 transition-colors"
-                            >
-                              View Trip
-                            </button>
-                            <button
-                              onClick={() => {
-                                setSelectedTrip(trip);
-                                setMapCenter([current_location.latitude, current_location.longitude]);
-                                setMapZoom(16);
-                              }}
-                              className="text-xs bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 px-3 py-1.5 rounded-lg hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors"
-                            >
-                              Center
-                            </button>
-                          </div>
-                        </div>
+                        <TripPopupContent 
+                          trip={trip}
+                          onViewTrip={handleViewTrip}
+                          onCenter={handleCenter}
+                        />
                       </Popup>
                     </Marker>
 
@@ -728,6 +907,10 @@ export default function LiveTracking() {
               </div>
               <div className="flex items-center gap-3">
                 <div className="flex items-center gap-1.5">
+                  <div className="w-3 h-3 rounded-full bg-indigo-500" />
+                  <span className="text-slate-600 dark:text-slate-300">Completed</span>
+                </div>
+                <div className="flex items-center gap-1.5">
                   <div className="w-6 h-0.5 bg-slate-400" />
                   <span className="text-slate-500 dark:text-slate-400">Route</span>
                 </div>
@@ -735,10 +918,9 @@ export default function LiveTracking() {
                   <div className="w-6 h-0.5 bg-blue-500" />
                   <span className="text-slate-500 dark:text-slate-400">Selected</span>
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <div className="w-3 h-3 rounded-full border-2 border-blue-500 bg-transparent" />
-                  <span className="text-slate-500 dark:text-slate-400">Accuracy</span>
-                </div>
+              </div>
+              <div className="text-[10px] text-slate-400 border-t border-slate-200 dark:border-slate-700 pt-1 mt-1">
+                🚗 Click car for details • GPS ping: 10s
               </div>
             </div>
           </div>
@@ -747,8 +929,9 @@ export default function LiveTracking() {
           <div className="absolute top-4 right-4 flex items-center gap-3 z-[1000]">
             <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm rounded-xl shadow-lg px-4 py-2 text-sm border border-slate-200/60 dark:border-slate-700/60">
               <span className="font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2">
-                <Activity className="h-4 w-4 text-green-500" />
+                <Activity className="h-4 w-4 text-green-500 animate-pulse" />
                 {tripsWithLocation.length} active
+                <span className="text-[10px] text-emerald-500 font-normal">● Live</span>
               </span>
             </div>
           </div>
@@ -760,8 +943,12 @@ export default function LiveTracking() {
             <h2 className="font-semibold text-slate-800 dark:text-white flex items-center gap-2">
               <Truck className="h-4 w-4 text-blue-500" />
               Active Vehicles
+              <span className="text-xs text-emerald-500 font-normal ml-2">● Live</span>
             </h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400">Click a vehicle to focus on map</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center justify-between">
+              <span>Click a vehicle to focus on map</span>
+              <span className="text-[10px] text-slate-400">Ping: 10s</span>
+            </p>
           </div>
 
           <div className="p-3 space-y-2">
@@ -771,6 +958,7 @@ export default function LiveTracking() {
                   <Truck className="h-6 w-6 text-slate-400 dark:text-slate-500" />
                 </div>
                 <p className="text-slate-500 dark:text-slate-400 text-sm">No active vehicles</p>
+                <p className="text-xs text-slate-400 mt-1">Waiting for GPS pings...</p>
               </div>
             ) : (
               tripsWithLocation.map((trip) => {
@@ -795,17 +983,18 @@ export default function LiveTracking() {
                           <span className="font-mono text-sm font-semibold text-slate-800 dark:text-white truncate">
                             {trip.ticket_number}
                           </span>
+                          <span className="text-[10px] text-emerald-500 font-medium">● Live</span>
                         </div>
                         <div className="mt-1 text-sm text-slate-600 dark:text-slate-300 truncate flex items-center gap-1.5">
                           <Truck className="h-3 w-3 text-slate-400" />
-                          {trip.vehicle?.plate_number}
+                          {trip.vehicle?.plate_number || 'N/A'}
                           <span className="text-slate-400 mx-1">•</span>
                           <User className="h-3 w-3 text-slate-400" />
-                          {trip.driver?.name}
+                          {trip.driver?.name || 'N/A'}
                         </div>
                         <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-400 truncate flex items-center gap-1">
                           <MapPin className="h-3 w-3" />
-                          {trip.destination}
+                          {trip.destination || 'N/A'}
                         </div>
                       </div>
                       <div className="text-right flex-shrink-0">
@@ -824,6 +1013,7 @@ export default function LiveTracking() {
                       <div className="mt-2 text-xs text-blue-600 dark:text-blue-400 flex items-center gap-2 bg-blue-50/50 dark:bg-blue-950/20 rounded-lg px-2 py-1">
                         <Navigation className="h-3 w-3" />
                         {current_location.latitude.toFixed(5)}, {current_location.longitude.toFixed(5)}
+                        <span className="text-emerald-500 text-[10px] font-medium ml-auto">● Live</span>
                       </div>
                     )}
                   </div>
@@ -834,10 +1024,13 @@ export default function LiveTracking() {
 
           {/* Sidebar Footer */}
           <div className="p-3 border-t border-slate-200/60 dark:border-slate-800/60 text-[10px] text-slate-400 dark:text-slate-500 flex items-center justify-between">
-            <span>Auto-refresh every 10s</span>
+            <span className="flex items-center gap-1">
+              <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+              Real-time via WebSocket
+            </span>
             <span className="flex items-center gap-1">
               <Activity className="h-3 w-3" />
-              Live
+              <span>Ping: 10s</span>
             </span>
           </div>
         </div>

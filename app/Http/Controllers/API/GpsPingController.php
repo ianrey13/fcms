@@ -5,9 +5,12 @@ namespace App\Http\Controllers\API;
 use App\Http\Controllers\Controller;
 use App\Models\GpsPing;
 use App\Models\TripTicket;
+use App\Models\TripHistory;
 use App\Models\FuelReceipt;
 use App\Models\Driver;
 use App\Helpers\NotificationHelper;
+use App\Events\DriverLocationUpdated;
+use App\Events\TripCompleted;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -17,7 +20,7 @@ class GpsPingController extends Controller
 {
     /**
      * Store a single GPS ping
-     * POST /api/gps-pings
+     * POST /api/gps/pings
      */
     public function store(Request $request)
     {
@@ -83,6 +86,19 @@ class GpsPingController extends Controller
                 'received_at' => now(),
             ]);
 
+            // ✅ Broadcast location to WebSocket
+            try {
+                broadcast(new DriverLocationUpdated(
+                    $request->trip_ticket_id,
+                    $request->latitude,
+                    $request->longitude,
+                    $request->speed_kmh ?? null,
+                    $request->accuracy_meters ?? null
+                ));
+            } catch (\Exception $e) {
+                Log::warning('Failed to broadcast location: ' . $e->getMessage());
+            }
+
             Log::info('GPS ping stored', [
                 'ping_id' => $ping->ping_id,
                 'trip_id' => $request->trip_ticket_id,
@@ -112,7 +128,7 @@ class GpsPingController extends Controller
 
     /**
      * Store batch GPS pings (for offline sync)
-     * POST /api/gps-pings/batch
+     * POST /api/gps/pings/batch
      */
     public function storeBatch(Request $request)
     {
@@ -188,6 +204,22 @@ class GpsPingController extends Controller
             
             DB::commit();
 
+            // ✅ Broadcast last ping in batch
+            if (!empty($request->pings)) {
+                $lastPing = end($request->pings);
+                try {
+                    broadcast(new DriverLocationUpdated(
+                        $request->trip_ticket_id,
+                        $lastPing['latitude'],
+                        $lastPing['longitude'],
+                        $lastPing['speed_kmh'] ?? null,
+                        $lastPing['accuracy_meters'] ?? null
+                    ));
+                } catch (\Exception $e) {
+                    Log::warning('Failed to broadcast batch location: ' . $e->getMessage());
+                }
+            }
+
             Log::info('Batch GPS pings stored', [
                 'count' => count($createdPings),
                 'trip_id' => $request->trip_ticket_id
@@ -213,7 +245,7 @@ class GpsPingController extends Controller
     }
 
     /**
-     * Start GPS tracking for a trip - FIXED (No Odometer)
+     * Start GPS tracking for a trip (Enhanced with TripHistory)
      * POST /api/gps/start
      */
     public function startTracking(Request $request)
@@ -224,7 +256,6 @@ class GpsPingController extends Controller
                 'latitude' => 'required|numeric|between:-90,90',
                 'longitude' => 'required|numeric|between:-180,180',
                 'accuracy_meters' => 'nullable|numeric|min:0',
-                // ✅ REMOVED: odometer_start
             ]);
 
             if ($validator->fails()) {
@@ -276,8 +307,20 @@ class GpsPingController extends Controller
 
             DB::beginTransaction();
 
+            // Update trip status
             $trip->status = 'in_transit';
             $trip->save();
+
+            // ✅ Create TripHistory entry
+            $nextTripNumber = TripHistory::where('trip_ticket_id', $trip->trip_ticket_id)->max('trip_number') + 1;
+            $tripHistory = TripHistory::create([
+                'trip_ticket_id' => $trip->trip_ticket_id,
+                'trip_number' => $nextTripNumber,
+                'start_lat' => $request->latitude,
+                'start_lng' => $request->longitude,
+                'started_at' => now(),
+                'status' => 'in_progress',
+            ]);
 
             if ($trip->gasSlip) {
                 $fuelReceipt = FuelReceipt::firstOrNew(['gas_slip_id' => $trip->gasSlip->gas_slip_id]);
@@ -285,7 +328,6 @@ class GpsPingController extends Controller
                 $fuelReceipt->trip_start_gps_lat = $request->latitude;
                 $fuelReceipt->trip_start_gps_lng = $request->longitude;
                 $fuelReceipt->trip_start_gps_accuracy = $request->accuracy_meters ?? null;
-                // ✅ REMOVED: odometer_start
                 $fuelReceipt->save();
 
                 GpsPing::create([
@@ -301,9 +343,23 @@ class GpsPingController extends Controller
 
             DB::commit();
 
+            // ✅ Broadcast trip started
+            try {
+                broadcast(new DriverLocationUpdated(
+                    $trip->trip_ticket_id,
+                    $request->latitude,
+                    $request->longitude,
+                    null,
+                    $request->accuracy_meters ?? null
+                ));
+            } catch (\Exception $e) {
+                Log::warning('Failed to broadcast trip start: ' . $e->getMessage());
+            }
+
             Log::info('GPS tracking started', [
                 'trip_id' => $trip->trip_ticket_id,
-                'driver_id' => $driver->driver_id
+                'driver_id' => $driver->driver_id,
+                'history_id' => $tripHistory->history_id
             ]);
 
             NotificationHelper::send(
@@ -321,6 +377,7 @@ class GpsPingController extends Controller
                     'trip_ticket_id' => $trip->trip_ticket_id,
                     'status' => $trip->status,
                     'trip_started_at' => now(),
+                    'trip_history_id' => $tripHistory->history_id,
                     'latitude' => $request->latitude,
                     'longitude' => $request->longitude,
                 ]
@@ -337,7 +394,7 @@ class GpsPingController extends Controller
     }
 
     /**
-     * Stop GPS tracking for a trip - FIXED (No Odometer)
+     * Stop GPS tracking for a trip (Enhanced with TripHistory)
      * POST /api/gps/stop
      */
     public function stopTracking(Request $request)
@@ -349,7 +406,6 @@ class GpsPingController extends Controller
                 'longitude' => 'required|numeric|between:-180,180',
                 'accuracy_meters' => 'nullable|numeric|min:0',
                 'gps_distance_km' => 'nullable|numeric|min:0',
-                // ✅ REMOVED: odometer_end
             ]);
 
             if ($validator->fails()) {
@@ -401,18 +457,41 @@ class GpsPingController extends Controller
 
             DB::beginTransaction();
 
+            // Update trip status
             $trip->status = 'pending_reconciliation';
             $trip->save();
+
+            // ✅ Complete TripHistory
+            $currentTrip = TripHistory::where('trip_ticket_id', $trip->trip_ticket_id)
+                ->where('status', 'in_progress')
+                ->orderBy('trip_number', 'desc')
+                ->first();
+
+            if ($currentTrip) {
+                $currentTrip->end_lat = $request->latitude;
+                $currentTrip->end_lng = $request->longitude;
+                $currentTrip->ended_at = now();
+                $currentTrip->status = 'completed';
+                
+                if ($request->has('gps_distance_km')) {
+                    $currentTrip->distance_km = $request->gps_distance_km;
+                } else {
+                    $currentTrip->distance_km = $this->calculateTripDistance($trip->trip_ticket_id);
+                }
+                
+                $currentTrip->save();
+            }
 
             if ($trip->gasSlip && $trip->gasSlip->fuelReceipt) {
                 $fuelReceipt = $trip->gasSlip->fuelReceipt;
                 $fuelReceipt->trip_ended_at = now();
                 if ($request->has('gps_distance_km')) {
                     $fuelReceipt->gps_distance_km = $request->gps_distance_km;
+                } else {
+                    $fuelReceipt->gps_distance_km = $this->calculateTripDistance($trip->trip_ticket_id);
                 }
                 $fuelReceipt->trip_elapsed_minutes = $fuelReceipt->trip_started_at ? 
                     $fuelReceipt->trip_started_at->diffInMinutes(now()) : null;
-                // ✅ REMOVED: odometer_end
                 $fuelReceipt->save();
 
                 GpsPing::create([
@@ -428,9 +507,21 @@ class GpsPingController extends Controller
 
             DB::commit();
 
+            // ✅ Broadcast trip completed
+            try {
+                broadcast(new TripCompleted(
+                    $trip->trip_ticket_id,
+                    $request->latitude,
+                    $request->longitude
+                ));
+            } catch (\Exception $e) {
+                Log::warning('Failed to broadcast trip completion: ' . $e->getMessage());
+            }
+
             Log::info('GPS tracking stopped', [
                 'trip_id' => $trip->trip_ticket_id,
-                'driver_id' => $driver->driver_id
+                'driver_id' => $driver->driver_id,
+                'distance_km' => $fuelReceipt->gps_distance_km ?? null
             ]);
 
             NotificationHelper::send(
@@ -450,6 +541,7 @@ class GpsPingController extends Controller
                     'trip_ended_at' => now(),
                     'latitude' => $request->latitude,
                     'longitude' => $request->longitude,
+                    'distance_km' => $fuelReceipt->gps_distance_km ?? null,
                 ]
             ]);
 
@@ -459,6 +551,373 @@ class GpsPingController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to stop GPS tracking: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Calculate total distance from GPS pings for a trip
+     * GET /api/gps/trips/{id}/distance
+     */
+    public function calculateDistance($tripId)
+    {
+        try {
+            $user = auth()->user();
+            
+            $trip = TripTicket::with(['driver'])->find($tripId);
+            if (!$trip) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Trip not found'
+                ], 404);
+            }
+
+            $isGSO = $user->role === 'gso_office';
+            $isDriver = $trip->driver && $trip->driver->user_id === $user->user_id;
+            
+            if (!$isGSO && !$isDriver) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized'
+                ], 403);
+            }
+
+            $distance = $this->calculateTripDistance($tripId);
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'trip_id' => $tripId,
+                    'distance_km' => $distance,
+                    'calculated_at' => now(),
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Calculate distance error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to calculate distance: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Check if trip is deviating from route (Geofencing)
+     * POST /api/gps/check-deviation
+     */
+    public function checkDeviation(Request $request)
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'trip_ticket_id' => 'required|exists:trip_ticket,trip_ticket_id',
+                'latitude' => 'required|numeric|between:-90,90',
+                'longitude' => 'required|numeric|between:-180,180',
+                'deviation_threshold_km' => 'nullable|numeric|min:0.1|max:10',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            $user = $request->user();
+            $trip = TripTicket::with(['driver'])->find($request->trip_ticket_id);
+            
+            if (!$trip) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Trip not found'
+                ], 404);
+            }
+
+            $isGSO = $user->role === 'gso_office';
+            $isDriver = $trip->driver && $trip->driver->user_id === $user->user_id;
+            
+            if (!$isGSO && !$isDriver) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized'
+                ], 403);
+            }
+
+            $threshold = $request->deviation_threshold_km ?? 2.0;
+
+            // Get start location from TripHistory or FuelReceipt
+            $startPing = TripHistory::where('trip_ticket_id', $trip->trip_ticket_id)
+                ->where('status', 'in_progress')
+                ->orderBy('trip_number', 'desc')
+                ->first();
+
+            if (!$startPing) {
+                $fuelReceipt = FuelReceipt::whereHas('gasSlip', function($q) use ($trip) {
+                    $q->where('trip_ticket_id', $trip->trip_ticket_id);
+                })->first();
+                
+                if ($fuelReceipt && $fuelReceipt->trip_start_gps_lat) {
+                    $startLat = $fuelReceipt->trip_start_gps_lat;
+                    $startLng = $fuelReceipt->trip_start_gps_lng;
+                } else {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'No start location found for this trip'
+                    ]);
+                }
+            } else {
+                $startLat = $startPing->start_lat;
+                $startLng = $startPing->start_lng;
+            }
+
+            $distanceFromStart = $this->haversineDistance(
+                $startLat, $startLng,
+                $request->latitude, $request->longitude
+            );
+
+            $isDeviating = $distanceFromStart > $threshold;
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'trip_id' => $trip->trip_ticket_id,
+                    'ticket_number' => $trip->trip_ticket_number,
+                    'current_latitude' => $request->latitude,
+                    'current_longitude' => $request->longitude,
+                    'start_latitude' => $startLat,
+                    'start_longitude' => $startLng,
+                    'distance_from_start_km' => round($distanceFromStart, 2),
+                    'deviation_threshold_km' => $threshold,
+                    'is_deviating' => $isDeviating,
+                    'status' => $isDeviating ? 'DEVIATING' : 'ON_ROUTE',
+                    'warning' => $isDeviating ? 'Vehicle has deviated from the trip route' : null,
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Check deviation error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to check deviation: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get trip details with all locations
+     * GET /api/gps/trips/{id}/locations
+     */
+    public function getTripWithLocations(Request $request, $tripId)
+    {
+        try {
+            $user = $request->user();
+            
+            $trip = TripTicket::with(['driver', 'vehicle', 'department'])
+                ->find($tripId);
+
+            if (!$trip) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Trip not found'
+                ], 404);
+            }
+
+            $isGSO = $user->role === 'gso_office';
+            $isDriver = $trip->driver && $trip->driver->user_id === $user->user_id;
+            $isRequester = $trip->submitted_by === $user->user_id;
+
+            if (!$isGSO && !$isDriver && !$isRequester) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized'
+                ], 403);
+            }
+
+            $pings = GpsPing::where('trip_ticket_id', $tripId)
+                ->orderBy('recorded_at', 'asc')
+                ->get();
+
+            $totalDistance = 0;
+            $maxSpeed = 0;
+            $prevPing = null;
+            $duration = 0;
+
+            foreach ($pings as $ping) {
+                if ($ping->speed_kmh && $ping->speed_kmh > $maxSpeed) {
+                    $maxSpeed = $ping->speed_kmh;
+                }
+
+                if ($prevPing) {
+                    $distance = $this->haversineDistance(
+                        $prevPing->latitude, $prevPing->longitude,
+                        $ping->latitude, $ping->longitude
+                    );
+                    if ($distance > 0.01) {
+                        $totalDistance += $distance;
+                    }
+                    $duration += $prevPing->recorded_at->diffInSeconds($ping->recorded_at);
+                }
+                $prevPing = $ping;
+            }
+
+            $avgSpeed = ($duration > 0 && $totalDistance > 0) ? ($totalDistance / $duration) * 3.6 : 0;
+
+            $tripHistory = TripHistory::where('trip_ticket_id', $tripId)
+                ->orderBy('trip_number', 'asc')
+                ->get();
+
+            // Safe null handling
+            $vehicle = $trip->vehicle;
+            $driver = $trip->driver;
+            $driverUser = $driver ? $driver->user : null;
+            $department = $trip->department;
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'trip' => [
+                        'trip_ticket_id' => $trip->trip_ticket_id,
+                        'trip_ticket_number' => $trip->trip_ticket_number,
+                        'destination' => $trip->destination,
+                        'status' => $trip->status,
+                        'trip_date' => $trip->trip_date,
+                        'vehicle' => [
+                            'plate_number' => $vehicle ? $vehicle->plate_number : 'Unknown',
+                            'vehicle_model' => $vehicle ? $vehicle->vehicle_model : 'Unknown',
+                        ],
+                        'driver' => [
+                            'name' => $driverUser ? $driverUser->full_name : 'Unknown',
+                        ],
+                        'department' => $department ? $department->department_name : 'Unknown',
+                    ],
+                    'stats' => [
+                        'total_pings' => $pings->count(),
+                        'total_distance_km' => round($totalDistance, 2),
+                        'max_speed_kmh' => round($maxSpeed, 2),
+                        'avg_speed_kmh' => round($avgSpeed, 2),
+                        'duration_minutes' => round($duration / 60, 2),
+                        'start_time' => $pings->first() ? $pings->first()->recorded_at : null,
+                        'end_time' => $pings->last() ? $pings->last()->recorded_at : null,
+                    ],
+                    'locations' => $pings->map(fn($ping) => [
+                        'latitude' => (float) $ping->latitude,
+                        'longitude' => (float) $ping->longitude,
+                        'speed_kmh' => (float) ($ping->speed_kmh ?? 0),
+                        'accuracy_meters' => (float) ($ping->accuracy_meters ?? 0),
+                        'recorded_at' => $ping->recorded_at,
+                    ]),
+                    'trip_history' => $tripHistory->map(fn($history) => [
+                        'trip_number' => $history->trip_number,
+                        'start_lat' => $history->start_lat,
+                        'start_lng' => $history->start_lng,
+                        'started_at' => $history->started_at,
+                        'end_lat' => $history->end_lat,
+                        'end_lng' => $history->end_lng,
+                        'ended_at' => $history->ended_at,
+                        'distance_km' => $history->distance_km,
+                        'status' => $history->status,
+                    ]),
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Get trip with locations error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch trip: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get all active trips with their latest GPS location
+     * GET /api/gps/active-trips
+     */
+    public function getActiveTrips(Request $request)
+    {
+        try {
+            $user = $request->user();
+            if (!$user || $user->role !== 'gso_office') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized. Only GSO can view live tracking.'
+                ], 403);
+            }
+
+            $activeTrips = TripTicket::with(['vehicle', 'driver.user', 'department'])
+                ->whereIn('status', ['in_transit', 'funds_issued', 'acknowledged'])
+                ->orderBy('updated_at', 'desc')
+                ->limit(50) // ✅ Prevent memory issues
+                ->get();
+
+            $result = [];
+
+            foreach ($activeTrips as $trip) {
+                $latestPing = GpsPing::where('trip_ticket_id', $trip->trip_ticket_id)
+                    ->orderBy('recorded_at', 'desc')
+                    ->first();
+
+                $routePings = GpsPing::where('trip_ticket_id', $trip->trip_ticket_id)
+                    ->where('is_low_accuracy', false)
+                    ->orderBy('recorded_at', 'asc')
+                    ->limit(50)
+                    ->get(['latitude', 'longitude', 'recorded_at', 'speed_kmh']);
+
+                // ✅ Safe null handling
+                $vehicle = $trip->vehicle;
+                $driver = $trip->driver;
+                $driverUser = $driver ? $driver->user : null;
+                $department = $trip->department;
+
+                $result[] = [
+                    'trip_id' => $trip->trip_ticket_id,
+                    'ticket_number' => $trip->trip_ticket_number ?? 'N/A',
+                    'destination' => $trip->destination ?? 'N/A',
+                    'status' => $trip->status ?? 'unknown',
+                    'vehicle' => [
+                        'plate_number' => $vehicle ? $vehicle->plate_number : 'Unknown',
+                        'vehicle_model' => $vehicle ? $vehicle->vehicle_model : 'Unknown',
+                    ],
+                    'driver' => [
+                        'name' => $driverUser ? $driverUser->full_name : 'Unknown',
+                    ],
+                    'department' => $department ? $department->department_name : 'Unknown',
+                    'current_location' => $latestPing ? [
+                        'latitude' => (float) $latestPing->latitude,
+                        'longitude' => (float) $latestPing->longitude,
+                        'speed_kmh' => (float) ($latestPing->speed_kmh ?? 0),
+                        'accuracy_meters' => (float) ($latestPing->accuracy_meters ?? 0),
+                        'recorded_at' => $latestPing->recorded_at,
+                        'is_low_accuracy' => (bool) $latestPing->is_low_accuracy,
+                    ] : null,
+                    'route' => $routePings->map(function($ping) {
+                        return [
+                            'latitude' => (float) $ping->latitude,
+                            'longitude' => (float) $ping->longitude,
+                            'speed_kmh' => (float) ($ping->speed_kmh ?? 0),
+                            'recorded_at' => $ping->recorded_at,
+                        ];
+                    }),
+                    'ping_count' => GpsPing::where('trip_ticket_id', $trip->trip_ticket_id)->count(),
+                    'last_update' => $latestPing ? $latestPing->recorded_at : $trip->updated_at,
+                ];
+            }
+
+            return response()->json([
+                'success' => true,
+                'data' => $result,
+                'meta' => [
+                    'total_active' => count($result),
+                    'updated_at' => now()->toDateTimeString(),
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Get active trips GPS error: ' . $e->getMessage());
+            Log::error('Stack trace: ' . $e->getTraceAsString());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch active trips: ' . $e->getMessage()
             ], 500);
         }
     }
@@ -690,92 +1149,6 @@ class GpsPingController extends Controller
     }
 
     /**
-     * Get all active trips with their latest GPS location
-     * For GSO live tracking dashboard
-     * GET /api/gps/active-trips
-     */
-    public function getActiveTrips(Request $request)
-    {
-        try {
-            $user = $request->user();
-            if (!$user || $user->role !== 'gso_office') {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Unauthorized. Only GSO can view live tracking.'
-                ], 403);
-            }
-
-            $activeTrips = TripTicket::with(['vehicle', 'driver.user', 'department'])
-                ->whereIn('status', ['in_transit', 'funds_issued', 'acknowledged'])
-                ->orderBy('updated_at', 'desc')
-                ->get();
-
-            $result = [];
-
-            foreach ($activeTrips as $trip) {
-                $latestPing = GpsPing::where('trip_ticket_id', $trip->trip_ticket_id)
-                    ->orderBy('recorded_at', 'desc')
-                    ->first();
-
-                $routePings = GpsPing::where('trip_ticket_id', $trip->trip_ticket_id)
-                    ->where('is_low_accuracy', false)
-                    ->orderBy('recorded_at', 'asc')
-                    ->limit(100)
-                    ->get(['latitude', 'longitude', 'recorded_at', 'speed_kmh']);
-
-                $result[] = [
-                    'trip_id' => $trip->trip_ticket_id,
-                    'ticket_number' => $trip->trip_ticket_number,
-                    'destination' => $trip->destination,
-                    'status' => $trip->status,
-                    'vehicle' => [
-                        'plate_number' => $trip->vehicle?->plate_number ?? 'Unknown',
-                        'vehicle_model' => $trip->vehicle?->vehicle_model ?? 'Unknown',
-                    ],
-                    'driver' => [
-                        'name' => $trip->driver?->user?->full_name ?? 'Unknown',
-                    ],
-                    'department' => $trip->department?->department_name ?? 'Unknown',
-                    'current_location' => $latestPing ? [
-                        'latitude' => (float) $latestPing->latitude,
-                        'longitude' => (float) $latestPing->longitude,
-                        'speed_kmh' => (float) ($latestPing->speed_kmh ?? 0),
-                        'accuracy_meters' => (float) ($latestPing->accuracy_meters ?? 0),
-                        'recorded_at' => $latestPing->recorded_at,
-                        'is_low_accuracy' => (bool) $latestPing->is_low_accuracy,
-                    ] : null,
-                    'route' => $routePings->map(function($ping) {
-                        return [
-                            'latitude' => (float) $ping->latitude,
-                            'longitude' => (float) $ping->longitude,
-                            'speed_kmh' => (float) ($ping->speed_kmh ?? 0),
-                            'recorded_at' => $ping->recorded_at,
-                        ];
-                    }),
-                    'ping_count' => GpsPing::where('trip_ticket_id', $trip->trip_ticket_id)->count(),
-                    'last_update' => $latestPing?->recorded_at ?? $trip->updated_at,
-                ];
-            }
-
-            return response()->json([
-                'success' => true,
-                'data' => $result,
-                'meta' => [
-                    'total_active' => count($result),
-                    'updated_at' => now()->toDateTimeString(),
-                ]
-            ]);
-
-        } catch (\Exception $e) {
-            Log::error('Get active trips GPS error: ' . $e->getMessage());
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to fetch active trips: ' . $e->getMessage()
-            ], 500);
-        }
-    }
-
-    /**
      * Get route for a specific trip (alias for getTrack)
      * GET /api/gps/trips/{id}/route
      */
@@ -947,6 +1320,41 @@ class GpsPingController extends Controller
                 'message' => 'Failed to delete GPS pings: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    // ============ PRIVATE HELPER METHODS ============
+
+    /**
+     * Calculate total distance from GPS pings
+     */
+    private function calculateTripDistance($tripId)
+    {
+        $pings = GpsPing::where('trip_ticket_id', $tripId)
+            ->where('is_low_accuracy', false)
+            ->orderBy('recorded_at', 'asc')
+            ->get();
+
+        if ($pings->count() < 2) {
+            return 0;
+        }
+
+        $totalDistance = 0;
+        $prevPing = null;
+
+        foreach ($pings as $ping) {
+            if ($prevPing) {
+                $distance = $this->haversineDistance(
+                    $prevPing->latitude, $prevPing->longitude,
+                    $ping->latitude, $ping->longitude
+                );
+                if ($distance > 0.01) {
+                    $totalDistance += $distance;
+                }
+            }
+            $prevPing = $ping;
+        }
+
+        return round($totalDistance, 2);
     }
 
     /**

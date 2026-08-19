@@ -1060,6 +1060,60 @@ const GsoDashboard = () => {
     queryClient.invalidateQueries({ queryKey: ['audit-logs'] });
   };
 
+
+  // ============================================
+// WEBSOCKET: Real-time updates for dashboard
+// ============================================
+
+useEffect(() => {
+    if (!user) return;
+
+    if (!echo.connector || !echo.connector.pusher) {
+        console.warn('⚠️ Echo not ready for dashboard updates');
+        return;
+    }
+
+    console.log('📊 Setting up GSO dashboard WebSocket...');
+
+    const channel = echo.channel('gso-live-tracking');
+
+    // Update active trips count in real-time
+    channel.listen('.location.updated', (data) => {
+        console.log('📍 Dashboard: Location updated', data);
+        // Refresh data to update stats and active trips
+        setForceUpdate(prev => prev + 1);
+        // Debounced refresh
+        const timer = setTimeout(() => fetchAllData(), 1000);
+        return () => clearTimeout(timer);
+    });
+
+    channel.listen('.trip.completed', (data) => {
+        console.log('🏁 Dashboard: Trip completed', data);
+        toast.success(`Trip ${data.trip_id || 'unknown'} completed`);
+        fetchAllData();
+    });
+
+    channel.listen('.trip.started', (data) => {
+        console.log('🚗 Dashboard: Trip started', data);
+        toast.info(`Trip ${data.trip_id || 'unknown'} started`);
+        fetchAllData();
+    });
+
+    channel.subscribed(() => {
+        console.log('✅ Dashboard subscribed to gso-live-tracking');
+    });
+
+    return () => {
+        try {
+            channel.stopListening('.location.updated');
+            channel.stopListening('.trip.completed');
+            channel.stopListening('.trip.started');
+        } catch (e) {
+            // Ignore cleanup errors
+        }
+    };
+}, [user]);
+
   // ============================================
   // LOADING STATE
   // ============================================
