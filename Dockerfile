@@ -18,8 +18,11 @@ COPY . .
 
 ENV COMPOSER_ALLOW_SUPERUSER=1
 
-# Install PHP dependencies
-RUN composer install --no-dev --optimize-autoloader
+# ✅ Install PHP dependencies WITHOUT running scripts
+RUN composer install --no-dev --optimize-autoloader --no-scripts
+
+# ✅ Then run scripts separately with environment variables set
+RUN composer run-script post-autoload-dump
 
 # Install Reverb explicitly
 RUN composer require laravel/reverb
