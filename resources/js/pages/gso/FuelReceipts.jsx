@@ -13,26 +13,20 @@ import {
     Loader2,
     Image as ImageIcon,
     Calendar,
-    MapPin,
     User,
     Truck,
     Fuel,
     RefreshCw,
-    ArrowLeft,
-    FileCheck,
     AlertTriangle,
     Clock,
     DollarSign,
     Gauge,
     Zap,
-    Shield,
     CheckCircle,
     XCircle,
-    Info,
     TrendingUp,
     TrendingDown,
     Minus,
-    Printer,
     Download,
 } from "lucide-react";
 import {
@@ -44,36 +38,61 @@ import {
 } from "@/components/ui/dialog";
 import { format } from "date-fns";
 import { toast } from "react-hot-toast";
-import { cn } from "@/lib/utils";
 
 // ============================================
-// HELPERS
+// HELPER FUNCTIONS - PRIORITIZE PUBLIC FOLDER
 // ============================================
 
-const getReceiptImageUrl = (receipt) => {
+/**
+ * Get receipt image URLs - Prioritizes public/receipts/ folder
+ * Falls back to storage/receipts/ for backward compatibility
+ */
+const getReceiptImageUrls = (receipt) => {
     let url = receipt?.receipt_url || receipt?.receipt_photo_path || null;
-
+    
     if (!url) {
-        return null;
+        return [];
     }
-
-    const currentHost = window.location.hostname;
-    const baseUrl = `http://${currentHost}:8000`;
-
+    
+    const baseUrl = window.location.origin;
+    const urlsList = [];
+    
+    // ✅ If it's a full URL, use it
     if (url.startsWith('http://') || url.startsWith('https://')) {
+        urlsList.push(url);
+        // Also try extracting filename for fallback
         const filename = url.split('/').pop();
         if (filename) {
-            return `${baseUrl}/receipts/${filename}`;
+            urlsList.push(`${baseUrl}/receipts/${filename}`);      // Public folder (priority)
+            urlsList.push(`${baseUrl}/storage/receipts/${filename}`); // Storage (fallback)
         }
-        return url;
+        return [...new Set(urlsList)];
     }
-
+    
+    // ✅ Extract filename
     const filename = url.split('/').pop();
-    if (filename) {
-        return `${baseUrl}/receipts/${filename}`;
+    
+    if (!filename) {
+        return [];
     }
-
-    return `${baseUrl}/receipts/${url}`;
+    
+    // ✅ PUBLIC FOLDER FIRST (new uploads go here)
+    urlsList.push(`${baseUrl}/receipts/${filename}`);
+    
+    // ✅ Storage folder (backward compatibility for old uploads)
+    urlsList.push(`${baseUrl}/storage/receipts/${filename}`);
+    
+    // ✅ Try the original path if different
+    if (url.startsWith('/')) {
+        urlsList.push(`${baseUrl}${url}`);
+    } else if (!url.startsWith('receipts/') && !url.startsWith('storage/')) {
+        urlsList.push(`${baseUrl}/${url}`);
+    } else if (url.startsWith('receipts/')) {
+        urlsList.push(`${baseUrl}/${url}`);
+    }
+    
+    // Remove duplicates
+    return [...new Set(urlsList)];
 };
 
 const getStatusConfig = (status) => {
@@ -153,6 +172,103 @@ const formatTimeAgo = (date) => {
     if (hours < 24) return `${hours}h ago`;
     if (days < 7) return `${days}d ago`;
     return formatDateShort(date);
+};
+
+// ============================================
+// RECEIPT IMAGE COMPONENT
+// ============================================
+
+const ReceiptImage = ({ receipt }) => {
+    const [imageError, setImageError] = useState(false);
+    const [currentUrlIndex, setCurrentUrlIndex] = useState(0);
+    const [imageLoaded, setImageLoaded] = useState(false);
+    
+    const urls = React.useMemo(() => getReceiptImageUrls(receipt), [receipt]);
+    
+    // Reset when receipt changes
+    React.useEffect(() => {
+        setImageError(false);
+        setCurrentUrlIndex(0);
+        setImageLoaded(false);
+    }, [receipt]);
+    
+    if (urls.length === 0) {
+        return (
+            <div className="border rounded-xl p-8 text-center bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700">
+                <div className="w-16 h-16 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto mb-3">
+                    <ImageIcon className="h-8 w-8 text-slate-400 dark:text-slate-500" />
+                </div>
+                <p className="text-slate-500 dark:text-slate-400 font-medium">No receipt image uploaded</p>
+                <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">Driver did not attach a photo</p>
+            </div>
+        );
+    }
+    
+    const currentUrl = urls[currentUrlIndex];
+    const hasMoreUrls = currentUrlIndex < urls.length - 1;
+    
+    const handleImageError = () => {
+        if (hasMoreUrls) {
+            setCurrentUrlIndex(prev => prev + 1);
+        } else {
+            setImageError(true);
+        }
+    };
+    
+    if (imageError) {
+        return (
+            <div className="border rounded-xl p-8 text-center bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700">
+                <div className="w-16 h-16 rounded-2xl bg-red-100 dark:bg-red-900/30 flex items-center justify-center mx-auto mb-3">
+                    <AlertTriangle className="h-8 w-8 text-red-500" />
+                </div>
+                <p className="text-red-600 dark:text-red-400 font-medium">Cannot load receipt image</p>
+                <p className="text-xs text-slate-400 dark:text-slate-500 mt-1 break-all">
+                    Tried: {urls.join(' → ')}
+                </p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
+                    DB Path: {receipt.receipt_photo_path || receipt.receipt_url || 'No path'}
+                </p>
+                <button
+                    onClick={() => {
+                        setImageError(false);
+                        setCurrentUrlIndex(0);
+                        setImageLoaded(false);
+                    }}
+                    className="mt-3 text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 underline"
+                >
+                    Retry
+                </button>
+            </div>
+        );
+    }
+    
+    return (
+        <div className="relative border rounded-xl overflow-hidden bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700">
+            {!imageLoaded && (
+                <div className="absolute inset-0 flex items-center justify-center bg-slate-50 dark:bg-slate-900/50">
+                    <Loader2 className="h-8 w-8 text-blue-500 animate-spin" />
+                </div>
+            )}
+            <img
+                src={currentUrl}
+                alt="Fuel Receipt"
+                className={`w-full max-h-80 object-contain transition-all duration-300 hover:scale-105 ${
+                    imageLoaded ? 'opacity-100' : 'opacity-0'
+                }`}
+                onError={handleImageError}
+                onLoad={() => setImageLoaded(true)}
+                loading="lazy"
+            />
+            {urls.length > 1 && !imageError && (
+                <div className="absolute bottom-2 right-2 bg-black/50 backdrop-blur-sm text-white text-[10px] px-2 py-1 rounded-lg">
+                    Trying {currentUrlIndex + 1}/{urls.length}
+                </div>
+            )}
+            <div className="absolute top-2 right-2 bg-black/50 backdrop-blur-sm text-white text-[10px] px-2 py-1 rounded-lg">
+                Click to expand
+            </div>
+        </div>
+    );
 };
 
 // ============================================
@@ -276,50 +392,6 @@ const FuelReceipts = () => {
             trend: receipts.filter(r => r.status === 'discrepancy' || r.status === 'rejected').length > 0 ? -10 : 0,
         },
     ];
-
-    // ============ RENDER RECEIPT IMAGE ============
-    const renderReceiptImage = (receipt) => {
-        const imageUrl = getReceiptImageUrl(receipt);
-
-        if (!imageUrl) {
-            return (
-                <div className="border rounded-xl p-8 text-center bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700">
-                    <div className="w-16 h-16 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto mb-3">
-                        <ImageIcon className="h-8 w-8 text-slate-400 dark:text-slate-500" />
-                    </div>
-                    <p className="text-slate-500 dark:text-slate-400 font-medium">No receipt image uploaded</p>
-                    <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">Driver did not attach a photo</p>
-                </div>
-            );
-        }
-
-        return (
-            <div className="border rounded-xl overflow-hidden bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700">
-                <img
-                    src={imageUrl}
-                    alt="Fuel Receipt"
-                    className="w-full max-h-80 object-contain transition-all duration-300 hover:scale-105"
-                    onError={(e) => {
-                        e.target.onerror = null;
-                        e.target.style.display = 'none';
-                        const parent = e.target.parentElement;
-                        parent.innerHTML = `
-                            <div class="flex flex-col items-center justify-center p-8 text-center">
-                                <div class="w-16 h-16 rounded-2xl bg-red-100 dark:bg-red-900/30 flex items-center justify-center mx-auto mb-3">
-                                    <AlertTriangle class="h-8 w-8 text-red-500" />
-                                </div>
-                                <p class="text-red-600 dark:text-red-400 font-medium">Cannot load receipt image</p>
-                                <p class="text-xs text-slate-400 dark:text-slate-500 mt-1 break-all">${receipt.receipt_photo_path || receipt.receipt_url || 'No image path'}</p>
-                            </div>
-                        `;
-                    }}
-                />
-                <div className="absolute top-2 right-2 bg-black/50 backdrop-blur-sm text-white text-[10px] px-2 py-1 rounded-lg">
-                    Click to expand
-                </div>
-            </div>
-        );
-    };
 
     // ============ LOADING STATE ============
     if (isLoading) {
@@ -548,9 +620,7 @@ const FuelReceipts = () => {
                     {selectedReceipt && (
                         <div className="space-y-6">
                             {/* Receipt Image */}
-                            <div className="relative">
-                                {renderReceiptImage(selectedReceipt)}
-                            </div>
+                            <ReceiptImage receipt={selectedReceipt} />
 
                             {/* Status Bar */}
                             <div className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700">

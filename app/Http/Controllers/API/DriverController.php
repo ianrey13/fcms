@@ -840,7 +840,7 @@ public function getTripHistoryByTicket(Request $request, $id)
         }
     }
 
-   /**
+/**
  * Get receipt status for a trip
  */
 public function getReceiptStatus(Request $request, $id)
@@ -886,8 +886,9 @@ public function getReceiptStatus(Request $request, $id)
             'data' => [
                 'is_uploaded' => $fuelReceipt && $fuelReceipt->receipt_photo_path ? true : false,
                 'receipt_photo_path' => $fuelReceipt ? $fuelReceipt->receipt_photo_path : null,
+                // ✅ CHANGE: Use asset() for public folder
                 'receipt_url' => $fuelReceipt && $fuelReceipt->receipt_photo_path ? 
-                    Storage::url($fuelReceipt->receipt_photo_path) : null,
+                    asset($fuelReceipt->receipt_photo_path) : null,
                 'liters_availed' => $fuelReceipt ? $fuelReceipt->liters_availed : null,
                 'amount_on_receipt' => $fuelReceipt ? $fuelReceipt->amount_on_receipt : null,
                 'uploaded_at' => $fuelReceipt ? $fuelReceipt->receipt_uploaded_at : null,
@@ -1470,136 +1471,143 @@ private function notifyTripCompleted($ticket)
         );
     }
 }
-    /**
-     * Upload fuel receipt - WITH AMOUNT VALIDATION
-     */
-    public function uploadReceipt(Request $request, $id)
-    {
-        try {
-            $validator = Validator::make($request->all(), [
-                'receipt' => 'required|image|mimes:jpeg,png,jpg|max:5120',
-                'liters_availed' => 'nullable|numeric|min:0',
-                'amount_on_receipt' => 'nullable|numeric|min:0',
-            ]);
-            
-            if ($validator->fails()) {
-                return response()->json(['errors' => $validator->errors()], 422);
-            }
-            
-            $user = $request->user();
-            Log::info('uploadReceipt called', ['trip_id' => $id, 'user_id' => $user->user_id]);
-            
-            $driver = Driver::where('user_id', $user->user_id)->first();
-            
-            if (!$driver) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Driver record not found'
-                ], 404);
-            }
-            
-            $ticket = TripTicket::where('trip_ticket_id', $id)
-                ->where('driver_id', $driver->driver_id)
-                ->first();
-            
-            if (!$ticket) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Trip ticket not found'
-                ], 404);
-            }
-            
-            $gasSlip = GasSlip::where('trip_ticket_id', $id)->first();
-            
-            if (!$gasSlip) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Gas slip not found'
-                ], 404);
-            }
-            
-            $amountReleased = $gasSlip->amount_released;
-            $amountOnReceipt = $request->amount_on_receipt ?? 0;
-            $litersAvailed = $request->liters_availed ?? 0;
-            
-            // VALIDATION 1: Amount on receipt cannot exceed released amount
-            if ($amountOnReceipt > $amountReleased) {
-                return response()->json([
-                    'success' => false,
-                    'message' => "Receipt amount (₱{$amountOnReceipt}) exceeds the released amount (₱{$amountReleased}). Please upload the correct receipt.",
-                    'max_amount' => $amountReleased,
-                    'suggestion' => "Please ensure the receipt amount is ₱{$amountReleased} or less."
-                ], 422);
-            }
-            
-            // VALIDATION 2: Calculate expected liters based on fuel price
-            if ($litersAvailed > 0 && $amountOnReceipt > 0) {
-                $fuelType = $ticket->vehicle ? $ticket->vehicle->fuel_type : 'regular';
-                $fuelPrice = $this->getFuelPrice($fuelType);
-                $expectedLiters = round($amountOnReceipt / $fuelPrice, 2);
-                $tolerance = 0.5;
-                
-                if (abs($litersAvailed - $expectedLiters) > $tolerance) {
-                    Log::warning('Liters mismatch', [
-                        'liters_availed' => $litersAvailed,
-                        'expected_liters' => $expectedLiters,
-                        'amount_on_receipt' => $amountOnReceipt,
-                        'fuel_price' => $fuelPrice
-                    ]);
-                }
-            }
-            
-            $file = $request->file('receipt');
-            $filename = time() . '_' . $file->getClientOriginalName();
-            $path = $file->storeAs('receipts', $filename, 'public');
-            
-            $fuelReceipt = FuelReceipt::firstOrNew(['gas_slip_id' => $gasSlip->gas_slip_id]);
-            $fuelReceipt->receipt_photo_path = $path;
-            $fuelReceipt->receipt_uploaded_at = now();
-            
-            if ($request->has('liters_availed') && $litersAvailed > 0) {
-                $fuelReceipt->liters_availed = $litersAvailed;
-            } else {
-                $fuelType = $ticket->vehicle ? $ticket->vehicle->fuel_type : 'regular';
-                $fuelPrice = $this->getFuelPrice($fuelType);
-                $fuelReceipt->liters_availed = round($amountOnReceipt / $fuelPrice, 2);
-            }
-            
-            if ($request->has('amount_on_receipt') && $amountOnReceipt > 0) {
-                $fuelReceipt->amount_on_receipt = $amountOnReceipt;
-            } else {
-                $fuelReceipt->amount_on_receipt = $amountReleased;
-            }
-            
-            $fuelReceipt->save();
-            
-            Log::info('Receipt uploaded', [
-                'trip_id' => $id, 
-                'path' => $path,
-                'amount_released' => $amountReleased,
-                'amount_on_receipt' => $fuelReceipt->amount_on_receipt,
-                'liters_availed' => $fuelReceipt->liters_availed
-            ]);
-            
-            return response()->json([
-                'success' => true,
-                'message' => 'Receipt uploaded successfully',
-                'data' => [
-                    'receipt_path' => $path,
-                    'receipt_url' => Storage::url($path),
-                    'amount_released' => $amountReleased,
-                    'amount_on_receipt' => $fuelReceipt->amount_on_receipt,
-                    'liters_availed' => $fuelReceipt->liters_availed,
-                ]
-            ]);
-        } catch (\Exception $e) {
-            Log::error('Upload receipt error: ' . $e->getMessage());
+/**
+ * Upload fuel receipt - CHANGED TO PUBLIC FOLDER
+ */
+public function uploadReceipt(Request $request, $id)
+{
+    try {
+        $validator = Validator::make($request->all(), [
+            'receipt' => 'required|image|mimes:jpeg,png,jpg|max:5120',
+            'liters_availed' => 'nullable|numeric|min:0',
+            'amount_on_receipt' => 'nullable|numeric|min:0',
+        ]);
+        
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+        
+        $user = $request->user();
+        Log::info('uploadReceipt called', ['trip_id' => $id, 'user_id' => $user->user_id]);
+        
+        $driver = Driver::where('user_id', $user->user_id)->first();
+        
+        if (!$driver) {
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to upload receipt: ' . $e->getMessage()
-            ], 500);
+                'message' => 'Driver record not found'
+            ], 404);
         }
+        
+        $ticket = TripTicket::where('trip_ticket_id', $id)
+            ->where('driver_id', $driver->driver_id)
+            ->first();
+        
+        if (!$ticket) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Trip ticket not found'
+            ], 404);
+        }
+        
+        $gasSlip = GasSlip::where('trip_ticket_id', $id)->first();
+        
+        if (!$gasSlip) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Gas slip not found'
+            ], 404);
+        }
+        
+        $amountReleased = $gasSlip->amount_released;
+        $amountOnReceipt = $request->amount_on_receipt ?? 0;
+        $litersAvailed = $request->liters_availed ?? 0;
+        
+        // VALIDATION 1: Amount on receipt cannot exceed released amount
+        if ($amountOnReceipt > $amountReleased) {
+            return response()->json([
+                'success' => false,
+                'message' => "Receipt amount (₱{$amountOnReceipt}) exceeds the released amount (₱{$amountReleased}). Please upload the correct receipt.",
+                'max_amount' => $amountReleased,
+                'suggestion' => "Please ensure the receipt amount is ₱{$amountReleased} or less."
+            ], 422);
+        }
+        
+        // VALIDATION 2: Calculate expected liters based on fuel price
+        if ($litersAvailed > 0 && $amountOnReceipt > 0) {
+            $fuelType = $ticket->vehicle ? $ticket->vehicle->fuel_type : 'regular';
+            $fuelPrice = $this->getFuelPrice($fuelType);
+            $expectedLiters = round($amountOnReceipt / $fuelPrice, 2);
+            $tolerance = 0.5;
+            
+            if (abs($litersAvailed - $expectedLiters) > $tolerance) {
+                Log::warning('Liters mismatch', [
+                    'liters_availed' => $litersAvailed,
+                    'expected_liters' => $expectedLiters,
+                    'amount_on_receipt' => $amountOnReceipt,
+                    'fuel_price' => $fuelPrice
+                ]);
+            }
+        }
+        
+        $file = $request->file('receipt');
+        $filename = time() . '_' . $file->getClientOriginalName();
+        
+        // ✅ CHANGE: Save directly to public/receipts/
+        $path = $file->move(public_path('receipts'), $filename);
+        
+        // ✅ Store relative path for database (without public/)
+        $dbPath = 'receipts/' . $filename;
+        
+        $fuelReceipt = FuelReceipt::firstOrNew(['gas_slip_id' => $gasSlip->gas_slip_id]);
+        $fuelReceipt->receipt_photo_path = $dbPath;  // ✅ Store as 'receipts/filename.jpg'
+        $fuelReceipt->receipt_uploaded_at = now();
+        
+        if ($request->has('liters_availed') && $litersAvailed > 0) {
+            $fuelReceipt->liters_availed = $litersAvailed;
+        } else {
+            $fuelType = $ticket->vehicle ? $ticket->vehicle->fuel_type : 'regular';
+            $fuelPrice = $this->getFuelPrice($fuelType);
+            $fuelReceipt->liters_availed = round($amountOnReceipt / $fuelPrice, 2);
+        }
+        
+        if ($request->has('amount_on_receipt') && $amountOnReceipt > 0) {
+            $fuelReceipt->amount_on_receipt = $amountOnReceipt;
+        } else {
+            $fuelReceipt->amount_on_receipt = $amountReleased;
+        }
+        
+        $fuelReceipt->save();
+        
+        Log::info('Receipt uploaded to public/receipts/', [
+            'trip_id' => $id, 
+            'path' => $dbPath,
+            'amount_released' => $amountReleased,
+            'amount_on_receipt' => $fuelReceipt->amount_on_receipt,
+            'liters_availed' => $fuelReceipt->liters_availed
+        ]);
+        
+        return response()->json([
+            'success' => true,
+            'message' => 'Receipt uploaded successfully',
+            'data' => [
+                'receipt_path' => $dbPath,
+                'receipt_url' => asset($dbPath),  // ✅ Generates full URL
+                'amount_released' => $amountReleased,
+                'amount_on_receipt' => $fuelReceipt->amount_on_receipt,
+                'liters_availed' => $fuelReceipt->liters_availed,
+            ]
+        ]);
+    } catch (\Exception $e) {
+        Log::error('Upload receipt error: ' . $e->getMessage());
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to upload receipt: ' . $e->getMessage()
+        ], 500);
     }
+}
+
+
     
     /**
      * Get fuel price based on fuel type

@@ -147,4 +147,6 @@ class FuelReceipt extends Model
     {
         return $this->gasSlip && $this->gasSlip->reconciliation_status === 'verified';
     }
+
+    
 }

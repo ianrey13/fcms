@@ -46,6 +46,9 @@ RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cac
 RUN chmod -R 777 /var/www/html/storage /var/www/html/bootstrap/cache
 RUN chmod -R 777 /var/www/html/public
 
+# ✅ CREATE SYMBOLIC LINK FOR STORAGE
+RUN php artisan storage:link
+
 # Copy nginx config to the correct location
 COPY nginx.conf /etc/nginx/http.d/default.conf
 
