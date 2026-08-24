@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { gpsAPI } from '../../services/api';
 import echo from '../../services/echo';
+import LiveTripTracker from '../gso/LiveTripTracker';
 import {
   MapContainer,
   TileLayer,
@@ -37,6 +38,14 @@ import {
   Focus,
   Map,
   Eye,
+  Fuel,
+  Zap,
+  Target,
+  Move,
+  Crosshair,
+  Minimize2,
+  Plus,
+  Minus,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -54,7 +63,7 @@ L.Icon.Default.mergeOptions({
 // 🚗 VEHICLE ICON - Clean car only
 // ============================================
 
-const createVehicleIcon = (status, isSelected, isOnline = true) => {
+const createVehicleIcon = (status, isSelected, isOnline = true, isFocused = false) => {
   const colors = {
     in_transit: '#22c55e',
     funds_issued: '#f59e0b',
@@ -67,18 +76,36 @@ const createVehicleIcon = (status, isSelected, isOnline = true) => {
     returned_for_revision: '#ef4444',
   };
   const color = colors[status] || '#6b7280';
-  const size = isSelected ? 38 : 32;
+  const size = isFocused ? 44 : (isSelected ? 38 : 32);
   
   return L.divIcon({
     className: 'custom-vehicle-icon',
     html: `
       <div style="
         position: relative;
-        width: ${size + 8}px;
-        height: ${size + 8}px;
+        width: ${size + 12}px;
+        height: ${size + 12}px;
         cursor: pointer;
+        transition: all 0.3s ease;
       ">
-        ${isSelected ? `
+        ${isFocused ? `
+          <div style="
+            position: absolute;
+            inset: -8px;
+            border-radius: 50%;
+            background: rgba(59, 130, 246, 0.15);
+            border: 3px solid rgba(59, 130, 246, 0.5);
+            animation: pulse-ring 1.5s ease-out infinite;
+            box-shadow: 0 0 40px rgba(59, 130, 246, 0.3);
+          "></div>
+          <div style="
+            position: absolute;
+            inset: -4px;
+            border-radius: 50%;
+            background: rgba(59, 130, 246, 0.05);
+            border: 2px solid rgba(59, 130, 246, 0.2);
+          "></div>
+        ` : isSelected ? `
           <div style="
             position: absolute;
             inset: -4px;
@@ -89,14 +116,16 @@ const createVehicleIcon = (status, isSelected, isOnline = true) => {
           "></div>
         ` : ''}
         
-        <!-- 🚗 Car Icon Only -->
+        <!-- 🚗 Car Icon -->
         <div style="
           width: ${size}px;
           height: ${size}px;
           background: ${color};
-          border-radius: 10px;
-          border: 2px solid white;
-          box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+          border-radius: 12px;
+          border: ${isFocused ? '3px solid #3b82f6' : '2px solid white'};
+          box-shadow: ${isFocused 
+            ? '0 4px 24px rgba(59,130,246,0.6), 0 0 60px rgba(59,130,246,0.15)' 
+            : '0 4px 12px rgba(0,0,0,0.25)'};
           display: flex;
           align-items: center;
           justify-content: center;
@@ -105,16 +134,39 @@ const createVehicleIcon = (status, isSelected, isOnline = true) => {
           position: relative;
           z-index: 1;
           transition: all 0.3s ease;
-          ${isSelected ? 'transform: scale(1.1); box-shadow: 0 4px 20px rgba(59,130,246,0.4);' : ''}
+          ${isFocused ? 'transform: scale(1.15);' : ''}
+          ${isSelected ? 'transform: scale(1.08);' : ''}
           ${!isOnline ? 'opacity: 0.5;' : ''}
         ">
           🚗
         </div>
+        
+        ${isFocused ? `
+          <div style="
+            position: absolute;
+            top: -8px;
+            right: -8px;
+            background: #3b82f6;
+            border-radius: 50%;
+            width: 18px;
+            height: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 2px solid white;
+            font-size: 9px;
+            color: white;
+            box-shadow: 0 2px 8px rgba(59,130,246,0.4);
+            z-index: 2;
+          ">
+            🎯
+          </div>
+        ` : ''}
       </div>
     `,
-    iconSize: [size + 8, size + 8],
-    iconAnchor: [(size + 8) / 2, (size + 8) / 2],
-    popupAnchor: [0, -(size + 8) / 2 - 5],
+    iconSize: [size + 12, size + 12],
+    iconAnchor: [(size + 12) / 2, (size + 12) / 2],
+    popupAnchor: [0, -(size + 12) / 2 - 5],
   });
 };
 
@@ -125,8 +177,17 @@ styleSheet.textContent = `
     0% { transform: scale(1); opacity: 0.8; }
     100% { transform: scale(1.8); opacity: 0; }
   }
+  @keyframes glow-pulse {
+    0% { opacity: 0.6; transform: scale(1); }
+    50% { opacity: 1; transform: scale(1.05); }
+    100% { opacity: 0.6; transform: scale(1); }
+  }
   .custom-vehicle-icon:hover {
     filter: brightness(1.1);
+    transform: scale(1.05);
+  }
+  .focus-glow {
+    animation: glow-pulse 2s ease-in-out infinite;
   }
 `;
 document.head.appendChild(styleSheet);
@@ -223,7 +284,7 @@ const getMapTypeLabel = (type) => {
 };
 
 // ============================================
-// STATS CARD COMPONENT
+// 📊 STATS CARD COMPONENT
 // ============================================
 
 const StatsCard = ({ title, value, icon: Icon, color, subtitle }) => (
@@ -296,7 +357,7 @@ const TripPopupContent = ({ trip, onViewTrip, onCenter, onFocus }) => {
           <span className="text-emerald-500 text-[10px] font-medium ml-auto">● Live</span>
         </div>
         <div className="text-[10px] text-slate-400">
-          GPS ping interval: 10s
+          GPS ping interval: 3s
         </div>
       </div>
       <div className="mt-3 flex gap-2">
@@ -327,140 +388,10 @@ const TripPopupContent = ({ trip, onViewTrip, onCenter, onFocus }) => {
 };
 
 // ============================================
-// 🎯 FOCUS MODAL - Live tracking for single vehicle
-// ============================================
-
-const FocusModal = ({ trip, onClose, allTrips, onFocusAll, isOpen }) => {
-  const [focusMode, setFocusMode] = useState('single');
-  const [selectedTrip, setSelectedTrip] = useState(trip);
-  
-  // ✅ Safe check for trips
-  const safeTrips = allTrips || [];
-  const tripsWithLocation = safeTrips.filter(t => t && t.current_location);
-  const hasMultiple = tripsWithLocation.length > 1;
-  
-  const tripsToShow = focusMode === 'all' ? tripsWithLocation : [selectedTrip || trip].filter(t => t && t.current_location);
-  
-  // ✅ If modal is not open, don't render
-  if (!isOpen) return null;
-  
-  return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[2000] flex items-center justify-center p-4">
-      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden border border-slate-200/60 dark:border-slate-700/60">
-        {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-slate-200/60 dark:border-slate-700/60">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-xl bg-emerald-500/10">
-              <Focus className="h-5 w-5 text-emerald-500" />
-            </div>
-            <div>
-              <h2 className="text-lg font-bold text-slate-900 dark:text-white">
-                {focusMode === 'all' ? '📍 All Vehicles Monitoring' : `📍 ${selectedTrip?.ticket_number || 'Vehicle'}`}
-              </h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                {focusMode === 'all' 
-                  ? `${tripsWithLocation.length} vehicles active` 
-                  : `Live tracking • ${selectedTrip?.destination || 'No destination'}`}
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            {hasMultiple && (
-              <button
-                onClick={() => setFocusMode(focusMode === 'all' ? 'single' : 'all')}
-                className="px-3 py-1.5 text-xs rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors flex items-center gap-1.5"
-              >
-                <Map className="h-3.5 w-3.5" />
-                {focusMode === 'all' ? 'Focus Single' : 'Focus All'}
-              </button>
-            )}
-            <button
-              onClick={onClose}
-              className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-            >
-              <X className="h-5 w-5 text-slate-500" />
-            </button>
-          </div>
-        </div>
-
-        {/* Content */}
-        <div className="p-4">
-          {/* Mini Map */}
-          <div className="relative rounded-xl overflow-hidden border border-slate-200/60 dark:border-slate-700/60 h-[400px]">
-            <MapContainer
-              center={[8.5833, 124.6667]}
-              zoom={14}
-              style={{ height: '100%', width: '100%' }}
-              zoomControl={false}
-              className="z-0"
-            >
-              <TileLayer
-                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-              />
-              
-              {tripsToShow.map((t) => {
-                if (!t || !t.current_location) return null;
-                return (
-                  <Marker
-                    key={t.trip_id}
-                    position={[t.current_location.latitude, t.current_location.longitude]}
-                    icon={createVehicleIcon(t.status, false, true)}
-                  >
-                    <Popup>
-                      <div className="p-1 min-w-[180px]">
-                        <p className="font-semibold text-sm">{t.ticket_number}</p>
-                        <p className="text-xs text-slate-500">{t.destination}</p>
-                        <p className="text-xs text-slate-400">Speed: {t.current_location?.speed_kmh || 0} km/h</p>
-                      </div>
-                    </Popup>
-                  </Marker>
-                );
-              })}
-            </MapContainer>
-            
-            {/* Focus Mode Badge */}
-            <div className="absolute top-3 left-3 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm rounded-lg px-3 py-1.5 text-xs shadow-lg border border-slate-200/60 dark:border-slate-700/60 z-[1000]">
-              <span className="font-semibold text-slate-700 dark:text-slate-300">
-                {focusMode === 'all' ? `📍 ${tripsToShow.length} vehicles` : '🎯 Single focus'}
-              </span>
-            </div>
-          </div>
-
-          {/* Vehicle List (for all mode) */}
-          {focusMode === 'all' && tripsWithLocation.length > 0 && (
-            <div className="mt-4 grid grid-cols-2 md:grid-cols-3 gap-2 max-h-32 overflow-y-auto">
-              {tripsWithLocation.map((t) => (
-                <div 
-                  key={t.trip_id}
-                  className="flex items-center gap-2 p-2 rounded-lg bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors cursor-pointer"
-                  onClick={() => {
-                    setSelectedTrip(t);
-                    setFocusMode('single');
-                  }}
-                >
-                  <div className={`w-2 h-2 rounded-full ${getStatusDot(t.status)} animate-pulse`} />
-                  <span className="text-xs font-medium text-slate-700 dark:text-slate-300 truncate">
-                    {t.ticket_number}
-                  </span>
-                  <span className="text-[10px] text-slate-400 ml-auto">
-                    {t.current_location?.speed_kmh || 0} km/h
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// ============================================
 // MAIN COMPONENT
 // ============================================
 
-export default function LiveTracking() {
+const LiveTracking = () => {
   const navigate = useNavigate();
   const [selectedTrip, setSelectedTrip] = useState(null);
   const [focusedTrip, setFocusedTrip] = useState(null);
@@ -476,6 +407,8 @@ export default function LiveTracking() {
   const mapRef = useRef(null);
   const dropdownRef = useRef(null);
   const pingCounterRef = useRef(0);
+  const markerRefs = useRef({});
+  const [followedTripId, setFollowedTripId] = useState(null);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -512,7 +445,6 @@ export default function LiveTracking() {
           data = response;
         }
         
-        // ✅ Ensure data is an array and filter out any invalid entries
         const safeData = Array.isArray(data) ? data : [];
         setTripsData(safeData);
         setLastUpdate(new Date());
@@ -551,6 +483,7 @@ export default function LiveTracking() {
       pingCounterRef.current += 1;
       setPingCount(pingCounterRef.current);
       
+      // Update trips data
       setTripsData(prev => {
         if (!Array.isArray(prev)) return [];
         const updated = prev.map(trip => {
@@ -572,6 +505,7 @@ export default function LiveTracking() {
         return updated;
       });
 
+      // Update selected trip if it's the one being tracked
       setSelectedTrip(prev => {
         if (prev && prev.trip_id === data.trip_id) {
           return {
@@ -589,6 +523,7 @@ export default function LiveTracking() {
         return prev;
       });
 
+      // Update focused trip if it's the one being focused
       setFocusedTrip(prev => {
         if (prev && prev.trip_id === data.trip_id) {
           return {
@@ -605,6 +540,11 @@ export default function LiveTracking() {
         }
         return prev;
       });
+
+      // Auto-center map if following a trip
+      if (followedTripId === data.trip_id && mapRef.current) {
+        mapRef.current.setView([data.latitude, data.longitude], mapZoom);
+      }
 
       setLastUpdate(new Date());
     });
@@ -659,7 +599,6 @@ export default function LiveTracking() {
   // FILTER: Trips with location data
   // ============================================
 
-  // ✅ SAFE: Filter only trips that have current_location
   const tripsWithLocation = Array.isArray(tripsData) 
     ? tripsData.filter(trip => trip && trip.current_location) 
     : [];
@@ -701,14 +640,19 @@ export default function LiveTracking() {
 
   const handleTripSelect = (trip) => {
     setSelectedTrip(trip);
+    setFollowedTripId(trip?.trip_id);
     if (trip && trip.current_location) {
       setMapCenter([trip.current_location.latitude, trip.current_location.longitude]);
       setMapZoom(16);
+      if (mapRef.current) {
+        mapRef.current.setView([trip.current_location.latitude, trip.current_location.longitude], 16);
+      }
     }
   };
 
   const handleViewTrip = (trip) => {
     setSelectedTrip(null);
+    setFollowedTripId(null);
     navigate(`/gso/trip/${trip?.trip_id}`);
   };
 
@@ -717,22 +661,33 @@ export default function LiveTracking() {
       setMapCenter([trip.current_location.latitude, trip.current_location.longitude]);
       setMapZoom(16);
       setSelectedTrip(trip);
+      setFollowedTripId(trip.trip_id);
+      if (mapRef.current) {
+        mapRef.current.setView([trip.current_location.latitude, trip.current_location.longitude], 16);
+      }
     }
   };
 
+  // ✅ FIXED: Handle focus - opens modal with selected trip
   const handleFocus = (trip) => {
+    console.log('🎯 Focusing on trip:', trip?.ticket_number);
     setFocusedTrip(trip);
     setFocusModalOpen(true);
+  };
+
+  // ✅ FIXED: Handle close modal
+  const handleCloseModal = () => {
+    console.log('🔒 Closing focus modal');
+    setFocusModalOpen(false);
+    // Keep focused trip for a moment to avoid flash
+    setTimeout(() => {
+      setFocusedTrip(null);
+    }, 300);
   };
 
   const handleFocusAll = () => {
     setFocusedTrip(null);
     setFocusModalOpen(true);
-  };
-
-  const handleCloseModal = () => {
-    setFocusModalOpen(false);
-    setFocusedTrip(null);
   };
 
   const handleFitBounds = () => {
@@ -970,9 +925,6 @@ export default function LiveTracking() {
                 <p className="text-xs text-blue-500 mt-2">
                   ● Waiting for real-time updates
                 </p>
-                <p className="text-xs text-slate-400 mt-1">
-                  Mobile GPS pings every 10 seconds
-                </p>
               </div>
             </div>
           ) : (
@@ -991,6 +943,7 @@ export default function LiveTracking() {
               {tripsWithLocation.map((trip) => {
                 if (!trip || !trip.current_location) return null;
                 const isSelected = selectedTrip?.trip_id === trip.trip_id;
+                const isFocused = focusedTrip?.trip_id === trip.trip_id;
 
                 return (
                   <div key={trip.trip_id}>
@@ -998,19 +951,24 @@ export default function LiveTracking() {
                     {trip.route && trip.route.length > 1 && (
                       <Polyline
                         positions={trip.route.map(p => [p.latitude, p.longitude])}
-                        color={isSelected ? '#2563eb' : '#94a3b8'}
-                        weight={isSelected ? 4 : 2}
-                        opacity={isSelected ? 0.9 : 0.4}
-                        dashArray={isSelected ? null : '5, 5'}
+                        color={isSelected || isFocused ? '#2563eb' : '#94a3b8'}
+                        weight={isSelected || isFocused ? 4 : 2}
+                        opacity={isSelected || isFocused ? 0.9 : 0.4}
+                        dashArray={isSelected || isFocused ? null : '5, 5'}
                       />
                     )}
 
-                    {/* Vehicle Marker - Clean car icon only */}
+                    {/* Vehicle Marker */}
                     <Marker
                       position={[trip.current_location.latitude, trip.current_location.longitude]}
-                      icon={createVehicleIcon(trip.status, isSelected, true)}
+                      icon={createVehicleIcon(trip.status, isSelected, true, isFocused)}
                       eventHandlers={{
                         click: () => handleTripSelect(trip),
+                      }}
+                      ref={(ref) => {
+                        if (ref) {
+                          markerRefs.current[trip.trip_id] = ref;
+                        }
                       }}
                     >
                       <Popup>
@@ -1028,8 +986,8 @@ export default function LiveTracking() {
                       <Circle
                         center={[trip.current_location.latitude, trip.current_location.longitude]}
                         radius={trip.current_location.accuracy_meters}
-                        color={isSelected ? '#2563eb' : '#94a3b8'}
-                        fillColor={isSelected ? '#2563eb' : '#94a3b8'}
+                        color={isSelected || isFocused ? '#2563eb' : '#94a3b8'}
+                        fillColor={isSelected || isFocused ? '#2563eb' : '#94a3b8'}
                         fillOpacity={0.1}
                       />
                     )}
@@ -1069,9 +1027,13 @@ export default function LiveTracking() {
                   <div className="w-6 h-0.5 bg-blue-500" />
                   <span className="text-slate-500 dark:text-slate-400">Selected</span>
                 </div>
+                <div className="flex items-center gap-1.5">
+                  <div className="w-3 h-3 rounded-full bg-emerald-500" />
+                  <span className="text-slate-500 dark:text-slate-400">Focused</span>
+                </div>
               </div>
               <div className="text-[10px] text-slate-400 border-t border-slate-200 dark:border-slate-700 pt-1 mt-1">
-                🚗 Click car for details • GPS ping: 10s
+                🚗 Click car for details • GPS ping: 3s • Focus mode available
               </div>
             </div>
           </div>
@@ -1083,6 +1045,11 @@ export default function LiveTracking() {
                 <Activity className="h-4 w-4 text-green-500 animate-pulse" />
                 {tripsWithLocation.length} active
                 <span className="text-[10px] text-emerald-500 font-normal">● Live</span>
+                {followedTripId && (
+                  <span className="text-[10px] text-blue-500 font-normal ml-1">
+                    • Following
+                  </span>
+                )}
               </span>
             </div>
           </div>
@@ -1123,6 +1090,7 @@ export default function LiveTracking() {
               tripsWithLocation.map((trip) => {
                 if (!trip) return null;
                 const isSelected = selectedTrip?.trip_id === trip.trip_id;
+                const isFocused = focusedTrip?.trip_id === trip.trip_id;
                 const { current_location } = trip;
 
                 return (
@@ -1130,17 +1098,28 @@ export default function LiveTracking() {
                     key={trip.trip_id}
                     onClick={() => handleTripSelect(trip)}
                     className={cn(
-                      "p-3 rounded-xl cursor-pointer transition-all duration-200",
-                      isSelected 
-                        ? "bg-blue-50 dark:bg-blue-900/20 ring-2 ring-blue-500 shadow-sm shadow-blue-500/10" 
-                        : "hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                      "p-3 rounded-xl cursor-pointer transition-all duration-200 relative",
+                      isFocused 
+                        ? "bg-emerald-50 dark:bg-emerald-950/30 ring-2 ring-emerald-500 shadow-lg shadow-emerald-500/10" 
+                        : isSelected 
+                          ? "bg-blue-50 dark:bg-blue-900/20 ring-2 ring-blue-500 shadow-sm shadow-blue-500/10" 
+                          : "hover:bg-slate-50 dark:hover:bg-slate-800/50"
                     )}
                   >
+                    {isFocused && (
+                      <div className="absolute top-2 right-2 bg-emerald-500 text-white text-[8px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                        <Focus className="h-2.5 w-2.5" />
+                        FOCUS
+                      </div>
+                    )}
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
-                          <div className={`w-2 h-2 rounded-full ${getStatusDot(trip.status)} animate-pulse`} />
-                          <span className="font-mono text-sm font-semibold text-slate-800 dark:text-white truncate">
+                          <div className={`w-2 h-2 rounded-full ${getStatusDot(trip.status)} ${isFocused ? 'animate-ping' : 'animate-pulse'}`} />
+                          <span className={cn(
+                            "font-mono text-sm font-semibold truncate",
+                            isFocused ? "text-emerald-700 dark:text-emerald-300" : "text-slate-800 dark:text-white"
+                          )}>
                             {trip.ticket_number}
                           </span>
                           <span className="text-[10px] text-emerald-500 font-medium">● Live</span>
@@ -1203,20 +1182,27 @@ export default function LiveTracking() {
             </span>
             <span className="flex items-center gap-1">
               <Activity className="h-3 w-3" />
-              <span>Ping: 10s</span>
+              <span>Ping: 3s</span>
             </span>
           </div>
         </div>
       </div>
 
-      {/* Focus Monitoring Modal */}
-      <FocusModal 
-        trip={focusedTrip} 
-        allTrips={tripsWithLocation}
-        isOpen={focusModalOpen}
-        onClose={handleCloseModal}
-        onFocusAll={handleFocusAll}
-      />
+      {/* ✅ FIXED: Focus Monitoring Modal with LiveTripTracker - Scrollable */}
+      {focusModalOpen && focusedTrip && (
+        <div className="fixed inset-0 z-[2000] overflow-y-auto">
+          <div className="min-h-screen px-2 py-4 md:px-4 md:py-8 flex items-center justify-center bg-black/80 backdrop-blur-md">
+            <LiveTripTracker 
+              trip={focusedTrip} 
+              allTrips={tripsWithLocation}
+              isOpen={focusModalOpen}
+              onClose={handleCloseModal}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
-}
+};
+
+export default LiveTracking;

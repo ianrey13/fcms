@@ -1187,7 +1187,127 @@ public function acknowledgeFunds(Request $request, $id)
     }
 }
     
-  /**
+//   /**
+//  * Start trip - Save start coordinates in trip_history V1
+//  */
+// public function startTrip(Request $request, $id)
+// {
+//     try {
+//         $user = $request->user();
+        
+//         $validator = Validator::make($request->all(), [
+//             'latitude' => 'nullable|numeric|between:-90,90',
+//             'longitude' => 'nullable|numeric|between:-180,180',
+//             'accuracy' => 'nullable|numeric',
+//         ]);
+        
+//         if ($validator->fails()) {
+//             return response()->json(['errors' => $validator->errors()], 422);
+//         }
+        
+//         Log::info('startTrip called', ['trip_id' => $id, 'user_id' => $user->user_id]);
+        
+//         $driver = Driver::where('user_id', $user->user_id)->first();
+//         if (!$driver) {
+//             return response()->json(['success' => false, 'message' => 'Driver record not found'], 404);
+//         }
+        
+//         $ticket = TripTicket::where('trip_ticket_id', $id)
+//             ->where('driver_id', $driver->driver_id)
+//             ->first();
+        
+//         if (!$ticket) {
+//             return response()->json(['success' => false, 'message' => 'Trip ticket not found'], 404);
+//         }
+        
+//         Log::info('Trip found', [
+//             'trip_id' => $ticket->trip_ticket_id,
+//             'current_status' => $ticket->status
+//         ]);
+        
+//         // ✅ Allow starting from 'completed' status (next day)
+//         // ✅ Also allow from 'funds_issued' and 'acknowledged'
+//         $allowedStatuses = ['acknowledged', 'funds_issued', 'completed', 'pending_gso_validation'];
+        
+//         if (!in_array($ticket->status, $allowedStatuses)) {
+//             return response()->json([
+//                 'success' => false,
+//                 'message' => 'Cannot start trip. Current status: ' . $ticket->status . 
+//                             '. Allowed: ' . implode(', ', $allowedStatuses)
+//             ], 400);
+//         }
+        
+//         DB::beginTransaction();
+        
+//         // ✅ Increment trip count
+//         $ticket->trip_count = ($ticket->trip_count ?? 0) + 1;
+//         $ticket->status = 'in_transit';
+//         $ticket->save();
+        
+//         // ✅ Save start coordinates to trip_history
+//         $tripHistory = TripHistory::create([
+//             'trip_ticket_id' => $ticket->trip_ticket_id,
+//             'trip_number' => $ticket->trip_count,
+//             'start_lat' => $request->latitude,
+//             'start_lng' => $request->longitude,
+//             'started_at' => now(),
+//             'status' => 'in_progress',
+//         ]);
+        
+//         // ✅ Also update gas slip (for compatibility)
+//         $gasSlip = GasSlip::where('trip_ticket_id', $id)->first();
+//         if ($gasSlip) {
+//             $fuelReceipt = FuelReceipt::firstOrNew(['gas_slip_id' => $gasSlip->gas_slip_id]);
+//             $fuelReceipt->trip_started_at = now();
+//             if ($request->has('latitude') && $request->has('longitude')) {
+//                 $fuelReceipt->trip_start_gps_lat = $request->latitude;
+//                 $fuelReceipt->trip_start_gps_lng = $request->longitude;
+//                 $fuelReceipt->trip_start_gps_accuracy = $request->accuracy ?? null;
+//             }
+//             $fuelReceipt->save();
+//         }
+        
+//         // ✅ Store initial GPS ping for live tracking
+//         if ($request->has('latitude') && $request->has('longitude')) {
+//             GpsPing::create([
+//                 'trip_ticket_id' => $ticket->trip_ticket_id,
+//                 'latitude' => $request->latitude,
+//                 'longitude' => $request->longitude,
+//                 'accuracy_meters' => $request->accuracy ?? null,
+//                 'recorded_at' => now(),
+//                 'received_at' => now(),
+//             ]);
+//         }
+        
+//         DB::commit();
+        
+//         Log::info('Trip started successfully', [
+//             'trip_id' => $ticket->trip_ticket_id,
+//             'new_status' => $ticket->status,
+//             'trip_number' => $ticket->trip_count,
+//         ]);
+        
+//         return response()->json([
+//             'success' => true,
+//             'message' => 'Trip started! GPS tracking is active.',
+//             'data' => [
+//                 'trip_ticket_id' => $ticket->trip_ticket_id,
+//                 'status' => $ticket->status,
+//                 'trip_number' => $ticket->trip_count,
+//                 'trip_started_at' => now(),
+//             ]
+//         ]);
+//     } catch (\Exception $e) {
+//         DB::rollBack();
+//         Log::error('Start trip error: ' . $e->getMessage());
+//         return response()->json([
+//             'success' => false,
+//             'message' => 'Failed to start trip: ' . $e->getMessage()
+//         ], 500);
+//     }
+// }
+
+/**
  * Start trip - Save start coordinates in trip_history
  */
 public function startTrip(Request $request, $id)
@@ -1205,7 +1325,12 @@ public function startTrip(Request $request, $id)
             return response()->json(['errors' => $validator->errors()], 422);
         }
         
-        Log::info('startTrip called', ['trip_id' => $id, 'user_id' => $user->user_id]);
+        Log::info('startTrip called', [
+            'trip_id' => $id, 
+            'user_id' => $user->user_id,
+            'latitude' => $request->latitude,
+            'longitude' => $request->longitude,
+        ]);
         
         $driver = Driver::where('user_id', $user->user_id)->first();
         if (!$driver) {
@@ -1227,7 +1352,9 @@ public function startTrip(Request $request, $id)
         
         // ✅ Allow starting from 'completed' status (next day)
         // ✅ Also allow from 'funds_issued' and 'acknowledged'
-        $allowedStatuses = ['acknowledged', 'funds_issued', 'completed', 'pending_gso_validation'];
+        // ✅ But NOT from 'pending_gso_validation' (waiting for GSO)
+        // ✅ And NOT from 'closed' (permanently closed)
+        $allowedStatuses = ['acknowledged', 'funds_issued', 'completed'];
         
         if (!in_array($ticket->status, $allowedStatuses)) {
             return response()->json([
@@ -1252,6 +1379,12 @@ public function startTrip(Request $request, $id)
             'start_lng' => $request->longitude,
             'started_at' => now(),
             'status' => 'in_progress',
+        ]);
+        
+        Log::info('Trip history created', [
+            'history_id' => $tripHistory->history_id,
+            'start_lat' => $tripHistory->start_lat,
+            'start_lng' => $tripHistory->start_lng,
         ]);
         
         // ✅ Also update gas slip (for compatibility)
@@ -1285,6 +1418,7 @@ public function startTrip(Request $request, $id)
             'trip_id' => $ticket->trip_ticket_id,
             'new_status' => $ticket->status,
             'trip_number' => $ticket->trip_count,
+            'has_start_coordinates' => $request->latitude && $request->longitude,
         ]);
         
         return response()->json([
@@ -1295,6 +1429,8 @@ public function startTrip(Request $request, $id)
                 'status' => $ticket->status,
                 'trip_number' => $ticket->trip_count,
                 'trip_started_at' => now(),
+                'start_lat' => $request->latitude,
+                'start_lng' => $request->longitude,
             ]
         ]);
     } catch (\Exception $e) {
@@ -1306,6 +1442,172 @@ public function startTrip(Request $request, $id)
         ], 500);
     }
 }
+// /**
+//  * Complete trip - Save end coordinates in trip_history, delete GPS pings V1
+//  */
+// public function completeTrip(Request $request, $id)
+// {
+//     try {
+//         $user = $request->user();
+        
+//         $validator = Validator::make($request->all(), [
+//             'latitude' => 'nullable|numeric|between:-90,90',
+//             'longitude' => 'nullable|numeric|between:-180,180',
+//             'gps_distance_km' => 'nullable|numeric|min:0',
+//         ]);
+        
+//         if ($validator->fails()) {
+//             return response()->json(['errors' => $validator->errors()], 422);
+//         }
+        
+//         Log::info('completeTrip called', ['trip_id' => $id, 'user_id' => $user->user_id]);
+        
+//         $driver = Driver::where('user_id', $user->user_id)->first();
+//         if (!$driver) {
+//             return response()->json(['success' => false, 'message' => 'Driver record not found'], 404);
+//         }
+        
+//         $ticket = TripTicket::where('trip_ticket_id', $id)
+//             ->where('driver_id', $driver->driver_id)
+//             ->first();
+        
+//         if (!$ticket) {
+//             return response()->json(['success' => false, 'message' => 'Trip ticket not found'], 404);
+//         }
+        
+//         Log::info('Trip found for completion', [
+//             'trip_id' => $ticket->trip_ticket_id,
+//             'current_status' => $ticket->status
+//         ]);
+        
+//         // ✅ If already completed or closed, return success
+//         if ($ticket->status === 'completed' || $ticket->status === 'pending_gso_validation' || $ticket->status === 'closed') {
+//             return response()->json([
+//                 'success' => true,
+//                 'message' => 'Trip already completed',
+//                 'data' => [
+//                     'trip_ticket_id' => $ticket->trip_ticket_id,
+//                     'status' => $ticket->status
+//                 ]
+//             ]);
+//         }
+        
+//         if ($ticket->status !== 'in_transit') {
+//             return response()->json([
+//                 'success' => false,
+//                 'message' => 'Cannot complete trip. Current status: ' . $ticket->status . '. Required: in_transit'
+//             ], 400);
+//         }
+        
+//         DB::beginTransaction();
+        
+//         // ✅ Update trip history with end coordinates
+//         $tripHistory = TripHistory::where('trip_ticket_id', $id)
+//             ->where('status', 'in_progress')
+//             ->orderBy('trip_number', 'desc')
+//             ->first();
+        
+//         if ($tripHistory) {
+//             $tripHistory->end_lat = $request->latitude;
+//             $tripHistory->end_lng = $request->longitude;
+//             $tripHistory->ended_at = now();
+//             $tripHistory->distance_km = $request->gps_distance_km ?? 0;
+//             $tripHistory->status = 'completed';
+//             $tripHistory->save();
+//         }
+        
+//         // ✅ Set status to 'completed' (NOT closed)
+//         // Driver can start trip again tomorrow
+//         // $ticket->status = 'completed';
+//         // $ticket->save();
+        
+//         // ✅ Update fuel_receipt (for compatibility)
+//         $gasSlip = GasSlip::where('trip_ticket_id', $id)->first();
+//         if ($gasSlip) {
+//             $fuelReceipt = FuelReceipt::where('gas_slip_id', $gasSlip->gas_slip_id)->first();
+//             if ($fuelReceipt) {
+//                 $fuelReceipt->trip_ended_at = now();
+//                 if ($request->has('gps_distance_km')) {
+//                     $fuelReceipt->gps_distance_km = $request->gps_distance_km;
+//                 }
+//                 $fuelReceipt->trip_elapsed_minutes = $fuelReceipt->trip_started_at ? 
+//                     $fuelReceipt->trip_started_at->diffInMinutes(now()) : null;
+                
+//                 if ($request->has('latitude') && $request->has('longitude')) {
+//                     $fuelReceipt->trip_end_gps_lat = $request->latitude;
+//                     $fuelReceipt->trip_end_gps_lng = $request->longitude;
+//                 }
+//                 $fuelReceipt->save();
+//             }
+//         }
+        
+//         // ✅ DELETE ALL GPS PINGS (they are only for live tracking)
+//         $deletedPings = GpsPing::where('trip_ticket_id', $id)->delete();
+//         Log::info('🧹 Deleted ' . $deletedPings . ' GPS pings for trip: ' . $id);
+        
+//         DB::commit();
+        
+//         Log::info('Trip completed for today', [
+//             'trip_id' => $ticket->trip_ticket_id,
+//             'new_status' => $ticket->status,
+//             'trip_number' => $ticket->trip_count,
+//         ]);
+        
+//         // ✅ Notify GSO and Mayor
+//         $this->notifyTripCompleted($ticket);
+        
+//         return response()->json([
+//             'success' => true,
+//             'message' => 'Trip completed for today! You can start again tomorrow.',
+//             'data' => [
+//                 'trip_ticket_id' => $ticket->trip_ticket_id,
+//                 'status' => $ticket->status,
+//                 'trip_number' => $ticket->trip_count,
+//                 'trip_ended_at' => now(),
+//                 'pings_deleted' => $deletedPings,
+//                 'can_restart_tomorrow' => true,
+//             ]
+//         ]);
+//     } catch (\Exception $e) {
+//         DB::rollBack();
+//         Log::error('Complete trip error: ' . $e->getMessage());
+//         return response()->json([
+//             'success' => false,
+//             'message' => 'Failed to complete trip: ' . $e->getMessage()
+//         ], 500);
+//     }
+// }
+
+// /**
+//  * Notify GSO and Mayor that trip is completed
+//  */
+// private function notifyTripCompleted($ticket)
+// {
+//     // Notify GSO
+//     $gsoStaff = User::where('role', 'gso_office')->where('status', 'active')->get();
+//     foreach ($gsoStaff as $gso) {
+//         NotificationHelper::send(
+//             $gso->user_id,
+//             'trip_completed_pending_validation',
+//             'trip_ticket',
+//             $ticket->trip_ticket_id,
+//             "Trip {$ticket->trip_ticket_number} (#{$ticket->trip_count}) has been completed and is pending GSO validation"
+//         );
+//     }
+    
+//     // Notify Mayor's Office
+//     $moStaff = User::where('role', 'mayors_office')->where('status', 'active')->get();
+//     foreach ($moStaff as $mo) {
+//         NotificationHelper::send(
+//             $mo->user_id,
+//             'trip_completed_pending_validation',
+//             'trip_ticket',
+//             $ticket->trip_ticket_id,
+//             "Trip {$ticket->trip_ticket_number} (#{$ticket->trip_count}) has been completed and is pending GSO validation"
+//         );
+//     }
+// }
+
 /**
  * Complete trip - Save end coordinates in trip_history, delete GPS pings
  */
@@ -1318,13 +1620,18 @@ public function completeTrip(Request $request, $id)
             'latitude' => 'nullable|numeric|between:-90,90',
             'longitude' => 'nullable|numeric|between:-180,180',
             'gps_distance_km' => 'nullable|numeric|min:0',
+            'is_done' => 'nullable|boolean', // ✅ NEW: Driver says "I'm done"
         ]);
         
         if ($validator->fails()) {
             return response()->json(['errors' => $validator->errors()], 422);
         }
         
-        Log::info('completeTrip called', ['trip_id' => $id, 'user_id' => $user->user_id]);
+        Log::info('completeTrip called', [
+            'trip_id' => $id, 
+            'user_id' => $user->user_id,
+            'is_done' => $request->is_done,
+        ]);
         
         $driver = Driver::where('user_id', $user->user_id)->first();
         if (!$driver) {
@@ -1378,12 +1685,14 @@ public function completeTrip(Request $request, $id)
             $tripHistory->distance_km = $request->gps_distance_km ?? 0;
             $tripHistory->status = 'completed';
             $tripHistory->save();
+            
+            Log::info('Trip history updated', [
+                'history_id' => $tripHistory->history_id,
+                'end_lat' => $tripHistory->end_lat,
+                'end_lng' => $tripHistory->end_lng,
+                'distance_km' => $tripHistory->distance_km,
+            ]);
         }
-        
-        // ✅ Set status to 'completed' (NOT closed)
-        // Driver can start trip again tomorrow
-        $ticket->status = 'completed';
-        $ticket->save();
         
         // ✅ Update fuel_receipt (for compatibility)
         $gasSlip = GasSlip::where('trip_ticket_id', $id)->first();
@@ -1409,27 +1718,50 @@ public function completeTrip(Request $request, $id)
         $deletedPings = GpsPing::where('trip_ticket_id', $id)->delete();
         Log::info('🧹 Deleted ' . $deletedPings . ' GPS pings for trip: ' . $id);
         
+        // ✅ CRITICAL: Check if user wants to finish or continue
+        $isDone = $request->is_done ?? false;
+        
+        if ($isDone) {
+            // ✅ Driver says "I'm done - please validate"
+            $ticket->status = 'pending_gso_validation';
+            $message = 'Trip completed! Awaiting GSO validation.';
+            $notifyGSO = true;
+        } else {
+            // ✅ Driver says "I'll start again tomorrow"
+            $ticket->status = 'completed';
+            $message = 'Trip completed for today! You can start again tomorrow.';
+            $notifyGSO = false;
+        }
+        
+        $ticket->save();
+        
         DB::commit();
         
-        Log::info('Trip completed for today', [
+        Log::info('Trip completed', [
             'trip_id' => $ticket->trip_ticket_id,
             'new_status' => $ticket->status,
             'trip_number' => $ticket->trip_count,
+            'is_done' => $isDone,
         ]);
         
-        // ✅ Notify GSO and Mayor
-        $this->notifyTripCompleted($ticket);
+        // ✅ Only notify GSO if driver is done
+        if ($notifyGSO) {
+            $this->notifyGsoForValidation($ticket);
+        }
         
         return response()->json([
             'success' => true,
-            'message' => 'Trip completed for today! You can start again tomorrow.',
+            'message' => $message,
             'data' => [
                 'trip_ticket_id' => $ticket->trip_ticket_id,
                 'status' => $ticket->status,
                 'trip_number' => $ticket->trip_count,
                 'trip_ended_at' => now(),
                 'pings_deleted' => $deletedPings,
-                'can_restart_tomorrow' => true,
+                'is_complete' => $isDone,
+                'can_restart_tomorrow' => !$isDone,
+                'end_lat' => $request->latitude,
+                'end_lng' => $request->longitude,
             ]
         ]);
     } catch (\Exception $e) {
@@ -1443,34 +1775,39 @@ public function completeTrip(Request $request, $id)
 }
 
 /**
- * Notify GSO and Mayor that trip is completed
+ * Notify GSO that trip is ready for validation
  */
-private function notifyTripCompleted($ticket)
+private function notifyGsoForValidation($ticket)
 {
-    // Notify GSO
+    // Notify GSO Staff
     $gsoStaff = User::where('role', 'gso_office')->where('status', 'active')->get();
     foreach ($gsoStaff as $gso) {
         NotificationHelper::send(
             $gso->user_id,
-            'trip_completed_pending_validation',
+            'trip_pending_validation',
             'trip_ticket',
             $ticket->trip_ticket_id,
-            "Trip {$ticket->trip_ticket_number} (#{$ticket->trip_count}) has been completed and is pending GSO validation"
+            "Trip {$ticket->trip_ticket_number} (#{$ticket->trip_count} trips) is ready for GSO validation"
         );
     }
+    Log::info('📡 Notified ' . $gsoStaff->count() . ' GSO staff for validation');
     
-    // Notify Mayor's Office
+    // Also notify Mayor's Office
     $moStaff = User::where('role', 'mayors_office')->where('status', 'active')->get();
     foreach ($moStaff as $mo) {
         NotificationHelper::send(
             $mo->user_id,
-            'trip_completed_pending_validation',
+            'trip_pending_validation',
             'trip_ticket',
             $ticket->trip_ticket_id,
-            "Trip {$ticket->trip_ticket_number} (#{$ticket->trip_count}) has been completed and is pending GSO validation"
+            "Trip {$ticket->trip_ticket_number} (#{$ticket->trip_count} trips) is ready for GSO validation"
         );
     }
+    Log::info('📡 Notified ' . $moStaff->count() . ' MO staff for validation');
 }
+
+
+
 /**
  * Upload fuel receipt - CHANGED TO PUBLIC FOLDER
  */

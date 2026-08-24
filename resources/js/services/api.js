@@ -276,8 +276,13 @@ export const driverAPI = {
 
   // Trip Actions
   acknowledgeFunds: (id) => api.post(`/driver/trips/${id}/acknowledge`),
-  startTrip: (id, data) => api.post(`/driver/trips/${id}/start`, data),
-  completeTrip: (id, data) => api.post(`/driver/trips/${id}/complete`, data),
+  
+  // ✅ FIXED: startTrip sends location data
+  startTrip: (id, data) => api.post(`/driver/trips/${id}/start`, data || {}),
+  
+  // ✅ FIXED: completeTrip sends location data + is_done
+  completeTrip: (id, data) => api.post(`/driver/trips/${id}/complete`, data || {}),
+  
   uploadReceipt: (id, formData) =>
     api.post(`/driver/trips/${id}/receipt`, formData, {
       headers: { "Content-Type": "multipart/form-data" },
@@ -307,14 +312,12 @@ export const driverAPI = {
   getFuelReport: (params) => api.get("/driver/reports/fuel", { params }),
   getReportSummary: (params) => api.get("/driver/reports/summary", { params }),
 
-  // getTripHistory: (tripId) => 
-  //   api.get(`/driver/trips/${tripId}/history`),
-   getTripHistory: (tripId) => 
-        api.get(`/gso/tickets/${tripId}/history`),
+  getTripHistory: (tripId) => 
+    api.get(`/gso/tickets/${tripId}/history`),
 
-
+  // ✅ FIXED: get receipt status
+  getReceiptStatus: (id) => api.get(`/driver/trips/${id}/receipt`),
 };
-
 // ============ DEPARTMENT API ============
 export const departmentAPI = {
   getAll: (params) => api.get("/admin/departments", { params }),
@@ -540,6 +543,8 @@ export const gpsAPI = {
     api.post('/gps/check-deviation', data),
      storeBatch: (data) => 
     api.post('/gps/pings/batch', data),
+     getTripStats: (tripId) => 
+    api.get(`/gps/trips/${tripId}/stats`),
 };
 
 // ============ LOCATION API ============

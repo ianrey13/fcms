@@ -1375,4 +1375,126 @@ class GpsPingController extends Controller
 
         return $earthRadius * $c;
     }
+
+    /**
+ * Get real-time trip stats (distance, fuel consumption, speed)
+ * GET /api/gps/trips/{id}/stats
+ */
+public function getRealtimeStats(Request $request, $tripId)
+{
+    try {
+        $user = $request->user();
+        
+        $trip = TripTicket::with(['driver', 'vehicle'])->find($tripId);
+        if (!$trip) {
+            return response()->json(['success' => false, 'message' => 'Trip not found'], 404);
+        }
+        
+        // Check authorization
+        $isGSO = $user->role === 'gso_office';
+        $isDriver = $trip->driver && $trip->driver->user_id === $user->user_id;
+        if (!$isGSO && !$isDriver) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
+        }
+        
+        // Get latest ping
+        $latestPing = GpsPing::where('trip_ticket_id', $tripId)
+            ->orderBy('recorded_at', 'desc')
+            ->first();
+        
+        // Get all pings for distance calculation
+        $pings = GpsPing::where('trip_ticket_id', $tripId)
+            ->where('is_low_accuracy', false)
+            ->orderBy('recorded_at', 'asc')
+            ->get();
+        
+        // Calculate total distance
+        $totalDistance = 0;
+        $maxSpeed = 0;
+        $avgSpeed = 0;
+        $totalTime = 0;
+        $prevPing = null;
+        $estimatedFuelConsumed = 0;
+        
+        // Get fuel efficiency from vehicle or use default
+        $fuelEfficiency = $trip->vehicle?->fuel_efficiency ?? 10; // km per liter
+        
+        foreach ($pings as $ping) {
+            if ($ping->speed_kmh && $ping->speed_kmh > $maxSpeed) {
+                $maxSpeed = $ping->speed_kmh;
+            }
+            
+            if ($prevPing) {
+                $distance = $this->haversineDistance(
+                    $prevPing->latitude, $prevPing->longitude,
+                    $ping->latitude, $ping->longitude
+                );
+                // Only add significant movements (> 10 meters)
+                if ($distance > 0.01) {
+                    $totalDistance += $distance;
+                }
+                $totalTime += $prevPing->recorded_at->diffInSeconds($ping->recorded_at);
+            }
+            $prevPing = $ping;
+        }
+        
+        // Calculate average speed
+        if ($totalTime > 0 && $pings->count() > 1) {
+            $avgSpeed = ($totalDistance / $totalTime) * 3.6; // Convert to km/h
+        }
+        
+        // Estimate fuel consumption
+        if ($totalDistance > 0 && $fuelEfficiency > 0) {
+            $estimatedFuelConsumed = $totalDistance / $fuelEfficiency;
+        }
+        
+        // Get trip history for multi-trip tracking
+        $currentTripNumber = TripHistory::where('trip_ticket_id', $tripId)
+            ->where('status', 'in_progress')
+            ->value('trip_number') ?? $trip->trip_count ?? 0;
+        
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'trip_ticket_id' => $tripId,
+                'trip_ticket_number' => $trip->trip_ticket_number,
+                'status' => $trip->status,
+                'trip_number' => $currentTripNumber,
+                'ping_count' => $pings->count(),
+                'total_distance_km' => round($totalDistance, 2),
+                'current_speed_kmh' => $latestPing?->speed_kmh ?? 0,
+                'max_speed_kmh' => round($maxSpeed, 2),
+                'avg_speed_kmh' => round($avgSpeed, 2),
+                'duration_minutes' => $totalTime > 0 ? round($totalTime / 60, 2) : 0,
+                'estimated_fuel_liters' => round($estimatedFuelConsumed, 2),
+                'fuel_efficiency_kmpl' => $fuelEfficiency,
+                'latest_location' => $latestPing ? [
+                    'latitude' => (float) $latestPing->latitude,
+                    'longitude' => (float) $latestPing->longitude,
+                    'speed_kmh' => (float) ($latestPing->speed_kmh ?? 0),
+                    'accuracy_meters' => (float) ($latestPing->accuracy_meters ?? 0),
+                    'recorded_at' => $latestPing->recorded_at,
+                ] : null,
+                'route_points' => $pings->map(function($ping) {
+                    return [
+                        'latitude' => (float) $ping->latitude,
+                        'longitude' => (float) $ping->longitude,
+                        'speed_kmh' => (float) ($ping->speed_kmh ?? 0),
+                        'recorded_at' => $ping->recorded_at,
+                    ];
+                }),
+                'start_location' => $pings->first() ? [
+                    'latitude' => (float) $pings->first()->latitude,
+                    'longitude' => (float) $pings->first()->longitude,
+                ] : null,
+            ]
+        ]);
+    } catch (\Exception $e) {
+        Log::error('Get realtime stats error: ' . $e->getMessage());
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to get realtime stats: ' . $e->getMessage()
+        ], 500);
+    }
+}
 }

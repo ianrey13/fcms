@@ -334,6 +334,8 @@ Route::middleware('auth:sanctum')->group(function () {
         // Delete - GSO only
         Route::delete('trips/{id}/pings', [GpsPingController::class, 'deletePings'])
             ->middleware(['role:gso_office']);
+           // Real-time stats for active trip
+    Route::get('trips/{id}/stats', [GpsPingController::class, 'getRealtimeStats']);
     });
 
     // ============ NOTIFICATIONS ============
