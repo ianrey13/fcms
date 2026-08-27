@@ -25,9 +25,7 @@ class LocationController extends Controller
             'query' => 'required|string|min:2',
         ]);
 
-        // ✅ FIXED: Get the 'query' parameter correctly
         $query = $request->input('query');
-        
         Log::info('Search request', ['query' => $query]);
 
         $result = $this->ors->searchPlaces($query);
@@ -37,29 +35,35 @@ class LocationController extends Controller
 
     /**
      * Calculate distance between locations
+     * ✅ UPDATED: Added round_trip parameter
      */
     public function calculateDistance(Request $request)
-{
-    $request->validate([
-        'origin' => 'required|string',
-        'destination' => 'required|string',
-        'vehicle_id' => 'nullable|exists:vehicles,vehicle_id',
-    ]);
+    {
+        $request->validate([
+            'origin' => 'required|string',
+            'destination' => 'required|string',
+            'vehicle_id' => 'nullable|exists:vehicles,vehicle_id',
+            'round_trip' => 'nullable|boolean',
+        ]);
 
-    $result = $this->ors->calculateTripEstimate(
-        $request->origin,
-        $request->destination,
-        $request->vehicle_id
-    );
+        // ✅ Default to true for round trip (back and forth)
+        $roundTrip = $request->boolean('round_trip', true);
 
-    // ✅ Add the fuel type to the response
-    if ($result['success']) {
-        $result['fuel_type_used'] = $result['fuel_type'] ?? 'regular';
-        $result['price_source'] = 'database';
+        $result = $this->ors->calculateTripEstimate(
+            $request->origin,
+            $request->destination,
+            $request->vehicle_id,
+            $roundTrip
+        );
+
+        if ($result['success']) {
+            $result['fuel_type_used'] = $result['fuel_type'] ?? 'regular';
+            $result['price_source'] = 'database';
+            $result['is_round_trip'] = $roundTrip;
+        }
+
+        return response()->json($result);
     }
-
-    return response()->json($result);
-}
 
     /**
      * Geocode a single address

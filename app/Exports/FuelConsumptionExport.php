@@ -43,7 +43,7 @@ class FuelConsumptionExport implements
         // HEADER SECTION
         // ============================================
         $rows[] = ['FUEL CONSUMPTION MONITORING REPORT'];
-        $rows[] = ['Laguindingan Municipality - Fleet Management System'];
+        $rows[] = ['Laguindingan Municipality - Fuel Consumption Monitoring System'];
         $rows[] = ['Generated: ' . now()->format('F d, Y h:i A')];
         $rows[] = [];
         
@@ -64,6 +64,7 @@ class FuelConsumptionExport implements
         $rows[] = ['Total Fuel Consumed (Liters)', $summary['total_fuel_liters'] ?? 0];
         $rows[] = ['Total Fuel Cost (PHP)', $summary['total_fuel_cost'] ?? 0];
         $rows[] = ['Average Km/Liter', $summary['average_km_per_liter'] ?? 0];
+        $rows[] = ['Total Distance (km)', $summary['total_distance_km'] ?? 0];
         $rows[] = [];
 
         // ============================================
@@ -204,20 +205,22 @@ class FuelConsumptionExport implements
                 $sheet->getStyle('A8:I8')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT);
                 
                 // Summary labels (column A)
-                $sheet->getStyle('A9:A13')->getFont()->setBold(true);
-                $sheet->getStyle('A9:A13')->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('F1F5F9');
+                $sheet->getStyle('A9:A15')->getFont()->setBold(true);
+                $sheet->getStyle('A9:A15')->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('F1F5F9');
                 
                 // Summary values (column B) - right align
-                $sheet->getStyle('B9:B13')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
-                $sheet->getStyle('B9:B13')->getFont()->setBold(true);
+                $sheet->getStyle('B9:B15')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
+                $sheet->getStyle('B9:B15')->getFont()->setBold(true);
                 
-                // Highlight total cost in red - FIXED
+                // Highlight total cost in red
                 $sheet->getStyle('B11')->getFont()->getColor()->setRGB('DC2626');
+                // Highlight average km/l in blue
+                $sheet->getStyle('B13')->getFont()->getColor()->setRGB('2563EB');
 
                 // ============================================
                 // 3. VEHICLE BREAKDOWN TABLE HEADER (Row 15)
                 // ============================================
-                $vehicleHeaderRow = 15;
+                $vehicleHeaderRow = 17;
                 
                 // Vehicle section title
                 $sheet->mergeCells('A' . $vehicleHeaderRow . ':I' . $vehicleHeaderRow);
@@ -226,7 +229,7 @@ class FuelConsumptionExport implements
                 $sheet->getStyle('A' . $vehicleHeaderRow . ':I' . $vehicleHeaderRow)
                     ->getFont()->setBold(true)->setSize(12);
                 
-                // Table headers (Row 16)
+                // Table headers (Row 18)
                 $headerRow = $vehicleHeaderRow + 1;
                 $sheet->getStyle('A' . $headerRow . ':I' . $headerRow)
                     ->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('2563EB');
@@ -306,11 +309,8 @@ class FuelConsumptionExport implements
                     $color = $colorMap[$value] ?? '94A3B8';
                     $bgColor = $bgColorMap[$value] ?? 'F1F5F9';
                     
-                    // FIXED: Use getColor()->setRGB()
                     $sheet->getStyle($cell)->getFont()->getColor()->setRGB($color);
                     $sheet->getStyle($cell)->getFont()->setBold(true);
-                    
-                    // FIXED: Use getStartColor()->setRGB()
                     $sheet->getStyle($cell)->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB($bgColor);
                 }
 
@@ -319,7 +319,7 @@ class FuelConsumptionExport implements
                 // ============================================
                 $footerRow = $endRow + 2;
                 $sheet->mergeCells('A' . $footerRow . ':I' . $footerRow);
-                $sheet->setCellValue('A' . $footerRow, '© ' . date('Y') . ' Laguindingan Municipality - Fuel Consumption Management System');
+                $sheet->setCellValue('A' . $footerRow, '© ' . date('Y') . ' Laguindingan Municipality - Fuel Consumption Monitoring System');
                 $sheet->getStyle('A' . $footerRow)->getFont()->setSize(8)->getColor()->setRGB('94A3B8');
                 $sheet->getStyle('A' . $footerRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
 

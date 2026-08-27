@@ -335,56 +335,7 @@ const EditDepartment = () => {
                 />
               </FormField>
 
-              {/* Email */}
-              <FormField
-                label="Email Address"
-                icon={Mail}
-                helper="Official department email address"
-                error={hasError("email") && errors.email}
-              >
-                <Input
-                  type="email"
-                  placeholder="e.g., engineering@laguindingan.gov.ph"
-                  value={formData.email}
-                  onChange={(e) => handleChange("email", e.target.value)}
-                  onBlur={() => handleBlur("email")}
-                  className={cn(
-                    "bg-white dark:bg-slate-900 dark:border-slate-700",
-                    hasError("email") && "border-red-500 ring-red-500"
-                  )}
-                />
-              </FormField>
-
-              {/* Phone */}
-              <FormField
-                label="Phone Number"
-                icon={Phone}
-                helper="Department contact number"
-              >
-                <Input
-                  type="tel"
-                  placeholder="e.g., (088) 123-4567"
-                  value={formData.phone}
-                  onChange={(e) => handleChange("phone", e.target.value)}
-                  onBlur={() => handleBlur("phone")}
-                  className="bg-white dark:bg-slate-900 dark:border-slate-700"
-                />
-              </FormField>
-
-              {/* Address */}
-              <FormField
-                label="Address"
-                icon={MapPin}
-                helper="Department physical address"
-              >
-                <Input
-                  placeholder="e.g., Municipal Hall, Laguindingan"
-                  value={formData.address}
-                  onChange={(e) => handleChange("address", e.target.value)}
-                  onBlur={() => handleBlur("address")}
-                  className="bg-white dark:bg-slate-900 dark:border-slate-700"
-                />
-              </FormField>
+            
 
               {/* Form Preview */}
               <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-4 border border-slate-200 dark:border-slate-700">

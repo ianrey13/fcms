@@ -147,7 +147,7 @@ const StatusBadge = ({ status }) => {
 };
 
 // ============================================
-// TRIP HISTORY DETAIL MODAL
+// TRIP HISTORY DETAIL MODAL (SCROLLABLE)
 // ============================================
 
 const TripHistoryDetailModal = ({ trip, open, onOpenChange, history }) => {
@@ -157,10 +157,13 @@ const TripHistoryDetailModal = ({ trip, open, onOpenChange, history }) => {
 
   const tripHistory = history || [];
 
+  // Determine which history items to display
+  const displayedHistory = showAllHistory ? tripHistory : tripHistory.slice(0, 5);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl dark:bg-slate-800 dark:border-slate-700">
-        <DialogHeader>
+      <DialogContent className="max-w-4xl max-h-[90vh] dark:bg-slate-800 dark:border-slate-700 flex flex-col">
+        <DialogHeader className="flex-shrink-0">
           <DialogTitle className="flex items-center gap-2 text-slate-800 dark:text-white">
             <History className="h-5 w-5 text-blue-600" />
             Trip History - {getTicketNumber(trip)}
@@ -170,8 +173,8 @@ const TripHistoryDetailModal = ({ trip, open, onOpenChange, history }) => {
           </DialogDescription>
         </DialogHeader>
 
-        {/* Trip Summary */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* Trip Summary - Fixed */}
+        <div className="flex-shrink-0 grid grid-cols-1 md:grid-cols-3 gap-4">
           <Card className="dark:bg-slate-900/50 dark:border-slate-700">
             <CardContent className="pt-4">
               <div className="flex items-center gap-3">
@@ -215,30 +218,34 @@ const TripHistoryDetailModal = ({ trip, open, onOpenChange, history }) => {
           </Card>
         </div>
 
-        {/* Trip History Table */}
-        <div className="mt-4">
-          <div className="flex items-center justify-between mb-3">
+        {/* Trip History Table - Scrollable Area */}
+        <div className="flex-1 min-h-0 mt-4 flex flex-col">
+          <div className="flex items-center justify-between mb-3 flex-shrink-0">
             <div className="flex items-center gap-2">
               <History className="h-4 w-4 text-slate-400" />
               <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
                 Trip Logs ({tripHistory.length})
               </span>
             </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowAllHistory(!showAllHistory)}
-              className="text-xs"
-            >
-              {showAllHistory ? 'Show Less' : 'Show All'}
-              {showAllHistory ? <ChevronUp className="h-3 w-3 ml-1" /> : <ChevronDown className="h-3 w-3 ml-1" />}
-            </Button>
+            {tripHistory.length > 5 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowAllHistory(!showAllHistory)}
+                className="text-xs"
+              >
+                {showAllHistory ? 'Show Less' : 'Show All'}
+                {showAllHistory ? <ChevronUp className="h-3 w-3 ml-1" /> : <ChevronDown className="h-3 w-3 ml-1" />}
+              </Button>
+            )}
           </div>
 
-          <TripHistoryTable
-            history={showAllHistory ? tripHistory : tripHistory.slice(0, 5)}
-            loading={false}
-          />
+          <div className="flex-1 overflow-y-auto border rounded-lg dark:border-slate-700">
+            <TripHistoryTable
+              history={displayedHistory}
+              loading={false}
+            />
+          </div>
         </div>
       </DialogContent>
     </Dialog>

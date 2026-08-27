@@ -11,6 +11,9 @@ class GasSlip extends Model
     protected $table = 'gas_slip';
     protected $primaryKey = 'gas_slip_id';
     
+    // ✅ Add timestamps
+    public $timestamps = true;
+    
     protected $fillable = [
         'trip_ticket_id',
         'created_by',
@@ -29,8 +32,10 @@ class GasSlip extends Model
         'receipt_acknowledged_by',
         'receipt_acknowledged_at',
         'is_cross_department',
-    'original_department_id',
-    'cross_department_reason',
+        'original_department_id',
+        'cross_department_reason',
+        'created_at',      // ✅ ADD THIS
+        'updated_at',      // ✅ ADD THIS
     ];
     
     protected $casts = [
@@ -42,8 +47,7 @@ class GasSlip extends Model
         'amount_released' => 'decimal:2',
         'budget_before' => 'decimal:2',
         'budget_after' => 'decimal:2',
-            'is_cross_department' => 'boolean',
-
+        'is_cross_department' => 'boolean',
     ];
 
     // ============ RELATIONSHIPS ============
@@ -84,25 +88,16 @@ class GasSlip extends Model
 
     // ============ HELPER METHODS ============
     
-    /**
-     * Check if gas slip is pending reconciliation
-     */
     public function isPending()
     {
         return $this->reconciliation_status === 'pending';
     }
     
-    /**
-     * Check if gas slip is verified
-     */
     public function isVerified()
     {
         return $this->reconciliation_status === 'verified';
     }
     
-    /**
-     * Check if gas slip has discrepancy
-     */
     public function hasDiscrepancy()
     {
         return $this->reconciliation_status === 'discrepancy';

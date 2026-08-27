@@ -54,12 +54,12 @@ export const useCreateUser = () => {
     mutationFn: (userData) => userAPI.create(userData),
     onSuccess: (response) => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
-      toast.success('User created successfully');
+      //toast.success('User created successfully');
       // Return the created user data for signature modal
       return response.data?.data;
     },
     onError: (error) => {
-      toast.error(error.response?.data?.message || 'Failed to create user');
+     // toast.error(error.response?.data?.message || 'Failed to create user');
     },
   });
 };
@@ -72,10 +72,10 @@ export const useUpdateUser = () => {
     mutationFn: ({ userId, userData }) => userAPI.update(userId, userData),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
-      toast.success('User updated successfully');
+    //  toast.success('User updated successfully');
     },
     onError: (error) => {
-      toast.error(error.response?.data?.message || 'Failed to update user');
+    //  toast.error(error.response?.data?.message || 'Failed to update user');
     },
   });
 };
@@ -88,10 +88,10 @@ export const useDeleteUser = () => {
     mutationFn: (userId) => userAPI.delete(userId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
-      toast.success('User deactivated successfully');
+      //toast.success('User deactivated successfully');
     },
     onError: (error) => {
-      toast.error(error.response?.data?.message || 'Failed to deactivate user');
+      //toast.error(error.response?.data?.message || 'Failed to deactivate user');
     },
   });
 };
@@ -104,10 +104,10 @@ export const useToggleUserStatus = () => {
     mutationFn: ({ userId, status }) => userAPI.updateStatus(userId, status),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
-      toast.success(`User ${variables.status === 'active' ? 'activated' : 'deactivated'} successfully`);
+    //  toast.success(`User ${variables.status === 'active' ? 'activated' : 'deactivated'} successfully`);
     },
     onError: (error) => {
-      toast.error(error.response?.data?.message || 'Failed to update user status');
+      //toast.error(error.response?.data?.message || 'Failed to update user status');
     },
   });
 };
@@ -120,10 +120,10 @@ export const useResetPassword = () => {
     mutationFn: (userId) => userAPI.resetPassword(userId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
-      toast.success('Password reset successfully');
+     // toast.success('Password reset successfully');
     },
     onError: (error) => {
-      toast.error(error.response?.data?.message || 'Failed to reset password');
+    //  toast.error(error.response?.data?.message || 'Failed to reset password');
     },
   });
 };
@@ -136,10 +136,10 @@ export const useUploadSignature = () => {
     mutationFn: ({ userId, formData }) => userAPI.uploadSignature(userId, formData),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
-      toast.success('E-signature uploaded successfully');
+      //toast.success('E-signature uploaded successfully');
     },
     onError: (error) => {
-      toast.error(error.response?.data?.message || 'Failed to upload signature');
+   //   toast.error(error.response?.data?.message || 'Failed to upload signature');
     },
   });
 };

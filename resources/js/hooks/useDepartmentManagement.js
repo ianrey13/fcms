@@ -68,11 +68,11 @@ export const useCreateDepartment = () => {
     mutationFn: (departmentData) => departmentAPI.create(departmentData),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['departments'] });
-      toast.success('Department created successfully');
+     // toast.success('Department created successfully');
     },
     onError: (error) => {
       const message = error.response?.data?.message || error.response?.data?.errors || 'Failed to create department';
-      toast.error(typeof message === 'string' ? message : 'Failed to create department');
+   //   toast.error(typeof message === 'string' ? message : 'Failed to create department');
     },
   });
 };
@@ -103,11 +103,11 @@ export const useDeleteDepartment = () => {
     mutationFn: (departmentId) => departmentAPI.delete(departmentId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['departments'] });
-      toast.success('Department deleted successfully');
+      // toast.success('Department deleted successfully');
     },
     onError: (error) => {
       const message = error.response?.data?.message || 'Failed to delete department';
-      toast.error(message);
+      // toast.error(message);
     },
   });
 };

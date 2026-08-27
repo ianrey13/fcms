@@ -386,6 +386,7 @@ const MayorPending = () => {
 
   const [chargeToDepartmentId, setChargeToDepartmentId] = useState("");
   const [availableDepartments, setAvailableDepartments] = useState([]);
+  const [loadingDepartments, setLoadingDepartments] = useState(false);
 
   useEffect(() => {
     fetchTickets();
@@ -554,15 +555,46 @@ const MayorPending = () => {
     };
   };
 
+  // ============================================================
+  // ✅ FIXED: Fetch all active departments for selector
+  // ============================================================
   const fetchAllDepartments = useCallback(async () => {
-    const uniqueDepts = [
-      ...new Map(
-        tickets.map((ticket) => [ticket.department_id, ticket.department_name]),
-      ).entries(),
-    ].map(([id, name]) => ({ department_id: id, department_name: name }));
-    setAvailableDepartments(uniqueDepts);
+    setLoadingDepartments(true);
+    try {
+      // ✅ First: Try to fetch all active departments from API
+      const response = await mayorsOfficeAPI.getAllDepartmentsForSelector();
+      const depts = response.data?.data || [];
+      
+      if (depts.length > 0) {
+        setAvailableDepartments(depts);
+        console.log('✅ Departments loaded from API:', depts.length);
+      } else {
+        // ❌ Fallback: Use departments from tickets
+        const uniqueDepts = [
+          ...new Map(
+            tickets.map((ticket) => [ticket.department_id, ticket.department_name]),
+          ).entries(),
+        ].map(([id, name]) => ({ department_id: id, department_name: name }));
+        setAvailableDepartments(uniqueDepts);
+        console.log('⚠️ Fallback departments from tickets:', uniqueDepts.length);
+      }
+    } catch (error) {
+      console.error('Failed to fetch departments:', error);
+      // Fallback: use departments from tickets
+      const uniqueDepts = [
+        ...new Map(
+          tickets.map((ticket) => [ticket.department_id, ticket.department_name]),
+        ).entries(),
+      ].map(([id, name]) => ({ department_id: id, department_name: name }));
+      setAvailableDepartments(uniqueDepts);
+    } finally {
+      setLoadingDepartments(false);
+    }
   }, [tickets]);
 
+  // ============================================================
+  // OPEN APPROVE DIALOG
+  // ============================================================
   const openApproveDialog = async (ticket) => {
     setSelectedTicket(ticket);
     setAmountReleased(ticket.estimated_cost?.toString() || "");
@@ -584,7 +616,10 @@ const MayorPending = () => {
       ticket.department?.id?.toString() ||
       ticket.department?.department_id?.toString();
 
+    // ✅ Set chargeToDepartmentId to requesting department by default
     setChargeToDepartmentId(requestingDeptId || "");
+    
+    // ✅ Wait for departments to load
     await fetchAllDepartments();
     setShowApproveDialog(true);
   };
@@ -629,6 +664,9 @@ const MayorPending = () => {
     }
   };
 
+  // ============================================================
+  // HANDLE APPROVE - WITH VALIDATION
+  // ============================================================
   const handleApprove = async () => {
     if (!selectedTicket) {
       toast.error("No ticket selected");
@@ -652,6 +690,12 @@ const MayorPending = () => {
 
     if (!finalChargeDeptId) {
       toast.error("Please select which department to charge");
+      return;
+    }
+
+    // ✅ NEW VALIDATION: Check if cross-department is checked but same department is selected
+    if (isCrossDepartment && finalChargeDeptId === selectedTicket?.department_id?.toString()) {
+      toast.error("❌ Cross-Department usage selected but same department is chosen. Please select a different department or uncheck the Cross-Department option.");
       return;
     }
 
@@ -1216,7 +1260,7 @@ const MayorPending = () => {
                 </div>
               </div>
 
-              {/* Department Selector */}
+              {/* ✅ FIXED: Department Selector - Disabled when NOT cross-department */}
               <div>
                 <Label htmlFor="charge_to_department" className="text-sm text-slate-700 dark:text-slate-300">
                   Charge To Department <span className="text-red-500">*</span>
@@ -1225,13 +1269,23 @@ const MayorPending = () => {
                   id="charge_to_department"
                   value={chargeToDepartmentId}
                   onChange={(e) => setChargeToDepartmentId(e.target.value)}
-                  className="w-full mt-1 px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-900 dark:text-white text-sm"
+                  disabled={!isCrossDepartment}
+                  className={cn(
+                    "w-full mt-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-900 dark:text-white text-sm",
+                    isCrossDepartment 
+                      ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20 dark:border-blue-700" 
+                      : "border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 cursor-not-allowed opacity-60"
+                  )}
                 >
                   <option value="">Select Department</option>
-                  <option value={selectedTicket?.department_id}>
-                    {selectedTicket?.department_name} (Requesting)
-                  </option>
-                  {availableDepartments
+                  {/* ✅ Always show requesting department */}
+                  {selectedTicket?.department_id && (
+                    <option value={selectedTicket.department_id}>
+                      {selectedTicket.department_name} (Requesting)
+                    </option>
+                  )}
+                  {/* ✅ Show other departments only when cross-department is checked */}
+                  {isCrossDepartment && availableDepartments
                     .filter((dept) => dept.department_id?.toString() !== selectedTicket?.department_id?.toString())
                     .map((dept) => (
                       <option key={dept.department_id} value={dept.department_id}>
@@ -1239,6 +1293,33 @@ const MayorPending = () => {
                       </option>
                     ))}
                 </select>
+
+                {/* ✅ Warning when cross-department is checked but same department is selected */}
+                {isCrossDepartment && chargeToDepartmentId === selectedTicket?.department_id?.toString() && (
+                  <p className="text-xs text-red-500 mt-1 flex items-center gap-1">
+                    <AlertCircle className="h-3 w-3" />
+                    ⚠️ Please select a DIFFERENT department for cross-department usage
+                  </p>
+                )}
+
+                {!isCrossDepartment && (
+                  <p className="text-xs text-slate-400 mt-1 flex items-center gap-1">
+                    <Info className="h-3 w-3" />
+                    Check "Cross-Department Usage" to select another department
+                  </p>
+                )}
+                {isCrossDepartment && availableDepartments.length === 0 && !loadingDepartments && (
+                  <p className="text-xs text-yellow-600 mt-1 flex items-center gap-1">
+                    <AlertCircle className="h-3 w-3" />
+                    No departments available. Please refresh.
+                  </p>
+                )}
+                {loadingDepartments && (
+                  <p className="text-xs text-slate-400 mt-1 flex items-center gap-1">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    Loading departments...
+                  </p>
+                )}
               </div>
 
               {/* Cross-Department */}
@@ -1253,6 +1334,10 @@ const MayorPending = () => {
                       setIsCrossDepartment(checked);
                       if (!checked) {
                         setCrossDepartmentReason("");
+                        // ✅ Reset to requesting department when unchecked
+                        if (selectedTicket?.department_id) {
+                          setChargeToDepartmentId(selectedTicket.department_id.toString());
+                        }
                       }
                     }}
                     className="mt-1 h-4 w-4 rounded border-slate-300 text-orange-600 focus:ring-orange-500 dark:border-slate-600 dark:bg-slate-700"
@@ -1261,6 +1346,7 @@ const MayorPending = () => {
                     <Label htmlFor="cross-department" className="text-sm font-medium cursor-pointer flex items-center gap-2 text-slate-700 dark:text-slate-300">
                       <AlertTriangle className="h-4 w-4 text-orange-500" />
                       Cross-Department Usage
+                      <span className="text-[10px] px-1.5 py-0.5 border border-orange-500 text-orange-500 rounded-full">Check to enable</span>
                     </Label>
                     {isCrossDepartment && (
                       <Textarea
@@ -1314,7 +1400,12 @@ const MayorPending = () => {
                     : 'bg-slate-400 cursor-not-allowed'
                 } text-white`}
                 onClick={handleApprove}
-                disabled={submitting || (!tripDateValidation?.canApprove && !isForceApprove)}
+                disabled={
+                  submitting || 
+                  (!tripDateValidation?.canApprove && !isForceApprove) ||
+                  // ✅ Disable if cross-department is checked but same department selected
+                  (isCrossDepartment && chargeToDepartmentId === selectedTicket?.department_id?.toString())
+                }
               >
                 {submitting ? (
                   <Loader2 className="h-4 w-4 animate-spin mr-2" />

@@ -1,4 +1,5 @@
 // src/pages/gso/reports/WeeklyMonitoring.jsx
+
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -40,29 +41,6 @@ const LoadingSkeleton = () => (
 );
 
 // ============================================
-// STATS CARD COMPONENT
-// ============================================
-
-const StatCard = ({ title, value, icon: Icon, color, subtitle }) => (
-  <Card className="dark:bg-slate-800/80 dark:border-slate-700 hover:shadow-lg transition-all duration-300">
-    <CardContent className="pt-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">{title}</p>
-          <p className="text-2xl font-bold text-slate-900 dark:text-white mt-1">{value}</p>
-          {subtitle && (
-            <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">{subtitle}</p>
-          )}
-        </div>
-        <div className={`p-3 rounded-xl bg-gradient-to-br ${color} shadow-lg`}>
-          <Icon className="h-6 w-6 text-white" />
-        </div>
-      </div>
-    </CardContent>
-  </Card>
-);
-
-// ============================================
 // MAIN COMPONENT
 // ============================================
 
@@ -72,12 +50,6 @@ const WeeklyMonitoring = () => {
   const [departments, setDepartments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
-  const [stats, setStats] = useState({
-    totalBudget: 0,
-    totalUsed: 0,
-    totalTrips: 0,
-    completionRate: 0,
-  });
 
   useEffect(() => {
     fetchDepartments();
@@ -109,17 +81,6 @@ const WeeklyMonitoring = () => {
   const selectedDepartment = departments.find(
     dept => dept.department_id === parseInt(departmentId)
   );
-
-  // Format currency
-  const formatCurrency = (amount) => {
-    if (!amount || amount === 0) return '₱0';
-    return new Intl.NumberFormat('en-PH', {
-      style: 'currency',
-      currency: 'PHP',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    }).format(amount);
-  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
@@ -231,37 +192,8 @@ const WeeklyMonitoring = () => {
           </Card>
         )}
 
-        {/* Quick Stats - Overview Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <StatCard
-            title="Weekly Budget"
-            value={formatCurrency(stats.totalBudget || 0)}
-            icon={Wallet}
-            color="from-blue-500 to-blue-600"
-            subtitle="Total allocation"
-          />
-          <StatCard
-            title="Used"
-            value={formatCurrency(stats.totalUsed || 0)}
-            icon={TrendingDown}
-            color="from-yellow-500 to-yellow-600"
-            subtitle="Amount utilized"
-          />
-          <StatCard
-            title="Total Trips"
-            value={stats.totalTrips || 0}
-            icon={BarChart3}
-            color="from-purple-500 to-purple-600"
-            subtitle="This week"
-          />
-          <StatCard
-            title="Completion Rate"
-            value={`${stats.completionRate || 0}%`}
-            icon={TrendingUp}
-            color="from-emerald-500 to-emerald-600"
-            subtitle="Trips completed"
-          />
-        </div>
+        {/* ✅ REMOVED: Quick Stats - Overview Cards (duplicate) */}
+        {/* The child component already shows these stats with correct data */}
 
         {/* Main Report Component */}
         {loading ? (

@@ -50,11 +50,11 @@ export const useCreateVehicle = () => {
     mutationFn: (vehicleData) => vehicleAPI.create(vehicleData),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['vehicles'] });
-      toast.success('Vehicle created successfully');
+      // toast.success('Vehicle created successfully');
     },
     onError: (error) => {
       const message = error.response?.data?.message || 'Failed to create vehicle';
-      toast.error(message);
+      // toast.error(message);
     },
   });
 };
@@ -68,7 +68,7 @@ export const useUpdateVehicle = () => {
       vehicleAPI.update(vehicleId, vehicleData),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['vehicles'] });
-      toast.success('Vehicle updated successfully');
+      // toast.success('Vehicle updated successfully');
     },
     onError: (error) => {
       const message = error.response?.data?.message || 'Failed to update vehicle';
@@ -85,11 +85,11 @@ export const useDeleteVehicle = () => {
     mutationFn: (vehicleId) => vehicleAPI.delete(vehicleId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['vehicles'] });
-      toast.success('Vehicle deleted successfully');
+      // toast.success('Vehicle deleted successfully');
     },
     onError: (error) => {
       const message = error.response?.data?.message || 'Failed to delete vehicle';
-      toast.error(message);
+      // toast.error(message);
     },
   });
 };

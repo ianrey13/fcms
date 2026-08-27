@@ -103,10 +103,7 @@ class BudgetService
                 throw new \Exception("Insufficient budget for department ID: {$departmentId}");
             }
             
-            // ✅ If cross-department, still deduct from the charged department
-            if ($isCrossDepartment && $originalDepartmentId) {
-                $this->logCrossDepartmentUsage($originalDepartmentId, $departmentId, $amount, $reason);
-            }
+           
             
             // ✅ ALWAYS deduct from annual budget
             $budget->used_amount += $amount;

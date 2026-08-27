@@ -1,4 +1,5 @@
 // src/components/reports/FuelWithoutTripReport.jsx
+
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -10,7 +11,8 @@ import {
   Printer, RefreshCw, Loader2, Search, Filter, X, CheckCircle,
   Clock, AlertCircle, TrendingUp, TrendingDown, Minus,
   Eye, ChevronDown, ChevronUp, Zap, Shield, ArrowLeft,
-  Building2, User, MapPin, DollarSign, Activity
+  Building2, User, MapPin, DollarSign, Activity,
+  ChevronLeft, ChevronRight  // ✅ Added for week navigation
 } from 'lucide-react';
 import { reportsAPI } from '../../services/api';
 import { saveAs } from 'file-saver';
@@ -85,6 +87,7 @@ const StatusBadge = ({ status, type = 'movement' }) => {
       'Normal Trip': { color: 'bg-emerald-500', label: 'Normal Trip' },
       'No Movement': { color: 'bg-red-500', label: 'No Movement' },
       'Minimal Movement (<1km)': { color: 'bg-yellow-500', label: 'Minimal Movement' },
+      'No Odometer Reading': { color: 'bg-slate-500', label: 'No Odometer' },
     };
     const config = configs[status] || { color: 'bg-slate-500', label: status || 'Unknown' };
     return (
@@ -92,6 +95,7 @@ const StatusBadge = ({ status, type = 'movement' }) => {
         {status === 'No Movement' && <AlertTriangle className="h-2.5 w-2.5" />}
         {status === 'Normal Trip' && <CheckCircle className="h-2.5 w-2.5" />}
         {status === 'Minimal Movement (<1km)' && <Clock className="h-2.5 w-2.5" />}
+        {status === 'No Odometer Reading' && <AlertCircle className="h-2.5 w-2.5" />}
         {config.label}
       </Badge>
     );
@@ -100,8 +104,12 @@ const StatusBadge = ({ status, type = 'movement' }) => {
   // Trip status
   const configs = {
     'closed': { color: 'border-emerald-500 text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30', label: 'Completed' },
+    'completed': { color: 'border-emerald-500 text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30', label: 'Completed' },
     'pending': { color: 'border-yellow-500 text-yellow-700 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-950/30', label: 'Pending' },
+    'pending_mayors_office': { color: 'border-yellow-500 text-yellow-700 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-950/30', label: 'Pending MO' },
+    'funds_issued': { color: 'border-blue-500 text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/30', label: 'Funds Issued' },
     'in_transit': { color: 'border-blue-500 text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/30', label: 'In Transit' },
+    'acknowledged': { color: 'border-cyan-500 text-cyan-700 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-950/30', label: 'Acknowledged' },
   };
   const config = configs[status] || { color: 'border-slate-500 text-slate-700 dark:text-slate-400 bg-slate-50 dark:bg-slate-800', label: status || 'Unknown' };
   return (
@@ -112,34 +120,71 @@ const StatusBadge = ({ status, type = 'movement' }) => {
 };
 
 // ============================================
-// MAIN COMPONENT
+// MAIN COMPONENT - UPDATED WITH WEEK NAVIGATION
 // ============================================
 
-const FuelWithoutTripReport = ({ departmentId, dateRange }) => {
+const FuelWithoutTripReport = ({ departmentId, onRefresh }) => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
-  const [filters, setFilters] = useState({
-    start_date: dateRange?.start || '',
-    end_date: dateRange?.end || '',
-    department_id: departmentId || 'all',
-  });
-  const [showFilters, setShowFilters] = useState(false);
+  const [weekStart, setWeekStart] = useState('');
+  const [weekEnd, setWeekEnd] = useState('');
+  const [availableWeeks, setAvailableWeeks] = useState([]);
 
+  // ✅ Initialize with current week
   useEffect(() => {
-    fetchData();
-  }, [filters]);
+    const now = new Date();
+    const start = new Date(now);
+    start.setDate(now.getDate() - now.getDay() + 1);
+    const end = new Date(start);
+    end.setDate(start.getDate() + 6);
+    
+    setWeekStart(start.toISOString().split('T')[0]);
+    setWeekEnd(end.toISOString().split('T')[0]);
+  }, []);
+
+  // ✅ Fetch data when week changes
+  useEffect(() => {
+    if (weekStart && weekEnd) {
+      fetchData();
+    }
+  }, [weekStart, weekEnd, departmentId]);
 
   const fetchData = async () => {
+    if (!weekStart || !weekEnd) return;
+    
     setLoading(true);
     try {
       const params = {
-        department_id: filters.department_id !== 'all' ? filters.department_id : undefined,
-        start_date: filters.start_date || undefined,
-        end_date: filters.end_date || undefined,
+        department_id: departmentId !== 'all' ? departmentId : undefined,
+        start_date: weekStart,
+        end_date: weekEnd,
       };
       const response = await reportsAPI.getFuelWithoutTrip(params);
-      setData(response.data?.data);
+      const responseData = response.data?.data || [];
+      
+      // ✅ Extract weeks from data for navigation
+      const weeks = new Map();
+      responseData.forEach(item => {
+        if (item.date) {
+          const date = new Date(item.date);
+          const weekStartDate = new Date(date);
+          weekStartDate.setDate(date.getDate() - date.getDay() + 1);
+          const key = weekStartDate.toISOString().split('T')[0];
+          if (!weeks.has(key)) {
+            weeks.set(key, {
+              start: key,
+              end: new Date(weekStartDate.getTime() + 6 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+            });
+          }
+        }
+      });
+      
+      // If data has weeks, update availableWeeks
+      const sortedWeeks = Array.from(weeks.values()).sort((a, b) => b.start.localeCompare(a.start));
+      setAvailableWeeks(sortedWeeks);
+      
+      setData(responseData);
     } catch (error) {
       console.error('Failed to fetch fuel without trip:', error);
       toast.error('Failed to load fuel without trip report');
@@ -152,14 +197,14 @@ const FuelWithoutTripReport = ({ departmentId, dateRange }) => {
     setExporting(true);
     try {
       const params = {
-        department_id: filters.department_id !== 'all' ? filters.department_id : undefined,
-        start_date: filters.start_date || undefined,
-        end_date: filters.end_date || undefined,
+        department_id: departmentId !== 'all' ? departmentId : undefined,
+        start_date: weekStart,
+        end_date: weekEnd,
       };
       
       const response = await reportsAPI.exportFuelWithoutTrip(format, params);
       const extension = format === 'pdf' ? 'pdf' : format === 'excel' ? 'xlsx' : 'csv';
-      const fileName = `fuel_without_trip_${new Date().toISOString().split('T')[0]}.${extension}`;
+      const fileName = `fuel_without_trip_${weekStart}_to_${weekEnd}.${extension}`;
       saveAs(response.data, fileName);
       toast.success(`Report exported as ${format.toUpperCase()}`);
     } catch (error) {
@@ -170,26 +215,28 @@ const FuelWithoutTripReport = ({ departmentId, dateRange }) => {
     }
   };
 
-  const handleFilterChange = (e) => {
-    const { name, value } = e.target;
-    setFilters(prev => ({ ...prev, [name]: value }));
+  const handleRefresh = () => {
+    fetchData();
+    if (onRefresh) onRefresh();
+    toast.success('Data refreshed');
   };
 
-  const clearFilters = () => {
-    setFilters({
-      start_date: '',
-      end_date: '',
-      department_id: 'all',
-    });
+  const handlePreviousWeek = () => {
+    const start = new Date(weekStart);
+    start.setDate(start.getDate() - 7);
+    const end = new Date(start);
+    end.setDate(start.getDate() + 6);
+    setWeekStart(start.toISOString().split('T')[0]);
+    setWeekEnd(end.toISOString().split('T')[0]);
   };
 
-  const formatCurrency = (amount) => {
-    if (!amount || amount === 0) return '₱0.00';
-    return new Intl.NumberFormat('en-PH', {
-      style: 'currency',
-      currency: 'PHP',
-      minimumFractionDigits: 2,
-    }).format(amount);
+  const handleNextWeek = () => {
+    const start = new Date(weekStart);
+    start.setDate(start.getDate() + 7);
+    const end = new Date(start);
+    end.setDate(start.getDate() + 6);
+    setWeekStart(start.toISOString().split('T')[0]);
+    setWeekEnd(end.toISOString().split('T')[0]);
   };
 
   const formatDate = (dateString) => {
@@ -205,7 +252,23 @@ const FuelWithoutTripReport = ({ departmentId, dateRange }) => {
     }
   };
 
-  const hasActiveFilters = filters.start_date || filters.end_date || filters.department_id !== 'all';
+  const formatCurrency = (amount) => {
+    if (!amount || amount === 0) return '₱0.00';
+    return new Intl.NumberFormat('en-PH', {
+      style: 'currency',
+      currency: 'PHP',
+      minimumFractionDigits: 2,
+    }).format(amount);
+  };
+
+  const formatDateDisplay = (date) => {
+    if (!date) return 'N/A';
+    return new Date(date).toLocaleDateString('en-PH', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    });
+  };
 
   if (loading) {
     return (
@@ -224,17 +287,15 @@ const FuelWithoutTripReport = ({ departmentId, dateRange }) => {
   const fuelData = data || [];
   const summary = data?.summary || {};
 
-  // Calculate trends based on previous period
-  const trends = {
-    total: fuelData.length > 0 ? 12 : 0,
-    fuel: summary.total_fuel_issued > 0 ? 8 : 0,
-    movement: summary.no_movement > 0 ? -5 : 0,
-    odometer: summary.no_odometer > 0 ? 3 : 0,
-  };
+  // Calculate totals from data
+  const totalIncidents = fuelData.length;
+  const totalFuelIssued = fuelData.reduce((sum, item) => sum + (parseFloat(item.fuel_issued) || 0), 0);
+  const noMovement = fuelData.filter(item => item.movement_status === 'No Movement').length;
+  const noOdometer = fuelData.filter(item => item.movement_status === 'No Odometer Reading').length;
 
   return (
     <div className="space-y-6 p-4 md:p-6 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 rounded-2xl">
-      {/* Header */}
+      {/* Header with Week Navigation */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
           <div className="flex items-center gap-3">
@@ -246,7 +307,7 @@ const FuelWithoutTripReport = ({ departmentId, dateRange }) => {
                 Fuel Issued Without Trip
               </h2>
               <p className="text-sm text-slate-500 dark:text-slate-400">
-                Trips with fuel issued but no movement recorded
+                {formatDateDisplay(weekStart)} - {formatDateDisplay(weekEnd)}
               </p>
             </div>
           </div>
@@ -255,24 +316,25 @@ const FuelWithoutTripReport = ({ departmentId, dateRange }) => {
           <Button 
             variant="outline" 
             size="sm" 
-            onClick={() => setShowFilters(!showFilters)}
+            onClick={handlePreviousWeek}
             className="dark:border-slate-700 dark:text-slate-300"
           >
-            <Filter className="h-4 w-4 mr-1.5" />
-            Filters
-            {hasActiveFilters && (
-              <span className="ml-1.5 px-1.5 py-0.5 text-[10px] bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded-full font-bold">!</span>
-            )}
-            {showFilters ? (
-              <ChevronUp className="h-4 w-4 ml-1" />
-            ) : (
-              <ChevronDown className="h-4 w-4 ml-1" />
-            )}
+            <ChevronLeft className="h-4 w-4 mr-1" />
+            Prev
           </Button>
           <Button 
             variant="outline" 
             size="sm" 
-            onClick={fetchData}
+            onClick={handleNextWeek}
+            className="dark:border-slate-700 dark:text-slate-300"
+          >
+            Next
+            <ChevronRight className="h-4 w-4 ml-1" />
+          </Button>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={handleRefresh}
             className="dark:border-slate-700 dark:text-slate-300"
           >
             <RefreshCw className="h-4 w-4 mr-1.5" />
@@ -301,85 +363,39 @@ const FuelWithoutTripReport = ({ departmentId, dateRange }) => {
         </div>
       </div>
 
-      {/* Filters */}
-      {showFilters && (
-        <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-          <CardContent className="pt-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <Label className="text-sm font-medium text-slate-700 dark:text-slate-300">Start Date</Label>
-                <Input
-                  type="date"
-                  name="start_date"
-                  value={filters.start_date}
-                  onChange={handleFilterChange}
-                  className="mt-1 dark:bg-slate-900 dark:border-slate-700"
-                />
-              </div>
-              <div>
-                <Label className="text-sm font-medium text-slate-700 dark:text-slate-300">End Date</Label>
-                <Input
-                  type="date"
-                  name="end_date"
-                  value={filters.end_date}
-                  onChange={handleFilterChange}
-                  className="mt-1 dark:bg-slate-900 dark:border-slate-700"
-                />
-              </div>
-              <div className="flex items-end gap-2">
-                {hasActiveFilters && (
-                  <Button 
-                    variant="outline" 
-                    onClick={clearFilters} 
-                    className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30"
-                  >
-                    <X className="h-4 w-4 mr-1.5" />
-                    Clear Filters
-                  </Button>
-                )}
-                <Button onClick={fetchData} className="bg-blue-600 hover:bg-blue-700 text-white">
-                  <Search className="h-4 w-4 mr-1.5" />
-                  Apply
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
       {/* Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatsCard
           title="Total Incidents"
-          value={summary.total_trips || 0}
+          value={totalIncidents}
           icon={AlertTriangle}
           color="red"
           subtitle="Fuel without trip"
-          trend={trends.total}
+          trend={totalIncidents > 0 ? 12 : 0}
         />
         <StatsCard
           title="Total Fuel Issued"
-          value={formatCurrency(summary.total_fuel_issued || 0)}
+          value={formatCurrency(totalFuelIssued)}
           icon={DollarSign}
           color="orange"
           subtitle="Fuel cost"
-          trend={trends.fuel}
+          trend={totalFuelIssued > 0 ? 8 : 0}
         />
         <StatsCard
           title="No Movement"
-          value={summary.no_movement || 0}
+          value={noMovement}
           icon={Activity}
           color="purple"
           subtitle="Zero distance recorded"
-          trend={trends.movement}
+          trend={noMovement > 0 ? -5 : 0}
         />
         <StatsCard
           title="No Odometer"
-          value={summary.no_odometer || 0}
+          value={noOdometer}
           icon={Truck}
           color="blue"
           subtitle="Missing odometer readings"
-          trend={trends.odometer}
+          trend={noOdometer > 0 ? 3 : 0}
         />
       </div>
 
@@ -394,6 +410,7 @@ const FuelWithoutTripReport = ({ departmentId, dateRange }) => {
               </CardTitle>
               <CardDescription className="dark:text-slate-400">
                 {fuelData.length} incident{fuelData.length !== 1 ? 's' : ''} found
+                {availableWeeks.length > 0 && ` • Week ${availableWeeks.length} available`}
               </CardDescription>
             </div>
             {fuelData.length > 0 && (
@@ -413,7 +430,10 @@ const FuelWithoutTripReport = ({ departmentId, dateRange }) => {
                 </div>
                 <p className="text-slate-600 dark:text-slate-400 font-medium text-lg">No incidents found</p>
                 <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">
-                  All fuel issuances have proper trip records
+                  All fuel issuances have proper trip records for this week
+                </p>
+                <p className="text-xs text-slate-400 dark:text-slate-500 mt-2">
+                  {formatDateDisplay(weekStart)} - {formatDateDisplay(weekEnd)}
                 </p>
               </div>
             ) : (
@@ -493,6 +513,7 @@ const FuelWithoutTripReport = ({ departmentId, dateRange }) => {
           minute: '2-digit'
         })}</p>
         <p>FCMS - Fuel Without Trip Report • Laguindingan Municipality</p>
+        <p className="mt-0.5">Week: {formatDateDisplay(weekStart)} - {formatDateDisplay(weekEnd)}</p>
       </div>
     </div>
   );

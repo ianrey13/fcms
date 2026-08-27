@@ -109,6 +109,33 @@ const formatNumber = (num) => {
   return new Intl.NumberFormat('en-PH').format(num);
 };
 
+const getStatusBadge = (status) => {
+  const statusMap = {
+    'working': { label: 'Working', color: 'bg-emerald-500' },
+    'ongoing': { label: 'Ongoing', color: 'bg-blue-500' },
+    'started': { label: 'Started', color: 'bg-yellow-500' },
+    'pending': { label: 'Pending', color: 'bg-orange-500' },
+    'pending_verification': { label: 'Pending Verification', color: 'bg-yellow-500' },
+    'pending_reconciliation': { label: 'Pending Recon', color: 'bg-yellow-500' },
+    'pending_mayors_office': { label: 'Pending MO', color: 'bg-yellow-500' },
+    'verified': { label: 'Verified', color: 'bg-emerald-500' },
+    'approved': { label: 'Approved', color: 'bg-emerald-500' },
+    'closed': { label: 'Closed', color: 'bg-green-600' },
+    'completed': { label: 'Completed', color: 'bg-green-500' },
+    'rejected': { label: 'Rejected', color: 'bg-red-500' },
+    'cancelled': { label: 'Cancelled', color: 'bg-slate-500' },
+    'in_transit': { label: 'In Transit', color: 'bg-purple-500' },
+    'funds_issued': { label: 'Funds Issued', color: 'bg-blue-500' },
+    'acknowledged': { label: 'Acknowledged', color: 'bg-cyan-500' },
+    'discrepancy': { label: 'Discrepancy', color: 'bg-red-500' },
+    'active': { label: 'Active', color: 'bg-blue-500' },
+    'returned_for_revision': { label: 'Returned', color: 'bg-purple-500' },
+    'draft': { label: 'Draft', color: 'bg-slate-400' },
+    'pending_gso_validation': { label: 'Pending Validation', color: 'bg-indigo-500' },
+  };
+  return statusMap[status?.toLowerCase()] || { label: status || 'N/A', color: 'bg-slate-400' };
+};
+
 const getEfficiencyBadge = (kmPerLiter) => {
   if (!kmPerLiter || kmPerLiter === 0) {
     return { label: 'No Data', color: 'bg-slate-400' };
@@ -118,22 +145,6 @@ const getEfficiencyBadge = (kmPerLiter) => {
   if (kmPerLiter >= 5) return { label: 'Average', color: 'bg-yellow-500' };
   if (kmPerLiter >= 3) return { label: 'Poor', color: 'bg-orange-500' };
   return { label: 'Critical', color: 'bg-red-500' };
-};
-
-const getStatusBadge = (status) => {
-  const statusMap = {
-    'closed': { label: 'Completed', color: 'bg-green-500' },
-    'completed': { label: 'Completed', color: 'bg-green-500' },
-    'pending_reconciliation': { label: 'Pending', color: 'bg-yellow-500' },
-    'pending_mayors_office': { label: 'Pending MO', color: 'bg-yellow-500' },
-    'funds_issued': { label: 'Active', color: 'bg-blue-500' },
-    'in_transit': { label: 'In Transit', color: 'bg-purple-500' },
-    'active': { label: 'Active', color: 'bg-blue-500' },
-    'rejected': { label: 'Rejected', color: 'bg-red-500' },
-    'verified': { label: 'Verified', color: 'bg-emerald-500' },
-    'discrepancy': { label: 'Discrepancy', color: 'bg-red-500' },
-  };
-  return statusMap[status?.toLowerCase()] || { label: status || 'N/A', color: 'bg-slate-400' };
 };
 
 // ============================================
@@ -441,96 +452,19 @@ const GsoReports = () => {
   };
 
   // ============================================
-  // RENDER HELPERS
-  // ============================================
-
-  const renderSummaryCards = (data, type = 'consumption') => {
-    const summary = data?.summary || {};
-    
-    if (type === 'consumption') {
-      return (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatsCard
-            title="Total Trips"
-            value={formatNumber(summary.total_trips)}
-            icon={Truck}
-            color="from-blue-500 to-blue-600"
-            subtitle="Completed trips"
-            trend={summary.total_trips > 0 ? 12 : 0}
-          />
-          <StatsCard
-            title="Total Fuel"
-            value={`${formatNumber(summary.total_fuel_liters)} L`}
-            icon={Fuel}
-            color="from-emerald-500 to-emerald-600"
-            subtitle="Liters consumed"
-            trend={summary.total_fuel_liters > 0 ? 8 : 0}
-          />
-          <StatsCard
-            title="Total Cost"
-            value={formatCurrency(summary.total_fuel_cost)}
-            icon={DollarSign}
-            color="from-yellow-500 to-yellow-600"
-            subtitle="Fuel expenses"
-            trend={summary.total_fuel_cost > 0 ? 5 : 0}
-          />
-          <StatsCard
-            title="Avg. Efficiency"
-            value={`${summary.average_km_per_liter || 0} km/L`}
-            icon={TrendingUp}
-            color="from-purple-500 to-purple-600"
-            subtitle="Fuel efficiency"
-            trend={summary.average_km_per_liter > 0 ? 3 : 0}
-          />
-        </div>
-      );
-    }
-
-    // Receipt summary
-    return (
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatsCard
-          title="Total Receipts"
-          value={formatNumber(summary.total_receipts)}
-          icon={Receipt}
-          color="from-blue-500 to-blue-600"
-          subtitle="Uploaded receipts"
-          trend={summary.total_receipts > 0 ? 10 : 0}
-        />
-        <StatsCard
-          title="Total Fuel"
-          value={`${formatNumber(summary.total_liters)} L`}
-          icon={Fuel}
-          color="from-emerald-500 to-emerald-600"
-          subtitle="Liters purchased"
-          trend={summary.total_liters > 0 ? 7 : 0}
-        />
-        <StatsCard
-          title="Total Cost"
-          value={formatCurrency(summary.total_cost)}
-          icon={DollarSign}
-          color="from-yellow-500 to-yellow-600"
-          subtitle="Total expenses"
-          trend={summary.total_cost > 0 ? 6 : 0}
-        />
-        <StatsCard
-          title="Avg. Unit Price"
-          value={summary.total_liters > 0 ? formatCurrency(summary.total_cost / summary.total_liters) : '₱0.00'}
-          icon={TrendingUp}
-          color="from-purple-500 to-purple-600"
-          subtitle="Price per liter"
-          trend={summary.total_liters > 0 ? -2 : 0}
-        />
-      </div>
-    );
-  };
-
-  // ============================================
-  // RENDER FUEL RECEIPT TABLE
+  // RENDER - FUEL RECEIPT TABLE (ENHANCED WITH TOTAL)
   // ============================================
 
   const renderFuelReceiptTable = () => {
     const receipts = receiptData?.receipts || [];
+
+    // ✅ Calculate totals
+    const totals = receipts.reduce((acc, receipt) => {
+      acc.totalAmount += parseFloat(receipt.amount || 0);
+      acc.totalQuantity += parseFloat(receipt.quantity || 0);
+      acc.totalUnitPrice += parseFloat(receipt.unit_price || 0);
+      return acc;
+    }, { totalAmount: 0, totalQuantity: 0, totalUnitPrice: 0 });
 
     if (receipts.length === 0) {
       return (
@@ -549,7 +483,7 @@ const GsoReports = () => {
     }
 
     return (
-      <Card className="dark:bg-slate-800/80 dark:border-slate-700">
+      <Card className="dark:bg-slate-800/80 dark:border-slate-700 shadow-xl shadow-black/5">
         <CardHeader className="border-b border-slate-200/60 dark:border-slate-700/60">
           <div className="flex items-center justify-between">
             <div>
@@ -572,15 +506,19 @@ const GsoReports = () => {
             <Table>
               <TableHeader>
                 <TableRow className="bg-slate-50 dark:bg-slate-900/50">
-                  <TableHead className="font-semibold text-slate-600 dark:text-slate-400">Invoice #</TableHead>
-                  <TableHead className="font-semibold text-slate-600 dark:text-slate-400">Date</TableHead>
-                  <TableHead className="font-semibold text-slate-600 dark:text-slate-400">Driver</TableHead>
-                  <TableHead className="font-semibold text-slate-600 dark:text-slate-400">Vehicle</TableHead>
-                  <TableHead className="font-semibold text-slate-600 dark:text-slate-400">Plate No.</TableHead>
-                  <TableHead className="font-semibold text-slate-600 dark:text-slate-400">Fuel</TableHead>
-                  <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400">Unit Price</TableHead>
-                  <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400">Amount</TableHead>
-                  <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400">Qty (L)</TableHead>
+                  <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Invoice #</TableHead>
+                  <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Ticket #</TableHead>
+                  <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Date</TableHead>
+                  <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Driver</TableHead>
+                  <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Vehicle</TableHead>
+                  <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Plate No.</TableHead>
+                  <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Destination</TableHead>
+                  <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Time Departure</TableHead>
+                  <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Time Arrival</TableHead>
+                  <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Fuel Type</TableHead>
+                  <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Unit Price</TableHead>
+                  <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Amount</TableHead>
+                  <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Qty (L)</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -588,41 +526,73 @@ const GsoReports = () => {
                   const invoiceNumber = receipt.invoice_number || receipt.charge_invoice_no || 'N/A';
                   const unitPrice = receipt.unit_price || 0;
                   const key = receipt.fuel_receipt_id || receipt.gas_slip_id || `receipt-${index}`;
+                  const status = receipt.status || receipt.reconciliation_status || 'pending';
+                  const statusConfig = getStatusBadge(status);
                   
                   return (
                     <TableRow key={key} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors group">
                       <TableCell className="font-mono text-sm font-semibold text-blue-600 dark:text-blue-400">
                         {invoiceNumber}
                       </TableCell>
+                      <TableCell className="font-mono text-sm text-slate-700 dark:text-slate-300">
+                        {receipt.ticket_number || receipt.trip_ticket_number || 'N/A'}
+                      </TableCell>
                       <TableCell className="text-slate-600 dark:text-slate-400">
-                        {receipt.date || 'N/A'}
+                        {receipt.date || receipt.trip_date || 'N/A'}
                       </TableCell>
                       <TableCell className="font-medium text-slate-700 dark:text-slate-300">
-                        {receipt.driver || 'N/A'}
+                        {receipt.driver_name || receipt.driver || 'N/A'}
                       </TableCell>
                       <TableCell className="text-slate-600 dark:text-slate-400">
-                        {receipt.vehicle || 'N/A'}
+                        {receipt.vehicle_model || receipt.vehicle || 'N/A'}
                       </TableCell>
                       <TableCell className="font-mono text-sm text-slate-700 dark:text-slate-300">
-                        {receipt.plate_no || 'N/A'}
+                        {receipt.plate_number || receipt.plate_no || 'N/A'}
+                      </TableCell>
+                      <TableCell className="text-slate-600 dark:text-slate-400">
+                        {receipt.destination || 'N/A'}
+                      </TableCell>
+                      <TableCell className="text-slate-600 dark:text-slate-400">
+                        {receipt.time_departure || receipt.departure_time || 'N/A'}
+                      </TableCell>
+                      <TableCell className="text-slate-600 dark:text-slate-400">
+                        {receipt.time_arrival || receipt.arrival_time || 'N/A'}
                       </TableCell>
                       <TableCell>
-                        <Badge variant="outline" className="text-xs">
-                          {receipt.lubricant || 'N/A'}
+                        <Badge variant="outline" className="text-xs dark:border-slate-600">
+                          {receipt.fuel_type || receipt.lubricant || 'N/A'}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right font-mono text-slate-600 dark:text-slate-400">
                         {formatCurrency(unitPrice)}
                       </TableCell>
                       <TableCell className="text-right font-medium font-mono text-emerald-600 dark:text-emerald-400">
-                        {formatCurrency(receipt.amount)}
+                        {formatCurrency(receipt.amount || receipt.amount_on_receipt || 0)}
                       </TableCell>
                       <TableCell className="text-right font-mono text-slate-700 dark:text-slate-300">
-                        {formatNumber(receipt.quantity)}
+                        {formatNumber(receipt.quantity || receipt.liters_availed || 0)}
                       </TableCell>
+                    
                     </TableRow>
                   );
                 })}
+
+                {/* ✅ TOTAL ROW */}
+                <TableRow className="bg-slate-100 dark:bg-slate-800 font-bold border-t-2 border-slate-300 dark:border-slate-600">
+                  <TableCell colSpan={10} className="text-right text-slate-800 dark:text-white">
+                    TOTAL
+                  </TableCell>
+                  <TableCell className="text-right text-slate-800 dark:text-white">
+                    {formatCurrency(totals.totalUnitPrice || 0)}
+                  </TableCell>
+                  <TableCell className="text-right text-emerald-700 dark:text-emerald-400">
+                    {formatCurrency(totals.totalAmount || 0)}
+                  </TableCell>
+                  <TableCell className="text-right text-slate-800 dark:text-white">
+                    {formatNumber(totals.totalQuantity || 0)}
+                  </TableCell>
+               
+                </TableRow>
               </TableBody>
             </Table>
           </div>
@@ -632,7 +602,7 @@ const GsoReports = () => {
   };
 
   // ============================================
-  // RENDER TRIP SUMMARY TAB
+  // RENDER - TRIP SUMMARY TAB
   // ============================================
 
   const renderTripSummary = () => {
@@ -761,7 +731,7 @@ const GsoReports = () => {
   };
 
   // ============================================
-  // RENDER VEHICLE EFFICIENCY TAB
+  // RENDER - VEHICLE EFFICIENCY TAB
   // ============================================
 
   const renderVehicleEfficiency = () => {
@@ -877,7 +847,7 @@ const GsoReports = () => {
   };
 
   // ============================================
-  // RENDER BUDGET UTILIZATION TAB
+  // RENDER - BUDGET UTILIZATION TAB
   // ============================================
 
   const renderBudgetUtilization = () => {
@@ -1324,7 +1294,6 @@ const GsoReports = () => {
 
         {/* TAB 1: FUEL RECEIPT */}
         <TabsContent value="fuel-receipt" className="space-y-4 mt-6">
-          {renderSummaryCards(receiptData, 'receipt')}
           {renderFuelReceiptTable()}
         </TabsContent>
 

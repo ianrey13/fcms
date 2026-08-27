@@ -749,7 +749,9 @@ public function getBudgetReport(Request $request)
 // ============================================
 // FUEL RECEIPT REPORT 
 // ============================================
-
+/**
+ * GET FUEL RECEIPT REPORT - FIXED
+ */
 public function getFuelReceiptReport(Request $request)
 {
     try {
@@ -757,6 +759,13 @@ public function getFuelReceiptReport(Request $request)
         $endDate = $request->get('end_date');
         $departmentId = $request->get('department_id');
         $vehicleId = $request->get('vehicle_id');
+
+        Log::info('Fuel Receipt Report Request', [
+            'start_date' => $startDate,
+            'end_date' => $endDate,
+            'department_id' => $departmentId,
+            'vehicle_id' => $vehicleId,
+        ]);
 
         $query = FuelReceipt::with([
             'gasSlip.tripTicket.department',
@@ -785,57 +794,99 @@ public function getFuelReceiptReport(Request $request)
 
         $receipts = $query->get();
 
+        Log::info('Receipts found: ' . $receipts->count());
+
         $formattedReceipts = $receipts->map(function($receipt) {
             $trip = $receipt->gasSlip->tripTicket;
             $vehicle = $trip->vehicle;
             $department = $trip->department;
             $driver = $trip->driver;
 
-            // ✅ Get invoice number from database
+            // ✅ Get invoice number
             $invoiceNumber = $receipt->invoice_number ?? 'N/A';
-            
-            // ✅ Get unit price from database
+
+            // ✅ Get unit price - calculate if not set
             $unitPrice = $receipt->unit_price ?? 0;
+            if ($unitPrice == 0 && $receipt->liters_availed > 0 && $receipt->amount_on_receipt > 0) {
+                $unitPrice = round($receipt->amount_on_receipt / $receipt->liters_availed, 2);
+            }
+
+            // ✅ Get time fields from fuel_receipt (trip_started_at, trip_ended_at)
+            $timeDeparture = $receipt->trip_started_at 
+                ? Carbon::parse($receipt->trip_started_at)->format('h:i A') 
+                : 'N/A';
+            
+            $timeArrival = $receipt->trip_ended_at 
+                ? Carbon::parse($receipt->trip_ended_at)->format('h:i A') 
+                : 'N/A';
+
+            // ✅ Get status from trip ticket
+            $status = $trip->status ?? 'N/A';
+            
+            // ✅ Map status to display label
+            $statusMap = [
+                'closed' => 'Closed',
+                'completed' => 'Completed',
+                'pending_mayors_office' => 'Pending MO',
+                'funds_issued' => 'Funds Issued',
+                'in_transit' => 'In Transit',
+                'acknowledged' => 'Acknowledged',
+                'pending_gso_validation' => 'Pending Validation',
+            ];
+            $statusLabel = $statusMap[$status] ?? $status;
 
             return [
                 'used_for' => $department ? $department->department_name : 'N/A',
-                // ✅ Primary field - use invoice_number
                 'invoice_number' => $invoiceNumber,
-                // ✅ Keep charge_invoice_no for backward compatibility with your frontend
                 'charge_invoice_no' => $invoiceNumber,
                 'gas_slip_id' => $receipt->gas_slip_id,
                 'date' => $receipt->created_at ? $receipt->created_at->format('m/d/Y') : 'N/A',
                 'lubricant' => $vehicle ? strtoupper($vehicle->fuel_type) : 'N/A',
+                'fuel_type' => $vehicle ? strtoupper($vehicle->fuel_type) : 'N/A',
                 'quantity' => $receipt->liters_availed ?? 0,
-                // ✅ Use unit_price from database
                 'unit_price' => $unitPrice,
                 'formatted_unit_price' => '₱' . number_format($unitPrice, 2),
                 'amount' => $receipt->amount_on_receipt ?? 0,
                 'formatted_amount' => '₱' . number_format($receipt->amount_on_receipt ?? 0, 2),
+                'ticket_number' => $trip->trip_ticket_number ?? 'N/A',
                 'control_no' => $trip->trip_ticket_number ?? 'N/A',
                 'plate_no' => $vehicle ? $vehicle->plate_number : 'N/A',
+                'plate_number' => $vehicle ? $vehicle->plate_number : 'N/A',
                 'vehicle' => $vehicle ? $vehicle->vehicle_model : 'N/A',
+                'vehicle_model' => $vehicle ? $vehicle->vehicle_model : 'N/A',
                 'vehicle_id' => $vehicle ? $vehicle->vehicle_id : null,
                 'department' => $department ? $department->department_name : 'N/A',
+                'department_name' => $department ? $department->department_name : 'N/A',
                 'department_id' => $department ? $department->department_id : null,
                 'driver' => $driver && $driver->user ? $driver->user->full_name : 'N/A',
+                'driver_name' => $driver && $driver->user ? $driver->user->full_name : 'N/A',
                 'driver_id' => $driver ? $driver->driver_id : null,
-                'status' => $trip->status ?? 'N/A',
-                // ✅ Add receipt photo path for reference
+                'destination' => $trip->destination ?? 'N/A',
+                'time_departure' => $timeDeparture,
+                'time_arrival' => $timeArrival,
+                'status' => $statusLabel,
+                'reconciliation_status' => $receipt->gasSlip?->reconciliation_status ?? 'N/A',
                 'has_receipt' => !is_null($receipt->receipt_photo_path),
-                'receipt_uploaded_at' => $receipt->receipt_uploaded_at ? $receipt->receipt_uploaded_at->format('m/d/Y H:i') : 'N/A',
-                // ✅ Add fuel receipt ID for key reference
+                'receipt_uploaded_at' => $receipt->receipt_uploaded_at 
+                    ? $receipt->receipt_uploaded_at->format('m/d/Y H:i') 
+                    : 'N/A',
                 'fuel_receipt_id' => $receipt->fuel_receipt_id,
+                'trip_date' => $trip->trip_date ?? 'N/A',
+                'trip_started_at' => $receipt->trip_started_at,
+                'trip_ended_at' => $receipt->trip_ended_at,
             ];
         });
 
+        // ✅ Calculate summary
         $summary = [
             'total_receipts' => $receipts->count(),
             'total_liters' => round($receipts->sum('liters_availed'), 2),
             'total_cost' => round($receipts->sum('amount_on_receipt'), 2),
             'total_vehicles' => $receipts->pluck('gasSlip.tripTicket.vehicle_id')->unique()->count(),
             'total_departments' => $receipts->pluck('gasSlip.tripTicket.department_id')->unique()->count(),
-            'avg_unit_price' => $receipts->count() > 0 ? round($receipts->sum('amount_on_receipt') / $receipts->sum('liters_availed'), 2) : 0,
+            'avg_unit_price' => $receipts->count() > 0 && $receipts->sum('liters_availed') > 0 
+                ? round($receipts->sum('amount_on_receipt') / $receipts->sum('liters_availed'), 2) 
+                : 0,
         ];
 
         return response()->json([
@@ -862,45 +913,63 @@ public function getFuelReceiptReport(Request $request)
         ], 500);
     }
 }
+/**
+ * Calculate unit price from amount and liters
+ */
+private function calculateUnitPrice($amount, $liters)
+{
+    if ($liters > 0 && $amount > 0) {
+        return round($amount / $liters, 2);
+    }
+    return 0;
+}
+
     // ============================================
     // EXPORT FUEL RECEIPT REPORT
     // ============================================
 
-    public function exportFuelReceiptReport(Request $request, $format)
-    {
-        try {
-            $response = $this->getFuelReceiptReport($request);
-            $data = $response->getData(true);
+    /**
+ * EXPORT FUEL RECEIPT REPORT - SUPPORTS PDF, EXCEL, CSV
+ */
+public function exportFuelReceiptReport(Request $request, $format)
+{
+    try {
+        // ✅ Get the report data
+        $response = $this->getFuelReceiptReport($request);
+        $data = $response->getData(true);
 
-            if (!$data['success']) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Failed to get report data'
-                ], 500);
-            }
-
-            $reportData = $data['data'];
-            $filename = 'fuel_receipt_report_' . date('Y-m-d');
-
-            if ($format === 'excel' || $format === 'xlsx') {
-                return Excel::download(
-                    new FuelReceiptReportExport($reportData),
-                    $filename . '.xlsx'
-                );
-            } elseif ($format === 'pdf') {
-                return $this->generateFuelReceiptPDF($reportData, $filename);
-            } else {
-                return $this->exportFuelReceiptCSV($reportData, $filename);
-            }
-
-        } catch (\Exception $e) {
-            Log::error('Export fuel receipt report error: ' . $e->getMessage());
+        if (!$data['success']) {
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to export report: ' . $e->getMessage()
+                'message' => 'Failed to get report data'
             ], 500);
         }
+
+        $reportData = $data['data'];
+        $filename = 'fuel_receipt_report_' . date('Y-m-d');
+
+        // ✅ Handle different formats
+        if ($format === 'excel' || $format === 'xlsx') {
+            return Excel::download(
+                new FuelReceiptReportExport($reportData, 'gso'),
+                $filename . '.xlsx'
+            );
+        } elseif ($format === 'pdf') {
+            // ✅ Use the updated PDF builder
+            return $this->generateFuelReceiptPDF($reportData, $filename);
+        } else {
+            // CSV
+            return $this->exportFuelReceiptCSV($reportData, $filename);
+        }
+
+    } catch (\Exception $e) {
+        Log::error('Export fuel receipt report error: ' . $e->getMessage());
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to export report: ' . $e->getMessage()
+        ], 500);
     }
+}
 
     // ============================================
     // FUEL RECEIPT PDF
@@ -928,106 +997,225 @@ public function getFuelReceiptReport(Request $request)
         }
     }
 
-    private function buildFuelReceiptPDFHTML($reportData)
-    {
-        $summary = $reportData['summary'] ?? [];
-        $receipts = $reportData['receipts'] ?? [];
-        $filters = $reportData['filters'] ?? [];
+ /**
+ * Build Fuel Receipt PDF HTML - FIXED with TOTAL row
+ */
+private function buildFuelReceiptPDFHTML($reportData)
+{
+    $summary = $reportData['summary'] ?? [];
+    $receipts = $reportData['receipts'] ?? [];
+    $filters = $reportData['filters'] ?? [];
 
-        $html = '<!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="utf-8">
-            <title>Fuel Receipt Report</title>
-            <style>
-                * { margin: 0; padding: 0; box-sizing: border-box; }
-                body { font-family: "DejaVu Sans", Arial, sans-serif; font-size: 9px; padding: 20px; color: #1e293b; }
-                .header { text-align: center; border-bottom: 3px solid #2563eb; padding-bottom: 15px; margin-bottom: 20px; }
-                .header h1 { font-size: 18px; color: #1e293b; font-weight: bold; }
-                .header p { color: #64748b; font-size: 11px; margin-top: 5px; }
-                .section { margin-bottom: 15px; }
-                .section-title { background: #e2e8f0; padding: 6px 12px; font-weight: bold; font-size: 11px; border-radius: 4px; margin-bottom: 8px; }
-                table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 8px; }
-                th { background: #2563eb; color: white; padding: 6px 4px; text-align: center; font-weight: bold; border: 1px solid #1e40af; }
-                td { padding: 5px 4px; border: 1px solid #d1d5db; text-align: center; font-size: 8px; }
-                tr:nth-child(even) { background: #f8fafc; }
-                .summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 10px 0; }
-                .summary-card { background: #f8fafc; padding: 10px; border-radius: 6px; border: 1px solid #e2e8f0; text-align: center; }
-                .summary-card .label { font-size: 8px; color: #64748b; text-transform: uppercase; }
-                .summary-card .value { font-size: 14px; font-weight: bold; color: #0f172a; margin-top: 4px; }
-                .footer { text-align: center; border-top: 1px solid #e2e8f0; padding-top: 12px; margin-top: 20px; color: #94a3b8; font-size: 8px; }
-                .badge-active { background: #dcfce7; color: #166534; padding: 2px 8px; border-radius: 10px; font-size: 7px; font-weight: bold; }
-                .badge-completed { background: #dbeafe; color: #1e40af; padding: 2px 8px; border-radius: 10px; font-size: 7px; font-weight: bold; }
-                .badge-pending { background: #fef3c7; color: #92400e; padding: 2px 8px; border-radius: 10px; font-size: 7px; font-weight: bold; }
-            </style>
-        </head>
-        <body>
-            <div class="header">
-                <h1>FUEL RECEIPT REPORT</h1>
-                <p>Laguindingan Municipality - FCMS</p>
-                <p>Generated: ' . now()->format('F d, Y h:i A') . '</p>
-                <p style="font-size: 9px; margin-top: 3px;">
-                    Period: ' . ($filters['start_date'] ?? 'N/A') . ' to ' . ($filters['end_date'] ?? 'N/A') . '
-                </p>
-            </div>
+    // ✅ Calculate totals
+    $totalAmount = 0;
+    $totalQuantity = 0;
+    $totalUnitPrice = 0;
 
-            
-
-            <div class="section">
-                <div class="section-title">📋 FUEL RECEIPT DETAILS</div>
-                <table>
-                    <thead>
-                        <tr>
-                            <th style="width:8%">Used For</th>
-                            <th style="width:7%">Invoice #</th>
-                            <th style="width:8%">Date</th>
-                            <th style="width:8%">Lubricant</th>
-                            <th style="width:7%">Qty</th>
-                            <th style="width:8%">Unit Price</th>
-                            <th style="width:8%">Amount</th>
-                            <th style="width:10%">Control No.</th>
-                            <th style="width:8%">Plate No.</th>
-                            <th style="width:10%">Vehicle</th>
-                            <th style="width:8%">Department</th>
-                            <th style="width:8%">Driver</th>
-                        </tr>
-                    </thead>
-                    <tbody>';
-
-        if (count($receipts) > 0) {
-            foreach ($receipts as $r) {
-                $html .= '<tr>
-                    <td>' . ($r['used_for'] ?? 'N/A') . '</td>
-                    <td>' . ($r['charge_invoice_no'] ?? 'N/A') . '</td>
-                    <td>' . ($r['date'] ?? 'N/A') . '</td>
-                    <td>' . ($r['lubricant'] ?? 'N/A') . '</td>
-                    <td>' . number_format($r['quantity'] ?? 0, 2) . '</td>
-                    <td>₱' . number_format($r['unit_price'] ?? 0, 2) . '</td>
-                    <td>₱' . number_format($r['amount'] ?? 0, 2) . '</td>
-                    <td>' . ($r['control_no'] ?? 'N/A') . '</td>
-                    <td>' . ($r['plate_no'] ?? 'N/A') . '</td>
-                    <td>' . ($r['vehicle'] ?? 'N/A') . '</td>
-                    <td>' . ($r['department'] ?? 'N/A') . '</td>
-                    <td>' . ($r['driver'] ?? 'N/A') . '</td>
-                </tr>';
+    $html = '<!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <title>Fuel Receipt Report</title>
+        <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { 
+                font-family: "DejaVu Sans", Arial, sans-serif; 
+                font-size: 8px; 
+                padding: 15px; 
+                color: #1e293b; 
             }
-        } else {
-            $html .= '<tr><td colspan="12" class="text-center text-muted">No fuel receipt data available</td></tr>';
+            .header { 
+                text-align: center; 
+                border-bottom: 3px solid #2563eb; 
+                padding-bottom: 12px; 
+                margin-bottom: 15px; 
+            }
+            .header h1 { 
+                font-size: 16px; 
+                color: #1e293b; 
+                font-weight: bold; 
+            }
+            .header p { 
+                color: #64748b; 
+                font-size: 10px; 
+                margin-top: 4px; 
+            }
+            .header .subtitle { 
+                font-size: 9px; 
+                color: #94a3b8; 
+                margin-top: 3px; 
+            }
+            .section { 
+                margin-bottom: 12px; 
+            }
+            .section-title { 
+                background: #e2e8f0; 
+                padding: 5px 10px; 
+                font-weight: bold; 
+                font-size: 10px; 
+                border-radius: 4px; 
+                margin-bottom: 6px; 
+            }
+            table { 
+                width: 100%; 
+                border-collapse: collapse; 
+                margin-top: 6px; 
+                font-size: 7px; 
+            }
+            th { 
+                background: #2563eb; 
+                color: white; 
+                padding: 4px 3px; 
+                text-align: center; 
+                font-weight: bold; 
+                border: 1px solid #1e40af; 
+                font-size: 7px;
+            }
+            td { 
+                padding: 4px 3px; 
+                border: 1px solid #d1d5db; 
+                text-align: center; 
+                font-size: 7px; 
+            }
+            tr:nth-child(even) { 
+                background: #f8fafc; 
+            }
+            .summary-grid { 
+                display: grid; 
+                grid-template-columns: repeat(4, 1fr); 
+                gap: 8px; 
+                margin: 8px 0; 
+            }
+            .summary-card { 
+                background: #f8fafc; 
+                padding: 8px; 
+                border-radius: 4px; 
+                border: 1px solid #e2e8f0; 
+                text-align: center; 
+            }
+            .summary-card .label { 
+                font-size: 7px; 
+                color: #64748b; 
+                text-transform: uppercase; 
+            }
+            .summary-card .value { 
+                font-size: 12px; 
+                font-weight: bold; 
+                color: #0f172a; 
+                margin-top: 3px; 
+            }
+            .footer { 
+                text-align: center; 
+                border-top: 1px solid #e2e8f0; 
+                padding-top: 10px; 
+                margin-top: 15px; 
+                color: #94a3b8; 
+                font-size: 7px; 
+            }
+            .text-muted { 
+                color: #94a3b8; 
+            }
+            .text-right { 
+                text-align: right; 
+            }
+            .text-left { 
+                text-align: left; 
+            }
+            .text-center { 
+                text-align: center; 
+            }
+            .fw-bold { 
+                font-weight: bold; 
+            }
+            .text-success { 
+                color: #059669; 
+            }
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            <h1>FUEL RECEIPT REPORT</h1>
+            <p>LGU Laguindingan - FCMS</p>
+            <p class="subtitle">Generated: ' . now()->format('F d, Y h:i A') . '</p>
+            <p style="font-size: 8px; margin-top: 3px; color: #64748b;">
+                Period: ' . ($filters['start_date'] ?? 'N/A') . ' to ' . ($filters['end_date'] ?? 'N/A') . '
+            </p>
+        </div>
+
+       
+
+        <!-- RECEIPT DETAILS TABLE -->
+        <div class="section">
+            <div class="section-title">📋 FUEL RECEIPT DETAILS</div>
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width:6%">Date</th>
+                        <th style="width:6%">Invoice #</th>
+                        <th style="width:7%">Ticket #</th>
+                        <th style="width:7%">Driver</th>
+                        <th style="width:7%">Vehicle</th>
+                        <th style="width:6%">Plate No.</th>
+                        <th style="width:8%">Destination</th>
+                        <th style="width:6%">Time Dep.</th>
+                        <th style="width:6%">Time Arr.</th>
+                        <th style="width:5%">Fuel Type</th>
+                        <th style="width:5%">Unit Price</th>
+                        <th style="width:6%">Amount</th>
+                        <th style="width:5%">Qty (L)</th>
+                    </tr>
+                </thead>
+                <tbody>';
+
+    if (count($receipts) > 0) {
+        foreach ($receipts as $r) {
+            $totalAmount += $r['amount'] ?? 0;
+            $totalQuantity += $r['quantity'] ?? 0;
+            $totalUnitPrice += $r['unit_price'] ?? 0;
+
+            $html .= '<tr>
+                <td>' . ($r['date'] ?? 'N/A') . '</td>
+                <td><span style="font-weight:bold;color:#2563eb;">' . ($r['invoice_number'] ?? 'N/A') . '</span></td>
+                <td>' . ($r['ticket_number'] ?? 'N/A') . '</td>
+                <td>' . ($r['driver'] ?? 'N/A') . '</td>
+                <td>' . ($r['vehicle'] ?? 'N/A') . '</td>
+                <td><span style="font-weight:bold;">' . ($r['plate_no'] ?? 'N/A') . '</span></td>
+                <td style="text-align:left;">' . ($r['destination'] ?? 'N/A') . '</td>
+                <td>' . ($r['time_departure'] ?? 'N/A') . '</td>
+                <td>' . ($r['time_arrival'] ?? 'N/A') . '</td>
+                <td><span style="font-weight:bold;color:#2563eb;">' . ($r['lubricant'] ?? 'N/A') . '</span></td>
+                <td>₱' . number_format($r['unit_price'] ?? 0, 2) . '</td>
+                <td style="font-weight:bold;color:#059669;">₱' . number_format($r['amount'] ?? 0, 2) . '</td>
+                <td>' . number_format($r['quantity'] ?? 0, 2) . '</td>
+            </tr>';
         }
-
-        $html .= '</tbody>
-                </table>
-            </div>
-
-            <div class="footer">
-                <p>This report is automatically generated by the FCMS System</p>
-                <p>© ' . date('Y') . ' Laguindingan Municipality - Fuel Consumption Monitoring System</p>
-            </div>
-        </body>
-        </html>';
-
-        return $html;
+        
+        // ✅ TOTAL ROW
+        $html .= '<tr style="background: #e2e8f0; font-weight: bold;">
+            <td colspan="10" style="text-align:right; font-weight:bold;">TOTAL</td>
+            <td>₱' . number_format($totalUnitPrice, 2) . '</td>
+            <td style="font-weight:bold;color:#059669;">₱' . number_format($totalAmount, 2) . '</td>
+            <td>' . number_format($totalQuantity, 2) . '</td>
+        </tr>';
+        
+    } else {
+        $html .= '<tr><td colspan="13" style="text-align:center; color:#94a3b8; padding:20px;">No fuel receipt data available</td></tr>';
     }
+
+    $html .= '</tbody>
+            </table>
+        </div>
+
+        <!-- FOOTER -->
+        <div class="footer">
+            <p>This report is automatically generated by the FCMS System</p>
+            <p>© ' . date('Y') . ' Laguindingan Municipality - Fuel Consumption Monitoring System</p>
+        </div>
+    </body>
+    </html>';
+
+    return $html;
+}
 
     private function exportFuelReceiptCSV($reportData, $filename)
     {
@@ -1076,7 +1264,7 @@ public function getFuelReceiptReport(Request $request)
     }
 
 /**
- * Get Weekly Monitoring Data
+ * Get Weekly Monitoring Data - FIXED with per-week budgets
  */
 public function getWeeklyMonitoring(Request $request)
 {
@@ -1105,7 +1293,6 @@ public function getWeeklyMonitoring(Request $request)
             'driver.user', 
             'vehicle'
         ])
-        // ✅ FIXED: Use 'submitted_at' instead of 'created_at'
         ->whereBetween('submitted_at', [
             Carbon::parse($weekStart)->startOfDay(),
             Carbon::parse($weekEnd)->endOfDay()
@@ -1119,36 +1306,88 @@ public function getWeeklyMonitoring(Request $request)
 
         Log::info('Trips found: ' . $trips->count());
 
-        // ✅ Calculate metrics
+        // ✅ ============================================
+        // ✅ FIXED: Get budget for the SELECTED week
+        // ✅ ============================================
         $totalBudget = 0;
+        $departmentBudgets = [];
+
+        if ($departmentId) {
+            // ✅ Get budget for the selected week
+            $budgetPeriod = DeptBudgetPeriod::where('department_id', $departmentId)
+                ->where('week_start', Carbon::parse($weekStart)->startOfWeek()->toDateString())
+                ->first();
+
+            if ($budgetPeriod) {
+                $totalBudget = $budgetPeriod->allocated_amount;
+                $departmentBudgets[] = [
+                    'department_id' => $departmentId,
+                    'allocated' => $budgetPeriod->allocated_amount,
+                ];
+            }
+        } else {
+            // ✅ Get ALL department budgets for the selected week
+            $periods = DeptBudgetPeriod::where('week_start', Carbon::parse($weekStart)->startOfWeek()->toDateString())
+                ->with('department')
+                ->get();
+
+            foreach ($periods as $period) {
+                $totalBudget += $period->allocated_amount;
+                $departmentBudgets[] = [
+                    'department_id' => $period->department_id,
+                    'department_name' => $period->department->department_name ?? 'Unknown',
+                    'department_code' => $period->department->department_code ?? 'Unknown',
+                    'allocated' => $period->allocated_amount,
+                ];
+            }
+        }
+
+        Log::info('Weekly Budget: ' . $totalBudget);
+
+        // ✅ Calculate metrics
         $totalUsed = 0;
         $completed = 0;
         $pending = 0;
+        $inTransit = 0;
+        $departmentUsage = [];
 
         foreach ($trips as $trip) {
-            if ($trip->gasSlip) {
-                $totalUsed += $trip->gasSlip->amount_released;
+            $amount = $trip->gasSlip ? $trip->gasSlip->amount_released : 0;
+            $totalUsed += $amount;
+
+            // ✅ Track per-department usage
+            $deptId = $trip->department_id;
+            if (!isset($departmentUsage[$deptId])) {
+                $departmentUsage[$deptId] = 0;
             }
-            
-            if ($trip->status === 'closed') {
+            $departmentUsage[$deptId] += $amount;
+
+            // ✅ Count statuses
+            if ($trip->status === 'closed' || $trip->status === 'completed') {
                 $completed++;
+            } elseif ($trip->status === 'in_transit') {
+                $inTransit++;
             } else {
                 $pending++;
             }
         }
 
-        // ✅ Get budget from department
-        if ($departmentId) {
-            $budgetPeriod = DeptBudgetPeriod::where('department_id', $departmentId)
-                ->where('status', 'active')
-                ->first();
+        // ✅ Build department breakdown with budgets
+        $departmentBreakdown = [];
+        foreach ($departmentBudgets as $dept) {
+            $deptId = $dept['department_id'];
+            $used = $departmentUsage[$deptId] ?? 0;
+            $allocated = $dept['allocated'] ?? 0;
 
-            if ($budgetPeriod) {
-                $totalBudget = $budgetPeriod->allocated_amount;
-            }
-        } else {
-            // ✅ If all departments, sum all active budgets
-            $totalBudget = DeptBudgetPeriod::where('status', 'active')->sum('allocated_amount');
+            $departmentBreakdown[] = [
+                'department_id' => $deptId,
+                'department_name' => $dept['department_name'] ?? 'Unknown',
+                'department_code' => $dept['department_code'] ?? 'N/A',
+                'allocated' => $allocated,
+                'used' => $used,
+                'remaining' => $allocated - $used,
+                'utilization' => $allocated > 0 ? round(($used / $allocated) * 100, 2) : 0,
+            ];
         }
 
         // ✅ Format trips data
@@ -1166,6 +1405,7 @@ public function getWeeklyMonitoring(Request $request)
                 'amount' => $trip->gasSlip?->amount_released ?? 0,
                 'driver' => $trip->driver?->user?->full_name ?? 'N/A',
                 'vehicle' => $trip->vehicle?->plate_number ?? 'N/A',
+                'trip_date' => $trip->trip_date,
             ];
         });
 
@@ -1180,12 +1420,14 @@ public function getWeeklyMonitoring(Request $request)
                     'trips' => $trips->count(),
                     'completed' => $completed,
                     'pending' => $pending,
+                    'in_transit' => $inTransit,
                 ],
                 'period' => [
                     'start' => $weekStart,
                     'end' => $weekEnd,
                 ],
                 'trips' => $formattedTrips,
+                'departments' => $departmentBreakdown, // ✅ NEW: Department breakdown
             ]
         ];
 
@@ -1204,12 +1446,8 @@ public function getWeeklyMonitoring(Request $request)
     }
 }
 /**
- * Get Fuel Without Trip Report
+ * Get Fuel Without Trip Report - FIXED
  */
-
-
-
-
 public function getFuelWithoutTrip(Request $request)
 {
     try {
@@ -1217,68 +1455,89 @@ public function getFuelWithoutTrip(Request $request)
         $startDate = $request->get('start_date');
         $endDate = $request->get('end_date');
 
+        Log::info('Fuel Without Trip Request', [
+            'department_id' => $departmentId,
+            'start_date' => $startDate,
+            'end_date' => $endDate,
+        ]);
+
         $query = TripTicket::with(['gasSlip', 'gasSlip.fuelReceipt', 'vehicle', 'driver.user', 'department'])
             ->whereHas('gasSlip')
             ->where(function($q) {
                 $q->whereNull('odometer_start')
                   ->orWhereNull('odometer_end')
                   ->orWhere('actual_distance_km', '<', 1)
-                  ->orWhere('actual_distance_km', '=', 0);
+                  ->orWhere('actual_distance_km', '=', 0)
+                  ->orWhereNull('actual_distance_km');  // ✅ Add this
             });
 
         if ($departmentId && $departmentId !== 'all') {
             $query->where('department_id', $departmentId);
         }
 
+        // ✅ Use 'submitted_at' for date filtering
         if ($startDate && $endDate) {
-            $query->whereBetween('created_at', [$startDate, $endDate]);
+            $query->whereBetween('submitted_at', [
+                Carbon::parse($startDate)->startOfDay(),
+                Carbon::parse($endDate)->endOfDay()
+            ]);
         }
 
         $trips = $query->get();
 
-        // ✅ Calculate total fuel issued (AMOUNT, not liters)
+        Log::info('Fuel Without Trip - Trips found: ' . $trips->count());
+
+        // ✅ Calculate totals
         $totalFuelIssued = $trips->sum(function($trip) {
             return (float) ($trip->gasSlip?->amount_released ?? 0);
         });
 
-        // ✅ Calculate total liters from fuel receipts
         $totalLiters = $trips->sum(function($trip) {
             return (float) ($trip->gasSlip?->fuelReceipt?->liters_availed ?? 0);
         });
 
-        // ✅ Map data with correct fields
+        // ✅ Map data
         $formattedData = $trips->map(function($trip) {
+            // ✅ Determine movement status
             $movementStatus = 'No Odometer Reading';
-            if ($trip->odometer_start && $trip->odometer_end) {
-                if ($trip->odometer_start == $trip->odometer_end) {
+            
+            if ($trip->odometer_start !== null && $trip->odometer_end !== null) {
+                $distance = $trip->odometer_end - $trip->odometer_start;
+                if ($distance == 0) {
                     $movementStatus = 'No Movement';
-                } elseif (($trip->odometer_end - $trip->odometer_start) < 1) {
+                } elseif ($distance < 1) {
                     $movementStatus = 'Minimal Movement (<1km)';
                 } else {
                     $movementStatus = 'Normal Trip';
                 }
             }
 
-            // ✅ Get amount and liters separately
-            $amountReleased = (float) ($trip->gasSlip?->amount_released ?? 0);
-            $litersAvailed = (float) ($trip->gasSlip?->fuelReceipt?->liters_availed ?? 0);
+            // ✅ Use actual_distance_km if odometer not available
+            if ($movementStatus === 'No Odometer Reading' && $trip->actual_distance_km !== null) {
+                if ($trip->actual_distance_km == 0) {
+                    $movementStatus = 'No Movement';
+                } elseif ($trip->actual_distance_km < 1) {
+                    $movementStatus = 'Minimal Movement (<1km)';
+                } else {
+                    $movementStatus = 'Normal Trip';
+                }
+            }
+
+            // ✅ Get driver name
+            $driverName = 'N/A';
+            if ($trip->driver && $trip->driver->user) {
+                $driverName = $trip->driver->user->first_name . ' ' . $trip->driver->user->last_name;
+            }
 
             return [
                 'id' => $trip->trip_ticket_id,
                 'trip_number' => $trip->trip_ticket_number,
-                // ✅ Use submitted_at or created_at
-                'date' => $trip->submitted_at 
-                    ? Carbon::parse($trip->submitted_at)->format('Y-m-d H:i')
-                    : ($trip->created_at 
-                        ? Carbon::parse($trip->created_at)->format('Y-m-d H:i')
-                        : 'N/A'),
+                'date' => $trip->submitted_at ? Carbon::parse($trip->submitted_at)->format('Y-m-d') : 'N/A',
                 'plate_number' => $trip->vehicle?->plate_number ?? 'N/A',
-                'driver' => $trip->driver?->user?->full_name ?? 'N/A',
+                'driver' => $driverName,
                 'department' => $trip->department?->department_name ?? 'N/A',
-                // ✅ FIXED: fuel_issued = AMOUNT (₱) - NOT liters
-                'fuel_issued' => $amountReleased,
-                // ✅ fuel_liters = LITERS
-                'fuel_liters' => $litersAvailed,
+                'fuel_issued' => (float) ($trip->gasSlip?->amount_released ?? 0),
+                'fuel_liters' => (float) ($trip->gasSlip?->fuelReceipt?->liters_availed ?? 0),
                 'odometer_start' => $trip->odometer_start,
                 'odometer_end' => $trip->odometer_end,
                 'actual_distance' => $trip->actual_distance_km ?? 0,
@@ -1287,24 +1546,36 @@ public function getFuelWithoutTrip(Request $request)
             ];
         });
 
+        // ✅ Calculate summary
+        $noMovement = $trips->filter(function($t) {
+            if ($t->odometer_start !== null && $t->odometer_end !== null) {
+                return $t->odometer_start == $t->odometer_end;
+            }
+            return false;
+        })->count();
+
+        $noOdometer = $trips->filter(function($t) {
+            return $t->odometer_start === null || $t->odometer_end === null;
+        })->count();
+
         return response()->json([
             'success' => true,
             'data' => $formattedData,
             'summary' => [
                 'total_trips' => $trips->count(),
-                'total_fuel_issued' => round($totalFuelIssued, 2),  // ✅ Amount
-                'total_liters' => round($totalLiters, 2),           // ✅ Liters
-                'no_movement' => $trips->filter(fn($t) => $t->odometer_start == $t->odometer_end)->count(),
-                'no_odometer' => $trips->filter(fn($t) => is_null($t->odometer_start) || is_null($t->odometer_end))->count(),
+                'total_fuel_issued' => round($totalFuelIssued, 2),
+                'total_liters' => round($totalLiters, 2),
+                'no_movement' => $noMovement,
+                'no_odometer' => $noOdometer,
             ]
         ]);
 
     } catch (\Exception $e) {
         Log::error('Fuel without trip error: ' . $e->getMessage());
-        Log::error($e->getTraceAsString());
+        Log::error('Stack trace: ' . $e->getTraceAsString());
         return response()->json([
             'success' => false,
-            'message' => 'Failed to fetch fuel without trip report'
+            'message' => 'Failed to fetch fuel without trip report: ' . $e->getMessage()
         ], 500);
     }
 }
@@ -1535,7 +1806,7 @@ private function buildFuelWithoutTripPDFHTML($reportData)
                         <th>Department</th>
                         <th>Fuel Issued</th>
                         <th>Movement</th>
-                        <th>Status</th>
+                       
                     </tr>
                 </thead>
                 <tbody>';
@@ -1550,7 +1821,7 @@ private function buildFuelWithoutTripPDFHTML($reportData)
                 <td>' . ($item['department'] ?? 'N/A') . '</td>
                 <td>₱' . number_format($item['fuel_issued'] ?? 0, 2) . '</td>
                 <td>' . ($item['movement_status'] ?? 'N/A') . '</td>
-                <td><span class="badge-pending">' . ($item['status'] ?? 'N/A') . '</span></td>
+               
             </tr>';
         }
     } else {

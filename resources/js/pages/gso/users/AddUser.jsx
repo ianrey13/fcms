@@ -396,7 +396,7 @@ const AddUser = () => {
                 >
                   <option value="">Select Role</option>
                   <option value="gso_office">GSO Office</option>
-                  <option value="mayors_office">Mayor's Office</option>
+                  <option value="mayors_office">Disbursing Officer</option>
                   <option value="driver">Driver</option>
                 </select>
               </FormField>

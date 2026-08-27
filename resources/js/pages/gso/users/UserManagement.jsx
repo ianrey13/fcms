@@ -74,7 +74,7 @@ const RoleBadge = ({ role }) => {
     mayors_office: {
       color: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300",
       icon: BadgeCheck,
-      label: "Mayor's Office",
+      label: "Disbursing Officer",
     },
     staff: {
       color: "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300",
@@ -345,7 +345,7 @@ const UserManagement = () => {
                     >
                       <option value="all">All Roles</option>
                       <option value="gso_office">GSO Office</option>
-                      <option value="mayors_office">Mayor's Office</option>
+                      <option value="mayors_office">Disbursing Officer</option>
                       <option value="staff">Staff</option>
                       <option value="driver">Driver</option>
                     </select>
