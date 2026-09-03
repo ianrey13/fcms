@@ -1,5 +1,5 @@
 // src/pages/gso/users/EditUser.jsx
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -26,6 +26,7 @@ import {
   X,
   Zap,
   Users,
+  Search,
 } from "lucide-react";
 import { useUsers, useUpdateUser, useDepartments } from "../../../hooks/useUserManagement";
 import { toast } from "react-hot-toast";
@@ -65,6 +66,158 @@ const FormField = ({
     )}
   </div>
 );
+
+// ============================================
+// DEPARTMENT DATALIST COMPONENT
+// ============================================
+
+const DepartmentDatalist = ({ value, onChange, onBlur, error, departments }) => {
+  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedDepartment, setSelectedDepartment] = useState(null);
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    if (value) {
+      const found = departments.find(d => d.department_id === parseInt(value));
+      if (found) {
+        setSearchTerm(found.department_name);
+        setSelectedDepartment(found);
+      }
+    } else {
+      setSearchTerm("");
+      setSelectedDepartment(null);
+    }
+  }, [value, departments]);
+
+  const handleInputChange = (e) => {
+    const input = e.target.value;
+    setSearchTerm(input);
+    
+    const match = departments.find(d => 
+      d.department_name.toLowerCase() === input.toLowerCase() ||
+      d.department_code?.toLowerCase() === input.toLowerCase()
+    );
+    
+    if (match) {
+      setSelectedDepartment(match);
+      onChange(match.department_id);
+    } else if (input === "") {
+      setSelectedDepartment(null);
+      onChange("");
+    }
+  };
+
+  const handleSelect = (dept) => {
+    setSearchTerm(dept.department_name);
+    setSelectedDepartment(dept);
+    onChange(dept.department_id);
+    inputRef.current?.blur();
+  };
+
+  const handleClear = () => {
+    setSearchTerm("");
+    setSelectedDepartment(null);
+    onChange("");
+    inputRef.current?.focus();
+  };
+
+  const filteredDepartments = searchTerm.length > 0
+    ? departments.filter(d => 
+        d.department_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        d.department_code?.toLowerCase().includes(searchTerm.toLowerCase())
+      )
+    : [];
+
+  return (
+    <div className="relative w-full">
+      <div className="relative">
+        <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+          <Building2 className="h-4 w-4" />
+        </div>
+        <Input
+          ref={inputRef}
+          type="text"
+          placeholder="Type department name or code..."
+          value={searchTerm}
+          onChange={handleInputChange}
+          onBlur={() => {
+            if (searchTerm && !selectedDepartment) {
+              const match = departments.find(d => 
+                d.department_name.toLowerCase() === searchTerm.toLowerCase()
+              );
+              if (!match) {
+                onChange("");
+              }
+            }
+            if (onBlur) onBlur();
+          }}
+          className={cn(
+            "pl-10 pr-10 bg-white dark:bg-slate-900 dark:border-slate-700",
+            error && "border-red-500 ring-red-500"
+          )}
+        />
+        {searchTerm && (
+          <button
+            type="button"
+            onClick={handleClear}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        )}
+      </div>
+
+      {searchTerm.length > 0 && filteredDepartments.length > 0 && (
+        <div className="absolute z-50 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg max-h-60 overflow-auto">
+          {filteredDepartments.map((dept) => (
+            <div
+              key={dept.department_id}
+              onClick={() => handleSelect(dept)}
+              className={cn(
+                "px-4 py-2.5 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors flex items-center justify-between",
+                selectedDepartment?.department_id === dept.department_id && "bg-blue-50 dark:bg-blue-900/30"
+              )}
+            >
+              <div>
+                <span className="font-medium text-slate-800 dark:text-white">
+                  {dept.department_name}
+                </span>
+                {dept.department_code && (
+                  <span className="ml-2 text-xs text-slate-400 dark:text-slate-500">
+                    ({dept.department_code})
+                  </span>
+                )}
+              </div>
+              {selectedDepartment?.department_id === dept.department_id && (
+                <CheckCircle className="h-4 w-4 text-blue-600" />
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {searchTerm.length > 0 && filteredDepartments.length === 0 && (
+        <div className="absolute z-50 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg p-4 text-center">
+          <p className="text-sm text-slate-500 dark:text-slate-400">No departments found</p>
+        </div>
+      )}
+
+      {selectedDepartment && (
+        <div className="mt-2 bg-blue-50/50 dark:bg-blue-950/20 rounded-lg p-2.5 border border-blue-200 dark:border-blue-800">
+          <div className="flex items-center gap-2">
+            <Building2 className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+            <span className="text-sm text-blue-700 dark:text-blue-300">
+              Selected: <strong>{selectedDepartment.department_name}</strong>
+            </span>
+            <Badge variant="outline" className="ml-auto text-xs border-blue-300 dark:border-blue-700">
+              {selectedDepartment.department_code}
+            </Badge>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 // ============================================
 // ROLE BADGE COMPONENT
@@ -429,45 +582,21 @@ const EditUser = () => {
                 />
               </FormField>
 
-              {/* Department */}
+              {/* Department - WITH DATALIST */}
               <FormField
                 label="Department"
                 icon={Building2}
                 required
                 error={hasError("department_id") && errors.department_id}
               >
-                <select
+                <DepartmentDatalist
                   value={formData.department_id}
-                  onChange={(e) => handleChange("department_id", e.target.value)}
+                  onChange={(value) => handleChange("department_id", value)}
                   onBlur={() => handleBlur("department_id")}
-                  className={cn(
-                    "w-full mt-1 px-3 py-2.5 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-slate-900 dark:border-slate-700",
-                    hasError("department_id") && "border-red-500 ring-red-500"
-                  )}
-                >
-                  <option value="">Select Department</option>
-                  {departments.map((dept) => (
-                    <option key={dept.department_id} value={dept.department_id}>
-                      {dept.department_name} ({dept.department_code})
-                    </option>
-                  ))}
-                </select>
+                  error={hasError("department_id")}
+                  departments={departments}
+                />
               </FormField>
-
-              {/* Selected Department Preview */}
-              {selectedDepartment && (
-                <div className="bg-blue-50/50 dark:bg-blue-950/20 rounded-lg p-3 border border-blue-200 dark:border-blue-800">
-                  <div className="flex items-center gap-2">
-                    <Building2 className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                    <span className="text-sm text-blue-700 dark:text-blue-300">
-                      Department: <strong>{selectedDepartment.department_name}</strong>
-                    </span>
-                    <Badge variant="outline" className="ml-auto text-xs border-blue-300 dark:border-blue-700">
-                      {selectedDepartment.department_code}
-                    </Badge>
-                  </div>
-                </div>
-              )}
 
               {/* Role */}
               <FormField
@@ -660,7 +789,7 @@ const EditUser = () => {
                   <div>
                     <span className="text-slate-400">Department:</span>
                     <span className="text-slate-700 dark:text-slate-300 ml-2">
-                      {selectedDepartment?.department_name || "—"}
+                      {departments.find(d => d.department_id === parseInt(formData.department_id))?.department_name || "—"}
                     </span>
                   </div>
                   {showCanDrive && (

@@ -79,6 +79,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('weekly-monitoring', [ReportsController::class, 'getWeeklyMonitoring']);
         Route::get('fuel-without-trip', [ReportsController::class, 'getFuelWithoutTrip']);
         Route::get('weekly-monitoring/export/{format}', [ReportsController::class, 'exportWeeklyMonitoring']);
+
+          Route::get('fund-release-history', [ReportsController::class, 'getFundReleaseHistory']);
+    Route::get('fund-release-history/export/{format}', [ReportsController::class, 'exportFundReleaseHistory']);
     });
 
     // ============ GSO ADMIN ============

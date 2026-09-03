@@ -344,14 +344,28 @@ class BudgetService
         return $budget->used_amount;
     }
     
-    /**
-     * ✅ Get weekly allocation for a department
-     */
-    public function getWeeklyAllocation($departmentId)
-    {
-        $policy = DeptBudgetPolicy::where('department_id', $departmentId)->first();
-        return $policy ? $policy->default_weekly_allocation : 0;
+   /**
+ * Get weekly allocation for a department (fiscal year aware)
+ */
+public function getWeeklyAllocation($departmentId, $fiscalYear = null)
+{
+    $fiscalYear = $fiscalYear ?? date('Y');
+    
+    // ✅ Get policy for specific fiscal year
+    $policy = DeptBudgetPolicy::where('department_id', $departmentId)
+        ->where('fiscal_year', $fiscalYear)
+        ->first();
+    
+    if ($policy) {
+        return $policy->default_weekly_allocation;
     }
+    
+    // Fallback to current policy
+    $fallback = DeptBudgetPolicy::where('department_id', $departmentId)
+        ->first();
+    
+    return $fallback ? $fallback->default_weekly_allocation : 0;
+}
     
     /**
      * ✅ Get weekly usage for current week

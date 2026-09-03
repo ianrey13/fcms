@@ -903,157 +903,108 @@ const LiveTracking = () => {
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
-        {/* Map */}
-        <div className="flex-1 relative min-h-[50vh] lg:min-h-0">
-          {isLoading ? (
-            <div className="w-full h-full flex items-center justify-center bg-slate-100 dark:bg-slate-800">
-              <div className="text-center">
-                <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-                <p className="text-slate-500 dark:text-slate-400">Loading vehicles...</p>
-              </div>
+        {/* Map - Always Visible */}
+<div className="flex-1 relative min-h-[50vh] lg:min-h-0">
+  {isLoading ? (
+    <div className="w-full h-full flex items-center justify-center bg-slate-100 dark:bg-slate-800">
+      <div className="text-center">
+        <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+        <p className="text-slate-500 dark:text-slate-400">Loading vehicles...</p>
+      </div>
+    </div>
+  ) : (
+    <MapContainer
+      ref={mapRef}
+      center={mapCenter}
+      zoom={mapZoom}
+      style={{ height: '100%', width: '100%' }}
+      zoomControl={false}
+      className="z-0"
+    >
+      {renderMapTiles()}
+      <ZoomControl position="bottomright" />
+
+      {/* Vehicle Markers - Only if trips exist */}
+      {tripsWithLocation.length > 0 ? (
+        tripsWithLocation.map((trip) => {
+          if (!trip || !trip.current_location) return null;
+          const isSelected = selectedTrip?.trip_id === trip.trip_id;
+          const isFocused = focusedTrip?.trip_id === trip.trip_id;
+
+          return (
+            <div key={trip.trip_id}>
+              {trip.route && trip.route.length > 1 && (
+                <Polyline
+                  positions={trip.route.map(p => [p.latitude, p.longitude])}
+                  color={isSelected || isFocused ? '#2563eb' : '#94a3b8'}
+                  weight={isSelected || isFocused ? 4 : 2}
+                  opacity={isSelected || isFocused ? 0.9 : 0.4}
+                  dashArray={isSelected || isFocused ? null : '5, 5'}
+                />
+              )}
+
+              <Marker
+                position={[trip.current_location.latitude, trip.current_location.longitude]}
+                icon={createVehicleIcon(trip.status, isSelected, true, isFocused)}
+                eventHandlers={{
+                  click: () => handleTripSelect(trip),
+                }}
+                ref={(ref) => {
+                  if (ref) {
+                    markerRefs.current[trip.trip_id] = ref;
+                  }
+                }}
+              >
+                <Popup>
+                  <TripPopupContent 
+                    trip={trip}
+                    onViewTrip={handleViewTrip}
+                    onCenter={handleCenter}
+                    onFocus={handleFocus}
+                  />
+                </Popup>
+              </Marker>
+
+              {trip.current_location.accuracy_meters && trip.current_location.accuracy_meters < 100 && (
+                <Circle
+                  center={[trip.current_location.latitude, trip.current_location.longitude]}
+                  radius={trip.current_location.accuracy_meters}
+                  color={isSelected || isFocused ? '#2563eb' : '#94a3b8'}
+                  fillColor={isSelected || isFocused ? '#2563eb' : '#94a3b8'}
+                  fillOpacity={0.1}
+                />
+              )}
             </div>
-          ) : tripsWithLocation.length === 0 ? (
-            <div className="w-full h-full flex items-center justify-center bg-slate-100 dark:bg-slate-800">
-              <div className="text-center">
-                <div className="w-20 h-20 rounded-2xl bg-slate-200 dark:bg-slate-700 flex items-center justify-center mx-auto mb-4">
-                  <Satellite className="h-10 w-10 text-slate-400 dark:text-slate-500" />
-                </div>
-                <p className="text-slate-600 dark:text-slate-400 font-medium">No active vehicles</p>
-                <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">
-                  Vehicles with GPS tracking will appear here
-                </p>
-                <p className="text-xs text-blue-500 mt-2">
-                  ● Waiting for real-time updates
-                </p>
-              </div>
+          );
+        })
+      ) : (
+        // ✅ No active trips - Show overlay on map
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+          <div className="bg-white/90 dark:bg-slate-900/90 backdrop-blur-sm rounded-2xl shadow-2xl p-8 max-w-md text-center pointer-events-auto border border-slate-200/60 dark:border-slate-700/60">
+            <div className="w-20 h-20 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto mb-4">
+              <Satellite className="h-10 w-10 text-slate-400 dark:text-slate-500" />
             </div>
-          ) : (
-            <MapContainer
-              ref={mapRef}
-              center={mapCenter}
-              zoom={mapZoom}
-              style={{ height: '100%', width: '100%' }}
-              zoomControl={false}
-              className="z-0"
+            <p className="text-slate-600 dark:text-slate-400 font-medium text-lg">No active vehicles</p>
+            <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">
+              Vehicles with GPS tracking will appear here
+            </p>
+            <div className="mt-3 flex items-center justify-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+              <span className="text-xs text-emerald-600 dark:text-emerald-400">Waiting for GPS pings</span>
+            </div>
+            <button
+              onClick={handleRefresh}
+              className="mt-4 text-sm bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors flex items-center gap-2 mx-auto"
             >
-              {renderMapTiles()}
-
-              <ZoomControl position="bottomright" />
-
-              {tripsWithLocation.map((trip) => {
-                if (!trip || !trip.current_location) return null;
-                const isSelected = selectedTrip?.trip_id === trip.trip_id;
-                const isFocused = focusedTrip?.trip_id === trip.trip_id;
-
-                return (
-                  <div key={trip.trip_id}>
-                    {/* Route Polyline */}
-                    {trip.route && trip.route.length > 1 && (
-                      <Polyline
-                        positions={trip.route.map(p => [p.latitude, p.longitude])}
-                        color={isSelected || isFocused ? '#2563eb' : '#94a3b8'}
-                        weight={isSelected || isFocused ? 4 : 2}
-                        opacity={isSelected || isFocused ? 0.9 : 0.4}
-                        dashArray={isSelected || isFocused ? null : '5, 5'}
-                      />
-                    )}
-
-                    {/* Vehicle Marker */}
-                    <Marker
-                      position={[trip.current_location.latitude, trip.current_location.longitude]}
-                      icon={createVehicleIcon(trip.status, isSelected, true, isFocused)}
-                      eventHandlers={{
-                        click: () => handleTripSelect(trip),
-                      }}
-                      ref={(ref) => {
-                        if (ref) {
-                          markerRefs.current[trip.trip_id] = ref;
-                        }
-                      }}
-                    >
-                      <Popup>
-                        <TripPopupContent 
-                          trip={trip}
-                          onViewTrip={handleViewTrip}
-                          onCenter={handleCenter}
-                          onFocus={handleFocus}
-                        />
-                      </Popup>
-                    </Marker>
-
-                    {/* Accuracy Circle */}
-                    {trip.current_location.accuracy_meters && trip.current_location.accuracy_meters < 100 && (
-                      <Circle
-                        center={[trip.current_location.latitude, trip.current_location.longitude]}
-                        radius={trip.current_location.accuracy_meters}
-                        color={isSelected || isFocused ? '#2563eb' : '#94a3b8'}
-                        fillColor={isSelected || isFocused ? '#2563eb' : '#94a3b8'}
-                        fillOpacity={0.1}
-                      />
-                    )}
-                  </div>
-                );
-              })}
-            </MapContainer>
-          )}
-
-          {/* Map Legend */}
-          <div className="absolute bottom-4 left-4 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm rounded-xl shadow-lg p-3 text-xs z-[1000] border border-slate-200/60 dark:border-slate-700/60">
-            <div className="space-y-1.5">
-              <div className="flex items-center gap-3">
-                <div className="flex items-center gap-1.5">
-                  <div className="w-3 h-3 rounded-full bg-green-500 animate-pulse" />
-                  <span className="text-slate-600 dark:text-slate-300">In Transit</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <div className="w-3 h-3 rounded-full bg-yellow-500" />
-                  <span className="text-slate-600 dark:text-slate-300">Funds Issued</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <div className="w-3 h-3 rounded-full bg-blue-500" />
-                  <span className="text-slate-600 dark:text-slate-300">Acknowledged</span>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <div className="flex items-center gap-1.5">
-                  <div className="w-3 h-3 rounded-full bg-indigo-500" />
-                  <span className="text-slate-600 dark:text-slate-300">Completed</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <div className="w-6 h-0.5 bg-slate-400" />
-                  <span className="text-slate-500 dark:text-slate-400">Route</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <div className="w-6 h-0.5 bg-blue-500" />
-                  <span className="text-slate-500 dark:text-slate-400">Selected</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <div className="w-3 h-3 rounded-full bg-emerald-500" />
-                  <span className="text-slate-500 dark:text-slate-400">Focused</span>
-                </div>
-              </div>
-              <div className="text-[10px] text-slate-400 border-t border-slate-200 dark:border-slate-700 pt-1 mt-1">
-                🚗 Click car for details • GPS ping: 3s • Focus mode available
-              </div>
-            </div>
-          </div>
-
-          {/* Map Info */}
-          <div className="absolute top-4 right-4 flex items-center gap-3 z-[1000]">
-            <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm rounded-xl shadow-lg px-4 py-2 text-sm border border-slate-200/60 dark:border-slate-700/60">
-              <span className="font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2">
-                <Activity className="h-4 w-4 text-green-500 animate-pulse" />
-                {tripsWithLocation.length} active
-                <span className="text-[10px] text-emerald-500 font-normal">● Live</span>
-                {followedTripId && (
-                  <span className="text-[10px] text-blue-500 font-normal ml-1">
-                    • Following
-                  </span>
-                )}
-              </span>
-            </div>
+              <RefreshCw className="h-4 w-4" />
+              Check for updates
+            </button>
           </div>
         </div>
+      )}
+    </MapContainer>
+  )}
+</div>
 
         {/* Sidebar - Trip List */}
         <div className="w-full lg:w-80 bg-white dark:bg-slate-900 border-t lg:border-t-0 lg:border-l border-slate-200/60 dark:border-slate-800/60 overflow-y-auto">

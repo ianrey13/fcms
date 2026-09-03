@@ -478,6 +478,15 @@ export const reportsAPI = {
       params, 
       responseType: "blob" 
     }),
+
+     getFundReleaseHistory: (params) => 
+    api.get('/reports/fund-release-history', { params }),
+  
+  exportFundReleaseHistory: (format, params) =>
+    api.get(`/reports/fund-release-history/export/${format}`, { 
+      params, 
+      responseType: 'blob' 
+    }),
 };
 
 // ============ ADMIN DEPARTMENT API ============

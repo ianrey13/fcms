@@ -1847,6 +1847,318 @@ private function exportFuelWithoutTripCSV($reportData, $filename)
     $content = $this->buildFuelWithoutTripCSV($reportData);
     return $this->returnAsCSV($content, $filename . '.csv');
 }
+/**
+ * Get Fund Release History (from existing tables)
+ * GET /api/reports/fund-release-history
+ */
+public function getFundReleaseHistory(Request $request)
+{
+    try {
+        $departmentId = $request->get('department_id');
+        $fiscalYear = $request->get('fiscal_year', date('Y'));
+        $weekNumber = $request->get('week_number');
+        $startDate = $request->get('start_date');
+        $endDate = $request->get('end_date');
 
+        $query = GasSlip::with([
+            'tripTicket',
+            'tripTicket.vehicle',
+            'tripTicket.driver.user',
+            'tripTicket.department',
+            'period',
+            'createdBy',
+        ]);
+
+        // ✅ Join with trip_ticket for department filtering
+        $query->join('trip_ticket', 'gas_slip.trip_ticket_id', '=', 'trip_ticket.trip_ticket_id');
+
+        // ✅ Department filter (requesting department)
+        if ($departmentId) {
+            $query->where('trip_ticket.department_id', $departmentId);
+        }
+
+        // ✅ Fiscal year filter
+        if ($fiscalYear) {
+            $query->whereYear('gas_slip.created_at', $fiscalYear);
+        }
+
+        // ✅ Week number filter
+        if ($weekNumber) {
+            $query->whereRaw('WEEK(gas_slip.created_at, 1) = ?', [$weekNumber]);
+        }
+
+        // ✅ Date range filter
+        if ($startDate && $endDate) {
+            $query->whereBetween('gas_slip.created_at', [
+                Carbon::parse($startDate)->startOfDay(),
+                Carbon::parse($endDate)->endOfDay()
+            ]);
+        }
+
+        // ✅ Get all gas slips with amount_released > 0
+        $query->where('gas_slip.amount_released', '>', 0);
+
+        $history = $query->select('gas_slip.*')
+            ->orderBy('gas_slip.created_at', 'desc')
+            ->get();
+
+        // ✅ Format the data
+        $formattedHistory = $history->map(function ($gasSlip) {
+            $trip = $gasSlip->tripTicket;
+            $period = $gasSlip->period;
+            
+            // ✅ Get week number from period or created_at
+            $weekNumber = $period ? date('W', strtotime($period->week_start)) : date('W', strtotime($gasSlip->created_at));
+            $weekStart = $period ? $period->week_start : Carbon::parse($gasSlip->created_at)->startOfWeek()->toDateString();
+            $weekEnd = $period ? $period->week_end : Carbon::parse($gasSlip->created_at)->endOfWeek()->toDateString();
+            
+            // ✅ Get charged department (from gas_slip or trip)
+            $chargedDepartmentId = $gasSlip->original_department_id ?? $trip->department_id;
+            
+            return [
+                'history_id' => $gasSlip->gas_slip_id,
+                'gas_slip_id' => $gasSlip->gas_slip_id,
+                'trip_ticket_id' => $trip->trip_ticket_id,
+                'trip_ticket_number' => $trip->trip_ticket_number,
+                'trip_date' => $trip->trip_date,
+                'destination' => $trip->destination,
+                'amount_released' => (float) $gasSlip->amount_released,
+                'week_number' => $weekNumber,
+                'week_start' => $weekStart,
+                'week_end' => $weekEnd,
+                'fiscal_year' => date('Y', strtotime($gasSlip->created_at)),
+                'released_at' => $gasSlip->created_at,
+                'released_by' => $gasSlip->createdBy ? [
+                    'user_id' => $gasSlip->createdBy->user_id,
+                    'full_name' => $gasSlip->createdBy->full_name,
+                ] : null,
+                'department' => $trip->department ? [
+                    'department_id' => $trip->department->department_id,
+                    'department_name' => $trip->department->department_name,
+                    'department_code' => $trip->department->department_code,
+                ] : null,
+                'charged_to_department' => $chargedDepartmentId ? [
+                    'department_id' => $chargedDepartmentId,
+                    'department_name' => $trip->department ? $trip->department->department_name : null,
+                    'department_code' => $trip->department ? $trip->department->department_code : null,
+                ] : null,
+                'is_cross_department' => $gasSlip->is_cross_department ?? false,
+                'cross_department_reason' => $gasSlip->cross_department_reason ?? null,
+                'reconciliation_status' => $gasSlip->reconciliation_status,
+                'vehicle' => $trip->vehicle ? [
+                    'plate_number' => $trip->vehicle->plate_number,
+                    'vehicle_model' => $trip->vehicle->vehicle_model,
+                ] : null,
+                'driver' => $trip->driver && $trip->driver->user ? [
+                    'full_name' => $trip->driver->user->full_name,
+                ] : null,
+            ];
+        });
+
+        // ✅ Calculate summary
+        $summary = [
+            'total_released' => $formattedHistory->sum('amount_released'),
+            'total_count' => $formattedHistory->count(),
+            'cross_department_count' => $formattedHistory->filter(fn($h) => $h['is_cross_department'])->count(),
+            'by_week' => $formattedHistory->groupBy('week_number')->map(function($group) {
+                return [
+                    'count' => $group->count(),
+                    'total_amount' => $group->sum('amount_released'),
+                ];
+            }),
+        ];
+
+        return response()->json([
+            'success' => true,
+            'data' => $formattedHistory,
+            'summary' => $summary,
+            'filters' => [
+                'department_id' => $departmentId,
+                'fiscal_year' => $fiscalYear,
+                'week_number' => $weekNumber,
+                'start_date' => $startDate,
+                'end_date' => $endDate,
+            ]
+        ]);
+
+    } catch (\Exception $e) {
+        Log::error('Get fund release history error: ' . $e->getMessage());
+        Log::error($e->getTraceAsString());
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to fetch fund release history: ' . $e->getMessage()
+        ], 500);
+    }
+}
+
+/**
+ * Export Fund Release History
+ */
+public function exportFundReleaseHistory(Request $request, $format)
+{
+    try {
+        $response = $this->getFundReleaseHistory($request);
+        $data = $response->getData(true);
+
+        if (!$data['success']) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to get report data'
+            ], 500);
+        }
+
+        $reportData = $data['data'] ?? [];
+        $filename = 'fund_release_history_' . date('Y-m-d');
+
+        if ($format === 'excel' || $format === 'xlsx') {
+            // Create Excel export
+            return Excel::download(
+                new \App\Exports\FundReleaseHistoryExport($reportData),
+                $filename . '.xlsx'
+            );
+        } elseif ($format === 'csv') {
+            $content = $this->buildFundReleaseHistoryCSV($reportData);
+            return $this->returnAsCSV($content, $filename . '.csv');
+        } elseif ($format === 'pdf') {
+            return $this->generateFundReleaseHistoryPDF($reportData, $filename);
+        }
+
+        return response()->json([
+            'success' => false,
+            'message' => 'Unsupported format'
+        ], 400);
+
+    } catch (\Exception $e) {
+        Log::error('Export fund release history error: ' . $e->getMessage());
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to export report: ' . $e->getMessage()
+        ], 500);
+    }
+}
+
+private function buildFundReleaseHistoryCSV($reportData)
+{
+    $lines = [];
+    $lines[] = "\xEF\xBB\xBF";
+    $lines[] = 'FUND RELEASE HISTORY REPORT';
+    $lines[] = 'Generated: ' . now()->format('Y-m-d H:i:s');
+    $lines[] = '';
+    $lines[] = 'Date,Week,Trip #,Department,Charged To,Amount,Status,Released By';
+    
+    foreach ($reportData as $item) {
+        $lines[] = implode(',', [
+            '"' . ($item['released_at'] ? date('Y-m-d H:i', strtotime($item['released_at'])) : 'N/A') . '"',
+            $item['week_number'] ?? 'N/A',
+            '"' . ($item['trip_ticket_number'] ?? 'N/A') . '"',
+            '"' . ($item['department']['department_name'] ?? 'N/A') . '"',
+            '"' . ($item['charged_to_department']['department_name'] ?? 'N/A') . '"',
+            $item['amount_released'] ?? 0,
+            '"' . ($item['reconciliation_status'] ?? 'N/A') . '"',
+            '"' . ($item['released_by']['full_name'] ?? 'N/A') . '"',
+        ]);
+    }
+    
+    return implode("\n", $lines);
+}
+
+private function generateFundReleaseHistoryPDF($reportData, $filename)
+{
+    try {
+        $html = $this->buildFundReleaseHistoryPDFHTML($reportData);
+        
+        if (class_exists('Barryvdh\DomPDF\Facade\Pdf')) {
+            $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML($html);
+            $pdf->setPaper('A4', 'landscape');
+            return $pdf->download($filename . '.pdf');
+        }
+        
+        return response($html, 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'attachment; filename="' . $filename . '.pdf"',
+        ]);
+
+    } catch (\Exception $e) {
+        Log::error('PDF generation error: ' . $e->getMessage());
+        $content = $this->buildFundReleaseHistoryCSV($reportData);
+        return $this->returnAsCSV($content, $filename . '.csv');
+    }
+}
+
+private function buildFundReleaseHistoryPDFHTML($reportData)
+{
+    $html = '<!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <title>Fund Release History Report</title>
+        <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { font-family: Arial, sans-serif; font-size: 9px; padding: 20px; }
+            .header { text-align: center; border-bottom: 2px solid #2563eb; padding-bottom: 15px; margin-bottom: 20px; }
+            .header h1 { font-size: 18px; color: #1e293b; }
+            .header p { color: #64748b; font-size: 10px; margin-top: 5px; }
+            table { width: 100%; border-collapse: collapse; font-size: 8px; }
+            th { background: #2563eb; color: white; padding: 6px 4px; text-align: center; border: 1px solid #1e40af; }
+            td { padding: 5px 4px; border: 1px solid #d1d5db; text-align: center; }
+            tr:nth-child(even) { background: #f8fafc; }
+            .footer { text-align: center; border-top: 1px solid #e2e8f0; padding-top: 12px; margin-top: 20px; color: #94a3b8; font-size: 7px; }
+            .badge-cross { background: #fef3c7; color: #92400e; padding: 2px 6px; border-radius: 10px; font-size: 7px; }
+            .text-right { text-align: right; }
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            <h1>FUND RELEASE HISTORY REPORT</h1>
+            <p>LGU Laguindingan - FCMS</p>
+            <p>Generated: ' . now()->format('F d, Y h:i A') . '</p>
+        </div>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Week</th>
+                    <th>Trip #</th>
+                    <th>Department</th>
+                    <th>Charged To</th>
+                    <th>Amount</th>
+                    <th>Status</th>
+                    <th>Released By</th>
+                </tr>
+            </thead>
+            <tbody>';
+
+    if (count($reportData) > 0) {
+        foreach ($reportData as $item) {
+            $isCross = $item['is_cross_department'] ?? false;
+            $html .= '<tr>
+                <td>' . ($item['released_at'] ? date('Y-m-d H:i', strtotime($item['released_at'])) : 'N/A') . '</td>
+                <td>Week ' . ($item['week_number'] ?? 'N/A') . '</td>
+                <td><strong>' . ($item['trip_ticket_number'] ?? 'N/A') . '</strong></td>
+                <td>' . ($item['department']['department_name'] ?? 'N/A') . '</td>
+                <td>' . ($item['charged_to_department']['department_name'] ?? 'N/A') . 
+                    ($isCross ? ' <span class="badge-cross">Cross</span>' : '') . '</td>
+                <td class="text-right" style="font-weight:bold;color:#059669;">₱' . number_format($item['amount_released'] ?? 0, 2) . '</td>
+                <td>' . ($item['reconciliation_status'] ?? 'N/A') . '</td>
+                <td>' . ($item['released_by']['full_name'] ?? 'N/A') . '</td>
+            </tr>';
+        }
+    } else {
+        $html .= '<tr><td colspan="8" style="text-align:center;color:#94a3b8;">No fund release records found</td></tr>';
+    }
+
+    $html .= '</tbody>
+        </table>
+
+        <div class="footer">
+            <p>This report is automatically generated by the FCMS System</p>
+            <p>© ' . date('Y') . ' Laguindingan Municipality - Fuel Consumption Monitoring System</p>
+        </div>
+    </body>
+    </html>';
+
+    return $html;
+}
 
 }

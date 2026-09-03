@@ -89,6 +89,32 @@ const StatsCard = ({ title, value, icon: Icon, color, subtitle, trend }) => (
 );
 
 // ============================================
+// TOOLTIP COMPONENT
+// ============================================
+
+const DepartmentTooltip = ({ code, name }) => {
+    const [show, setShow] = useState(false);
+
+    return (
+        <div className="relative inline-block">
+            <span
+                className="font-mono text-sm font-medium text-slate-800 dark:text-slate-200 cursor-help hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                onMouseEnter={() => setShow(true)}
+                onMouseLeave={() => setShow(false)}
+            >
+                {code}
+            </span>
+            {show && (
+                <div className="absolute z-[9999] left-1/2 -translate-x-1/2 bottom-full mb-2 px-3 py-1.5 bg-slate-800 dark:bg-slate-700 text-white text-xs rounded-lg shadow-xl whitespace-nowrap pointer-events-none">
+                    {name}
+                    <div className="absolute left-1/2 -translate-x-1/2 top-full border-4 border-transparent border-t-slate-800 dark:border-t-slate-700"></div>
+                </div>
+            )}
+        </div>
+    );
+};
+
+// ============================================
 // MAIN COMPONENT
 // ============================================
 
@@ -618,16 +644,17 @@ const BudgetAllocation = () => {
                     />
                 </div>
 
-                {/* Budget Table */}
-                <Card className="dark:bg-slate-800/80 dark:border-slate-700 shadow-xl shadow-black/5">
-                    <CardHeader className="border-b border-slate-200/60 dark:border-slate-700/60">
+                {/* Budget Table Container */}
+                <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xl shadow-black/5">
+                    {/* Fixed Header - Sticky on its own */}
+                    <div className="border-b border-slate-200/60 dark:border-slate-700/60 px-6 py-4 flex-shrink-0">
                         <div className="flex items-center justify-between">
                             <div>
-                                <CardTitle className="flex items-center gap-2 text-slate-800 dark:text-white">
+                                <h3 className="flex items-center gap-2 text-slate-800 dark:text-white font-semibold">
                                     <DollarSign className="h-5 w-5 text-green-500" />
                                     Budget Details for {selectedYear}
-                                </CardTitle>
-                                <CardDescription className="dark:text-slate-400">
+                                </h3>
+                                <p className="text-sm text-slate-500 dark:text-slate-400">
                                     {budgets.length} departments
                                     {fiscalYear?.is_active === false && (
                                         <Badge className="ml-2 bg-yellow-500 text-white">
@@ -635,7 +662,7 @@ const BudgetAllocation = () => {
                                             Inactive
                                         </Badge>
                                     )}
-                                </CardDescription>
+                                </p>
                             </div>
                             {budgets.length > 0 && (
                                 <Badge className="bg-blue-500/20 text-blue-600 dark:text-blue-400 border-blue-500/30">
@@ -644,248 +671,482 @@ const BudgetAllocation = () => {
                                 </Badge>
                             )}
                         </div>
-                    </CardHeader>
+                    </div>
 
-<CardContent className="pt-6 p-0">
-    {budgets.length === 0 ? (
-        <div className="text-center py-16">
-            <div className="w-20 h-20 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto mb-4">
-                <AlertCircle className="h-10 w-10 text-slate-400 dark:text-slate-500" />
-            </div>
-            <p className="text-slate-600 dark:text-slate-400 font-medium text-lg">No departments found</p>
-            <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">
-                Please ask GSO to add departments or select a different year
-            </p>
-        </div>
-    ) : (
-        <div className="overflow-x-auto max-h-[500px] overflow-y-auto relative">
-            <Table>
-                <TableHeader className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-900/50">
-                    <TableRow className="bg-slate-50 dark:bg-slate-900/50">
-                        <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
-                            Department
-                        </TableHead>
-                        <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
-                            Code
-                        </TableHead>
-                        <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
-                            Annual Budget
-                        </TableHead>
-                        <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
-                            Weekly Ceiling
-                        </TableHead>
-                        <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
-                            Used
-                        </TableHead>
-                        <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
-                            Remaining
-                        </TableHead>
-                        <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
-                            Weekly Used
-                        </TableHead>
-                        <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
-                            Weekly Remaining
-                        </TableHead>
-                        <TableHead className="text-center font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
-                            Status
-                        </TableHead>
-                        <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
-                            Actions
-                        </TableHead>
-                    </TableRow>
-                </TableHeader>
-                <TableBody>
-                    {budgets.map((budget) => {
-                        const isEditing = isBulkMode && bulkData[budget.department_id];
-                        const isNew = !budget.has_budget;
-                        const weeklyUsedPercent = budget.weekly_ceiling > 0
-                            ? Math.round(((budget.weekly_used || 0) / budget.weekly_ceiling) * 100)
-                            : 0;
-
-                        return (
-                            <TableRow
-                                key={budget.department_id}
-                                className={cn(
-                                    "hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors",
-                                    isNew ? "bg-yellow-50/50 dark:bg-yellow-950/20" : ""
-                                )}
-                            >
-                                <TableCell className="font-medium text-slate-900 dark:text-white">
-                                    {budget.department_name}
-                                    {isNew && (
-                                        <Badge variant="outline" className="ml-2 text-yellow-600 border-yellow-300 text-xs">
-                                            New
-                                        </Badge>
-                                    )}
-                                </TableCell>
-                                <TableCell>
-                                    <Badge variant="outline">{budget.department_code}</Badge>
-                                </TableCell>
-                                <TableCell className="text-right">
-                                    {isBulkMode ? (
-                                        <Input
-                                            type="number"
-                                            step="0.01"
-                                            min="0"
-                                            value={isEditing ? bulkData[budget.department_id]?.annual_amount : ""}
-                                            onChange={(e) =>
-                                                handleBulkChange(budget.department_id, "annual_amount", e.target.value)
-                                            }
-                                            className="w-32 ml-auto text-right dark:bg-slate-900 dark:border-slate-700 dark:text-white"
-                                            placeholder="0.00"
-                                        />
-                                    ) : (
-                                        <span className="font-medium text-blue-600 dark:text-blue-400">
-                                            {formatCurrency(budget.annual_amount)}
+                    {/* TABLE HEADER - Sticky outside scroll using position: sticky */}
+                    <div 
+                        className="sticky top-0 z-40 bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700"
+                        style={{ 
+                            position: 'sticky',
+                            top: 0,
+                            zIndex: 40
+                        }}
+                    >
+                        <Table>
+                            <TableHeader className="bg-slate-50 dark:bg-slate-900/50">
+                                <TableRow className="bg-slate-50 dark:bg-slate-900/50">
+                                    {/* Department Code */}
+                                    <TableHead
+                                        className="
+                                            sticky left-0 z-50
+                                            bg-slate-50 dark:bg-slate-900/50
+                                            font-semibold
+                                            text-slate-600 dark:text-slate-400
+                                            text-xs uppercase tracking-wider
+                                            min-w-[100px]
+                                            border-r border-slate-200 dark:border-slate-700
+                                        "
+                                    >
+                                        <span className="flex items-center gap-1">
+                                            <Building2 className="h-3 w-3" />
+                                            Code
                                         </span>
-                                    )}
-                                </TableCell>
-                                <TableCell className="text-right">
-                                    {isBulkMode ? (
-                                        <Input
-                                            type="number"
-                                            step="0.01"
-                                            min="0"
-                                            value={isEditing ? bulkData[budget.department_id]?.weekly_ceiling : ""}
-                                            onChange={(e) =>
-                                                handleBulkChange(budget.department_id, "weekly_ceiling", e.target.value)
-                                            }
-                                            className="w-32 ml-auto text-right dark:bg-slate-900 dark:border-slate-700 dark:text-white"
-                                            placeholder="Auto"
-                                        />
-                                    ) : (
-                                        <div>
-                                            <span className={cn(
-                                                "font-medium",
-                                                (budget.weekly_used || 0) > 0
-                                                    ? "text-orange-600 dark:text-orange-400"
-                                                    : "text-slate-700 dark:text-slate-300"
-                                            )}>
-                                                {formatCurrency(budget.weekly_ceiling || 0)}
-                                            </span>
-                                            {budget.suggested_ceiling > 0 && (
-                                                <div className="text-xs text-slate-400 dark:text-slate-500">
-                                                    Suggested: {formatCurrency(budget.suggested_ceiling)}
-                                                </div>
-                                            )}
-                                        </div>
-                                    )}
-                                </TableCell>
-                                <TableCell className="text-right">
-                                    <span className="font-medium text-yellow-600 dark:text-yellow-400">
-                                        {formatCurrency(budget.used_amount || 0)}
-                                    </span>
-                                    {(budget.total_used_this_year || 0) > 0 && (
-                                        <div className="text-xs text-slate-400 dark:text-slate-500">
-                                            Total: {formatCurrency(budget.total_used_this_year)}
-                                        </div>
-                                    )}
-                                </TableCell>
-                                <TableCell className="text-right">
-                                    <span className="font-medium text-emerald-600 dark:text-emerald-400">
-                                        {formatCurrency(budget.remaining_amount || 0)}
-                                    </span>
-                                    {budget.remaining_after_weekly !== undefined && (
-                                        <div className="text-xs text-slate-400 dark:text-slate-500">
-                                            After weekly: {formatCurrency(budget.remaining_after_weekly)}
-                                        </div>
-                                    )}
-                                </TableCell>
-                                <TableCell className="text-right">
-                                    <span className={cn(
-                                        "font-medium",
-                                        (budget.weekly_used || 0) > 0
-                                            ? "text-red-600 dark:text-red-400"
-                                            : "text-slate-400"
-                                    )}>
-                                        {formatCurrency(budget.weekly_used || 0)}
-                                    </span>
-                                    {(budget.weekly_used || 0) > 0 && budget.weekly_ceiling > 0 && (
-                                        <div className="text-xs text-slate-400 dark:text-slate-500">
-                                            {weeklyUsedPercent}% used
-                                        </div>
-                                    )}
-                                </TableCell>
-                                <TableCell className="text-right">
-                                    <span className={cn(
-                                        "font-medium",
-                                        (budget.weekly_remaining || 0) <= 0
-                                            ? "text-red-600 dark:text-red-400"
-                                            : (budget.weekly_remaining || 0) < (budget.weekly_ceiling || 0) * 0.2
-                                                ? "text-yellow-600 dark:text-yellow-400"
-                                                : "text-emerald-600 dark:text-emerald-400"
-                                    )}>
-                                        {formatCurrency(budget.weekly_remaining || 0)}
-                                    </span>
-                                    {(budget.weekly_remaining || 0) > 0 && budget.weekly_ceiling > 0 && (
-                                        <div className="text-xs text-slate-400 dark:text-slate-500">
-                                            {formatCurrency(budget.weekly_ceiling - budget.weekly_remaining)} used
-                                        </div>
-                                    )}
-                                </TableCell>
-                                <TableCell className="text-center">
-                                    {getStatusBadge(budget.status)}
-                                </TableCell>
-                                <TableCell className="text-right">
-                                    <div className="flex items-center justify-end gap-1">
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={() => handleView(budget)}
-                                            className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:text-blue-300 dark:hover:bg-blue-950/30 h-9 w-9 p-0 rounded-lg transition-all duration-200 group-hover:scale-110"
-                                            title="View Details"
-                                        >
-                                            <Eye className="h-4 w-4" />
-                                        </Button>
-                                        {!isBulkMode && (
-                                            <>
-                                                <Button
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    onClick={() => openWeeklyDialog(budget)}
-                                                    className="text-purple-600 hover:text-purple-700 hover:bg-purple-50 dark:text-purple-400 dark:hover:text-purple-300 dark:hover:bg-purple-950/30 h-9 w-9 p-0 rounded-lg transition-all duration-200 group-hover:scale-110"
-                                                    title="Set Weekly Ceiling"
+                                    </TableHead>
+
+                                    {/* Annual Budget */}
+                                    <TableHead
+                                        className="
+                                            text-right
+                                            font-semibold
+                                            text-slate-600 dark:text-slate-400
+                                            text-xs uppercase tracking-wider
+                                            min-w-[120px]
+                                        "
+                                    >
+                                        Annual Budget
+                                    </TableHead>
+
+                                    {/* Weekly Ceiling */}
+                                    <TableHead
+                                        className="
+                                            text-right
+                                            font-semibold
+                                            text-slate-600 dark:text-slate-400
+                                            text-xs uppercase tracking-wider
+                                            min-w-[120px]
+                                        "
+                                    >
+                                        Weekly Ceiling
+                                    </TableHead>
+
+                                    {/* Used */}
+                                    <TableHead
+                                        className="
+                                            text-right
+                                            font-semibold
+                                            text-slate-600 dark:text-slate-400
+                                            text-xs uppercase tracking-wider
+                                            min-w-[100px]
+                                        "
+                                    >
+                                        Used
+                                    </TableHead>
+
+                                    {/* Remaining */}
+                                    <TableHead
+                                        className="
+                                            text-right
+                                            font-semibold
+                                            text-slate-600 dark:text-slate-400
+                                            text-xs uppercase tracking-wider
+                                            min-w-[110px]
+                                        "
+                                    >
+                                        Remaining
+                                    </TableHead>
+
+                                    {/* Weekly Used */}
+                                    <TableHead
+                                        className="
+                                            text-right
+                                            font-semibold
+                                            text-slate-600 dark:text-slate-400
+                                            text-xs uppercase tracking-wider
+                                            min-w-[100px]
+                                        "
+                                    >
+                                        Weekly Used
+                                    </TableHead>
+
+                                    {/* Weekly Remaining */}
+                                    <TableHead
+                                        className="
+                                            text-right
+                                            font-semibold
+                                            text-slate-600 dark:text-slate-400
+                                            text-xs uppercase tracking-wider
+                                            min-w-[120px]
+                                        "
+                                    >
+                                        Weekly Remaining
+                                    </TableHead>
+
+                                    {/* Status */}
+                                    <TableHead
+                                        className="
+                                            text-center
+                                            font-semibold
+                                            text-slate-600 dark:text-slate-400
+                                            text-xs uppercase tracking-wider
+                                            min-w-[90px]
+                                        "
+                                    >
+                                        Status
+                                    </TableHead>
+
+                                    {/* Actions */}
+                                    <TableHead
+                                        className="
+                                            sticky right-0 z-50
+                                            bg-slate-50 dark:bg-slate-900/50
+                                            text-right
+                                            font-semibold
+                                            text-slate-600 dark:text-slate-400
+                                            text-xs uppercase tracking-wider
+                                            min-w-[200px]
+                                            border-l border-slate-200 dark:border-slate-700
+                                        "
+                                    >
+                                        Actions
+                                    </TableHead>
+                                </TableRow>
+                            </TableHeader>
+                        </Table>
+                    </div>
+
+                    {/* Scrollable Table Body Container */}
+                    {budgets.length === 0 ? (
+                        <div className="text-center py-16">
+                            <div className="w-20 h-20 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto mb-4">
+                                <AlertCircle className="h-10 w-10 text-slate-400 dark:text-slate-500" />
+                            </div>
+                            <p className="text-slate-600 dark:text-slate-400 font-medium text-lg">No departments found</p>
+                            <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">
+                                Please ask GSO to add departments or select a different year
+                            </p>
+                        </div>
+                    ) : (
+                        <div
+                            className="overflow-auto"
+                            style={{
+                                maxHeight: "500px",
+                            }}
+                        >
+                            <Table className="w-full">
+                                {/* TABLE BODY */}
+                                <TableBody>
+                                    {budgets.map((budget) => {
+                                        const isEditing =
+                                            isBulkMode && bulkData[budget.department_id];
+
+                                        const isNew = !budget.has_budget;
+
+                                        const weeklyUsedPercent =
+                                            budget.weekly_ceiling > 0
+                                                ? Math.round(
+                                                    ((budget.weekly_used || 0) /
+                                                        budget.weekly_ceiling) *
+                                                    100
+                                                )
+                                                : 0;
+
+                                        return (
+                                            <TableRow
+                                                key={budget.department_id}
+                                                className={cn(
+                                                    "hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors",
+                                                    isNew
+                                                        ? "bg-yellow-50/50 dark:bg-yellow-950/20"
+                                                        : ""
+                                                )}
+                                            >
+                                                {/* Department Code */}
+                                                <TableCell
+                                                    className="
+                                                        sticky left-0 z-30
+                                                        bg-white dark:bg-slate-800
+                                                        border-r border-slate-200 dark:border-slate-700
+                                                    "
                                                 >
-                                                    <Clock className="h-4 w-4" />
-                                                </Button>
-                                                <Button
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    onClick={() => {
-                                                        setAddBudgetData({
-                                                            department_id: budget.department_id.toString(),
-                                                            additional_amount: "",
-                                                            reason: "",
-                                                        });
-                                                        setShowAddBudgetDialog(true);
-                                                    }}
-                                                    className="text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:text-emerald-300 dark:hover:bg-emerald-950/30 h-9 w-9 p-0 rounded-lg transition-all duration-200 group-hover:scale-110"
-                                                    title="Add Budget"
+                                                    <div className="flex items-center gap-2 min-w-[80px]">
+                                                        <DepartmentTooltip
+                                                            code={budget.department_code || "N/A"}
+                                                            name={budget.department_name}
+                                                        />
+
+                                                        {isNew && (
+                                                            <Badge
+                                                                variant="outline"
+                                                                className="text-yellow-600 border-yellow-300 text-xs whitespace-nowrap"
+                                                            >
+                                                                New
+                                                            </Badge>
+                                                        )}
+                                                    </div>
+                                                </TableCell>
+
+                                                {/* Annual Budget */}
+                                                <TableCell className="text-right">
+                                                    {isBulkMode ? (
+                                                        <Input
+                                                            type="number"
+                                                            step="0.01"
+                                                            min="0"
+                                                            value={
+                                                                isEditing
+                                                                    ? bulkData[
+                                                                        budget.department_id
+                                                                    ]?.annual_amount
+                                                                    : ""
+                                                            }
+                                                            onChange={(e) =>
+                                                                handleBulkChange(
+                                                                    budget.department_id,
+                                                                    "annual_amount",
+                                                                    e.target.value
+                                                                )
+                                                            }
+                                                            className="w-32 ml-auto text-right dark:bg-slate-900 dark:border-slate-700 dark:text-white"
+                                                            placeholder="0.00"
+                                                        />
+                                                    ) : (
+                                                        <span className="font-medium text-blue-600 dark:text-blue-400">
+                                                            {formatCurrency(
+                                                                budget.annual_amount
+                                                            )}
+                                                        </span>
+                                                    )}
+                                                </TableCell>
+
+                                                {/* Weekly Ceiling */}
+                                                <TableCell className="text-right">
+                                                    {isBulkMode ? (
+                                                        <Input
+                                                            type="number"
+                                                            step="0.01"
+                                                            min="0"
+                                                            value={
+                                                                isEditing
+                                                                    ? bulkData[
+                                                                        budget.department_id
+                                                                    ]?.weekly_ceiling
+                                                                    : ""
+                                                            }
+                                                            onChange={(e) =>
+                                                                handleBulkChange(
+                                                                    budget.department_id,
+                                                                    "weekly_ceiling",
+                                                                    e.target.value
+                                                                )
+                                                            }
+                                                            className="w-32 ml-auto text-right dark:bg-slate-900 dark:border-slate-700 dark:text-white"
+                                                            placeholder="Auto"
+                                                        />
+                                                    ) : (
+                                                        <div>
+                                                            <span
+                                                                className={cn(
+                                                                    "font-medium",
+                                                                    (budget.weekly_used || 0) > 0
+                                                                        ? "text-orange-600 dark:text-orange-400"
+                                                                        : "text-slate-700 dark:text-slate-300"
+                                                                )}
+                                                            >
+                                                                {formatCurrency(
+                                                                    budget.weekly_ceiling || 0
+                                                                )}
+                                                            </span>
+
+                                                            {budget.suggested_ceiling > 0 && (
+                                                                <div className="text-xs text-slate-400 dark:text-slate-500">
+                                                                    Suggested:{" "}
+                                                                    {formatCurrency(
+                                                                        budget.suggested_ceiling
+                                                                    )}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </TableCell>
+
+                                                {/* Used */}
+                                                <TableCell className="text-right">
+                                                    <span className="font-medium text-yellow-600 dark:text-yellow-400">
+                                                        {formatCurrency(
+                                                            budget.used_amount || 0
+                                                        )}
+                                                    </span>
+
+                                                    {(budget.total_used_this_year || 0) > 0 && (
+                                                        <div className="text-xs text-slate-400 dark:text-slate-500">
+                                                            Total:{" "}
+                                                            {formatCurrency(
+                                                                budget.total_used_this_year
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </TableCell>
+
+                                                {/* Remaining */}
+                                                <TableCell className="text-right">
+                                                    <span className="font-medium text-emerald-600 dark:text-emerald-400">
+                                                        {formatCurrency(
+                                                            budget.remaining_amount || 0
+                                                        )}
+                                                    </span>
+
+                                                    {budget.remaining_after_weekly !==
+                                                        undefined && (
+                                                        <div className="text-xs text-slate-400 dark:text-slate-500">
+                                                            After weekly:{" "}
+                                                            {formatCurrency(
+                                                                budget.remaining_after_weekly
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </TableCell>
+
+                                                {/* Weekly Used */}
+                                                <TableCell className="text-right">
+                                                    <span
+                                                        className={cn(
+                                                            "font-medium",
+                                                            (budget.weekly_used || 0) > 0
+                                                                ? "text-red-600 dark:text-red-400"
+                                                                : "text-slate-400"
+                                                        )}
+                                                    >
+                                                        {formatCurrency(
+                                                            budget.weekly_used || 0
+                                                        )}
+                                                    </span>
+
+                                                    {(budget.weekly_used || 0) > 0 &&
+                                                        budget.weekly_ceiling > 0 && (
+                                                            <div className="text-xs text-slate-400 dark:text-slate-500">
+                                                                {weeklyUsedPercent}% used
+                                                            </div>
+                                                        )}
+                                                </TableCell>
+
+                                                {/* Weekly Remaining */}
+                                                <TableCell className="text-right">
+                                                    <span
+                                                        className={cn(
+                                                            "font-medium",
+                                                            (budget.weekly_remaining || 0) <= 0
+                                                                ? "text-red-600 dark:text-red-400"
+                                                                : (budget.weekly_remaining ||
+                                                                    0) <
+                                                                    (budget.weekly_ceiling || 0) *
+                                                                        0.2
+                                                                    ? "text-yellow-600 dark:text-yellow-400"
+                                                                    : "text-emerald-600 dark:text-emerald-400"
+                                                        )}
+                                                    >
+                                                        {formatCurrency(
+                                                            budget.weekly_remaining || 0
+                                                        )}
+                                                    </span>
+
+                                                    {(budget.weekly_remaining || 0) > 0 &&
+                                                        budget.weekly_ceiling > 0 && (
+                                                            <div className="text-xs text-slate-400 dark:text-slate-500">
+                                                                {formatCurrency(
+                                                                    budget.weekly_ceiling -
+                                                                        budget.weekly_remaining
+                                                                )}{" "}
+                                                                used
+                                                            </div>
+                                                        )}
+                                                </TableCell>
+
+                                                {/* Status */}
+                                                <TableCell className="text-center">
+                                                    {getStatusBadge(budget.status)}
+                                                </TableCell>
+
+                                                {/* Actions */}
+                                                <TableCell
+                                                    className="
+                                                        sticky right-0 z-30
+                                                        bg-white dark:bg-slate-800
+                                                        text-right
+                                                        border-l border-slate-200 dark:border-slate-700
+                                                    "
                                                 >
-                                                    <Plus className="h-4 w-4" />
-                                                </Button>
-                                                <Button
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    onClick={() => handleEdit(budget)}
-                                                    className="text-green-600 hover:text-green-700 hover:bg-green-50 dark:text-green-400 dark:hover:text-green-300 dark:hover:bg-green-950/30 h-9 w-9 p-0 rounded-lg transition-all duration-200 group-hover:scale-110"
-                                                    title="Edit Annual Budget"
-                                                >
-                                                    <Edit className="h-4 w-4" />
-                                                </Button>
-                                            </>
-                                        )}
-                                    </div>
-                                </TableCell>
-                            </TableRow>
-                        );
-                    })}
-                </TableBody>
-            </Table>
-        </div>
-    )}
-</CardContent>
-                </Card>
+                                                    <div className="flex items-center justify-end gap-1 min-w-[180px]">
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            onClick={() =>
+                                                                handleView(budget)
+                                                            }
+                                                            className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:text-blue-300 dark:hover:bg-blue-950/30 h-9 w-9 p-0 rounded-lg transition-all duration-200"
+                                                            title="View Details"
+                                                        >
+                                                            <Eye className="h-4 w-4" />
+                                                        </Button>
+
+                                                        {!isBulkMode && (
+                                                            <>
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    size="sm"
+                                                                    onClick={() =>
+                                                                        openWeeklyDialog(budget)
+                                                                    }
+                                                                    className="text-purple-600 hover:text-purple-700 hover:bg-purple-50 dark:text-purple-400 dark:hover:text-purple-300 dark:hover:bg-purple-950/30 h-9 w-9 p-0 rounded-lg transition-all duration-200"
+                                                                    title="Set Weekly Ceiling"
+                                                                >
+                                                                    <Clock className="h-4 w-4" />
+                                                                </Button>
+
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    size="sm"
+                                                                    onClick={() => {
+                                                                        setAddBudgetData({
+                                                                            department_id:
+                                                                                budget.department_id.toString(),
+                                                                            additional_amount:
+                                                                                "",
+                                                                            reason: "",
+                                                                        });
+
+                                                                        setShowAddBudgetDialog(
+                                                                            true
+                                                                        );
+                                                                    }}
+                                                                    className="text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:text-emerald-300 dark:hover:bg-emerald-950/30 h-9 w-9 p-0 rounded-lg transition-all duration-200"
+                                                                    title="Add Budget"
+                                                                >
+                                                                    <Plus className="h-4 w-4" />
+                                                                </Button>
+
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    size="sm"
+                                                                    onClick={() =>
+                                                                        handleEdit(budget)
+                                                                    }
+                                                                    className="text-green-600 hover:text-green-700 hover:bg-green-50 dark:text-green-400 dark:hover:text-green-300 dark:hover:bg-green-950/30 h-9 w-9 p-0 rounded-lg transition-all duration-200"
+                                                                    title="Edit Annual Budget"
+                                                                >
+                                                                    <Edit className="h-4 w-4" />
+                                                                </Button>
+                                                            </>
+                                                        )}
+                                                    </div>
+                                                </TableCell>
+                                            </TableRow>
+                                        );
+                                    })}
+                                </TableBody>
+                            </Table>
+                        </div>
+                    )}
+                </div>
 
                 {/* Footer */}
                 <div className="text-center text-xs text-slate-400 dark:text-slate-500 pt-2 border-t border-slate-200 dark:border-slate-700">
@@ -1230,8 +1491,8 @@ const BudgetAllocation = () => {
                                 <option value="">Select Department</option>
                                 {budgets.map((budget) => (
                                     <option key={budget.department_id} value={budget.department_id}>
-                                        {budget.department_name} ({budget.department_code})
-                                        {budget.has_budget && ` - Current: ${formatCurrency(budget.annual_amount)}`}
+                                        {budget.department_code} - {budget.department_name}
+                                        {budget.has_budget && ` (Current: ${formatCurrency(budget.annual_amount)})`}
                                     </option>
                                 ))}
                             </select>

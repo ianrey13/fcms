@@ -23,7 +23,7 @@ const CompletedTrips = lazy(() => import("./pages/gso/CompletedTrips"));
 const LiveTracking = lazy(() => import("./pages/gso/LiveTracking"));
 const SystemSettings = lazy(() => import("./pages/gso/SystemSettings"));
 const AnnualBudget = lazy(()=>import('./pages/gso/FiscalYearManagement'));
-const TripHistory = lazy(() => import("./pages/gso/TripHistory")); // ✅ NEW
+const TripHistory = lazy(() => import("./pages/gso/TripHistory"));
 
 // ============ GSO REPORT PAGES (NEW) ============
 const WeeklyMonitoring = lazy(
@@ -75,9 +75,15 @@ const MayorReceiptVerification = lazy(
 );
 const MayorTripTicket = lazy(() => import("./pages/mayor/MayorTripTicket"));
 
-import BudgetAllocation from "./pages/mayor/budget/BudgetAllocation";
-import BudgetHistory from "./pages/mayor/budget/BudgetHistory";
-import WeeklyTracking from "./pages/mayor/budget/WeeklyTracking";
+// ✅ NEW: Fund Release History (Mayor's Office only)
+const FundReleaseHistory = lazy(
+    () => import("./pages/mayor/FundReleaseHistory"),
+);
+
+// ============ MAYOR BUDGET PAGES ============
+const BudgetAllocation = lazy(() => import("./pages/mayor/budget/BudgetAllocation"));
+const BudgetHistory = lazy(() => import("./pages/mayor/budget/BudgetHistory"));
+const WeeklyTracking = lazy(() => import("./pages/mayor/budget/WeeklyTracking"));
 
 // ============ MAYOR REPORT PAGES (NEW) ============
 const MayorWeeklyMonitoring = lazy(
@@ -579,6 +585,18 @@ function App() {
                         <ProtectedRoute allowedRoles={["mayors_office"]}>
                             <Layout>
                                 <MayorReceiptVerification />
+                            </Layout>
+                        </ProtectedRoute>
+                    }
+                />
+
+                {/* ✅ NEW: Fund Release History (Mayor's Office only) */}
+                <Route
+                    path="/mo/fund-release-history"
+                    element={
+                        <ProtectedRoute allowedRoles={["mayors_office"]}>
+                            <Layout>
+                                <FundReleaseHistory />
                             </Layout>
                         </ProtectedRoute>
                     }

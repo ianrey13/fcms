@@ -64,22 +64,30 @@ const StatsCard = ({ title, value, icon: Icon, color, subtitle }) => (
 );
 
 // ============================================
-// STATUS BADGE COMPONENT
+// STATUS BADGE COMPONENT - Frontend Display
 // ============================================
 
-const StatusBadge = ({ status }) => {
-  if (status === "active") {
-    return (
-      <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800 flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-medium">
-        <CheckCircle className="h-3 w-3" />
-        Active
-      </Badge>
-    );
+const StatusBadge = ({ status, maintenanceFlag }) => {
+  // Map backend to frontend display
+  let displayStatus = "Serviceable";
+  let color = "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800";
+  let icon = CheckCircle;
+
+  if (status === "inactive") {
+    displayStatus = "Unserviceable";
+    color = "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 border-red-200 dark:border-red-800";
+    icon = XCircle;
+  } else if (maintenanceFlag) {
+    displayStatus = "Under Maintenance";
+    color = "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400 border-yellow-200 dark:border-yellow-800";
+    icon = Wrench;
   }
+
+  const Icon = icon;
   return (
-    <Badge className="bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 border-red-200 dark:border-red-800 flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-medium">
-      <XCircle className="h-3 w-3" />
-      Inactive
+    <Badge className={`${color} flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-medium`}>
+      <Icon className="h-3 w-3" />
+      {displayStatus}
     </Badge>
   );
 };
@@ -133,10 +141,11 @@ const VehicleManagement = () => {
   // ============ STATS ============
   const stats = useMemo(() => {
     const total = vehicles.length;
-    const active = vehicles.filter(v => v.status === "active").length;
+    const active = vehicles.filter(v => v.status === "active" && !v.maintenance_flag).length;
+    const underMaintenance = vehicles.filter(v => v.maintenance_flag).length;
     const inactive = vehicles.filter(v => v.status === "inactive").length;
     const diesel = vehicles.filter(v => v.fuel_type === "diesel").length;
-    const gasoline = vehicles.filter(v => v.fuel_type === "gasoline").length;
+    const gasoline = vehicles.filter(v => v.fuel_type === "gasoline" || v.fuel_type === "regular" || v.fuel_type === "premium").length;
     
     return [
       {
@@ -144,28 +153,28 @@ const VehicleManagement = () => {
         value: total,
         icon: Car,
         color: "from-blue-500 to-blue-600",
-        subtitle: `${active} active • ${inactive} inactive`,
+        subtitle: `${active} serviceable • ${underMaintenance} maintenance`,
       },
       {
-        title: "Active",
+        title: "Serviceable",
         value: active,
         icon: CheckCircle,
         color: "from-emerald-500 to-emerald-600",
         subtitle: `${total > 0 ? Math.round((active / total) * 100) : 0}% of fleet`,
       },
       {
-        title: "Diesel",
-        value: diesel,
-        icon: Fuel,
-        color: "from-orange-500 to-orange-600",
-        subtitle: `${diesel + gasoline > 0 ? Math.round((diesel / (diesel + gasoline)) * 100) : 0}% of fleet`,
+        title: "Under Maintenance",
+        value: underMaintenance,
+        icon: Wrench,
+        color: "from-yellow-500 to-yellow-600",
+        subtitle: `Needs attention`,
       },
       {
-        title: "Gasoline",
-        value: gasoline,
-        icon: Fuel,
-        color: "from-cyan-500 to-cyan-600",
-        subtitle: `${diesel + gasoline > 0 ? Math.round((gasoline / (diesel + gasoline)) * 100) : 0}% of fleet`,
+        title: "Unserviceable",
+        value: inactive,
+        icon: XCircle,
+        color: "from-red-500 to-red-600",
+        subtitle: `Not operational`,
       },
     ];
   }, [vehicles]);
@@ -210,7 +219,12 @@ const VehicleManagement = () => {
     }
     
     if (statusFilter !== "all") {
-      filtered = filtered.filter((v) => v.status === statusFilter);
+      filtered = filtered.filter((v) => {
+        if (statusFilter === "serviceable") return v.status === "active" && !v.maintenance_flag;
+        if (statusFilter === "maintenance") return v.maintenance_flag;
+        if (statusFilter === "unserviceable") return v.status === "inactive";
+        return true;
+      });
     }
     
     if (fuelFilter !== "all") {
@@ -221,13 +235,36 @@ const VehicleManagement = () => {
   }, [vehicles, searchTerm, statusFilter, fuelFilter]);
 
   // ============ HANDLERS ============
-  const handleToggleStatus = (id, currentStatus) => {
-    const newStatus = currentStatus === "active" ? "inactive" : "active";
-    const action = newStatus === "active" ? "activate" : "deactivate";
-    
+  const handleToggleStatus = (id, currentStatus, maintenanceFlag) => {
+    // Cycle through statuses: Serviceable -> Under Maintenance -> Unserviceable -> Serviceable
+    let newStatus = "active";
+    let newMaintenanceFlag = false;
+    let action = "";
+
+    if (currentStatus === "active" && !maintenanceFlag) {
+      // Serviceable -> Under Maintenance
+      newStatus = "active";
+      newMaintenanceFlag = true;
+      action = "put under maintenance";
+    } else if (currentStatus === "active" && maintenanceFlag) {
+      // Under Maintenance -> Unserviceable
+      newStatus = "inactive";
+      newMaintenanceFlag = false;
+      action = "mark as unserviceable";
+    } else if (currentStatus === "inactive") {
+      // Unserviceable -> Serviceable
+      newStatus = "active";
+      newMaintenanceFlag = false;
+      action = "reactivate";
+    }
+
     if (window.confirm(`Are you sure you want to ${action} this vehicle?`)) {
       toggleStatus.mutate(
-        { vehicleId: id, status: newStatus },
+        { 
+          vehicleId: id, 
+          status: newStatus,
+          maintenance_flag: newMaintenanceFlag 
+        },
         {
           onSuccess: () => toast.success(`Vehicle ${action}d successfully!`),
           onError: () => toast.error(`Failed to ${action} vehicle`),
@@ -358,8 +395,9 @@ const VehicleManagement = () => {
                       className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
                     >
                       <option value="all">All Statuses</option>
-                      <option value="active">Active</option>
-                      <option value="inactive">Inactive</option>
+                      <option value="serviceable">Serviceable</option>
+                      <option value="maintenance">Under Maintenance</option>
+                      <option value="unserviceable">Unserviceable</option>
                     </select>
                   </div>
                   <div>
@@ -518,21 +556,10 @@ const VehicleManagement = () => {
                           </td>
                           <td className="px-4 py-3">
                             <button
-                              onClick={() => handleToggleStatus(vehicle.vehicle_id, vehicle.status)}
-                              className={cn(
-                                "px-3 py-1.5 rounded-lg text-xs font-medium inline-flex items-center gap-1.5 transition-all duration-200",
-                                "hover:scale-105 active:scale-95",
-                                vehicle.status === "active"
-                                  ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:hover:bg-emerald-900/50"
-                                  : "bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50"
-                              )}
+                              onClick={() => handleToggleStatus(vehicle.vehicle_id, vehicle.status, vehicle.maintenance_flag)}
+                              className="hover:scale-105 active:scale-95 transition-all duration-200"
                             >
-                              {vehicle.status === "active" ? (
-                                <CheckCircle className="h-3 w-3" />
-                              ) : (
-                                <XCircle className="h-3 w-3" />
-                              )}
-                              {vehicle.status === "active" ? "Active" : "Inactive"}
+                              <StatusBadge status={vehicle.status} maintenanceFlag={vehicle.maintenance_flag} />
                             </button>
                           </td>
                           <td className="px-4 py-3 text-right">
@@ -561,7 +588,12 @@ const VehicleManagement = () => {
         {/* Footer */}
         <div className="text-center text-xs text-slate-400 dark:text-slate-500 pt-2 border-t border-slate-200 dark:border-slate-700">
           <p>FCMS - Vehicle Management • Laguindingan Municipality</p>
-          <p className="mt-0.5">{vehicles.length} total vehicles • {vehicles.filter(v => v.status === "active").length} active</p>
+          <p className="mt-0.5">
+            {vehicles.length} total vehicles • 
+            {vehicles.filter(v => v.status === "active" && !v.maintenance_flag).length} serviceable • 
+            {vehicles.filter(v => v.maintenance_flag).length} maintenance • 
+            {vehicles.filter(v => v.status === "inactive").length} unserviceable
+          </p>
         </div>
       </div>
     </div>

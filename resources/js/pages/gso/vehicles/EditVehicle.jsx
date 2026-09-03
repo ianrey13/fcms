@@ -1,5 +1,5 @@
 // src/pages/gso/vehicles/EditVehicle.jsx
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -26,6 +26,7 @@ import {
   Edit,
   Users,
   MapPin,
+  Search,
 } from "lucide-react";
 import { useVehicles, useUpdateVehicle, useDepartmentsForVehicles } from "../../../hooks/useVehicleManagement";
 import { toast } from "react-hot-toast";
@@ -67,47 +68,156 @@ const FormField = ({
 );
 
 // ============================================
-// TOGGLE SWITCH COMPONENT
+// DEPARTMENT DATALIST COMPONENT
 // ============================================
 
-const ToggleSwitch = ({ checked, onChange, label, description, icon: Icon }) => (
-  <div className={cn(
-    "flex items-center justify-between p-4 rounded-xl border transition-all duration-200",
-    checked 
-      ? "bg-red-50/50 dark:bg-red-950/20 border-red-200 dark:border-red-800" 
-      : "bg-slate-50/50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700"
-  )}>
-    <div className="flex items-center gap-3">
-      {Icon && <Icon className={cn(
-        "h-5 w-5",
-        checked ? "text-red-600 dark:text-red-400" : "text-slate-400"
-      )} />}
-      <div>
-        <Label className="cursor-pointer font-medium text-slate-700 dark:text-slate-300">
-          {label}
-        </Label>
-        {description && (
-          <p className="text-xs text-slate-400 dark:text-slate-500">{description}</p>
+const DepartmentDatalist = ({ value, onChange, onBlur, error, departments }) => {
+  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedDepartment, setSelectedDepartment] = useState(null);
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    if (value) {
+      const found = departments.find(d => d.department_id === parseInt(value));
+      if (found) {
+        setSearchTerm(found.department_name);
+        setSelectedDepartment(found);
+      }
+    } else {
+      setSearchTerm("");
+      setSelectedDepartment(null);
+    }
+  }, [value, departments]);
+
+  const handleInputChange = (e) => {
+    const input = e.target.value;
+    setSearchTerm(input);
+    
+    const match = departments.find(d => 
+      d.department_name.toLowerCase() === input.toLowerCase() ||
+      d.department_code?.toLowerCase() === input.toLowerCase()
+    );
+    
+    if (match) {
+      setSelectedDepartment(match);
+      onChange(match.department_id);
+    } else if (input === "") {
+      setSelectedDepartment(null);
+      onChange("");
+    }
+  };
+
+  const handleSelect = (dept) => {
+    setSearchTerm(dept.department_name);
+    setSelectedDepartment(dept);
+    onChange(dept.department_id);
+    inputRef.current?.blur();
+  };
+
+  const handleClear = () => {
+    setSearchTerm("");
+    setSelectedDepartment(null);
+    onChange("");
+    inputRef.current?.focus();
+  };
+
+  const filteredDepartments = searchTerm.length > 0
+    ? departments.filter(d => 
+        d.department_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        d.department_code?.toLowerCase().includes(searchTerm.toLowerCase())
+      )
+    : [];
+
+  return (
+    <div className="relative w-full">
+      <div className="relative">
+        <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+          <Building2 className="h-4 w-4" />
+        </div>
+        <Input
+          ref={inputRef}
+          type="text"
+          placeholder="Type department name or code..."
+          value={searchTerm}
+          onChange={handleInputChange}
+          onBlur={() => {
+            if (searchTerm && !selectedDepartment) {
+              const match = departments.find(d => 
+                d.department_name.toLowerCase() === searchTerm.toLowerCase()
+              );
+              if (!match) {
+                onChange("");
+              }
+            }
+            if (onBlur) onBlur();
+          }}
+          className={cn(
+            "pl-10 pr-10 bg-white dark:bg-slate-900 dark:border-slate-700",
+            error && "border-red-500 ring-red-500"
+          )}
+        />
+        {searchTerm && (
+          <button
+            type="button"
+            onClick={handleClear}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+          >
+            <X className="h-4 w-4" />
+          </button>
         )}
       </div>
-    </div>
-    <button
-      type="button"
-      onClick={() => onChange(!checked)}
-      className={cn(
-        "relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200",
-        checked ? "bg-red-600" : "bg-slate-300 dark:bg-slate-600"
+
+      {searchTerm.length > 0 && filteredDepartments.length > 0 && (
+        <div className="absolute z-50 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg max-h-60 overflow-auto">
+          {filteredDepartments.map((dept) => (
+            <div
+              key={dept.department_id}
+              onClick={() => handleSelect(dept)}
+              className={cn(
+                "px-4 py-2.5 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors flex items-center justify-between",
+                selectedDepartment?.department_id === dept.department_id && "bg-blue-50 dark:bg-blue-900/30"
+              )}
+            >
+              <div>
+                <span className="font-medium text-slate-800 dark:text-white">
+                  {dept.department_name}
+                </span>
+                {dept.department_code && (
+                  <span className="ml-2 text-xs text-slate-400 dark:text-slate-500">
+                    ({dept.department_code})
+                  </span>
+                )}
+              </div>
+              {selectedDepartment?.department_id === dept.department_id && (
+                <CheckCircle className="h-4 w-4 text-blue-600" />
+              )}
+            </div>
+          ))}
+        </div>
       )}
-    >
-      <span
-        className={cn(
-          "inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-200",
-          checked ? "translate-x-6" : "translate-x-1"
-        )}
-      />
-    </button>
-  </div>
-);
+
+      {searchTerm.length > 0 && filteredDepartments.length === 0 && (
+        <div className="absolute z-50 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg p-4 text-center">
+          <p className="text-sm text-slate-500 dark:text-slate-400">No departments found</p>
+        </div>
+      )}
+
+      {selectedDepartment && (
+        <div className="mt-2 bg-blue-50/50 dark:bg-blue-950/20 rounded-lg p-2.5 border border-blue-200 dark:border-blue-800">
+          <div className="flex items-center gap-2">
+            <Building2 className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+            <span className="text-sm text-blue-700 dark:text-blue-300">
+              Selected: <strong>{selectedDepartment.department_name}</strong>
+            </span>
+            <Badge variant="outline" className="ml-auto text-xs border-blue-300 dark:border-blue-700">
+              {selectedDepartment.department_code}
+            </Badge>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 // ============================================
 // LOADING SKELETON
@@ -149,26 +259,42 @@ const EditVehicle = () => {
     plate_number: "",
     fuel_type: "diesel",
     status: "active",
-    odometer_status: "functional",
     maintenance_flag: false,
+    odometer_status: "functional",
+    display_status: "Serviceable",
   });
   const [errors, setErrors] = useState({});
   const [touched, setTouched] = useState({});
   const [originalData, setOriginalData] = useState(null);
+
+  // ============ STATUS OPTIONS ============
+  const statusOptions = [
+    { value: "Serviceable", backendStatus: "active", maintenanceFlag: false },
+    { value: "Under Maintenance", backendStatus: "active", maintenanceFlag: true },
+    { value: "Unserviceable", backendStatus: "inactive", maintenanceFlag: false },
+  ];
+
+  const getDisplayStatus = (status, maintenanceFlag) => {
+    if (status === "inactive") return "Unserviceable";
+    if (maintenanceFlag) return "Under Maintenance";
+    return "Serviceable";
+  };
 
   // ============ LOAD VEHICLE DATA ============
   useEffect(() => {
     if (vehicles.length > 0 && id) {
       const vehicle = vehicles.find((v) => v.vehicle_id === parseInt(id));
       if (vehicle) {
+        const displayStatus = getDisplayStatus(vehicle.status, vehicle.maintenance_flag);
         const data = {
           department_id: vehicle.department_id || "",
           vehicle_model: vehicle.vehicle_model || "",
           plate_number: vehicle.plate_number || "",
           fuel_type: vehicle.fuel_type || "diesel",
           status: vehicle.status || "active",
-          odometer_status: vehicle.odometer_status || "functional",
           maintenance_flag: vehicle.maintenance_flag || false,
+          odometer_status: vehicle.odometer_status || "functional",
+          display_status: displayStatus,
         };
         setFormData(data);
         setOriginalData(data);
@@ -224,6 +350,18 @@ const EditVehicle = () => {
     }
   };
 
+  const handleStatusChange = (displayStatus) => {
+    const option = statusOptions.find(s => s.value === displayStatus);
+    if (option) {
+      setFormData((prev) => ({
+        ...prev,
+        display_status: displayStatus,
+        status: option.backendStatus,
+        maintenance_flag: option.maintenanceFlag,
+      }));
+    }
+  };
+
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!validate()) {
@@ -240,8 +378,8 @@ const EditVehicle = () => {
           plate_number: formData.plate_number.trim().toUpperCase(),
           fuel_type: formData.fuel_type,
           status: formData.status,
-          odometer_status: formData.odometer_status,
           maintenance_flag: formData.maintenance_flag,
+          odometer_status: formData.odometer_status,
         },
       },
       {
@@ -257,9 +395,6 @@ const EditVehicle = () => {
     );
   };
 
-  const selectedDepartment = departments.find(
-    (d) => d.department_id === parseInt(formData.department_id)
-  );
   const hasChanges = JSON.stringify(formData) !== JSON.stringify(originalData);
 
   // ============================================
@@ -269,6 +404,8 @@ const EditVehicle = () => {
   if (isLoading) {
     return <LoadingSkeleton />;
   }
+
+  const currentDisplayStatus = formData.display_status || "Serviceable";
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
@@ -334,38 +471,14 @@ const EditVehicle = () => {
                 required
                 error={hasError("department_id") && errors.department_id}
               >
-                <select
+                <DepartmentDatalist
                   value={formData.department_id}
-                  onChange={(e) => handleChange("department_id", e.target.value)}
+                  onChange={(value) => handleChange("department_id", value)}
                   onBlur={() => handleBlur("department_id")}
-                  className={cn(
-                    "w-full mt-1 px-3 py-2.5 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-slate-900 dark:border-slate-700",
-                    hasError("department_id") && "border-red-500 ring-red-500"
-                  )}
-                >
-                  <option value="">Select Department</option>
-                  {departments.map((dept) => (
-                    <option key={dept.department_id} value={dept.department_id}>
-                      {dept.department_name} ({dept.department_code})
-                    </option>
-                  ))}
-                </select>
+                  error={hasError("department_id")}
+                  departments={departments}
+                />
               </FormField>
-
-              {/* Selected Department Preview */}
-              {selectedDepartment && (
-                <div className="bg-blue-50/50 dark:bg-blue-950/20 rounded-lg p-3 border border-blue-200 dark:border-blue-800">
-                  <div className="flex items-center gap-2">
-                    <Building2 className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                    <span className="text-sm text-blue-700 dark:text-blue-300">
-                      Department: <strong>{selectedDepartment.department_name}</strong>
-                    </span>
-                    <Badge variant="outline" className="ml-auto text-xs border-blue-300 dark:border-blue-700">
-                      {selectedDepartment.department_code}
-                    </Badge>
-                  </div>
-                </div>
-              )}
 
               {/* Vehicle Model */}
               <FormField
@@ -425,46 +538,41 @@ const EditVehicle = () => {
                 </select>
               </FormField>
 
-              {/* Status & Odometer */}
-              <div className="grid grid-cols-2 gap-4">
-                <FormField
-                  label="Status"
-                  helper="Vehicle operational status"
+              {/* Status - Frontend Display */}
+              <FormField
+                label="Vehicle Status"
+                icon={Shield}
+                required
+                helper="Select the current status of the vehicle"
+              >
+                <select
+                  value={currentDisplayStatus}
+                  onChange={(e) => handleStatusChange(e.target.value)}
+                  className="w-full mt-1 px-3 py-2.5 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-slate-900 dark:border-slate-700"
                 >
-                  <select
-                    value={formData.status}
-                    onChange={(e) => handleChange("status", e.target.value)}
-                    className="w-full mt-1 px-3 py-2.5 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-slate-900 dark:border-slate-700"
-                  >
-                    <option value="active">Active</option>
-                    <option value="inactive">Inactive</option>
-                  </select>
-                </FormField>
+                  {statusOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.value}
+                    </option>
+                  ))}
+                </select>
+              </FormField>
 
-                <FormField
-                  label="Odometer"
-                  icon={Gauge}
-                  helper="Odometer functionality status"
+              {/* Odometer Status */}
+              <FormField
+                label="Odometer Status"
+                icon={Gauge}
+                helper="Odometer functionality status"
+              >
+                <select
+                  value={formData.odometer_status}
+                  onChange={(e) => handleChange("odometer_status", e.target.value)}
+                  className="w-full mt-1 px-3 py-2.5 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-slate-900 dark:border-slate-700"
                 >
-                  <select
-                    value={formData.odometer_status}
-                    onChange={(e) => handleChange("odometer_status", e.target.value)}
-                    className="w-full mt-1 px-3 py-2.5 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-slate-900 dark:border-slate-700"
-                  >
-                    <option value="functional">Functional</option>
-                    <option value="non_functional">Non-Functional</option>
-                  </select>
-                </FormField>
-              </div>
-
-              {/* Maintenance Toggle */}
-              <ToggleSwitch
-                checked={formData.maintenance_flag}
-                onChange={(value) => handleChange("maintenance_flag", value)}
-                label="Under Maintenance"
-                description="Mark vehicle as undergoing maintenance"
-                icon={Wrench}
-              />
+                  <option value="functional">Functional</option>
+                  <option value="non_functional">Non-Functional</option>
+                </select>
+              </FormField>
 
               {/* Form Preview */}
               <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-4 border border-slate-200 dark:border-slate-700">
@@ -494,17 +602,19 @@ const EditVehicle = () => {
                     <span className="text-slate-400">Status:</span>
                     <span className={cn(
                       "font-medium ml-2",
-                      formData.status === "active" 
+                      currentDisplayStatus === "Serviceable" 
                         ? "text-emerald-600 dark:text-emerald-400" 
+                        : currentDisplayStatus === "Under Maintenance"
+                        ? "text-yellow-600 dark:text-yellow-400"
                         : "text-red-600 dark:text-red-400"
                     )}>
-                      {formData.status === "active" ? "Active" : "Inactive"}
+                      {currentDisplayStatus}
                     </span>
                   </div>
                   <div className="col-span-2">
                     <span className="text-slate-400">Department:</span>
                     <span className="text-slate-700 dark:text-slate-300 ml-2">
-                      {selectedDepartment?.department_name || "—"}
+                      {departments.find(d => d.department_id === parseInt(formData.department_id))?.department_name || "—"}
                     </span>
                   </div>
                   <div className="col-span-2">
@@ -518,14 +628,6 @@ const EditVehicle = () => {
                       {formData.odometer_status === "functional" ? "Functional" : "Non-Functional"}
                     </span>
                   </div>
-                  {formData.maintenance_flag && (
-                    <div className="col-span-2">
-                      <Badge className="bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
-                        <Wrench className="h-3 w-3 mr-1" />
-                        Under Maintenance
-                      </Badge>
-                    </div>
-                  )}
                 </div>
               </div>
 

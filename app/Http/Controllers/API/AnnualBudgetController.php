@@ -258,7 +258,6 @@ public function store(Request $request)
         DB::beginTransaction();
 
         $annualAmount = $request->annual_amount;
-        // ✅ FIX: Ensure weekly_ceiling is set properly
         $weeklyCeiling = $request->weekly_ceiling ?? round($annualAmount / 52, 2);
         $departmentId = $request->department_id;
         $fiscalYear = $request->fiscal_year;
@@ -270,21 +269,19 @@ public function store(Request $request)
         $oldAmount = $budget ? $budget->annual_amount : 0;
 
         if ($budget) {
-            // ✅ Update existing
             $budget->annual_amount = $annualAmount;
-            $budget->weekly_ceiling = $weeklyCeiling;  // ✅ I-save ang weekly_ceiling
+            $budget->weekly_ceiling = $weeklyCeiling;
             $budget->used_amount = $budget->used_amount ?? 0;
             $budget->status = 'active';
             $budget->save();
             $action = 'annual_updated';
             $message = 'Annual budget updated successfully';
         } else {
-            // ✅ Create new
             $budget = AnnualBudget::create([
                 'department_id' => $departmentId,
                 'fiscal_year' => $fiscalYear,
                 'annual_amount' => $annualAmount,
-                'weekly_ceiling' => $weeklyCeiling,  // ✅ I-save ang weekly_ceiling
+                'weekly_ceiling' => $weeklyCeiling,
                 'used_amount' => 0,
                 'status' => 'active',
             ]);
@@ -292,10 +289,26 @@ public function store(Request $request)
             $message = 'Annual budget created successfully';
         }
 
-        // ✅ Update policy with weekly ceiling
+        // ✅ Update policy with fiscal_year
         DeptBudgetPolicy::updateOrCreate(
-            ['department_id' => $departmentId],
-            ['default_weekly_allocation' => $weeklyCeiling]  // ✅ Use weeklyCeiling
+            [
+                'department_id' => $departmentId,
+                'fiscal_year' => $fiscalYear,  // ✅ ADD THIS
+            ],
+            [
+                'default_weekly_allocation' => $weeklyCeiling
+            ]
+        );
+
+        // ✅ Also update the main policy (for backward compatibility)
+        DeptBudgetPolicy::updateOrCreate(
+            [
+                'department_id' => $departmentId,
+            ],
+            [
+                'default_weekly_allocation' => $weeklyCeiling,
+                'fiscal_year' => $fiscalYear,
+            ]
         );
 
         // ✅ Update weekly_budget_usage table
@@ -355,7 +368,7 @@ public function store(Request $request)
                 'department_id' => $budget->department_id,
                 'fiscal_year' => $budget->fiscal_year,
                 'annual_amount' => (float) $budget->annual_amount,
-                'weekly_ceiling' => (float) $budget->weekly_ceiling,  // ✅ I-return ang weekly_ceiling
+                'weekly_ceiling' => (float) $budget->weekly_ceiling,
                 'suggested_ceiling' => round($budget->annual_amount / 52, 2),
                 'used_amount' => (float) $budget->used_amount,
                 'remaining_amount' => (float) $budget->remaining_amount,
