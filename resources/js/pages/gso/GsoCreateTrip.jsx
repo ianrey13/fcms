@@ -1,5 +1,5 @@
 // src/pages/gso/GsoCreateTrip.jsx
-import React, { useState, useEffect, useCallback,useRef, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -54,10 +54,33 @@ import {
     Shield,
     Users,
     Route,
+    Map,
+    Minus,
+    Plus,
+    Maximize2,
+    Minimize2,
+    Move,
+    MousePointer,
+    Globe,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { debounce } from "lodash";
 import { cn } from "@/lib/utils";
+import RouteMap from '../../components/map/RouteMap';
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogTrigger,
+    DialogClose,
+} from "@/components/ui/dialog";
+import {
+    Tooltip,
+    TooltipContent,
+    TooltipProvider,
+    TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 // ============================================
 // CONSTANTS
@@ -95,6 +118,195 @@ const FieldError = ({ error }) => {
             <AlertTriangle className="h-3 w-3" />
             {error}
         </p>
+    );
+};
+
+// ============================================
+// INTERACTIVE MAP MODAL COMPONENT
+// ============================================
+
+const InteractiveMapModal = ({ 
+    isOpen, 
+    onClose, 
+    destination, 
+    coordinates, 
+    origin,
+    onLocationSelect,
+    onCalculateRoute 
+}) => {
+    const [isInteractive, setIsInteractive] = useState(true);
+    const [selectedPoint, setSelectedPoint] = useState(coordinates);
+    const [isCalculating, setIsCalculating] = useState(false);
+
+    useEffect(() => {
+        if (coordinates) {
+            setSelectedPoint(coordinates);
+        }
+    }, [coordinates]);
+
+    const handleMapClick = (e) => {
+        if (!isInteractive) return;
+        
+        const lat = e.latLng?.lat() || e.latLng?.lat;
+        const lng = e.latLng?.lng() || e.latLng?.lng;
+        
+        if (lat && lng) {
+            setSelectedPoint({ lat, lng });
+            reverseGeocode(lat, lng);
+        }
+    };
+
+    const reverseGeocode = async (lat, lng) => {
+        try {
+            const response = await locationAPI.reverseGeocode({ lat, lng });
+            if (response.data.success) {
+                const address = response.data.address;
+                setSelectedPoint({ lat, lng, address });
+                onLocationSelect({ lat, lng, address });
+            }
+        } catch (error) {
+            console.error("Reverse geocoding error:", error);
+        }
+    };
+
+    const handleRecalculate = async () => {
+        if (!selectedPoint) return;
+        
+        setIsCalculating(true);
+        try {
+            const address = selectedPoint.address || destination;
+            await onCalculateRoute(address, selectedPoint);
+            toast.success("Route recalculated successfully!");
+        } catch (error) {
+            console.error("Recalculation error:", error);
+            toast.error("Failed to recalculate route");
+        } finally {
+            setIsCalculating(false);
+        }
+    };
+
+    const handleUseCurrentLocation = () => {
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    const { latitude, longitude } = position.coords;
+                    setSelectedPoint({ lat: latitude, lng: longitude });
+                    reverseGeocode(latitude, longitude);
+                    toast.success("Current location detected!");
+                },
+                (error) => {
+                    toast.error("Unable to get current location");
+                    console.error("Geolocation error:", error);
+                }
+            );
+        } else {
+            toast.error("Geolocation is not supported by your browser");
+        }
+    };
+
+    return (
+        <Dialog open={isOpen} onOpenChange={onClose}>
+            <DialogContent className="max-w-6xl w-[95vw] h-[90vh] p-0 overflow-hidden">
+                <DialogHeader className="p-4 border-b border-slate-200 dark:border-slate-700 flex flex-row items-center justify-between flex-wrap gap-2">
+                    <DialogTitle className="flex items-center gap-2">
+                        <Map className="h-5 w-5 text-blue-600" />
+                        Interactive Route Map
+                        <span className="text-sm font-normal text-gray-500 dark:text-gray-400 hidden sm:inline">
+                            {origin} → {destination}
+                        </span>
+                    </DialogTitle>
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <TooltipProvider>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <Button
+                                        type="button"
+                                        variant={isInteractive ? "default" : "outline"}
+                                        size="sm"
+                                        onClick={() => setIsInteractive(!isInteractive)}
+                                        className="h-8"
+                                    >
+                                        {isInteractive ? (
+                                            <>
+                                                <MousePointer className="h-4 w-4 mr-1" />
+                                                Click to Place
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Move className="h-4 w-4 mr-1" />
+                                                Pan Mode
+                                            </>
+                                        )}
+                                    </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                    {isInteractive ? "Click on map to place destination" : "Drag to pan the map"}
+                                </TooltipContent>
+                            </Tooltip>
+                        </TooltipProvider>
+
+                        <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={handleUseCurrentLocation}
+                            className="h-8"
+                        >
+                            <MapPin className="h-4 w-4 mr-1" />
+                            My Location
+                        </Button>
+
+                        <Button
+                            type="button"
+                            variant="default"
+                            size="sm"
+                            onClick={handleRecalculate}
+                            disabled={isCalculating || !selectedPoint}
+                            className="h-8 bg-blue-600 hover:bg-blue-700"
+                        >
+                            {isCalculating ? (
+                                <>
+                                    <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                                    Calculating...
+                                </>
+                            ) : (
+                                <>
+                                    <Navigation className="h-4 w-4 mr-1" />
+                                    Recalculate
+                                </>
+                            )}
+                        </Button>
+
+                        <DialogClose asChild>
+                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                <X className="h-4 w-4" />
+                            </Button>
+                        </DialogClose>
+                    </div>
+                </DialogHeader>
+                <div className="flex-1 h-full min-h-[400px] p-4 relative">
+                    {coordinates && (
+                        <RouteMap
+                            destination={destination}
+                            coordinates={selectedPoint || coordinates}
+                            height="100%"
+                            showRoute={true}
+                            interactive={isInteractive}
+                            onMapClick={handleMapClick}
+                            className="w-full h-full rounded-lg"
+                            showMarker={true}
+                            draggableMarker={isInteractive}
+                        />
+                    )}
+                    {isInteractive && selectedPoint && (
+                        <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 bg-black/75 text-white px-4 py-2 rounded-lg text-sm z-10">
+                            <MousePointer className="h-4 w-4 inline mr-2" />
+                            Click on the map to move the destination point
+                        </div>
+                    )}
+                </div>
+            </DialogContent>
+        </Dialog>
     );
 };
 
@@ -140,6 +352,14 @@ const GsoCreateTrip = () => {
     const [isCalculating, setIsCalculating] = useState(false);
     const [tripEstimate, setTripEstimate] = useState(null);
     const [selectedLocation, setSelectedLocation] = useState(null);
+    const [manualSearchQuery, setManualSearchQuery] = useState("");
+    const [isManualSearching, setIsManualSearching] = useState(false);
+
+    // Mini map
+    const [selectedCoords, setSelectedCoords] = useState(null);
+    const [showMap, setShowMap] = useState(false);
+    const [isMapModalOpen, setIsMapModalOpen] = useState(false);
+    const [interactiveCoords, setInteractiveCoords] = useState(null);
 
     // ============================================
     // QUERIES
@@ -190,204 +410,283 @@ const GsoCreateTrip = () => {
         staleTime: 5 * 60 * 1000,
     });
 
+    // ============================================
+    // DEPARTMENT DATALIST COMPONENT
+    // ============================================
 
- // ============================================
-// DEPARTMENT DATALIST COMPONENT - FIXED
-// ============================================
+    const DepartmentDatalist = ({ value, onChange, onBlur, error, departments, loading }) => {
+        const [searchTerm, setSearchTerm] = useState("");
+        const [selectedDepartment, setSelectedDepartment] = useState(null);
+        const [isOpen, setIsOpen] = useState(false);
+        const inputRef = useRef(null);
+        const wrapperRef = useRef(null);
 
-const DepartmentDatalist = ({ value, onChange, onBlur, error, departments, loading }) => {
-  const [searchTerm, setSearchTerm] = useState("");
-  const [selectedDepartment, setSelectedDepartment] = useState(null);
-  const [isOpen, setIsOpen] = useState(false);
-  const inputRef = useRef(null);
-  const wrapperRef = useRef(null);
+        useEffect(() => {
+            const handleClickOutside = (event) => {
+                if (wrapperRef.current && !wrapperRef.current.contains(event.target)) {
+                    setIsOpen(false);
+                }
+            };
+            document.addEventListener('mousedown', handleClickOutside);
+            return () => document.removeEventListener('mousedown', handleClickOutside);
+        }, []);
 
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (wrapperRef.current && !wrapperRef.current.contains(event.target)) {
-        setIsOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+        useEffect(() => {
+            if (value) {
+                const found = departments.find(d => d.department_id === parseInt(value));
+                if (found) {
+                    setSearchTerm(found.department_name);
+                    setSelectedDepartment(found);
+                }
+            } else {
+                setSearchTerm("");
+                setSelectedDepartment(null);
+            }
+        }, [value, departments]);
 
-  // Update search term when value changes from parent
-  useEffect(() => {
-    if (value) {
-      const found = departments.find(d => d.department_id === parseInt(value));
-      if (found) {
-        setSearchTerm(found.department_name);
-        setSelectedDepartment(found);
-      }
-    } else {
-      setSearchTerm("");
-      setSelectedDepartment(null);
-    }
-  }, [value, departments]);
+        const handleInputChange = (e) => {
+            const input = e.target.value;
+            setSearchTerm(input);
+            setIsOpen(true);
 
-  const handleInputChange = (e) => {
-    const input = e.target.value;
-    setSearchTerm(input);
-    setIsOpen(true);
-    
-    // Check if input matches a department exactly
-    const match = departments.find(d => 
-      d.department_name.toLowerCase() === input.toLowerCase() ||
-      d.department_code?.toLowerCase() === input.toLowerCase()
-    );
-    
-    if (match) {
-      setSelectedDepartment(match);
-      onChange(match.department_id);
-      setIsOpen(false);
-    } else if (input === "") {
-      setSelectedDepartment(null);
-      onChange("");
-    }
-  };
+            const match = departments.find(d =>
+                d.department_name.toLowerCase() === input.toLowerCase() ||
+                d.department_code?.toLowerCase() === input.toLowerCase()
+            );
 
-  const handleSelect = (dept) => {
-    setSearchTerm(dept.department_name);
-    setSelectedDepartment(dept);
-    onChange(dept.department_id);
-    setIsOpen(false);
-    inputRef.current?.blur();
-  };
+            if (match) {
+                setSelectedDepartment(match);
+                onChange(match.department_id);
+                setIsOpen(false);
+            } else if (input === "") {
+                setSelectedDepartment(null);
+                onChange("");
+            }
+        };
 
-  const handleClear = () => {
-    setSearchTerm("");
-    setSelectedDepartment(null);
-    onChange("");
-    setIsOpen(false);
-    inputRef.current?.focus();
-  };
+        const handleSelect = (dept) => {
+            setSearchTerm(dept.department_name);
+            setSelectedDepartment(dept);
+            onChange(dept.department_id);
+            setIsOpen(false);
+            inputRef.current?.blur();
+        };
 
-  const handleFocus = () => {
-    if (searchTerm.length > 0) {
-      setIsOpen(true);
-    }
-  };
+        const handleClear = () => {
+            setSearchTerm("");
+            setSelectedDepartment(null);
+            onChange("");
+            setIsOpen(false);
+            inputRef.current?.focus();
+        };
 
-  const handleKeyDown = (e) => {
-    if (e.key === 'Escape') {
-      setIsOpen(false);
-      inputRef.current?.blur();
-    }
-  };
+        const handleFocus = () => {
+            if (searchTerm.length > 0) {
+                setIsOpen(true);
+            }
+        };
 
-  const filteredDepartments = searchTerm.length > 0
-    ? departments.filter(d => 
-        d.department_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        d.department_code?.toLowerCase().includes(searchTerm.toLowerCase())
-      )
-    : [];
+        const handleKeyDown = (e) => {
+            if (e.key === 'Escape') {
+                setIsOpen(false);
+                inputRef.current?.blur();
+            }
+        };
 
-  return (
-    <div className="relative w-full" ref={wrapperRef}>
-      <div className="relative">
-        <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-          <Building2 className="h-4 w-4" />
-        </div>
-        <Input
-          ref={inputRef}
-          type="text"
-          placeholder="Type department name or code..."
-          value={searchTerm}
-          onChange={handleInputChange}
-          onFocus={handleFocus}
-          onBlur={() => {
-            // Delay to allow click on dropdown item
-            setTimeout(() => {
-              setIsOpen(false);
-            }, 200);
-            if (onBlur) onBlur();
-          }}
-          onKeyDown={handleKeyDown}
-          className={cn(
-            "pl-10 pr-10 bg-white dark:bg-slate-900 dark:border-slate-700",
-            error && "border-red-500 ring-red-500"
-          )}
-        />
-        {searchTerm && (
-          <button
-            type="button"
-            onClick={handleClear}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        )}
-        {loading && (
-          <div className="absolute right-3 top-1/2 -translate-y-1/2">
-            <Loader2 className="h-4 w-4 animate-spin text-slate-400" />
-          </div>
-        )}
-      </div>
+        const filteredDepartments = searchTerm.length > 0
+            ? departments.filter(d =>
+                d.department_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                d.department_code?.toLowerCase().includes(searchTerm.toLowerCase())
+            )
+            : [];
 
-      {/* Dropdown */}
-      {isOpen && searchTerm.length > 0 && filteredDepartments.length > 0 && (
-        <div className="absolute z-50 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg max-h-60 overflow-auto">
-          {filteredDepartments.map((dept) => (
-            <div
-              key={dept.department_id}
-              onMouseDown={(e) => {
-                e.preventDefault(); // Prevent input blur
-                handleSelect(dept);
-              }}
-              className={cn(
-                "px-4 py-2.5 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors flex items-center justify-between",
-                selectedDepartment?.department_id === dept.department_id && "bg-blue-50 dark:bg-blue-900/30"
-              )}
-            >
-              <div>
-                <span className="font-medium text-slate-800 dark:text-white">
-                  {dept.department_name}
-                </span>
-                {dept.department_code && (
-                  <span className="ml-2 text-xs text-slate-400 dark:text-slate-500">
-                    ({dept.department_code})
-                  </span>
+        return (
+            <div className="relative w-full" ref={wrapperRef}>
+                <div className="relative">
+                    <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+                        <Building2 className="h-4 w-4" />
+                    </div>
+                    <Input
+                        ref={inputRef}
+                        type="text"
+                        placeholder="Type department name or code..."
+                        value={searchTerm}
+                        onChange={handleInputChange}
+                        onFocus={handleFocus}
+                        onBlur={() => {
+                            setTimeout(() => {
+                                setIsOpen(false);
+                            }, 200);
+                            if (onBlur) onBlur();
+                        }}
+                        onKeyDown={handleKeyDown}
+                        className={cn(
+                            "pl-10 pr-10 bg-white dark:bg-slate-900 dark:border-slate-700",
+                            error && "border-red-500 ring-red-500"
+                        )}
+                    />
+                    {searchTerm && (
+                        <button
+                            type="button"
+                            onClick={handleClear}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                        >
+                            <X className="h-4 w-4" />
+                        </button>
+                    )}
+                    {loading && (
+                        <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                            <Loader2 className="h-4 w-4 animate-spin text-slate-400" />
+                        </div>
+                    )}
+                </div>
+
+                {isOpen && searchTerm.length > 0 && filteredDepartments.length > 0 && (
+                    <div className="absolute z-50 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg max-h-60 overflow-auto">
+                        {filteredDepartments.map((dept) => (
+                            <div
+                                key={dept.department_id}
+                                onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    handleSelect(dept);
+                                }}
+                                className={cn(
+                                    "px-4 py-2.5 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors flex items-center justify-between",
+                                    selectedDepartment?.department_id === dept.department_id && "bg-blue-50 dark:bg-blue-900/30"
+                                )}
+                            >
+                                <div>
+                                    <span className="font-medium text-slate-800 dark:text-white">
+                                        {dept.department_name}
+                                    </span>
+                                    {dept.department_code && (
+                                        <span className="ml-2 text-xs text-slate-400 dark:text-slate-500">
+                                            ({dept.department_code})
+                                        </span>
+                                    )}
+                                </div>
+                                {selectedDepartment?.department_id === dept.department_id && (
+                                    <CheckCircle className="h-4 w-4 text-blue-600" />
+                                )}
+                            </div>
+                        ))}
+                    </div>
                 )}
-              </div>
-              {selectedDepartment?.department_id === dept.department_id && (
-                <CheckCircle className="h-4 w-4 text-blue-600" />
-              )}
+
+                {isOpen && searchTerm.length > 0 && filteredDepartments.length === 0 && !loading && (
+                    <div className="absolute z-50 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg p-4 text-center">
+                        <p className="text-sm text-slate-500 dark:text-slate-400">No departments found</p>
+                        <p className="text-xs text-slate-400 mt-1">Try a different search term</p>
+                    </div>
+                )}
+
+                {selectedDepartment && (
+                    <div className="mt-2 bg-blue-50/50 dark:bg-blue-950/20 rounded-lg p-2.5 border border-blue-200 dark:border-blue-800">
+                        <div className="flex items-center gap-2">
+                            <Building2 className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                            <span className="text-sm text-blue-700 dark:text-blue-300">
+                                Selected: <strong>{selectedDepartment.department_name}</strong>
+                            </span>
+                            <Badge variant="outline" className="ml-auto text-xs border-blue-300 dark:border-blue-700">
+                                {selectedDepartment.department_code}
+                            </Badge>
+                        </div>
+                    </div>
+                )}
             </div>
-          ))}
-        </div>
-      )}
-
-      {/* No results */}
-      {isOpen && searchTerm.length > 0 && filteredDepartments.length === 0 && !loading && (
-        <div className="absolute z-50 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg p-4 text-center">
-          <p className="text-sm text-slate-500 dark:text-slate-400">No departments found</p>
-          <p className="text-xs text-slate-400 mt-1">Try a different search term</p>
-        </div>
-      )}
-
-      {/* Selected Department Preview */}
-      {selectedDepartment && (
-        <div className="mt-2 bg-blue-50/50 dark:bg-blue-950/20 rounded-lg p-2.5 border border-blue-200 dark:border-blue-800">
-          <div className="flex items-center gap-2">
-            <Building2 className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-            <span className="text-sm text-blue-700 dark:text-blue-300">
-              Selected: <strong>{selectedDepartment.department_name}</strong>
-            </span>
-            <Badge variant="outline" className="ml-auto text-xs border-blue-300 dark:border-blue-700">
-              {selectedDepartment.department_code}
-            </Badge>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
-
+        );
+    };
 
     // ============================================
-    // DESTINATION SEARCH
+    // DESTINATION SEARCH - Manual Search with Button
+    // ============================================
+
+    const handleManualSearch = async () => {
+        if (!manualSearchQuery.trim() || manualSearchQuery.trim().length < 2) {
+            toast.error("Please enter at least 2 characters to search");
+            return;
+        }
+
+        setIsManualSearching(true);
+        try {
+            console.log('Manual searching for:', manualSearchQuery);
+            const response = await locationAPI.searchPlaces(manualSearchQuery);
+            console.log('Manual search response:', response);
+
+            if (response && response.data) {
+                const data = response.data;
+                
+                // ✅ Always treat as success if we have data
+                if (data.success !== false) {
+                    let predictions = data.predictions || [];
+                    
+                    if (predictions.length === 0 && data.data) {
+                        predictions = data.data;
+                    }
+                    
+                    // ✅ SIMPLIFIED FILTERING - Just check if lat/lng exist
+                    const filtered = predictions.filter((item) => {
+                        // Check if lat and lng exist and are valid numbers
+                        const lat = parseFloat(item.lat);
+                        const lng = parseFloat(item.lng);
+                        
+                        const isValid = !isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0;
+                        
+                        console.log('Checking item:', {
+                            description: item.description,
+                            lat: lat,
+                            lng: lng,
+                            isValid: isValid
+                        });
+                        
+                        return isValid;
+                    });
+                    
+                    console.log('Filtered predictions:', filtered);
+                    
+                    // ✅ Set suggestions even if filtered is empty (show what we have)
+                    if (filtered.length > 0) {
+                        setDestinationSuggestions(filtered);
+                        setShowSuggestions(true);
+                        toast.success(`Found ${filtered.length} results`);
+                    } else if (predictions.length > 0) {
+                        // If filtering removed all, show unfiltered but warn
+                        console.warn('All predictions filtered out, showing unfiltered:', predictions);
+                        setDestinationSuggestions(predictions);
+                        setShowSuggestions(true);
+                        toast("Showing results without coordinates", {
+                            icon: '⚠️',
+                            duration: 3000,
+                        });
+                    } else {
+                        setDestinationSuggestions([]);
+                        setShowSuggestions(false);
+                        toast.error("No results found. Try a different search term.");
+                    }
+                } else {
+                    console.warn('Search failed:', data.message);
+                    toast.error(data.message || "Search failed");
+                    setDestinationSuggestions([]);
+                    setShowSuggestions(false);
+                }
+            } else {
+                console.warn('Invalid search response:', response);
+                toast.error("Invalid response from server");
+                setDestinationSuggestions([]);
+                setShowSuggestions(false);
+            }
+        } catch (error) {
+            console.error("Manual search error:", error);
+            toast.error("Search failed. Please try again.");
+            setDestinationSuggestions([]);
+            setShowSuggestions(false);
+        } finally {
+            setIsManualSearching(false);
+        }
+    };
+
+    // ============================================
+    // DESTINATION SEARCH - Auto-complete (debounced)
     // ============================================
 
     const searchDestinations = useCallback(
@@ -399,22 +698,46 @@ const DepartmentDatalist = ({ value, onChange, onBlur, error, departments, loadi
             }
 
             try {
+                console.log('Searching for:', query);
                 const response = await locationAPI.searchPlaces(query);
-                if (response.data.success && response.data.predictions) {
-                    const filtered = response.data.predictions.filter(
-                        (item) => {
-                            const description = item.description.toLowerCase();
-                            return (
-                                !description.includes("region") &&
-                                !description.includes("province") &&
-                                item.lat !== null &&
-                                item.lng !== null
-                            );
-                        },
-                    );
-                    setDestinationSuggestions(filtered);
-                    setShowSuggestions(filtered.length > 0);
+                console.log('Search response:', response);
+
+                if (response && response.data) {
+                    const data = response.data;
+                    
+                    if (data.success !== false) {
+                        let predictions = data.predictions || [];
+                        
+                        if (predictions.length === 0 && data.data) {
+                            predictions = data.data;
+                        }
+                        
+                        // ✅ SIMPLIFIED FILTERING
+                        const filtered = predictions.filter((item) => {
+                            const lat = parseFloat(item.lat);
+                            const lng = parseFloat(item.lng);
+                            return !isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0;
+                        });
+                        
+                        console.log('Filtered predictions:', filtered);
+                        
+                        if (filtered.length > 0) {
+                            setDestinationSuggestions(filtered);
+                            setShowSuggestions(true);
+                        } else if (predictions.length > 0) {
+                            setDestinationSuggestions(predictions);
+                            setShowSuggestions(true);
+                        } else {
+                            setDestinationSuggestions([]);
+                            setShowSuggestions(false);
+                        }
+                    } else {
+                        console.warn('Search failed:', data.message);
+                        setDestinationSuggestions([]);
+                        setShowSuggestions(false);
+                    }
                 } else {
+                    console.warn('Invalid search response:', response);
                     setDestinationSuggestions([]);
                     setShowSuggestions(false);
                 }
@@ -432,16 +755,22 @@ const DepartmentDatalist = ({ value, onChange, onBlur, error, departments, loadi
     // ============================================
 
     const calculateTripEstimate = useCallback(
-        async (destination, vehicleId) => {
+        async (destination, vehicleId, coordinates = null) => {
             if (!destination || destination.length < 2) return;
 
             setIsCalculating(true);
             try {
-                const response = await locationAPI.calculateDistance({
+                const payload = {
                     origin: ORIGIN_ADDRESS,
                     destination: destination,
                     vehicle_id: vehicleId || formData.vehicle_id || undefined,
-                });
+                };
+
+                if (coordinates) {
+                    payload.destination_coords = coordinates;
+                }
+
+                const response = await locationAPI.calculateDistance(payload);
 
                 if (response.data.success) {
                     const data = response.data;
@@ -452,8 +781,16 @@ const DepartmentDatalist = ({ value, onChange, onBlur, error, departments, loadi
                         estimated_fuel_liters: data.estimated_liters,
                         estimated_cost: data.estimated_cost,
                     }));
+                    
+                    if (data.address && data.address !== destination) {
+                        setFormData((prev) => ({
+                            ...prev,
+                            destination: data.address,
+                        }));
+                    }
+                    
                     toast.success(
-                        `Trip estimate calculated: ${data.distance_km} km`,
+                        `Trip estimate updated: ${data.distance_km} km`,
                     );
                 } else {
                     toast.error(
@@ -463,7 +800,7 @@ const DepartmentDatalist = ({ value, onChange, onBlur, error, departments, loadi
             } catch (error) {
                 console.error("Distance calculation error:", error);
                 toast.error(
-                    "Failed to calculate distance. Please enter manually.",
+                    "Failed to calculate distance. Please try again.",
                 );
             } finally {
                 setIsCalculating(false);
@@ -482,14 +819,24 @@ const DepartmentDatalist = ({ value, onChange, onBlur, error, departments, loadi
             destination: suggestion.description,
         }));
         setSelectedLocation(suggestion);
+        if (suggestion.lat && suggestion.lng) {
+            setSelectedCoords({ lat: suggestion.lat, lng: suggestion.lng });
+            setInteractiveCoords({ lat: suggestion.lat, lng: suggestion.lng });
+        }
         setShowSuggestions(false);
+        setManualSearchQuery("");
         calculateTripEstimate(suggestion.description);
+        setShowMap(true);
     };
 
     const handleDestinationChange = (value) => {
         setFormData((prev) => ({ ...prev, destination: value }));
+        setManualSearchQuery(value);
         setTripEstimate(null);
         setSelectedLocation(null);
+        setSelectedCoords(null);
+        setInteractiveCoords(null);
+        setShowMap(false);
         if (value.length > 1) {
             searchDestinations(value);
         } else {
@@ -500,10 +847,42 @@ const DepartmentDatalist = ({ value, onChange, onBlur, error, departments, loadi
 
     const clearDestination = () => {
         setFormData((prev) => ({ ...prev, destination: "" }));
+        setManualSearchQuery("");
         setTripEstimate(null);
         setSelectedLocation(null);
+        setSelectedCoords(null);
+        setInteractiveCoords(null);
         setDestinationSuggestions([]);
         setShowSuggestions(false);
+        setShowMap(false);
+    };
+
+    // ============================================
+    // HANDLE INTERACTIVE MAP
+    // ============================================
+
+    const handleInteractiveLocationSelect = (coords) => {
+        setInteractiveCoords(coords);
+        setSelectedCoords(coords);
+        
+        if (coords.address) {
+            setFormData((prev) => ({
+                ...prev,
+                destination: coords.address,
+            }));
+            setManualSearchQuery(coords.address);
+        }
+    };
+
+    const handleInteractiveRouteCalculate = async (address, coords) => {
+        if (address && coords) {
+            setFormData((prev) => ({
+                ...prev,
+                destination: address,
+            }));
+            setManualSearchQuery(address);
+            await calculateTripEstimate(address, formData.vehicle_id, coords);
+        }
     };
 
     // ============================================
@@ -665,7 +1044,6 @@ const DepartmentDatalist = ({ value, onChange, onBlur, error, departments, loadi
     // EFFECTS
     // ============================================
 
-    // Auto-fill charge_to when department changes
     useEffect(() => {
         if (formData.department_id) {
             const selectedDept = departments.find(
@@ -683,14 +1061,13 @@ const DepartmentDatalist = ({ value, onChange, onBlur, error, departments, loadi
         }
     }, [formData.department_id, departments]);
 
-    // Re-calculate estimate when vehicle changes
     useEffect(() => {
         if (
             formData.destination &&
             formData.vehicle_id &&
             formData.destination.length > 2
         ) {
-            calculateTripEstimate(formData.destination, formData.vehicle_id);
+            calculateTripEstimate(formData.destination, formData.vehicle_id, selectedCoords);
         }
     }, [formData.vehicle_id]);
 
@@ -775,6 +1152,12 @@ const DepartmentDatalist = ({ value, onChange, onBlur, error, departments, loadi
             return;
         }
         createTripMutation.mutate(formData);
+    };
+
+    const openFullMap = () => {
+        if (selectedCoords) {
+            setIsMapModalOpen(true);
+        }
     };
 
     // ============================================
@@ -1078,54 +1461,77 @@ const DepartmentDatalist = ({ value, onChange, onBlur, error, departments, loadi
                         {/* Destination Section */}
                         <FormSection title="Trip Details" icon={MapPin}>
                             <div className="space-y-4">
-                                {/* Destination */}
+                                {/* Destination with Search Button */}
                                 <div className="relative">
                                     <Label htmlFor="destination">
                                         Destination{" "}
                                         <span className="text-red-500">*</span>
                                     </Label>
-                                    <div className="relative mt-1">
-                                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                            <MapPin className="h-4 w-4 text-gray-400" />
-                                        </div>
-                                        <Input
-                                            id="destination"
-                                            placeholder="Type destination (e.g., Cagayan de Oro)"
-                                            value={formData.destination}
-                                            onChange={(e) =>
-                                                handleDestinationChange(
-                                                    e.target.value,
-                                                )
-                                            }
-                                            onBlur={() =>
-                                                handleFieldBlur("destination")
-                                            }
-                                            className={cn(
-                                                "pl-10 pr-10",
-                                                hasError("destination") &&
-                                                    "border-red-500 ring-red-500",
-                                            )}
-                                        />
-                                        {formData.destination && (
-                                            <button
-                                                type="button"
-                                                onClick={clearDestination}
-                                                className="absolute inset-y-0 right-0 pr-3 flex items-center"
-                                            >
-                                                <X className="h-4 w-4 text-gray-400 hover:text-gray-600" />
-                                            </button>
-                                        )}
-                                        {isCalculating && (
-                                            <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
-                                                <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
+                                    <div className="relative mt-1 flex gap-2">
+                                        <div className="relative flex-1">
+                                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                                <MapPin className="h-4 w-4 text-gray-400" />
                                             </div>
-                                        )}
+                                            <Input
+                                                id="destination"
+                                                placeholder="Type destination or click on map"
+                                                value={formData.destination}
+                                                onChange={(e) =>
+                                                    handleDestinationChange(
+                                                        e.target.value,
+                                                    )
+                                                }
+                                                onBlur={() =>
+                                                    handleFieldBlur("destination")
+                                                }
+                                                className={cn(
+                                                    "pl-10 pr-10",
+                                                    hasError("destination") &&
+                                                        "border-red-500 ring-red-500",
+                                                )}
+                                            />
+                                            {formData.destination && (
+                                                <button
+                                                    type="button"
+                                                    onClick={clearDestination}
+                                                    className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                                                >
+                                                    <X className="h-4 w-4 text-gray-400 hover:text-gray-600" />
+                                                </button>
+                                            )}
+                                            {isCalculating && (
+                                                <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
+                                                    <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
+                                                </div>
+                                            )}
+                                        </div>
+                                        <Button
+                                            type="button"
+                                            onClick={handleManualSearch}
+                                            disabled={isManualSearching || !manualSearchQuery.trim()}
+                                            className="shrink-0 bg-blue-600 hover:bg-blue-700"
+                                        >
+                                            {isManualSearching ? (
+                                                <Loader2 className="h-4 w-4 animate-spin" />
+                                            ) : (
+                                                <>
+                                                    <Search className="h-4 w-4 mr-1" />
+                                                    Search
+                                                </>
+                                            )}
+                                        </Button>
                                     </div>
 
                                     {/* Suggestions */}
                                     {showSuggestions &&
                                         destinationSuggestions.length > 0 && (
                                             <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg max-h-60 overflow-auto">
+                                                <div className="sticky top-0 bg-gray-100 dark:bg-gray-700 px-4 py-2 text-xs text-gray-500 dark:text-gray-400 flex justify-between items-center border-b border-gray-200 dark:border-gray-600">
+                                                    <span>Suggestions</span>
+                                                    <span className="text-blue-500">
+                                                        {destinationSuggestions.length} results
+                                                    </span>
+                                                </div>
                                                 {destinationSuggestions.map(
                                                     (suggestion, index) => (
                                                         <div
@@ -1135,7 +1541,7 @@ const DepartmentDatalist = ({ value, onChange, onBlur, error, departments, loadi
                                                                     suggestion,
                                                                 )
                                                             }
-                                                            className="px-4 py-3 hover:bg-blue-50 dark:hover:bg-gray-700 cursor-pointer flex items-start gap-3 transition-colors"
+                                                            className="px-4 py-3 hover:bg-blue-50 dark:hover:bg-gray-700 cursor-pointer flex items-start gap-3 transition-colors border-b border-gray-100 dark:border-gray-700 last:border-0"
                                                         >
                                                             <MapPin className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
                                                             <div>
@@ -1245,6 +1651,112 @@ const DepartmentDatalist = ({ value, onChange, onBlur, error, departments, loadi
                                             {tripEstimate.fuel_price_per_liter}
                                             /L
                                         </div>
+
+                                        {/* Map Section */}
+                                        {selectedCoords && (
+                                            <div className="mt-4 pt-4 border-t border-blue-200 dark:border-blue-800">
+                                                <div className="flex items-center justify-between mb-3">
+                                                    <h4 className="font-semibold text-blue-800 dark:text-blue-300 flex items-center gap-2">
+                                                        <Map className="h-4 w-4" />
+                                                        Interactive Route Map
+                                                        <span className="text-xs font-normal text-gray-500 dark:text-gray-400">
+                                                            {ORIGIN_ADDRESS} → {formData.destination}
+                                                        </span>
+                                                    </h4>
+                                                    <div className="flex items-center gap-2">
+                                                        <Button
+                                                            type="button"
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            onClick={() => setShowMap(!showMap)}
+                                                            className="h-8 px-2 text-gray-400 hover:text-gray-600"
+                                                        >
+                                                            {showMap ? (
+                                                                <>
+                                                                    <Minus className="h-4 w-4 mr-1" />
+                                                                    Hide
+                                                                </>
+                                                            ) : (
+                                                                <>
+                                                                    <Plus className="h-4 w-4 mr-1" />
+                                                                    Show
+                                                                </>
+                                                            )}
+                                                        </Button>
+                                                        <Button
+                                                            type="button"
+                                                            variant="outline"
+                                                            size="sm"
+                                                            onClick={openFullMap}
+                                                            className="h-8 px-3 text-blue-600 border-blue-300 hover:bg-blue-50 dark:text-blue-400 dark:border-blue-700 dark:hover:bg-blue-950/30"
+                                                        >
+                                                            <Maximize2 className="h-4 w-4 mr-1" />
+                                                            Interactive Map
+                                                        </Button>
+                                                    </div>
+                                                </div>
+                                                {showMap && (
+                                                    <div className="relative">
+                                                        <RouteMap
+                                                            key={JSON.stringify(selectedCoords)}
+                                                            destination={formData.destination}
+                                                            coordinates={selectedCoords}
+                                                            height="250px"
+                                                            showRoute={true}
+                                                            interactive={true}
+                                                            className="w-full rounded-lg"
+                                                            showMarker={true}
+                                                            draggableMarker={true}
+                                                            vehicleId={formData.vehicle_id}
+                                                            roundTrip={true}
+                                                            onMarkerDrag={(coords) => {
+                                                                console.log('Marker dragged to:', coords);
+                                                                setSelectedCoords(coords);
+                                                                const address = `${coords.lat.toFixed(6)}, ${coords.lng.toFixed(6)}`;
+                                                                setFormData((prev) => ({
+                                                                    ...prev,
+                                                                    destination: address,
+                                                                }));
+                                                                setManualSearchQuery(address);
+                                                                calculateTripEstimate(address, formData.vehicle_id, coords);
+                                                            }}
+                                                            onRouteCalculated={(routeData) => {
+                                                                console.log('Route calculated:', routeData);
+                                                                setFormData((prev) => ({
+                                                                    ...prev,
+                                                                    estimated_distance_km: routeData.distance_km,
+                                                                    estimated_fuel_liters: routeData.estimated_liters,
+                                                                    estimated_cost: routeData.estimated_cost,
+                                                                }));
+                                                                setTripEstimate(prev => ({
+                                                                    ...prev,
+                                                                    ...routeData,
+                                                                }));
+                                                            }}
+                                                        />
+                                                        <div className="absolute bottom-3 right-3 z-20 flex gap-2">
+                                                            <Button
+                                                                type="button"
+                                                                variant="secondary"
+                                                                size="sm"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    openFullMap();
+                                                                }}
+                                                                className="shadow-lg bg-white/90 hover:bg-white dark:bg-slate-800/90 dark:hover:bg-slate-800"
+                                                            >
+                                                                <Maximize2 className="h-4 w-4 mr-1" />
+                                                                Open Interactive
+                                                            </Button>
+                                                        </div>
+                                                        <div className="absolute top-3 left-3 z-20 bg-black/60 text-white text-xs px-3 py-1.5 rounded-lg pointer-events-none">
+                                                            <MousePointer className="h-3 w-3 inline mr-1" />
+                                                            Drag marker to adjust destination
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
                                     </div>
                                 )}
                             </div>
@@ -1253,7 +1765,6 @@ const DepartmentDatalist = ({ value, onChange, onBlur, error, departments, loadi
                         {/* Department & Assignment Section */}
                         <FormSection title="Assignment" icon={Building2}>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                {/* Department */}
                                 <div>
                                     <Label htmlFor="department_id">
                                         Department{" "}
@@ -1274,7 +1785,6 @@ const DepartmentDatalist = ({ value, onChange, onBlur, error, departments, loadi
                                     <FieldError error={errors.department_id} />
                                 </div>
 
-                                {/* Vehicle */}
                                 <div>
                                     <Label htmlFor="vehicle_id">
                                         Vehicle{" "}
@@ -1336,7 +1846,6 @@ const DepartmentDatalist = ({ value, onChange, onBlur, error, departments, loadi
                                     <FieldError error={errors.vehicle_id} />
                                 </div>
 
-                                {/* Driver */}
                                 <div>
                                     <Label htmlFor="driver_id">
                                         Driver{" "}
@@ -1379,8 +1888,7 @@ const DepartmentDatalist = ({ value, onChange, onBlur, error, departments, loadi
                                                                 driver.id ||
                                                                 driver.user_id
                                                             }
-                                                            value={(
-                                                                driver.driver_id ||
+                                                            value={(driver.driver_id ||
                                                                 driver.id ||
                                                                 driver.user_id
                                                             ).toString()}
@@ -1402,7 +1910,6 @@ const DepartmentDatalist = ({ value, onChange, onBlur, error, departments, loadi
                                     <FieldError error={errors.driver_id} />
                                 </div>
 
-                                {/* Trip Date */}
                                 <div>
                                     <Label htmlFor="trip_date">
                                         Trip Date{" "}
@@ -1593,6 +2100,17 @@ const DepartmentDatalist = ({ value, onChange, onBlur, error, departments, loadi
                     </form>
                 </CardContent>
             </Card>
+
+            {/* Interactive Map Modal */}
+            <InteractiveMapModal
+                isOpen={isMapModalOpen}
+                onClose={() => setIsMapModalOpen(false)}
+                destination={formData.destination}
+                coordinates={selectedCoords}
+                origin={ORIGIN_ADDRESS}
+                onLocationSelect={handleInteractiveLocationSelect}
+                onCalculateRoute={handleInteractiveRouteCalculate}
+            />
         </div>
     );
 };

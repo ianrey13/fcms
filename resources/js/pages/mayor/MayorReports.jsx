@@ -1,4 +1,12 @@
 // src/pages/mayor/MayorReports.jsx
+// ============================================
+// DISBURSING OFFICER (MAYOR'S OFFICE) REPORTS
+// 3 Reports:
+// 1. Fuel Receipt Report
+// 2. Budget Utilization Report  
+// 3. Reconciliation Report (Viewable by Disbursing Officer)
+// ============================================
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { reportsAPI, mayorsOfficeAPI, departmentAPI, vehicleAPI } from '../../services/api';
@@ -20,7 +28,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Table,
   TableBody,
@@ -38,9 +45,6 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
 } from 'recharts';
 import {
   Loader2,
@@ -49,18 +53,15 @@ import {
   Calendar,
   TrendingUp,
   TrendingDown,
+  CheckCircle ,
   Fuel,
   DollarSign,
-  Truck,
   Building2,
-  Clock,
-  CheckCircle,
   Printer,
   FileSpreadsheet,
   ChevronDown,
   ChevronUp,
   AlertCircle,
-  Info,
   CalendarRange,
   Receipt,
   Eye,
@@ -68,32 +69,25 @@ import {
   BarChart3,
   ArrowLeft,
   Zap,
-  Shield,
   Wallet,
-  Gauge,
-  Activity,
+  FileCheck,
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, endOfYear } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
-import { cn } from '@/lib/utils';
 
 // ============================================
 // CONSTANTS & HELPERS
 // ============================================
 
-const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444', '#06b6d4', '#ec4899', '#f97316', '#14b8a6', '#6366f1'];
-
 const PERIOD_TYPES = [
-  { value: 'weekly', label: 'Weekly', icon: Calendar },
-  { value: 'monthly', label: 'Monthly', icon: CalendarRange },
-  { value: 'yearly', label: 'Yearly', icon: CalendarRange },
+  { value: 'weekly', label: 'Weekly' },
+  { value: 'monthly', label: 'Monthly' },
+  { value: 'yearly', label: 'Yearly' },
 ];
 
 const formatCurrency = (amount) => {
-  if (amount === undefined || amount === null || isNaN(amount)) {
-    return '₱0.00';
-  }
+  if (amount === undefined || amount === null || isNaN(amount)) return '₱0.00';
   return new Intl.NumberFormat('en-PH', {
     style: 'currency',
     currency: 'PHP',
@@ -102,87 +96,13 @@ const formatCurrency = (amount) => {
 };
 
 const formatNumber = (num) => {
-  if (num === undefined || num === null || isNaN(num)) {
-    return '0';
-  }
+  if (num === undefined || num === null || isNaN(num)) return '0';
   return new Intl.NumberFormat('en-PH').format(num);
 };
 
-const getStatusBadge = (status) => {
-  const statusMap = {
-    'working': { label: 'Working', color: 'bg-emerald-500' },
-    'ongoing': { label: 'Ongoing', color: 'bg-blue-500' },
-    'started': { label: 'Started', color: 'bg-yellow-500' },
-    'pending': { label: 'Pending', color: 'bg-orange-500' },
-    'pending_verification': { label: 'Pending Verification', color: 'bg-yellow-500' },
-    'pending_reconciliation': { label: 'Pending Recon', color: 'bg-yellow-500' },
-    'pending_mayors_office': { label: 'Pending MO', color: 'bg-yellow-500' },
-    'verified': { label: 'Verified', color: 'bg-emerald-500' },
-    'approved': { label: 'Approved', color: 'bg-emerald-500' },
-    'closed': { label: 'Closed', color: 'bg-green-600' },
-    'completed': { label: 'Completed', color: 'bg-green-500' },
-    'rejected': { label: 'Rejected', color: 'bg-red-500' },
-    'cancelled': { label: 'Cancelled', color: 'bg-slate-500' },
-    'in_transit': { label: 'In Transit', color: 'bg-purple-500' },
-    'funds_issued': { label: 'Funds Issued', color: 'bg-blue-500' },
-    'acknowledged': { label: 'Acknowledged', color: 'bg-cyan-500' },
-    'discrepancy': { label: 'Discrepancy', color: 'bg-red-500' },
-    'active': { label: 'Active', color: 'bg-blue-500' },
-    'returned_for_revision': { label: 'Returned', color: 'bg-purple-500' },
-    'draft': { label: 'Draft', color: 'bg-slate-400' },
-    'pending_gso_validation': { label: 'Pending Validation', color: 'bg-indigo-500' },
-  };
-  return statusMap[status?.toLowerCase()] || { label: status || 'N/A', color: 'bg-slate-400' };
-};
-
-// ============================================
-// STATS CARD COMPONENT
-// ============================================
-
-const StatsCard = ({ title, value, icon: Icon, color, subtitle, trend }) => (
-    <Card className="dark:bg-slate-800/80 dark:border-slate-700 hover:shadow-lg transition-all duration-300">
-        <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-                <div>
-                    <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">{title}</p>
-                    <p className="text-2xl font-bold text-slate-900 dark:text-white mt-1">{value}</p>
-                    {subtitle && (
-                        <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">{subtitle}</p>
-                    )}
-                    {trend !== undefined && (
-                        <div className="flex items-center gap-1 mt-1 text-[10px]">
-                            {trend > 0 ? (
-                                <TrendingUp className="h-3 w-3 text-emerald-500" />
-                            ) : trend < 0 ? (
-                                <TrendingDown className="h-3 w-3 text-red-500" />
-                            ) : (
-                                <Activity className="h-3 w-3 text-slate-400" />
-                            )}
-                            <span className={trend > 0 ? 'text-emerald-600 dark:text-emerald-400' : trend < 0 ? 'text-red-600 dark:text-red-400' : 'text-slate-400'}>
-                                {trend > 0 ? '+' : ''}{trend}%
-                            </span>
-                        </div>
-                    )}
-                </div>
-                <div className={`p-3 rounded-xl bg-gradient-to-br ${color} shadow-lg`}>
-                    <Icon className="h-6 w-6 text-white" />
-                </div>
-            </div>
-        </CardContent>
-    </Card>
-);
-
-// ============================================
-// DATE RANGE HELPER
-// ============================================
-
 const getDateRange = (periodType, customStart, customEnd) => {
   const today = new Date();
-  
-  if (customStart && customEnd) {
-    return { startDate: customStart, endDate: customEnd };
-  }
-
+  if (customStart && customEnd) return { startDate: customStart, endDate: customEnd };
   switch (periodType) {
     case 'weekly':
       return {
@@ -208,6 +128,25 @@ const getDateRange = (periodType, customStart, customEnd) => {
 };
 
 // ============================================
+// STATS CARD COMPONENT
+// ============================================
+
+const StatsCard = ({ title, value, icon: Icon, color, subtitle }) => (
+  <div className="bg-white dark:bg-slate-800/80 rounded-xl p-4 border border-slate-200/60 dark:border-slate-700/60 hover:shadow-lg transition-all duration-300">
+    <div className="flex items-center justify-between">
+      <div>
+        <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">{title}</p>
+        <p className="text-xl font-bold text-slate-900 dark:text-white mt-1">{value}</p>
+        {subtitle && <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">{subtitle}</p>}
+      </div>
+      <div className={`p-2.5 rounded-xl bg-gradient-to-br ${color} shadow-lg`}>
+        <Icon className="h-5 w-5 text-white" />
+      </div>
+    </div>
+  </div>
+);
+
+// ============================================
 // MAIN COMPONENT
 // ============================================
 
@@ -215,8 +154,7 @@ const MayorReports = () => {
   const navigate = useNavigate();
   
   // ============ STATE ============
-  const [activeTab, setActiveTab] = useState('fuel-receipt');
-  const [periodType, setPeriodType] = useState('weekly');
+  const [periodType, setPeriodType] = useState('monthly');
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
   const [departmentFilter, setDepartmentFilter] = useState('all');
@@ -224,11 +162,12 @@ const MayorReports = () => {
   const [departments, setDepartments] = useState([]);
   const [vehicles, setVehicles] = useState([]);
   const [showBudgetChart, setShowBudgetChart] = useState(false);
-  const [expandedSections, setExpandedSections] = useState({
-    summary: true,
-    departmentBreakdown: true,
-  });
   const [exportLoading, setExportLoading] = useState(false);
+  const [expandedSections, setExpandedSections] = useState({
+    fuelReceipt: true,
+    budgetUtilization: true,
+    reconciliation: true,
+  });
 
   // ============ FETCH DEPARTMENTS & VEHICLES ============
   useEffect(() => {
@@ -256,7 +195,7 @@ const MayorReports = () => {
     fetchVehicles();
   }, [departmentFilter]);
 
-  // ============ COMPUTED DATE RANGE ============
+  // ============ DATE RANGE ============
   const dateRange = useMemo(() => {
     if (customStartDate && customEndDate) {
       return { startDate: customStartDate, endDate: customEndDate };
@@ -266,571 +205,418 @@ const MayorReports = () => {
 
   // ============ QUERIES ============
 
-  // 1. Budget Report
-  const {
-    data: budgetData,
-    isLoading: budgetLoading,
-    refetch: refetchBudget,
-    isFetching: budgetFetching,
-  } = useQuery({
-    queryKey: ['mayor-budget-report', dateRange, departmentFilter],
-    queryFn: async () => {
-      try {
-        const params = {
-          department_id: departmentFilter !== 'all' ? departmentFilter : undefined,
-        };
-        const response = await mayorsOfficeAPI.getBudgetOverview();
-        let data = response.data?.data || response.data || [];
-        if (!Array.isArray(data)) {
-          data = [];
-        }
-        return data;
-      } catch (error) {
-        console.error('Error fetching budget report:', error);
-        toast.error('Failed to load budget report');
-        return [];
-      }
-    },
-    enabled: true,
-  });
-
-  // 2. Fuel Receipt Report
+  // 1. FUEL RECEIPT REPORT
   const {
     data: receiptData,
     isLoading: receiptLoading,
     refetch: refetchReceipts,
     isFetching: receiptFetching,
   } = useQuery({
-    queryKey: ['mayor-fuel-receipt-report', dateRange, departmentFilter, vehicleFilter],
+    queryKey: ['mayor-fuel-receipt', dateRange, departmentFilter, vehicleFilter],
     queryFn: async () => {
-      try {
-        const params = {
-          start_date: dateRange.startDate,
-          end_date: dateRange.endDate,
-          department_id: departmentFilter !== 'all' ? departmentFilter : undefined,
-          vehicle_id: vehicleFilter !== 'all' ? vehicleFilter : undefined,
-        };
-        const response = await reportsAPI.getFuelReceiptReport(params);
-        return response.data?.data || response.data || {};
-      } catch (error) {
-        console.error('Error fetching fuel receipt report:', error);
-        toast.error('Failed to load fuel receipt report');
-        return {};
-      }
+      const params = {
+        start_date: dateRange.startDate,
+        end_date: dateRange.endDate,
+        department_id: departmentFilter !== 'all' ? departmentFilter : undefined,
+        vehicle_id: vehicleFilter !== 'all' ? vehicleFilter : undefined,
+      };
+      const res = await reportsAPI.getFuelReceiptReport(params);
+      return res.data?.data || {};
     },
-    enabled: activeTab === 'fuel-receipt',
+    enabled: true,
+  });
+
+  // 2. BUDGET UTILIZATION REPORT
+  const {
+    data: budgetData,
+    isLoading: budgetLoading,
+    refetch: refetchBudget,
+    isFetching: budgetFetching,
+  } = useQuery({
+    queryKey: ['mayor-budget', dateRange, departmentFilter],
+    queryFn: async () => {
+      const params = {
+        department_id: departmentFilter !== 'all' ? departmentFilter : undefined,
+        year: new Date(dateRange.startDate).getFullYear(),
+      };
+      const res = await reportsAPI.getBudgetReport(params);
+      return res.data?.data || {};
+    },
+    enabled: true,
+  });
+
+  // 3. RECONCILIATION REPORT (Viewable by Disbursing Officer)
+  const {
+    data: reconciliationData,
+    isLoading: reconciliationLoading,
+    refetch: refetchReconciliation,
+    isFetching: reconciliationFetching,
+  } = useQuery({
+    queryKey: ['mayor-reconciliation', dateRange, departmentFilter],
+    queryFn: async () => {
+      const params = {
+        start_date: dateRange.startDate,
+        end_date: dateRange.endDate,
+        department_id: departmentFilter !== 'all' ? departmentFilter : undefined,
+      };
+      const res = await reportsAPI.getReconciliation(params);
+      return res.data?.data || {};
+    },
+    enabled: true,
   });
 
   // ============ HANDLERS ============
-
   const handleRefresh = () => {
     refetchReceipts();
     refetchBudget();
+    refetchReconciliation();
     toast.success('Reports refreshed');
   };
 
   const toggleSection = (section) => {
-    setExpandedSections(prev => ({
-      ...prev,
-      [section]: !prev[section],
-    }));
+    setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }));
   };
 
-  const handleExport = async (format) => {
+  const handleExport = async (format, reportType) => {
     try {
       setExportLoading(true);
       toast.loading(`Exporting ${format.toUpperCase()} report...`);
-
-      let exportFunction;
-      let reportName;
-
-      if (activeTab === 'fuel-receipt') {
-        exportFunction = reportsAPI.exportFuelReceiptReport;
-        reportName = 'fuel_receipt_report';
-      } else {
-        exportFunction = reportsAPI.exportFuelConsumptionReport;
-        reportName = 'fuel_consumption_report';
-      }
 
       const params = {
         start_date: dateRange.startDate,
         end_date: dateRange.endDate,
         department_id: departmentFilter !== 'all' ? departmentFilter : undefined,
         vehicle_id: vehicleFilter !== 'all' ? vehicleFilter : undefined,
-        period_type: periodType,
       };
 
-      const response = await exportFunction(format, params);
-      
+      let response;
+      let fileName = `${reportType}_${dateRange.startDate}_to_${dateRange.endDate}`;
+
+      switch(reportType) {
+        case 'fuel_receipt':
+          response = await reportsAPI.exportFuelReceiptReport(format, params);
+          break;
+        case 'reconciliation':
+          response = await reportsAPI.exportReconciliation(format, params);
+          break;
+        default:
+          response = await reportsAPI.exportFuelReceiptReport(format, params);
+      }
+
       const extension = format === 'pdf' ? 'pdf' : format === 'excel' ? 'xlsx' : 'csv';
-      const fileName = `${reportName}_${dateRange.startDate}_to_${dateRange.endDate}.${extension}`;
-      
-      saveAs(response.data, fileName);
+      saveAs(response.data, `${fileName}.${extension}`);
 
       toast.dismiss();
       toast.success(`Report exported as ${format.toUpperCase()}`);
-      
     } catch (error) {
       toast.dismiss();
-      console.error('❌ Export error:', error);
-      
-      const message = error.response?.data?.message || 
-                     error.message || 
-                     'Failed to export report';
-      toast.error(message);
+      console.error('Export error:', error);
+      toast.error(error.response?.data?.message || 'Failed to export report');
     } finally {
       setExportLoading(false);
     }
   };
 
-  const handlePrint = () => {
-    window.print();
-  };
+  const handlePrint = () => window.print();
 
-  // ============================================
-  // RENDER - FUEL RECEIPT TABLE (ENHANCED WITH TOTAL)
-  // ============================================
+  // ============================================================
+  // RENDER - FUEL RECEIPT REPORT
+  // ============================================================
 
-  const renderFuelReceiptTable = () => {
+  const renderFuelReceipt = () => {
     const receipts = receiptData?.receipts || [];
+    const summary = receiptData?.summary || {};
 
-    // ✅ Calculate totals
-    const totals = receipts.reduce((acc, receipt) => {
-      acc.totalAmount += parseFloat(receipt.amount || 0);
-      acc.totalQuantity += parseFloat(receipt.quantity || 0);
-      acc.totalUnitPrice += parseFloat(receipt.unit_price || 0);
+    const totals = receipts.reduce((acc, r) => {
+      acc.amount += parseFloat(r.amount || 0);
+      acc.quantity += parseFloat(r.quantity || 0);
       return acc;
-    }, { totalAmount: 0, totalQuantity: 0, totalUnitPrice: 0 });
+    }, { amount: 0, quantity: 0 });
 
-    if (receipts.length === 0) {
-      return (
-        <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-          <CardContent className="py-16 text-center">
-            <div className="w-20 h-20 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto mb-4">
-              <Receipt className="h-10 w-10 text-slate-400 dark:text-slate-500" />
-            </div>
-            <p className="text-slate-600 dark:text-slate-400 font-medium text-lg">No fuel receipt records found</p>
-            <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">
-              Try adjusting your filters or date range
-            </p>
-          </CardContent>
-        </Card>
-      );
-    }
+    const statusColors = {
+      'Verified': 'bg-emerald-500',
+      'For Review': 'bg-yellow-500',
+      'Pending': 'bg-orange-500',
+      'Rejected': 'bg-red-500',
+    };
 
     return (
-      <Card className="dark:bg-slate-800/80 dark:border-slate-700 shadow-xl shadow-black/5">
-        <CardHeader className="border-b border-slate-200/60 dark:border-slate-700/60">
+      <Card className="dark:bg-slate-800/80 dark:border-slate-700">
+        <CardHeader className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors rounded-t-2xl" onClick={() => toggleSection('fuelReceipt')}>
           <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="flex items-center gap-2 text-slate-800 dark:text-white">
-                <Receipt className="h-5 w-5 text-blue-500" />
-                Fuel Receipt Details
-              </CardTitle>
-              <CardDescription className="dark:text-slate-400">
-                Showing {receipts.length} receipt{receipts.length !== 1 ? 's' : ''}
-              </CardDescription>
+            <div className="flex items-center gap-2">
+              <Receipt className="h-5 w-5 text-blue-500" />
+              <CardTitle>1. Fuel Receipt Report</CardTitle>
+              <Badge className="bg-blue-500/20 text-blue-600 ml-2">{receipts.length} receipts</Badge>
             </div>
-            {receipts.length > 0 && (
-              <Badge className="bg-blue-500/20 text-blue-600 dark:text-blue-400 border-blue-500/30">
-                <Zap className="h-3 w-3 mr-1" />
-                {receipts.length} records
-              </Badge>
-            )}
+            <div className="flex items-center gap-2">
+              <Badge variant="secondary">{expandedSections.fuelReceipt ? 'Hide' : 'Show'}</Badge>
+              {expandedSections.fuelReceipt ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            </div>
           </div>
+          <CardDescription>For expenditure verification</CardDescription>
         </CardHeader>
-        <CardContent className="pt-6">
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-slate-50 dark:bg-slate-900/50">
-                  <TableHead className="font-bold text-blue-600 dark:text-blue-400 text-xs uppercase tracking-wider">Invoice #</TableHead>
-                  <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Ticket #</TableHead>
-                  <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Date</TableHead>
-                  <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Driver</TableHead>
-                  <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Vehicle</TableHead>
-                  <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Plate No.</TableHead>
-                  <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Destination</TableHead>
-                  <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Time Departure</TableHead>
-                  <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Time Arrival</TableHead>
-                  <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Fuel Type</TableHead>
-                  <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Unit Price</TableHead>
-                  <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Amount</TableHead>
-                  <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Qty (L)</TableHead>
-                  <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Status</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {receipts.map((receipt, index) => {
-                  const invoiceNumber = receipt.invoice_number || receipt.charge_invoice_no || 'N/A';
-                  const unitPrice = receipt.unit_price || 0;
-                  const key = receipt.fuel_receipt_id || receipt.gas_slip_id || `receipt-${index}`;
-                  const status = receipt.status || receipt.reconciliation_status || 'pending';
-                  const statusConfig = getStatusBadge(status);
-                  
-                  return (
-                    <TableRow key={key} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors group">
-                      <TableCell className="font-mono text-sm font-bold text-blue-600 dark:text-blue-400">
-                        {invoiceNumber}
-                      </TableCell>
-                      <TableCell className="font-mono text-sm text-slate-700 dark:text-slate-300">
-                        {receipt.ticket_number || receipt.trip_ticket_number || 'N/A'}
-                      </TableCell>
-                      <TableCell className="text-slate-600 dark:text-slate-400">
-                        {receipt.date || receipt.trip_date || 'N/A'}
-                      </TableCell>
-                      <TableCell className="text-slate-600 dark:text-slate-400">
-                        {receipt.driver_name || receipt.driver || 'N/A'}
-                      </TableCell>
-                      <TableCell className="text-slate-600 dark:text-slate-400">
-                        {receipt.vehicle_model || receipt.vehicle || 'N/A'}
-                      </TableCell>
-                      <TableCell className="font-mono text-sm text-slate-700 dark:text-slate-300">
-                        {receipt.plate_number || receipt.plate_no || 'N/A'}
-                      </TableCell>
-                      <TableCell className="text-slate-600 dark:text-slate-400">
-                        {receipt.destination || 'N/A'}
-                      </TableCell>
-                      <TableCell className="text-slate-600 dark:text-slate-400">
-                        {receipt.time_departure || receipt.departure_time || 'N/A'}
-                      </TableCell>
-                      <TableCell className="text-slate-600 dark:text-slate-400">
-                        {receipt.time_arrival || receipt.arrival_time || 'N/A'}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className="text-xs dark:border-slate-600">
-                          {receipt.fuel_type || receipt.lubricant || 'N/A'}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right font-mono text-slate-600 dark:text-slate-400">
-                        {formatCurrency(unitPrice)}
-                      </TableCell>
-                      <TableCell className="text-right font-medium font-mono text-emerald-600 dark:text-emerald-400">
-                        {formatCurrency(receipt.amount || receipt.amount_on_receipt || 0)}
-                      </TableCell>
-                      <TableCell className="text-right font-mono text-slate-700 dark:text-slate-300">
-                        {formatNumber(receipt.quantity || receipt.liters_availed || 0)}
-                      </TableCell>
-                      <TableCell>
-                        <Badge className={`${statusConfig.color} text-white`}>
-                          {statusConfig.label}
-                        </Badge>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
+        {expandedSections.fuelReceipt && (
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+              <StatsCard title="Total Receipts" value={receipts.length} icon={Receipt} color="from-blue-500 to-blue-600" />
+              <StatsCard title="Total Fuel" value={`${formatNumber(totals.quantity || summary.total_liters || 0)} L`} icon={Fuel} color="from-emerald-500 to-emerald-600" />
+              <StatsCard title="Total Cost" value={formatCurrency(totals.amount || summary.total_cost || 0)} icon={DollarSign} color="from-purple-500 to-purple-600" />
+              <StatsCard title="Avg Unit Price" value={formatCurrency(summary.avg_unit_price || 0)} icon={TrendingUp} color="from-orange-500 to-orange-600" />
+            </div>
 
-                {/* ✅ TOTAL ROW */}
-                <TableRow className="bg-slate-100 dark:bg-slate-800 font-bold border-t-2 border-slate-300 dark:border-slate-600">
-                  <TableCell colSpan={10} className="text-right text-slate-800 dark:text-white">
-                    TOTAL
-                  </TableCell>
-                  <TableCell className="text-right text-slate-800 dark:text-white">
-                    {formatCurrency(totals.totalUnitPrice || 0)}
-                  </TableCell>
-                  <TableCell className="text-right text-emerald-700 dark:text-emerald-400">
-                    {formatCurrency(totals.totalAmount || 0)}
-                  </TableCell>
-                  <TableCell className="text-right text-slate-800 dark:text-white">
-                    {formatNumber(totals.totalQuantity || 0)}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Badge className="bg-slate-500 text-white">
-                      {receipts.length} Records
-                    </Badge>
-                  </TableCell>
-                </TableRow>
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="outline" onClick={() => handleExport('excel', 'fuel_receipt')} disabled={exportLoading}>
+                  <FileSpreadsheet className="h-4 w-4 mr-2" /> Excel
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => handleExport('pdf', 'fuel_receipt')} disabled={exportLoading}>
+                  <FileText className="h-4 w-4 mr-2" /> PDF
+                </Button>
+                <Button size="sm" variant="outline" onClick={handlePrint}>
+                  <Printer className="h-4 w-4 mr-2" /> Print
+                </Button>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto max-h-[400px] overflow-y-auto border rounded-lg">
+              <Table>
+                <TableHeader className="sticky top-0 z-10 bg-slate-100 dark:bg-slate-800">
+                  <TableRow>
+                    <TableHead>Receipt No.</TableHead>
+                    <TableHead>Date Submitted</TableHead>
+                    <TableHead>Trip Ticket No.</TableHead>
+                    <TableHead>Driver</TableHead>
+                    <TableHead>Vehicle</TableHead>
+                    <TableHead className="text-right">Amount (₱)</TableHead>
+                    <TableHead>Receipt Status</TableHead>
+                    <TableHead>Verification Date</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {receipts.length === 0 ? (
+                    <TableRow><TableCell colSpan="8" className="text-center py-8 text-slate-500">No fuel receipt data available</TableCell></TableRow>
+                  ) : (
+                    receipts.map((r, i) => (
+                      <TableRow key={i}>
+                        <TableCell className="font-mono font-medium">{r.invoice_number || r.charge_invoice_no || 'N/A'}</TableCell>
+                        <TableCell>{r.date || r.trip_date || 'N/A'}</TableCell>
+                        <TableCell className="font-mono">{r.ticket_number || r.trip_ticket_number || 'N/A'}</TableCell>
+                        <TableCell>{r.driver_name || r.driver || 'N/A'}</TableCell>
+                        <TableCell>{r.vehicle_model || r.vehicle || 'N/A'}</TableCell>
+                        <TableCell className="text-right font-medium">{formatCurrency(r.amount || r.amount_on_receipt || 0)}</TableCell>
+                        <TableCell><Badge className={statusColors[r.reconciliation_status] || 'bg-slate-400'}>{r.reconciliation_status || 'Pending'}</Badge></TableCell>
+                        <TableCell>{r.reconciled_at ? format(new Date(r.reconciled_at), 'yyyy-MM-dd') : 'N/A'}</TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        )}
       </Card>
     );
   };
 
-  // ============================================
-  // RENDER - BUDGET UTILIZATION TAB
-  // ============================================
+  // ============================================================
+  // RENDER - BUDGET UTILIZATION REPORT
+  // ============================================================
 
   const renderBudgetUtilization = () => {
-    const periods = Array.isArray(budgetData) ? budgetData : [];
+    const periods = budgetData?.periods || [];
+    const summary = budgetData?.summary || {};
 
-    if (periods.length === 0) {
-      return (
-        <div className="space-y-4 mt-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <StatsCard
-              title="Total Allocated"
-              value={formatCurrency(0)}
-              icon={DollarSign}
-              color="from-blue-500 to-blue-600"
-              subtitle="Budget allocation"
-            />
-            <StatsCard
-              title="Used"
-              value={formatCurrency(0)}
-              icon={TrendingDown}
-              color="from-yellow-500 to-yellow-600"
-              subtitle="Amount used"
-            />
-            <StatsCard
-              title="Remaining"
-              value={formatCurrency(0)}
-              icon={TrendingUp}
-              color="from-emerald-500 to-emerald-600"
-              subtitle="Budget remaining"
-            />
-          </div>
-          <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-            <CardContent className="py-16 text-center">
-              <div className="w-20 h-20 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto mb-4">
-                <DollarSign className="h-10 w-10 text-slate-400 dark:text-slate-500" />
-              </div>
-              <p className="text-slate-600 dark:text-slate-400 font-medium text-lg">No budget data available</p>
-              <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">
-                Try adjusting your filters or date range
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-      );
-    }
-
-    // Calculate totals
-    const totalAllocated = periods.reduce((sum, p) => sum + (parseFloat(p.allocated_amount) || 0), 0);
-    const totalUsed = periods.reduce((sum, p) => sum + (parseFloat(p.spent_amount) || 0), 0);
-    const totalRemaining = totalAllocated - totalUsed;
-
-    // Prepare data for charts
     const chartData = periods.map(p => ({
       department_name: p.department_name || 'Unknown',
-      allocated: parseFloat(p.allocated_amount) || 0,
-      used: parseFloat(p.spent_amount) || 0,
-      remaining: parseFloat(p.remaining_amount) || 0,
-      utilization: parseFloat(p.utilization_percentage) || 
-                   (p.allocated_amount > 0 ? ((p.spent_amount / p.allocated_amount) * 100) : 0),
+      allocated: parseFloat(p.allocated) || 0,
+      used: parseFloat(p.used) || 0,
+      remaining: parseFloat(p.remaining) || 0,
     }));
 
-    // Pie chart data
-    const pieData = periods
-      .filter(p => parseFloat(p.allocated_amount) > 0)
-      .map(p => ({
-        name: p.department_name || 'Unknown',
-        value: parseFloat(p.allocated_amount) || 0,
-      }));
-
-    // Stats
-    const budgetStats = [
-      {
-        title: "Total Allocated",
-        value: formatCurrency(totalAllocated),
-        icon: DollarSign,
-        color: "from-blue-500 to-blue-600",
-        subtitle: "Total budget",
-        trend: totalAllocated > 0 ? 5 : 0,
-      },
-      {
-        title: "Used",
-        value: formatCurrency(totalUsed),
-        icon: TrendingDown,
-        color: "from-yellow-500 to-yellow-600",
-        subtitle: "Amount spent",
-        trend: totalUsed > 0 ? 8 : 0,
-      },
-      {
-        title: "Remaining",
-        value: formatCurrency(totalRemaining),
-        icon: TrendingUp,
-        color: totalRemaining > 0 ? "from-emerald-500 to-emerald-600" : "from-red-500 to-red-600",
-        subtitle: "Budget remaining",
-        trend: totalRemaining > 0 ? -3 : 0,
-      },
-    ];
-
     return (
-      <div className="space-y-4 mt-6">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {budgetStats.map((stat, index) => (
-            <StatsCard key={index} {...stat} />
-          ))}
-        </div>
-
-        {/* Budget Allocation Pie Chart */}
-        {pieData.length > 0 && (
-          <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-slate-800 dark:text-white">
-                <PieChart className="h-5 w-5 text-blue-500" />
-                Budget Allocation by Department
-              </CardTitle>
-              <CardDescription className="dark:text-slate-400">
-                {pieData.length} departments with active budgets
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={300}>
-                <PieChart>
-                  <Pie
-                    data={pieData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={60}
-                    outerRadius={100}
-                    paddingAngle={2}
-                    dataKey="value"
-                    label={({ name, percent }) => `${(percent * 100).toFixed(0)}%`}
-                    labelLine={false}
-                  >
-                    {pieData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip formatter={(value) => formatCurrency(value)} />
-                  <Legend />
-                </PieChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Department Budget Table */}
-        <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-          <CardHeader 
-            className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors rounded-t-2xl"
-            onClick={() => toggleSection('departmentBreakdown')}
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Building2 className="h-5 w-5 text-purple-500" />
-                <CardTitle className="text-slate-800 dark:text-white">Budget Utilization by Department</CardTitle>
-                <Badge variant="secondary" className="ml-2">{periods.length} Departments</Badge>
-              </div>
-              {expandedSections.departmentBreakdown ? (
-                <ChevronUp className="h-4 w-4 text-slate-400" />
-              ) : (
-                <ChevronDown className="h-4 w-4 text-slate-400" />
-              )}
+      <Card className="dark:bg-slate-800/80 dark:border-slate-700">
+        <CardHeader className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors rounded-t-2xl" onClick={() => toggleSection('budgetUtilization')}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Wallet className="h-5 w-5 text-amber-500" />
+              <CardTitle>2. Budget Utilization Report</CardTitle>
+              <Badge className="bg-amber-500/20 text-amber-600 ml-2">{periods.length} departments</Badge>
             </div>
-          </CardHeader>
-          {expandedSections.departmentBreakdown && (
-            <CardContent>
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="bg-slate-50 dark:bg-slate-900/50">
-                      <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Department</TableHead>
-                      <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Allocated</TableHead>
-                      <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Used</TableHead>
-                      <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Remaining</TableHead>
-                      <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Utilization</TableHead>
-                      <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Status</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {periods.map((period, index) => {
-                      const allocated = parseFloat(period.allocated_amount) || 0;
-                      const used = parseFloat(period.spent_amount) || 0;
-                      const remaining = parseFloat(period.remaining_amount) || (allocated - used);
-                      const utilPercent = allocated > 0 ? ((used / allocated) * 100) : 0;
-                      
-                      let statusLabel = 'On Track';
-                      let statusColor = 'bg-emerald-500';
-                      
-                      if (remaining < 0 || utilPercent > 100) {
-                        statusLabel = 'Over Budget';
-                        statusColor = 'bg-red-500';
-                      } else if (utilPercent > 80) {
-                        statusLabel = 'Near Limit';
-                        statusColor = 'bg-yellow-500';
-                      }
-                      
+            <div className="flex items-center gap-2">
+              <Badge variant="secondary">{expandedSections.budgetUtilization ? 'Hide' : 'Show'}</Badge>
+              {expandedSections.budgetUtilization ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            </div>
+          </div>
+          <CardDescription>Budget tracking across departments</CardDescription>
+        </CardHeader>
+        {expandedSections.budgetUtilization && (
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+              <StatsCard title="Total Allocated" value={formatCurrency(summary.total_allocated || 0)} icon={Wallet} color="from-blue-500 to-blue-600" />
+              <StatsCard title="Total Utilized" value={formatCurrency(summary.total_used || 0)} icon={TrendingDown} color="from-yellow-500 to-yellow-600" />
+              <StatsCard title="Total Remaining" value={formatCurrency(summary.total_remaining || 0)} icon={TrendingUp} color="from-emerald-500 to-emerald-600" />
+              <StatsCard title="Departments" value={summary.total_departments || 0} icon={Building2} color="from-purple-500 to-purple-600" />
+            </div>
+
+            <div className="overflow-x-auto max-h-[400px] overflow-y-auto border rounded-lg">
+              <Table>
+                <TableHeader className="sticky top-0 z-10 bg-slate-100 dark:bg-slate-800">
+                  <TableRow>
+                    <TableHead>Department</TableHead>
+                    <TableHead className="text-right">Allocated Budget (₱)</TableHead>
+                    <TableHead className="text-right">Amount Utilized (₱)</TableHead>
+                    <TableHead className="text-right">Remaining Budget (₱)</TableHead>
+                    <TableHead className="text-right">Utilization (%)</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {periods.length === 0 ? (
+                    <TableRow><TableCell colSpan="5" className="text-center py-8 text-slate-500">No budget data available</TableCell></TableRow>
+                  ) : (
+                    periods.map((p, i) => {
+                      const util = p.utilization || (p.allocated > 0 ? ((p.used || 0) / p.allocated) * 100 : 0);
                       return (
-                        <TableRow key={index} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
-                          <TableCell className="font-medium text-slate-800 dark:text-white">
-                            {period.department_name || 'Unknown'}
-                          </TableCell>
-                          <TableCell className="text-right text-blue-600 dark:text-blue-400">
-                            {formatCurrency(allocated)}
-                          </TableCell>
-                          <TableCell className="text-right text-yellow-600 dark:text-yellow-400">
-                            {formatCurrency(used)}
-                          </TableCell>
-                          <TableCell className={cn(
-                            "text-right font-medium",
-                            remaining < 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'
-                          )}>
-                            {formatCurrency(remaining)}
-                          </TableCell>
-                          <TableCell className="text-right text-slate-700 dark:text-slate-300">
-                            {utilPercent.toFixed(1)}%
-                          </TableCell>
-                          <TableCell>
-                            <Badge className={statusColor}>{statusLabel}</Badge>
+                        <TableRow key={i}>
+                          <TableCell className="font-medium">{p.department_name}</TableCell>
+                          <TableCell className="text-right">{formatCurrency(p.allocated)}</TableCell>
+                          <TableCell className="text-right">{formatCurrency(p.used)}</TableCell>
+                          <TableCell className="text-right font-medium">{formatCurrency(p.remaining)}</TableCell>
+                          <TableCell className="text-right">
+                            <Badge className={util > 80 ? 'bg-red-500' : util > 60 ? 'bg-yellow-500' : 'bg-emerald-500'}>
+                              {typeof util === 'number' ? util.toFixed(1) : '0'}%
+                            </Badge>
                           </TableCell>
                         </TableRow>
                       );
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
-            </CardContent>
-          )}
-        </Card>
-
-        {/* Budget Bar Chart */}
-        <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-          <CardHeader 
-            className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors rounded-t-2xl"
-            onClick={() => setShowBudgetChart(!showBudgetChart)}
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <BarChart3 className="h-5 w-5 text-emerald-500" />
-                <CardTitle className="text-slate-800 dark:text-white">Budget Visualization</CardTitle>
-                <Badge variant="secondary" className="ml-2">
-                  {showBudgetChart ? 'Hide' : 'Show'}
-                </Badge>
-              </div>
-              <div className="flex items-center gap-2 text-sm text-slate-500">
-                {showBudgetChart ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                {showBudgetChart ? 'Hide Chart' : 'Show Chart'}
-              </div>
+                    })
+                  )}
+                </TableBody>
+              </Table>
             </div>
-          </CardHeader>
-          {showBudgetChart && (
-            <CardContent>
-              <div className="h-80">
-                {chartData.length === 0 ? (
-                  <div className="flex items-center justify-center h-full">
-                    <p className="text-slate-500 dark:text-slate-400">No data to visualize</p>
-                  </div>
-                ) : (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={chartData}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                      <XAxis dataKey="department_name" angle={-45} textAnchor="end" height={80} stroke="#94a3b8" />
-                      <YAxis stroke="#94a3b8" />
-                      <Tooltip formatter={(value) => formatCurrency(value)} />
-                      <Legend />
-                      <Bar dataKey="allocated" fill="#3b82f6" name="Allocated" radius={[4, 4, 0, 0]} />
-                      <Bar dataKey="used" fill="#f59e0b" name="Used" radius={[4, 4, 0, 0]} />
-                      <Bar dataKey="remaining" fill="#10b981" name="Remaining" radius={[4, 4, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                )}
+
+            {/* Budget Chart */}
+            <div className="mt-6">
+              <div className="flex items-center justify-between cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 p-3 rounded-lg transition-colors" onClick={() => setShowBudgetChart(!showBudgetChart)}>
+                <div className="flex items-center gap-2">
+                  <BarChart3 className="h-5 w-5 text-emerald-500" />
+                  <h4 className="font-semibold text-slate-700 dark:text-slate-300">Budget Visualization</h4>
+                  <Badge variant="secondary">{showBudgetChart ? 'Hide' : 'Show'}</Badge>
+                </div>
+                <div className="flex items-center gap-2 text-sm text-slate-500">
+                  {showBudgetChart ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  {showBudgetChart ? 'Hide Chart' : 'Show Chart'}
+                </div>
               </div>
-            </CardContent>
-          )}
-        </Card>
-      </div>
+              {showBudgetChart && (
+                <div className="h-80 mt-4">
+                  {chartData.length === 0 ? (
+                    <div className="flex items-center justify-center h-full">
+                      <p className="text-slate-500 dark:text-slate-400">No data to visualize</p>
+                    </div>
+                  ) : (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={chartData}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                        <XAxis dataKey="department_name" angle={-45} textAnchor="end" height={80} stroke="#94a3b8" />
+                        <YAxis stroke="#94a3b8" />
+                        <Tooltip formatter={(value) => formatCurrency(value)} />
+                        <Legend />
+                        <Bar dataKey="allocated" fill="#3b82f6" name="Allocated" radius={[4, 4, 0, 0]} />
+                        <Bar dataKey="used" fill="#f59e0b" name="Used" radius={[4, 4, 0, 0]} />
+                        <Bar dataKey="remaining" fill="#10b981" name="Remaining" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  )}
+                </div>
+              )}
+            </div>
+          </CardContent>
+        )}
+      </Card>
     );
   };
 
-  // ============================================
-  // RENDER - LOADING
-  // ============================================
+  // ============================================================
+  // RENDER - RECONCILIATION REPORT (NEW)
+  // ============================================================
 
-  const isLoading = receiptLoading || budgetLoading;
+  const renderReconciliation = () => {
+    const reconciliations = reconciliationData?.reconciliations || [];
+    const summary = reconciliationData?.summary || {};
+
+    return (
+      <Card className="dark:bg-slate-800/80 dark:border-slate-700">
+        <CardHeader className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors rounded-t-2xl" onClick={() => toggleSection('reconciliation')}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <FileCheck className="h-5 w-5 text-indigo-500" />
+              <CardTitle>3. Trip and Fuel Reconciliation Report</CardTitle>
+              <Badge className="bg-indigo-500/20 text-indigo-600 ml-2">{reconciliations.length} trips</Badge>
+            </div>
+            <div className="flex items-center gap-2">
+              <Badge variant="secondary">{expandedSections.reconciliation ? 'Hide' : 'Show'}</Badge>
+              {expandedSections.reconciliation ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            </div>
+          </div>
+          <CardDescription>For budget verification - viewable by Disbursing Officer</CardDescription>
+        </CardHeader>
+        {expandedSections.reconciliation && (
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+              <StatsCard title="Total Trips" value={summary.total_reconciliations || 0} icon={FileCheck} color="from-blue-500 to-blue-600" />
+              <StatsCard title="Verified" value={summary.total_verified || 0} icon={CheckCircle} color="from-emerald-500 to-emerald-600" />
+              <StatsCard title="Discrepancy" value={summary.total_discrepancy || 0} icon={AlertCircle} color="from-red-500 to-red-600" />
+              <StatsCard title="Total Released" value={formatCurrency(summary.total_amount_released || 0)} icon={DollarSign} color="from-purple-500 to-purple-600" />
+            </div>
+
+            <div className="overflow-x-auto max-h-[400px] overflow-y-auto border rounded-lg">
+              <Table>
+                <TableHeader className="sticky top-0 z-10 bg-slate-100 dark:bg-slate-800">
+                  <TableRow>
+                    <TableHead>Trip Ticket No.</TableHead>
+                    <TableHead>Vehicle</TableHead>
+                    <TableHead>Driver</TableHead>
+                    <TableHead className="text-right">Expected Distance</TableHead>
+                    <TableHead className="text-right">Actual Distance</TableHead>
+                    <TableHead className="text-right">Distance Variance</TableHead>
+                    <TableHead className="text-right">Amount Released</TableHead>
+                    <TableHead className="text-right">Actual Amount Paid</TableHead>
+                    <TableHead className="text-right">Amount Variance</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {reconciliations.length === 0 ? (
+                    <TableRow><TableCell colSpan="9" className="text-center py-8 text-slate-500">No reconciliation data available</TableCell></TableRow>
+                  ) : (
+                    reconciliations.map((r, i) => (
+                      <TableRow key={i}>
+                        <TableCell className="font-mono font-medium">{r.ticket_number}</TableCell>
+                        <TableCell>{r.plate_number}</TableCell>
+                        <TableCell>{r.driver_name}</TableCell>
+                        <TableCell className="text-right">{r.expected_distance || 'N/A'}</TableCell>
+                        <TableCell className="text-right">{r.actual_distance || 'N/A'}</TableCell>
+                        <TableCell className={`text-right font-medium ${r.variance !== 0 ? 'text-red-600' : ''}`}>{r.variance || 0}</TableCell>
+                        <TableCell className="text-right">{formatCurrency(r.amount_released || 0)}</TableCell>
+                        <TableCell className="text-right">{formatCurrency(r.actual_amount || 0)}</TableCell>
+                        <TableCell className={`text-right font-medium ${r.amount_variance !== 0 ? 'text-red-600' : ''}`}>{formatCurrency(r.amount_variance || 0)}</TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        )}
+      </Card>
+    );
+  };
+
+  // ============================================================
+  // LOADING STATE
+  // ============================================================
+
+  const isLoading = receiptLoading || budgetLoading || reconciliationLoading;
 
   if (isLoading) {
     return (
@@ -846,22 +632,17 @@ const MayorReports = () => {
     );
   }
 
-  // ============================================
-  // RENDER - MAIN
-  // ============================================
+  // ============================================================
+  // MAIN RENDER
+  // ============================================================
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
-      <div className="space-y-6 p-4 md:p-6 print:p-4 animate-fade-in-up">
+      <div className="space-y-6 p-4 md:p-6 print:p-4">
         {/* ========== HEADER ========== */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 print:hidden">
           <div className="flex items-center gap-3">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => navigate('/mo/dashboard')}
-              className="rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 h-10 w-10"
-            >
+            <Button variant="ghost" size="icon" onClick={() => navigate('/mo/dashboard')} className="rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 h-10 w-10">
               <ArrowLeft className="h-5 w-5" />
             </Button>
             <div>
@@ -871,7 +652,7 @@ const MayorReports = () => {
                 </div>
                 <div>
                   <h1 className="text-2xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 bg-clip-text text-transparent">
-                    {activeTab === 'fuel-receipt' ? 'Fuel Receipt Report' : 'Budget & Receipt Report'}
+                    Disbursing Officer Reports
                   </h1>
                   <p className="text-sm text-slate-500 dark:text-slate-400">
                     {periodType.charAt(0).toUpperCase() + periodType.slice(1)} report from {dateRange.startDate} to {dateRange.endDate}
@@ -881,38 +662,8 @@ const MayorReports = () => {
             </div>
           </div>
           <div className="flex gap-2 flex-wrap">
-            <Button
-              variant="outline"
-              onClick={handleRefresh}
-              disabled={receiptFetching || budgetFetching}
-              className="dark:border-slate-700 dark:text-slate-300"
-            >
-              <RefreshCw className={`h-4 w-4 mr-2 ${receiptFetching || budgetFetching ? 'animate-spin' : ''}`} />
-              Refresh
-            </Button>
-            <Button
-              onClick={handlePrint}
-              variant="outline"
-              className="dark:border-slate-700 dark:text-slate-300"
-            >
-              <Printer className="h-4 w-4 mr-2" />
-              Print
-            </Button>
-            <Button
-              onClick={() => handleExport('pdf')}
-              disabled={exportLoading}
-              className="bg-red-600 hover:bg-red-700 text-white"
-            >
-              <FileSpreadsheet className="h-4 w-4 mr-2" />
-              PDF
-            </Button>
-            <Button
-              onClick={() => handleExport('excel')}
-              disabled={exportLoading}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white"
-            >
-              <FileSpreadsheet className="h-4 w-4 mr-2" />
-              Excel
+            <Button variant="outline" onClick={handleRefresh} disabled={receiptFetching || budgetFetching || reconciliationFetching} className="dark:border-slate-700 dark:text-slate-300">
+              <RefreshCw className={`h-4 w-4 mr-2 ${receiptFetching || budgetFetching || reconciliationFetching ? 'animate-spin' : ''}`} /> Refresh
             </Button>
           </div>
         </div>
@@ -921,7 +672,6 @@ const MayorReports = () => {
         <Card className="dark:bg-slate-800/80 dark:border-slate-700 print:hidden">
           <CardContent className="pt-6">
             <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
-              {/* Period Type */}
               <div>
                 <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Period</label>
                 <Select value={periodType} onValueChange={setPeriodType}>
@@ -929,34 +679,20 @@ const MayorReports = () => {
                     <SelectValue placeholder="Select Period" />
                   </SelectTrigger>
                   <SelectContent>
-                    {PERIOD_TYPES.map(p => (
-                      <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
-                    ))}
+                    {PERIOD_TYPES.map(p => <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
 
-              {/* Date Range */}
               <div>
                 <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Start Date</label>
-                <Input
-                  type="date"
-                  value={customStartDate}
-                  onChange={(e) => setCustomStartDate(e.target.value)}
-                  className="mt-1 dark:bg-slate-900 dark:border-slate-700"
-                />
+                <Input type="date" value={customStartDate} onChange={(e) => setCustomStartDate(e.target.value)} className="mt-1 dark:bg-slate-900 dark:border-slate-700" />
               </div>
               <div>
                 <label className="text-sm font-medium text-slate-700 dark:text-slate-300">End Date</label>
-                <Input
-                  type="date"
-                  value={customEndDate}
-                  onChange={(e) => setCustomEndDate(e.target.value)}
-                  className="mt-1 dark:bg-slate-900 dark:border-slate-700"
-                />
+                <Input type="date" value={customEndDate} onChange={(e) => setCustomEndDate(e.target.value)} className="mt-1 dark:bg-slate-900 dark:border-slate-700" />
               </div>
 
-              {/* Department Filter */}
               <div>
                 <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Department</label>
                 <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
@@ -965,16 +701,13 @@ const MayorReports = () => {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Departments</SelectItem>
-                    {departments.map((dept) => (
-                      <SelectItem key={dept.department_id} value={String(dept.department_id)}>
-                        {dept.department_name}
-                      </SelectItem>
+                    {departments.map((d) => (
+                      <SelectItem key={d.department_id} value={String(d.department_id)}>{d.department_name}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
 
-              {/* Vehicle Filter */}
               <div>
                 <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Vehicle</label>
                 <Select value={vehicleFilter} onValueChange={setVehicleFilter}>
@@ -983,100 +716,34 @@ const MayorReports = () => {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Vehicles</SelectItem>
-                    {vehicles.map((vehicle) => (
-                      <SelectItem key={vehicle.vehicle_id} value={String(vehicle.vehicle_id)}>
-                        {vehicle.plate_number} - {vehicle.vehicle_model}
-                      </SelectItem>
+                    {vehicles.map((v) => (
+                      <SelectItem key={v.vehicle_id} value={String(v.vehicle_id)}>{v.plate_number} - {v.vehicle_model}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
             </div>
 
-            {/* Quick Date Buttons */}
             <div className="flex gap-2 mt-4 flex-wrap">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  const range = getDateRange('weekly');
-                  setCustomStartDate(range.startDate);
-                  setCustomEndDate(range.endDate);
-                  setPeriodType('weekly');
-                }}
-                className="text-xs dark:border-slate-700 dark:text-slate-300"
-              >
-                This Week
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  const range = getDateRange('monthly');
-                  setCustomStartDate(range.startDate);
-                  setCustomEndDate(range.endDate);
-                  setPeriodType('monthly');
-                }}
-                className="text-xs dark:border-slate-700 dark:text-slate-300"
-              >
-                This Month
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  const range = getDateRange('yearly');
-                  setCustomStartDate(range.startDate);
-                  setCustomEndDate(range.endDate);
-                  setPeriodType('yearly');
-                }}
-                className="text-xs dark:border-slate-700 dark:text-slate-300"
-              >
-                This Year
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setCustomStartDate('');
-                  setCustomEndDate('');
-                }}
-                className="text-xs dark:border-slate-700 dark:text-slate-300"
-              >
-                Clear Dates
-              </Button>
+              <Button variant="outline" size="sm" onClick={() => { const r = getDateRange('weekly'); setCustomStartDate(r.startDate); setCustomEndDate(r.endDate); setPeriodType('weekly'); }} className="text-xs">This Week</Button>
+              <Button variant="outline" size="sm" onClick={() => { const r = getDateRange('monthly'); setCustomStartDate(r.startDate); setCustomEndDate(r.endDate); setPeriodType('monthly'); }} className="text-xs">This Month</Button>
+              <Button variant="outline" size="sm" onClick={() => { const r = getDateRange('yearly'); setCustomStartDate(r.startDate); setCustomEndDate(r.endDate); setPeriodType('yearly'); }} className="text-xs">This Year</Button>
+              <Button variant="outline" size="sm" onClick={() => { setCustomStartDate(''); setCustomEndDate(''); }} className="text-xs">Clear Dates</Button>
             </div>
           </CardContent>
         </Card>
 
-        {/* ========== TABS ========== */}
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-2 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl print:hidden">
-            <TabsTrigger value="fuel-receipt" className="rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900 data-[state=active]:shadow-sm transition-all duration-200">
-              <Receipt className="h-4 w-4 mr-2" />
-              Receipts
-            </TabsTrigger>
-            <TabsTrigger value="budget-utilization" className="rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900 data-[state=active]:shadow-sm transition-all duration-200">
-              <DollarSign className="h-4 w-4 mr-2" />
-              Budget
-            </TabsTrigger>
-          </TabsList>
-
-          {/* TAB 1: FUEL RECEIPT */}
-          <TabsContent value="fuel-receipt" className="space-y-4 mt-6">
-            {renderFuelReceiptTable()}
-          </TabsContent>
-
-          {/* TAB 2: BUDGET UTILIZATION */}
-          <TabsContent value="budget-utilization">
-            {renderBudgetUtilization()}
-          </TabsContent>
-        </Tabs>
+        {/* ========== ALL 3 REPORTS ========== */}
+        <div className="space-y-6">
+          {renderFuelReceipt()}
+          {renderBudgetUtilization()}
+          {renderReconciliation()}
+        </div>
 
         {/* Footer */}
-        <div className="text-center text-xs text-slate-400 dark:text-slate-500 pt-2 border-t border-slate-200 dark:border-slate-700 print:block hidden">
+        <div className="text-center text-xs text-slate-400 dark:text-slate-500 pt-4 border-t border-slate-200 dark:border-slate-700 print:block hidden">
           <p>Generated on {format(new Date(), 'MMMM d, yyyy h:mm a')}</p>
-          <p>FCMS - {activeTab === 'fuel-receipt' ? 'Fuel Receipt Report' : 'Budget & Receipt Report'} • Laguindingan Municipality</p>
+          <p>FCMS - Fuel Consumption Monitoring Report • Laguindingan Municipality</p>
         </div>
       </div>
     </div>

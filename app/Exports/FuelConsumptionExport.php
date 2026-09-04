@@ -84,6 +84,13 @@ class FuelConsumptionExport implements
         ];
 
         $vehicles = $this->data['vehicle_breakdown'] ?? [];
+        
+        // ✅ Calculate totals
+        $totalTrips = 0;
+        $totalLiters = 0;
+        $totalCost = 0;
+        $totalDistance = 0;
+
         if (empty($vehicles)) {
             $rows[] = ['No data available', '', '', '', '', '', '', '', ''];
         } else {
@@ -103,6 +110,12 @@ class FuelConsumptionExport implements
                     $efficiency = 'Critical';
                 }
 
+                // Accumulate totals
+                $totalTrips += $vehicle['trips'] ?? 0;
+                $totalLiters += $vehicle['liters'] ?? 0;
+                $totalCost += $vehicle['cost'] ?? 0;
+                $totalDistance += $vehicle['distance_km'] ?? 0;
+
                 $rows[] = [
                     $vehicle['plate_number'] ?? 'N/A',
                     $vehicle['model'] ?? 'N/A',
@@ -115,6 +128,19 @@ class FuelConsumptionExport implements
                     $efficiency,
                 ];
             }
+
+            // ✅ Add TOTAL ROW
+            $rows[] = [
+                'TOTAL',                                    // Plate #
+                '',                                         // Vehicle Model
+                '',                                         // Fuel Type
+                $totalTrips,                                // Trips
+                number_format($totalLiters, 2),             // Liters
+                number_format($totalCost, 2),               // Cost
+                number_format($totalDistance, 2),           // Distance
+                $totalLiters > 0 ? number_format($totalDistance / $totalLiters, 2) : 0, // Km/L
+                '',                                         // Efficiency
+            ];
         }
 
         return $rows;
@@ -218,7 +244,7 @@ class FuelConsumptionExport implements
                 $sheet->getStyle('B13')->getFont()->getColor()->setRGB('2563EB');
 
                 // ============================================
-                // 3. VEHICLE BREAKDOWN TABLE HEADER (Row 15)
+                // 3. VEHICLE BREAKDOWN TABLE HEADER
                 // ============================================
                 $vehicleHeaderRow = 17;
                 
@@ -261,6 +287,16 @@ class FuelConsumptionExport implements
                             continue;
                         }
                         
+                        // ✅ Check if it's the TOTAL row
+                        $cellValueA = $sheet->getCell('A' . $row)->getValue();
+                        if ($cellValueA === 'TOTAL') {
+                            $sheet->getStyle('A' . $row . ':I' . $row)
+                                ->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('E5E7EB');
+                            $sheet->getStyle('A' . $row . ':I' . $row)->getFont()->setBold(true);
+                            $sheet->getStyle('D' . $row . ':H' . $row)->getFont()->setBold(true);
+                            continue;
+                        }
+                        
                         $fillColor = ($row % 2 == 0) ? 'F8FAFC' : 'FFFFFF';
                         $sheet->getStyle('A' . $row . ':I' . $row)
                             ->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB($fillColor);
@@ -286,6 +322,10 @@ class FuelConsumptionExport implements
                     
                     // Skip if it's "No data available" row
                     if ($value === 'No data available') continue;
+                    
+                    // Skip TOTAL row
+                    $cellValueA = $sheet->getCell('A' . $row)->getValue();
+                    if ($cellValueA === 'TOTAL') continue;
                     
                     // Set color based on efficiency
                     $colorMap = [

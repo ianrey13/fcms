@@ -47,6 +47,7 @@ import {
   TrendingUp,
   TrendingDown,
   Minus,
+  Calculator,
 } from "lucide-react";
 import {
   Dialog,
@@ -388,6 +389,14 @@ const MayorPending = () => {
   const [availableDepartments, setAvailableDepartments] = useState([]);
   const [loadingDepartments, setLoadingDepartments] = useState(false);
 
+  // ✅ Calculate estimated cost from ticket
+  const getEstimatedCost = (ticket) => {
+    if (!ticket) return 0;
+    // Use estimated_cost if available, otherwise calculate from fuel liters
+    return ticket.estimated_cost || 
+           (ticket.estimated_fuel_liters ? ticket.estimated_fuel_liters * 88 : 0);
+  };
+
   useEffect(() => {
     fetchTickets();
   }, []);
@@ -593,11 +602,13 @@ const MayorPending = () => {
   }, [tickets]);
 
   // ============================================================
-  // OPEN APPROVE DIALOG
+  // OPEN APPROVE DIALOG - ✅ Show estimated amount as suggestion
   // ============================================================
   const openApproveDialog = async (ticket) => {
     setSelectedTicket(ticket);
-    setAmountReleased(ticket.estimated_cost?.toString() || "");
+    
+    // ✅ Leave amount field empty - Mayor will enter the amount
+    setAmountReleased("");
     
     setIsCrossDepartment(false);
     setCrossDepartmentReason("");
@@ -1361,18 +1372,53 @@ const MayorPending = () => {
                 </div>
               </div>
 
-              {/* Amount */}
+              {/* Amount - ✅ Show estimated amount as suggestion */}
               <div>
                 <Label htmlFor="amount" className="text-sm text-slate-700 dark:text-slate-300">Amount (₱)</Label>
                 <Input
                   id="amount"
                   type="number"
                   step="0.01"
-                  placeholder="0.00"
+                  placeholder="Enter amount"
                   value={amountReleased}
                   onChange={(e) => setAmountReleased(e.target.value)}
                   className="mt-1 dark:bg-slate-900 dark:border-slate-700 dark:text-white"
                 />
+                {/* ✅ Show estimated cost as suggestion */}
+                {selectedTicket && getEstimatedCost(selectedTicket) > 0 && (
+                  <div className="flex items-center gap-2 mt-1.5">
+                    <div className="flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
+                      <Calculator className="h-3.5 w-3.5 text-blue-400" />
+                      <span>Suggested:</span>
+                      <span className="font-semibold text-blue-600 dark:text-blue-400">
+                        {formatCurrency(getEstimatedCost(selectedTicket))}
+                      </span>
+                    </div>
+                    {selectedTicket.estimated_fuel_liters && (
+                      <span className="text-xs text-slate-400 dark:text-slate-500">
+                        ({selectedTicket.estimated_fuel_liters} L × ₱88)
+                      </span>
+                    )}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 px-2 text-xs text-blue-500 hover:text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:text-blue-300 dark:hover:bg-blue-950/30"
+                      onClick={() => {
+                        const estimated = getEstimatedCost(selectedTicket);
+                        if (estimated > 0) {
+                          setAmountReleased(estimated.toString());
+                          toast.success("Suggested amount applied");
+                        }
+                      }}
+                    >
+                      Apply
+                    </Button>
+                  </div>
+                )}
+                <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
+                  Enter the amount to release. The suggested amount is based on estimated fuel consumption.
+                </p>
               </div>
             </div>
 

@@ -1,5 +1,5 @@
 // src/pages/mayor/budget/BudgetAllocation.jsx
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -45,6 +45,10 @@ import {
     Gauge,
     Activity,
     CheckCircle,
+    Search,
+    Filter,
+    ChevronDown,
+    ChevronUp,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { useNavigate } from "react-router-dom";
@@ -115,6 +119,121 @@ const DepartmentTooltip = ({ code, name }) => {
 };
 
 // ============================================
+// FILTER SECTION COMPONENT
+// ============================================
+
+const FilterSection = ({ filters, setFilters, departments, isFilterOpen, setIsFilterOpen }) => {
+    const hasActiveFilters = filters.searchTerm || filters.allocationStatus !== 'all' || filters.budgetRange !== 'all';
+
+    return (
+        <div className="mb-4">
+            <div className="flex items-center gap-2 mb-3">
+                <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setIsFilterOpen(!isFilterOpen)}
+                    className="dark:border-slate-700 dark:text-slate-300"
+                >
+                    <Filter className="h-4 w-4 mr-1.5" />
+                    Filters
+                    {hasActiveFilters && (
+                        <Badge className="ml-1.5 bg-blue-500 text-white text-[10px] px-1.5 py-0.5">
+                            {Object.values(filters).filter(v => v !== 'all' && v !== '').length}
+                        </Badge>
+                    )}
+                    {isFilterOpen ? (
+                        <ChevronUp className="h-4 w-4 ml-1.5" />
+                    ) : (
+                        <ChevronDown className="h-4 w-4 ml-1.5" />
+                    )}
+                </Button>
+
+                {hasActiveFilters && (
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setFilters({ searchTerm: '', allocationStatus: 'all', budgetRange: 'all' })}
+                        className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30 h-8 px-2"
+                    >
+                        <X className="h-3.5 w-3.5 mr-1" />
+                        Clear
+                    </Button>
+                )}
+            </div>
+
+            {isFilterOpen && (
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-slate-200 dark:border-slate-700">
+                    {/* Search by Department Name */}
+                    <div>
+                        <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Search Department</label>
+                        <div className="relative mt-1">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                            <Input
+                                placeholder="Type department name..."
+                                value={filters.searchTerm}
+                                onChange={(e) => setFilters(prev => ({ ...prev, searchTerm: e.target.value }))}
+                                className="pl-9 h-9 text-sm dark:bg-slate-800 dark:border-slate-700"
+                            />
+                        </div>
+                    </div>
+
+                    {/* Department Dropdown */}
+                    <div>
+                        <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Department</label>
+                        <select
+                            value={filters.departmentId}
+                            onChange={(e) => setFilters(prev => ({ ...prev, departmentId: e.target.value }))}
+                            className="w-full mt-1 px-3 py-1.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-800 dark:border-slate-700 dark:text-white text-sm"
+                        >
+                            <option value="all">All Departments</option>
+                            {departments.map((dept) => (
+                                <option key={dept.department_id} value={dept.department_id}>
+                                    {dept.department_name} ({dept.department_code})
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+
+                    {/* Allocation Status */}
+                    <div>
+                        <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Allocation Status</label>
+                        <select
+                            value={filters.allocationStatus}
+                            onChange={(e) => setFilters(prev => ({ ...prev, allocationStatus: e.target.value }))}
+                            className="w-full mt-1 px-3 py-1.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-800 dark:border-slate-700 dark:text-white text-sm"
+                        >
+                            <option value="all">All Statuses</option>
+                            <option value="has_budget">Has Budget</option>
+                            <option value="no_budget">No Budget</option>
+                            <option value="over_budget">Over Budget</option>
+                            <option value="near_limit">Near Limit (&gt;80%)</option>
+                            <option value="on_track">On Track</option>
+                        </select>
+                    </div>
+
+                    {/* Budget Range */}
+                    <div>
+                        <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Budget Range</label>
+                        <select
+                            value={filters.budgetRange}
+                            onChange={(e) => setFilters(prev => ({ ...prev, budgetRange: e.target.value }))}
+                            className="w-full mt-1 px-3 py-1.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-800 dark:border-slate-700 dark:text-white text-sm"
+                        >
+                            <option value="all">All Ranges</option>
+                            <option value="under_50k">Under ₱50,000</option>
+                            <option value="50k_100k">₱50,000 - ₱100,000</option>
+                            <option value="100k_500k">₱100,000 - ₱500,000</option>
+                            <option value="500k_1m">₱500,000 - ₱1,000,000</option>
+                            <option value="over_1m">Over ₱1,000,000</option>
+                        </select>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
+// ============================================
 // MAIN COMPONENT
 // ============================================
 
@@ -138,6 +257,7 @@ const BudgetAllocation = () => {
     });
     const [isBulkMode, setIsBulkMode] = useState(false);
     const [bulkData, setBulkData] = useState({});
+    const [isFilterOpen, setIsFilterOpen] = useState(false);
 
     // Weekly Ceiling state
     const [showWeeklyDialog, setShowWeeklyDialog] = useState(false);
@@ -147,6 +267,14 @@ const BudgetAllocation = () => {
         reason: "",
     });
     const [weeklyDepartment, setWeeklyDepartment] = useState(null);
+
+    // ============ FILTERS STATE ============
+    const [filters, setFilters] = useState({
+        searchTerm: '',
+        departmentId: 'all',
+        allocationStatus: 'all',
+        budgetRange: 'all',
+    });
 
     // ============================================
     // QUERIES
@@ -322,6 +450,75 @@ const BudgetAllocation = () => {
         }
         return <Badge className="bg-green-500">Active</Badge>;
     };
+
+    // ============================================
+    // FILTER LOGIC
+    // ============================================
+
+    const filteredBudgets = useMemo(() => {
+        let filtered = [...budgets];
+
+        // Search by department name or code
+        if (filters.searchTerm) {
+            const search = filters.searchTerm.toLowerCase();
+            filtered = filtered.filter(b => 
+                b.department_name?.toLowerCase().includes(search) ||
+                b.department_code?.toLowerCase().includes(search)
+            );
+        }
+
+        // Department filter
+        if (filters.departmentId !== 'all') {
+            filtered = filtered.filter(b => b.department_id === parseInt(filters.departmentId));
+        }
+
+        // Allocation Status filter
+        if (filters.allocationStatus !== 'all') {
+            filtered = filtered.filter(b => {
+                const annualAmount = b.annual_amount || 0;
+                const usedAmount = b.used_amount || 0;
+                const utilization = annualAmount > 0 ? (usedAmount / annualAmount) * 100 : 0;
+
+                switch (filters.allocationStatus) {
+                    case 'has_budget':
+                        return b.has_budget;
+                    case 'no_budget':
+                        return !b.has_budget;
+                    case 'over_budget':
+                        return b.remaining_amount < 0;
+                    case 'near_limit':
+                        return utilization > 80 && utilization <= 100;
+                    case 'on_track':
+                        return utilization > 0 && utilization <= 80;
+                    default:
+                        return true;
+                }
+            });
+        }
+
+        // Budget Range filter
+        if (filters.budgetRange !== 'all') {
+            filtered = filtered.filter(b => {
+                const amount = b.annual_amount || 0;
+                switch (filters.budgetRange) {
+                    case 'under_50k':
+                        return amount < 50000;
+                    case '50k_100k':
+                        return amount >= 50000 && amount < 100000;
+                    case '100k_500k':
+                        return amount >= 100000 && amount < 500000;
+                    case '500k_1m':
+                        return amount >= 500000 && amount < 1000000;
+                    case 'over_1m':
+                        return amount >= 1000000;
+                    default:
+                        return true;
+                }
+            });
+        }
+
+        return filtered;
+    }, [budgets, filters]);
 
     // ============================================
     // HANDLERS
@@ -644,9 +841,18 @@ const BudgetAllocation = () => {
                     />
                 </div>
 
+                {/* ========== FILTER SECTION ========== */}
+                <FilterSection
+                    filters={filters}
+                    setFilters={setFilters}
+                    departments={budgets}
+                    isFilterOpen={isFilterOpen}
+                    setIsFilterOpen={setIsFilterOpen}
+                />
+
                 {/* Budget Table Container */}
                 <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xl shadow-black/5">
-                    {/* Fixed Header - Sticky on its own */}
+                    {/* Fixed Header */}
                     <div className="border-b border-slate-200/60 dark:border-slate-700/60 px-6 py-4 flex-shrink-0">
                         <div className="flex items-center justify-between">
                             <div>
@@ -655,7 +861,8 @@ const BudgetAllocation = () => {
                                     Budget Details for {selectedYear}
                                 </h3>
                                 <p className="text-sm text-slate-500 dark:text-slate-400">
-                                    {budgets.length} departments
+                                    {filteredBudgets.length} departments
+                                    {filteredBudgets.length !== budgets.length && ` (filtered from ${budgets.length})`}
                                     {fiscalYear?.is_active === false && (
                                         <Badge className="ml-2 bg-yellow-500 text-white">
                                             <AlertCircle className="h-3 w-3 mr-1" />
@@ -664,16 +871,16 @@ const BudgetAllocation = () => {
                                     )}
                                 </p>
                             </div>
-                            {budgets.length > 0 && (
+                            {filteredBudgets.length > 0 && (
                                 <Badge className="bg-blue-500/20 text-blue-600 dark:text-blue-400 border-blue-500/30">
                                     <Zap className="h-3 w-3 mr-1" />
-                                    {budgets.length} records
+                                    {filteredBudgets.length} records
                                 </Badge>
                             )}
                         </div>
                     </div>
 
-                    {/* TABLE HEADER - Sticky outside scroll using position: sticky */}
+                    {/* TABLE HEADER - Sticky */}
                     <div 
                         className="sticky top-0 z-40 bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700"
                         style={{ 
@@ -685,7 +892,6 @@ const BudgetAllocation = () => {
                         <Table>
                             <TableHeader className="bg-slate-50 dark:bg-slate-900/50">
                                 <TableRow className="bg-slate-50 dark:bg-slate-900/50">
-                                    {/* Department Code */}
                                     <TableHead
                                         className="
                                             sticky left-0 z-50
@@ -702,8 +908,6 @@ const BudgetAllocation = () => {
                                             Code
                                         </span>
                                     </TableHead>
-
-                                    {/* Annual Budget */}
                                     <TableHead
                                         className="
                                             text-right
@@ -715,8 +919,6 @@ const BudgetAllocation = () => {
                                     >
                                         Annual Budget
                                     </TableHead>
-
-                                    {/* Weekly Ceiling */}
                                     <TableHead
                                         className="
                                             text-right
@@ -728,8 +930,6 @@ const BudgetAllocation = () => {
                                     >
                                         Weekly Ceiling
                                     </TableHead>
-
-                                    {/* Used */}
                                     <TableHead
                                         className="
                                             text-right
@@ -741,8 +941,6 @@ const BudgetAllocation = () => {
                                     >
                                         Used
                                     </TableHead>
-
-                                    {/* Remaining */}
                                     <TableHead
                                         className="
                                             text-right
@@ -754,8 +952,6 @@ const BudgetAllocation = () => {
                                     >
                                         Remaining
                                     </TableHead>
-
-                                    {/* Weekly Used */}
                                     <TableHead
                                         className="
                                             text-right
@@ -767,8 +963,6 @@ const BudgetAllocation = () => {
                                     >
                                         Weekly Used
                                     </TableHead>
-
-                                    {/* Weekly Remaining */}
                                     <TableHead
                                         className="
                                             text-right
@@ -780,8 +974,6 @@ const BudgetAllocation = () => {
                                     >
                                         Weekly Remaining
                                     </TableHead>
-
-                                    {/* Status */}
                                     <TableHead
                                         className="
                                             text-center
@@ -793,8 +985,6 @@ const BudgetAllocation = () => {
                                     >
                                         Status
                                     </TableHead>
-
-                                    {/* Actions */}
                                     <TableHead
                                         className="
                                             sticky right-0 z-50
@@ -815,15 +1005,26 @@ const BudgetAllocation = () => {
                     </div>
 
                     {/* Scrollable Table Body Container */}
-                    {budgets.length === 0 ? (
+                    {filteredBudgets.length === 0 ? (
                         <div className="text-center py-16">
                             <div className="w-20 h-20 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto mb-4">
-                                <AlertCircle className="h-10 w-10 text-slate-400 dark:text-slate-500" />
+                                <Search className="h-10 w-10 text-slate-400 dark:text-slate-500" />
                             </div>
                             <p className="text-slate-600 dark:text-slate-400 font-medium text-lg">No departments found</p>
                             <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">
-                                Please ask GSO to add departments or select a different year
+                                {filters.searchTerm || filters.departmentId !== 'all' || filters.allocationStatus !== 'all' || filters.budgetRange !== 'all'
+                                    ? 'Try adjusting your filters'
+                                    : 'Please ask GSO to add departments or select a different year'}
                             </p>
+                            {(filters.searchTerm || filters.departmentId !== 'all' || filters.allocationStatus !== 'all' || filters.budgetRange !== 'all') && (
+                                <Button
+                                    variant="link"
+                                    onClick={() => setFilters({ searchTerm: '', departmentId: 'all', allocationStatus: 'all', budgetRange: 'all' })}
+                                    className="mt-2"
+                                >
+                                    Clear filters
+                                </Button>
+                            )}
                         </div>
                     ) : (
                         <div
@@ -833,9 +1034,8 @@ const BudgetAllocation = () => {
                             }}
                         >
                             <Table className="w-full">
-                                {/* TABLE BODY */}
                                 <TableBody>
-                                    {budgets.map((budget) => {
+                                    {filteredBudgets.map((budget) => {
                                         const isEditing =
                                             isBulkMode && bulkData[budget.department_id];
 
@@ -1151,11 +1351,13 @@ const BudgetAllocation = () => {
                 {/* Footer */}
                 <div className="text-center text-xs text-slate-400 dark:text-slate-500 pt-2 border-t border-slate-200 dark:border-slate-700">
                     <p>FCMS - Mayor's Office • Annual Budget Allocation</p>
-                    <p className="mt-0.5">FY {selectedYear} • {budgets.length} departments • {summary.departments_with_budget || 0} with budget</p>
+                    <p className="mt-0.5">FY {selectedYear} • {filteredBudgets.length} departments • {filteredBudgets.filter(b => b.has_budget).length} with budget</p>
                 </div>
             </div>
 
-            {/* ========== ANNUAL BUDGET EDIT DIALOG ========== */}
+            {/* ========== DIALOGS (Keep existing dialogs) ========== */}
+
+            {/* ANNUAL BUDGET EDIT DIALOG */}
             <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
                 <DialogContent className="dark:bg-slate-800 dark:border-slate-700 max-w-md">
                     <DialogHeader>

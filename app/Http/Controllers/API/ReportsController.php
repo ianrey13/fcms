@@ -9,6 +9,7 @@ use App\Models\Vehicle;
 use App\Models\Department;
 use App\Models\DeptBudgetPeriod;
 use App\Models\GasSlip;
+use App\Models\AuditLog;
 use App\Exports\FuelConsumptionExport;
 use App\Exports\FuelReceiptReportExport;
 use Illuminate\Http\Request;
@@ -20,9 +21,9 @@ use Maatwebsite\Excel\Facades\Excel;
 
 class ReportsController extends Controller
 {
-    /**
-     * Get Fuel Consumption Report Data
-     */
+    // ============================================================
+    // 1. FUEL CONSUMPTION REPORT
+    // ============================================================
     public function getFuelConsumptionReport(Request $request)
     {
         try {
@@ -31,7 +32,6 @@ class ReportsController extends Controller
             $departmentId = $request->get('department_id');
             $vehicleId = $request->get('vehicle_id');
             
-            // Build query
             $query = FuelReceipt::with([
                 'gasSlip.tripTicket.department',
                 'gasSlip.tripTicket.vehicle',
@@ -59,9 +59,6 @@ class ReportsController extends Controller
             
             $fuelReceipts = $query->get();
             
-            // ============================================
-            // Calculate Summary
-            // ============================================
             $totalTrips = $fuelReceipts->unique('gas_slip.trip_ticket_id')->count();
             $totalLiters = $fuelReceipts->sum('liters_availed');
             $totalCost = $fuelReceipts->sum('amount_on_receipt');
@@ -78,9 +75,6 @@ class ReportsController extends Controller
                 'average_cost_per_km' => $totalDistance > 0 ? round($totalCost / $totalDistance, 2) : 0,
             ];
             
-            // ============================================
-            // Vehicle Breakdown with Distance Calculation
-            // ============================================
             $vehicleBreakdown = $fuelReceipts->groupBy(function($receipt) {
                 return $receipt->gasSlip->tripTicket->vehicle_id ?? 'unknown';
             })->map(function($group) {
@@ -106,16 +100,12 @@ class ReportsController extends Controller
                 ];
             })->values();
 
-            // Calculate percentages
             $totalLitersAll = $vehicleBreakdown->sum('liters');
             $vehicleBreakdown = $vehicleBreakdown->map(function($item) use ($totalLitersAll) {
                 $item['percentage_of_total_liters'] = $totalLitersAll > 0 ? round(($item['liters'] / $totalLitersAll) * 100, 2) : 0;
                 return $item;
             });
 
-            // ============================================
-            // Department Breakdown
-            // ============================================
             $departmentBreakdown = $fuelReceipts->groupBy(function($receipt) {
                 $department = $receipt->gasSlip->tripTicket->department;
                 return $department ? $department->department_id : 'unknown';
@@ -146,9 +136,6 @@ class ReportsController extends Controller
                 return $item;
             });
 
-            // ============================================
-            // Period Trends
-            // ============================================
             $periodTrends = $fuelReceipts->groupBy(function($receipt) {
                 return $receipt->created_at ? Carbon::parse($receipt->created_at)->format('Y-m') : 'Unknown';
             })->map(function($group) {
@@ -164,9 +151,6 @@ class ReportsController extends Controller
                 ];
             })->values();
 
-            // ============================================
-            // Efficiency Distribution
-            // ============================================
             $efficiencyDistribution = [
                 'Excellent' => 0,
                 'Good' => 0,
@@ -185,9 +169,6 @@ class ReportsController extends Controller
                 }
             }
 
-            // ============================================
-            // Recent Receipts
-            // ============================================
             $recentReceipts = $fuelReceipts->sortByDesc('created_at')->take(50)->map(function($receipt) {
                 $trip = $receipt->gasSlip->tripTicket;
                 $vehicle = $trip->vehicle;
@@ -238,409 +219,9 @@ class ReportsController extends Controller
         }
     }
 
-    /**
-     * EXPORT - Supports CSV, Excel, and PDF
-     */
-    public function exportFuelConsumptionReport(Request $request, $format)
-    {
-        try {
-            $response = $this->getFuelConsumptionReport($request);
-            $data = $response->getData(true);
-            
-            if (!$data['success']) {
-                $errorContent = "Error: " . ($data['message'] ?? 'Failed to get report data');
-                return $this->returnAsCSV($errorContent, 'error_report.csv');
-            }
-
-            $reportData = $data['data'];
-            $filename = 'fuel_consumption_report_' . date('Y-m-d');
-
-            if ($format === 'excel') {
-                return Excel::download(
-                    new FuelConsumptionExport($reportData), 
-                    $filename . '.xlsx'
-                );
-            } elseif ($format === 'pdf') {
-                return $this->generatePDF($reportData, $filename);
-            } else {
-                $content = $this->buildCSVContent($reportData);
-                return $this->returnAsCSV($content, $filename . '.csv');
-            }
-
-        } catch (\Exception $e) {
-            Log::error('Export error: ' . $e->getMessage());
-            Log::error($e->getTraceAsString());
-            $errorContent = "Error: " . $e->getMessage();
-            return $this->returnAsCSV($errorContent, 'error_report.csv');
-        }
-    }
-
-    // ============================================
-    // HELPER METHODS - CLEANED (No Odometer)
-    // ============================================
-
-    /**
-     * Calculate total distance from fuel receipts (GPS only)
-     */
-    private function calculateTotalDistance($receipts)
-    {
-        $totalDistance = 0;
-        foreach ($receipts as $receipt) {
-            // ✅ Only use GPS distance
-            if ($receipt->gps_distance_km) {
-                $totalDistance += $receipt->gps_distance_km;
-            }
-        }
-        return $totalDistance;
-    }
-
-    /**
-     * Calculate distance for a single receipt (GPS only)
-     */
-    private function calculateReceiptDistance($receipt)
-    {
-        // ✅ Only use GPS distance
-        return $receipt->gps_distance_km ?? 0;
-    }
-
-    private function getEfficiencyRating($liters, $distance)
-    {
-        if ($liters == 0 || $distance == 0) return 'No Data';
-        
-        $kmPerLiter = $distance / $liters;
-        
-        if ($kmPerLiter >= 10) return 'Excellent';
-        if ($kmPerLiter >= 7) return 'Good';
-        if ($kmPerLiter >= 5) return 'Average';
-        if ($kmPerLiter >= 3) return 'Poor';
-        return 'Critical - Needs Maintenance';
-    }
-
-    private function generatePDF($reportData, $filename)
-    {
-        try {
-            if (class_exists('Barryvdh\DomPDF\Facade\Pdf')) {
-                $html = $this->buildPDFHTML($reportData);
-                $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML($html);
-                $pdf->setPaper('A4', 'landscape');
-                return $pdf->download($filename . '.pdf');
-            }
-            
-            $html = $this->buildPDFHTML($reportData);
-            return response($html, 200, [
-                'Content-Type' => 'application/pdf',
-                'Content-Disposition' => 'attachment; filename="' . $filename . '.pdf"',
-            ]);
-
-        } catch (\Exception $e) {
-            Log::error('PDF generation error: ' . $e->getMessage());
-            $content = $this->buildCSVContent($reportData);
-            return $this->returnAsCSV($content, $filename . '.csv');
-        }
-    }
-
-    private function buildPDFHTML($reportData)
-    {
-        $summary = $reportData['summary'] ?? [];
-        $vehicles = $reportData['vehicle_breakdown'] ?? [];
-        $filters = $reportData['filters'] ?? [];
-        
-        $html = '<!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="utf-8">
-            <title>Fuel Consumption Report</title>
-            <style>
-                * { margin: 0; padding: 0; box-sizing: border-box; }
-                body { font-family: "DejaVu Sans", Arial, sans-serif; font-size: 10px; padding: 30px; color: #1e293b; }
-                .header { text-align: center; border-bottom: 3px solid #2563eb; padding-bottom: 15px; margin-bottom: 25px; }
-                .header h1 { font-size: 18px; color: #1e293b; font-weight: bold; }
-                .header p { color: #64748b; font-size: 11px; margin-top: 5px; }
-                .section { margin-bottom: 20px; }
-                .section-title { background: #e2e8f0; padding: 8px 12px; font-weight: bold; font-size: 12px; border-radius: 4px; margin-bottom: 10px; }
-                table { width: 100%; border-collapse: collapse; margin-top: 8px; }
-                th { background: #f1f5f9; padding: 8px; text-align: left; font-size: 9px; text-transform: uppercase; font-weight: bold; border-bottom: 2px solid #94a3b8; }
-                td { padding: 6px 8px; border-bottom: 1px solid #e2e8f0; font-size: 9px; }
-                .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 15px 0; }
-                .summary-card { background: #f8fafc; padding: 12px; border-radius: 6px; border: 1px solid #e2e8f0; text-align: center; }
-                .summary-card .label { font-size: 8px; color: #64748b; text-transform: uppercase; }
-                .summary-card .value { font-size: 14px; font-weight: bold; color: #0f172a; margin-top: 4px; }
-                .badge { padding: 2px 8px; border-radius: 10px; font-size: 8px; font-weight: bold; display: inline-block; }
-                .badge-excellent { background: #dcfce7; color: #166534; }
-                .badge-good { background: #dbeafe; color: #1e40af; }
-                .badge-average { background: #fef3c7; color: #92400e; }
-                .badge-poor { background: #fee2e2; color: #991b1b; }
-                .badge-critical { background: #fecaca; color: #7f1d1d; }
-                .footer { text-align: center; border-top: 1px solid #e2e8f0; padding-top: 15px; margin-top: 25px; color: #94a3b8; font-size: 8px; }
-                .text-right { text-align: right; }
-                .text-center { text-align: center; }
-                .text-muted { color: #94a3b8; }
-            </style>
-        </head>
-        <body>
-            <div class="header">
-                <h1>FUEL CONSUMPTION MONITORING REPORT</h1>
-                <p>Laguindingan Municipality - FCMS</p>
-                <p>Generated: ' . now()->format('F d, Y h:i A') . '</p>
-                <p style="font-size: 10px; margin-top: 3px;">
-                    Period: ' . ($filters['start_date'] ?? 'N/A') . ' to ' . ($filters['end_date'] ?? 'N/A') . '
-                </p>
-            </div>
-            
-         
-            <div class="section">
-                <div class="section-title">🚗 VEHICLE BREAKDOWN</div>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Plate #</th>
-                            <th>Model</th>
-                            <th>Fuel Type</th>
-                            <th class="text-right">Trips</th>
-                            <th class="text-right">Liters</th>
-                            <th class="text-right">Cost</th>
-                            <th class="text-right">Distance</th>
-                            <th class="text-right">Km/L</th>
-                            <th>Efficiency</th>
-                        </tr>
-                    </thead>
-                    <tbody>';
-        
-        if (count($vehicles) > 0) {
-            foreach ($vehicles as $v) {
-                $km = $v['km_per_liter'] ?? 0;
-                $badge = 'badge-average';
-                $label = 'Average';
-                if ($km >= 10) { $badge = 'badge-excellent'; $label = 'Excellent'; }
-                elseif ($km >= 7) { $badge = 'badge-good'; $label = 'Good'; }
-                elseif ($km >= 5) { $badge = 'badge-average'; $label = 'Average'; }
-                elseif ($km >= 3) { $badge = 'badge-poor'; $label = 'Poor'; }
-                elseif ($km > 0) { $badge = 'badge-critical'; $label = 'Critical'; }
-                else { $label = 'No Data'; $badge = 'badge-average'; }
-                
-                $html .= '<tr>
-                    <td><strong>' . ($v['plate_number'] ?? 'N/A') . '</strong></td>
-                    <td>' . ($v['model'] ?? 'N/A') . '</td>
-                    <td>' . ucfirst($v['fuel_type'] ?? 'N/A') . '</td>
-                    <td class="text-right">' . ($v['trips'] ?? 0) . '</td>
-                    <td class="text-right">' . number_format($v['liters'] ?? 0, 2) . '</td>
-                    <td class="text-right">₱' . number_format($v['cost'] ?? 0, 2) . '</td>
-                    <td class="text-right">' . number_format($v['distance_km'] ?? 0, 2) . '</td>
-                    <td class="text-right"><strong>' . number_format($km, 2) . '</strong></td>
-                    <td><span class="badge ' . $badge . '">' . $label . '</span></td>
-                </tr>';
-            }
-        } else {
-            $html .= '<tr><td colspan="9" class="text-center text-muted">No data available</td></tr>';
-        }
-        
-        $html .= '</tbody>
-                </table>
-            </div>
-            
-            <div class="footer">
-                <p>This report is automatically generated by the FCMS System</p>
-                <p>© ' . date('Y') . ' Laguindingan Municipality - Fuel Consumption Monitoring System</p>
-            </div>
-        </body>
-        </html>';
-        
-        return $html;
-    }
-
-    private function returnAsCSV($content, $filename)
-    {
-        return Response::make($content, 200, [
-            'Content-Type' => 'text/csv; charset=UTF-8',
-            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
-            'Cache-Control' => 'no-cache, no-store, must-revalidate',
-            'Pragma' => 'no-cache',
-            'Expires' => '0',
-        ]);
-    }
-
-    private function buildCSVContent($reportData)
-    {
-        $lines = [];
-        $lines[] = "\xEF\xBB\xBF";
-        $lines[] = 'FUEL CONSUMPTION MONITORING REPORT';
-        $lines[] = 'Generated: ' . now()->format('Y-m-d H:i:s');
-        $lines[] = '';
-        
-        $summary = $reportData['summary'] ?? [];
-        $lines[] = 'SUMMARY';
-        $lines[] = 'Total Trips,' . ($summary['total_trips'] ?? 0);
-        $lines[] = 'Total Fuel (Liters),' . ($summary['total_fuel_liters'] ?? 0);
-        $lines[] = 'Total Cost (PHP),' . ($summary['total_fuel_cost'] ?? 0);
-        $lines[] = 'Average Km/L,' . ($summary['average_km_per_liter'] ?? 0);
-        $lines[] = '';
-        
-        $lines[] = 'VEHICLE BREAKDOWN';
-        $lines[] = 'Plate #,Model,Fuel Type,Trips,Liters,Cost,Distance (km),Km/L,Efficiency';
-        
-        $vehicles = $reportData['vehicle_breakdown'] ?? [];
-        foreach ($vehicles as $v) {
-            $km = $v['km_per_liter'] ?? 0;
-            $efficiency = $v['efficiency_rating'] ?? 'No Data';
-            $lines[] = implode(',', [
-                '"' . ($v['plate_number'] ?? 'N/A') . '"',
-                '"' . ($v['model'] ?? 'N/A') . '"',
-                '"' . ($v['fuel_type'] ?? 'N/A') . '"',
-                $v['trips'] ?? 0,
-                $v['liters'] ?? 0,
-                $v['cost'] ?? 0,
-                $v['distance_km'] ?? 0,
-                $km,
-                '"' . $efficiency . '"',
-            ]);
-        }
-        
-        return implode("\n", $lines);
-    }
-
-    // ============================================
-    // TRIP REPORT
-    // ============================================
-
-    public function getTripReport(Request $request)
-    {
-        try {
-            $startDate = $request->get('start_date');
-            $endDate = $request->get('end_date');
-            $departmentId = $request->get('department_id');
-
-            $query = TripTicket::with(['department', 'driver.user', 'vehicle', 'gasSlip']);
-            
-            if ($startDate && $endDate) {
-                $query->whereBetween('trip_date', [$startDate, $endDate]);
-            }
-            
-            if ($departmentId) {
-                $query->where('department_id', $departmentId);
-            }
-            
-            $trips = $query->get();
-            
-            $statusBreakdown = $trips->groupBy('status')->map(function($group) {
-                return $group->count();
-            });
-
-            return response()->json([
-                'success' => true,
-                'data' => [
-                    'total_trips' => $trips->count(),
-                    'status_breakdown' => $statusBreakdown,
-                ]
-            ]);
-        } catch (\Exception $e) {
-            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
-        }
-    }
-
-    // ============================================
-    // FUEL REPORT (Legacy)
-    // ============================================
-
-    public function getFuelReport(Request $request)
-    {
-        try {
-            $startDate = $request->get('start_date');
-            $endDate = $request->get('end_date');
-
-            $query = FuelReceipt::query();
-            
-            if ($startDate && $endDate) {
-                $query->whereBetween('created_at', [$startDate, $endDate]);
-            }
-            
-            $receipts = $query->get();
-            
-            return response()->json([
-                'success' => true,
-                'data' => [
-                    'summary' => [
-                        'total_liters' => $receipts->sum('liters_availed'),
-                        'total_cost' => $receipts->sum('amount_on_receipt'),
-                    ]
-                ]
-            ]);
-        } catch (\Exception $e) {
-            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
-        }
-    }
-
-    // ============================================
-    // BUDGET REPORT
-    // ============================================
-
-public function getBudgetReport(Request $request)
-{
-    try {
-        $departmentId = $request->get('department_id');
-        $year = $request->get('year', date('Y'));
-
-        // ✅ Get budget periods grouped by department
-        $query = DeptBudgetPeriod::with(['department'])
-            ->whereYear('created_at', $year);
-
-        if ($departmentId) {
-            $query->where('department_id', $departmentId);
-        }
-
-        $periods = $query->get();
-
-        // ✅ Group by department and calculate totals
-        $groupedByDepartment = $periods->groupBy('department_id')->map(function($group) {
-            $first = $group->first();
-            $department = $first->department;
-            
-            $totalAllocated = $group->sum('allocated_amount');
-            $totalUsed = $group->sum(function($p) {
-                return GasSlip::where('period_id', $p->period_id)->sum('amount_released');
-            });
-            
-            return [
-                'period_id' => $first->period_id,
-                'department_id' => $first->department_id,
-                'department_name' => $department ? $department->department_name : 'Unknown',
-                'department_code' => $department ? $department->department_code : 'Unknown',
-                'allocated' => $totalAllocated,
-                'used' => $totalUsed,
-                'remaining' => $totalAllocated - $totalUsed,
-                'utilization_percentage' => $totalAllocated > 0 
-                    ? round(($totalUsed / $totalAllocated) * 100, 2) 
-                    : 0,
-                'period_count' => $group->count(),
-            ];
-        })->values();
-
-        $summary = [
-            'total_allocated' => $groupedByDepartment->sum('allocated'),
-            'total_used' => $groupedByDepartment->sum('used'),
-            'total_remaining' => $groupedByDepartment->sum('remaining'),
-            'total_departments' => $groupedByDepartment->count(),
-        ];
-
-        return response()->json([
-            'success' => true,
-            'data' => [
-                'summary' => $summary,
-                'periods' => $groupedByDepartment,
-            ]
-        ]);
-    } catch (\Exception $e) {
-        Log::error('Budget report error: ' . $e->getMessage());
-        return response()->json([
-            'success' => false,
-            'message' => 'Failed to generate budget report: ' . $e->getMessage()
-        ], 500);
-    }
-}
-
-    // ============================================
-    // VEHICLE REPORT - CLEANED (No Odometer)
-    // ============================================
-
+    // ============================================================
+    // 2. VEHICLE REPORT
+    // ============================================================
     public function getVehicleReport(Request $request)
     {
         try {
@@ -668,7 +249,6 @@ public function getBudgetReport(Request $request)
                         if ($fuelReceipt) {
                             $totalLiters += $fuelReceipt->liters_availed ?? 0;
                             $totalCost += $fuelReceipt->amount_on_receipt ?? 0;
-                            // ✅ Only use GPS distance
                             $totalDistance += $fuelReceipt->gps_distance_km ?? 0;
                         }
                     }
@@ -708,273 +288,1611 @@ public function getBudgetReport(Request $request)
         }
     }
 
-    // ============================================
-    // REPORT SUMMARY
-    // ============================================
-
-    public function getReportSummary(Request $request)
+    // ============================================================
+    // 3. BUDGET REPORT
+    // ============================================================
+    public function getBudgetReport(Request $request)
     {
         try {
+            $departmentId = $request->get('department_id');
+            $year = $request->get('year', date('Y'));
+
+            $query = DeptBudgetPeriod::with(['department'])
+                ->whereYear('created_at', $year);
+
+            if ($departmentId) {
+                $query->where('department_id', $departmentId);
+            }
+
+            $periods = $query->get();
+
+            $groupedByDepartment = $periods->groupBy('department_id')->map(function($group) {
+                $first = $group->first();
+                $department = $first->department;
+                
+                $totalAllocated = $group->sum('allocated_amount');
+                $totalUsed = $group->sum(function($p) {
+                    return GasSlip::where('period_id', $p->period_id)->sum('amount_released');
+                });
+                
+                return [
+                    'period_id' => $first->period_id,
+                    'department_id' => $first->department_id,
+                    'department_name' => $department ? $department->department_name : 'Unknown',
+                    'department_code' => $department ? $department->department_code : 'Unknown',
+                    'allocated' => $totalAllocated,
+                    'used' => $totalUsed,
+                    'remaining' => $totalAllocated - $totalUsed,
+                    'utilization' => $totalAllocated > 0 
+                        ? round(($totalUsed / $totalAllocated) * 100, 2) 
+                        : 0,
+                    'period_count' => $group->count(),
+                ];
+            })->values();
+
+            $summary = [
+                'total_allocated' => $groupedByDepartment->sum('allocated'),
+                'total_used' => $groupedByDepartment->sum('used'),
+                'total_remaining' => $groupedByDepartment->sum('remaining'),
+                'total_departments' => $groupedByDepartment->count(),
+            ];
+
             return response()->json([
                 'success' => true,
                 'data' => [
-                    'trips' => ['total' => TripTicket::count()],
-                    'fuel' => ['total_liters' => FuelReceipt::sum('liters_availed')],
+                    'summary' => $summary,
+                    'periods' => $groupedByDepartment,
                 ]
             ]);
         } catch (\Exception $e) {
-            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+            Log::error('Budget report error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to generate budget report: ' . $e->getMessage()
+            ], 500);
         }
     }
 
-    // ============================================
-    // EXPORT PLACEHOLDERS
-    // ============================================
-
-    public function exportTripReport(Request $request, $format)
+    // ============================================================
+    // 4. FUEL RECEIPT REPORT
+    // ============================================================
+    public function getFuelReceiptReport(Request $request)
     {
-        return response()->json(['message' => 'Trip export coming soon'], 200);
-    }
+        try {
+            $startDate = $request->get('start_date');
+            $endDate = $request->get('end_date');
+            $departmentId = $request->get('department_id');
+            $vehicleId = $request->get('vehicle_id');
 
-    public function exportFuelReport(Request $request, $format)
-    {
-        return response()->json(['message' => 'Fuel export coming soon'], 200);
-    }
-
-    public function exportBudgetReport(Request $request, $format)
-    {
-        return response()->json(['message' => 'Budget export coming soon'], 200);
-    }
-
-// ============================================
-// FUEL RECEIPT REPORT 
-// ============================================
-/**
- * GET FUEL RECEIPT REPORT - FIXED
- */
-public function getFuelReceiptReport(Request $request)
-{
-    try {
-        $startDate = $request->get('start_date');
-        $endDate = $request->get('end_date');
-        $departmentId = $request->get('department_id');
-        $vehicleId = $request->get('vehicle_id');
-
-        Log::info('Fuel Receipt Report Request', [
-            'start_date' => $startDate,
-            'end_date' => $endDate,
-            'department_id' => $departmentId,
-            'vehicle_id' => $vehicleId,
-        ]);
-
-        $query = FuelReceipt::with([
-            'gasSlip.tripTicket.department',
-            'gasSlip.tripTicket.vehicle',
-            'gasSlip.tripTicket.driver.user'
-        ]);
-
-        if ($startDate && $endDate) {
-            $query->whereBetween('created_at', [
-                Carbon::parse($startDate)->startOfDay(),
-                Carbon::parse($endDate)->endOfDay()
+            Log::info('Fuel Receipt Report Request', [
+                'start_date' => $startDate,
+                'end_date' => $endDate,
+                'department_id' => $departmentId,
+                'vehicle_id' => $vehicleId,
             ]);
-        }
 
-        if ($departmentId) {
-            $query->whereHas('gasSlip.tripTicket', function($q) use ($departmentId) {
-                $q->where('department_id', $departmentId);
-            });
-        }
+            $query = FuelReceipt::with([
+                'gasSlip.tripTicket.department',
+                'gasSlip.tripTicket.vehicle',
+                'gasSlip.tripTicket.driver.user'
+            ]);
 
-        if ($vehicleId) {
-            $query->whereHas('gasSlip.tripTicket', function($q) use ($vehicleId) {
-                $q->where('vehicle_id', $vehicleId);
-            });
-        }
-
-        $receipts = $query->get();
-
-        Log::info('Receipts found: ' . $receipts->count());
-
-        $formattedReceipts = $receipts->map(function($receipt) {
-            $trip = $receipt->gasSlip->tripTicket;
-            $vehicle = $trip->vehicle;
-            $department = $trip->department;
-            $driver = $trip->driver;
-
-            // ✅ Get invoice number
-            $invoiceNumber = $receipt->invoice_number ?? 'N/A';
-
-            // ✅ Get unit price - calculate if not set
-            $unitPrice = $receipt->unit_price ?? 0;
-            if ($unitPrice == 0 && $receipt->liters_availed > 0 && $receipt->amount_on_receipt > 0) {
-                $unitPrice = round($receipt->amount_on_receipt / $receipt->liters_availed, 2);
+            if ($startDate && $endDate) {
+                $query->whereBetween('created_at', [
+                    Carbon::parse($startDate)->startOfDay(),
+                    Carbon::parse($endDate)->endOfDay()
+                ]);
             }
 
-            // ✅ Get time fields from fuel_receipt (trip_started_at, trip_ended_at)
-            $timeDeparture = $receipt->trip_started_at 
-                ? Carbon::parse($receipt->trip_started_at)->format('h:i A') 
-                : 'N/A';
-            
-            $timeArrival = $receipt->trip_ended_at 
-                ? Carbon::parse($receipt->trip_ended_at)->format('h:i A') 
-                : 'N/A';
+            if ($departmentId) {
+                $query->whereHas('gasSlip.tripTicket', function($q) use ($departmentId) {
+                    $q->where('department_id', $departmentId);
+                });
+            }
 
-            // ✅ Get status from trip ticket
-            $status = $trip->status ?? 'N/A';
-            
-            // ✅ Map status to display label
-            $statusMap = [
-                'closed' => 'Closed',
-                'completed' => 'Completed',
-                'pending_mayors_office' => 'Pending MO',
-                'funds_issued' => 'Funds Issued',
-                'in_transit' => 'In Transit',
-                'acknowledged' => 'Acknowledged',
-                'pending_gso_validation' => 'Pending Validation',
+            if ($vehicleId) {
+                $query->whereHas('gasSlip.tripTicket', function($q) use ($vehicleId) {
+                    $q->where('vehicle_id', $vehicleId);
+                });
+            }
+
+            $receipts = $query->get();
+
+            Log::info('Receipts found: ' . $receipts->count());
+
+            $formattedReceipts = $receipts->map(function($receipt) {
+                $trip = $receipt->gasSlip->tripTicket;
+                $vehicle = $trip->vehicle;
+                $department = $trip->department;
+                $driver = $trip->driver;
+
+                $invoiceNumber = $receipt->invoice_number ?? 'N/A';
+
+                $unitPrice = $receipt->unit_price ?? 0;
+                if ($unitPrice == 0 && $receipt->liters_availed > 0 && $receipt->amount_on_receipt > 0) {
+                    $unitPrice = round($receipt->amount_on_receipt / $receipt->liters_availed, 2);
+                }
+
+                $timeDeparture = $receipt->trip_started_at 
+                    ? Carbon::parse($receipt->trip_started_at)->format('h:i A') 
+                    : 'N/A';
+                
+                $timeArrival = $receipt->trip_ended_at 
+                    ? Carbon::parse($receipt->trip_ended_at)->format('h:i A') 
+                    : 'N/A';
+
+                $status = $trip->status ?? 'N/A';
+                
+                $statusMap = [
+                    'closed' => 'Closed',
+                    'completed' => 'Completed',
+                    'pending_mayors_office' => 'Pending MO',
+                    'funds_issued' => 'Funds Issued',
+                    'in_transit' => 'In Transit',
+                    'acknowledged' => 'Acknowledged',
+                    'pending_gso_validation' => 'Pending Validation',
+                ];
+                $statusLabel = $statusMap[$status] ?? $status;
+
+                return [
+                    'used_for' => $department ? $department->department_name : 'N/A',
+                    'invoice_number' => $invoiceNumber,
+                    'charge_invoice_no' => $invoiceNumber,
+                    'gas_slip_id' => $receipt->gas_slip_id,
+                    'date' => $receipt->created_at ? $receipt->created_at->format('m/d/Y') : 'N/A',
+                    'lubricant' => $vehicle ? strtoupper($vehicle->fuel_type) : 'N/A',
+                    'fuel_type' => $vehicle ? strtoupper($vehicle->fuel_type) : 'N/A',
+                    'quantity' => $receipt->liters_availed ?? 0,
+                    'unit_price' => $unitPrice,
+                    'formatted_unit_price' => '₱' . number_format($unitPrice, 2),
+                    'amount' => $receipt->amount_on_receipt ?? 0,
+                    'formatted_amount' => '₱' . number_format($receipt->amount_on_receipt ?? 0, 2),
+                    'ticket_number' => $trip->trip_ticket_number ?? 'N/A',
+                    'control_no' => $trip->trip_ticket_number ?? 'N/A',
+                    'plate_no' => $vehicle ? $vehicle->plate_number : 'N/A',
+                    'plate_number' => $vehicle ? $vehicle->plate_number : 'N/A',
+                    'vehicle' => $vehicle ? $vehicle->vehicle_model : 'N/A',
+                    'vehicle_model' => $vehicle ? $vehicle->vehicle_model : 'N/A',
+                    'vehicle_id' => $vehicle ? $vehicle->vehicle_id : null,
+                    'department' => $department ? $department->department_name : 'N/A',
+                    'department_name' => $department ? $department->department_name : 'N/A',
+                    'department_id' => $department ? $department->department_id : null,
+                    'driver' => $driver && $driver->user ? $driver->user->full_name : 'N/A',
+                    'driver_name' => $driver && $driver->user ? $driver->user->full_name : 'N/A',
+                    'driver_id' => $driver ? $driver->driver_id : null,
+                    'destination' => $trip->destination ?? 'N/A',
+                    'time_departure' => $timeDeparture,
+                    'time_arrival' => $timeArrival,
+                    'status' => $statusLabel,
+                    'reconciliation_status' => $receipt->gasSlip?->reconciliation_status ?? 'N/A',
+                    'has_receipt' => !is_null($receipt->receipt_photo_path),
+                    'receipt_uploaded_at' => $receipt->receipt_uploaded_at 
+                        ? $receipt->receipt_uploaded_at->format('m/d/Y H:i') 
+                        : 'N/A',
+                    'fuel_receipt_id' => $receipt->fuel_receipt_id,
+                    'trip_date' => $trip->trip_date ?? 'N/A',
+                    'trip_started_at' => $receipt->trip_started_at,
+                    'trip_ended_at' => $receipt->trip_ended_at,
+                ];
+            });
+
+            $summary = [
+                'total_receipts' => $receipts->count(),
+                'total_liters' => round($receipts->sum('liters_availed'), 2),
+                'total_cost' => round($receipts->sum('amount_on_receipt'), 2),
+                'total_vehicles' => $receipts->pluck('gasSlip.tripTicket.vehicle_id')->unique()->count(),
+                'total_departments' => $receipts->pluck('gasSlip.tripTicket.department_id')->unique()->count(),
+                'avg_unit_price' => $receipts->count() > 0 && $receipts->sum('liters_availed') > 0 
+                    ? round($receipts->sum('amount_on_receipt') / $receipts->sum('liters_availed'), 2) 
+                    : 0,
             ];
-            $statusLabel = $statusMap[$status] ?? $status;
 
-            return [
-                'used_for' => $department ? $department->department_name : 'N/A',
-                'invoice_number' => $invoiceNumber,
-                'charge_invoice_no' => $invoiceNumber,
-                'gas_slip_id' => $receipt->gas_slip_id,
-                'date' => $receipt->created_at ? $receipt->created_at->format('m/d/Y') : 'N/A',
-                'lubricant' => $vehicle ? strtoupper($vehicle->fuel_type) : 'N/A',
-                'fuel_type' => $vehicle ? strtoupper($vehicle->fuel_type) : 'N/A',
-                'quantity' => $receipt->liters_availed ?? 0,
-                'unit_price' => $unitPrice,
-                'formatted_unit_price' => '₱' . number_format($unitPrice, 2),
-                'amount' => $receipt->amount_on_receipt ?? 0,
-                'formatted_amount' => '₱' . number_format($receipt->amount_on_receipt ?? 0, 2),
-                'ticket_number' => $trip->trip_ticket_number ?? 'N/A',
-                'control_no' => $trip->trip_ticket_number ?? 'N/A',
-                'plate_no' => $vehicle ? $vehicle->plate_number : 'N/A',
-                'plate_number' => $vehicle ? $vehicle->plate_number : 'N/A',
-                'vehicle' => $vehicle ? $vehicle->vehicle_model : 'N/A',
-                'vehicle_model' => $vehicle ? $vehicle->vehicle_model : 'N/A',
-                'vehicle_id' => $vehicle ? $vehicle->vehicle_id : null,
-                'department' => $department ? $department->department_name : 'N/A',
-                'department_name' => $department ? $department->department_name : 'N/A',
-                'department_id' => $department ? $department->department_id : null,
-                'driver' => $driver && $driver->user ? $driver->user->full_name : 'N/A',
-                'driver_name' => $driver && $driver->user ? $driver->user->full_name : 'N/A',
-                'driver_id' => $driver ? $driver->driver_id : null,
-                'destination' => $trip->destination ?? 'N/A',
-                'time_departure' => $timeDeparture,
-                'time_arrival' => $timeArrival,
-                'status' => $statusLabel,
-                'reconciliation_status' => $receipt->gasSlip?->reconciliation_status ?? 'N/A',
-                'has_receipt' => !is_null($receipt->receipt_photo_path),
-                'receipt_uploaded_at' => $receipt->receipt_uploaded_at 
-                    ? $receipt->receipt_uploaded_at->format('m/d/Y H:i') 
-                    : 'N/A',
-                'fuel_receipt_id' => $receipt->fuel_receipt_id,
-                'trip_date' => $trip->trip_date ?? 'N/A',
-                'trip_started_at' => $receipt->trip_started_at,
-                'trip_ended_at' => $receipt->trip_ended_at,
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'summary' => $summary,
+                    'receipts' => $formattedReceipts,
+                    'filters' => [
+                        'start_date' => $startDate,
+                        'end_date' => $endDate,
+                        'department_id' => $departmentId,
+                        'vehicle_id' => $vehicleId,
+                    ],
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Fuel receipt report error: ' . $e->getMessage());
+            Log::error($e->getTraceAsString());
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to generate fuel receipt report: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    // ============================================================
+    // 5. RECONCILIATION REPORT
+    // ============================================================
+    public function getReconciliationReport(Request $request)
+    {
+        try {
+            $startDate = $request->get('start_date');
+            $endDate = $request->get('end_date');
+            $departmentId = $request->get('department_id');
+
+            $query = TripTicket::with([
+                'department',
+                'driver.user',
+                'vehicle',
+                'gasSlip',
+                'gasSlip.fuelReceipt',
+            ])
+            ->whereHas('gasSlip')
+            ->whereHas('gasSlip.fuelReceipt');
+
+            if ($startDate && $endDate) {
+                $query->whereBetween('submitted_at', [
+                    Carbon::parse($startDate)->startOfDay(),
+                    Carbon::parse($endDate)->endOfDay()
+                ]);
+            }
+
+            if ($departmentId) {
+                $query->where('department_id', $departmentId);
+            }
+
+            $trips = $query->get();
+
+            $reconciliations = $trips->map(function ($trip) {
+                $estimatedFuel = $trip->estimated_fuel_liters ?? 0;
+                $actualFuel = $trip->gasSlip?->fuelReceipt?->liters_availed ?? 0;
+                $variance = $estimatedFuel - $actualFuel;
+
+                $varianceStatus = 'normal';
+                if (abs($variance) > 0.5) {
+                    $varianceStatus = abs($variance) > 2 ? 'high_discrepancy' : 'minor_discrepancy';
+                }
+
+                return [
+                    'ticket_number' => $trip->trip_ticket_number,
+                    'department_name' => $trip->department?->department_name ?? 'N/A',
+                    'plate_number' => $trip->vehicle?->plate_number ?? 'N/A',
+                    'driver_name' => $trip->driver?->user?->full_name ?? 'N/A',
+                    'amount_released' => $trip->gasSlip?->amount_released ?? 0,
+                    'estimated_fuel' => round($estimatedFuel, 2),
+                    'actual_fuel' => round($actualFuel, 2),
+                    'variance' => round($variance, 2),
+                    'variance_status' => $varianceStatus,
+                    'status' => $trip->gasSlip?->reconciliation_status ?? 'pending',
+                    'reconciled_by' => $trip->gasSlip?->reconciledBy?->full_name ?? 'N/A',
+                    'reconciled_at' => $trip->gasSlip?->reconciled_at,
+                ];
+            });
+
+            $summary = [
+                'total_reconciliations' => $reconciliations->count(),
+                'total_verified' => $reconciliations->filter(fn($r) => $r['status'] === 'verified')->count(),
+                'total_discrepancy' => $reconciliations->filter(fn($r) => $r['status'] === 'discrepancy')->count(),
+                'total_amount_released' => $reconciliations->sum('amount_released'),
             ];
-        });
 
-        // ✅ Calculate summary
-        $summary = [
-            'total_receipts' => $receipts->count(),
-            'total_liters' => round($receipts->sum('liters_availed'), 2),
-            'total_cost' => round($receipts->sum('amount_on_receipt'), 2),
-            'total_vehicles' => $receipts->pluck('gasSlip.tripTicket.vehicle_id')->unique()->count(),
-            'total_departments' => $receipts->pluck('gasSlip.tripTicket.department_id')->unique()->count(),
-            'avg_unit_price' => $receipts->count() > 0 && $receipts->sum('liters_availed') > 0 
-                ? round($receipts->sum('amount_on_receipt') / $receipts->sum('liters_availed'), 2) 
-                : 0,
-        ];
-
-        return response()->json([
-            'success' => true,
-            'data' => [
-                'summary' => $summary,
-                'receipts' => $formattedReceipts,
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'reconciliations' => $reconciliations,
+                    'summary' => $summary,
+                ],
                 'filters' => [
                     'start_date' => $startDate,
                     'end_date' => $endDate,
                     'department_id' => $departmentId,
-                    'vehicle_id' => $vehicleId,
-                ],
-            ]
-        ]);
+                ]
+            ]);
 
-    } catch (\Exception $e) {
-        Log::error('Fuel receipt report error: ' . $e->getMessage());
-        Log::error($e->getTraceAsString());
-        
-        return response()->json([
-            'success' => false,
-            'message' => 'Failed to generate fuel receipt report: ' . $e->getMessage()
-        ], 500);
-    }
-}
-/**
- * Calculate unit price from amount and liters
- */
-private function calculateUnitPrice($amount, $liters)
-{
-    if ($liters > 0 && $amount > 0) {
-        return round($amount / $liters, 2);
-    }
-    return 0;
-}
-
-    // ============================================
-    // EXPORT FUEL RECEIPT REPORT
-    // ============================================
-
-    /**
- * EXPORT FUEL RECEIPT REPORT - SUPPORTS PDF, EXCEL, CSV
- */
-public function exportFuelReceiptReport(Request $request, $format)
-{
-    try {
-        // ✅ Get the report data
-        $response = $this->getFuelReceiptReport($request);
-        $data = $response->getData(true);
-
-        if (!$data['success']) {
+        } catch (\Exception $e) {
+            Log::error('Reconciliation report error: ' . $e->getMessage());
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to get report data'
+                'message' => 'Failed to fetch reconciliation report: ' . $e->getMessage()
             ], 500);
         }
+    }
 
-        $reportData = $data['data'];
-        $filename = 'fuel_receipt_report_' . date('Y-m-d');
+    // ============================================================
+    // 6. DEPARTMENT FUEL CONSUMPTION
+    // ============================================================
+    public function getDepartmentFuelConsumption(Request $request)
+    {
+        try {
+            $startDate = $request->get('start_date');
+            $endDate = $request->get('end_date');
+            $departmentId = $request->get('department_id');
 
-        // ✅ Handle different formats
-        if ($format === 'excel' || $format === 'xlsx') {
-            return Excel::download(
-                new FuelReceiptReportExport($reportData, 'gso'),
-                $filename . '.xlsx'
-            );
-        } elseif ($format === 'pdf') {
-            // ✅ Use the updated PDF builder
-            return $this->generateFuelReceiptPDF($reportData, $filename);
-        } else {
-            // CSV
-            return $this->exportFuelReceiptCSV($reportData, $filename);
+            $query = FuelReceipt::with([
+                'gasSlip.tripTicket.department',
+                'gasSlip.tripTicket.vehicle',
+            ]);
+
+            if ($startDate && $endDate) {
+                $query->whereBetween('created_at', [
+                    Carbon::parse($startDate)->startOfDay(),
+                    Carbon::parse($endDate)->endOfDay()
+                ]);
+            }
+
+            if ($departmentId) {
+                $query->whereHas('gasSlip.tripTicket', function($q) use ($departmentId) {
+                    $q->where('department_id', $departmentId);
+                });
+            }
+
+            $receipts = $query->get();
+
+            $departments = $receipts->groupBy(function($receipt) {
+                $department = $receipt->gasSlip->tripTicket->department;
+                return $department ? $department->department_id : 'unknown';
+            })->map(function($group) {
+                $first = $group->first();
+                $department = $first->gasSlip->tripTicket->department;
+                
+                $totalTrips = $group->unique('gas_slip.trip_ticket_id')->count();
+                $totalLiters = $group->sum('liters_availed');
+                $totalCost = $group->sum('amount_on_receipt');
+                $totalDistance = $group->sum('gps_distance_km');
+                
+                return [
+                    'department_id' => $department ? $department->department_id : null,
+                    'department_name' => $department ? $department->department_name : 'Unknown',
+                    'department_code' => $department ? $department->department_code : 'N/A',
+                    'total_trips' => $totalTrips,
+                    'total_fuel_liters' => round($totalLiters, 2),
+                    'total_amount' => round($totalCost, 2),
+                    'total_distance_km' => round($totalDistance, 2),
+                    'avg_fuel_per_trip' => $totalTrips > 0 ? round($totalLiters / $totalTrips, 2) : 0,
+                    'avg_cost_per_trip' => $totalTrips > 0 ? round($totalCost / $totalTrips, 2) : 0,
+                    'km_per_liter' => $totalLiters > 0 ? round($totalDistance / $totalLiters, 2) : 0,
+                ];
+            })->values();
+
+            $summary = [
+                'total_departments' => $departments->count(),
+                'total_trips' => $departments->sum('total_trips'),
+                'total_fuel_liters' => round($departments->sum('total_fuel_liters'), 2),
+                'total_cost' => round($departments->sum('total_amount'), 2),
+            ];
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'departments' => $departments,
+                    'summary' => $summary,
+                    'filters' => [
+                        'start_date' => $startDate,
+                        'end_date' => $endDate,
+                        'department_id' => $departmentId,
+                    ]
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Department Fuel Consumption error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to generate report: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    // ============================================================
+    // 7. MONTHLY FUEL CONSUMPTION
+    // ============================================================
+    public function getMonthlyFuelConsumption(Request $request)
+    {
+        try {
+            $year = $request->get('year', date('Y'));
+            $departmentId = $request->get('department_id');
+
+            $query = FuelReceipt::with([
+                'gasSlip.tripTicket.department',
+            ])
+            ->whereYear('created_at', $year);
+
+            if ($departmentId) {
+                $query->whereHas('gasSlip.tripTicket', function($q) use ($departmentId) {
+                    $q->where('department_id', $departmentId);
+                });
+            }
+
+            $receipts = $query->get();
+
+            $months = $receipts->groupBy(function($receipt) {
+                return $receipt->created_at ? Carbon::parse($receipt->created_at)->format('Y-m') : 'unknown';
+            })->map(function($group) {
+                $monthDate = Carbon::parse($group->first()->created_at);
+                
+                $totalTrips = $group->unique('gas_slip.trip_ticket_id')->count();
+                $totalLiters = $group->sum('liters_availed');
+                $totalCost = $group->sum('amount_on_receipt');
+                $totalDistance = $group->sum('gps_distance_km');
+                
+                return [
+                    'month' => $monthDate->format('F Y'),
+                    'month_key' => $monthDate->format('Y-m'),
+                    'total_trips' => $totalTrips,
+                    'total_fuel_liters' => round($totalLiters, 2),
+                    'total_cost' => round($totalCost, 2),
+                    'total_distance_km' => round($totalDistance, 2),
+                    'avg_fuel_per_trip' => $totalTrips > 0 ? round($totalLiters / $totalTrips, 2) : 0,
+                    'km_per_liter' => $totalLiters > 0 ? round($totalDistance / $totalLiters, 2) : 0,
+                ];
+            })->sortKeys()->values();
+
+            $summary = [
+                'total_months' => $months->count(),
+                'total_trips' => $months->sum('total_trips'),
+                'total_fuel_liters' => round($months->sum('total_fuel_liters'), 2),
+                'total_cost' => round($months->sum('total_cost'), 2),
+                'year' => $year,
+            ];
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'months' => $months,
+                    'summary' => $summary,
+                    'filters' => [
+                        'year' => $year,
+                        'department_id' => $departmentId,
+                    ]
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Monthly Fuel Consumption error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to generate report: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    // ============================================================
+    // 8. TRIP TICKET REPORT
+    // ============================================================
+    public function getTripTicketReport(Request $request)
+    {
+        try {
+            $startDate = $request->get('start_date');
+            $endDate = $request->get('end_date');
+            $departmentId = $request->get('department_id');
+            $status = $request->get('status');
+
+            $query = TripTicket::with([
+                'department',
+                'driver.user',
+                'vehicle',
+                'gasSlip',
+                'gasSlip.fuelReceipt',
+            ]);
+
+            if ($startDate && $endDate) {
+                $query->whereBetween('trip_date', [
+                    Carbon::parse($startDate),
+                    Carbon::parse($endDate)
+                ]);
+            }
+
+            if ($departmentId) {
+                $query->where('department_id', $departmentId);
+            }
+
+            if ($status) {
+                $query->where('status', $status);
+            }
+
+            $trips = $query->orderBy('trip_date', 'desc')->get();
+
+            $formattedTrips = $trips->map(function($trip) {
+                $gasSlip = $trip->gasSlip;
+                $fuelReceipt = $gasSlip ? $gasSlip->fuelReceipt : null;
+                
+                $distance = $fuelReceipt ? $fuelReceipt->gps_distance_km : $trip->estimated_distance_km;
+                
+                return [
+                    'trip_ticket_id' => $trip->trip_ticket_id,
+                    'trip_ticket_number' => $trip->trip_ticket_number,
+                    'trip_date' => $trip->trip_date,
+                    'department_name' => $trip->department?->department_name ?? 'N/A',
+                    'department_code' => $trip->department?->department_code ?? 'N/A',
+                    'vehicle_model' => $trip->vehicle?->vehicle_model ?? 'N/A',
+                    'plate_number' => $trip->vehicle?->plate_number ?? 'N/A',
+                    'driver_name' => $trip->driver?->user?->full_name ?? 'N/A',
+                    'destination' => $trip->destination,
+                    'purpose' => $trip->purpose,
+                    'estimated_distance_km' => $trip->estimated_distance_km,
+                    'actual_distance_km' => $trip->actual_distance_km ?? $fuelReceipt?->gps_distance_km,
+                    'estimated_fuel_liters' => $trip->estimated_fuel_liters,
+                    'actual_fuel_used' => $trip->actual_fuel_used ?? $fuelReceipt?->liters_availed,
+                    'amount_released' => $gasSlip?->amount_released ?? 0,
+                    'status' => $trip->status,
+                    'status_label' => $trip->status_label,
+                    'has_receipt' => $fuelReceipt && !is_null($fuelReceipt->receipt_photo_path),
+                    'submitted_at' => $trip->submitted_at,
+                ];
+            });
+
+            $statusBreakdown = $trips->groupBy('status')->map(fn($g) => $g->count());
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'trips' => $formattedTrips,
+                    'summary' => [
+                        'total_trips' => $trips->count(),
+                        'status_breakdown' => $statusBreakdown,
+                        'total_amount_released' => round($formattedTrips->sum('amount_released'), 2),
+                        'total_distance' => round($formattedTrips->sum('actual_distance_km') ?? $formattedTrips->sum('estimated_distance_km'), 2),
+                    ],
+                    'filters' => [
+                        'start_date' => $startDate,
+                        'end_date' => $endDate,
+                        'department_id' => $departmentId,
+                        'status' => $status,
+                    ]
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Trip Ticket Report error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to generate report: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    // ============================================================
+    // 9. GPS VEHICLE ACTIVITY
+    // ============================================================
+    public function getGPSVehicleActivity(Request $request)
+    {
+        try {
+            $startDate = $request->get('start_date');
+            $endDate = $request->get('end_date');
+            $vehicleId = $request->get('vehicle_id');
+
+            $query = TripTicket::with([
+                'vehicle',
+                'driver.user',
+                'gasSlip',
+                'gasSlip.fuelReceipt',
+                'tripHistory',
+            ])
+            ->whereIn('status', ['in_transit', 'completed', 'closed', 'pending_gso_validation']);
+
+            if ($startDate && $endDate) {
+                $query->whereBetween('trip_date', [
+                    Carbon::parse($startDate),
+                    Carbon::parse($endDate)
+                ]);
+            }
+
+            if ($vehicleId) {
+                $query->where('vehicle_id', $vehicleId);
+            }
+
+            $trips = $query->get();
+
+            $activityData = $trips->map(function($trip) {
+                $fuelReceipt = $trip->gasSlip?->fuelReceipt;
+                $gpsDistance = $fuelReceipt?->gps_distance_km ?? 0;
+                $logbookDistance = $trip->estimated_distance_km ?? 0;
+                
+                $tripStart = $fuelReceipt?->trip_started_at;
+                $tripEnd = $fuelReceipt?->trip_ended_at;
+                $duration = null;
+                if ($tripStart && $tripEnd) {
+                    $duration = round($tripStart->diffInHours($tripEnd), 1);
+                }
+
+                $tolerance = 0.20;
+                $distanceMatch = 'In Progress';
+                if ($gpsDistance > 0 && $logbookDistance > 0) {
+                    $ratio = $gpsDistance / $logbookDistance;
+                    if ($ratio >= (1 - $tolerance) && $ratio <= (1 + $tolerance)) {
+                        $distanceMatch = 'Match';
+                    } else {
+                        $distanceMatch = 'Discrepancy';
+                    }
+                } elseif ($trip->status === 'closed' || $trip->status === 'completed') {
+                    $distanceMatch = 'No GPS Data';
+                }
+
+                return [
+                    'trip_ticket_number' => $trip->trip_ticket_number,
+                    'vehicle' => $trip->vehicle?->vehicle_model ?? 'N/A',
+                    'plate_number' => $trip->vehicle?->plate_number ?? 'N/A',
+                    'driver' => $trip->driver?->user?->full_name ?? 'N/A',
+                    'trip_start' => $tripStart ? $tripStart->format('Y-m-d H:i') : 'N/A',
+                    'trip_end' => $tripEnd ? $tripEnd->format('Y-m-d H:i') : 'N/A',
+                    'duration_hrs' => $duration,
+                    'gps_distance_km' => round($gpsDistance, 2),
+                    'logbook_distance_km' => round($logbookDistance, 2),
+                    'distance_match' => $distanceMatch,
+                    'trip_status' => $trip->status_label,
+                    'has_gps_pings' => $trip->tripHistory()->exists(),
+                ];
+            });
+
+            $summary = [
+                'total_trips' => $activityData->count(),
+                'match_count' => $activityData->filter(fn($d) => $d['distance_match'] === 'Match')->count(),
+                'discrepancy_count' => $activityData->filter(fn($d) => $d['distance_match'] === 'Discrepancy')->count(),
+                'in_progress_count' => $activityData->filter(fn($d) => $d['distance_match'] === 'In Progress')->count(),
+                'no_gps_count' => $activityData->filter(fn($d) => $d['distance_match'] === 'No GPS Data')->count(),
+            ];
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'activities' => $activityData,
+                    'summary' => $summary,
+                    'filters' => [
+                        'start_date' => $startDate,
+                        'end_date' => $endDate,
+                        'vehicle_id' => $vehicleId,
+                    ]
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('GPS Vehicle Activity error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to generate report: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    // ============================================================
+    // 10. DRIVER EFFICIENCY REPORT
+    // ============================================================
+    public function getDriverEfficiencyReport(Request $request)
+    {
+        try {
+            $startDate = $request->get('start_date');
+            $endDate = $request->get('end_date');
+            $driverId = $request->get('driver_id');
+            $departmentId = $request->get('department_id');
+
+            $query = TripTicket::with([
+                'driver.user',
+                'vehicle',
+                'gasSlip',
+                'gasSlip.fuelReceipt',
+            ])
+            ->whereHas('gasSlip')
+            ->whereHas('gasSlip.fuelReceipt')
+            ->whereIn('status', ['closed', 'completed']);
+
+            if ($startDate && $endDate) {
+                $query->whereBetween('trip_date', [
+                    Carbon::parse($startDate),
+                    Carbon::parse($endDate)
+                ]);
+            }
+
+            if ($driverId) {
+                $query->where('driver_id', $driverId);
+            }
+
+            if ($departmentId) {
+                $query->where('department_id', $departmentId);
+            }
+
+            $trips = $query->get();
+
+            $drivers = $trips->groupBy('driver_id')->map(function($group) {
+                $first = $group->first();
+                $driver = $first->driver;
+                
+                $totalTrips = $group->count();
+                $totalDistance = 0;
+                $totalFuel = 0;
+                $totalCost = 0;
+                
+                foreach ($group as $trip) {
+                    $receipt = $trip->gasSlip?->fuelReceipt;
+                    if ($receipt) {
+                        $totalDistance += $receipt->gps_distance_km ?? 0;
+                        $totalFuel += $receipt->liters_availed ?? 0;
+                        $totalCost += $receipt->amount_on_receipt ?? 0;
+                    }
+                }
+                
+                $vehicleCounts = $group->groupBy('vehicle_id')->map->count();
+                $mostUsedVehicleId = $vehicleCounts->sortDesc()->keys()->first();
+                $mostUsedVehicle = $group->firstWhere('vehicle_id', $mostUsedVehicleId)?->vehicle;
+                
+                return [
+                    'driver_id' => $driver?->driver_id ?? null,
+                    'driver_name' => $driver?->user?->full_name ?? 'Unknown',
+                    'assigned_vehicle' => $mostUsedVehicle?->vehicle_model ?? 'N/A',
+                    'plate_number' => $mostUsedVehicle?->plate_number ?? 'N/A',
+                    'total_trips' => $totalTrips,
+                    'total_distance_km' => round($totalDistance, 2),
+                    'total_fuel_used_liters' => round($totalFuel, 2),
+                    'total_cost' => round($totalCost, 2),
+                    'fuel_efficiency_kmpl' => $totalFuel > 0 ? round($totalDistance / $totalFuel, 2) : 0,
+                    'cost_per_km' => $totalDistance > 0 ? round($totalCost / $totalDistance, 2) : 0,
+                    'avg_cost_per_trip' => $totalTrips > 0 ? round($totalCost / $totalTrips, 2) : 0,
+                    'efficiency_rating' => $this->getEfficiencyRating($totalFuel, $totalDistance),
+                ];
+            })->values();
+
+            $summary = [
+                'total_drivers' => $drivers->count(),
+                'total_trips' => $drivers->sum('total_trips'),
+                'total_distance' => round($drivers->sum('total_distance_km'), 2),
+                'total_fuel' => round($drivers->sum('total_fuel_used_liters'), 2),
+                'total_cost' => round($drivers->sum('total_cost'), 2),
+                'avg_efficiency' => $drivers->sum('total_fuel_used_liters') > 0 
+                    ? round($drivers->sum('total_distance_km') / $drivers->sum('total_fuel_used_liters'), 2) 
+                    : 0,
+            ];
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'drivers' => $drivers,
+                    'summary' => $summary,
+                    'filters' => [
+                        'start_date' => $startDate,
+                        'end_date' => $endDate,
+                        'driver_id' => $driverId,
+                        'department_id' => $departmentId,
+                    ]
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Driver Efficiency Report error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to generate report: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    // ============================================================
+    // 11. AUDIT TRAIL REPORT
+    // ============================================================
+    public function getAuditTrailReport(Request $request)
+    {
+        try {
+            $startDate = $request->get('start_date');
+            $endDate = $request->get('end_date');
+            $userId = $request->get('user_id');
+            $role = $request->get('role');
+            $action = $request->get('action');
+            $module = $request->get('module');
+            $result = $request->get('result');
+
+            $query = AuditLog::with(['user']);
+
+            if ($startDate && $endDate) {
+                $query->whereBetween('created_at', [
+                    Carbon::parse($startDate)->startOfDay(),
+                    Carbon::parse($endDate)->endOfDay()
+                ]);
+            }
+
+            if ($userId) {
+                $query->where('user_id', $userId);
+            }
+
+            if ($role) {
+                $query->whereHas('user', function($q) use ($role) {
+                    $q->where('role', $role);
+                });
+            }
+
+            if ($action) {
+                $query->where('action', $action);
+            }
+
+            if ($module) {
+                $query->where('table_name', $module);
+            }
+
+            if ($result) {
+                if ($result === 'Success') {
+                    $query->whereNotNull('new_values');
+                } else {
+                    $query->whereNull('new_values');
+                }
+            }
+
+            $logs = $query->orderBy('created_at', 'desc')->get();
+
+            $formattedLogs = $logs->map(function($log) {
+                return [
+                    'log_id' => $log->log_id,
+                    'created_at' => $log->created_at,
+                    'user_name' => $log->user?->full_name ?? 'Unknown User',
+                    'user_email' => $log->user?->email ?? 'N/A',
+                    'role' => $log->user?->role ?? 'N/A',
+                    'module' => $log->table_name,
+                    'action' => $log->action,
+                    'details' => $this->formatAuditDetails($log),
+                    'result' => $log->new_values ? 'Success' : 'Failed',
+                    'ip_address' => $log->ip_address,
+                ];
+            });
+
+            $summary = [
+                'total_logs' => $logs->count(),
+                'success_count' => $logs->filter(fn($l) => $l->new_values)->count(),
+                'failed_count' => $logs->filter(fn($l) => !$l->new_values)->count(),
+                'unique_users' => $logs->pluck('user_id')->filter()->unique()->count(),
+                'action_breakdown' => $logs->groupBy('action')->map(fn($g) => $g->count()),
+                'module_breakdown' => $logs->groupBy('table_name')->map(fn($g) => $g->count()),
+            ];
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'logs' => $formattedLogs,
+                    'summary' => $summary,
+                    'filters' => [
+                        'start_date' => $startDate,
+                        'end_date' => $endDate,
+                        'user_id' => $userId,
+                        'role' => $role,
+                        'action' => $action,
+                        'module' => $module,
+                        'result' => $result,
+                    ]
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Audit Trail Report error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to generate report: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    // ============================================================
+    // EXPORT METHODS
+    // ============================================================
+
+    // 1. EXPORT FUEL CONSUMPTION
+    public function exportFuelConsumptionReport(Request $request, $format)
+    {
+        try {
+            $response = $this->getFuelConsumptionReport($request);
+            $data = $response->getData(true);
+            
+            if (!$data['success']) {
+                $errorContent = "Error: " . ($data['message'] ?? 'Failed to get report data');
+                return $this->returnAsCSV($errorContent, 'error_report.csv');
+            }
+
+            $reportData = $data['data'];
+            $filename = 'fuel_consumption_report_' . date('Y-m-d');
+
+            if ($format === 'excel') {
+                return Excel::download(
+                    new FuelConsumptionExport($reportData), 
+                    $filename . '.xlsx'
+                );
+            } elseif ($format === 'pdf') {
+                return $this->generateFuelConsumptionPDF($reportData, $filename);
+            } else {
+                $content = $this->buildFuelConsumptionCSV($reportData);
+                return $this->returnAsCSV($content, $filename . '.csv');
+            }
+
+        } catch (\Exception $e) {
+            Log::error('Export error: ' . $e->getMessage());
+            Log::error($e->getTraceAsString());
+            $errorContent = "Error: " . $e->getMessage();
+            return $this->returnAsCSV($errorContent, 'error_report.csv');
+        }
+    }
+
+    // 2. EXPORT VEHICLE REPORT
+    public function exportVehicleReport(Request $request, $format)
+    {
+        try {
+            $response = $this->getVehicleReport($request);
+            $data = $response->getData(true);
+
+            if (!$data['success']) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to get report data'
+                ], 500);
+            }
+
+            $reportData = $data['data'];
+            $filename = 'vehicle_summary_' . date('Y-m-d');
+
+            if ($format === 'excel' || $format === 'xlsx') {
+                return Excel::download(
+                    new \App\Exports\VehicleSummaryExport($reportData),
+                    $filename . '.xlsx'
+                );
+            } elseif ($format === 'csv') {
+                $content = $this->buildVehicleSummaryCSV($reportData);
+                return $this->returnAsCSV($content, $filename . '.csv');
+            } else {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unsupported format'
+                ], 400);
+            }
+        } catch (\Exception $e) {
+            Log::error('Export vehicle report error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to export report: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    // 3. EXPORT BUDGET REPORT
+    public function exportBudgetReport(Request $request, $format)
+    {
+        try {
+            $response = $this->getBudgetReport($request);
+            $data = $response->getData(true);
+
+            if (!$data['success']) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to get report data'
+                ], 500);
+            }
+
+            $reportData = $data['data'];
+            $filename = 'budget_utilization_' . date('Y-m-d');
+
+            if ($format === 'excel' || $format === 'xlsx') {
+                return Excel::download(
+                    new \App\Exports\BudgetUtilizationExport($reportData),
+                    $filename . '.xlsx'
+                );
+            } elseif ($format === 'csv') {
+                $content = $this->buildBudgetUtilizationCSV($reportData);
+                return $this->returnAsCSV($content, $filename . '.csv');
+            } else {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unsupported format'
+                ], 400);
+            }
+        } catch (\Exception $e) {
+            Log::error('Export budget report error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to export report: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    // 4. EXPORT FUEL RECEIPT
+    public function exportFuelReceiptReport(Request $request, $format)
+    {
+        try {
+            $response = $this->getFuelReceiptReport($request);
+            $data = $response->getData(true);
+
+            if (!$data['success']) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to get report data'
+                ], 500);
+            }
+
+            $reportData = $data['data'];
+            $filename = 'fuel_receipt_report_' . date('Y-m-d');
+
+            if ($format === 'excel' || $format === 'xlsx') {
+                return Excel::download(
+                    new FuelReceiptReportExport($reportData, 'gso'),
+                    $filename . '.xlsx'
+                );
+            } elseif ($format === 'pdf') {
+                return $this->generateFuelReceiptPDF($reportData, $filename);
+            } else {
+                return $this->exportFuelReceiptCSV($reportData, $filename);
+            }
+
+        } catch (\Exception $e) {
+            Log::error('Export fuel receipt report error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to export report: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    // 5. EXPORT DEPARTMENT FUEL CONSUMPTION
+    public function exportDepartmentFuelConsumption(Request $request, $format)
+    {
+        try {
+            $response = $this->getDepartmentFuelConsumption($request);
+            $data = $response->getData(true);
+
+            if (!$data['success']) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to get report data'
+                ], 500);
+            }
+
+            $reportData = $data['data'];
+            $filename = 'department_fuel_consumption_' . date('Y-m-d');
+
+            if ($format === 'excel' || $format === 'xlsx') {
+                return Excel::download(
+                    new \App\Exports\DepartmentFuelExport($reportData),
+                    $filename . '.xlsx'
+                );
+            } elseif ($format === 'csv') {
+                $content = $this->buildDepartmentFuelCSV($reportData);
+                return $this->returnAsCSV($content, $filename . '.csv');
+            } else {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unsupported format'
+                ], 400);
+            }
+        } catch (\Exception $e) {
+            Log::error('Export department fuel error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to export report: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    // 6. EXPORT MONTHLY FUEL CONSUMPTION
+    public function exportMonthlyFuelConsumption(Request $request, $format)
+    {
+        try {
+            $response = $this->getMonthlyFuelConsumption($request);
+            $data = $response->getData(true);
+
+            if (!$data['success']) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to get report data'
+                ], 500);
+            }
+
+            $reportData = $data['data'];
+            $filename = 'monthly_fuel_consumption_' . date('Y-m-d');
+
+            if ($format === 'excel' || $format === 'xlsx') {
+                return Excel::download(
+                    new \App\Exports\MonthlyFuelExport($reportData),
+                    $filename . '.xlsx'
+                );
+            } elseif ($format === 'csv') {
+                $content = $this->buildMonthlyFuelCSV($reportData);
+                return $this->returnAsCSV($content, $filename . '.csv');
+            } else {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unsupported format'
+                ], 400);
+            }
+        } catch (\Exception $e) {
+            Log::error('Export monthly fuel error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to export report: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    // 7. EXPORT TRIP TICKET REPORT
+    public function exportTripTicketReport(Request $request, $format)
+    {
+        try {
+            $response = $this->getTripTicketReport($request);
+            $data = $response->getData(true);
+
+            if (!$data['success']) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to get report data'
+                ], 500);
+            }
+
+            $reportData = $data['data'];
+            $filename = 'trip_ticket_report_' . date('Y-m-d');
+
+            if ($format === 'excel' || $format === 'xlsx') {
+                return Excel::download(
+                    new \App\Exports\TripTicketExport($reportData),
+                    $filename . '.xlsx'
+                );
+            } elseif ($format === 'csv') {
+                $content = $this->buildTripTicketCSV($reportData);
+                return $this->returnAsCSV($content, $filename . '.csv');
+            } else {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unsupported format'
+                ], 400);
+            }
+        } catch (\Exception $e) {
+            Log::error('Export trip ticket error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to export report: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    // 8. EXPORT GPS VEHICLE ACTIVITY
+    public function exportGPSVehicleActivity(Request $request, $format)
+    {
+        try {
+            $response = $this->getGPSVehicleActivity($request);
+            $data = $response->getData(true);
+
+            if (!$data['success']) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to get report data'
+                ], 500);
+            }
+
+            $reportData = $data['data'];
+            $filename = 'gps_vehicle_activity_' . date('Y-m-d');
+
+            if ($format === 'excel' || $format === 'xlsx') {
+                return Excel::download(
+                    new \App\Exports\GPSActivityExport($reportData),
+                    $filename . '.xlsx'
+                );
+            } elseif ($format === 'csv') {
+                $content = $this->buildGPSActivityCSV($reportData);
+                return $this->returnAsCSV($content, $filename . '.csv');
+            } else {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unsupported format'
+                ], 400);
+            }
+        } catch (\Exception $e) {
+            Log::error('Export GPS activity error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to export report: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    // 9. EXPORT RECONCILIATION
+    public function exportReconciliation(Request $request, $format)
+    {
+        try {
+            $response = $this->getReconciliationReport($request);
+            $data = $response->getData(true);
+
+            if (!$data['success']) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to get report data'
+                ], 500);
+            }
+
+            $reportData = $data['data'];
+            $filename = 'reconciliation_report_' . date('Y-m-d');
+
+            if ($format === 'excel' || $format === 'xlsx') {
+                return Excel::download(
+                    new \App\Exports\ReconciliationExport($reportData),
+                    $filename . '.xlsx'
+                );
+            } elseif ($format === 'csv') {
+                $content = $this->buildReconciliationCSV($reportData);
+                return $this->returnAsCSV($content, $filename . '.csv');
+            } else {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unsupported format'
+                ], 400);
+            }
+        } catch (\Exception $e) {
+            Log::error('Export reconciliation error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to export report: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    // 10. EXPORT DRIVER EFFICIENCY
+    public function exportDriverEfficiency(Request $request, $format)
+    {
+        try {
+            $response = $this->getDriverEfficiencyReport($request);
+            $data = $response->getData(true);
+
+            if (!$data['success']) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to get report data'
+                ], 500);
+            }
+
+            $reportData = $data['data'];
+            $filename = 'driver_efficiency_' . date('Y-m-d');
+
+            if ($format === 'excel' || $format === 'xlsx') {
+                return Excel::download(
+                    new \App\Exports\DriverEfficiencyExport($reportData),
+                    $filename . '.xlsx'
+                );
+            } elseif ($format === 'csv') {
+                $content = $this->buildDriverEfficiencyCSV($reportData);
+                return $this->returnAsCSV($content, $filename . '.csv');
+            } else {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unsupported format'
+                ], 400);
+            }
+        } catch (\Exception $e) {
+            Log::error('Export driver efficiency error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to export report: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    // 11. EXPORT AUDIT TRAIL
+    public function exportAuditTrail(Request $request, $format)
+    {
+        try {
+            $response = $this->getAuditTrailReport($request);
+            $data = $response->getData(true);
+
+            if (!$data['success']) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to get report data'
+                ], 500);
+            }
+
+            $reportData = $data['data'];
+            $filename = 'audit_trail_' . date('Y-m-d');
+
+            if ($format === 'excel' || $format === 'xlsx') {
+                return Excel::download(
+                    new \App\Exports\AuditTrailExport($reportData),
+                    $filename . '.xlsx'
+                );
+            } elseif ($format === 'csv') {
+                $content = $this->buildAuditTrailCSV($reportData);
+                return $this->returnAsCSV($content, $filename . '.csv');
+            } else {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unsupported format'
+                ], 400);
+            }
+        } catch (\Exception $e) {
+            Log::error('Export audit trail error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to export report: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    // ============================================================
+    // PDF GENERATORS
+    // ============================================================
+
+    // FUEL CONSUMPTION PDF
+    private function generateFuelConsumptionPDF($reportData, $filename)
+    {
+        try {
+            $html = $this->buildFuelConsumptionPDFHTML($reportData);
+            
+            if (class_exists('Barryvdh\DomPDF\Facade\Pdf')) {
+                $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML($html);
+                $pdf->setPaper('A4', 'landscape');
+                $pdf->setOptions([
+                    'defaultFont' => 'sans-serif',
+                    'isHtml5ParserEnabled' => true,
+                    'isRemoteEnabled' => true,
+                ]);
+                return $pdf->download($filename . '.pdf');
+            }
+            
+            return response($html, 200, [
+                'Content-Type' => 'application/pdf',
+                'Content-Disposition' => 'attachment; filename="' . $filename . '.pdf"',
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('PDF generation error: ' . $e->getMessage());
+            $content = $this->buildFuelConsumptionCSV($reportData);
+            return $this->returnAsCSV($content, $filename . '.csv');
+        }
+    }
+
+    private function buildFuelConsumptionPDFHTML($reportData)
+    {
+        $summary = $reportData['summary'] ?? [];
+        $vehicles = $reportData['vehicle_breakdown'] ?? [];
+        $filters = $reportData['filters'] ?? [];
+        
+        $totalTrips = 0;
+        $totalLiters = 0;
+        $totalCost = 0;
+        $totalDistance = 0;
+
+        foreach ($vehicles as $v) {
+            $totalTrips += $v['trips'] ?? 0;
+            $totalLiters += $v['liters'] ?? 0;
+            $totalCost += $v['cost'] ?? 0;
+            $totalDistance += $v['distance_km'] ?? 0;
         }
 
-    } catch (\Exception $e) {
-        Log::error('Export fuel receipt report error: ' . $e->getMessage());
-        return response()->json([
-            'success' => false,
-            'message' => 'Failed to export report: ' . $e->getMessage()
-        ], 500);
+        $html = '<!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <title>Fuel Consumption Report</title>
+            <style>
+                * { margin: 0; padding: 0; box-sizing: border-box; }
+                body { 
+                    font-family: "DejaVu Sans", Arial, sans-serif; 
+                    font-size: 9px; 
+                    padding: 20px; 
+                    color: #1e293b; 
+                }
+                .header { 
+                    text-align: center; 
+                    border-bottom: 2px solid #2563eb; 
+                    padding-bottom: 12px; 
+                    margin-bottom: 15px; 
+                }
+                .header h1 { 
+                    font-size: 18px; 
+                    color: #1e293b; 
+                    font-weight: bold; 
+                }
+                .header p { 
+                    color: #64748b; 
+                    font-size: 10px; 
+                    margin-top: 4px; 
+                }
+                .header .subtitle { 
+                    font-size: 9px; 
+                    color: #94a3b8; 
+                    margin-top: 3px; 
+                }
+                table { 
+                    width: 100%; 
+                    border-collapse: collapse; 
+                    margin-top: 8px; 
+                    font-size: 8px; 
+                }
+                th { 
+                    background: #2563eb; 
+                    color: white; 
+                    padding: 6px 4px; 
+                    text-align: center; 
+                    font-weight: bold; 
+                    border: 1px solid #1e40af; 
+                    font-size: 8px;
+                }
+                td { 
+                    padding: 5px 4px; 
+                    border: 1px solid #d1d5db; 
+                    text-align: center; 
+                    font-size: 8px; 
+                }
+                tr:nth-child(even) { 
+                    background: #f8fafc; 
+                }
+                .total-row { 
+                    background: #e2e8f0; 
+                    font-weight: bold; 
+                }
+                .total-row td { 
+                    border-top: 2px solid #2563eb; 
+                    padding: 6px 4px; 
+                    font-weight: bold;
+                }
+                .badge { 
+                    padding: 2px 10px; 
+                    border-radius: 12px; 
+                    font-size: 7px; 
+                    font-weight: bold; 
+                    display: inline-block; 
+                }
+                .badge-excellent { background: #dcfce7; color: #166534; }
+                .badge-good { background: #dbeafe; color: #1e40af; }
+                .badge-average { background: #fef3c7; color: #92400e; }
+                .badge-poor { background: #fee2e2; color: #991b1b; }
+                .badge-critical { background: #fecaca; color: #7f1d1d; }
+                .badge-nodata { background: #f1f5f9; color: #94a3b8; }
+                .text-success { color: #059669; }
+                .text-right { text-align: right; }
+                .text-left { text-align: left; }
+                .text-center { text-align: center; }
+                .footer { 
+                    text-align: center; 
+                    border-top: 1px solid #e2e8f0; 
+                    padding-top: 10px; 
+                    margin-top: 15px; 
+                    color: #94a3b8; 
+                    font-size: 7px; 
+                }
+                .summary-grid {
+                    display: grid;
+                    grid-template-columns: repeat(4, 1fr);
+                    gap: 10px;
+                    margin: 10px 0 15px 0;
+                }
+                .summary-card {
+                    background: #f8fafc;
+                    padding: 10px;
+                    border-radius: 6px;
+                    border: 1px solid #e2e8f0;
+                    text-align: center;
+                }
+                .summary-card .label {
+                    font-size: 8px;
+                    color: #64748b;
+                    text-transform: uppercase;
+                }
+                .summary-card .value {
+                    font-size: 14px;
+                    font-weight: bold;
+                    color: #0f172a;
+                    margin-top: 3px;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <h1>FUEL CONSUMPTION REPORT</h1>
+                <p>LGU Laguindingan - Fuel Consumption Monitoring System</p>
+                <p class="subtitle">Generated: ' . now()->format('F d, Y h:i A') . '</p>
+                <p style="font-size: 8px; color: #64748b; margin-top: 3px;">
+                    Period: ' . ($filters['start_date'] ?? 'N/A') . ' to ' . ($filters['end_date'] ?? 'N/A') . '
+                </p>
+            </div>
+
+            <!-- Summary Cards -->
+            <div class="summary-grid">
+                <div class="summary-card">
+                    <div class="label">Total Trips</div>
+                    <div class="value">' . ($summary['total_trips'] ?? 0) . '</div>
+                </div>
+                <div class="summary-card">
+                    <div class="label">Total Fuel</div>
+                    <div class="value">' . number_format($summary['total_fuel_liters'] ?? 0, 2) . ' L</div>
+                </div>
+                <div class="summary-card">
+                    <div class="label">Total Cost</div>
+                    <div class="value">₱' . number_format($summary['total_fuel_cost'] ?? 0, 2) . '</div>
+                </div>
+                <div class="summary-card">
+                    <div class="label">Average Km/L</div>
+                    <div class="value">' . number_format($summary['average_km_per_liter'] ?? 0, 2) . '</div>
+                </div>
+            </div>
+
+            <!-- Vehicle Breakdown Table -->
+            <table>
+                <thead>
+                    <tr>
+                        <th>Plate #</th>
+                        <th>Model</th>
+                        <th>Fuel Type</th>
+                        <th>Trips</th>
+                        <th>Liters</th>
+                        <th>Cost</th>
+                        <th>Distance</th>
+                        <th>Km/L</th>
+                        <th>Efficiency</th>
+                    </tr>
+                </thead>
+                <tbody>';
+    
+    if (count($vehicles) > 0) {
+        foreach ($vehicles as $v) {
+            $km = $v['km_per_liter'] ?? 0;
+            $badgeClass = 'badge-nodata';
+            $label = 'No Data';
+            
+            if ($km >= 10) { 
+                $badgeClass = 'badge-excellent'; 
+                $label = 'Excellent'; 
+            } elseif ($km >= 7) { 
+                $badgeClass = 'badge-good'; 
+                $label = 'Good'; 
+            } elseif ($km >= 5) { 
+                $badgeClass = 'badge-average'; 
+                $label = 'Average'; 
+            } elseif ($km >= 3) { 
+                $badgeClass = 'badge-poor'; 
+                $label = 'Poor'; 
+            } elseif ($km > 0) { 
+                $badgeClass = 'badge-critical'; 
+                $label = 'Critical'; 
+            }
+            
+            $html .= '
+                <tr>
+                    <td><strong>' . ($v['plate_number'] ?? 'N/A') . '</strong></td>
+                    <td class="text-left">' . ($v['model'] ?? 'N/A') . '</td>
+                    <td>' . ucfirst($v['fuel_type'] ?? 'N/A') . '</td>
+                    <td class="text-right">' . ($v['trips'] ?? 0) . '</td>
+                    <td class="text-right">' . number_format($v['liters'] ?? 0, 2) . '</td>
+                    <td class="text-right">₱' . number_format($v['cost'] ?? 0, 2) . '</td>
+                    <td class="text-right">' . number_format($v['distance_km'] ?? 0, 2) . '</td>
+                    <td class="text-right"><strong>' . number_format($km, 2) . '</strong></td>
+                    <td><span class="badge ' . $badgeClass . '">' . $label . '</span></td>
+                </tr>';
+        }
+
+        // TOTAL ROW
+        $avgKmPerLiter = $totalLiters > 0 ? number_format($totalDistance / $totalLiters, 2) : '0.00';
+        $html .= '
+                <tr class="total-row">
+                    <td style="font-weight:bold;">TOTAL</td>
+                    <td></td>
+                    <td></td>
+                    <td class="text-right" style="font-weight:bold;">' . $totalTrips . '</td>
+                    <td class="text-right" style="font-weight:bold;">' . number_format($totalLiters, 2) . '</td>
+                    <td class="text-right" style="font-weight:bold;color:#059669;">₱' . number_format($totalCost, 2) . '</td>
+                    <td class="text-right" style="font-weight:bold;">' . number_format($totalDistance, 2) . '</td>
+                    <td class="text-right" style="font-weight:bold;">' . $avgKmPerLiter . '</td>
+                    <td></td>
+                </tr>';
+        
+    } else {
+        $html .= '
+                <tr>
+                    <td colspan="9" style="text-align:center; color:#94a3b8; padding:20px;">No data available</td>
+                </tr>';
     }
-}
+    
+    $html .= '
+            </tbody>
+        </table>
 
-    // ============================================
+        <div class="footer">
+            <p>This report is automatically generated by the FCMS System</p>
+            <p>© ' . date('Y') . ' Laguindingan Municipality - Fuel Consumption Monitoring System</p>
+        </div>
+    </body>
+    </html>';
+    
+    return $html;
+    }
+
     // FUEL RECEIPT PDF
-    // ============================================
-
     private function generateFuelReceiptPDF($reportData, $filename)
     {
         try {
@@ -983,6 +1901,11 @@ public function exportFuelReceiptReport(Request $request, $format)
             if (class_exists('Barryvdh\DomPDF\Facade\Pdf')) {
                 $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML($html);
                 $pdf->setPaper('A4', 'landscape');
+                $pdf->setOptions([
+                    'defaultFont' => 'sans-serif',
+                    'isHtml5ParserEnabled' => true,
+                    'isRemoteEnabled' => true,
+                ]);
                 return $pdf->download($filename . '.pdf');
             }
             
@@ -997,172 +1920,131 @@ public function exportFuelReceiptReport(Request $request, $format)
         }
     }
 
- /**
- * Build Fuel Receipt PDF HTML - FIXED with TOTAL row
- */
-private function buildFuelReceiptPDFHTML($reportData)
-{
-    $summary = $reportData['summary'] ?? [];
-    $receipts = $reportData['receipts'] ?? [];
-    $filters = $reportData['filters'] ?? [];
+    private function buildFuelReceiptPDFHTML($reportData)
+    {
+        $summary = $reportData['summary'] ?? [];
+        $receipts = $reportData['receipts'] ?? [];
+        $filters = $reportData['filters'] ?? [];
 
-    // ✅ Calculate totals
-    $totalAmount = 0;
-    $totalQuantity = 0;
-    $totalUnitPrice = 0;
+        $totalAmount = 0;
+        $totalQuantity = 0;
+        $totalUnitPrice = 0;
 
-    $html = '<!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="utf-8">
-        <title>Fuel Receipt Report</title>
-        <style>
-            * { margin: 0; padding: 0; box-sizing: border-box; }
-            body { 
-                font-family: "DejaVu Sans", Arial, sans-serif; 
-                font-size: 8px; 
-                padding: 15px; 
-                color: #1e293b; 
-            }
-            .header { 
-                text-align: center; 
-                border-bottom: 3px solid #2563eb; 
-                padding-bottom: 12px; 
-                margin-bottom: 15px; 
-            }
-            .header h1 { 
-                font-size: 16px; 
-                color: #1e293b; 
-                font-weight: bold; 
-            }
-            .header p { 
-                color: #64748b; 
-                font-size: 10px; 
-                margin-top: 4px; 
-            }
-            .header .subtitle { 
-                font-size: 9px; 
-                color: #94a3b8; 
-                margin-top: 3px; 
-            }
-            .section { 
-                margin-bottom: 12px; 
-            }
-            .section-title { 
-                background: #e2e8f0; 
-                padding: 5px 10px; 
-                font-weight: bold; 
-                font-size: 10px; 
-                border-radius: 4px; 
-                margin-bottom: 6px; 
-            }
-            table { 
-                width: 100%; 
-                border-collapse: collapse; 
-                margin-top: 6px; 
-                font-size: 7px; 
-            }
-            th { 
-                background: #2563eb; 
-                color: white; 
-                padding: 4px 3px; 
-                text-align: center; 
-                font-weight: bold; 
-                border: 1px solid #1e40af; 
-                font-size: 7px;
-            }
-            td { 
-                padding: 4px 3px; 
-                border: 1px solid #d1d5db; 
-                text-align: center; 
-                font-size: 7px; 
-            }
-            tr:nth-child(even) { 
-                background: #f8fafc; 
-            }
-            .summary-grid { 
-                display: grid; 
-                grid-template-columns: repeat(4, 1fr); 
-                gap: 8px; 
-                margin: 8px 0; 
-            }
-            .summary-card { 
-                background: #f8fafc; 
-                padding: 8px; 
-                border-radius: 4px; 
-                border: 1px solid #e2e8f0; 
-                text-align: center; 
-            }
-            .summary-card .label { 
-                font-size: 7px; 
-                color: #64748b; 
-                text-transform: uppercase; 
-            }
-            .summary-card .value { 
-                font-size: 12px; 
-                font-weight: bold; 
-                color: #0f172a; 
-                margin-top: 3px; 
-            }
-            .footer { 
-                text-align: center; 
-                border-top: 1px solid #e2e8f0; 
-                padding-top: 10px; 
-                margin-top: 15px; 
-                color: #94a3b8; 
-                font-size: 7px; 
-            }
-            .text-muted { 
-                color: #94a3b8; 
-            }
-            .text-right { 
-                text-align: right; 
-            }
-            .text-left { 
-                text-align: left; 
-            }
-            .text-center { 
-                text-align: center; 
-            }
-            .fw-bold { 
-                font-weight: bold; 
-            }
-            .text-success { 
-                color: #059669; 
-            }
-        </style>
-    </head>
-    <body>
-        <div class="header">
-            <h1>FUEL RECEIPT REPORT</h1>
-            <p>LGU Laguindingan - FCMS</p>
-            <p class="subtitle">Generated: ' . now()->format('F d, Y h:i A') . '</p>
-            <p style="font-size: 8px; margin-top: 3px; color: #64748b;">
-                Period: ' . ($filters['start_date'] ?? 'N/A') . ' to ' . ($filters['end_date'] ?? 'N/A') . '
-            </p>
-        </div>
+        $html = '<!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <title>Fuel Receipt Report</title>
+            <style>
+                * { margin: 0; padding: 0; box-sizing: border-box; }
+                body { 
+                    font-family: "DejaVu Sans", Arial, sans-serif; 
+                    font-size: 8px; 
+                    padding: 15px; 
+                    color: #1e293b; 
+                }
+                .header { 
+                    text-align: center; 
+                    border-bottom: 2px solid #2563eb; 
+                    padding-bottom: 10px; 
+                    margin-bottom: 15px; 
+                }
+                .header h1 { 
+                    font-size: 16px; 
+                    color: #1e293b; 
+                    font-weight: bold; 
+                }
+                .header p { 
+                    color: #64748b; 
+                    font-size: 10px; 
+                    margin-top: 4px; 
+                }
+                .header .subtitle { 
+                    font-size: 9px; 
+                    color: #94a3b8; 
+                    margin-top: 3px; 
+                }
+                table { 
+                    width: 100%; 
+                    border-collapse: collapse; 
+                    margin-top: 8px; 
+                    font-size: 7px; 
+                }
+                th { 
+                    background: #2563eb; 
+                    color: white; 
+                    padding: 5px 3px; 
+                    text-align: center; 
+                    font-weight: bold; 
+                    border: 1px solid #1e40af; 
+                    font-size: 7px;
+                }
+                td { 
+                    padding: 4px 3px; 
+                    border: 1px solid #d1d5db; 
+                    text-align: center; 
+                    font-size: 7px; 
+                }
+                tr:nth-child(even) { 
+                    background: #f8fafc; 
+                }
+                .total-row { 
+                    background: #e2e8f0; 
+                    font-weight: bold; 
+                }
+                .total-row td { 
+                    border-top: 2px solid #2563eb; 
+                    padding: 5px 3px; 
+                    font-weight: bold;
+                }
+                .text-success { 
+                    color: #059669; 
+                }
+                .text-right { 
+                    text-align: right; 
+                }
+                .text-left { 
+                    text-align: left; 
+                }
+                .text-center { 
+                    text-align: center; 
+                }
+                .footer { 
+                    text-align: center; 
+                    border-top: 1px solid #e2e8f0; 
+                    padding-top: 10px; 
+                    margin-top: 15px; 
+                    color: #94a3b8; 
+                    font-size: 7px; 
+                }
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <h1>FUEL RECEIPT REPORT</h1>
+                <p>LGU Laguindingan - Fuel Consumption Monitoring System</p>
+                <p class="subtitle">Generated: ' . now()->format('F d, Y h:i A') . '</p>
+                <p style="font-size: 8px; color: #64748b; margin-top: 3px;">
+                    Period: ' . ($filters['start_date'] ?? 'N/A') . ' to ' . ($filters['end_date'] ?? 'N/A') . '
+                </p>
+            </div>
 
-       
-
-        <!-- RECEIPT DETAILS TABLE -->
-        <div class="section">
-            <div class="section-title">📋 FUEL RECEIPT DETAILS</div>
             <table>
                 <thead>
                     <tr>
-                        <th style="width:6%">Date</th>
-                        <th style="width:6%">Invoice #</th>
-                        <th style="width:7%">Ticket #</th>
-                        <th style="width:7%">Driver</th>
-                        <th style="width:7%">Vehicle</th>
-                        <th style="width:6%">Plate No.</th>
-                        <th style="width:8%">Destination</th>
-                        <th style="width:6%">Time Dep.</th>
-                        <th style="width:6%">Time Arr.</th>
-                        <th style="width:5%">Fuel Type</th>
-                        <th style="width:5%">Unit Price</th>
-                        <th style="width:6%">Amount</th>
-                        <th style="width:5%">Qty (L)</th>
+                        <th>Date</th>
+                        <th>Invoice #</th>
+                        <th>Ticket #</th>
+                        <th>Driver</th>
+                        <th>Vehicle</th>
+                        <th>Plate No.</th>
+                        <th>Destination</th>
+                        <th>Time Dep.</th>
+                        <th>Time Arr.</th>
+                        <th>Fuel Type</th>
+                        <th>Unit Price</th>
+                        <th>Amount</th>
+                        <th>Qty (L)</th>
                     </tr>
                 </thead>
                 <tbody>';
@@ -1173,40 +2055,44 @@ private function buildFuelReceiptPDFHTML($reportData)
             $totalQuantity += $r['quantity'] ?? 0;
             $totalUnitPrice += $r['unit_price'] ?? 0;
 
-            $html .= '<tr>
-                <td>' . ($r['date'] ?? 'N/A') . '</td>
-                <td><span style="font-weight:bold;color:#2563eb;">' . ($r['invoice_number'] ?? 'N/A') . '</span></td>
-                <td>' . ($r['ticket_number'] ?? 'N/A') . '</td>
-                <td>' . ($r['driver'] ?? 'N/A') . '</td>
-                <td>' . ($r['vehicle'] ?? 'N/A') . '</td>
-                <td><span style="font-weight:bold;">' . ($r['plate_no'] ?? 'N/A') . '</span></td>
-                <td style="text-align:left;">' . ($r['destination'] ?? 'N/A') . '</td>
-                <td>' . ($r['time_departure'] ?? 'N/A') . '</td>
-                <td>' . ($r['time_arrival'] ?? 'N/A') . '</td>
-                <td><span style="font-weight:bold;color:#2563eb;">' . ($r['lubricant'] ?? 'N/A') . '</span></td>
-                <td>₱' . number_format($r['unit_price'] ?? 0, 2) . '</td>
-                <td style="font-weight:bold;color:#059669;">₱' . number_format($r['amount'] ?? 0, 2) . '</td>
-                <td>' . number_format($r['quantity'] ?? 0, 2) . '</td>
-            </tr>';
+            $html .= '
+                <tr>
+                    <td>' . ($r['date'] ?? 'N/A') . '</td>
+                    <td><span style="font-weight:bold;color:#2563eb;">' . ($r['invoice_number'] ?? 'N/A') . '</span></td>
+                    <td>' . ($r['ticket_number'] ?? 'N/A') . '</td>
+                    <td>' . ($r['driver'] ?? 'N/A') . '</td>
+                    <td>' . ($r['vehicle'] ?? 'N/A') . '</td>
+                    <td><span style="font-weight:bold;">' . ($r['plate_no'] ?? 'N/A') . '</span></td>
+                    <td style="text-align:left;">' . ($r['destination'] ?? 'N/A') . '</td>
+                    <td>' . ($r['time_departure'] ?? 'N/A') . '</td>
+                    <td>' . ($r['time_arrival'] ?? 'N/A') . '</td>
+                    <td><span style="font-weight:bold;color:#2563eb;">' . ($r['lubricant'] ?? 'N/A') . '</span></td>
+                    <td class="text-right">₱' . number_format($r['unit_price'] ?? 0, 2) . '</td>
+                    <td class="text-right" style="font-weight:bold;color:#059669;">₱' . number_format($r['amount'] ?? 0, 2) . '</td>
+                    <td class="text-right">' . number_format($r['quantity'] ?? 0, 2) . '</td>
+                </tr>';
         }
         
-        // ✅ TOTAL ROW
-        $html .= '<tr style="background: #e2e8f0; font-weight: bold;">
-            <td colspan="10" style="text-align:right; font-weight:bold;">TOTAL</td>
-            <td>₱' . number_format($totalUnitPrice, 2) . '</td>
-            <td style="font-weight:bold;color:#059669;">₱' . number_format($totalAmount, 2) . '</td>
-            <td>' . number_format($totalQuantity, 2) . '</td>
-        </tr>';
+        // TOTAL ROW
+        $html .= '
+                <tr class="total-row">
+                    <td colspan="10" style="text-align:right;">TOTAL</td>
+                    <td class="text-right">₱' . number_format($totalUnitPrice, 2) . '</td>
+                    <td class="text-right" style="color:#059669;">₱' . number_format($totalAmount, 2) . '</td>
+                    <td class="text-right">' . number_format($totalQuantity, 2) . '</td>
+                </tr>';
         
     } else {
-        $html .= '<tr><td colspan="13" style="text-align:center; color:#94a3b8; padding:20px;">No fuel receipt data available</td></tr>';
+        $html .= '
+                <tr>
+                    <td colspan="13" style="text-align:center; color:#94a3b8; padding:20px;">No fuel receipt data available</td>
+                </tr>';
     }
 
-    $html .= '</tbody>
-            </table>
-        </div>
+    $html .= '
+            </tbody>
+        </table>
 
-        <!-- FOOTER -->
         <div class="footer">
             <p>This report is automatically generated by the FCMS System</p>
             <p>© ' . date('Y') . ' Laguindingan Municipality - Fuel Consumption Monitoring System</p>
@@ -1215,7 +2101,74 @@ private function buildFuelReceiptPDFHTML($reportData)
     </html>';
 
     return $html;
-}
+    }
+
+    // ============================================================
+    // CSV BUILDERS
+    // ============================================================
+
+    private function buildFuelConsumptionCSV($reportData)
+    {
+        $lines = [];
+        $lines[] = "\xEF\xBB\xBF";
+        $lines[] = 'FUEL CONSUMPTION REPORT';
+        $lines[] = 'Generated: ' . now()->format('Y-m-d H:i:s');
+        $lines[] = '';
+        
+        $summary = $reportData['summary'] ?? [];
+        $lines[] = 'SUMMARY';
+        $lines[] = 'Total Trips,' . ($summary['total_trips'] ?? 0);
+        $lines[] = 'Total Fuel (Liters),' . ($summary['total_fuel_liters'] ?? 0);
+        $lines[] = 'Total Cost (PHP),' . ($summary['total_fuel_cost'] ?? 0);
+        $lines[] = 'Average Km/L,' . ($summary['average_km_per_liter'] ?? 0);
+        $lines[] = '';
+        
+        $lines[] = 'VEHICLE BREAKDOWN';
+        $lines[] = 'Plate #,Model,Fuel Type,Trips,Liters,Cost,Distance (km),Km/L,Efficiency';
+        
+        $vehicles = $reportData['vehicle_breakdown'] ?? [];
+        $totalTrips = 0;
+        $totalLiters = 0;
+        $totalCost = 0;
+        $totalDistance = 0;
+
+        foreach ($vehicles as $v) {
+            $km = $v['km_per_liter'] ?? 0;
+            $efficiency = $v['efficiency_rating'] ?? 'No Data';
+            $totalTrips += $v['trips'] ?? 0;
+            $totalLiters += $v['liters'] ?? 0;
+            $totalCost += $v['cost'] ?? 0;
+            $totalDistance += $v['distance_km'] ?? 0;
+
+            $lines[] = implode(',', [
+                '"' . ($v['plate_number'] ?? 'N/A') . '"',
+                '"' . ($v['model'] ?? 'N/A') . '"',
+                '"' . ($v['fuel_type'] ?? 'N/A') . '"',
+                $v['trips'] ?? 0,
+                $v['liters'] ?? 0,
+                $v['cost'] ?? 0,
+                $v['distance_km'] ?? 0,
+                $km,
+                '"' . $efficiency . '"',
+            ]);
+        }
+
+        // TOTAL ROW
+        $avgKmPerLiter = $totalLiters > 0 ? number_format($totalDistance / $totalLiters, 2) : 0;
+        $lines[] = implode(',', [
+            '"TOTAL"',
+            '""',
+            '""',
+            $totalTrips,
+            number_format($totalLiters, 2),
+            number_format($totalCost, 2),
+            number_format($totalDistance, 2),
+            $avgKmPerLiter,
+            '""',
+        ]);
+        
+        return implode("\n", $lines);
+    }
 
     private function exportFuelReceiptCSV($reportData, $filename)
     {
@@ -1235,7 +2188,13 @@ private function buildFuelReceiptPDFHTML($reportData)
         $lines[] = 'FUEL RECEIPT DETAILS';
         $lines[] = 'Used For,Invoice #,Date,Lubricant,Quantity,Unit Price,Amount,Control No.,Plate No.,Vehicle,Department,Driver';
 
+        $totalAmount = 0;
+        $totalQuantity = 0;
+
         foreach ($receipts as $r) {
+            $totalAmount += $r['amount'] ?? 0;
+            $totalQuantity += $r['quantity'] ?? 0;
+
             $lines[] = implode(',', [
                 '"' . ($r['used_for'] ?? 'N/A') . '"',
                 '"' . ($r['charge_invoice_no'] ?? 'N/A') . '"',
@@ -1252,6 +2211,22 @@ private function buildFuelReceiptPDFHTML($reportData)
             ]);
         }
 
+        // TOTAL ROW
+        $lines[] = implode(',', [
+            '"TOTAL"',
+            '""',
+            '""',
+            '""',
+            number_format($totalQuantity, 2),
+            '""',
+            number_format($totalAmount, 2),
+            '""',
+            '""',
+            '""',
+            '""',
+            '""',
+        ]);
+
         $content = implode("\n", $lines);
 
         return response($content, 200, [
@@ -1263,902 +2238,430 @@ private function buildFuelReceiptPDFHTML($reportData)
         ]);
     }
 
-/**
- * Get Weekly Monitoring Data - FIXED with per-week budgets
- */
-public function getWeeklyMonitoring(Request $request)
-{
-    try {
-        $departmentId = $request->get('department_id');
-        $weekStart = $request->get('week_start');
-        $weekEnd = $request->get('week_end');
+    // ============================================================
+    // OTHER CSV BUILDERS
+    // ============================================================
 
-        // ✅ If no dates provided, use current week
-        if (!$weekStart || !$weekEnd) {
-            $weekStart = now()->startOfWeek()->toDateString();
-            $weekEnd = now()->endOfWeek()->toDateString();
-        }
-
-        Log::info('Weekly Monitoring Request', [
-            'department_id' => $departmentId,
-            'week_start' => $weekStart,
-            'week_end' => $weekEnd,
-        ]);
-
-        // ✅ Build query with proper relationships
-        $query = TripTicket::with([
-            'department', 
-            'gasSlip', 
-            'gasSlip.fuelReceipt',
-            'driver.user', 
-            'vehicle'
-        ])
-        ->whereBetween('submitted_at', [
-            Carbon::parse($weekStart)->startOfDay(),
-            Carbon::parse($weekEnd)->endOfDay()
-        ]);
-
-        if ($departmentId) {
-            $query->where('department_id', $departmentId);
-        }
-
-        $trips = $query->get();
-
-        Log::info('Trips found: ' . $trips->count());
-
-        // ✅ ============================================
-        // ✅ FIXED: Get budget for the SELECTED week
-        // ✅ ============================================
-        $totalBudget = 0;
-        $departmentBudgets = [];
-
-        if ($departmentId) {
-            // ✅ Get budget for the selected week
-            $budgetPeriod = DeptBudgetPeriod::where('department_id', $departmentId)
-                ->where('week_start', Carbon::parse($weekStart)->startOfWeek()->toDateString())
-                ->first();
-
-            if ($budgetPeriod) {
-                $totalBudget = $budgetPeriod->allocated_amount;
-                $departmentBudgets[] = [
-                    'department_id' => $departmentId,
-                    'allocated' => $budgetPeriod->allocated_amount,
-                ];
-            }
-        } else {
-            // ✅ Get ALL department budgets for the selected week
-            $periods = DeptBudgetPeriod::where('week_start', Carbon::parse($weekStart)->startOfWeek()->toDateString())
-                ->with('department')
-                ->get();
-
-            foreach ($periods as $period) {
-                $totalBudget += $period->allocated_amount;
-                $departmentBudgets[] = [
-                    'department_id' => $period->department_id,
-                    'department_name' => $period->department->department_name ?? 'Unknown',
-                    'department_code' => $period->department->department_code ?? 'Unknown',
-                    'allocated' => $period->allocated_amount,
-                ];
-            }
-        }
-
-        Log::info('Weekly Budget: ' . $totalBudget);
-
-        // ✅ Calculate metrics
-        $totalUsed = 0;
-        $completed = 0;
-        $pending = 0;
-        $inTransit = 0;
-        $departmentUsage = [];
-
-        foreach ($trips as $trip) {
-            $amount = $trip->gasSlip ? $trip->gasSlip->amount_released : 0;
-            $totalUsed += $amount;
-
-            // ✅ Track per-department usage
-            $deptId = $trip->department_id;
-            if (!isset($departmentUsage[$deptId])) {
-                $departmentUsage[$deptId] = 0;
-            }
-            $departmentUsage[$deptId] += $amount;
-
-            // ✅ Count statuses
-            if ($trip->status === 'closed' || $trip->status === 'completed') {
-                $completed++;
-            } elseif ($trip->status === 'in_transit') {
-                $inTransit++;
-            } else {
-                $pending++;
-            }
-        }
-
-        // ✅ Build department breakdown with budgets
-        $departmentBreakdown = [];
-        foreach ($departmentBudgets as $dept) {
-            $deptId = $dept['department_id'];
-            $used = $departmentUsage[$deptId] ?? 0;
-            $allocated = $dept['allocated'] ?? 0;
-
-            $departmentBreakdown[] = [
-                'department_id' => $deptId,
-                'department_name' => $dept['department_name'] ?? 'Unknown',
-                'department_code' => $dept['department_code'] ?? 'N/A',
-                'allocated' => $allocated,
-                'used' => $used,
-                'remaining' => $allocated - $used,
-                'utilization' => $allocated > 0 ? round(($used / $allocated) * 100, 2) : 0,
-            ];
-        }
-
-        // ✅ Format trips data
-        $formattedTrips = $trips->map(function($trip) {
-            $fuelReceipt = $trip->gasSlip?->fuelReceipt;
-            $actualFuel = $fuelReceipt ? $fuelReceipt->liters_availed : null;
-            
-            return [
-                'id' => $trip->trip_ticket_id,
-                'number' => $trip->trip_ticket_number,
-                'destination' => $trip->destination,
-                'status' => $trip->status,
-                'estimated_fuel' => $trip->estimated_fuel_liters ?? null,
-                'actual_fuel' => $actualFuel,
-                'amount' => $trip->gasSlip?->amount_released ?? 0,
-                'driver' => $trip->driver?->user?->full_name ?? 'N/A',
-                'vehicle' => $trip->vehicle?->plate_number ?? 'N/A',
-                'trip_date' => $trip->trip_date,
-            ];
-        });
-
-        $response = [
-            'success' => true,
-            'data' => [
-                'summary' => [
-                    'budget' => $totalBudget,
-                    'used' => $totalUsed,
-                    'remaining' => $totalBudget - $totalUsed,
-                    'utilization' => $totalBudget > 0 ? round(($totalUsed / $totalBudget) * 100, 2) : 0,
-                    'trips' => $trips->count(),
-                    'completed' => $completed,
-                    'pending' => $pending,
-                    'in_transit' => $inTransit,
-                ],
-                'period' => [
-                    'start' => $weekStart,
-                    'end' => $weekEnd,
-                ],
-                'trips' => $formattedTrips,
-                'departments' => $departmentBreakdown, // ✅ NEW: Department breakdown
-            ]
-        ];
-
-        Log::info('Weekly Monitoring Response', ['summary' => $response['data']['summary']]);
-
-        return response()->json($response);
-
-    } catch (\Exception $e) {
-        Log::error('Weekly monitoring error: ' . $e->getMessage());
-        Log::error('Stack trace: ' . $e->getTraceAsString());
+    private function buildVehicleSummaryCSV($reportData)
+    {
+        $lines = [];
+        $lines[] = "\xEF\xBB\xBF";
+        $lines[] = 'VEHICLE FUEL CONSUMPTION SUMMARY';
+        $lines[] = 'Generated: ' . now()->format('Y-m-d H:i:s');
+        $lines[] = '';
+        $lines[] = 'Vehicle,Plate No.,Total Trips,Total Fuel (L),Total Amount (₱),Average Fuel/Trip (L)';
         
-        return response()->json([
-            'success' => false,
-            'message' => 'Failed to fetch weekly monitoring data: ' . $e->getMessage()
-        ], 500);
+        foreach ($reportData as $v) {
+            $avgFuelPerTrip = ($v['trip_count'] ?? 0) > 0 ? number_format(($v['total_liters'] ?? 0) / ($v['trip_count'] ?? 1), 2) : 0;
+            $lines[] = implode(',', [
+                '"' . ($v['model'] ?? 'N/A') . '"',
+                '"' . ($v['plate_number'] ?? 'N/A') . '"',
+                $v['trip_count'] ?? 0,
+                $v['total_liters'] ?? 0,
+                $v['total_cost'] ?? 0,
+                $avgFuelPerTrip,
+            ]);
+        }
+        return implode("\n", $lines);
     }
-}
-/**
- * Get Fuel Without Trip Report - FIXED
- */
-public function getFuelWithoutTrip(Request $request)
-{
-    try {
-        $departmentId = $request->get('department_id');
-        $startDate = $request->get('start_date');
-        $endDate = $request->get('end_date');
 
-        Log::info('Fuel Without Trip Request', [
-            'department_id' => $departmentId,
-            'start_date' => $startDate,
-            'end_date' => $endDate,
-        ]);
+    private function buildBudgetUtilizationCSV($reportData)
+    {
+        $lines = [];
+        $lines[] = "\xEF\xBB\xBF";
+        $lines[] = 'BUDGET UTILIZATION REPORT';
+        $lines[] = 'Generated: ' . now()->format('Y-m-d H:i:s');
+        $lines[] = '';
+        $lines[] = 'Department,Allocated Budget (₱),Amount Utilized (₱),Remaining Budget (₱),Utilization (%)';
+        
+        $periods = $reportData['periods'] ?? [];
+        foreach ($periods as $p) {
+            $lines[] = implode(',', [
+                '"' . ($p['department_name'] ?? 'N/A') . '"',
+                $p['allocated'] ?? 0,
+                $p['used'] ?? 0,
+                $p['remaining'] ?? 0,
+                $p['utilization'] ?? 0,
+            ]);
+        }
+        return implode("\n", $lines);
+    }
 
-        $query = TripTicket::with(['gasSlip', 'gasSlip.fuelReceipt', 'vehicle', 'driver.user', 'department'])
-            ->whereHas('gasSlip')
-            ->where(function($q) {
-                $q->whereNull('odometer_start')
-                  ->orWhereNull('odometer_end')
-                  ->orWhere('actual_distance_km', '<', 1)
-                  ->orWhere('actual_distance_km', '=', 0)
-                  ->orWhereNull('actual_distance_km');  // ✅ Add this
+    private function buildDepartmentFuelCSV($reportData)
+    {
+        $lines = [];
+        $lines[] = "\xEF\xBB\xBF";
+        $lines[] = 'DEPARTMENT FUEL CONSUMPTION REPORT';
+        $lines[] = 'Generated: ' . now()->format('Y-m-d H:i:s');
+        $lines[] = '';
+        $lines[] = 'Department,Total Trips,Total Fuel (L),Total Amount (₱),Average Fuel/Trip (L)';
+        
+        $departments = $reportData['departments'] ?? [];
+        foreach ($departments as $d) {
+            $lines[] = implode(',', [
+                '"' . ($d['department_name'] ?? 'N/A') . '"',
+                $d['total_trips'] ?? 0,
+                $d['total_fuel_liters'] ?? 0,
+                $d['total_amount'] ?? 0,
+                $d['avg_fuel_per_trip'] ?? 0,
+            ]);
+        }
+        return implode("\n", $lines);
+    }
+
+    private function buildMonthlyFuelCSV($reportData)
+    {
+        $lines = [];
+        $lines[] = "\xEF\xBB\xBF";
+        $lines[] = 'MONTHLY FUEL CONSUMPTION REPORT';
+        $lines[] = 'Generated: ' . now()->format('Y-m-d H:i:s');
+        $lines[] = '';
+        $lines[] = 'Month,Total Trips,Total Fuel (L),Total Fuel Cost (₱),Average Fuel/Trip (L)';
+        
+        $months = $reportData['months'] ?? [];
+        foreach ($months as $m) {
+            $lines[] = implode(',', [
+                '"' . ($m['month'] ?? 'N/A') . '"',
+                $m['total_trips'] ?? 0,
+                $m['total_fuel_liters'] ?? 0,
+                $m['total_cost'] ?? 0,
+                $m['avg_fuel_per_trip'] ?? 0,
+            ]);
+        }
+        return implode("\n", $lines);
+    }
+
+    private function buildTripTicketCSV($reportData)
+    {
+        $lines = [];
+        $lines[] = "\xEF\xBB\xBF";
+        $lines[] = 'TRIP TICKET REPORT';
+        $lines[] = 'Generated: ' . now()->format('Y-m-d H:i:s');
+        $lines[] = '';
+        $lines[] = 'TT Number,Date,Department,Vehicle,Plate Number,Driver,Destination,Purpose,Distance (km),Status';
+        
+        $trips = $reportData['trips'] ?? [];
+        foreach ($trips as $t) {
+            $lines[] = implode(',', [
+                '"' . ($t['trip_ticket_number'] ?? 'N/A') . '"',
+                '"' . ($t['trip_date'] ?? 'N/A') . '"',
+                '"' . ($t['department_name'] ?? 'N/A') . '"',
+                '"' . ($t['vehicle_model'] ?? 'N/A') . '"',
+                '"' . ($t['plate_number'] ?? 'N/A') . '"',
+                '"' . ($t['driver_name'] ?? 'N/A') . '"',
+                '"' . ($t['destination'] ?? 'N/A') . '"',
+                '"' . ($t['purpose'] ?? 'N/A') . '"',
+                $t['estimated_distance_km'] ?? $t['actual_distance_km'] ?? 0,
+                '"' . ($t['status'] ?? 'N/A') . '"',
+            ]);
+        }
+        return implode("\n", $lines);
+    }
+
+    private function buildGPSActivityCSV($reportData)
+    {
+        $lines = [];
+        $lines[] = "\xEF\xBB\xBF";
+        $lines[] = 'GPS VEHICLE ACTIVITY REPORT';
+        $lines[] = 'Generated: ' . now()->format('Y-m-d H:i:s');
+        $lines[] = '';
+        $lines[] = 'TT Number,Vehicle,Driver,Trip Start,Trip End,Duration (hrs),GPS Distance,Logbook Distance,Distance Match,Trip Status';
+        
+        $activities = $reportData['activities'] ?? [];
+        foreach ($activities as $a) {
+            $lines[] = implode(',', [
+                '"' . ($a['trip_ticket_number'] ?? 'N/A') . '"',
+                '"' . ($a['vehicle'] ?? 'N/A') . '"',
+                '"' . ($a['driver'] ?? 'N/A') . '"',
+                '"' . ($a['trip_start'] ?? 'N/A') . '"',
+                '"' . ($a['trip_end'] ?? 'N/A') . '"',
+                $a['duration_hrs'] ?? 0,
+                $a['gps_distance_km'] ?? 0,
+                $a['logbook_distance_km'] ?? 0,
+                '"' . ($a['distance_match'] ?? 'N/A') . '"',
+                '"' . ($a['trip_status'] ?? 'N/A') . '"',
+            ]);
+        }
+        return implode("\n", $lines);
+    }
+
+    private function buildReconciliationCSV($reportData)
+    {
+        $lines = [];
+        $lines[] = "\xEF\xBB\xBF";
+        $lines[] = 'RECONCILIATION REPORT';
+        $lines[] = 'Generated: ' . now()->format('Y-m-d H:i:s');
+        $lines[] = '';
+        $lines[] = 'Trip Ticket No.,Vehicle,Driver,Expected Distance,Actual Distance,Distance Variance,Amount Released,Actual Amount Paid,Amount Variance';
+        
+        $reconciliations = $reportData['reconciliations'] ?? [];
+        foreach ($reconciliations as $r) {
+            $lines[] = implode(',', [
+                '"' . ($r['ticket_number'] ?? 'N/A') . '"',
+                '"' . ($r['plate_number'] ?? 'N/A') . '"',
+                '"' . ($r['driver_name'] ?? 'N/A') . '"',
+                $r['expected_distance'] ?? 0,
+                $r['actual_distance'] ?? 0,
+                $r['variance'] ?? 0,
+                $r['amount_released'] ?? 0,
+                $r['actual_amount'] ?? 0,
+                $r['amount_variance'] ?? 0,
+            ]);
+        }
+        return implode("\n", $lines);
+    }
+
+    private function buildDriverEfficiencyCSV($reportData)
+    {
+        $lines = [];
+        $lines[] = "\xEF\xBB\xBF";
+        $lines[] = 'DRIVER FUEL EFFICIENCY REPORT';
+        $lines[] = 'Generated: ' . now()->format('Y-m-d H:i:s');
+        $lines[] = '';
+        $lines[] = 'Rank,Driver,Assigned Vehicle,Total Trips,Total Distance (km),Total Fuel Used (L),Fuel Efficiency (km/L)';
+        
+        $drivers = $reportData['drivers'] ?? [];
+        $rank = 1;
+        foreach ($drivers as $d) {
+            $lines[] = implode(',', [
+                $rank,
+                '"' . ($d['driver_name'] ?? 'N/A') . '"',
+                '"' . ($d['assigned_vehicle'] ?? 'N/A') . '"',
+                $d['total_trips'] ?? 0,
+                $d['total_distance_km'] ?? 0,
+                $d['total_fuel_used_liters'] ?? 0,
+                $d['fuel_efficiency_kmpl'] ?? 0,
+            ]);
+            $rank++;
+        }
+        return implode("\n", $lines);
+    }
+
+    private function buildAuditTrailCSV($reportData)
+    {
+        $lines = [];
+        $lines[] = "\xEF\xBB\xBF";
+        $lines[] = 'AUDIT TRAIL REPORT';
+        $lines[] = 'Generated: ' . now()->format('Y-m-d H:i:s');
+        $lines[] = '';
+        $lines[] = 'Date/Time,User,Role,Module,Action,Details,Result';
+        
+        $logs = $reportData['logs'] ?? [];
+        foreach ($logs as $log) {
+            $lines[] = implode(',', [
+                '"' . ($log['created_at'] ?? 'N/A') . '"',
+                '"' . ($log['user_name'] ?? 'N/A') . '"',
+                '"' . ($log['role'] ?? 'N/A') . '"',
+                '"' . ($log['module'] ?? 'N/A') . '"',
+                '"' . ($log['action'] ?? 'N/A') . '"',
+                '"' . ($log['details'] ?? 'N/A') . '"',
+                '"' . ($log['result'] ?? 'N/A') . '"',
+            ]);
+        }
+        return implode("\n", $lines);
+    }
+
+    // ============================================================
+    // LEGACY METHODS
+    // ============================================================
+
+    public function getTripReport(Request $request)
+    {
+        try {
+            $startDate = $request->get('start_date');
+            $endDate = $request->get('end_date');
+            $departmentId = $request->get('department_id');
+
+            $query = TripTicket::with(['department', 'driver.user', 'vehicle', 'gasSlip']);
+            
+            if ($startDate && $endDate) {
+                $query->whereBetween('trip_date', [$startDate, $endDate]);
+            }
+            
+            if ($departmentId) {
+                $query->where('department_id', $departmentId);
+            }
+            
+            $trips = $query->get();
+            
+            $statusBreakdown = $trips->groupBy('status')->map(function($group) {
+                return $group->count();
             });
 
-        if ($departmentId && $departmentId !== 'all') {
-            $query->where('department_id', $departmentId);
-        }
-
-        // ✅ Use 'submitted_at' for date filtering
-        if ($startDate && $endDate) {
-            $query->whereBetween('submitted_at', [
-                Carbon::parse($startDate)->startOfDay(),
-                Carbon::parse($endDate)->endOfDay()
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'total_trips' => $trips->count(),
+                    'status_breakdown' => $statusBreakdown,
+                ]
             ]);
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
+    }
 
-        $trips = $query->get();
+    public function getFuelReport(Request $request)
+    {
+        try {
+            $startDate = $request->get('start_date');
+            $endDate = $request->get('end_date');
 
-        Log::info('Fuel Without Trip - Trips found: ' . $trips->count());
-
-        // ✅ Calculate totals
-        $totalFuelIssued = $trips->sum(function($trip) {
-            return (float) ($trip->gasSlip?->amount_released ?? 0);
-        });
-
-        $totalLiters = $trips->sum(function($trip) {
-            return (float) ($trip->gasSlip?->fuelReceipt?->liters_availed ?? 0);
-        });
-
-        // ✅ Map data
-        $formattedData = $trips->map(function($trip) {
-            // ✅ Determine movement status
-            $movementStatus = 'No Odometer Reading';
+            $query = FuelReceipt::query();
             
-            if ($trip->odometer_start !== null && $trip->odometer_end !== null) {
-                $distance = $trip->odometer_end - $trip->odometer_start;
-                if ($distance == 0) {
-                    $movementStatus = 'No Movement';
-                } elseif ($distance < 1) {
-                    $movementStatus = 'Minimal Movement (<1km)';
-                } else {
-                    $movementStatus = 'Normal Trip';
+            if ($startDate && $endDate) {
+                $query->whereBetween('created_at', [$startDate, $endDate]);
+            }
+            
+            $receipts = $query->get();
+            
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'summary' => [
+                        'total_liters' => $receipts->sum('liters_availed'),
+                        'total_cost' => $receipts->sum('amount_on_receipt'),
+                    ]
+                ]
+            ]);
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    public function getReportSummary(Request $request)
+    {
+        try {
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'trips' => ['total' => TripTicket::count()],
+                    'fuel' => ['total_liters' => FuelReceipt::sum('liters_availed')],
+                ]
+            ]);
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    public function getWeeklyMonitoring(Request $request)
+    {
+        return response()->json(['success' => true, 'data' => []]);
+    }
+
+    public function getFuelWithoutTrip(Request $request)
+    {
+        return response()->json(['success' => true, 'data' => []]);
+    }
+
+    public function getFundReleaseHistory(Request $request)
+    {
+        return response()->json(['success' => true, 'data' => []]);
+    }
+
+    public function exportTripReport(Request $request, $format)
+    {
+        return response()->json(['message' => 'Trip export coming soon'], 200);
+    }
+
+    public function exportFuelReport(Request $request, $format)
+    {
+        return response()->json(['message' => 'Fuel export coming soon'], 200);
+    }
+
+    public function exportWeeklyMonitoring(Request $request, $format)
+    {
+        return response()->json(['message' => 'Weekly monitoring export coming soon'], 200);
+    }
+
+    public function exportFuelWithoutTrip(Request $request, $format)
+    {
+        return response()->json(['message' => 'Fuel without trip export coming soon'], 200);
+    }
+
+    public function exportFundReleaseHistory(Request $request, $format)
+    {
+        return response()->json(['message' => 'Fund release history export coming soon'], 200);
+    }
+
+    // ============================================================
+    // HELPER METHODS
+    // ============================================================
+
+    private function calculateTotalDistance($receipts)
+    {
+        $totalDistance = 0;
+        foreach ($receipts as $receipt) {
+            if ($receipt->gps_distance_km) {
+                $totalDistance += $receipt->gps_distance_km;
+            }
+        }
+        return $totalDistance;
+    }
+
+    private function calculateReceiptDistance($receipt)
+    {
+        return $receipt->gps_distance_km ?? 0;
+    }
+
+    private function getEfficiencyRating($liters, $distance)
+    {
+        if ($liters == 0 || $distance == 0) return 'No Data';
+        
+        $kmPerLiter = $distance / $liters;
+        
+        if ($kmPerLiter >= 10) return 'Excellent';
+        if ($kmPerLiter >= 7) return 'Good';
+        if ($kmPerLiter >= 5) return 'Average';
+        if ($kmPerLiter >= 3) return 'Poor';
+        return 'Critical - Needs Maintenance';
+    }
+
+    private function formatAuditDetails($log)
+    {
+        $details = '';
+        
+        if ($log->action === 'login' || $log->action === 'logout') {
+            if ($log->new_values) {
+                $data = json_decode($log->new_values, true);
+                $details = "User: " . ($data['email'] ?? 'N/A');
+            }
+        } elseif ($log->action === 'created') {
+            if ($log->new_values) {
+                $data = json_decode($log->new_values, true);
+                $details = "Created " . ($data['name'] ?? $data['trip_ticket_number'] ?? 'record');
+            }
+        } elseif ($log->action === 'updated' || $log->action === 'edited') {
+            $details = "Updated record ID: " . $log->record_id;
+            if ($log->old_values && $log->new_values) {
+                $old = json_decode($log->old_values, true);
+                $new = json_decode($log->new_values, true);
+                $changed = [];
+                foreach ($new as $key => $value) {
+                    if (isset($old[$key]) && $old[$key] != $value) {
+                        $changed[] = $key;
+                    }
+                }
+                if (!empty($changed)) {
+                    $details .= " (Changed: " . implode(', ', array_slice($changed, 0, 3)) . ")";
                 }
             }
-
-            // ✅ Use actual_distance_km if odometer not available
-            if ($movementStatus === 'No Odometer Reading' && $trip->actual_distance_km !== null) {
-                if ($trip->actual_distance_km == 0) {
-                    $movementStatus = 'No Movement';
-                } elseif ($trip->actual_distance_km < 1) {
-                    $movementStatus = 'Minimal Movement (<1km)';
-                } else {
-                    $movementStatus = 'Normal Trip';
-                }
-            }
-
-            // ✅ Get driver name
-            $driverName = 'N/A';
-            if ($trip->driver && $trip->driver->user) {
-                $driverName = $trip->driver->user->first_name . ' ' . $trip->driver->user->last_name;
-            }
-
-            return [
-                'id' => $trip->trip_ticket_id,
-                'trip_number' => $trip->trip_ticket_number,
-                'date' => $trip->submitted_at ? Carbon::parse($trip->submitted_at)->format('Y-m-d') : 'N/A',
-                'plate_number' => $trip->vehicle?->plate_number ?? 'N/A',
-                'driver' => $driverName,
-                'department' => $trip->department?->department_name ?? 'N/A',
-                'fuel_issued' => (float) ($trip->gasSlip?->amount_released ?? 0),
-                'fuel_liters' => (float) ($trip->gasSlip?->fuelReceipt?->liters_availed ?? 0),
-                'odometer_start' => $trip->odometer_start,
-                'odometer_end' => $trip->odometer_end,
-                'actual_distance' => $trip->actual_distance_km ?? 0,
-                'movement_status' => $movementStatus,
-                'status' => $trip->status,
-            ];
-        });
-
-        // ✅ Calculate summary
-        $noMovement = $trips->filter(function($t) {
-            if ($t->odometer_start !== null && $t->odometer_end !== null) {
-                return $t->odometer_start == $t->odometer_end;
-            }
-            return false;
-        })->count();
-
-        $noOdometer = $trips->filter(function($t) {
-            return $t->odometer_start === null || $t->odometer_end === null;
-        })->count();
-
-        return response()->json([
-            'success' => true,
-            'data' => $formattedData,
-            'summary' => [
-                'total_trips' => $trips->count(),
-                'total_fuel_issued' => round($totalFuelIssued, 2),
-                'total_liters' => round($totalLiters, 2),
-                'no_movement' => $noMovement,
-                'no_odometer' => $noOdometer,
-            ]
-        ]);
-
-    } catch (\Exception $e) {
-        Log::error('Fuel without trip error: ' . $e->getMessage());
-        Log::error('Stack trace: ' . $e->getTraceAsString());
-        return response()->json([
-            'success' => false,
-            'message' => 'Failed to fetch fuel without trip report: ' . $e->getMessage()
-        ], 500);
-    }
-}
-
-// ============================================================
-// ✅ EXPORT WEEKLY MONITORING
-// ============================================================
-
-public function exportWeeklyMonitoring(Request $request, $format)
-{
-    try {
-        $response = $this->getWeeklyMonitoring($request);
-        $data = $response->getData(true);
-
-        if (!$data['success']) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to get report data'
-            ], 500);
-        }
-
-        $reportData = $data['data'];
-        $filename = 'weekly_monitoring_' . date('Y-m-d');
-
-        if ($format === 'excel' || $format === 'xlsx') {
-            // Create Excel export if needed
-            return Excel::download(
-                new \App\Exports\WeeklyMonitoringExport($reportData),
-                $filename . '.xlsx'
-            );
-        } elseif ($format === 'csv') {
-            $content = $this->buildWeeklyMonitoringCSV($reportData);
-            return $this->returnAsCSV($content, $filename . '.csv');
+        } elseif ($log->action === 'deleted') {
+            $details = "Deleted record ID: " . $log->record_id;
         } else {
-            return response()->json([
-                'success' => false,
-                'message' => 'Unsupported format'
-            ], 400);
-        }
-
-    } catch (\Exception $e) {
-        Log::error('Export weekly monitoring error: ' . $e->getMessage());
-        return response()->json([
-            'success' => false,
-            'message' => 'Failed to export report: ' . $e->getMessage()
-        ], 500);
-    }
-}
-
-private function buildWeeklyMonitoringCSV($reportData)
-{
-    $lines = [];
-    $lines[] = "\xEF\xBB\xBF";
-    $lines[] = 'WEEKLY MONITORING REPORT';
-    $lines[] = 'Generated: ' . now()->format('Y-m-d H:i:s');
-    $lines[] = '';
-    
-    $summary = $reportData['summary'] ?? [];
-    $period = $reportData['period'] ?? [];
-    $trips = $reportData['trips'] ?? [];
-    
-    $lines[] = 'PERIOD: ' . ($period['start'] ?? 'N/A') . ' to ' . ($period['end'] ?? 'N/A');
-    $lines[] = '';
-    $lines[] = 'SUMMARY';
-    $lines[] = 'Budget,' . ($summary['budget'] ?? 0);
-    $lines[] = 'Used,' . ($summary['used'] ?? 0);
-    $lines[] = 'Remaining,' . ($summary['remaining'] ?? 0);
-    $lines[] = 'Utilization,' . ($summary['utilization'] ?? 0) . '%';
-    $lines[] = 'Total Trips,' . ($summary['trips'] ?? 0);
-    $lines[] = 'Completed,' . ($summary['completed'] ?? 0);
-    $lines[] = 'Pending,' . ($summary['pending'] ?? 0);
-    $lines[] = '';
-    $lines[] = 'TRIP DETAILS';
-    $lines[] = 'Ticket #,Destination,Status,Estimated Fuel,Actual Fuel,Amount,Driver,Vehicle';
-    
-    foreach ($trips as $trip) {
-        $lines[] = implode(',', [
-            '"' . ($trip['number'] ?? 'N/A') . '"',
-            '"' . ($trip['destination'] ?? 'N/A') . '"',
-            '"' . ($trip['status'] ?? 'N/A') . '"',
-            $trip['estimated_fuel'] ?? 0,
-            $trip['actual_fuel'] ?? 0,
-            $trip['amount'] ?? 0,
-            '"' . ($trip['driver'] ?? 'N/A') . '"',
-            '"' . ($trip['vehicle'] ?? 'N/A') . '"',
-        ]);
-    }
-    
-    return implode("\n", $lines);
-}
-
-// ============================================================
-// ✅ EXPORT FUEL WITHOUT TRIP
-// ============================================================
-
-public function exportFuelWithoutTrip(Request $request, $format)
-{
-    try {
-        $response = $this->getFuelWithoutTrip($request);
-        $data = $response->getData(true);
-
-        if (!$data['success']) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to get report data'
-            ], 500);
-        }
-
-        // ✅ Extract data properly
-        $reportData = $data['data'] ?? [];
-        $filename = 'fuel_without_trip_' . date('Y-m-d');
-
-        if ($format === 'excel' || $format === 'xlsx') {
-            return Excel::download(
-                new \App\Exports\FuelWithoutTripExport($reportData),
-                $filename . '.xlsx'
-            );
-        } elseif ($format === 'csv') {
-            $content = $this->buildFuelWithoutTripCSV($reportData);
-            return $this->returnAsCSV($content, $filename . '.csv');
-        } elseif ($format === 'pdf') {
-            return $this->generateFuelWithoutTripPDF($reportData, $filename);
-        } else {
-            return response()->json([
-                'success' => false,
-                'message' => 'Unsupported format'
-            ], 400);
-        }
-
-    } catch (\Exception $e) {
-        Log::error('Export fuel without trip error: ' . $e->getMessage());
-        return response()->json([
-            'success' => false,
-            'message' => 'Failed to export report: ' . $e->getMessage()
-        ], 500);
-    }
-}
-
-private function buildFuelWithoutTripCSV($reportData)
-{
-    $lines = [];
-    $lines[] = "\xEF\xBB\xBF";
-    $lines[] = 'FUEL WITHOUT TRIP REPORT';
-    $lines[] = 'Generated: ' . now()->format('Y-m-d H:i:s');
-    $lines[] = '';
-    
-    $lines[] = 'Trip #,Date,Vehicle,Driver,Department,Fuel Issued,Movement,Status';
-    
-    foreach ($reportData as $item) {
-        $lines[] = implode(',', [
-            '"' . ($item['trip_number'] ?? 'N/A') . '"',
-            '"' . ($item['date'] ?? 'N/A') . '"',
-            '"' . ($item['plate_number'] ?? 'N/A') . '"',
-            '"' . ($item['driver'] ?? 'N/A') . '"',
-            '"' . ($item['department'] ?? 'N/A') . '"',
-            $item['fuel_issued'] ?? 0,
-            '"' . ($item['movement_status'] ?? 'N/A') . '"',
-            '"' . ($item['status'] ?? 'N/A') . '"',
-        ]);
-    }
-    
-    return implode("\n", $lines);
-}
-
-private function generateFuelWithoutTripPDF($reportData, $filename)
-{
-    try {
-        $html = $this->buildFuelWithoutTripPDFHTML($reportData);
-        
-        if (class_exists('Barryvdh\DomPDF\Facade\Pdf')) {
-            $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML($html);
-            $pdf->setPaper('A4', 'landscape');
-            return $pdf->download($filename . '.pdf');
+            $details = "Action on " . $log->table_name . " ID: " . $log->record_id;
         }
         
-        return response($html, 200, [
-            'Content-Type' => 'application/pdf',
-            'Content-Disposition' => 'attachment; filename="' . $filename . '.pdf"',
-        ]);
-
-    } catch (\Exception $e) {
-        Log::error('PDF generation error: ' . $e->getMessage());
-        return $this->exportFuelWithoutTripCSV($reportData, $filename);
-    }
-}
-
-private function buildFuelWithoutTripPDFHTML($reportData)
-{
-    $html = '<!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="utf-8">
-        <title>Fuel Without Trip Report</title>
-        <style>
-            * { margin: 0; padding: 0; box-sizing: border-box; }
-            body { font-family: "DejaVu Sans", Arial, sans-serif; font-size: 9px; padding: 20px; color: #1e293b; }
-            .header { text-align: center; border-bottom: 3px solid #2563eb; padding-bottom: 15px; margin-bottom: 20px; }
-            .header h1 { font-size: 18px; color: #1e293b; font-weight: bold; }
-            .header p { color: #64748b; font-size: 11px; margin-top: 5px; }
-            .header .subtitle { font-size: 10px; color: #94a3b8; margin-top: 3px; }
-            .section { margin-bottom: 15px; }
-            .section-title { background: #e2e8f0; padding: 6px 12px; font-weight: bold; font-size: 11px; border-radius: 4px; margin-bottom: 8px; }
-            table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 8px; }
-            th { background: #2563eb; color: white; padding: 6px 4px; text-align: center; font-weight: bold; border: 1px solid #1e40af; }
-            td { padding: 5px 4px; border: 1px solid #d1d5db; text-align: center; font-size: 8px; }
-            tr:nth-child(even) { background: #f8fafc; }
-            .footer { text-align: center; border-top: 1px solid #e2e8f0; padding-top: 12px; margin-top: 20px; color: #94a3b8; font-size: 8px; }
-            .badge-pending { background: #fef3c7; color: #92400e; padding: 2px 8px; border-radius: 10px; font-size: 7px; }
-            .badge-completed { background: #dbeafe; color: #1e40af; padding: 2px 8px; border-radius: 10px; font-size: 7px; }
-        </style>
-    </head>
-    <body>
-        <div class="header">
-            <h1>FUEL WITHOUT TRIP REPORT</h1>
-            <p>Laguindingan Municipality - FCMS</p>
-            <p class="subtitle">Generated: ' . now()->format('F d, Y h:i A') . '</p>
-        </div>
-
-        <div class="section">
-            <div class="section-title">📋 FUEL WITHOUT TRIP DETAILS</div>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Date</th>
-                        <th>Trip #</th>
-                        <th>Vehicle</th>
-                        <th>Driver</th>
-                        <th>Department</th>
-                        <th>Fuel Issued</th>
-                        <th>Movement</th>
-                       
-                    </tr>
-                </thead>
-                <tbody>';
-
-    if (count($reportData) > 0) {
-        foreach ($reportData as $item) {
-            $html .= '<tr>
-                <td>' . ($item['date'] ?? 'N/A') . '</td>
-                <td>' . ($item['trip_number'] ?? 'N/A') . '</td>
-                <td>' . ($item['plate_number'] ?? 'N/A') . '</td>
-                <td>' . ($item['driver'] ?? 'N/A') . '</td>
-                <td>' . ($item['department'] ?? 'N/A') . '</td>
-                <td>₱' . number_format($item['fuel_issued'] ?? 0, 2) . '</td>
-                <td>' . ($item['movement_status'] ?? 'N/A') . '</td>
-               
-            </tr>';
-        }
-    } else {
-        $html .= '<tr><td colspan="8" style="text-align:center; color:#94a3b8;">No data available</td></tr>';
+        return $details;
     }
 
-    $html .= '</tbody>
-            </table>
-        </div>
-
-        <div class="footer">
-            <p>This report is automatically generated by the FCMS System</p>
-            <p>© ' . date('Y') . ' Laguindingan Municipality - Fuel Consumption Monitoring System</p>
-        </div>
-    </body>
-    </html>';
-
-    return $html;
-}
-
-private function exportFuelWithoutTripCSV($reportData, $filename)
-{
-    $content = $this->buildFuelWithoutTripCSV($reportData);
-    return $this->returnAsCSV($content, $filename . '.csv');
-}
-/**
- * Get Fund Release History (from existing tables)
- * GET /api/reports/fund-release-history
- */
-public function getFundReleaseHistory(Request $request)
-{
-    try {
-        $departmentId = $request->get('department_id');
-        $fiscalYear = $request->get('fiscal_year', date('Y'));
-        $weekNumber = $request->get('week_number');
-        $startDate = $request->get('start_date');
-        $endDate = $request->get('end_date');
-
-        $query = GasSlip::with([
-            'tripTicket',
-            'tripTicket.vehicle',
-            'tripTicket.driver.user',
-            'tripTicket.department',
-            'period',
-            'createdBy',
-        ]);
-
-        // ✅ Join with trip_ticket for department filtering
-        $query->join('trip_ticket', 'gas_slip.trip_ticket_id', '=', 'trip_ticket.trip_ticket_id');
-
-        // ✅ Department filter (requesting department)
-        if ($departmentId) {
-            $query->where('trip_ticket.department_id', $departmentId);
-        }
-
-        // ✅ Fiscal year filter
-        if ($fiscalYear) {
-            $query->whereYear('gas_slip.created_at', $fiscalYear);
-        }
-
-        // ✅ Week number filter
-        if ($weekNumber) {
-            $query->whereRaw('WEEK(gas_slip.created_at, 1) = ?', [$weekNumber]);
-        }
-
-        // ✅ Date range filter
-        if ($startDate && $endDate) {
-            $query->whereBetween('gas_slip.created_at', [
-                Carbon::parse($startDate)->startOfDay(),
-                Carbon::parse($endDate)->endOfDay()
-            ]);
-        }
-
-        // ✅ Get all gas slips with amount_released > 0
-        $query->where('gas_slip.amount_released', '>', 0);
-
-        $history = $query->select('gas_slip.*')
-            ->orderBy('gas_slip.created_at', 'desc')
-            ->get();
-
-        // ✅ Format the data
-        $formattedHistory = $history->map(function ($gasSlip) {
-            $trip = $gasSlip->tripTicket;
-            $period = $gasSlip->period;
-            
-            // ✅ Get week number from period or created_at
-            $weekNumber = $period ? date('W', strtotime($period->week_start)) : date('W', strtotime($gasSlip->created_at));
-            $weekStart = $period ? $period->week_start : Carbon::parse($gasSlip->created_at)->startOfWeek()->toDateString();
-            $weekEnd = $period ? $period->week_end : Carbon::parse($gasSlip->created_at)->endOfWeek()->toDateString();
-            
-            // ✅ Get charged department (from gas_slip or trip)
-            $chargedDepartmentId = $gasSlip->original_department_id ?? $trip->department_id;
-            
-            return [
-                'history_id' => $gasSlip->gas_slip_id,
-                'gas_slip_id' => $gasSlip->gas_slip_id,
-                'trip_ticket_id' => $trip->trip_ticket_id,
-                'trip_ticket_number' => $trip->trip_ticket_number,
-                'trip_date' => $trip->trip_date,
-                'destination' => $trip->destination,
-                'amount_released' => (float) $gasSlip->amount_released,
-                'week_number' => $weekNumber,
-                'week_start' => $weekStart,
-                'week_end' => $weekEnd,
-                'fiscal_year' => date('Y', strtotime($gasSlip->created_at)),
-                'released_at' => $gasSlip->created_at,
-                'released_by' => $gasSlip->createdBy ? [
-                    'user_id' => $gasSlip->createdBy->user_id,
-                    'full_name' => $gasSlip->createdBy->full_name,
-                ] : null,
-                'department' => $trip->department ? [
-                    'department_id' => $trip->department->department_id,
-                    'department_name' => $trip->department->department_name,
-                    'department_code' => $trip->department->department_code,
-                ] : null,
-                'charged_to_department' => $chargedDepartmentId ? [
-                    'department_id' => $chargedDepartmentId,
-                    'department_name' => $trip->department ? $trip->department->department_name : null,
-                    'department_code' => $trip->department ? $trip->department->department_code : null,
-                ] : null,
-                'is_cross_department' => $gasSlip->is_cross_department ?? false,
-                'cross_department_reason' => $gasSlip->cross_department_reason ?? null,
-                'reconciliation_status' => $gasSlip->reconciliation_status,
-                'vehicle' => $trip->vehicle ? [
-                    'plate_number' => $trip->vehicle->plate_number,
-                    'vehicle_model' => $trip->vehicle->vehicle_model,
-                ] : null,
-                'driver' => $trip->driver && $trip->driver->user ? [
-                    'full_name' => $trip->driver->user->full_name,
-                ] : null,
-            ];
-        });
-
-        // ✅ Calculate summary
-        $summary = [
-            'total_released' => $formattedHistory->sum('amount_released'),
-            'total_count' => $formattedHistory->count(),
-            'cross_department_count' => $formattedHistory->filter(fn($h) => $h['is_cross_department'])->count(),
-            'by_week' => $formattedHistory->groupBy('week_number')->map(function($group) {
-                return [
-                    'count' => $group->count(),
-                    'total_amount' => $group->sum('amount_released'),
-                ];
-            }),
-        ];
-
-        return response()->json([
-            'success' => true,
-            'data' => $formattedHistory,
-            'summary' => $summary,
-            'filters' => [
-                'department_id' => $departmentId,
-                'fiscal_year' => $fiscalYear,
-                'week_number' => $weekNumber,
-                'start_date' => $startDate,
-                'end_date' => $endDate,
-            ]
-        ]);
-
-    } catch (\Exception $e) {
-        Log::error('Get fund release history error: ' . $e->getMessage());
-        Log::error($e->getTraceAsString());
-        return response()->json([
-            'success' => false,
-            'message' => 'Failed to fetch fund release history: ' . $e->getMessage()
-        ], 500);
-    }
-}
-
-/**
- * Export Fund Release History
- */
-public function exportFundReleaseHistory(Request $request, $format)
-{
-    try {
-        $response = $this->getFundReleaseHistory($request);
-        $data = $response->getData(true);
-
-        if (!$data['success']) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to get report data'
-            ], 500);
-        }
-
-        $reportData = $data['data'] ?? [];
-        $filename = 'fund_release_history_' . date('Y-m-d');
-
-        if ($format === 'excel' || $format === 'xlsx') {
-            // Create Excel export
-            return Excel::download(
-                new \App\Exports\FundReleaseHistoryExport($reportData),
-                $filename . '.xlsx'
-            );
-        } elseif ($format === 'csv') {
-            $content = $this->buildFundReleaseHistoryCSV($reportData);
-            return $this->returnAsCSV($content, $filename . '.csv');
-        } elseif ($format === 'pdf') {
-            return $this->generateFundReleaseHistoryPDF($reportData, $filename);
-        }
-
-        return response()->json([
-            'success' => false,
-            'message' => 'Unsupported format'
-        ], 400);
-
-    } catch (\Exception $e) {
-        Log::error('Export fund release history error: ' . $e->getMessage());
-        return response()->json([
-            'success' => false,
-            'message' => 'Failed to export report: ' . $e->getMessage()
-        ], 500);
-    }
-}
-
-private function buildFundReleaseHistoryCSV($reportData)
-{
-    $lines = [];
-    $lines[] = "\xEF\xBB\xBF";
-    $lines[] = 'FUND RELEASE HISTORY REPORT';
-    $lines[] = 'Generated: ' . now()->format('Y-m-d H:i:s');
-    $lines[] = '';
-    $lines[] = 'Date,Week,Trip #,Department,Charged To,Amount,Status,Released By';
-    
-    foreach ($reportData as $item) {
-        $lines[] = implode(',', [
-            '"' . ($item['released_at'] ? date('Y-m-d H:i', strtotime($item['released_at'])) : 'N/A') . '"',
-            $item['week_number'] ?? 'N/A',
-            '"' . ($item['trip_ticket_number'] ?? 'N/A') . '"',
-            '"' . ($item['department']['department_name'] ?? 'N/A') . '"',
-            '"' . ($item['charged_to_department']['department_name'] ?? 'N/A') . '"',
-            $item['amount_released'] ?? 0,
-            '"' . ($item['reconciliation_status'] ?? 'N/A') . '"',
-            '"' . ($item['released_by']['full_name'] ?? 'N/A') . '"',
+    private function returnAsCSV($content, $filename)
+    {
+        return Response::make($content, 200, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+            'Cache-Control' => 'no-cache, no-store, must-revalidate',
+            'Pragma' => 'no-cache',
+            'Expires' => '0',
         ]);
     }
-    
-    return implode("\n", $lines);
-}
-
-private function generateFundReleaseHistoryPDF($reportData, $filename)
-{
-    try {
-        $html = $this->buildFundReleaseHistoryPDFHTML($reportData);
-        
-        if (class_exists('Barryvdh\DomPDF\Facade\Pdf')) {
-            $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML($html);
-            $pdf->setPaper('A4', 'landscape');
-            return $pdf->download($filename . '.pdf');
-        }
-        
-        return response($html, 200, [
-            'Content-Type' => 'application/pdf',
-            'Content-Disposition' => 'attachment; filename="' . $filename . '.pdf"',
-        ]);
-
-    } catch (\Exception $e) {
-        Log::error('PDF generation error: ' . $e->getMessage());
-        $content = $this->buildFundReleaseHistoryCSV($reportData);
-        return $this->returnAsCSV($content, $filename . '.csv');
-    }
-}
-
-private function buildFundReleaseHistoryPDFHTML($reportData)
-{
-    $html = '<!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="utf-8">
-        <title>Fund Release History Report</title>
-        <style>
-            * { margin: 0; padding: 0; box-sizing: border-box; }
-            body { font-family: Arial, sans-serif; font-size: 9px; padding: 20px; }
-            .header { text-align: center; border-bottom: 2px solid #2563eb; padding-bottom: 15px; margin-bottom: 20px; }
-            .header h1 { font-size: 18px; color: #1e293b; }
-            .header p { color: #64748b; font-size: 10px; margin-top: 5px; }
-            table { width: 100%; border-collapse: collapse; font-size: 8px; }
-            th { background: #2563eb; color: white; padding: 6px 4px; text-align: center; border: 1px solid #1e40af; }
-            td { padding: 5px 4px; border: 1px solid #d1d5db; text-align: center; }
-            tr:nth-child(even) { background: #f8fafc; }
-            .footer { text-align: center; border-top: 1px solid #e2e8f0; padding-top: 12px; margin-top: 20px; color: #94a3b8; font-size: 7px; }
-            .badge-cross { background: #fef3c7; color: #92400e; padding: 2px 6px; border-radius: 10px; font-size: 7px; }
-            .text-right { text-align: right; }
-        </style>
-    </head>
-    <body>
-        <div class="header">
-            <h1>FUND RELEASE HISTORY REPORT</h1>
-            <p>LGU Laguindingan - FCMS</p>
-            <p>Generated: ' . now()->format('F d, Y h:i A') . '</p>
-        </div>
-
-        <table>
-            <thead>
-                <tr>
-                    <th>Date</th>
-                    <th>Week</th>
-                    <th>Trip #</th>
-                    <th>Department</th>
-                    <th>Charged To</th>
-                    <th>Amount</th>
-                    <th>Status</th>
-                    <th>Released By</th>
-                </tr>
-            </thead>
-            <tbody>';
-
-    if (count($reportData) > 0) {
-        foreach ($reportData as $item) {
-            $isCross = $item['is_cross_department'] ?? false;
-            $html .= '<tr>
-                <td>' . ($item['released_at'] ? date('Y-m-d H:i', strtotime($item['released_at'])) : 'N/A') . '</td>
-                <td>Week ' . ($item['week_number'] ?? 'N/A') . '</td>
-                <td><strong>' . ($item['trip_ticket_number'] ?? 'N/A') . '</strong></td>
-                <td>' . ($item['department']['department_name'] ?? 'N/A') . '</td>
-                <td>' . ($item['charged_to_department']['department_name'] ?? 'N/A') . 
-                    ($isCross ? ' <span class="badge-cross">Cross</span>' : '') . '</td>
-                <td class="text-right" style="font-weight:bold;color:#059669;">₱' . number_format($item['amount_released'] ?? 0, 2) . '</td>
-                <td>' . ($item['reconciliation_status'] ?? 'N/A') . '</td>
-                <td>' . ($item['released_by']['full_name'] ?? 'N/A') . '</td>
-            </tr>';
-        }
-    } else {
-        $html .= '<tr><td colspan="8" style="text-align:center;color:#94a3b8;">No fund release records found</td></tr>';
-    }
-
-    $html .= '</tbody>
-        </table>
-
-        <div class="footer">
-            <p>This report is automatically generated by the FCMS System</p>
-            <p>© ' . date('Y') . ' Laguindingan Municipality - Fuel Consumption Monitoring System</p>
-        </div>
-    </body>
-    </html>';
-
-    return $html;
-}
-
 }

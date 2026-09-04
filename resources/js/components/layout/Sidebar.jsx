@@ -255,7 +255,7 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
                     icon: FileBarChart,
                     submenu: [
                         {
-                            name: "Fuel Receipts Report",
+                            name: "Fuel Consumption Report",
                             href: "/gso/reports",
                             icon: Receipt,
                         },
@@ -325,6 +325,11 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
                             href: "/mo/receipt-verification",
                             icon: Receipt,
                         },
+                         {
+                            name: "Fund Release History",
+                            href: "/mo/fund-release-history",
+                            icon: DollarSign,
+                        },
                     ],
                 },
                 {
@@ -346,11 +351,7 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
                             href: "/mo/weekly-tracking",
                             icon: CalendarRange,
                         },
-                        {
-                            name: "Fund Release History",
-                            href: "/mo/fund-release-history",
-                            icon: DollarSign,
-                        },
+                       
                     ],
                 },
                 {
@@ -368,7 +369,7 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
                             icon: AlertTriangle,
                         },
                         {
-                            name: "Fuel Receipts",
+                            name: "Fuel Reports",
                             href: "/mo/reports",
                             icon: Receipt,
                         },

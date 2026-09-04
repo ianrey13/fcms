@@ -432,6 +432,9 @@ export const notificationAPI = {
 
 // ============ REPORTS API ============
 export const reportsAPI = {
+  // ============================================================
+  // EXISTING REPORTS
+  // ============================================================
   getTripReport: (params) => api.get("/reports/trips", { params }),
   exportTripReport: (format, params) =>
     api.get(`/reports/trips/export/${format}`, { params, responseType: "blob" }),
@@ -479,13 +482,79 @@ export const reportsAPI = {
       responseType: "blob" 
     }),
 
-     getFundReleaseHistory: (params) => 
+  getFundReleaseHistory: (params) => 
     api.get('/reports/fund-release-history', { params }),
-  
   exportFundReleaseHistory: (format, params) =>
     api.get(`/reports/fund-release-history/export/${format}`, { 
       params, 
       responseType: 'blob' 
+    }),
+
+  // ============================================================
+  // ✅ NEW REPORTS (ADD THESE)
+  // ============================================================
+  
+  // 1. Department Fuel Consumption Report
+  getDepartmentFuelConsumption: (params) => 
+    api.get("/reports/department-fuel-consumption", { params }),
+  exportDepartmentFuelConsumption: (format, params) =>
+    api.get(`/reports/department-fuel-consumption/export/${format}`, { 
+      params, 
+      responseType: "blob" 
+    }),
+
+  // 2. Monthly Fuel Consumption Report
+  getMonthlyFuelConsumption: (params) => 
+    api.get("/reports/monthly-fuel-consumption", { params }),
+  exportMonthlyFuelConsumption: (format, params) =>
+    api.get(`/reports/monthly-fuel-consumption/export/${format}`, { 
+      params, 
+      responseType: "blob" 
+    }),
+
+  // 3. Trip Ticket Report
+  getTripTicketReport: (params) => 
+    api.get("/reports/trip-tickets", { params }),
+  exportTripTicketReport: (format, params) =>
+    api.get(`/reports/trip-tickets/export/${format}`, { 
+      params, 
+      responseType: "blob" 
+    }),
+
+  // 4. GPS Vehicle Activity Report
+  getGPSVehicleActivity: (params) => 
+    api.get("/reports/gps-vehicle-activity", { params }),
+  exportGPSVehicleActivity: (format, params) =>
+    api.get(`/reports/gps-vehicle-activity/export/${format}`, { 
+      params, 
+      responseType: "blob" 
+    }),
+
+  // 5. Reconciliation Report (Viewable by Disbursing Officer)
+  getReconciliation: (params) => 
+    api.get("/reports/reconciliation", { params }),
+  exportReconciliation: (format, params) =>
+    api.get(`/reports/reconciliation/export/${format}`, { 
+      params, 
+      responseType: "blob" 
+    }),
+
+  // 6. Driver Efficiency Report
+  getDriverEfficiency: (params) => 
+    api.get("/reports/driver-efficiency", { params }),
+  exportDriverEfficiency: (format, params) =>
+    api.get(`/reports/driver-efficiency/export/${format}`, { 
+      params, 
+      responseType: "blob" 
+    }),
+
+  // 7. Audit Trail Report
+  getAuditTrail: (params) => 
+    api.get("/reports/audit-trail", { params }),
+  exportAuditTrail: (format, params) =>
+    api.get(`/reports/audit-trail/export/${format}`, { 
+      params, 
+      responseType: "blob" 
     }),
 };
 

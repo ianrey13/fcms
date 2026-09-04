@@ -62,27 +62,53 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('update-profile', [AuthController::class, 'updateProfile']);
     });
 
-    // ============ REPORTS ============
-    Route::prefix('reports')->group(function () {
-        Route::get('trips', [ReportsController::class, 'getTripReport']);
-        Route::get('trips/export/{format}', [ReportsController::class, 'exportTripReport']);
-        Route::get('fuel', [ReportsController::class, 'getFuelReport']);
-        Route::get('fuel/export/{format}', [ReportsController::class, 'exportFuelReport']);
-        Route::get('budget', [ReportsController::class, 'getBudgetReport']);
-        Route::get('budget/export/{format}', [ReportsController::class, 'exportBudgetReport']);
-        Route::get('vehicles', [ReportsController::class, 'getVehicleReport']);
-        Route::get('summary', [ReportsController::class, 'getReportSummary']);
-        Route::get('fuel-consumption', [ReportsController::class, 'getFuelConsumptionReport']);
-        Route::get('fuel-consumption/export/{format}', [ReportsController::class, 'exportFuelConsumptionReport']);
-        Route::get('fuel-receipts', [ReportsController::class, 'getFuelReceiptReport']);
-        Route::get('fuel-receipts/export/{format}', [ReportsController::class, 'exportFuelReceiptReport']);
-        Route::get('weekly-monitoring', [ReportsController::class, 'getWeeklyMonitoring']);
-        Route::get('fuel-without-trip', [ReportsController::class, 'getFuelWithoutTrip']);
-        Route::get('weekly-monitoring/export/{format}', [ReportsController::class, 'exportWeeklyMonitoring']);
+ // ============ REPORTS ============
+Route::prefix('reports')->group(function () {
+    // ============================================================
+    // DATA ENDPOINTS
+    // ============================================================
+    Route::get('trips', [ReportsController::class, 'getTripReport']);
+    Route::get('fuel', [ReportsController::class, 'getFuelReport']);
+    Route::get('budget', [ReportsController::class, 'getBudgetReport']);
+    Route::get('vehicles', [ReportsController::class, 'getVehicleReport']);
+    Route::get('summary', [ReportsController::class, 'getReportSummary']);
+    Route::get('fuel-consumption', [ReportsController::class, 'getFuelConsumptionReport']);
+    Route::get('fuel-receipts', [ReportsController::class, 'getFuelReceiptReport']);
+    Route::get('weekly-monitoring', [ReportsController::class, 'getWeeklyMonitoring']);
+    Route::get('fuel-without-trip', [ReportsController::class, 'getFuelWithoutTrip']);
+    Route::get('fund-release-history', [ReportsController::class, 'getFundReleaseHistory']);
+    
+    // ✅ NEW DATA ENDPOINTS
+    Route::get('department-fuel-consumption', [ReportsController::class, 'getDepartmentFuelConsumption']);
+    Route::get('monthly-fuel-consumption', [ReportsController::class, 'getMonthlyFuelConsumption']);
+    Route::get('trip-tickets', [ReportsController::class, 'getTripTicketReport']);
+    Route::get('gps-vehicle-activity', [ReportsController::class, 'getGPSVehicleActivity']);
+    Route::get('reconciliation', [ReportsController::class, 'getReconciliationReport']);
+    Route::get('driver-efficiency', [ReportsController::class, 'getDriverEfficiencyReport']);
+    Route::get('audit-trail', [ReportsController::class, 'getAuditTrailReport']);
 
-          Route::get('fund-release-history', [ReportsController::class, 'getFundReleaseHistory']);
+    // ============================================================
+    // EXPORT ENDPOINTS
+    // ============================================================
+    Route::get('trips/export/{format}', [ReportsController::class, 'exportTripReport']);
+    Route::get('fuel/export/{format}', [ReportsController::class, 'exportFuelReport']);
+    Route::get('budget/export/{format}', [ReportsController::class, 'exportBudgetReport']);
+    Route::get('vehicles/export/{format}', [ReportsController::class, 'exportVehicleReport']);
+    Route::get('fuel-consumption/export/{format}', [ReportsController::class, 'exportFuelConsumptionReport']);
+    Route::get('fuel-receipts/export/{format}', [ReportsController::class, 'exportFuelReceiptReport']);
+    Route::get('weekly-monitoring/export/{format}', [ReportsController::class, 'exportWeeklyMonitoring']);
+    Route::get('fuel-without-trip/export/{format}', [ReportsController::class, 'exportFuelWithoutTrip']);
     Route::get('fund-release-history/export/{format}', [ReportsController::class, 'exportFundReleaseHistory']);
-    });
+    
+    // ✅ NEW EXPORT ENDPOINTS - ADD THESE
+    Route::get('department-fuel-consumption/export/{format}', [ReportsController::class, 'exportDepartmentFuelConsumption']);
+    Route::get('monthly-fuel-consumption/export/{format}', [ReportsController::class, 'exportMonthlyFuelConsumption']);
+    Route::get('trip-tickets/export/{format}', [ReportsController::class, 'exportTripTicketReport']);
+    Route::get('gps-vehicle-activity/export/{format}', [ReportsController::class, 'exportGPSVehicleActivity']);
+    Route::get('reconciliation/export/{format}', [ReportsController::class, 'exportReconciliation']);
+    Route::get('driver-efficiency/export/{format}', [ReportsController::class, 'exportDriverEfficiency']);
+    Route::get('audit-trail/export/{format}', [ReportsController::class, 'exportAuditTrail']);
+});
 
     // ============ GSO ADMIN ============
     Route::middleware(['role:gso_office'])->prefix('admin')->group(function () {
