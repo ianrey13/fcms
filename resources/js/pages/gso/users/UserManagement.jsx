@@ -61,7 +61,7 @@ const StatsCard = ({ title, value, icon: Icon, color, subtitle }) => (
 );
 
 // ============================================
-// ROLE BADGE COMPONENT
+// ROLE BADGE COMPONENT (Updated - No "Staff")
 // ============================================
 
 const RoleBadge = ({ role }) => {
@@ -75,11 +75,6 @@ const RoleBadge = ({ role }) => {
       color: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300",
       icon: BadgeCheck,
       label: "Disbursing Officer",
-    },
-    staff: {
-      color: "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300",
-      icon: User,
-      label: "Staff",
     },
     driver: {
       color: "bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-300",
@@ -139,6 +134,7 @@ const UserManagement = () => {
     const inactive = users.filter(u => u.status === "inactive").length;
     const drivers = users.filter(u => u.role === "driver").length;
     const gso = users.filter(u => u.role === "gso_office").length;
+    const mayor = users.filter(u => u.role === "mayors_office").length;
     
     return [
       {
@@ -164,10 +160,10 @@ const UserManagement = () => {
       },
       {
         title: "GSO Staff",
-        value: gso,
+        value: gso + mayor,
         icon: Shield,
         color: "from-purple-500 to-purple-600",
-        subtitle: "Administrative users",
+        subtitle: `${gso} GSO • ${mayor} Mayor's Office`,
       },
     ];
   }, [users]);
@@ -188,7 +184,7 @@ const UserManagement = () => {
       );
     }
     
-    // Role filter
+    // Role filter - ✅ Only 3 roles: gso_office, mayors_office, driver
     if (roleFilter !== "all") {
       filtered = filtered.filter((user) => user.role === roleFilter);
     }
@@ -346,7 +342,7 @@ const UserManagement = () => {
                       <option value="all">All Roles</option>
                       <option value="gso_office">GSO Office</option>
                       <option value="mayors_office">Disbursing Officer</option>
-                      <option value="staff">Staff</option>
+                      {/* ❌ "Staff" option removed */}
                       <option value="driver">Driver</option>
                     </select>
                   </div>

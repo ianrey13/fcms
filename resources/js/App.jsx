@@ -5,14 +5,13 @@ import { useAuth } from "./contexts/AuthContext";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
 import Layout from "./components/layout/Layout";
 
-// ============ PUBLIC PAGES (NO LAZY LOADING NEEDED) ============
+// ============ PUBLIC PAGES ============
 import Login from "./pages/Login";
 import Unauthorized from "./pages/Unauthorized";
 
 // ============ GSO PAGES (LAZY LOADED) ============
 const GsoDashboard = lazy(() => import("./pages/gso/GsoDashboard"));
 const GsoCreateTrip = lazy(() => import("./pages/gso/GsoCreateTrip"));
-const GsoAllTrips = lazy(() => import("./pages/gso/GsoAllTrips"));
 const GsoPendingMO = lazy(() => import("./pages/gso/GsoPendingMO"));
 const GsoReconciliation = lazy(() => import("./pages/gso/GsoReconciliation"));
 const GsoReturned = lazy(() => import("./pages/gso/GsoReturned"));
@@ -22,27 +21,17 @@ const FuelReceipts = lazy(() => import("./pages/gso/FuelReceipts"));
 const CompletedTrips = lazy(() => import("./pages/gso/CompletedTrips"));
 const LiveTracking = lazy(() => import("./pages/gso/LiveTracking"));
 const SystemSettings = lazy(() => import("./pages/gso/SystemSettings"));
-const AnnualBudget = lazy(()=>import('./pages/gso/FiscalYearManagement'));
+const AnnualBudget = lazy(() => import("./pages/gso/FiscalYearManagement"));
 const TripHistory = lazy(() => import("./pages/gso/TripHistory"));
 
-// ============ GSO REPORT PAGES (NEW) ============
-const WeeklyMonitoring = lazy(
-    () => import("./pages/gso/reports/WeeklyMonitoring"),
-);
-const FuelWithoutTripReport = lazy(
-    () => import("./pages/gso/reports/FuelWithoutTripReport"),
-);
+// ============ GSO REPORT PAGES ============
+const WeeklyMonitoring = lazy(() => import("./pages/gso/reports/WeeklyMonitoring"));
+const FuelWithoutTripReport = lazy(() => import("./pages/gso/reports/FuelWithoutTripReport"));
 
 // ============ GSO ADMIN (Departments) ============
-const DepartmentManagement = lazy(
-    () => import("./pages/gso/departments/DepartmentManagement"),
-);
-const AddDepartment = lazy(
-    () => import("./pages/gso/departments/AddDepartment"),
-);
-const EditDepartment = lazy(
-    () => import("./pages/gso/departments/EditDepartment"),
-);
+const DepartmentManagement = lazy(() => import("./pages/gso/departments/DepartmentManagement"));
+const AddDepartment = lazy(() => import("./pages/gso/departments/AddDepartment"));
+const EditDepartment = lazy(() => import("./pages/gso/departments/EditDepartment"));
 
 // ============ GSO ADMIN (Users) ============
 const UserManagement = lazy(() => import("./pages/gso/users/UserManagement"));
@@ -50,9 +39,7 @@ const AddUser = lazy(() => import("./pages/gso/users/AddUser"));
 const EditUser = lazy(() => import("./pages/gso/users/EditUser"));
 
 // ============ GSO ADMIN (Vehicles) ============
-const VehicleManagement = lazy(
-    () => import("./pages/gso/vehicles/VehicleManagement"),
-);
+const VehicleManagement = lazy(() => import("./pages/gso/vehicles/VehicleManagement"));
 const AddVehicle = lazy(() => import("./pages/gso/vehicles/AddVehicle"));
 const EditVehicle = lazy(() => import("./pages/gso/vehicles/EditVehicle"));
 
@@ -61,37 +48,23 @@ const MayorDashboard = lazy(() => import("./pages/mayor/MayorDashboard"));
 const MayorPending = lazy(() => import("./pages/mayor/MayorPending"));
 const MayorApproved = lazy(() => import("./pages/mayor/MayorApproved"));
 const MayorFundIssuance = lazy(() => import("./pages/mayor/MayorFundIssuance"));
-const MayorBudgetAssistance = lazy(
-    () => import("./pages/mayor/BudgetAssistance"),
-);
+const MayorBudgetAssistance = lazy(() => import("./pages/mayor/BudgetAssistance"));
 const MayorBudget = lazy(() => import("./pages/mayor/MayorBudget"));
 const MayorReports = lazy(() => import("./pages/mayor/MayorReports"));
-const MayorTripTicketDetail = lazy(
-    () => import("./pages/mayor/MayorTripTicketDetail"),
-);
+const MayorTripTicketDetail = lazy(() => import("./pages/mayor/MayorTripTicketDetail"));
 const BudgetPolicies = lazy(() => import("./pages/mayor/BudgetPolicies"));
-const MayorReceiptVerification = lazy(
-    () => import("./pages/mayor/MayorReceiptVerification"),
-);
+const MayorReceiptVerification = lazy(() => import("./pages/mayor/MayorReceiptVerification"));
 const MayorTripTicket = lazy(() => import("./pages/mayor/MayorTripTicket"));
-
-// ✅ NEW: Fund Release History (Mayor's Office only)
-const FundReleaseHistory = lazy(
-    () => import("./pages/mayor/FundReleaseHistory"),
-);
+const FundReleaseHistory = lazy(() => import("./pages/mayor/FundReleaseHistory"));
 
 // ============ MAYOR BUDGET PAGES ============
 const BudgetAllocation = lazy(() => import("./pages/mayor/budget/BudgetAllocation"));
 const BudgetHistory = lazy(() => import("./pages/mayor/budget/BudgetHistory"));
 const WeeklyTracking = lazy(() => import("./pages/mayor/budget/WeeklyTracking"));
 
-// ============ MAYOR REPORT PAGES (NEW) ============
-const MayorWeeklyMonitoring = lazy(
-    () => import("./pages/mayor/reports/WeeklyMonitoring"),
-);
-const MayorFuelWithoutTripReport = lazy(
-    () => import("./pages/mayor/reports/FuelWithoutTripReport"),
-);
+// ============ MAYOR REPORT PAGES ============
+const MayorWeeklyMonitoring = lazy(() => import("./pages/mayor/reports/WeeklyMonitoring"));
+const MayorFuelWithoutTripReport = lazy(() => import("./pages/mayor/reports/FuelWithoutTripReport"));
 
 // ============ STAFF PAGES ============
 const StaffDashboard = lazy(() => import("./pages/staff/StaffDashboard"));
@@ -103,15 +76,30 @@ const Reports = lazy(() => import("./pages/admin/Reports"));
 const Profile = lazy(() => import("./pages/admin/Profile"));
 const Help = lazy(() => import("./pages/admin/WorkInProgress"));
 
-// ============ LOADING COMPONENT ============
+// ============================================
+// OPTIMIZED PAGE LOADER
+// ============================================
+
 const PageLoader = () => (
-    <div className="min-h-screen flex items-center justify-center">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
         <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-            <p className="mt-4 text-gray-600">Loading...</p>
+            <div className="relative">
+                {/* Spinner with gradient */}
+                <div className="w-16 h-16 rounded-full border-4 border-slate-200 dark:border-slate-700 border-t-blue-600 dark:border-t-blue-400 animate-spin" />
+                {/* Pulsing dot in center */}
+                <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="w-3 h-3 rounded-full bg-blue-600 dark:bg-blue-400 animate-pulse" />
+                </div>
+            </div>
+            <p className="mt-4 text-slate-600 dark:text-slate-400 font-medium">Loading...</p>
+            <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">Please wait</p>
         </div>
     </div>
 );
+
+// ============================================
+// APP
+// ============================================
 
 function App() {
     return (
@@ -141,16 +129,6 @@ function App() {
                         <ProtectedRoute allowedRoles={["gso_office"]}>
                             <Layout>
                                 <GsoCreateTrip />
-                            </Layout>
-                        </ProtectedRoute>
-                    }
-                />
-                <Route
-                    path="/gso/all-trips"
-                    element={
-                        <ProtectedRoute allowedRoles={["gso_office"]}>
-                            <Layout>
-                                <GsoAllTrips />
                             </Layout>
                         </ProtectedRoute>
                     }
@@ -237,7 +215,7 @@ function App() {
                 />
 
                 {/* ============================================================ */}
-                {/* ============ GSO REPORT ROUTES (NEW) ============ */}
+                {/* ============ GSO REPORT ROUTES ============ */}
                 {/* ============================================================ */}
 
                 <Route
@@ -271,7 +249,7 @@ function App() {
                     }
                 />
 
-                {/* ✅ NEW: Trip History Route */}
+                {/* ============ GSO TRIP HISTORY ============ */}
                 <Route
                     path="/gso/trip-history"
                     element={
@@ -507,7 +485,6 @@ function App() {
                         </ProtectedRoute>
                     }
                 />
-
                 <Route
                     path="/mo/budget-allocation"
                     element={
@@ -538,7 +515,6 @@ function App() {
                         </ProtectedRoute>
                     }
                 />
-
                 <Route
                     path="/mo/reports"
                     element={
@@ -590,7 +566,7 @@ function App() {
                     }
                 />
 
-                {/* ✅ NEW: Fund Release History (Mayor's Office only) */}
+                {/* ============ MAYOR FUND RELEASE HISTORY ============ */}
                 <Route
                     path="/mo/fund-release-history"
                     element={
@@ -603,7 +579,7 @@ function App() {
                 />
 
                 {/* ============================================================ */}
-                {/* ============ MAYOR'S OFFICE REPORT ROUTES (NEW) ============ */}
+                {/* ============ MAYOR REPORT ROUTES ============ */}
                 {/* ============================================================ */}
 
                 <Route

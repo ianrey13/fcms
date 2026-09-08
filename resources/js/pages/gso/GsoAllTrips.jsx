@@ -1,4 +1,8 @@
 // src/pages/gso/GsoAllTrips.jsx
+// ============================================
+// MERGED: All Trips + Trip History + Trip Ticket View
+// ============================================
+
 import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -29,6 +33,13 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
   Truck,
   Search,
   Eye,
@@ -56,6 +67,11 @@ import {
   ChevronUp,
   Zap,
   Shield,
+  History,
+  Navigation,
+  Ruler,
+  EyeIcon,
+  FileText,
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { cn } from '@/lib/utils';
@@ -140,6 +156,18 @@ const getStatusConfig = (status) => {
       icon: Clock,
       dotColor: 'bg-orange-500',
     },
+    'pending_gso_validation': { 
+      color: 'bg-purple-500', 
+      label: 'Pending Validation',
+      icon: Shield,
+      dotColor: 'bg-purple-500',
+    },
+    'completed': { 
+      color: 'bg-indigo-400', 
+      label: 'Completed',
+      icon: CheckCircle,
+      dotColor: 'bg-indigo-400',
+    },
     'closed': { 
       color: 'bg-green-600', 
       label: 'Closed',
@@ -181,6 +209,21 @@ const formatDate = (dateString) => {
       month: 'short',
       day: 'numeric',
       year: 'numeric',
+    });
+  } catch {
+    return 'N/A';
+  }
+};
+
+const formatDateTime = (dateString) => {
+  if (!dateString) return 'N/A';
+  try {
+    return new Date(dateString).toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
     });
   } catch {
     return 'N/A';
@@ -250,6 +293,161 @@ const StatsCard = ({ title, value, icon: Icon, color, subtitle, trend }) => {
 };
 
 // ============================================
+// TRIP HISTORY DETAIL MODAL
+// ============================================
+
+const TripHistoryDetailModal = ({ trip, open, onOpenChange, history, loading }) => {
+  const [showAllHistory, setShowAllHistory] = useState(false);
+
+  if (!trip) return null;
+
+  const tripHistory = history || [];
+  const displayedHistory = showAllHistory ? tripHistory : tripHistory.slice(0, 5);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-5xl max-h-[90vh] dark:bg-slate-800 dark:border-slate-700 flex flex-col">
+        <DialogHeader className="flex-shrink-0">
+          <DialogTitle className="flex items-center gap-2 text-slate-800 dark:text-white">
+            <History className="h-5 w-5 text-blue-600" />
+            Trip History - {getTicketNumber(trip)}
+          </DialogTitle>
+          <DialogDescription className="dark:text-slate-400">
+            All trips made on this ticket
+          </DialogDescription>
+        </DialogHeader>
+
+        {/* Trip Summary */}
+        <div className="flex-shrink-0 grid grid-cols-1 md:grid-cols-4 gap-3">
+          <Card className="dark:bg-slate-900/50 dark:border-slate-700">
+            <CardContent className="pt-3">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 rounded-lg bg-blue-50 dark:bg-blue-950/30">
+                  <MapPin className="h-3.5 w-3.5 text-blue-600" />
+                </div>
+                <div>
+                  <p className="text-[10px] text-slate-500">Destination</p>
+                  <p className="font-semibold text-xs truncate max-w-[120px]">{trip.destination || 'N/A'}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="dark:bg-slate-900/50 dark:border-slate-700">
+            <CardContent className="pt-3">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/30">
+                  <Calendar className="h-3.5 w-3.5 text-emerald-600" />
+                </div>
+                <div>
+                  <p className="text-[10px] text-slate-500">Trip Date</p>
+                  <p className="font-semibold text-xs">{formatDate(trip.trip_date)}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="dark:bg-slate-900/50 dark:border-slate-700">
+            <CardContent className="pt-3">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 rounded-lg bg-purple-50 dark:bg-purple-950/30">
+                  <Navigation className="h-3.5 w-3.5 text-purple-600" />
+                </div>
+                <div>
+                  <p className="text-[10px] text-slate-500">Total Trips</p>
+                  <p className="font-semibold text-xs">{trip.trip_count || 0} trip(s)</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="dark:bg-slate-900/50 dark:border-slate-700">
+            <CardContent className="pt-3">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 rounded-lg bg-amber-50 dark:bg-amber-950/30">
+                  <StatusBadge status={trip.status} />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Trip History Table */}
+        <div className="flex-1 min-h-0 mt-3 flex flex-col">
+          <div className="flex items-center justify-between mb-2 flex-shrink-0">
+            <div className="flex items-center gap-2">
+              <History className="h-4 w-4 text-slate-400" />
+              <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                Trip Logs ({tripHistory.length})
+              </span>
+            </div>
+            {tripHistory.length > 5 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowAllHistory(!showAllHistory)}
+                className="text-xs"
+              >
+                {showAllHistory ? 'Show Less' : 'Show All'}
+                {showAllHistory ? <ChevronUp className="h-3 w-3 ml-1" /> : <ChevronDown className="h-3 w-3 ml-1" />}
+              </Button>
+            )}
+          </div>
+
+          <div className="flex-1 overflow-y-auto border rounded-lg dark:border-slate-700">
+            {loading ? (
+              <div className="flex justify-center items-center h-32">
+                <Loader2 className="h-6 w-6 animate-spin text-blue-500" />
+              </div>
+            ) : tripHistory.length === 0 ? (
+              <div className="text-center py-8 text-slate-500 dark:text-slate-400">
+                <History className="h-10 w-10 mx-auto mb-2 text-slate-300" />
+                <p>No trip history available</p>
+              </div>
+            ) : (
+              <Table>
+                <TableHeader className="sticky top-0 z-10 bg-slate-100 dark:bg-slate-900">
+                  <TableRow>
+                    <TableHead className="text-xs uppercase">#</TableHead>
+                    <TableHead className="text-xs uppercase">Start Time</TableHead>
+                    <TableHead className="text-xs uppercase">End Time</TableHead>
+                    <TableHead className="text-xs uppercase text-right">Distance (km)</TableHead>
+                    <TableHead className="text-xs uppercase text-center">Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {displayedHistory.map((entry, index) => (
+                    <TableRow key={entry.history_id || index} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
+                      <TableCell className="font-mono font-medium">
+                        #{entry.trip_number || index + 1}
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        {entry.started_at ? formatDateTime(entry.started_at) : 'N/A'}
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        {entry.ended_at ? formatDateTime(entry.ended_at) : 'N/A'}
+                      </TableCell>
+                      <TableCell className="text-right font-medium">
+                        {entry.distance_km || 0} km
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <Badge className={entry.status === 'completed' ? 'bg-emerald-500' : 'bg-yellow-500'}>
+                          {entry.status || 'N/A'}
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
+// ============================================
 // MAIN COMPONENT
 // ============================================
 
@@ -259,6 +457,10 @@ const GsoAllTrips = () => {
   const [statusFilter, setStatusFilter] = useState('all');
   const [departmentFilter, setDepartmentFilter] = useState('all');
   const [showFilters, setShowFilters] = useState(false);
+  const [selectedTrip, setSelectedTrip] = useState(null);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [tripHistories, setTripHistories] = useState({});
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   // ============ QUERY ============
   const { 
@@ -291,6 +493,7 @@ const GsoAllTrips = () => {
     const inTransit = trips.filter(t => t?.status === 'in_transit').length;
     const closed = trips.filter(t => t?.status === 'closed').length;
     const pendingRecon = trips.filter(t => t?.status === 'pending_reconciliation').length;
+    const pendingValidation = trips.filter(t => t?.status === 'pending_gso_validation' || t?.status === 'completed').length;
 
     return [
       {
@@ -318,12 +521,12 @@ const GsoAllTrips = () => {
         trend: inTransit > 0 ? 5 : 0,
       },
       {
-        title: 'Pending Recon',
-        value: pendingRecon,
-        icon: AlertCircle,
-        color: 'from-orange-500 to-orange-600',
-        subtitle: 'Need closing',
-        trend: pendingRecon > 0 ? -3 : 0,
+        title: 'Pending Validation',
+        value: pendingValidation,
+        icon: Shield,
+        color: 'from-purple-500 to-purple-600',
+        subtitle: 'Need GSO closing',
+        trend: pendingValidation > 0 ? 3 : 0,
       },
       {
         title: 'Closed',
@@ -388,6 +591,36 @@ const GsoAllTrips = () => {
       return;
     }
     navigate(`/gso/tickets/${ticketId}`);
+  };
+
+  const handleViewHistory = async (trip) => {
+    const ticketId = getTicketId(trip);
+    if (!ticketId) {
+      toast.error('Invalid trip ID');
+      return;
+    }
+
+    const tripCount = trip.trip_count || 0;
+    if (tripCount === 0) {
+      toast.error('No history available for this trip');
+      return;
+    }
+
+    setSelectedTrip(trip);
+    setShowHistoryModal(true);
+    setHistoryLoading(true);
+
+    try {
+      const response = await gsoAPI.getTripHistory(ticketId);
+      const history = response?.data?.data?.history || [];
+      setTripHistories(prev => ({ ...prev, [ticketId]: history }));
+    } catch (error) {
+      console.error('Error fetching trip history:', error);
+      setTripHistories(prev => ({ ...prev, [ticketId]: [] }));
+      toast.error('Failed to load trip history');
+    } finally {
+      setHistoryLoading(false);
+    }
   };
 
   const handleExport = () => {
@@ -675,6 +908,9 @@ const GsoAllTrips = () => {
                     <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
                       Vehicle
                     </TableHead>
+                    <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider text-center">
+                      Trips
+                    </TableHead>
                     <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider text-right">
                       Amount
                     </TableHead>
@@ -682,13 +918,16 @@ const GsoAllTrips = () => {
                       Status
                     </TableHead>
                     <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider text-center">
-                      Action
+                      Actions
                     </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredTrips.map((trip) => {
                     const ticketId = getTicketId(trip);
+                    const tripCount = trip.trip_count || 0;
+                    const hasHistory = tripCount > 0;
+
                     return (
                       <TableRow 
                         key={ticketId || Math.random()} 
@@ -708,7 +947,7 @@ const GsoAllTrips = () => {
                         <TableCell>
                           <div className="flex items-center gap-1.5">
                             <MapPin className="h-3.5 w-3.5 text-slate-400" />
-                            <span className="text-sm text-slate-600 dark:text-slate-400 truncate max-w-[150px]">
+                            <span className="text-sm text-slate-600 dark:text-slate-400 truncate max-w-[120px]">
                               {trip.destination || 'N/A'}
                             </span>
                           </div>
@@ -734,6 +973,14 @@ const GsoAllTrips = () => {
                             {getVehicleInfo(trip)}
                           </span>
                         </TableCell>
+                        <TableCell className="text-center">
+                          <Badge className={cn(
+                            "font-mono font-bold",
+                            hasHistory ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" : "bg-slate-100 text-slate-400 dark:bg-slate-700 dark:text-slate-500"
+                          )}>
+                            {tripCount}
+                          </Badge>
+                        </TableCell>
                         <TableCell className="text-right font-medium text-slate-800 dark:text-white">
                           {formatCurrency(getAmountReleased(trip))}
                         </TableCell>
@@ -741,14 +988,35 @@ const GsoAllTrips = () => {
                           <StatusBadge status={trip.status} />
                         </TableCell>
                         <TableCell className="text-center">
-                          <Button
-                            size="sm"
-                            onClick={() => handleViewTrip(trip)}
-                            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 h-8 flex items-center gap-1.5 rounded-lg transition-all duration-200 hover:scale-105 active:scale-95 shadow-sm shadow-blue-500/20"
-                          >
-                            <Eye className="h-3.5 w-3.5" />
-                            <span className="text-sm font-medium">View</span>
-                          </Button>
+                          <div className="flex items-center justify-center gap-1.5">
+                            {/* View Trip Button */}
+                            <Button
+                              size="sm"
+                              onClick={() => handleViewTrip(trip)}
+                              className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 h-8 flex items-center gap-1 rounded-lg transition-all duration-200 hover:scale-105 active:scale-95 shadow-sm shadow-blue-500/20"
+                              title="View Trip Details"
+                            >
+                              <Eye className="h-3.5 w-3.5" />
+                              <span className="text-xs font-medium">View</span>
+                            </Button>
+
+                            {/* View History Button */}
+                            <Button
+                              size="sm"
+                              onClick={() => handleViewHistory(trip)}
+                              disabled={!hasHistory}
+                              className={cn(
+                                "px-3 py-1.5 h-8 flex items-center gap-1 rounded-lg transition-all duration-200 hover:scale-105 active:scale-95",
+                                hasHistory
+                                  ? "bg-purple-600 hover:bg-purple-700 text-white shadow-sm shadow-purple-500/20"
+                                  : "bg-slate-200 text-slate-400 cursor-not-allowed dark:bg-slate-700 dark:text-slate-500"
+                              )}
+                              title={hasHistory ? "View Trip History" : "No history available"}
+                            >
+                              <History className="h-3.5 w-3.5" />
+                              <span className="text-xs font-medium">History</span>
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     );
@@ -759,6 +1027,15 @@ const GsoAllTrips = () => {
           )}
         </CardContent>
       </Card>
+
+      {/* History Modal */}
+      <TripHistoryDetailModal
+        trip={selectedTrip}
+        open={showHistoryModal}
+        onOpenChange={setShowHistoryModal}
+        history={selectedTrip ? tripHistories[getTicketId(selectedTrip)] || [] : []}
+        loading={historyLoading}
+      />
     </div>
   );
 };

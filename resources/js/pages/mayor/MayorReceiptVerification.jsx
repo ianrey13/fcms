@@ -26,6 +26,7 @@ import {
   Receipt,
   CheckCircle,
   Loader2,
+  AlertTriangle,
   RefreshCw,
   Eye,
   Image as ImageIcon,

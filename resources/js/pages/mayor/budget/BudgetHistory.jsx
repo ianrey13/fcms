@@ -1,9 +1,17 @@
 // src/pages/mayor/budget/BudgetHistory.jsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { useOptimizedQuery } from '../../../hooks/useOptimizedQuery';
+import {
+    SkeletonPage,
+    SkeletonStats,
+    SkeletonCard,
+    SkeletonText,
+    SkeletonTitle,
+} from '../../../components/ui/SkeletonCard';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { RefreshCw, Loader2, History, Filter, X,Plus,Edit, Calendar,Search, TrendingUp, TrendingDown, DollarSign, Clock, RotateCcw, ArrowLeft, Zap, Shield, Activity, CheckCircle, AlertCircle, Info } from 'lucide-react';
+import { RefreshCw, Loader2, History, Filter, X, Plus, Edit, Calendar, Search, TrendingUp, TrendingDown, DollarSign, Clock, RotateCcw, ArrowLeft, Zap, Shield, Activity, CheckCircle, AlertCircle, Info } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { mayorsOfficeAPI } from '../../../services/api';
@@ -55,88 +63,86 @@ const StatsCard = ({ title, value, icon: Icon, color, subtitle, trend }) => (
 
 const getActionConfig = (action) => {
     const configs = {
-        // Weekly actions
-        'weekly_allocated': { 
+        'weekly_allocated': {
             color: 'bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:border-purple-800',
             icon: Clock,
             label: 'Weekly Allocated',
             category: 'weekly'
         },
-        'weekly_updated': { 
+        'weekly_updated': {
             color: 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800',
             icon: Clock,
             label: 'Weekly Updated',
             category: 'weekly'
         },
-        'weekly_reset': { 
+        'weekly_reset': {
             color: 'bg-indigo-100 text-indigo-700 border-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-300 dark:border-indigo-800',
             icon: RotateCcw,
             label: 'Weekly Reset',
             category: 'weekly'
         },
-        'weekly_used': { 
+        'weekly_used': {
             color: 'bg-orange-100 text-orange-700 border-orange-200 dark:bg-orange-900/30 dark:text-orange-300 dark:border-orange-800',
             icon: TrendingDown,
             label: 'Weekly Used',
             category: 'weekly'
         },
-        // Annual actions
-        'annual_created': { 
+        'annual_created': {
             color: 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800',
             icon: DollarSign,
             label: 'Annual Created',
             category: 'annual'
         },
-        'annual_added': { 
+        'annual_added': {
             color: 'bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-300 dark:border-green-800',
             icon: TrendingUp,
             label: 'Annual Added',
             category: 'annual'
         },
-        'annual_updated': { 
+        'annual_updated': {
             color: 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800',
             icon: DollarSign,
             label: 'Annual Updated',
             category: 'annual'
         },
-        'surplus_returned': { 
+        'surplus_returned': {
             color: 'bg-teal-100 text-teal-700 border-teal-200 dark:bg-teal-900/30 dark:text-teal-300 dark:border-teal-800',
             icon: TrendingUp,
             label: 'Surplus Returned',
             category: 'other'
         },
-        'activated': { 
+        'activated': {
             color: 'bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:border-purple-800',
             icon: CheckCircle,
             label: 'Activated',
             category: 'other'
         },
-        'created': { 
+        'created': {
             color: 'bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-300 dark:border-green-800',
             icon: CheckCircle,
             label: 'Created',
             category: 'other'
         },
-        'added': { 
+        'added': {
             color: 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800',
             icon: Plus,
             label: 'Added',
             category: 'other'
         },
-        'updated': { 
+        'updated': {
             color: 'bg-yellow-100 text-yellow-700 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-300 dark:border-yellow-800',
             icon: Edit,
             label: 'Updated',
             category: 'other'
         },
-        'deleted': { 
+        'deleted': {
             color: 'bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800',
             icon: X,
             label: 'Deleted',
             category: 'other'
         },
     };
-    return configs[action] || { 
+    return configs[action] || {
         color: 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700',
         icon: Activity,
         label: action?.replace(/_/g, ' ') || 'Updated',
@@ -183,16 +189,31 @@ const CategoryBadge = ({ category }) => {
 
 const LoadingSkeleton = () => (
     <div className="space-y-6 p-4 md:p-6 bg-slate-50 dark:bg-slate-900 min-h-screen">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div className="h-12 w-48 bg-slate-200 dark:bg-slate-700 rounded animate-pulse" />
-            <div className="h-10 w-32 bg-slate-200 dark:bg-slate-700 rounded animate-pulse" />
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            {[1, 2, 3, 4].map((i) => (
-                <div key={i} className="h-28 bg-slate-200 dark:bg-slate-700 rounded-xl animate-pulse" />
-            ))}
-        </div>
-        <div className="h-96 bg-slate-200 dark:bg-slate-700 rounded-xl animate-pulse" />
+        <SkeletonPage />
+        <SkeletonStats count={4} cols={4} />
+        <SkeletonCard className="p-4">
+            <SkeletonText width="w-32" className="h-4" />
+            <div className="flex gap-4 mt-2">
+                <SkeletonCard className="h-10 flex-1" />
+                <SkeletonCard className="h-10 w-40" />
+            </div>
+        </SkeletonCard>
+        <SkeletonCard className="p-6">
+            <div className="space-y-4">
+                {[1, 2, 3].map((i) => (
+                    <SkeletonCard key={i} className="p-4">
+                        <div className="flex items-start justify-between">
+                            <div className="flex-1 space-y-2">
+                                <SkeletonText width="w-40" className="h-4" />
+                                <SkeletonText width="w-full" className="h-3" />
+                                <SkeletonText width="w-3/4" className="h-3" />
+                            </div>
+                            <SkeletonText width="w-24" className="h-4" />
+                        </div>
+                    </SkeletonCard>
+                ))}
+            </div>
+        </SkeletonCard>
     </div>
 );
 
@@ -202,47 +223,61 @@ const LoadingSkeleton = () => (
 
 const BudgetHistory = () => {
     const navigate = useNavigate();
-    const [history, setHistory] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [refreshing, setRefreshing] = useState(false);
     const [filter, setFilter] = useState('');
     const [departments, setDepartments] = useState([]);
     const [actionFilter, setActionFilter] = useState('all');
 
+    // ============================================
+    // OPTIMIZED QUERIES
+    // ============================================
+
+    const {
+        data: historyData = [],
+        isLoading,
+        refetch,
+        isFetching,
+    } = useOptimizedQuery({
+        queryKey: ['budget-history'],
+        queryFn: async () => {
+            try {
+                const response = await mayorsOfficeAPI.getBudgetHistory();
+                let data = response.data?.data || response.data || [];
+                return Array.isArray(data) ? data : [];
+            } catch (error) {
+                console.error('Failed to fetch budget history:', error);
+                toast.error('Failed to load budget history');
+                return [];
+            }
+        },
+        staleTime: 2 * 60 * 1000,
+        keepPreviousData: true,
+    });
+
+    const history = Array.isArray(historyData) ? historyData : [];
+
+    // ============================================
+    // FETCH DEPARTMENTS
+    // ============================================
+
     useEffect(() => {
-        fetchHistory();
+        const fetchDepartments = async () => {
+            try {
+                const response = await mayorsOfficeAPI.getAllDepartmentsForSelector();
+                const data = response.data?.data || response.data || [];
+                setDepartments(data);
+            } catch (error) {
+                console.error('Failed to fetch departments:', error);
+            }
+        };
         fetchDepartments();
     }, []);
 
-    const fetchHistory = async () => {
-        setLoading(true);
-        try {
-            const response = await mayorsOfficeAPI.getBudgetHistory();
-            let data = response.data?.data || response.data || [];
-            if (!Array.isArray(data)) data = [];
-            setHistory(data);
-        } catch (error) {
-            console.error('Failed to fetch budget history:', error);
-            toast.error('Failed to load budget history');
-        } finally {
-            setLoading(false);
-            setRefreshing(false);
-        }
-    };
-
-    const fetchDepartments = async () => {
-        try {
-            const response = await mayorsOfficeAPI.getAllDepartmentsForSelector();
-            const data = response.data?.data || response.data || [];
-            setDepartments(data);
-        } catch (error) {
-            console.error('Failed to fetch departments:', error);
-        }
-    };
+    // ============================================
+    // HANDLERS
+    // ============================================
 
     const handleRefresh = () => {
-        setRefreshing(true);
-        fetchHistory();
+        refetch();
         toast.success('History refreshed');
     };
 
@@ -264,30 +299,39 @@ const BudgetHistory = () => {
     };
 
     const isWeeklyAction = (action) => {
-        return action === 'weekly_allocated' || 
-               action === 'weekly_updated' || 
-               action === 'weekly_reset' || 
-               action === 'weekly_used';
+        return action === 'weekly_allocated' ||
+            action === 'weekly_updated' ||
+            action === 'weekly_reset' ||
+            action === 'weekly_used';
     };
 
     const isAnnualAction = (action) => {
-        return action === 'annual_created' || 
-               action === 'annual_added' || 
-               action === 'annual_updated';
+        return action === 'annual_created' ||
+            action === 'annual_added' ||
+            action === 'annual_updated';
     };
 
-    const filteredHistory = history.filter(item => {
-        const matchesSearch = filter === '' ||
-            item.department_name?.toLowerCase().includes(filter.toLowerCase()) ||
-            item.action?.toLowerCase().includes(filter.toLowerCase()) ||
-            item.reason?.toLowerCase().includes(filter.toLowerCase());
-        
-        const matchesAction = actionFilter === 'all' || item.action === actionFilter;
-        
-        return matchesSearch && matchesAction;
-    });
+    // ============================================
+    // FILTERS
+    // ============================================
 
-    // Stats
+    const filteredHistory = useMemo(() => {
+        return history.filter(item => {
+            const matchesSearch = filter === '' ||
+                item.department_name?.toLowerCase().includes(filter.toLowerCase()) ||
+                item.action?.toLowerCase().includes(filter.toLowerCase()) ||
+                item.reason?.toLowerCase().includes(filter.toLowerCase());
+
+            const matchesAction = actionFilter === 'all' || item.action === actionFilter;
+
+            return matchesSearch && matchesAction;
+        });
+    }, [history, filter, actionFilter]);
+
+    // ============================================
+    // STATS
+    // ============================================
+
     const totalEntries = history.length;
     const weeklyAllocations = history.filter(h => isWeeklyAction(h.action)).length;
     const annualChanges = history.filter(h => isAnnualAction(h.action)).length;
@@ -330,16 +374,21 @@ const BudgetHistory = () => {
         },
     ];
 
-    // Get unique actions for filter
-    const uniqueActions = [...new Set(history.map(item => item.action))].filter(Boolean);
+    // ============================================
+    // LOADING STATE
+    // ============================================
 
-    if (loading) {
+    if (isLoading) {
         return <LoadingSkeleton />;
     }
 
+    // ============================================
+    // RENDER
+    // ============================================
+
     return (
         <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
-            <div className="space-y-6 p-4 md:p-6 animate-fade-in-up">
+            <div className="space-y-6 p-4 md:p-6">
                 {/* Header */}
                 <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                     <div className="flex items-center gap-3">
@@ -367,13 +416,13 @@ const BudgetHistory = () => {
                             </div>
                         </div>
                     </div>
-                    <Button 
-                        variant="outline" 
-                        onClick={handleRefresh} 
-                        disabled={refreshing} 
+                    <Button
+                        variant="outline"
+                        onClick={handleRefresh}
+                        disabled={isFetching}
                         className="dark:border-slate-700 dark:text-slate-300"
                     >
-                        <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+                        <RefreshCw className={`h-4 w-4 mr-2 ${isFetching ? 'animate-spin' : ''}`} />
                         Refresh
                     </Button>
                 </div>
@@ -399,7 +448,7 @@ const BudgetHistory = () => {
                                 />
                                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
                             </div>
-                            
+
                             {/* Action Filter */}
                             <div className="min-w-[180px]">
                                 <select
@@ -421,12 +470,12 @@ const BudgetHistory = () => {
 
                             {/* Clear Filters */}
                             {(filter || actionFilter !== 'all') && (
-                                <Button 
-                                    variant="outline" 
+                                <Button
+                                    variant="outline"
                                     onClick={() => {
                                         setFilter('');
                                         setActionFilter('all');
-                                    }} 
+                                    }}
                                     className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30"
                                 >
                                     <X className="h-4 w-4 mr-2" />
@@ -467,7 +516,7 @@ const BudgetHistory = () => {
                                 </div>
                                 <p className="text-slate-600 dark:text-slate-400 font-medium text-lg">No budget history found</p>
                                 <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">
-                                    {history.length === 0 
+                                    {history.length === 0
                                         ? 'Budget changes will appear here'
                                         : 'Try adjusting your filters'}
                                 </p>
@@ -481,15 +530,15 @@ const BudgetHistory = () => {
                                     const category = config.category;
                                     const diffAmount = (entry.added_amount || entry.amount || 0) - (entry.previous_amount || 0);
                                     const isIncrease = diffAmount > 0;
-                                    
+
                                     return (
-                                        <div 
-                                            key={entry.id || index} 
+                                        <div
+                                            key={entry.id || index}
                                             className={cn(
                                                 "border rounded-xl p-4 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors",
-                                                isWeekly ? "border-l-4 border-l-purple-400 dark:border-l-purple-500" : 
-                                                isAnnual ? "border-l-4 border-l-emerald-400 dark:border-l-emerald-500" : 
-                                                "border-l-4 border-l-slate-300 dark:border-l-slate-600",
+                                                isWeekly ? "border-l-4 border-l-purple-400 dark:border-l-purple-500" :
+                                                    isAnnual ? "border-l-4 border-l-emerald-400 dark:border-l-emerald-500" :
+                                                    "border-l-4 border-l-slate-300 dark:border-l-slate-600",
                                                 "border border-slate-200 dark:border-slate-700"
                                             )}
                                         >
@@ -504,7 +553,7 @@ const BudgetHistory = () => {
                                                             <CategoryBadge category={category} />
                                                         )}
                                                     </div>
-                                                    
+
                                                     {/* Weekly Actions */}
                                                     {isWeekly && (
                                                         <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-sm">
@@ -538,7 +587,7 @@ const BudgetHistory = () => {
                                                             )}
                                                         </div>
                                                     )}
-                                                    
+
                                                     {/* Annual Actions */}
                                                     {isAnnual && (
                                                         <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
@@ -578,7 +627,7 @@ const BudgetHistory = () => {
                                                             )}
                                                         </div>
                                                     )}
-                                                    
+
                                                     {/* Other Actions */}
                                                     {!isWeekly && !isAnnual && (
                                                         <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-sm">
@@ -614,7 +663,7 @@ const BudgetHistory = () => {
                                                             )}
                                                         </div>
                                                     )}
-                                                    
+
                                                     <p className="text-xs text-slate-400 dark:text-slate-500 mt-2 flex items-center gap-1">
                                                         <Clock className="h-3 w-3" />
                                                         {formatDateTime(entry.created_at)}

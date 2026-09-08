@@ -1,5 +1,13 @@
 // src/pages/mayor/budget/WeeklyTracking.jsx
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
+import { useOptimizedQuery } from "../../../hooks/useOptimizedQuery";
+import {
+    SkeletonPage,
+    SkeletonStats,
+    SkeletonCard,
+    SkeletonText,
+    SkeletonTitle,
+} from "../../../components/ui/SkeletonCard";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -98,21 +106,27 @@ const StatusBadge = ({ status, label }) => {
 
 const LoadingSkeleton = () => (
     <div className="space-y-6 p-4 md:p-6 bg-slate-50 dark:bg-slate-900 min-h-screen">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div className="h-12 w-48 bg-slate-200 dark:bg-slate-700 rounded animate-pulse" />
-            <div className="h-10 w-32 bg-slate-200 dark:bg-slate-700 rounded animate-pulse" />
-        </div>
-        <div className="flex items-center justify-between gap-4">
-            <div className="h-10 w-24 bg-slate-200 dark:bg-slate-700 rounded animate-pulse" />
-            <div className="h-10 w-48 bg-slate-200 dark:bg-slate-700 rounded animate-pulse" />
-            <div className="h-10 w-24 bg-slate-200 dark:bg-slate-700 rounded animate-pulse" />
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            {[1, 2, 3, 4].map((i) => (
-                <div key={i} className="h-28 bg-slate-200 dark:bg-slate-700 rounded-xl animate-pulse" />
-            ))}
-        </div>
-        <div className="h-96 bg-slate-200 dark:bg-slate-700 rounded-xl animate-pulse" />
+        <SkeletonPage />
+        <SkeletonCard className="p-4">
+            <div className="flex items-center justify-between">
+                <SkeletonCard className="h-10 w-24" />
+                <div className="flex items-center gap-2">
+                    <SkeletonCard className="h-6 w-6" />
+                    <SkeletonText width="w-40" className="h-4" />
+                    <SkeletonCard className="h-6 w-16" />
+                </div>
+                <SkeletonCard className="h-10 w-24" />
+            </div>
+        </SkeletonCard>
+        <SkeletonStats count={4} cols={4} />
+        <SkeletonCard className="p-6">
+            <div className="space-y-4">
+                <SkeletonCard className="h-10" />
+                {[1, 2, 3].map((i) => (
+                    <SkeletonCard key={i} className="h-12" />
+                ))}
+            </div>
+        </SkeletonCard>
     </div>
 );
 
@@ -122,165 +136,148 @@ const LoadingSkeleton = () => (
 
 const WeeklyTracking = () => {
     const navigate = useNavigate();
-    const [trackingData, setTrackingData] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [refreshing, setRefreshing] = useState(false);
     const [currentWeek, setCurrentWeek] = useState(() => {
         const today = new Date();
         return startOfWeek(today, { weekStartsOn: 1 });
     });
-    const [departments, setDepartments] = useState([]);
-    const [budgetData, setBudgetData] = useState([]);
-    const [displayData, setDisplayData] = useState(null);
 
-    useEffect(() => {
-        const today = new Date();
-        const monday = startOfWeek(today, { weekStartsOn: 1 });
-        setCurrentWeek(monday);
-        fetchDepartments();
-        fetchBudgetData();
-    }, []);
+    // ============================================
+    // OPTIMIZED QUERIES
+    // ============================================
 
-    useEffect(() => {
-        if (budgetData.length > 0 || departments.length > 0) {
-            fetchTrackingData();
-        }
-    }, [currentWeek, budgetData, departments]);
+    const { data: departments = [], isLoading: deptsLoading } = useOptimizedQuery({
+        queryKey: ['departments-selector'],
+        queryFn: async () => {
+            try {
+                const response = await mayorsOfficeAPI.getAllDepartmentsForSelector();
+                return response.data?.data || response.data || [];
+            } catch (error) {
+                console.error("Failed to fetch departments:", error);
+                return [];
+            }
+        },
+        staleTime: 5 * 60 * 1000,
+        keepPreviousData: true,
+    });
 
-    const fetchDepartments = async () => {
-        try {
-            const response = await mayorsOfficeAPI.getAllDepartmentsForSelector();
-            const data = response.data?.data || response.data || [];
-            setDepartments(data);
-        } catch (error) {
-            console.error("Failed to fetch departments:", error);
-        }
-    };
+    const { data: budgetData = [], isLoading: budgetLoading } = useOptimizedQuery({
+        queryKey: ['departments-with-budget'],
+        queryFn: async () => {
+            try {
+                const response = await mayorsOfficeAPI.getAllDepartmentsWithBudget();
+                let data = response.data?.data || response.data || [];
+                return Array.isArray(data) ? data : [];
+            } catch (error) {
+                console.error("Failed to fetch budget data:", error);
+                return [];
+            }
+        },
+        staleTime: 2 * 60 * 1000,
+        keepPreviousData: true,
+    });
 
-    const fetchBudgetData = async () => {
-        try {
-            const response = await mayorsOfficeAPI.getAllDepartmentsWithBudget();
-            let data = response.data?.data || response.data || [];
-            if (data.data) data = data.data;
-            setBudgetData(Array.isArray(data) ? data : []);
-        } catch (error) {
-            console.error("Failed to fetch budget data:", error);
-        }
-    };
+    const { data: periodsData = [], isLoading: periodsLoading, refetch, isFetching } = useOptimizedQuery({
+        queryKey: ['budget-periods', currentWeek],
+        queryFn: async () => {
+            try {
+                const weekStartStr = format(startOfWeek(currentWeek, { weekStartsOn: 1 }), 'yyyy-MM-dd');
+                const response = await mayorsOfficeAPI.getBudgetPeriods();
+                let data = response?.data?.data || response?.data || [];
+                return data.filter(item => item.week_start === weekStartStr);
+            } catch (error) {
+                console.error("❌ Failed to fetch tracking data:", error);
+                toast.error("Failed to load tracking data");
+                return [];
+            }
+        },
+        staleTime: 60 * 1000,
+        keepPreviousData: true,
+    });
 
-    const fetchTrackingData = async () => {
-        setLoading(true);
-        try {
-            const weekStart = startOfWeek(currentWeek, { weekStartsOn: 1 });
-            const weekStartStr = format(weekStart, 'yyyy-MM-dd');
-            const weekNumber = getWeek(weekStart);
-            const year = format(weekStart, 'yyyy');
-            
-            const response = await mayorsOfficeAPI.getBudgetPeriods();
-            let data = response?.data?.data || response?.data || [];
-            
-            const filteredData = data.filter(item => item.week_start === weekStartStr);
-            
-            if (filteredData.length === 0) {
-                setDisplayData(null);
-                setTrackingData([]);
-                setLoading(false);
-                return;
+    // ============================================
+    // DERIVED DATA
+    // ============================================
+
+    const weekData = useMemo(() => {
+        if (!periodsData || periodsData.length === 0) return null;
+
+        const departmentUsage = periodsData.map((item) => {
+            const deptInfo = budgetData.find(d => d.department_id === item.department_id);
+            const allocated = parseFloat(item.allocated_amount || 0);
+            const used = parseFloat(item.actual_used || 0);
+            const remaining = allocated - used;
+            const utilization = allocated > 0 ? (used / allocated) * 100 : 0;
+
+            let status = 'on_track';
+            let statusLabel = 'On Track';
+
+            if (allocated === 0) {
+                status = 'no_budget';
+                statusLabel = 'No Budget';
+            } else if (used >= allocated) {
+                status = 'exhausted';
+                statusLabel = 'Exhausted';
+            } else if (utilization >= 80) {
+                status = 'near_limit';
+                statusLabel = 'Near Limit';
+            } else if (utilization >= 50) {
+                status = 'moderate';
+                statusLabel = 'Moderate';
             }
 
-            const departmentUsage = filteredData.map((item) => {
-                const deptInfo = budgetData.find(d => d.department_id === item.department_id);
-                const allocated = parseFloat(item.allocated_amount || 0);
-                const used = parseFloat(item.actual_used || 0);
-                const remaining = allocated - used;
-                const utilization = allocated > 0 ? (used / allocated) * 100 : 0;
-                
-                let status = 'on_track';
-                let statusLabel = 'On Track';
-                let statusColor = 'bg-emerald-500';
-                
-                if (allocated === 0) {
-                    status = 'no_budget';
-                    statusLabel = 'No Budget';
-                    statusColor = 'bg-slate-400';
-                } else if (used >= allocated) {
-                    status = 'exhausted';
-                    statusLabel = 'Exhausted';
-                    statusColor = 'bg-red-500';
-                } else if (utilization >= 80) {
-                    status = 'near_limit';
-                    statusLabel = 'Near Limit';
-                    statusColor = 'bg-orange-500';
-                } else if (utilization >= 50) {
-                    status = 'moderate';
-                    statusLabel = 'Moderate';
-                    statusColor = 'bg-yellow-500';
-                }
-                
-                return {
-                    department_id: item.department_id,
-                    department_name: deptInfo?.department_name || item.department_name || `Department ${item.department_id}`,
-                    department_code: deptInfo?.department_code || 'N/A',
-                    allocated: allocated,
-                    used: used,
-                    remaining: remaining,
-                    utilization: Math.round(utilization),
-                    status: status,
-                    status_label: statusLabel,
-                    status_color: statusColor,
-                    week_start: item.week_start,
-                    week_end: item.week_end,
-                };
-            });
-
-            const totalAllocated = departmentUsage.reduce((sum, d) => sum + d.allocated, 0);
-            const totalUsed = departmentUsage.reduce((sum, d) => sum + d.used, 0);
-            const totalRemaining = totalAllocated - totalUsed;
-            
-            const weekData = {
-                week_start: weekStartStr,
-                week_end: format(endOfWeek(weekStart, { weekStartsOn: 1 }), 'yyyy-MM-dd'),
-                week_number: weekNumber,
-                year: year,
-                departments: departmentUsage,
-                total_allocated: totalAllocated,
-                total_used: totalUsed,
-                total_remaining: totalRemaining,
-                is_active: departmentUsage.some(d => d.status === 'on_track' || d.status === 'moderate'),
-                department_count: departmentUsage.length,
-                departments_with_budget: departmentUsage.filter(d => d.allocated > 0).length,
+            return {
+                department_id: item.department_id,
+                department_name: deptInfo?.department_name || item.department_name || `Department ${item.department_id}`,
+                department_code: deptInfo?.department_code || 'N/A',
+                allocated: allocated,
+                used: used,
+                remaining: remaining,
+                utilization: Math.round(utilization),
+                status: status,
+                status_label: statusLabel,
+                week_start: item.week_start,
+                week_end: item.week_end,
             };
+        });
 
-            setDisplayData(weekData);
-            setTrackingData([weekData]);
-            
-        } catch (error) {
-            console.error("❌ Failed to fetch tracking data:", error);
-            setDisplayData(null);
-            setTrackingData([]);
-            toast.error("Failed to load tracking data");
-        } finally {
-            setLoading(false);
-            setRefreshing(false);
-        }
-    };
+        const totalAllocated = departmentUsage.reduce((sum, d) => sum + d.allocated, 0);
+        const totalUsed = departmentUsage.reduce((sum, d) => sum + d.used, 0);
+        const totalRemaining = totalAllocated - totalUsed;
+
+        const weekStart = startOfWeek(currentWeek, { weekStartsOn: 1 });
+
+        return {
+            week_start: format(weekStart, 'yyyy-MM-dd'),
+            week_end: format(endOfWeek(weekStart, { weekStartsOn: 1 }), 'yyyy-MM-dd'),
+            week_number: getWeek(weekStart),
+            year: format(weekStart, 'yyyy'),
+            departments: departmentUsage,
+            total_allocated: totalAllocated,
+            total_used: totalUsed,
+            total_remaining: totalRemaining,
+            is_active: departmentUsage.some(d => d.status === 'on_track' || d.status === 'moderate'),
+            department_count: departmentUsage.length,
+            departments_with_budget: departmentUsage.filter(d => d.allocated > 0).length,
+        };
+    }, [periodsData, budgetData, currentWeek]);
+
+    // ============================================
+    // HANDLERS
+    // ============================================
 
     const handleRefresh = () => {
-        setRefreshing(true);
-        Promise.all([fetchBudgetData(), fetchTrackingData()]);
+        refetch();
         toast.success("Data refreshed");
     };
 
     const handlePrevWeek = () => {
         const newDate = subWeeks(currentWeek, 1);
-        const monday = startOfWeek(newDate, { weekStartsOn: 1 });
-        setCurrentWeek(monday);
+        setCurrentWeek(startOfWeek(newDate, { weekStartsOn: 1 }));
     };
 
     const handleNextWeek = () => {
         const newDate = addWeeks(currentWeek, 1);
-        const monday = startOfWeek(newDate, { weekStartsOn: 1 });
-        setCurrentWeek(monday);
+        setCurrentWeek(startOfWeek(newDate, { weekStartsOn: 1 }));
     };
 
     const formatCurrency = (amount) => {
@@ -304,55 +301,67 @@ const WeeklyTracking = () => {
     const weekEnd = endOfWeek(currentWeek, { weekStartsOn: 1 });
     const currentWeekNumber = getWeek(weekStart);
 
-    // Stats
+    // ============================================
+    // STATS
+    // ============================================
+
     const stats = [
         {
             title: "Total Departments",
-            value: displayData?.department_count || 0,
+            value: weekData?.department_count || 0,
             icon: Building2,
             color: "from-blue-500 to-blue-600",
-            subtitle: `${displayData?.departments_with_budget || 0} with budget`,
-            trend: displayData?.department_count > 0 ? 3 : 0,
+            subtitle: `${weekData?.departments_with_budget || 0} with budget`,
+            trend: weekData?.department_count > 0 ? 3 : 0,
         },
         {
             title: "Total Allocated",
-            value: formatCurrency(displayData?.total_allocated || 0),
+            value: formatCurrency(weekData?.total_allocated || 0),
             icon: Wallet,
             color: "from-purple-500 to-purple-600",
             subtitle: "Weekly budget",
-            trend: displayData?.total_allocated > 0 ? 5 : 0,
+            trend: weekData?.total_allocated > 0 ? 5 : 0,
         },
         {
             title: "Total Used",
-            value: formatCurrency(displayData?.total_used || 0),
+            value: formatCurrency(weekData?.total_used || 0),
             icon: TrendingDown,
             color: "from-yellow-500 to-yellow-600",
             subtitle: "Consumed this week",
-            trend: displayData?.total_used > 0 ? 8 : 0,
+            trend: weekData?.total_used > 0 ? 8 : 0,
         },
         {
             title: "Total Remaining",
-            value: formatCurrency(displayData?.total_remaining || 0),
+            value: formatCurrency(weekData?.total_remaining || 0),
             icon: TrendingUp,
-            color: (displayData?.total_remaining || 0) > 0 ? "from-emerald-500 to-emerald-600" : "from-red-500 to-red-600",
+            color: (weekData?.total_remaining || 0) > 0 ? "from-emerald-500 to-emerald-600" : "from-red-500 to-red-600",
             subtitle: "Available balance",
-            trend: (displayData?.total_remaining || 0) > 0 ? -2 : 0,
+            trend: (weekData?.total_remaining || 0) > 0 ? -2 : 0,
         },
     ];
 
-    if (loading) {
+    // ============================================
+    // LOADING STATE
+    // ============================================
+
+    const isLoading = deptsLoading || budgetLoading || periodsLoading;
+
+    if (isLoading) {
         return <LoadingSkeleton />;
     }
 
-    const weekData = displayData || trackingData[0] || null;
+    // ============================================
+    // RENDER
+    // ============================================
+
     const departmentsList = weekData?.departments || [];
-    const totalUtilization = weekData?.total_allocated > 0 
-        ? Math.round((weekData.total_used / weekData.total_allocated) * 100) 
+    const totalUtilization = weekData?.total_allocated > 0
+        ? Math.round((weekData.total_used / weekData.total_allocated) * 100)
         : 0;
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
-            <div className="space-y-6 p-4 md:p-6 animate-fade-in-up">
+            <div className="space-y-6 p-4 md:p-6">
                 {/* Header */}
                 <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                     <div className="flex items-center gap-3">
@@ -383,10 +392,10 @@ const WeeklyTracking = () => {
                     <Button
                         variant="outline"
                         onClick={handleRefresh}
-                        disabled={refreshing}
+                        disabled={isFetching}
                         className="dark:border-slate-700 dark:text-slate-300"
                     >
-                        <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? "animate-spin" : ""}`} />
+                        <RefreshCw className={`h-4 w-4 mr-2 ${isFetching ? "animate-spin" : ""}`} />
                         Refresh
                     </Button>
                 </div>
@@ -395,9 +404,9 @@ const WeeklyTracking = () => {
                 <Card className="dark:bg-slate-800/80 dark:border-slate-700">
                     <CardContent className="pt-6">
                         <div className="flex flex-wrap items-center justify-between gap-4">
-                            <Button 
-                                variant="outline" 
-                                size="sm" 
+                            <Button
+                                variant="outline"
+                                size="sm"
                                 onClick={handlePrevWeek}
                                 className="dark:border-slate-700 dark:text-slate-300"
                             >
@@ -426,9 +435,9 @@ const WeeklyTracking = () => {
                                     </Badge>
                                 )}
                             </div>
-                            <Button 
-                                variant="outline" 
-                                size="sm" 
+                            <Button
+                                variant="outline"
+                                size="sm"
                                 onClick={handleNextWeek}
                                 className="dark:border-slate-700 dark:text-slate-300"
                             >
@@ -478,8 +487,8 @@ const WeeklyTracking = () => {
                                 <p className="text-sm text-slate-400 dark:text-slate-500 mt-1 max-w-md mx-auto">
                                     This week has not been set up yet. Please go to <strong className="text-purple-600 dark:text-purple-400">Budget Allocation</strong> to set a weekly budget.
                                 </p>
-                                <Button 
-                                    variant="outline" 
+                                <Button
+                                    variant="outline"
                                     className="mt-4 dark:border-slate-700 dark:text-slate-300"
                                     onClick={() => navigate('/mo/budget-allocation')}
                                 >
@@ -517,14 +526,14 @@ const WeeklyTracking = () => {
                                         </thead>
                                         <tbody>
                                             {departmentsList.map((dept, idx) => (
-                                                <tr 
-                                                    key={dept.department_id || idx} 
+                                                <tr
+                                                    key={dept.department_id || idx}
                                                     className={cn(
                                                         "border-b hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors",
                                                         dept.status === 'exhausted' ? 'bg-red-50/50 dark:bg-red-950/20' :
-                                                        dept.status === 'near_limit' ? 'bg-orange-50/50 dark:bg-orange-950/20' :
-                                                        dept.status === 'moderate' ? 'bg-yellow-50/50 dark:bg-yellow-950/20' :
-                                                        ''
+                                                            dept.status === 'near_limit' ? 'bg-orange-50/50 dark:bg-orange-950/20' :
+                                                                dept.status === 'moderate' ? 'bg-yellow-50/50 dark:bg-yellow-950/20' :
+                                                                    ''
                                                     )}
                                                 >
                                                     <td className="py-3 px-4 font-medium text-slate-800 dark:text-white">
@@ -544,8 +553,8 @@ const WeeklyTracking = () => {
                                                     </td>
                                                     <td className={cn(
                                                         "py-3 px-4 text-right font-medium",
-                                                        dept.remaining > 0 ? 'text-emerald-600 dark:text-emerald-400' : 
-                                                        dept.remaining < 0 ? 'text-red-600 dark:text-red-400' : 'text-slate-400'
+                                                        dept.remaining > 0 ? 'text-emerald-600 dark:text-emerald-400' :
+                                                            dept.remaining < 0 ? 'text-red-600 dark:text-red-400' : 'text-slate-400'
                                                     )}>
                                                         {formatCurrency(dept.remaining)}
                                                     </td>
@@ -555,14 +564,14 @@ const WeeklyTracking = () => {
                                                                 {dept.utilization}%
                                                             </span>
                                                             <div className="w-16 bg-slate-200 dark:bg-slate-700 rounded-full h-1.5">
-                                                                <div 
+                                                                <div
                                                                     className={cn(
                                                                         "h-1.5 rounded-full",
                                                                         dept.utilization >= 100 ? 'bg-red-500' :
-                                                                        dept.utilization >= 80 ? 'bg-orange-500' :
-                                                                        dept.utilization >= 50 ? 'bg-yellow-500' :
-                                                                        dept.utilization > 0 ? 'bg-emerald-500' :
-                                                                        'bg-slate-300'
+                                                                            dept.utilization >= 80 ? 'bg-orange-500' :
+                                                                                dept.utilization >= 50 ? 'bg-yellow-500' :
+                                                                                    dept.utilization > 0 ? 'bg-emerald-500' :
+                                                                                        'bg-slate-300'
                                                                     )}
                                                                     style={{ width: `${Math.min(dept.utilization, 100)}%` }}
                                                                 />
@@ -607,12 +616,12 @@ const WeeklyTracking = () => {
                                         </span>
                                     </div>
                                     <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2 mt-1">
-                                        <div 
+                                        <div
                                             className={cn(
                                                 "h-2 rounded-full transition-all duration-500",
                                                 totalUtilization >= 80 ? 'bg-red-500' :
-                                                totalUtilization >= 50 ? 'bg-yellow-500' :
-                                                'bg-emerald-500'
+                                                    totalUtilization >= 50 ? 'bg-yellow-500' :
+                                                        'bg-emerald-500'
                                             )}
                                             style={{ width: `${Math.min(totalUtilization, 100)}%` }}
                                         />

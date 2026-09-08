@@ -14,6 +14,22 @@ return [
     |
     */
 
+
+     /*
+    |--------------------------------------------------------------------------
+    | Nominatim (Free Geocoding)
+    |--------------------------------------------------------------------------
+    */
+    'nominatim' => [
+        'base_url' => env('NOMINATIM_BASE_URL', 'https://nominatim.openstreetmap.org'),
+        'user_agent' => env('NOMINATIM_USER_AGENT', 'FCMS/1.0'),
+        'rate_limit' => env('NOMINATIM_RATE_LIMIT', 1),
+        'country' => env('NOMINATIM_COUNTRY', 'ph'),
+        'language' => env('NOMINATIM_LANGUAGE', 'en'),
+        'enabled' => env('NOMINATIM_ENABLED', true),
+    ],
+
+
     'mailgun' => [
         'domain' => env('MAILGUN_DOMAIN'),
         'secret' => env('MAILGUN_SECRET'),
@@ -34,6 +50,7 @@ return [
     'ors' => [
         'api_key' => env('OPENROUTESERVICE_API_KEY'),
         'base_url' => env('OPENROUTESERVICE_BASE_URL', 'https://api.openrouteservice.org'),
+        'enabled' => env('ORS_ENABLED', false),
     ],
     'fuel_rates' => [
         'car' => env('FUEL_RATE_CAR', 0.10),

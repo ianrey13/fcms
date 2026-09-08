@@ -161,37 +161,7 @@ class FiscalYearController extends Controller
 
         return $policies->count();
     }
-    
-    /**
-     * Delete fiscal year
-     */
-    public function destroy($id)
-    {
-        try {
-            $fiscalYear = FiscalYear::findOrFail($id);
-            
-            // Check if there are budgets associated
-            if ($fiscalYear->annualBudgets()->count() > 0) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Cannot delete fiscal year with existing budgets'
-                ], 400);
-            }
-            
-            $fiscalYear->delete();
-            
-            return response()->json([
-                'success' => true,
-                'message' => 'Fiscal year deleted successfully',
-            ]);
-            
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to delete fiscal year: ' . $e->getMessage()
-            ], 500);
-        }
-    }
+   
 
     /**
      * Get active fiscal year

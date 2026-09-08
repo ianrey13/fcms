@@ -32,6 +32,42 @@ import { toast } from "react-hot-toast";
 import { cn } from "@/lib/utils";
 
 // ============================================
+// ✅ GET AVAILABLE ROLES BASED ON DEPARTMENT
+// ============================================
+
+const getAvailableRoles = (departmentId, departments) => {
+    const department = departments.find(d => d.department_id === parseInt(departmentId));
+    
+    if (!department) return [{ value: '', label: 'Select Role' }];
+    
+    const code = department.department_code?.toUpperCase() || '';
+    
+    // ✅ GSO Department → GSO Staff + Driver
+    if (code === 'GSO') {
+        return [
+            { value: '', label: 'Select Role' },
+            { value: 'gso_office', label: 'GSO Staff' },
+            { value: 'driver', label: 'Driver' },
+        ];
+    }
+    
+    // ✅ Mayor's Office → Disbursing Officer + Driver
+    if (code === 'MO') {
+        return [
+            { value: '', label: 'Select Role' },
+            { value: 'mayors_office', label: 'Disbursing Officer' },
+            { value: 'driver', label: 'Driver' },
+        ];
+    }
+    
+    // ✅ Other Departments → Driver only
+    return [
+        { value: '', label: 'Select Role' },
+        { value: 'driver', label: 'Driver' },
+    ];
+};
+
+// ============================================
 // FORM FIELD COMPONENT
 // ============================================
 
@@ -67,6 +103,43 @@ const FormField = ({
 );
 
 // ============================================
+// ✅ ROLE SELECT COMPONENT WITH DYNAMIC OPTIONS
+// ============================================
+
+const RoleSelect = ({ value, onChange, onBlur, error, departmentId, departments }) => {
+    const roleOptions = getAvailableRoles(departmentId, departments);
+    
+    // If only driver is available, auto-select it
+    useEffect(() => {
+        if (departmentId && roleOptions.length === 2 && roleOptions[1]?.value === 'driver') {
+            if (!value || value === '') {
+                onChange('driver');
+            }
+        }
+    }, [departmentId, roleOptions, value, onChange]);
+    
+    return (
+        <select
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            onBlur={onBlur}
+            className={cn(
+                "w-full mt-1 px-3 py-2.5 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-slate-900 dark:border-slate-700",
+                error && "border-red-500 ring-red-500",
+                roleOptions.length === 2 && roleOptions[1]?.value === 'driver' && "cursor-not-allowed opacity-60"
+            )}
+            disabled={roleOptions.length === 2 && roleOptions[1]?.value === 'driver'}
+        >
+            {roleOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                    {option.label}
+                </option>
+            ))}
+        </select>
+    );
+};
+
+// ============================================
 // DEPARTMENT DATALIST COMPONENT
 // ============================================
 
@@ -75,7 +148,6 @@ const DepartmentDatalist = ({ value, onChange, onBlur, error, departments, loadi
   const [selectedDepartment, setSelectedDepartment] = useState(null);
   const inputRef = useRef(null);
 
-  // Update search term when value changes from parent
   useEffect(() => {
     if (value) {
       const found = departments.find(d => d.department_id === parseInt(value));
@@ -93,7 +165,6 @@ const DepartmentDatalist = ({ value, onChange, onBlur, error, departments, loadi
     const input = e.target.value;
     setSearchTerm(input);
     
-    // Check if input matches a department exactly
     const match = departments.find(d => 
       d.department_name.toLowerCase() === input.toLowerCase() ||
       d.department_code?.toLowerCase() === input.toLowerCase()
@@ -122,7 +193,6 @@ const DepartmentDatalist = ({ value, onChange, onBlur, error, departments, loadi
     inputRef.current?.focus();
   };
 
-  // Filter departments based on search term
   const filteredDepartments = searchTerm.length > 0
     ? departments.filter(d => 
         d.department_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -143,7 +213,6 @@ const DepartmentDatalist = ({ value, onChange, onBlur, error, departments, loadi
           value={searchTerm}
           onChange={handleInputChange}
           onBlur={() => {
-            // If search term doesn't match any department, clear selection
             if (searchTerm && !selectedDepartment) {
               const match = departments.find(d => 
                 d.department_name.toLowerCase() === searchTerm.toLowerCase()
@@ -175,7 +244,6 @@ const DepartmentDatalist = ({ value, onChange, onBlur, error, departments, loadi
         )}
       </div>
 
-      {/* Datalist Dropdown */}
       {searchTerm.length > 0 && filteredDepartments.length > 0 && (
         <div className="absolute z-50 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg max-h-60 overflow-auto">
           {filteredDepartments.map((dept) => (
@@ -205,7 +273,6 @@ const DepartmentDatalist = ({ value, onChange, onBlur, error, departments, loadi
         </div>
       )}
 
-      {/* No results */}
       {searchTerm.length > 0 && filteredDepartments.length === 0 && !loading && (
         <div className="absolute z-50 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg p-4 text-center">
           <p className="text-sm text-slate-500 dark:text-slate-400">No departments found</p>
@@ -213,7 +280,6 @@ const DepartmentDatalist = ({ value, onChange, onBlur, error, departments, loadi
         </div>
       )}
 
-      {/* Selected Department Preview */}
       {selectedDepartment && (
         <div className="mt-2 bg-blue-50/50 dark:bg-blue-950/20 rounded-lg p-2.5 border border-blue-200 dark:border-blue-800">
           <div className="flex items-center gap-2">
@@ -263,7 +329,6 @@ const AddUser = () => {
         const response = await adminDepartmentAPI.getSelector();
         setDepartments(response.data.data || []);
       } catch (error) {
-        console.error("Error fetching departments:", error);
         toast.error("Failed to load departments");
       } finally {
         setLoadingDepartments(false);
@@ -271,6 +336,19 @@ const AddUser = () => {
     };
     fetchDepartments();
   }, []);
+
+  // ============ AUTO-SELECT ROLE WHEN DEPARTMENT CHANGES ============
+  useEffect(() => {
+    if (formData.department_id && departments.length > 0) {
+      const available = getAvailableRoles(formData.department_id, departments);
+      // If only one role available (driver), auto-select it
+      if (available.length === 2 && available[1]?.value === 'driver') {
+        if (formData.role !== 'driver') {
+          setFormData(prev => ({ ...prev, role: 'driver' }));
+        }
+      }
+    }
+  }, [formData.department_id, departments]);
 
   // ============ VALIDATION ============
   const validate = () => {
@@ -335,7 +413,6 @@ const AddUser = () => {
 
   const hasError = (field) => touched[field] && errors[field];
 
-  // ============ HANDLERS ============
   const handleChange = (field, value) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
     if (errors[field]) {
@@ -353,11 +430,12 @@ const AddUser = () => {
     createUser.mutate(formData, {
       onSuccess: () => {
         toast.success("User created successfully!");
+        // ✅ Return to user list
         navigate("/admin/users");
       },
       onError: (error) => {
-        console.error("Create user error:", error);
-        toast.error(error.response?.data?.message || "Failed to create user");
+        const message = error.response?.data?.message || "Failed to create user";
+        toast.error(message);
       },
     });
   };
@@ -492,7 +570,7 @@ const AddUser = () => {
                 />
               </FormField>
 
-              {/* Department - WITH DATALIST */}
+              {/* Department */}
               <FormField
                 label="Department"
                 icon={Building2}
@@ -509,7 +587,7 @@ const AddUser = () => {
                 />
               </FormField>
 
-              {/* Role */}
+              {/* ✅ Role - Dynamic based on department */}
               <FormField
                 label="User Role"
                 icon={Shield}
@@ -517,20 +595,14 @@ const AddUser = () => {
                 error={hasError("role") && errors.role}
                 helper="Determines what the user can access"
               >
-                <select
+                <RoleSelect
                   value={formData.role}
-                  onChange={(e) => handleChange("role", e.target.value)}
+                  onChange={(value) => handleChange("role", value)}
                   onBlur={() => handleBlur("role")}
-                  className={cn(
-                    "w-full mt-1 px-3 py-2.5 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-slate-900 dark:border-slate-700",
-                    hasError("role") && "border-red-500 ring-red-500"
-                  )}
-                >
-                  <option value="">Select Role</option>
-                  <option value="gso_office">GSO Office</option>
-                  <option value="mayors_office">Disbursing Officer</option>
-                  <option value="driver">Driver</option>
-                </select>
+                  error={hasError("role")}
+                  departmentId={formData.department_id}
+                  departments={departments}
+                />
               </FormField>
 
               {/* Password */}
@@ -635,38 +707,7 @@ const AddUser = () => {
                 </div>
               )}
 
-              {/* Form Preview */}
-              <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-4 border border-slate-200 dark:border-slate-700">
-                <h4 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
-                  Preview
-                </h4>
-                <div className="grid grid-cols-2 gap-2 text-sm">
-                  <div>
-                    <span className="text-slate-400">Name:</span>
-                    <span className="font-medium text-slate-700 dark:text-slate-300 ml-2">
-                      {formData.first_name || "—"} {formData.last_name || ""}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400">Email:</span>
-                    <span className="text-slate-700 dark:text-slate-300 ml-2">
-                      {formData.email || "—"}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400">Role:</span>
-                    <span className="font-medium text-slate-700 dark:text-slate-300 ml-2">
-                      {formData.role ? formData.role.replace(/_/g, " ").toUpperCase() : "—"}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400">Department:</span>
-                    <span className="text-slate-700 dark:text-slate-300 ml-2">
-                      {departments.find(d => d.department_id === parseInt(formData.department_id))?.department_name || "—"}
-                    </span>
-                  </div>
-                </div>
-              </div>
+           
 
               {/* Action Buttons */}
               <div className="flex gap-3 pt-4 border-t border-slate-200/60 dark:border-slate-700/60">

@@ -86,7 +86,7 @@ class VehicleController extends Controller
     }
 
     /**
-     * Store a newly created vehicle.
+     * Store a newly created Vehicle.
      */
     public function store(Request $request)
     {

@@ -1,582 +1,498 @@
-import axios from "axios";
-
-// Get API URL from Laravel meta tag (no more VITE env needed!)
-const apiUrl = document.querySelector('meta[name="api-url"]')?.content || '/api';
-
-const api = axios.create({
-  baseURL: apiUrl,
-  headers: {
-    "Content-Type": "application/json",
-    Accept: "application/json",
-  },
-});
-
-// Request interceptor to add token
-api.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem("fcms_token");
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-  },
-  (error) => {
-    return Promise.reject(error);
-  },
-);
-
-// Response interceptor to handle errors
-api.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      localStorage.removeItem("fcms_token");
-      localStorage.removeItem("fcms_user");
-      window.location.href = "/login";
-    }
-    return Promise.reject(error);
-  },
-);
+// src/services/api.js - FULLY FIXED
+import { cachedApi, uncachedApi } from "./apiClient";
 
 // ============ AUTH API ============
 export const authAPI = {
   login: (email, password, deviceName = "web") =>
-    api.post("/auth/login", { email, password, device_name: deviceName }),
+    uncachedApi.post("/auth/login", { email, password, device_name: deviceName }),
 
-  logout: () => api.post("/auth/logout"),
+  logout: () => uncachedApi.post("/auth/logout"),
 
-  getMe: () => api.get("/auth/me"),
+  getMe: () => cachedApi.get("/auth/me"),
 
   changePassword: (currentPassword, newPassword) =>
-    api.post("/auth/change-password", {
+    uncachedApi.post("/auth/change-password", {
       current_password: currentPassword,
       new_password: newPassword,
       new_password_confirmation: newPassword,
     }),
 
-  forgotPassword: (email) => api.post("/auth/forgot-password", { email }),
+  forgotPassword: (email) => uncachedApi.post("/auth/forgot-password", { email }),
 
   resetPassword: (email, token, password) =>
-    api.post("/auth/reset-password", {
+    uncachedApi.post("/auth/reset-password", {
       email,
       token,
       password,
       password_confirmation: password,
     }),
-    
-  updateProfile: (data) => api.post("/auth/update-profile", data),
+
+  updateProfile: (data) => uncachedApi.post("/auth/update-profile", data),
 };
 
 // ============ TRIP TICKET API ============
 export const tripTicketAPI = {
-  getAll: (params) => api.get("/trip-tickets", { params }),
-  getById: (id) => api.get(`/trip-tickets/${id}`),
-  create: (data) => api.post("/trip-tickets", data),
-  update: (id, data) => api.put(`/trip-tickets/${id}`, data),
-  delete: (id) => api.delete(`/trip-tickets/${id}`),
-  cancel: (id, reason) => api.post(`/trip-tickets/${id}/cancel`, { reason }),
-  getMyRequests: (params) => api.get("/trip-tickets/my-requests", { params }),
-  checkBudgetBeforeSubmit: (data) =>
-    api.post("/trip-tickets/check-budget", data),
+  getAll: (params) => cachedApi.get("/trip-tickets", { params }),
+  getById: (id) => cachedApi.get(`/trip-tickets/${id}`),
+  create: (data) => uncachedApi.post("/trip-tickets", data),
+  update: (id, data) => uncachedApi.put(`/trip-tickets/${id}`, data),
+  delete: (id) => uncachedApi.delete(`/trip-tickets/${id}`),
+  cancel: (id, reason) => uncachedApi.post(`/trip-tickets/${id}/cancel`, { reason }),
+  getMyRequests: (params) => cachedApi.get("/trip-tickets/my-requests", { params }),
+  checkBudgetBeforeSubmit: (data) => uncachedApi.post("/trip-tickets/check-budget", data),
 };
 
 // ============ GSO API ============
 export const gsoAPI = {
-  // Dashboard
-  getDashboard: () => api.get("/gso/dashboard"),
+  // Dashboard - CACHED
+  getDashboard: () => cachedApi.get("/gso/dashboard"),
 
-  // Trip Management
-  getPendingMO: (params) => api.get("/gso/pending", { params }),
-  getReturnedTickets: (params) => api.get("/gso/returned", { params }),
-  getAllTrips: (params) => api.get("/gso/all-trips", { params }),
-  getTicketById: (id) => api.get(`/gso/tickets/${id}`),
+  // Trip Management - CACHED
+  getPendingMO: (params) => cachedApi.get("/gso/pending", { params }),
+  getReturnedTickets: (params) => cachedApi.get("/gso/returned", { params }),
+  getAllTrips: (params) => cachedApi.get("/gso/all-trips", { params }),
+  getTicketById: (id) => cachedApi.get(`/gso/tickets/${id}`),
 
-  // GSO Creates Trip Directly
-  createTrip: (data) => api.post("/gso/create-trip", data),
+  // GSO Creates Trip Directly - UNCACHED (write operation)
+  createTrip: (data) => uncachedApi.post("/gso/create-trip", data),
 
   // Reconciliation
-  getPendingReconciliation: (params) =>
-    api.get("/gso/pending-reconciliation", { params }),
-  reconcileTrip: (id, data) =>
-    api.post(`/gso/tickets/${id}/reconcile`, data),
+  getPendingReconciliation: (params) => cachedApi.get("/gso/pending-reconciliation", { params }),
+  reconcileTrip: (id, data) => uncachedApi.post(`/gso/tickets/${id}/reconcile`, data),
 
-  // Reports
-  getReports: (params) => api.get("/gso/reports", { params }),
+  // Reports - CACHED
+  getReports: (params) => cachedApi.get("/gso/reports", { params }),
   exportReport: (type, params) =>
-    api.get(`/gso/reports/export/${type}`, { params, responseType: "blob" }),
-    
+    cachedApi.get(`/gso/reports/export/${type}`, { params, responseType: "blob" }),
+
   // Signature for GSO
-  getSignature: (id) => api.get(`/gso/users/${id}/signature`),
+  getSignature: (id) => cachedApi.get(`/gso/users/${id}/signature`),
 
   // Fuel Receipts
-  getFuelReceipts: (params) => api.get("/admin/fuel-receipts", { params }),
-  getFuelReceipt: (id) => api.get(`/admin/fuel-receipts/${id}`),
+  getFuelReceipts: (params) => cachedApi.get("/admin/fuel-receipts", { params }),
+  getFuelReceipt: (id) => cachedApi.get(`/admin/fuel-receipts/${id}`),
   recordReceipt: (data) => {
     const formData = new FormData();
-    Object.keys(data).forEach(key => {
+    Object.keys(data).forEach((key) => {
       if (data[key] !== null && data[key] !== undefined) {
         formData.append(key, data[key]);
       }
     });
-    return api.post("/admin/fuel-receipts/record", formData, {
+    return uncachedApi.post("/admin/fuel-receipts/record", formData, {
       headers: { "Content-Type": "multipart/form-data" },
     });
   },
 
   // Completed Trips
-  getCompletedTrips: (params) => api.get("/admin/completed-trips", { params }),
+  getCompletedTrips: (params) => cachedApi.get("/admin/completed-trips", { params }),
 
   // GPS
-  getTripsWithGPS: (params) => api.get("/gso/trips/with-gps", { params }),
+  getTripsWithGPS: (params) => cachedApi.get("/gso/trips/with-gps", { params }),
 
   // Budget Overview
-  getBudgetOverview: (params) => 
-    api.get("/gso/budget-overview", { params }),
-  getCrossDepartmentUsage: (params) => 
-    api.get("/gso/cross-department-usage", { params }),
+  getBudgetOverview: (params) => cachedApi.get("/gso/budget-overview", { params }),
+  getCrossDepartmentUsage: (params) => cachedApi.get("/gso/cross-department-usage", { params }),
 
-  // ============================================================
-  // ✅ FISCAL YEAR MANAGEMENT (GSO)
-  // ============================================================
-  getFiscalYears: () => api.get("/admin/fiscal-years"),
-  addFiscalYear: (data) => api.post("/admin/fiscal-years", data),
-  toggleFiscalYear: (id) => api.patch(`/admin/fiscal-years/${id}/toggle`),
-  deleteFiscalYear: (id) => api.delete(`/admin/fiscal-years/${id}`),
+  // Fiscal Year Management
+  getFiscalYears: () => cachedApi.get("/admin/fiscal-years"),
+  addFiscalYear: (data) => uncachedApi.post("/admin/fiscal-years", data),
+  toggleFiscalYear: (id) => uncachedApi.patch(`/admin/fiscal-years/${id}/toggle`),
+  deleteFiscalYear: (id) => uncachedApi.delete(`/admin/fiscal-years/${id}`),
 
-  // ============================================================
-  // ✅ ANNUAL BUDGET (GSO - View/Delete only)
-  // ============================================================
-  getAnnualBudgets: (params) => api.get("/admin/annual-budgets", { params }),
-  getBudgetYears: () => api.get("/admin/annual-budgets/years"),
-  getBudgetSummary: (params) => api.get("/admin/annual-budgets/summary", { params }),
-  deleteAnnualBudget: (id) => api.delete(`/admin/annual-budgets/${id}`),
-  getDepartmentsWithoutBudget: (params) => 
-    api.get("/admin/annual-budgets/departments-without-budget", { params }),
+  // Annual Budget
+  getAnnualBudgets: (params) => cachedApi.get("/admin/annual-budgets", { params }),
+  getBudgetYears: () => cachedApi.get("/admin/annual-budgets/years"),
+  getBudgetSummary: (params) => cachedApi.get("/admin/annual-budgets/summary", { params }),
+  deleteAnnualBudget: (id) => uncachedApi.delete(`/admin/annual-budgets/${id}`),
+  getDepartmentsWithoutBudget: (params) =>
+    cachedApi.get("/admin/annual-budgets/departments-without-budget", { params }),
 
+  getAvailableVehicles: (params = {}) => cachedApi.get("/gso/vehicles/available", { params }),
 
-   getAvailableVehicles: (params = {}) => 
-    api.get("/gso/vehicles/available", { params }),
-
-
-    getPendingValidation: (params) => 
-        api.get("/gso/pending-validation", { params }),
-    validateTrip: (id, data) => 
-        api.post(`/gso/tickets/${id}/validate`, data),
-     getTripHistory: (tripId) => 
-        api.get(`/gso/tickets/${tripId}/history`), 
+  getPendingValidation: (params) => cachedApi.get("/gso/pending-validation", { params }),
+  validateTrip: (id, data) => uncachedApi.post(`/gso/tickets/${id}/validate`, data),
+  getTripHistory: (tripId) => cachedApi.get(`/gso/tickets/${tripId}/history`),
 };
 
 // ============ MAYOR'S OFFICE API ============
 export const mayorsOfficeAPI = {
-  // Dashboard
-  getDashboard: () => api.get("/mayors-office/dashboard"),
+  // Dashboard - CACHED
+  getDashboard: () => cachedApi.get("/mayors-office/dashboard"),
 
-  // Ticket Management
-  getPendingTickets: (params) => api.get("/mayors-office/pending", { params }),
-  getApprovedTickets: (params) => api.get("/mayors-office/approved", { params }),
-  getTicketById: (id) => api.get(`/mayors-office/tickets/${id}`),
+  // Ticket Management - CACHED
+  getPendingTickets: (params) => cachedApi.get("/mayors-office/pending", { params }),
+  getApprovedTickets: (params) => cachedApi.get("/mayors-office/approved", { params }),
+  getTicketById: (id) => cachedApi.get(`/mayors-office/tickets/${id}`),
 
-  // Review Actions
-  approveTicket: (id, data) => api.post(`/mayors-office/tickets/${id}/approve`, data),
+  // Review Actions - UNCACHED (write operations)
+  approveTicket: (id, data) => uncachedApi.post(`/mayors-office/tickets/${id}/approve`, data),
   rejectTicket: (id, note) =>
-    api.post(`/mayors-office/tickets/${id}/reject`, { review_note: note }),
+    uncachedApi.post(`/mayors-office/tickets/${id}/reject`, { review_note: note }),
 
-  // Budget
-  getBudgetOverview: () => api.get("/mayors-office/budget-overview"),
+  // Budget - CACHED
+  getBudgetOverview: () => cachedApi.get("/mayors-office/budget-overview"),
   getDepartmentBudget: (departmentId) =>
-    api.get(`/mayors-office/departments/${departmentId}/budget`),
+    cachedApi.get(`/mayors-office/departments/${departmentId}/budget`),
   getAllDepartmentsWithBudget: () =>
-    api.get("/mayors-office/departments/all-with-budget"),
+    cachedApi.get("/mayors-office/departments/all-with-budget"),
   getAllDepartmentsForSelector: () =>
-    api.get("/mayors-office/departments/selector"),
+    cachedApi.get("/mayors-office/departments/selector"),
 
   // Budget Assistance
   getBudgetAssistanceRequests: () =>
-    api.get("/mayors-office/budget-assistance/requests"),
+    cachedApi.get("/mayors-office/budget-assistance/requests"),
   getBudgetAssistanceRequest: (requestId) =>
-    api.get(`/mayors-office/budget-assistance/request/${requestId}`),
+    cachedApi.get(`/mayors-office/budget-assistance/request/${requestId}`),
   createMoFundedTicket: (data) =>
-    api.post("/mayors-office/budget-assistance/create-ticket", data),
+    uncachedApi.post("/mayors-office/budget-assistance/create-ticket", data),
   removeMORequest: (requestId) =>
-    api.delete(`/mayors-office/budget-assistance/request/${requestId}`),
+    uncachedApi.delete(`/mayors-office/budget-assistance/request/${requestId}`),
 
   // Budget Policies
-  getBudgetPolicies: (params) => api.get('/mayors-office/budget-policies', { params }),
-  getBudgetPolicy: (departmentId) => api.get(`/mayors-office/budget-policies/${departmentId}`),
-  createBudgetPolicy: (data) => api.post('/mayors-office/budget-policies', data),
-  updateBudgetPolicy: (departmentId, data) => api.put(`/mayors-office/budget-policies/${departmentId}`, data),
-  deleteBudgetPolicy: (departmentId) => api.delete(`/mayors-office/budget-policies/${departmentId}`),
-  forceActivateBudget: (data) => api.post('/mayors-office/budget-periods/force-activate', data),
+  getBudgetPolicies: (params) => cachedApi.get('/mayors-office/budget-policies', { params }),
+  getBudgetPolicy: (departmentId) => cachedApi.get(`/mayors-office/budget-policies/${departmentId}`),
+  createBudgetPolicy: (data) => uncachedApi.post('/mayors-office/budget-policies', data),
+  updateBudgetPolicy: (departmentId, data) => uncachedApi.put(`/mayors-office/budget-policies/${departmentId}`, data),
+  deleteBudgetPolicy: (departmentId) => uncachedApi.delete(`/mayors-office/budget-policies/${departmentId}`),
+  forceActivateBudget: (data) => uncachedApi.post('/mayors-office/budget-periods/force-activate', data),
 
   // Receipt Verification
-  getReceiptsForVerification: (params) => 
-    api.get("/mayors-office/receipts/for-verification", { params }),
-  verifyReceipt: (receiptId, data) => 
-    api.post(`/mayors-office/receipts/${receiptId}/verify`, data),
+  getReceiptsForVerification: (params) =>
+    cachedApi.get("/mayors-office/receipts/for-verification", { params }),
+  verifyReceipt: (receiptId, data) =>
+    uncachedApi.post(`/mayors-office/receipts/${receiptId}/verify`, data),
 
   // Budget History
-  getBudgetHistory: (params) => 
-    api.get('/mayors-office/budget-history', { params }),
-  getBudgetSummary: () => 
-    api.get('/mayors-office/budget-summary'),
+  getBudgetHistory: (params) =>
+    cachedApi.get('/mayors-office/budget-history', { params }),
+  getBudgetSummary: () =>
+    cachedApi.get('/mayors-office/budget-summary'),
 
-  // ============================================================
-  // ✅ FISCAL YEARS (MO - View only)
-  // ============================================================
-  getFiscalYears: () => api.get("/mayors-office/fiscal-years"),
-  getActiveFiscalYears: () => api.get("/mayors-office/fiscal-years/active"),
+  // Fiscal Years (MO - View only)
+  getFiscalYears: () => cachedApi.get("/mayors-office/fiscal-years"),
+  getActiveFiscalYears: () => cachedApi.get("/mayors-office/fiscal-years/active"),
 
-  // ============================================================
-  // ✅ ANNUAL BUDGET (MO - Set budgets) - FIXED
-  // ============================================================
-  
-  // ✅ Create/Update annual budget (POST without /set)
-  setAnnualBudget: (data) => 
-    api.post('/mayors-office/annual-budgets', data),
-  
-  // ✅ Add additional budget (Mayor's Memo)
-  addAnnualBudget: (data) => 
-    api.post('/mayors-office/annual-budgets/add', data),
-  
-  // Get budgets by year
-  getAnnualBudgetsByYear: (year) => 
-    api.get(`/mayors-office/annual-budgets/year/${year}`),
-  
-  // Bulk update
-  bulkUpdateAnnualBudgets: (data) => 
-    api.post('/mayors-office/annual-budgets/bulk', data),
-  
-  // Update single budget
-  updateAnnualBudget: (id, data) => 
-    api.put(`/mayors-office/annual-budgets/${id}`, data),
-  
-  // Get department budget
-  getDepartmentAnnualBudget: (departmentId) => 
-    api.get(`/mayors-office/annual-budgets/${departmentId}`),
+  // Annual Budget (MO - Set budgets)
+  setAnnualBudget: (data) =>
+    uncachedApi.post('/mayors-office/annual-budgets', data),
+  addAnnualBudget: (data) =>
+    uncachedApi.post('/mayors-office/annual-budgets/add', data),
+  getAnnualBudgetsByYear: (year) =>
+    cachedApi.get(`/mayors-office/annual-budgets/year/${year}`),
+  bulkUpdateAnnualBudgets: (data) =>
+    uncachedApi.post('/mayors-office/annual-budgets/bulk', data),
+  updateAnnualBudget: (id, data) =>
+    uncachedApi.put(`/mayors-office/annual-budgets/${id}`, data),
+  getDepartmentAnnualBudget: (departmentId) =>
+    cachedApi.get(`/mayors-office/annual-budgets/${departmentId}`),
 
-  // ============================================================
-  // ✅ WEEKLY BUDGET MANAGEMENT (MO)
-  // ============================================================
-  updateWeeklyAllocation: (departmentId, data) => 
-    api.put(`/mayors-office/budget/weekly/${departmentId}`, data),
-  processSurplus: (departmentId) => 
-    api.post(`/mayors-office/budget/process-surplus/${departmentId}`),
-  getSurplusHistory: (params) => 
-    api.get('/mayors-office/budget/surplus-history', { params }),
-  getBudgetPeriods: (params) => 
-    api.get('/mayors-office/budget-periods', { params }),
+  // Weekly Budget Management (MO)
+  updateWeeklyAllocation: (departmentId, data) =>
+    uncachedApi.put(`/mayors-office/budget/weekly/${departmentId}`, data),
+  processSurplus: (departmentId) =>
+    uncachedApi.post(`/mayors-office/budget/process-surplus/${departmentId}`),
+  getSurplusHistory: (params) =>
+    cachedApi.get('/mayors-office/budget/surplus-history', { params }),
+  getBudgetPeriods: (params) =>
+    cachedApi.get('/mayors-office/budget-periods', { params }),
 };
 
 // ============ DRIVER API ============
 export const driverAPI = {
-  // Trip Management
-  getTrips: (params) => api.get("/driver/trips", { params }),
-  getActiveTrip: () => api.get("/driver/trips/active"),
-  getGasSlip: (id) => api.get(`/driver/trips/${id}/gas-slip`),
+  // Trip Management - CACHED
+  getTrips: (params) => cachedApi.get("/driver/trips", { params }),
+  getActiveTrip: () => cachedApi.get("/driver/trips/active"),
+  getGasSlip: (id) => cachedApi.get(`/driver/trips/${id}/gas-slip`),
 
-  // Trip Actions
-  acknowledgeFunds: (id) => api.post(`/driver/trips/${id}/acknowledge`),
-  
-  // ✅ FIXED: startTrip sends location data
-  startTrip: (id, data) => api.post(`/driver/trips/${id}/start`, data || {}),
-  
-  // ✅ FIXED: completeTrip sends location data + is_done
-  completeTrip: (id, data) => api.post(`/driver/trips/${id}/complete`, data || {}),
-  
+  // Trip Actions - UNCACHED
+  acknowledgeFunds: (id) => uncachedApi.post(`/driver/trips/${id}/acknowledge`),
+  startTrip: (id, data) => uncachedApi.post(`/driver/trips/${id}/start`, data || {}),
+  completeTrip: (id, data) => uncachedApi.post(`/driver/trips/${id}/complete`, data || {}),
   uploadReceipt: (id, formData) =>
-    api.post(`/driver/trips/${id}/receipt`, formData, {
+    uncachedApi.post(`/driver/trips/${id}/receipt`, formData, {
       headers: { "Content-Type": "multipart/form-data" },
     }),
   updateOdometer: (id, data) =>
-    api.post(`/driver/trips/${id}/odometer`, data),
+    uncachedApi.post(`/driver/trips/${id}/odometer`, data),
 
-  // Dashboard
-  getDashboard: () => api.get("/driver/dashboard"),
+  // Dashboard - CACHED
+  getDashboard: () => cachedApi.get("/driver/dashboard"),
 
   // Staff functionality
-  getMyRequests: (params) => api.get("/driver/trips/my-requests", { params }),
-  getTripById: (id) => api.get(`/driver/tickets/${id}`),
-  checkBudget: (data) => api.post("/driver/tickets/check-budget", data),
-  
-  // Resources
+  getMyRequests: (params) => cachedApi.get("/driver/trips/my-requests", { params }),
+  getTripById: (id) => cachedApi.get(`/driver/tickets/${id}`),
+  checkBudget: (data) => uncachedApi.post("/driver/tickets/check-budget", data),
+
+  // Resources - CACHED
   getAvailableVehicles: (params = {}) =>
-    api.get("/driver/vehicles/available", { params }),
+    cachedApi.get("/driver/vehicles/available", { params }),
   getActiveDrivers: (params = {}) =>
-    api.get("/driver/drivers/active", { params }),
-  
-  // Budget
-  getDepartmentBudget: () => api.get("/driver/departments/budget/current"),
-  
-  // Reports
-  getTripReport: (params) => api.get("/driver/reports/trips", { params }),
-  getFuelReport: (params) => api.get("/driver/reports/fuel", { params }),
-  getReportSummary: (params) => api.get("/driver/reports/summary", { params }),
+    cachedApi.get("/driver/drivers/active", { params }),
 
-  getTripHistory: (tripId) => 
-    api.get(`/gso/tickets/${tripId}/history`),
+  // Budget - CACHED
+  getDepartmentBudget: () => cachedApi.get("/driver/departments/budget/current"),
 
-  // ✅ FIXED: get receipt status
-  getReceiptStatus: (id) => api.get(`/driver/trips/${id}/receipt`),
+  // Reports - CACHED
+  getTripReport: (params) => cachedApi.get("/driver/reports/trips", { params }),
+  getFuelReport: (params) => cachedApi.get("/driver/reports/fuel", { params }),
+  getReportSummary: (params) => cachedApi.get("/driver/reports/summary", { params }),
+
+  getTripHistory: (tripId) =>
+    cachedApi.get(`/gso/tickets/${tripId}/history`),
+
+  getReceiptStatus: (id) => cachedApi.get(`/driver/trips/${id}/receipt`),
 };
+
 // ============ DEPARTMENT API ============
 export const departmentAPI = {
-  getAll: (params) => api.get("/admin/departments", { params }),
-  getById: (id) => api.get(`/admin/departments/${id}`),
-  create: (data) => api.post("/admin/departments", data),
-  update: (id, data) => api.put(`/admin/departments/${id}`, data),
-  delete: (id) => api.delete(`/admin/departments/${id}`),
-  toggleStatus: (id, isActive) => 
-    api.patch(`/admin/departments/${id}/toggle-status`, { is_active: isActive }),
+  getAll: (params) => cachedApi.get("/admin/departments", { params }),
+  getById: (id) => cachedApi.get(`/admin/departments/${id}`),
+  create: (data) => uncachedApi.post("/admin/departments", data),
+  update: (id, data) => uncachedApi.put(`/admin/departments/${id}`, data),
+  delete: (id) => uncachedApi.delete(`/admin/departments/${id}`),
+  toggleStatus: (id, isActive) =>
+    uncachedApi.patch(`/admin/departments/${id}/toggle-status`, { is_active: isActive }),
 };
 
 // ============ ADMIN API (GSO Only) ============
 // User Management
 export const userAPI = {
-  getAll: (params) => api.get("/admin/users", { params }),
-  getById: (id) => api.get(`/admin/users/${id}`),
-  create: (data) => api.post("/admin/users", data),
-  update: (id, data) => api.put(`/admin/users/${id}`, data),
-  delete: (id) => api.delete(`/admin/users/${id}`),
+  getAll: (params) => cachedApi.get("/admin/users", { params }),
+  getById: (id) => cachedApi.get(`/admin/users/${id}`),
+  create: (data) => uncachedApi.post("/admin/users", data),
+  update: (id, data) => uncachedApi.put(`/admin/users/${id}`, data),
+  delete: (id) => uncachedApi.delete(`/admin/users/${id}`),
   updateStatus: (id, status, reason = null) =>
-    api.patch(`/admin/users/${id}/status`, {
+    uncachedApi.patch(`/admin/users/${id}/status`, {
       status,
       deactivation_reason: reason,
     }),
-  resetPassword: (id) => api.post(`/admin/users/${id}/reset-password`),
+  resetPassword: (id) => uncachedApi.post(`/admin/users/${id}/reset-password`),
   updateDepartment: (id, departmentId) =>
-    api.patch(`/admin/users/${id}/department`, { department_id: departmentId }),
-  updateRole: (id, role) => api.patch(`/admin/users/${id}/role`, { role }),
+    uncachedApi.patch(`/admin/users/${id}/department`, { department_id: departmentId }),
+  updateRole: (id, role) => uncachedApi.patch(`/admin/users/${id}/role`, { role }),
+
+  getUsersSince: (timestamp) => 
+    cachedApi.get("/admin/users/since", { params: { since: timestamp } }),
 
   // Signature Management
   uploadSignature: (id, formData) =>
-    api.post(`/admin/users/${id}/signature`, formData, {
+    uncachedApi.post(`/admin/users/${id}/signature`, formData, {
       headers: { "Content-Type": "multipart/form-data" },
     }),
-  getSignature: (id) => api.get(`/admin/users/${id}/signature`),
-  deleteSignature: (id) => api.delete(`/admin/users/${id}/signature`),
+  getSignature: (id) => cachedApi.get(`/admin/users/${id}/signature`),
+  deleteSignature: (id) => uncachedApi.delete(`/admin/users/${id}/signature`),
 };
 
 // Vehicle Management
 export const vehicleAPI = {
-  getAll: (params) => api.get("/admin/vehicles", { params }),
-  getById: (id) => api.get(`/admin/vehicles/${id}`),
-  create: (data) => api.post("/admin/vehicles", data),
-  update: (id, data) => api.put(`/admin/vehicles/${id}`, data),
-  delete: (id) => api.delete(`/admin/vehicles/${id}`),
+  getAll: (params) => cachedApi.get("/admin/vehicles", { params }),
+  getById: (id) => cachedApi.get(`/admin/vehicles/${id}`),
+  create: (data) => uncachedApi.post("/admin/vehicles", data),
+  update: (id, data) => uncachedApi.put(`/admin/vehicles/${id}`, data),
+  delete: (id) => uncachedApi.delete(`/admin/vehicles/${id}`),
   updateStatus: (id, status, reason = null) =>
-    api.patch(`/admin/vehicles/${id}/status`, { status, deactivation_reason: reason }),
+    uncachedApi.patch(`/admin/vehicles/${id}/status`, { status, deactivation_reason: reason }),
   updateMaintenance: (id, maintenanceFlag) =>
-    api.patch(`/admin/vehicles/${id}/maintenance`, { maintenance_flag: maintenanceFlag }),
+    uncachedApi.patch(`/admin/vehicles/${id}/maintenance`, { maintenance_flag: maintenanceFlag }),
   updateOdometerStatus: (id, status) =>
-    api.patch(`/admin/vehicles/${id}/odometer-status`, { odometer_status: status }),
+    uncachedApi.patch(`/admin/vehicles/${id}/odometer-status`, { odometer_status: status }),
   getAvailableVehicles: (params = {}) =>
-    api.get("/admin/vehicles/available", { params }),
+    cachedApi.get("/admin/vehicles/available", { params }),
 };
 
 // Driver Management (Admin)
 export const driverManagementAPI = {
-  getAll: (params) => api.get("/admin/drivers", { params }),
-  getById: (id) => api.get(`/admin/drivers/${id}`),
+  getAll: (params) => cachedApi.get("/admin/drivers", { params }),
+  getById: (id) => cachedApi.get(`/admin/drivers/${id}`),
   registerDriver: (userId, departmentId) =>
-    api.post("/admin/drivers", { user_id: userId, department_id: departmentId }),
+    uncachedApi.post("/admin/drivers", { user_id: userId, department_id: departmentId }),
   updateStatus: (id, status, reason = null) =>
-    api.patch(`/admin/drivers/${id}/status`, { status, deactivation_reason: reason }),
-  delete: (id) => api.delete(`/admin/drivers/${id}`),
-  getActiveDrivers: (params = {}) => api.get("/admin/drivers", { params }),
+    uncachedApi.patch(`/admin/drivers/${id}/status`, { status, deactivation_reason: reason }),
+  delete: (id) => uncachedApi.delete(`/admin/drivers/${id}`),
+  getActiveDrivers: (params = {}) => cachedApi.get("/admin/drivers", { params }),
 };
 
 // Budget Policy Management
 export const budgetPolicyAPI = {
-  getAll: (params) => api.get("/admin/budget-policies", { params }),
+  getAll: (params) => cachedApi.get("/admin/budget-policies", { params }),
   getByDepartment: (departmentId) =>
-    api.get(`/admin/budget-policies/${departmentId}`),
-  create: (data) => api.post("/admin/budget-policies", data),
+    cachedApi.get(`/admin/budget-policies/${departmentId}`),
+  create: (data) => uncachedApi.post("/admin/budget-policies", data),
   update: (departmentId, data) =>
-    api.put(`/admin/budget-policies/${departmentId}`, data),
+    uncachedApi.put(`/admin/budget-policies/${departmentId}`, data),
   delete: (departmentId) =>
-    api.delete(`/admin/budget-policies/${departmentId}`),
+    uncachedApi.delete(`/admin/budget-policies/${departmentId}`),
 
-  getPeriods: (params) => api.get("/admin/budget-periods", { params }),
-  getPeriodById: (id) => api.get(`/admin/budget-periods/${id}`),
-  closePeriod: (id) => api.post(`/admin/budget-periods/${id}/close`),
-  createPeriods: (data) => api.post("/admin/budget-periods/create", data),
+  getPeriods: (params) => cachedApi.get("/admin/budget-periods", { params }),
+  getPeriodById: (id) => cachedApi.get(`/admin/budget-periods/${id}`),
+  closePeriod: (id) => uncachedApi.post(`/admin/budget-periods/${id}/close`),
+  createPeriods: (data) => uncachedApi.post("/admin/budget-periods/create", data),
 
-  getBudgetStatus: (params) => api.get("/admin/budget-status", { params }),
-  getEventLogs: (params) => api.get("/admin/budget-event-logs", { params }),
-  forceActivate: (data) => api.post("/admin/budget-policies/force-activate", data),
-  runWeeklyReset: () => api.post("/admin/budget-policies/run-weekly-reset"),
+  getBudgetStatus: (params) => cachedApi.get("/admin/budget-status", { params }),
+  getEventLogs: (params) => cachedApi.get("/admin/budget-event-logs", { params }),
+  forceActivate: (data) => uncachedApi.post("/admin/budget-policies/force-activate", data),
+  runWeeklyReset: () => uncachedApi.post("/admin/budget-policies/run-weekly-reset"),
 };
 
 // System Settings
 export const settingsAPI = {
-  getAll: () => api.get("/admin/settings"),
-  getByKey: (key) => api.get(`/admin/settings/${key}`),
+  getAll: () => cachedApi.get("/admin/settings"),
+  getByKey: (key) => cachedApi.get(`/admin/settings/${key}`),
   update: (key, value) =>
-    api.put(`/admin/settings/${key}`, { setting_value: value }),
-  updateMultiple: (settings) => api.post("/admin/settings/bulk", { settings }),
+    uncachedApi.put(`/admin/settings/${key}`, { setting_value: value }),
+  updateMultiple: (settings) => uncachedApi.post("/admin/settings/bulk", { settings }),
 };
 
 // ============ NOTIFICATIONS API ============
 export const notificationAPI = {
-  getAll: (params) => api.get("/notifications", { params }),
-  getUnreadCount: () => api.get("/notifications/unread-count"),
-  markAsRead: (id) => api.post(`/notifications/${id}/read`),
-  markAllAsRead: () => api.post("/notifications/mark-all-read"),
-  getPreferences: () => api.get("/notifications/preferences"),
+  getAll: (params) => cachedApi.get("/notifications", { params }),
+  getUnreadCount: () => cachedApi.get("/notifications/unread-count"),
+  markAsRead: (id) => uncachedApi.post(`/notifications/${id}/read`),
+  markAllAsRead: () => uncachedApi.post("/notifications/mark-all-read"),
+  getPreferences: () => cachedApi.get("/notifications/preferences"),
   updatePreferences: (preferences) =>
-    api.put("/notifications/preferences", preferences),
-  
-  send: (data) => api.post("/notifications/send", data),
-  testBroadcast: () => api.post("/notifications/test"),
+    uncachedApi.put("/notifications/preferences", preferences),
+
+  send: (data) => uncachedApi.post("/notifications/send", data),
+  testBroadcast: () => uncachedApi.post("/notifications/test"),
 };
 
 // ============ REPORTS API ============
 export const reportsAPI = {
-  // ============================================================
-  // EXISTING REPORTS
-  // ============================================================
-  getTripReport: (params) => api.get("/reports/trips", { params }),
+  // EXISTING REPORTS - CACHED
+  getTripReport: (params) => cachedApi.get("/reports/trips", { params }),
   exportTripReport: (format, params) =>
-    api.get(`/reports/trips/export/${format}`, { params, responseType: "blob" }),
-  
-  getFuelReport: (params) => api.get("/reports/fuel", { params }),
+    cachedApi.get(`/reports/trips/export/${format}`, { params, responseType: "blob" }),
+
+  getFuelReport: (params) => cachedApi.get("/reports/fuel", { params }),
   exportFuelReport: (format, params) =>
-    api.get(`/reports/fuel/export/${format}`, { params, responseType: "blob" }),
-  
-  getBudgetReport: (params) => api.get("/reports/budget", { params }),
+    cachedApi.get(`/reports/fuel/export/${format}`, { params, responseType: "blob" }),
+
+  getBudgetReport: (params) => cachedApi.get("/reports/budget", { params }),
   exportBudgetReport: (format, params) =>
-    api.get(`/reports/budget/export/${format}`, { params, responseType: "blob" }),
-  
-  getVehicleReport: (params) => api.get("/reports/vehicles", { params }),
-  getReportSummary: (params) => api.get("/reports/summary", { params }),
-  
-  getFuelConsumptionReport: (params) => 
-    api.get("/reports/fuel-consumption", { params }),
+    cachedApi.get(`/reports/budget/export/${format}`, { params, responseType: "blob" }),
+
+  getVehicleReport: (params) => cachedApi.get("/reports/vehicles", { params }),
+  getReportSummary: (params) => cachedApi.get("/reports/summary", { params }),
+
+  getFuelConsumptionReport: (params) =>
+    cachedApi.get("/reports/fuel-consumption", { params }),
   exportFuelConsumptionReport: (format, params) =>
-    api.get(`/reports/fuel-consumption/export/${format}`, { 
-      params, 
-      responseType: "blob" 
+    cachedApi.get(`/reports/fuel-consumption/export/${format}`, {
+      params,
+      responseType: "blob",
     }),
 
-  getFuelReceiptReport: (params) => 
-    api.get("/reports/fuel-receipts", { params }),
+  getFuelReceiptReport: (params) =>
+    cachedApi.get("/reports/fuel-receipts", { params }),
   exportFuelReceiptReport: (format, params) =>
-    api.get(`/reports/fuel-receipts/export/${format}`, { 
-      params, 
-      responseType: "blob" 
+    cachedApi.get(`/reports/fuel-receipts/export/${format}`, {
+      params,
+      responseType: "blob",
     }),
 
-  getWeeklyMonitoring: (params) => 
-    api.get("/reports/weekly-monitoring", { params }),
+  getWeeklyMonitoring: (params) =>
+    cachedApi.get("/reports/weekly-monitoring", { params }),
   exportWeeklyMonitoring: (format, params) =>
-    api.get(`/reports/weekly-monitoring/export/${format}`, { 
-      params, 
-      responseType: "blob" 
+    cachedApi.get(`/reports/weekly-monitoring/export/${format}`, {
+      params,
+      responseType: "blob",
     }),
 
-  getFuelWithoutTrip: (params) => 
-    api.get("/reports/fuel-without-trip", { params }),
+  getFuelWithoutTrip: (params) =>
+    cachedApi.get("/reports/fuel-without-trip", { params }),
   exportFuelWithoutTrip: (format, params) =>
-    api.get(`/reports/fuel-without-trip/export/${format}`, { 
-      params, 
-      responseType: "blob" 
+    cachedApi.get(`/reports/fuel-without-trip/export/${format}`, {
+      params,
+      responseType: "blob",
     }),
 
-  getFundReleaseHistory: (params) => 
-    api.get('/reports/fund-release-history', { params }),
+  getFundReleaseHistory: (params) =>
+    cachedApi.get('/reports/fund-release-history', { params }),
   exportFundReleaseHistory: (format, params) =>
-    api.get(`/reports/fund-release-history/export/${format}`, { 
-      params, 
-      responseType: 'blob' 
+    cachedApi.get(`/reports/fund-release-history/export/${format}`, {
+      params,
+      responseType: 'blob',
     }),
 
-  // ============================================================
-  // ✅ NEW REPORTS (ADD THESE)
-  // ============================================================
-  
-  // 1. Department Fuel Consumption Report
-  getDepartmentFuelConsumption: (params) => 
-    api.get("/reports/department-fuel-consumption", { params }),
+  // NEW REPORTS - CACHED
+  getDepartmentFuelConsumption: (params) =>
+    cachedApi.get("/reports/department-fuel-consumption", { params }),
   exportDepartmentFuelConsumption: (format, params) =>
-    api.get(`/reports/department-fuel-consumption/export/${format}`, { 
-      params, 
-      responseType: "blob" 
+    cachedApi.get(`/reports/department-fuel-consumption/export/${format}`, {
+      params,
+      responseType: "blob",
     }),
 
-  // 2. Monthly Fuel Consumption Report
-  getMonthlyFuelConsumption: (params) => 
-    api.get("/reports/monthly-fuel-consumption", { params }),
+  getMonthlyFuelConsumption: (params) =>
+    cachedApi.get("/reports/monthly-fuel-consumption", { params }),
   exportMonthlyFuelConsumption: (format, params) =>
-    api.get(`/reports/monthly-fuel-consumption/export/${format}`, { 
-      params, 
-      responseType: "blob" 
+    cachedApi.get(`/reports/monthly-fuel-consumption/export/${format}`, {
+      params,
+      responseType: "blob",
     }),
 
-  // 3. Trip Ticket Report
-  getTripTicketReport: (params) => 
-    api.get("/reports/trip-tickets", { params }),
+  getTripTicketReport: (params) =>
+    cachedApi.get("/reports/trip-tickets", { params }),
   exportTripTicketReport: (format, params) =>
-    api.get(`/reports/trip-tickets/export/${format}`, { 
-      params, 
-      responseType: "blob" 
+    cachedApi.get(`/reports/trip-tickets/export/${format}`, {
+      params,
+      responseType: "blob",
     }),
 
-  // 4. GPS Vehicle Activity Report
-  getGPSVehicleActivity: (params) => 
-    api.get("/reports/gps-vehicle-activity", { params }),
+  getGPSVehicleActivity: (params) =>
+    cachedApi.get("/reports/gps-vehicle-activity", { params }),
   exportGPSVehicleActivity: (format, params) =>
-    api.get(`/reports/gps-vehicle-activity/export/${format}`, { 
-      params, 
-      responseType: "blob" 
+    cachedApi.get(`/reports/gps-vehicle-activity/export/${format}`, {
+      params,
+      responseType: "blob",
     }),
 
-  // 5. Reconciliation Report (Viewable by Disbursing Officer)
-  getReconciliation: (params) => 
-    api.get("/reports/reconciliation", { params }),
+  getReconciliation: (params) =>
+    cachedApi.get("/reports/reconciliation", { params }),
   exportReconciliation: (format, params) =>
-    api.get(`/reports/reconciliation/export/${format}`, { 
-      params, 
-      responseType: "blob" 
+    cachedApi.get(`/reports/reconciliation/export/${format}`, {
+      params,
+      responseType: "blob",
     }),
 
-  // 6. Driver Efficiency Report
-  getDriverEfficiency: (params) => 
-    api.get("/reports/driver-efficiency", { params }),
+  getDriverEfficiency: (params) =>
+    cachedApi.get("/reports/driver-efficiency", { params }),
   exportDriverEfficiency: (format, params) =>
-    api.get(`/reports/driver-efficiency/export/${format}`, { 
-      params, 
-      responseType: "blob" 
+    cachedApi.get(`/reports/driver-efficiency/export/${format}`, {
+      params,
+      responseType: "blob",
     }),
 
-  // 7. Audit Trail Report
-  getAuditTrail: (params) => 
-    api.get("/reports/audit-trail", { params }),
+  getAuditTrail: (params) =>
+    cachedApi.get("/reports/audit-trail", { params }),
   exportAuditTrail: (format, params) =>
-    api.get(`/reports/audit-trail/export/${format}`, { 
-      params, 
-      responseType: "blob" 
+    cachedApi.get(`/reports/audit-trail/export/${format}`, {
+      params,
+      responseType: "blob",
     }),
 };
 
 // ============ ADMIN DEPARTMENT API ============
 export const adminDepartmentAPI = {
-  getAll: (params) => api.get("/admin/departments", { params }),
-  getActive: (params) => api.get("/admin/departments/active", { params }),
-  getSelector: () => api.get("/admin/departments/selector"),
-  getById: (id) => api.get(`/admin/departments/${id}`),
-  create: (data) => api.post("/admin/departments", data),
-  update: (id, data) => api.put(`/admin/departments/${id}`, data),
-  delete: (id) => api.delete(`/admin/departments/${id}`),
-  toggleStatus: (id) => api.patch(`/admin/departments/${id}/toggle-status`),
+  getAll: (params) => cachedApi.get("/admin/departments", { params }),
+  getActive: (params) => cachedApi.get("/admin/departments/active", { params }),
+  getSelector: () => cachedApi.get("/admin/departments/selector"),
+  getById: (id) => cachedApi.get(`/admin/departments/${id}`),
+  create: (data) => uncachedApi.post("/admin/departments", data),
+  update: (id, data) => uncachedApi.put(`/admin/departments/${id}`, data),
+  delete: (id) => uncachedApi.delete(`/admin/departments/${id}`),
+  toggleStatus: (id) => uncachedApi.patch(`/admin/departments/${id}/toggle-status`),
 };
 
 // ============ LOOKUP TABLES ============
 export const lookupAPI = {
-  getTripStatuses: () => api.get("/lookup/trip-statuses"),
-  getUserRoles: () => api.get("/lookup/user-roles"),
+  getTripStatuses: () => cachedApi.get("/lookup/trip-statuses"),
+  getUserRoles: () => cachedApi.get("/lookup/user-roles"),
   getRequestTypes: (category) =>
-    api.get(`/lookup/request-types${category ? `?category=${category}` : ""}`),
-  getFuelTypes: () => api.get("/lookup/fuel-types"),
+    cachedApi.get(`/lookup/request-types${category ? `?category=${category}` : ""}`),
+  getFuelTypes: () => cachedApi.get("/lookup/fuel-types"),
 };
 
 // ============ FILE MANAGEMENT ============
@@ -585,58 +501,70 @@ export const fileAPI = {
     const formData = new FormData();
     formData.append("file", file);
     formData.append("type", type);
-    return api.post("/files/upload", formData, {
+    return uncachedApi.post("/files/upload", formData, {
       headers: { "Content-Type": "multipart/form-data" },
     });
   },
   download: (uuid) =>
-    api.get(`/files/download/${uuid}`, { responseType: "blob" }),
-  delete: (uuid) => api.delete(`/files/${uuid}`),
+    cachedApi.get(`/files/download/${uuid}`, { responseType: "blob" }),
+  delete: (uuid) => uncachedApi.delete(`/files/${uuid}`),
 };
 
 // ============ AUDIT LOGS ============
 export const auditAPI = {
-  getLogs: (params) => api.get("/admin/audit-logs", { params }),
+  getLogs: (params) => cachedApi.get("/admin/audit-logs", { params }),
   getEntityLogs: (type, id) =>
-    api.get(`/admin/audit-logs/entity/${type}/${id}`),
-  getUserLogs: (userId) => api.get(`/admin/audit-logs/user/${userId}`),
+    cachedApi.get(`/admin/audit-logs/entity/${type}/${id}`),
+  getUserLogs: (userId) => cachedApi.get(`/admin/audit-logs/user/${userId}`),
 };
 
 // ============ GPS API ============
 export const gpsAPI = {
-  getActiveTrips: () => api.get("/gps/active-trips"),
-  getTripRoute: (tripId) => api.get(`/gps/trips/${tripId}/route`),
-  getTrack: (tripId) => api.get(`/gps/trips/${tripId}/track`),
-  getPings: (tripId, params = {}) => 
-    api.get(`/gps/trips/${tripId}/pings`, { params }),
-  getLatestPing: (tripId) => api.get(`/gps/trips/${tripId}/latest`),
-  getTripSummary: (tripId) => api.get(`/gps/trips/${tripId}/summary`),
-  deletePings: (tripId) => api.delete(`/gps/trips/${tripId}/pings`),
+  // GET requests - CACHED
+  getActiveTrips: () => cachedApi.get("/gps/active-trips"),
+  getTripRoute: (tripId) => cachedApi.get(`/gps/trips/${tripId}/route`),
+  getTrack: (tripId) => cachedApi.get(`/gps/trips/${tripId}/track`),
+  getPings: (tripId, params = {}) =>
+    cachedApi.get(`/gps/trips/${tripId}/pings`, { params }),
+  getLatestPing: (tripId) => cachedApi.get(`/gps/trips/${tripId}/latest`),
+  getTripSummary: (tripId) => cachedApi.get(`/gps/trips/${tripId}/summary`),
+  getTripWithLocations: (tripId) =>
+    cachedApi.get(`/gps/trips/${tripId}/locations`),
+  calculateDistance: (tripId) =>
+    cachedApi.get(`/gps/trips/${tripId}/distance`),
+  getTripStats: (tripId) =>
+    cachedApi.get(`/gps/trips/${tripId}/stats`),
 
-   getTripWithLocations: (tripId) => 
-    api.get(`/gps/trips/${tripId}/locations`),
-   calculateDistance: (tripId) => 
-    api.get(`/gps/trips/${tripId}/distance`),
-    checkDeviation: (data) => 
-    api.post('/gps/check-deviation', data),
-     storeBatch: (data) => 
-    api.post('/gps/pings/batch', data),
-     getTripStats: (tripId) => 
-    api.get(`/gps/trips/${tripId}/stats`),
+  // POST/DELETE requests - UNCACHED
+  deletePings: (tripId) => uncachedApi.delete(`/gps/trips/${tripId}/pings`),
+  checkDeviation: (data) => uncachedApi.post('/gps/check-deviation', data),
+  storeBatch: (data) => uncachedApi.post('/gps/pings/batch', data),
 };
 
 // ============ LOCATION API ============
 export const locationAPI = {
-  searchPlaces: (query) => api.get('/location/search', { 
-    params: { query } 
+  searchPlaces: (query) => cachedApi.get('/location/search', {
+    params: { query },
   }),
-  calculateDistance: (params) => api.get('/location/distance', { 
-    params 
+  
+  calculateDistance: (params) => cachedApi.get('/location/distance', {
+    params,
   }),
-  geocode: (address) => api.get('/location/geocode', { 
-    params: { address } 
+  
+  geocode: (address) => cachedApi.get('/location/geocode', {
+    params: { address },
+  }),
+  
+  // ✅ Reverse geocode (if needed)
+  reverseGeocode: (params) => cachedApi.get('/location/reverse', {
+    params,
+  }),
+  
+  // ✅ Trip estimate (combines distance + fuel calculation)
+  calculateTripEstimate: (params) => cachedApi.get('/location/trip-estimate', {
+    params,
   }),
 };
 
 // ============ EXPORT ============
-export default api;
+export default cachedApi;

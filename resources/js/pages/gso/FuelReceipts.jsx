@@ -1,6 +1,12 @@
 // src/pages/gso/FuelReceipts.jsx
-import React, { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import React, { useState, useMemo } from "react";
+import { useOptimizedQuery } from "../../hooks/useOptimizedQuery";
+import {
+    SkeletonPage,
+    SkeletonStats,
+    SkeletonTable,
+    SkeletonCard,
+} from "../../components/ui/SkeletonCard";
 import { gsoAPI } from "../../services/api";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -28,6 +34,7 @@ import {
     TrendingDown,
     Minus,
     Download,
+    X,
 } from "lucide-react";
 import {
     Dialog,
@@ -38,15 +45,12 @@ import {
 } from "@/components/ui/dialog";
 import { format } from "date-fns";
 import { toast } from "react-hot-toast";
+import { cn } from "@/lib/utils";
 
 // ============================================
-// HELPER FUNCTIONS - PRIORITIZE PUBLIC FOLDER
+// HELPER FUNCTIONS
 // ============================================
 
-/**
- * Get receipt image URLs - Prioritizes public/receipts/ folder
- * Falls back to storage/receipts/ for backward compatibility
- */
 const getReceiptImageUrls = (receipt) => {
     let url = receipt?.receipt_url || receipt?.receipt_photo_path || null;
     
@@ -57,32 +61,25 @@ const getReceiptImageUrls = (receipt) => {
     const baseUrl = window.location.origin;
     const urlsList = [];
     
-    // ✅ If it's a full URL, use it
     if (url.startsWith('http://') || url.startsWith('https://')) {
         urlsList.push(url);
-        // Also try extracting filename for fallback
         const filename = url.split('/').pop();
         if (filename) {
-            urlsList.push(`${baseUrl}/receipts/${filename}`);      // Public folder (priority)
-            urlsList.push(`${baseUrl}/storage/receipts/${filename}`); // Storage (fallback)
+            urlsList.push(`${baseUrl}/receipts/${filename}`);
+            urlsList.push(`${baseUrl}/storage/receipts/${filename}`);
         }
         return [...new Set(urlsList)];
     }
     
-    // ✅ Extract filename
     const filename = url.split('/').pop();
     
     if (!filename) {
         return [];
     }
     
-    // ✅ PUBLIC FOLDER FIRST (new uploads go here)
     urlsList.push(`${baseUrl}/receipts/${filename}`);
-    
-    // ✅ Storage folder (backward compatibility for old uploads)
     urlsList.push(`${baseUrl}/storage/receipts/${filename}`);
     
-    // ✅ Try the original path if different
     if (url.startsWith('/')) {
         urlsList.push(`${baseUrl}${url}`);
     } else if (!url.startsWith('receipts/') && !url.startsWith('storage/')) {
@@ -91,7 +88,6 @@ const getReceiptImageUrls = (receipt) => {
         urlsList.push(`${baseUrl}/${url}`);
     }
     
-    // Remove duplicates
     return [...new Set(urlsList)];
 };
 
@@ -185,7 +181,6 @@ const ReceiptImage = ({ receipt }) => {
     
     const urls = React.useMemo(() => getReceiptImageUrls(receipt), [receipt]);
     
-    // Reset when receipt changes
     React.useEffect(() => {
         setImageError(false);
         setCurrentUrlIndex(0);
@@ -326,6 +321,21 @@ const StatsCard = ({ title, value, icon: Icon, color, subtitle, trend }) => {
 };
 
 // ============================================
+// LOADING SKELETON
+// ============================================
+
+const LoadingSkeleton = () => (
+    <div className="space-y-6 p-4 md:p-6 min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
+        <SkeletonPage />
+        <SkeletonStats count={4} cols={4} />
+        <div className="relative">
+            <SkeletonCard className="h-12" />
+        </div>
+        <SkeletonTable rows={5} cols={7} />
+    </div>
+);
+
+// ============================================
 // MAIN COMPONENT
 // ============================================
 
@@ -334,8 +344,8 @@ const FuelReceipts = () => {
     const [selectedReceipt, setSelectedReceipt] = useState(null);
     const [showReceiptDialog, setShowReceiptDialog] = useState(false);
 
-    // ============ QUERY ============
-    const { data: receipts = [], isLoading, refetch, isFetching } = useQuery({
+    // ============ OPTIMIZED QUERY ============
+    const { data: receipts = [], isLoading, refetch, isFetching } = useOptimizedQuery({
         queryKey: ["gso-fuel-receipts"],
         queryFn: async () => {
             try {
@@ -347,18 +357,24 @@ const FuelReceipts = () => {
                 return [];
             }
         },
+        staleTime: 60000,
+        keepPreviousData: true,
     });
 
     // ============ FILTER ============
-    const filteredReceipts = receipts.filter((receipt) =>
-        receipt.ticket_number?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        receipt.plate_number?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        receipt.driver_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        receipt.vehicle_model?.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    const filteredReceipts = useMemo(() => {
+        if (!searchTerm) return receipts;
+        const search = searchTerm.toLowerCase();
+        return receipts.filter((receipt) =>
+            receipt.ticket_number?.toLowerCase().includes(search) ||
+            receipt.plate_number?.toLowerCase().includes(search) ||
+            receipt.driver_name?.toLowerCase().includes(search) ||
+            receipt.vehicle_model?.toLowerCase().includes(search)
+        );
+    }, [receipts, searchTerm]);
 
     // ============ STATS ============
-    const stats = [
+    const stats = useMemo(() => [
         {
             title: 'Total Receipts',
             value: receipts.length,
@@ -391,21 +407,14 @@ const FuelReceipts = () => {
             subtitle: 'Needs attention',
             trend: receipts.filter(r => r.status === 'discrepancy' || r.status === 'rejected').length > 0 ? -10 : 0,
         },
-    ];
+    ], [receipts, filteredReceipts]);
 
-    // ============ LOADING STATE ============
+    // ============================================
+    // LOADING STATE
+    // ============================================
+
     if (isLoading) {
-        return (
-            <div className="flex justify-center items-center h-96">
-                <div className="text-center">
-                    <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-500/20">
-                        <Loader2 className="h-8 w-8 text-white animate-spin" />
-                    </div>
-                    <p className="text-slate-600 dark:text-slate-400 font-medium">Loading fuel receipts...</p>
-                    <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">Please wait while we fetch your data</p>
-                </div>
-            </div>
-        );
+        return <LoadingSkeleton />;
     }
 
     // ============================================
@@ -459,7 +468,7 @@ const FuelReceipts = () => {
                         onClick={() => setSearchTerm("")}
                         className="absolute right-4 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-slate-600"
                     >
-                        <XCircle className="h-4 w-4" />
+                        <X className="h-4 w-4" />
                     </button>
                 )}
             </div>
@@ -532,7 +541,7 @@ const FuelReceipts = () => {
                                 <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
                                     {filteredReceipts.map((receipt) => (
                                         <tr 
-                                            key={receipt.id} 
+                                            key={receipt.id || receipt.fuel_receipt_id} 
                                             className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors group"
                                         >
                                             <td className="px-4 py-3">

@@ -19,8 +19,8 @@ use Illuminate\Support\Facades\Validator;
 class GpsPingController extends Controller
 {
     /**
-     * Store a single GPS ping
-     * POST /api/gps/pings
+     * Store a  GPS ping
+     * 
      */
     public function store(Request $request)
     {

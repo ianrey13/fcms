@@ -36,6 +36,8 @@ Route::prefix('location')->group(function () {
     Route::get('/geocode', [LocationController::class, 'geocode']);
     Route::get('/barangays', [LocationController::class, 'getBarangays']);
     Route::get('/municipalities', [LocationController::class, 'getMunicipalities']);
+        Route::get('/reverse', [LocationController::class, 'reverseGeocode']); 
+
 });
 
 Route::get('/public/fuel-prices', function () {

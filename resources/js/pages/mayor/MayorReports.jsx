@@ -53,7 +53,7 @@ import {
   Calendar,
   TrendingUp,
   TrendingDown,
-  CheckCircle ,
+  CheckCircle,
   Fuel,
   DollarSign,
   Building2,
@@ -68,9 +68,10 @@ import {
   EyeOff,
   BarChart3,
   ArrowLeft,
-  Zap,
   Wallet,
   FileCheck,
+  Search,
+  Filter,
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, endOfYear } from 'date-fns';
@@ -84,6 +85,22 @@ const PERIOD_TYPES = [
   { value: 'weekly', label: 'Weekly' },
   { value: 'monthly', label: 'Monthly' },
   { value: 'yearly', label: 'Yearly' },
+];
+
+const RECEIPT_STATUS_OPTIONS = [
+  { value: 'all', label: 'All Status' },
+  { value: 'Verified', label: 'Verified' },
+  { value: 'For Review', label: 'For Review' },
+  { value: 'Pending', label: 'Pending' },
+  { value: 'Rejected', label: 'Rejected' },
+];
+
+const RECONCILIATION_THRESHOLD_OPTIONS = [
+  { value: 'all', label: 'All' },
+  { value: '1', label: '> 1 km' },
+  { value: '2', label: '> 2 km' },
+  { value: '5', label: '> 5 km' },
+  { value: '10', label: '> 10 km' },
 ];
 
 const formatCurrency = (amount) => {
@@ -153,16 +170,26 @@ const StatsCard = ({ title, value, icon: Icon, color, subtitle }) => (
 const MayorReports = () => {
   const navigate = useNavigate();
   
-  // ============ STATE ============
-  const [periodType, setPeriodType] = useState('monthly');
-  const [customStartDate, setCustomStartDate] = useState('');
-  const [customEndDate, setCustomEndDate] = useState('');
-  const [departmentFilter, setDepartmentFilter] = useState('all');
-  const [vehicleFilter, setVehicleFilter] = useState('all');
+  // ============ GLOBAL FILTERS ============
+  const [globalStartDate, setGlobalStartDate] = useState('');
+  const [globalEndDate, setGlobalEndDate] = useState('');
+  const [globalDepartmentFilter, setGlobalDepartmentFilter] = useState('all');
+  const [globalVehicleFilter, setGlobalVehicleFilter] = useState('all');
+  
+  // ============ SECTION-SPECIFIC FILTERS ============
+  // Fuel Receipt Report filter
+  const [receiptStatusFilter, setReceiptStatusFilter] = useState('all');
+  
+  // Reconciliation Report filter
+  const [reconciliationThreshold, setReconciliationThreshold] = useState('all');
+  
+  // Budget Report filter
+  const [budgetYearFilter, setBudgetYearFilter] = useState(new Date().getFullYear());
+
   const [departments, setDepartments] = useState([]);
   const [vehicles, setVehicles] = useState([]);
-  const [showBudgetChart, setShowBudgetChart] = useState(false);
   const [exportLoading, setExportLoading] = useState(false);
+  const [showBudgetChart, setShowBudgetChart] = useState(false);
   const [expandedSections, setExpandedSections] = useState({
     fuelReceipt: true,
     budgetUtilization: true,
@@ -185,7 +212,7 @@ const MayorReports = () => {
   useEffect(() => {
     const fetchVehicles = async () => {
       try {
-        const params = departmentFilter !== 'all' ? { department_id: departmentFilter } : {};
+        const params = globalDepartmentFilter !== 'all' ? { department_id: globalDepartmentFilter } : {};
         const response = await vehicleAPI.getAll(params);
         setVehicles(response.data?.data || []);
       } catch (error) {
@@ -193,15 +220,15 @@ const MayorReports = () => {
       }
     };
     fetchVehicles();
-  }, [departmentFilter]);
+  }, [globalDepartmentFilter]);
 
   // ============ DATE RANGE ============
   const dateRange = useMemo(() => {
-    if (customStartDate && customEndDate) {
-      return { startDate: customStartDate, endDate: customEndDate };
+    if (globalStartDate && globalEndDate) {
+      return { startDate: globalStartDate, endDate: globalEndDate };
     }
-    return getDateRange(periodType);
-  }, [periodType, customStartDate, customEndDate]);
+    return getDateRange('monthly');
+  }, [globalStartDate, globalEndDate]);
 
   // ============ QUERIES ============
 
@@ -212,16 +239,24 @@ const MayorReports = () => {
     refetch: refetchReceipts,
     isFetching: receiptFetching,
   } = useQuery({
-    queryKey: ['mayor-fuel-receipt', dateRange, departmentFilter, vehicleFilter],
+    queryKey: ['mayor-fuel-receipt', dateRange, globalDepartmentFilter, globalVehicleFilter, receiptStatusFilter],
     queryFn: async () => {
       const params = {
         start_date: dateRange.startDate,
         end_date: dateRange.endDate,
-        department_id: departmentFilter !== 'all' ? departmentFilter : undefined,
-        vehicle_id: vehicleFilter !== 'all' ? vehicleFilter : undefined,
+        department_id: globalDepartmentFilter !== 'all' ? globalDepartmentFilter : undefined,
+        vehicle_id: globalVehicleFilter !== 'all' ? globalVehicleFilter : undefined,
       };
       const res = await reportsAPI.getFuelReceiptReport(params);
-      return res.data?.data || {};
+      let data = res.data?.data || {};
+      
+      // Apply status filter
+      if (receiptStatusFilter !== 'all' && data.receipts) {
+        data.receipts = data.receipts.filter(r => 
+          r.reconciliation_status === receiptStatusFilter
+        );
+      }
+      return data;
     },
     enabled: true,
   });
@@ -233,11 +268,11 @@ const MayorReports = () => {
     refetch: refetchBudget,
     isFetching: budgetFetching,
   } = useQuery({
-    queryKey: ['mayor-budget', dateRange, departmentFilter],
+    queryKey: ['mayor-budget', dateRange, globalDepartmentFilter, budgetYearFilter],
     queryFn: async () => {
       const params = {
-        department_id: departmentFilter !== 'all' ? departmentFilter : undefined,
-        year: new Date(dateRange.startDate).getFullYear(),
+        department_id: globalDepartmentFilter !== 'all' ? globalDepartmentFilter : undefined,
+        year: budgetYearFilter,
       };
       const res = await reportsAPI.getBudgetReport(params);
       return res.data?.data || {};
@@ -245,22 +280,31 @@ const MayorReports = () => {
     enabled: true,
   });
 
-  // 3. RECONCILIATION REPORT (Viewable by Disbursing Officer)
+  // 3. RECONCILIATION REPORT
   const {
     data: reconciliationData,
     isLoading: reconciliationLoading,
     refetch: refetchReconciliation,
     isFetching: reconciliationFetching,
   } = useQuery({
-    queryKey: ['mayor-reconciliation', dateRange, departmentFilter],
+    queryKey: ['mayor-reconciliation', dateRange, globalDepartmentFilter, reconciliationThreshold],
     queryFn: async () => {
       const params = {
         start_date: dateRange.startDate,
         end_date: dateRange.endDate,
-        department_id: departmentFilter !== 'all' ? departmentFilter : undefined,
+        department_id: globalDepartmentFilter !== 'all' ? globalDepartmentFilter : undefined,
       };
       const res = await reportsAPI.getReconciliation(params);
-      return res.data?.data || {};
+      let data = res.data?.data || {};
+      
+      // Apply threshold filter
+      if (reconciliationThreshold !== 'all' && data.reconciliations) {
+        const threshold = parseFloat(reconciliationThreshold);
+        data.reconciliations = data.reconciliations.filter(r => 
+          Math.abs(r.variance || 0) >= threshold
+        );
+      }
+      return data;
     },
     enabled: true,
   });
@@ -277,16 +321,17 @@ const MayorReports = () => {
     setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }));
   };
 
-  const handleExport = async (format, reportType) => {
+  const handleExport = async (format, reportType, customParams = {}) => {
     try {
       setExportLoading(true);
       toast.loading(`Exporting ${format.toUpperCase()} report...`);
 
-      const params = {
+      const baseParams = {
         start_date: dateRange.startDate,
         end_date: dateRange.endDate,
-        department_id: departmentFilter !== 'all' ? departmentFilter : undefined,
-        vehicle_id: vehicleFilter !== 'all' ? vehicleFilter : undefined,
+        department_id: globalDepartmentFilter !== 'all' ? globalDepartmentFilter : undefined,
+        vehicle_id: globalVehicleFilter !== 'all' ? globalVehicleFilter : undefined,
+        ...customParams,
       };
 
       let response;
@@ -294,20 +339,26 @@ const MayorReports = () => {
 
       switch(reportType) {
         case 'fuel_receipt':
-          response = await reportsAPI.exportFuelReceiptReport(format, params);
+          response = await reportsAPI.exportFuelReceiptReport(format, baseParams);
           break;
         case 'reconciliation':
-          response = await reportsAPI.exportReconciliation(format, params);
+          response = await reportsAPI.exportReconciliation(format, baseParams);
+          break;
+        case 'budget':
+          response = await reportsAPI.exportBudgetReport(format, {
+            ...baseParams,
+            year: budgetYearFilter,
+          });
           break;
         default:
-          response = await reportsAPI.exportFuelReceiptReport(format, params);
+          response = await reportsAPI.exportFuelReceiptReport(format, baseParams);
       }
 
-      const extension = format === 'pdf' ? 'pdf' : format === 'excel' ? 'xlsx' : 'csv';
+      const extension = format === 'pdf' ? 'pdf' : 'xlsx';
       saveAs(response.data, `${fileName}.${extension}`);
 
       toast.dismiss();
-      toast.success(`Report exported as ${format.toUpperCase()}`);
+      toast.success(`${format.toUpperCase()} exported successfully`);
     } catch (error) {
       toast.dismiss();
       console.error('Export error:', error);
@@ -346,10 +397,35 @@ const MayorReports = () => {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Receipt className="h-5 w-5 text-blue-500" />
-              <CardTitle>1. Fuel Receipt Report</CardTitle>
+              <CardTitle className="text-slate-800 dark:text-white">Fuel Receipt Report</CardTitle>
               <Badge className="bg-blue-500/20 text-blue-600 ml-2">{receipts.length} receipts</Badge>
             </div>
             <div className="flex items-center gap-2">
+              {expandedSections.fuelReceipt && (
+                <>
+                  <div className="flex items-center gap-1">
+                    <Select value={receiptStatusFilter} onValueChange={setReceiptStatusFilter}>
+                      <SelectTrigger className="w-[130px] h-8 text-xs">
+                        <SelectValue placeholder="Status" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {RECEIPT_STATUS_OPTIONS.map(opt => (
+                          <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); handleExport('excel', 'fuel_receipt'); }} disabled={exportLoading} className="h-8 px-2 text-xs">
+                    <FileSpreadsheet className="h-3.5 w-3.5 mr-1" /> Excel
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); handleExport('pdf', 'fuel_receipt'); }} disabled={exportLoading} className="h-8 px-2 text-xs">
+                    <FileText className="h-3.5 w-3.5 mr-1" /> PDF
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); window.print(); }} className="h-8 px-2 text-xs">
+                    <Printer className="h-3.5 w-3.5 mr-1" /> Print
+                  </Button>
+                </>
+              )}
               <Badge variant="secondary">{expandedSections.fuelReceipt ? 'Hide' : 'Show'}</Badge>
               {expandedSections.fuelReceipt ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
             </div>
@@ -365,50 +441,39 @@ const MayorReports = () => {
               <StatsCard title="Avg Unit Price" value={formatCurrency(summary.avg_unit_price || 0)} icon={TrendingUp} color="from-orange-500 to-orange-600" />
             </div>
 
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <Button size="sm" variant="outline" onClick={() => handleExport('excel', 'fuel_receipt')} disabled={exportLoading}>
-                  <FileSpreadsheet className="h-4 w-4 mr-2" /> Excel
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => handleExport('pdf', 'fuel_receipt')} disabled={exportLoading}>
-                  <FileText className="h-4 w-4 mr-2" /> PDF
-                </Button>
-                <Button size="sm" variant="outline" onClick={handlePrint}>
-                  <Printer className="h-4 w-4 mr-2" /> Print
-                </Button>
-              </div>
-            </div>
-
             <div className="overflow-x-auto max-h-[400px] overflow-y-auto border rounded-lg">
               <Table>
                 <TableHeader className="sticky top-0 z-10 bg-slate-100 dark:bg-slate-800">
                   <TableRow>
-                    <TableHead>Receipt No.</TableHead>
-                    <TableHead>Date Submitted</TableHead>
-                    <TableHead>Trip Ticket No.</TableHead>
-                    <TableHead>Driver</TableHead>
-                    <TableHead>Vehicle</TableHead>
-                    <TableHead className="text-right">Amount (₱)</TableHead>
-                    <TableHead>Receipt Status</TableHead>
-                    <TableHead>Verification Date</TableHead>
+                    <TableHead className="font-semibold text-slate-700 dark:text-slate-300 text-xs uppercase">Receipt No.</TableHead>
+                    <TableHead className="font-semibold text-slate-700 dark:text-slate-300 text-xs uppercase">Date Submitted</TableHead>
+                    <TableHead className="font-semibold text-slate-700 dark:text-slate-300 text-xs uppercase">Trip Ticket No.</TableHead>
+                    <TableHead className="font-semibold text-slate-700 dark:text-slate-300 text-xs uppercase">Driver</TableHead>
+                    <TableHead className="font-semibold text-slate-700 dark:text-slate-300 text-xs uppercase">Vehicle</TableHead>
+                    <TableHead className="text-right font-semibold text-slate-700 dark:text-slate-300 text-xs uppercase">Amount (₱)</TableHead>
+                    <TableHead className="font-semibold text-slate-700 dark:text-slate-300 text-xs uppercase">Receipt Status</TableHead>
+                    <TableHead className="font-semibold text-slate-700 dark:text-slate-300 text-xs uppercase">Verification Date</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {receipts.length === 0 ? (
                     <TableRow><TableCell colSpan="8" className="text-center py-8 text-slate-500">No fuel receipt data available</TableCell></TableRow>
                   ) : (
-                    receipts.map((r, i) => (
-                      <TableRow key={i}>
-                        <TableCell className="font-mono font-medium">{r.invoice_number || r.charge_invoice_no || 'N/A'}</TableCell>
-                        <TableCell>{r.date || r.trip_date || 'N/A'}</TableCell>
-                        <TableCell className="font-mono">{r.ticket_number || r.trip_ticket_number || 'N/A'}</TableCell>
-                        <TableCell>{r.driver_name || r.driver || 'N/A'}</TableCell>
-                        <TableCell>{r.vehicle_model || r.vehicle || 'N/A'}</TableCell>
-                        <TableCell className="text-right font-medium">{formatCurrency(r.amount || r.amount_on_receipt || 0)}</TableCell>
-                        <TableCell><Badge className={statusColors[r.reconciliation_status] || 'bg-slate-400'}>{r.reconciliation_status || 'Pending'}</Badge></TableCell>
-                        <TableCell>{r.reconciled_at ? format(new Date(r.reconciled_at), 'yyyy-MM-dd') : 'N/A'}</TableCell>
-                      </TableRow>
-                    ))
+                    receipts.map((r, i) => {
+                      const statusColor = statusColors[r.reconciliation_status] || 'bg-slate-400';
+                      return (
+                        <TableRow key={i} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
+                          <TableCell className="font-mono font-medium">{r.invoice_number || r.charge_invoice_no || 'N/A'}</TableCell>
+                          <TableCell>{r.date || r.trip_date || 'N/A'}</TableCell>
+                          <TableCell className="font-mono">{r.ticket_number || r.trip_ticket_number || 'N/A'}</TableCell>
+                          <TableCell>{r.driver_name || r.driver || 'N/A'}</TableCell>
+                          <TableCell>{r.vehicle_model || r.vehicle || 'N/A'}</TableCell>
+                          <TableCell className="text-right font-medium">{formatCurrency(r.amount || r.amount_on_receipt || 0)}</TableCell>
+                          <TableCell><Badge className={statusColor}>{r.reconciliation_status || 'Pending'}</Badge></TableCell>
+                          <TableCell>{r.reconciled_at ? format(new Date(r.reconciled_at), 'yyyy-MM-dd') : 'N/A'}</TableCell>
+                        </TableRow>
+                      );
+                    })
                   )}
                 </TableBody>
               </Table>
@@ -440,10 +505,33 @@ const MayorReports = () => {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Wallet className="h-5 w-5 text-amber-500" />
-              <CardTitle>2. Budget Utilization Report</CardTitle>
+              <CardTitle className="text-slate-800 dark:text-white">Budget Utilization Report</CardTitle>
               <Badge className="bg-amber-500/20 text-amber-600 ml-2">{periods.length} departments</Badge>
             </div>
             <div className="flex items-center gap-2">
+              {expandedSections.budgetUtilization && (
+                <>
+                  <div className="flex items-center gap-1">
+                    <Input
+                      type="number"
+                      value={budgetYearFilter}
+                      onChange={(e) => setBudgetYearFilter(parseInt(e.target.value) || new Date().getFullYear())}
+                      className="w-20 h-8 text-xs"
+                      min={2020}
+                      max={2030}
+                    />
+                    <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); handleExport('excel', 'budget', { year: budgetYearFilter }); }} disabled={exportLoading} className="h-8 px-2 text-xs">
+                      <FileSpreadsheet className="h-3.5 w-3.5 mr-1" /> Excel
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); handleExport('pdf', 'budget', { year: budgetYearFilter }); }} disabled={exportLoading} className="h-8 px-2 text-xs">
+                      <FileText className="h-3.5 w-3.5 mr-1" /> PDF
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); window.print(); }} className="h-8 px-2 text-xs">
+                      <Printer className="h-3.5 w-3.5 mr-1" /> Print
+                    </Button>
+                  </div>
+                </>
+              )}
               <Badge variant="secondary">{expandedSections.budgetUtilization ? 'Hide' : 'Show'}</Badge>
               {expandedSections.budgetUtilization ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
             </div>
@@ -463,11 +551,11 @@ const MayorReports = () => {
               <Table>
                 <TableHeader className="sticky top-0 z-10 bg-slate-100 dark:bg-slate-800">
                   <TableRow>
-                    <TableHead>Department</TableHead>
-                    <TableHead className="text-right">Allocated Budget (₱)</TableHead>
-                    <TableHead className="text-right">Amount Utilized (₱)</TableHead>
-                    <TableHead className="text-right">Remaining Budget (₱)</TableHead>
-                    <TableHead className="text-right">Utilization (%)</TableHead>
+                    <TableHead className="font-semibold text-slate-700 dark:text-slate-300 text-xs uppercase">Department</TableHead>
+                    <TableHead className="text-right font-semibold text-slate-700 dark:text-slate-300 text-xs uppercase">Allocated Budget (₱)</TableHead>
+                    <TableHead className="text-right font-semibold text-slate-700 dark:text-slate-300 text-xs uppercase">Amount Utilized (₱)</TableHead>
+                    <TableHead className="text-right font-semibold text-slate-700 dark:text-slate-300 text-xs uppercase">Remaining Budget (₱)</TableHead>
+                    <TableHead className="text-right font-semibold text-slate-700 dark:text-slate-300 text-xs uppercase">Utilization (%)</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -477,11 +565,13 @@ const MayorReports = () => {
                     periods.map((p, i) => {
                       const util = p.utilization || (p.allocated > 0 ? ((p.used || 0) / p.allocated) * 100 : 0);
                       return (
-                        <TableRow key={i}>
+                        <TableRow key={i} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
                           <TableCell className="font-medium">{p.department_name}</TableCell>
                           <TableCell className="text-right">{formatCurrency(p.allocated)}</TableCell>
                           <TableCell className="text-right">{formatCurrency(p.used)}</TableCell>
-                          <TableCell className="text-right font-medium">{formatCurrency(p.remaining)}</TableCell>
+                          <TableCell className={`text-right font-medium ${p.remaining < 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                            {formatCurrency(p.remaining)}
+                          </TableCell>
                           <TableCell className="text-right">
                             <Badge className={util > 80 ? 'bg-red-500' : util > 60 ? 'bg-yellow-500' : 'bg-emerald-500'}>
                               {typeof util === 'number' ? util.toFixed(1) : '0'}%
@@ -538,7 +628,7 @@ const MayorReports = () => {
   };
 
   // ============================================================
-  // RENDER - RECONCILIATION REPORT (NEW)
+  // RENDER - RECONCILIATION REPORT
   // ============================================================
 
   const renderReconciliation = () => {
@@ -551,10 +641,35 @@ const MayorReports = () => {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <FileCheck className="h-5 w-5 text-indigo-500" />
-              <CardTitle>3. Trip and Fuel Reconciliation Report</CardTitle>
+              <CardTitle className="text-slate-800 dark:text-white">Trip and Fuel Reconciliation Report</CardTitle>
               <Badge className="bg-indigo-500/20 text-indigo-600 ml-2">{reconciliations.length} trips</Badge>
             </div>
             <div className="flex items-center gap-2">
+              {expandedSections.reconciliation && (
+                <>
+                  <div className="flex items-center gap-1">
+                    <Select value={reconciliationThreshold} onValueChange={setReconciliationThreshold}>
+                      <SelectTrigger className="w-[130px] h-8 text-xs">
+                        <SelectValue placeholder="Threshold" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {RECONCILIATION_THRESHOLD_OPTIONS.map(opt => (
+                          <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); handleExport('excel', 'reconciliation'); }} disabled={exportLoading} className="h-8 px-2 text-xs">
+                    <FileSpreadsheet className="h-3.5 w-3.5 mr-1" /> Excel
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); handleExport('pdf', 'reconciliation'); }} disabled={exportLoading} className="h-8 px-2 text-xs">
+                    <FileText className="h-3.5 w-3.5 mr-1" /> PDF
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); window.print(); }} className="h-8 px-2 text-xs">
+                    <Printer className="h-3.5 w-3.5 mr-1" /> Print
+                  </Button>
+                </>
+              )}
               <Badge variant="secondary">{expandedSections.reconciliation ? 'Hide' : 'Show'}</Badge>
               {expandedSections.reconciliation ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
             </div>
@@ -574,34 +689,38 @@ const MayorReports = () => {
               <Table>
                 <TableHeader className="sticky top-0 z-10 bg-slate-100 dark:bg-slate-800">
                   <TableRow>
-                    <TableHead>Trip Ticket No.</TableHead>
-                    <TableHead>Vehicle</TableHead>
-                    <TableHead>Driver</TableHead>
-                    <TableHead className="text-right">Expected Distance</TableHead>
-                    <TableHead className="text-right">Actual Distance</TableHead>
-                    <TableHead className="text-right">Distance Variance</TableHead>
-                    <TableHead className="text-right">Amount Released</TableHead>
-                    <TableHead className="text-right">Actual Amount Paid</TableHead>
-                    <TableHead className="text-right">Amount Variance</TableHead>
+                    <TableHead className="font-semibold text-slate-700 dark:text-slate-300 text-xs uppercase">Trip Ticket No.</TableHead>
+                    <TableHead className="font-semibold text-slate-700 dark:text-slate-300 text-xs uppercase">Vehicle</TableHead>
+                    <TableHead className="font-semibold text-slate-700 dark:text-slate-300 text-xs uppercase">Driver</TableHead>
+                    {/* <TableHead className="text-right font-semibold text-slate-700 dark:text-slate-300 text-xs uppercase">Expected Distance</TableHead>
+                    <TableHead className="text-right font-semibold text-slate-700 dark:text-slate-300 text-xs uppercase">Actual Distance</TableHead>
+                    <TableHead className="text-right font-semibold text-slate-700 dark:text-slate-300 text-xs uppercase">Distance Variance</TableHead> */}
+                    <TableHead className="text-right font-semibold text-slate-700 dark:text-slate-300 text-xs uppercase">Amount Released</TableHead>
+                    <TableHead className="text-right font-semibold text-slate-700 dark:text-slate-300 text-xs uppercase">Actual Amount Paid</TableHead>
+                    <TableHead className="text-right font-semibold text-slate-700 dark:text-slate-300 text-xs uppercase">Amount Variance</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {reconciliations.length === 0 ? (
                     <TableRow><TableCell colSpan="9" className="text-center py-8 text-slate-500">No reconciliation data available</TableCell></TableRow>
                   ) : (
-                    reconciliations.map((r, i) => (
-                      <TableRow key={i}>
-                        <TableCell className="font-mono font-medium">{r.ticket_number}</TableCell>
-                        <TableCell>{r.plate_number}</TableCell>
-                        <TableCell>{r.driver_name}</TableCell>
-                        <TableCell className="text-right">{r.expected_distance || 'N/A'}</TableCell>
-                        <TableCell className="text-right">{r.actual_distance || 'N/A'}</TableCell>
-                        <TableCell className={`text-right font-medium ${r.variance !== 0 ? 'text-red-600' : ''}`}>{r.variance || 0}</TableCell>
-                        <TableCell className="text-right">{formatCurrency(r.amount_released || 0)}</TableCell>
-                        <TableCell className="text-right">{formatCurrency(r.actual_amount || 0)}</TableCell>
-                        <TableCell className={`text-right font-medium ${r.amount_variance !== 0 ? 'text-red-600' : ''}`}>{formatCurrency(r.amount_variance || 0)}</TableCell>
-                      </TableRow>
-                    ))
+                    reconciliations.map((r, i) => {
+                      const varianceColor = Math.abs(r.variance || 0) > 2 ? 'text-red-600' : '';
+                      const amountVarianceColor = Math.abs(r.amount_variance || 0) > 100 ? 'text-red-600' : '';
+                      return (
+                        <TableRow key={i} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
+                          <TableCell className="font-mono font-medium">{r.ticket_number}</TableCell>
+                          <TableCell>{r.plate_number}</TableCell>
+                          <TableCell>{r.driver_name}</TableCell>
+                          {/* <TableCell className="text-right">{r.expected_distance || 'N/A'}</TableCell>
+                          <TableCell className="text-right">{r.actual_distance || 'N/A'}</TableCell>
+                          <TableCell className={`text-right font-medium ${varianceColor}`}>{r.variance || 0}</TableCell> */}
+                          <TableCell className="text-right">{formatCurrency(r.amount_released || 0)}</TableCell>
+                          <TableCell className="text-right">{formatCurrency(r.actual_amount || 0)}</TableCell>
+                          <TableCell className={`text-right font-medium ${amountVarianceColor}`}>{formatCurrency(r.amount_variance || 0)}</TableCell>
+                        </TableRow>
+                      );
+                    })
                   )}
                 </TableBody>
               </Table>
@@ -655,7 +774,7 @@ const MayorReports = () => {
                     Disbursing Officer Reports
                   </h1>
                   <p className="text-sm text-slate-500 dark:text-slate-400">
-                    {periodType.charAt(0).toUpperCase() + periodType.slice(1)} report from {dateRange.startDate} to {dateRange.endDate}
+                    Period: {dateRange.startDate} to {dateRange.endDate}
                   </p>
                 </div>
               </div>
@@ -668,34 +787,31 @@ const MayorReports = () => {
           </div>
         </div>
 
-        {/* ========== FILTERS ========== */}
+        {/* ========== GLOBAL FILTERS ========== */}
         <Card className="dark:bg-slate-800/80 dark:border-slate-700 print:hidden">
           <CardContent className="pt-6">
             <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
               <div>
-                <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Period</label>
-                <Select value={periodType} onValueChange={setPeriodType}>
-                  <SelectTrigger className="mt-1 dark:bg-slate-900 dark:border-slate-700">
-                    <SelectValue placeholder="Select Period" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {PERIOD_TYPES.map(p => <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div>
                 <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Start Date</label>
-                <Input type="date" value={customStartDate} onChange={(e) => setCustomStartDate(e.target.value)} className="mt-1 dark:bg-slate-900 dark:border-slate-700" />
+                <Input 
+                  type="date" 
+                  value={globalStartDate} 
+                  onChange={(e) => setGlobalStartDate(e.target.value)} 
+                  className="mt-1 dark:bg-slate-900 dark:border-slate-700" 
+                />
               </div>
               <div>
                 <label className="text-sm font-medium text-slate-700 dark:text-slate-300">End Date</label>
-                <Input type="date" value={customEndDate} onChange={(e) => setCustomEndDate(e.target.value)} className="mt-1 dark:bg-slate-900 dark:border-slate-700" />
+                <Input 
+                  type="date" 
+                  value={globalEndDate} 
+                  onChange={(e) => setGlobalEndDate(e.target.value)} 
+                  className="mt-1 dark:bg-slate-900 dark:border-slate-700" 
+                />
               </div>
-
               <div>
                 <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Department</label>
-                <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
+                <Select value={globalDepartmentFilter} onValueChange={setGlobalDepartmentFilter}>
                   <SelectTrigger className="mt-1 dark:bg-slate-900 dark:border-slate-700">
                     <SelectValue placeholder="All Departments" />
                   </SelectTrigger>
@@ -707,10 +823,9 @@ const MayorReports = () => {
                   </SelectContent>
                 </Select>
               </div>
-
               <div>
                 <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Vehicle</label>
-                <Select value={vehicleFilter} onValueChange={setVehicleFilter}>
+                <Select value={globalVehicleFilter} onValueChange={setGlobalVehicleFilter}>
                   <SelectTrigger className="mt-1 dark:bg-slate-900 dark:border-slate-700">
                     <SelectValue placeholder="All Vehicles" />
                   </SelectTrigger>
@@ -722,13 +837,25 @@ const MayorReports = () => {
                   </SelectContent>
                 </Select>
               </div>
+              <div className="flex items-end">
+                <Button 
+                  variant="outline" 
+                  onClick={() => {
+                    const r = getDateRange('monthly');
+                    setGlobalStartDate(r.startDate);
+                    setGlobalEndDate(r.endDate);
+                  }}
+                  className="w-full"
+                >
+                  <Calendar className="h-4 w-4 mr-2" /> This Month
+                </Button>
+              </div>
             </div>
-
             <div className="flex gap-2 mt-4 flex-wrap">
-              <Button variant="outline" size="sm" onClick={() => { const r = getDateRange('weekly'); setCustomStartDate(r.startDate); setCustomEndDate(r.endDate); setPeriodType('weekly'); }} className="text-xs">This Week</Button>
-              <Button variant="outline" size="sm" onClick={() => { const r = getDateRange('monthly'); setCustomStartDate(r.startDate); setCustomEndDate(r.endDate); setPeriodType('monthly'); }} className="text-xs">This Month</Button>
-              <Button variant="outline" size="sm" onClick={() => { const r = getDateRange('yearly'); setCustomStartDate(r.startDate); setCustomEndDate(r.endDate); setPeriodType('yearly'); }} className="text-xs">This Year</Button>
-              <Button variant="outline" size="sm" onClick={() => { setCustomStartDate(''); setCustomEndDate(''); }} className="text-xs">Clear Dates</Button>
+              <Button variant="outline" size="sm" onClick={() => { const r = getDateRange('weekly'); setGlobalStartDate(r.startDate); setGlobalEndDate(r.endDate); }} className="text-xs">This Week</Button>
+              <Button variant="outline" size="sm" onClick={() => { const r = getDateRange('monthly'); setGlobalStartDate(r.startDate); setGlobalEndDate(r.endDate); }} className="text-xs">This Month</Button>
+              <Button variant="outline" size="sm" onClick={() => { const r = getDateRange('yearly'); setGlobalStartDate(r.startDate); setGlobalEndDate(r.endDate); }} className="text-xs">This Year</Button>
+              <Button variant="outline" size="sm" onClick={() => { setGlobalStartDate(''); setGlobalEndDate(''); }} className="text-xs">Clear Dates</Button>
             </div>
           </CardContent>
         </Card>
@@ -743,7 +870,7 @@ const MayorReports = () => {
         {/* Footer */}
         <div className="text-center text-xs text-slate-400 dark:text-slate-500 pt-4 border-t border-slate-200 dark:border-slate-700 print:block hidden">
           <p>Generated on {format(new Date(), 'MMMM d, yyyy h:mm a')}</p>
-          <p>FCMS - Fuel Consumption Monitoring Report • Laguindingan Municipality</p>
+          <p>FCMS - Fuel Consumption Monitoring System • Laguindingan Municipality</p>
         </div>
       </div>
     </div>

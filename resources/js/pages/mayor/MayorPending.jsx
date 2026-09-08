@@ -1,4 +1,4 @@
-// src/pages/mayor/MayorPending.jsx - SINGLE COLUMN APPROVE DIALOG
+// src/pages/mayor/MayorPending.jsx
 import React, { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { mayorsOfficeAPI } from "../../services/api";
@@ -48,6 +48,7 @@ import {
   TrendingDown,
   Minus,
   Calculator,
+  Printer,
 } from "lucide-react";
 import {
   Dialog,
@@ -62,6 +63,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "react-hot-toast";
 import { cn } from "@/lib/utils";
+import GasSlipView from "../../pages/mayor/reports/GasSlipView";
 
 // ============================================================
 // STATS CARD COMPONENT
@@ -377,6 +379,10 @@ const MayorPending = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [departmentFilter, setDepartmentFilter] = useState("all");
 
+  // ✅ Gas Slip State
+  const [showGasSlip, setShowGasSlip] = useState(false);
+  const [selectedGasSlipTicket, setSelectedGasSlipTicket] = useState(null);
+
   const [isCrossDepartment, setIsCrossDepartment] = useState(false);
   const [crossDepartmentReason, setCrossDepartmentReason] = useState("");
   const [showCrossDepartmentWarning, setShowCrossDepartmentWarning] = useState(false);
@@ -392,7 +398,6 @@ const MayorPending = () => {
   // ✅ Calculate estimated cost from ticket
   const getEstimatedCost = (ticket) => {
     if (!ticket) return 0;
-    // Use estimated_cost if available, otherwise calculate from fuel liters
     return ticket.estimated_cost || 
            (ticket.estimated_fuel_liters ? ticket.estimated_fuel_liters * 88 : 0);
   };
@@ -565,31 +570,27 @@ const MayorPending = () => {
   };
 
   // ============================================================
-  // ✅ FIXED: Fetch all active departments for selector
+  // FETCH ALL DEPARTMENTS
   // ============================================================
+  
   const fetchAllDepartments = useCallback(async () => {
     setLoadingDepartments(true);
     try {
-      // ✅ First: Try to fetch all active departments from API
       const response = await mayorsOfficeAPI.getAllDepartmentsForSelector();
       const depts = response.data?.data || [];
       
       if (depts.length > 0) {
         setAvailableDepartments(depts);
-        console.log('✅ Departments loaded from API:', depts.length);
       } else {
-        // ❌ Fallback: Use departments from tickets
         const uniqueDepts = [
           ...new Map(
             tickets.map((ticket) => [ticket.department_id, ticket.department_name]),
           ).entries(),
         ].map(([id, name]) => ({ department_id: id, department_name: name }));
         setAvailableDepartments(uniqueDepts);
-        console.log('⚠️ Fallback departments from tickets:', uniqueDepts.length);
       }
     } catch (error) {
       console.error('Failed to fetch departments:', error);
-      // Fallback: use departments from tickets
       const uniqueDepts = [
         ...new Map(
           tickets.map((ticket) => [ticket.department_id, ticket.department_name]),
@@ -602,12 +603,24 @@ const MayorPending = () => {
   }, [tickets]);
 
   // ============================================================
-  // OPEN APPROVE DIALOG - ✅ Show estimated amount as suggestion
+  // ✅ HANDLE VIEW GAS SLIP
   // ============================================================
+  
+  const handleViewGasSlip = (ticket) => {
+    const ticketWithDriver = {
+      ...ticket,
+      driver_name: ticket.driver?.full_name || ticket.driver_name || "N/A",
+    };
+    setSelectedGasSlipTicket(ticketWithDriver);
+    setShowGasSlip(true);
+  };
+
+  // ============================================================
+  // OPEN APPROVE DIALOG
+  // ============================================================
+  
   const openApproveDialog = async (ticket) => {
     setSelectedTicket(ticket);
-    
-    // ✅ Leave amount field empty - Mayor will enter the amount
     setAmountReleased("");
     
     setIsCrossDepartment(false);
@@ -627,10 +640,8 @@ const MayorPending = () => {
       ticket.department?.id?.toString() ||
       ticket.department?.department_id?.toString();
 
-    // ✅ Set chargeToDepartmentId to requesting department by default
     setChargeToDepartmentId(requestingDeptId || "");
     
-    // ✅ Wait for departments to load
     await fetchAllDepartments();
     setShowApproveDialog(true);
   };
@@ -676,8 +687,9 @@ const MayorPending = () => {
   };
 
   // ============================================================
-  // HANDLE APPROVE - WITH VALIDATION
+  // HANDLE APPROVE
   // ============================================================
+  
   const handleApprove = async () => {
     if (!selectedTicket) {
       toast.error("No ticket selected");
@@ -704,7 +716,6 @@ const MayorPending = () => {
       return;
     }
 
-    // ✅ NEW VALIDATION: Check if cross-department is checked but same department is selected
     if (isCrossDepartment && finalChargeDeptId === selectedTicket?.department_id?.toString()) {
       toast.error("❌ Cross-Department usage selected but same department is chosen. Please select a different department or uncheck the Cross-Department option.");
       return;
@@ -1101,6 +1112,19 @@ const MayorPending = () => {
                               </Button>
                             )}
 
+                            {/* ✅ View Gas Slip */}
+                            {ticket.gas_slip && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleViewGasSlip(ticket)}
+                                className="text-purple-600 hover:text-purple-700 hover:bg-purple-50 dark:text-purple-400 dark:hover:text-purple-300 dark:hover:bg-purple-950/30 h-9 w-9 p-0 rounded-lg transition-all duration-200 group-hover:scale-110"
+                                title="View Gas Slip"
+                              >
+                                <Printer className="h-4 w-4" />
+                              </Button>
+                            )}
+
                             {/* Release Fund */}
                             <Button
                               size="sm"
@@ -1126,7 +1150,7 @@ const MayorPending = () => {
         </Card>
 
         {/* ============================================================ */}
-        {/* APPROVE DIALOG - SINGLE COLUMN LAYOUT */}
+        {/* APPROVE DIALOG */}
         {/* ============================================================ */}
         <Dialog open={showApproveDialog} onOpenChange={setShowApproveDialog}>
           <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto dark:bg-slate-800 dark:border-slate-700 p-6">
@@ -1167,7 +1191,7 @@ const MayorPending = () => {
                 </div>
               )}
 
-              {/* Trip Date Validation - Simple Badge */}
+              {/* Trip Date Validation */}
               {tripDateValidation && (
                 <div className="flex items-center gap-2">
                   {tripDateValidation.category === 'today' && (
@@ -1271,7 +1295,7 @@ const MayorPending = () => {
                 </div>
               </div>
 
-              {/* ✅ FIXED: Department Selector - Disabled when NOT cross-department */}
+              {/* Department Selector */}
               <div>
                 <Label htmlFor="charge_to_department" className="text-sm text-slate-700 dark:text-slate-300">
                   Charge To Department <span className="text-red-500">*</span>
@@ -1289,13 +1313,11 @@ const MayorPending = () => {
                   )}
                 >
                   <option value="">Select Department</option>
-                  {/* ✅ Always show requesting department */}
                   {selectedTicket?.department_id && (
                     <option value={selectedTicket.department_id}>
                       {selectedTicket.department_name} (Requesting)
                     </option>
                   )}
-                  {/* ✅ Show other departments only when cross-department is checked */}
                   {isCrossDepartment && availableDepartments
                     .filter((dept) => dept.department_id?.toString() !== selectedTicket?.department_id?.toString())
                     .map((dept) => (
@@ -1305,7 +1327,6 @@ const MayorPending = () => {
                     ))}
                 </select>
 
-                {/* ✅ Warning when cross-department is checked but same department is selected */}
                 {isCrossDepartment && chargeToDepartmentId === selectedTicket?.department_id?.toString() && (
                   <p className="text-xs text-red-500 mt-1 flex items-center gap-1">
                     <AlertCircle className="h-3 w-3" />
@@ -1345,7 +1366,6 @@ const MayorPending = () => {
                       setIsCrossDepartment(checked);
                       if (!checked) {
                         setCrossDepartmentReason("");
-                        // ✅ Reset to requesting department when unchecked
                         if (selectedTicket?.department_id) {
                           setChargeToDepartmentId(selectedTicket.department_id.toString());
                         }
@@ -1372,7 +1392,7 @@ const MayorPending = () => {
                 </div>
               </div>
 
-              {/* Amount - ✅ Show estimated amount as suggestion */}
+              {/* Amount */}
               <div>
                 <Label htmlFor="amount" className="text-sm text-slate-700 dark:text-slate-300">Amount (₱)</Label>
                 <Input
@@ -1384,7 +1404,6 @@ const MayorPending = () => {
                   onChange={(e) => setAmountReleased(e.target.value)}
                   className="mt-1 dark:bg-slate-900 dark:border-slate-700 dark:text-white"
                 />
-                {/* ✅ Show estimated cost as suggestion */}
                 {selectedTicket && getEstimatedCost(selectedTicket) > 0 && (
                   <div className="flex items-center gap-2 mt-1.5">
                     <div className="flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
@@ -1449,7 +1468,6 @@ const MayorPending = () => {
                 disabled={
                   submitting || 
                   (!tripDateValidation?.canApprove && !isForceApprove) ||
-                  // ✅ Disable if cross-department is checked but same department selected
                   (isCrossDepartment && chargeToDepartmentId === selectedTicket?.department_id?.toString())
                 }
               >
@@ -1532,6 +1550,17 @@ const MayorPending = () => {
           onVerify={handleVerifyReceipt}
           onRefresh={fetchTickets}
         />
+
+        {/* Gas Slip Modal */}
+        {showGasSlip && selectedGasSlipTicket && (
+          <GasSlipView 
+            ticket={selectedGasSlipTicket} 
+            onClose={() => {
+              setShowGasSlip(false);
+              setSelectedGasSlipTicket(null);
+            }} 
+          />
+        )}
       </div>
     </div>
   );

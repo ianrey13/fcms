@@ -33,6 +33,79 @@ import { toast } from "react-hot-toast";
 import { cn } from "@/lib/utils";
 
 // ============================================
+// ✅ GET AVAILABLE ROLES BASED ON DEPARTMENT
+// ============================================
+
+const getAvailableRoles = (departmentId, departments) => {
+    const department = departments.find(d => d.department_id === parseInt(departmentId));
+    
+    if (!department) return [{ value: '', label: 'Select Role' }];
+    
+    const code = department.department_code?.toUpperCase() || '';
+    
+    // ✅ GSO Department → GSO Staff + Driver
+    if (code === 'GSO') {
+        return [
+            { value: '', label: 'Select Role' },
+            { value: 'gso_office', label: 'GSO Staff' },
+            { value: 'driver', label: 'Driver' },
+        ];
+    }
+    
+    // ✅ Mayor's Office → Disbursing Officer + Driver
+    if (code === 'MO') {
+        return [
+            { value: '', label: 'Select Role' },
+            { value: 'mayors_office', label: 'Disbursing Officer' },
+            { value: 'driver', label: 'Driver' },
+        ];
+    }
+    
+    // ✅ Other Departments → Driver only
+    return [
+        { value: '', label: 'Select Role' },
+        { value: 'driver', label: 'Driver' },
+    ];
+};
+
+// ============================================
+// ✅ ROLE SELECT COMPONENT WITH DYNAMIC OPTIONS
+// ============================================
+
+const RoleSelect = ({ value, onChange, onBlur, error, departmentId, departments }) => {
+    const roleOptions = getAvailableRoles(departmentId, departments);
+    
+    // If only driver is available, auto-select it
+    useEffect(() => {
+        if (departmentId && roleOptions.length === 2 && roleOptions[1]?.value === 'driver') {
+            if (!value || value === '') {
+                onChange('driver');
+            }
+        }
+    }, [departmentId, roleOptions, value, onChange]);
+    
+    return (
+        <select
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            onBlur={onBlur}
+            className={cn(
+                "w-full mt-1 px-3 py-2.5 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-slate-900 dark:border-slate-700",
+                error && "border-red-500 ring-red-500",
+                roleOptions.length === 2 && roleOptions[1]?.value === 'driver' && "cursor-not-allowed opacity-60"
+            )}
+            disabled={roleOptions.length === 2 && roleOptions[1]?.value === 'driver'}
+        >
+            {roleOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                    {option.label}
+                </option>
+            ))}
+        </select>
+    );
+};
+
+// ============================================
 // FORM FIELD COMPONENT
 // ============================================
 
@@ -220,7 +293,7 @@ const DepartmentDatalist = ({ value, onChange, onBlur, error, departments }) => 
 };
 
 // ============================================
-// ROLE BADGE COMPONENT
+// ROLE BADGE COMPONENT (Updated - No "Staff")
 // ============================================
 
 const RoleBadge = ({ role }) => {
@@ -231,11 +304,7 @@ const RoleBadge = ({ role }) => {
     },
     mayors_office: {
       color: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300",
-      label: "Mayor's Office",
-    },
-    staff: {
-      color: "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300",
-      label: "Staff",
+      label: "Disbursing Officer",
     },
     driver: {
       color: "bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-300",
@@ -327,6 +396,19 @@ const EditUser = () => {
     }
   }, [users, id, navigate]);
 
+  // ============ AUTO-SELECT ROLE WHEN DEPARTMENT CHANGES ============
+  useEffect(() => {
+    if (formData.department_id && departments.length > 0) {
+      const available = getAvailableRoles(formData.department_id, departments);
+      // If only one role available (driver), auto-select it
+      if (available.length === 2 && available[1]?.value === 'driver') {
+        if (formData.role !== 'driver') {
+          setFormData(prev => ({ ...prev, role: 'driver' }));
+        }
+      }
+    }
+  }, [formData.department_id, departments]);
+
   // ============ VALIDATION ============
   const validate = () => {
     const newErrors = {};
@@ -387,7 +469,6 @@ const EditUser = () => {
 
   const hasError = (field) => touched[field] && errors[field];
 
-  // ============ HANDLERS ============
   const handleChange = (field, value) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
     if (errors[field]) {
@@ -423,11 +504,8 @@ const EditUser = () => {
     );
   };
 
-  const showCanDrive = formData.role === "staff" || formData.role === "driver";
+  const showCanDrive = formData.role === "driver";
   const hasChanges = JSON.stringify(formData) !== JSON.stringify(originalData);
-  const selectedDepartment = departments.find(
-    (d) => d.department_id === parseInt(formData.department_id)
-  );
 
   // ============================================
   // RENDER
@@ -582,7 +660,7 @@ const EditUser = () => {
                 />
               </FormField>
 
-              {/* Department - WITH DATALIST */}
+              {/* Department */}
               <FormField
                 label="Department"
                 icon={Building2}
@@ -598,7 +676,7 @@ const EditUser = () => {
                 />
               </FormField>
 
-              {/* Role */}
+              {/* ✅ Role - Dynamic based on department */}
               <FormField
                 label="User Role"
                 icon={Shield}
@@ -606,24 +684,17 @@ const EditUser = () => {
                 error={hasError("role") && errors.role}
                 helper="Determines what the user can access"
               >
-                <select
+                <RoleSelect
                   value={formData.role}
-                  onChange={(e) => handleChange("role", e.target.value)}
+                  onChange={(value) => handleChange("role", value)}
                   onBlur={() => handleBlur("role")}
-                  className={cn(
-                    "w-full mt-1 px-3 py-2.5 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-slate-900 dark:border-slate-700",
-                    hasError("role") && "border-red-500 ring-red-500"
-                  )}
-                >
-                  <option value="">Select Role</option>
-                  <option value="gso_office">GSO Office</option>
-                  <option value="mayors_office">Disbursing Officer</option>
-                  <option value="staff">Staff</option>
-                  <option value="driver">Driver</option>
-                </select>
+                  error={hasError("role")}
+                  departmentId={formData.department_id}
+                  departments={departments}
+                />
               </FormField>
 
-              {/* Can Drive Toggle */}
+              {/* Can Drive Toggle - Only for Drivers */}
               {showCanDrive && (
                 <div className="bg-cyan-50/50 dark:bg-cyan-950/20 rounded-xl p-4 border border-cyan-200 dark:border-cyan-800">
                   <div className="flex items-center gap-4">
@@ -762,46 +833,7 @@ const EditUser = () => {
                 </div>
               )}
 
-              {/* Form Preview */}
-              <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-4 border border-slate-200 dark:border-slate-700">
-                <h4 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
-                  Preview
-                </h4>
-                <div className="grid grid-cols-2 gap-2 text-sm">
-                  <div>
-                    <span className="text-slate-400">Name:</span>
-                    <span className="font-medium text-slate-700 dark:text-slate-300 ml-2">
-                      {formData.first_name || "—"} {formData.last_name || ""}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400">Email:</span>
-                    <span className="text-slate-700 dark:text-slate-300 ml-2">
-                      {formData.email || "—"}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400">Role:</span>
-                    <span className="font-medium text-slate-700 dark:text-slate-300 ml-2">
-                      {formData.role ? formData.role.replace(/_/g, " ").toUpperCase() : "—"}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400">Department:</span>
-                    <span className="text-slate-700 dark:text-slate-300 ml-2">
-                      {departments.find(d => d.department_id === parseInt(formData.department_id))?.department_name || "—"}
-                    </span>
-                  </div>
-                  {showCanDrive && (
-                    <div className="col-span-2">
-                      <span className="text-slate-400">Can Drive:</span>
-                      <span className="font-medium text-slate-700 dark:text-slate-300 ml-2">
-                        {formData.can_drive ? "✅ Yes" : "❌ No"}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              </div>
+            
 
               {/* Action Buttons */}
               <div className="flex gap-3 pt-4 border-t border-slate-200/60 dark:border-slate-700/60">

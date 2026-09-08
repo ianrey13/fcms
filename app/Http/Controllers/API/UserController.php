@@ -18,14 +18,12 @@ class UserController extends Controller
 {
     /**
      * Get all users
-     * ✅ Updated for new roles
      */
     public function index(Request $request)
     {
         try {
             $query = User::with('department');
 
-            // Apply filters
             if ($request->has('role')) {
                 $query->where('role', $request->role);
             }
@@ -66,6 +64,7 @@ class UserController extends Controller
                     'role_label' => $this->getRoleLabel($user->role),
                     'department_id' => $user->department_id,
                     'department_name' => $user->department?->department_name,
+                    'department_code' => $user->department?->department_code,
                     'status' => $user->status,
                     'can_drive' => $canDrive,
                     'last_login_at' => $user->last_login_at,
@@ -90,8 +89,44 @@ class UserController extends Controller
     }
 
     /**
+     * ✅ Get available roles based on department
+     */
+    private function getAvailableRoles($departmentId)
+    {
+        $department = Department::find($departmentId);
+        
+        if (!$department) {
+            return ['driver'];
+        }
+
+        $code = strtoupper($department->department_code);
+
+        // ✅ GSO Department → GSO Staff + Driver
+        if ($code === 'GSO') {
+            return ['gso_office', 'driver'];
+        }
+        
+        // ✅ Mayor's Office → Disbursing Officer + Driver
+        if ($code === 'MO') {
+            return ['mayors_office', 'driver'];
+        }
+
+        // ✅ Other Departments → Driver only
+        return ['driver'];
+    }
+
+    /**
+     * ✅ Validate role based on department
+     */
+    private function validateRoleForDepartment($departmentId, $role)
+    {
+        $allowedRoles = $this->getAvailableRoles($departmentId);
+        return in_array($role, $allowedRoles);
+    }
+
+    /**
      * Create a new user
-     * ✅ Updated for new roles
+     * ✅ Added role validation based on department
      */
     public function store(Request $request)
     {
@@ -113,6 +148,24 @@ class UserController extends Controller
                     'success' => false,
                     'message' => 'Validation failed',
                     'errors' => $validator->errors()
+                ], 422);
+            }
+
+            // ✅ Validate role based on department
+            if (!$this->validateRoleForDepartment($request->department_id, $request->role)) {
+                $allowed = $this->getAvailableRoles($request->department_id);
+                $allowedLabels = array_map(function($r) {
+                    return $this->getRoleLabel($r);
+                }, $allowed);
+                
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Invalid role for selected department',
+                    'errors' => [
+                        'role' => [
+                            "Only " . implode(' or ', $allowedLabels) . " roles are allowed for this department."
+                        ]
+                    ]
                 ], 422);
             }
 
@@ -193,6 +246,7 @@ class UserController extends Controller
                     'role_label' => $this->getRoleLabel($user->role),
                     'department_id' => $user->department_id,
                     'department_name' => $user->department?->department_name,
+                    'department_code' => $user->department?->department_code,
                     'status' => $user->status,
                     'can_drive' => $canDrive,
                     'last_login_at' => $user->last_login_at,
@@ -201,6 +255,8 @@ class UserController extends Controller
                     'account_locked_until' => $user->account_locked_until,
                     'has_signature' => $hasSignature,
                     'signature_url' => $hasSignature ? Storage::url($user->esignature_path) : null,
+                    // ✅ Add available roles for this user's department
+                    'available_roles' => $this->getAvailableRoles($user->department_id),
                 ]
             ]);
         } catch (\Exception $e) {
@@ -213,7 +269,7 @@ class UserController extends Controller
 
     /**
      * Update a user
-     * ✅ Updated for new roles
+     * ✅ Added role validation based on department
      */
     public function update(Request $request, $id)
     {
@@ -242,6 +298,27 @@ class UserController extends Controller
             }
 
             DB::beginTransaction();
+
+            $departmentId = $request->has('department_id') ? $request->department_id : $user->department_id;
+            $role = $request->has('role') ? $request->role : $user->role;
+
+            // ✅ Validate role based on department (if either changed)
+            if (!$this->validateRoleForDepartment($departmentId, $role)) {
+                $allowed = $this->getAvailableRoles($departmentId);
+                $allowedLabels = array_map(function($r) {
+                    return $this->getRoleLabel($r);
+                }, $allowed);
+                
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Invalid role for selected department',
+                    'errors' => [
+                        'role' => [
+                            "Only " . implode(' or ', $allowedLabels) . " roles are allowed for this department."
+                        ]
+                    ]
+                ], 422);
+            }
 
             // Update user fields
             if ($request->has('email')) {
@@ -313,7 +390,6 @@ class UserController extends Controller
         try {
             $user = User::findOrFail($id);
 
-            // Prevent deleting own account
             if ($user->user_id == auth()->id()) {
                 return response()->json([
                     'success' => false,
@@ -321,13 +397,11 @@ class UserController extends Controller
                 ], 400);
             }
 
-            // Soft delete - just mark as inactive
             $user->status = 'inactive';
             $user->deactivated_at = now();
             $user->deactivated_by = auth()->id();
             $user->save();
 
-            // Revoke all tokens
             $user->tokens()->delete();
 
             return response()->json([
@@ -344,7 +418,7 @@ class UserController extends Controller
     }
 
     /**
-     * Update user status (activate/deactivate)
+     * Update user status
      */
     public function updateStatus(Request $request, $id)
     {
@@ -363,7 +437,6 @@ class UserController extends Controller
 
             $user = User::findOrFail($id);
 
-            // Prevent deactivating own account
             if ($user->user_id == auth()->id() && $request->status === 'inactive') {
                 return response()->json([
                     'success' => false,
@@ -376,7 +449,6 @@ class UserController extends Controller
             if ($request->status === 'inactive') {
                 $user->deactivated_at = now();
                 $user->deactivated_by = auth()->id();
-                // Revoke all tokens when deactivating
                 $user->tokens()->delete();
             } else {
                 $user->deactivated_at = null;
@@ -402,21 +474,19 @@ class UserController extends Controller
     }
 
     /**
-     * Reset user password (admin action)
+     * Reset user password
      */
     public function resetPassword($id)
     {
         try {
             $user = User::findOrFail($id);
             
-            // Generate temporary password
             $tempPassword = Str::random(10);
             
             $user->password_hash = Hash::make($tempPassword);
             $user->password_changed_at = now();
             $user->save();
             
-            // Force logout from all devices
             $user->tokens()->delete();
             
             return response()->json([
@@ -474,7 +544,6 @@ class UserController extends Controller
 
     /**
      * Get active drivers for department staff
-     * ✅ Updated for new roles
      */
     public function getActiveDrivers(Request $request)
     {
@@ -523,7 +592,7 @@ class UserController extends Controller
     {
         $labels = [
             'gso_office' => 'GSO Office',
-            'mayors_office' => "Mayor's Office",
+            'mayors_office' => "Disbursing Officer",
             'driver' => 'Driver',
         ];
         
@@ -538,7 +607,6 @@ class UserController extends Controller
         try {
             $user = $request->user();
             
-            // ✅ Only GSO Office can upload signatures
             if (!$user->isGsoOffice()) {
                 return response()->json(['message' => 'Unauthorized. Only GSO Office can upload signatures.'], 403);
             }
@@ -553,12 +621,10 @@ class UserController extends Controller
                 return response()->json(['errors' => $validator->errors()], 422);
             }
             
-            // Store signature file
             $file = $request->file('signature');
             $filename = 'signature_' . $id . '_' . time() . '.' . $file->getClientOriginalExtension();
             $path = $file->storeAs('signatures', $filename, 'public');
             
-            // Update users table directly
             $targetUser->esignature_path = $path;
             $targetUser->esignature_hash = hash('sha256', file_get_contents($file->getRealPath()));
             $targetUser->save();
@@ -582,7 +648,6 @@ class UserController extends Controller
     
     /**
      * Get user's active signature
-     * ✅ Updated: Allow GSO Office to view signatures
      */
     public function getSignature($id)
     {
@@ -689,6 +754,33 @@ class UserController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to get signature'
+            ], 500);
+        }
+    }
+
+    /**
+     * ✅ Get available roles for a department (for frontend)
+     */
+    public function getAvailableRolesForDepartment($departmentId)
+    {
+        try {
+            $roles = $this->getAvailableRoles($departmentId);
+            
+            $roleLabels = array_map(function($role) {
+                return [
+                    'value' => $role,
+                    'label' => $this->getRoleLabel($role),
+                ];
+            }, $roles);
+
+            return response()->json([
+                'success' => true,
+                'data' => $roleLabels,
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to get available roles: ' . $e->getMessage()
             ], 500);
         }
     }

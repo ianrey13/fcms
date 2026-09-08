@@ -234,12 +234,16 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
                     href: "/gso/dashboard",
                     icon: LayoutDashboard,
                 },
-                { name: "All Trips", href: "/gso/all-trips", icon: FileText },
-                {
-                    name: "Trip History",
-                    href: "/gso/trip-history",
-                    icon: History,
-                },
+                // { 
+                //     name: "All Trips",
+                //      href: "/gso/all-trips", 
+                //      icon: FileText
+                //      },
+                // {
+                //     name: "Trip History",
+                //     href: "/gso/trip-history",
+                //     icon: History,
+                // },
                 {
                     name: "Live Tracking",
                     href: "/gso/live-tracking",
@@ -250,27 +254,12 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
                     href: "/gso/fuel-receipts",
                     icon: Receipt,
                 },
-                {
-                    name: "Reports",
-                    icon: FileBarChart,
-                    submenu: [
-                        {
+                 {
                             name: "Fuel Consumption Report",
                             href: "/gso/reports",
                             icon: Receipt,
                         },
-                        {
-                            name: "Weekly Monitoring",
-                            href: "/gso/reports/weekly-monitoring",
-                            icon: Calendar,
-                        },
-                        {
-                            name: "Fuel Without Trip",
-                            href: "/gso/reports/fuel-without-trip",
-                            icon: AlertTriangle,
-                        },
-                    ],
-                },
+            
                 {
                     name: "Administration",
                     icon: Settings,
@@ -325,7 +314,7 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
                             href: "/mo/receipt-verification",
                             icon: Receipt,
                         },
-                         {
+                        {
                             name: "Fund Release History",
                             href: "/mo/fund-release-history",
                             icon: DollarSign,
@@ -351,30 +340,14 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
                             href: "/mo/weekly-tracking",
                             icon: CalendarRange,
                         },
-                       
                     ],
                 },
-                {
-                    name: "Reports",
-                    icon: FileBarChart,
-                    submenu: [
-                        {
-                            name: "Weekly Monitoring",
-                            href: "/mo/reports/weekly-monitoring",
-                            icon: Calendar,
-                        },
-                        {
-                            name: "Fuel Without Trip",
-                            href: "/mo/reports/fuel-without-trip",
-                            icon: AlertTriangle,
-                        },
-                        {
+                 {
                             name: "Fuel Reports",
                             href: "/mo/reports",
                             icon: Receipt,
                         },
-                    ],
-                },
+               
             ],
             driver: [
                 {

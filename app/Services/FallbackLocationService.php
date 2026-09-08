@@ -427,8 +427,21 @@ class FallbackLocationService
             }
         }
 
-        // Sort by distance (closest first)
-        usort($results, function($a, $b) {
+        // Sort by relevance first (exact matches), then by distance
+        usort($results, function($a, $b) use ($query) {
+            $aName = strtolower($a['description'] ?? '');
+            $bName = strtolower($b['description'] ?? '');
+            $queryLower = strtolower($query);
+            
+            // Exact match gets highest priority
+            $aExact = strpos($aName, $queryLower) === 0 ? 1 : 0;
+            $bExact = strpos($bName, $queryLower) === 0 ? 1 : 0;
+            
+            if ($aExact !== $bExact) {
+                return $bExact - $aExact;
+            }
+            
+            // Then sort by distance
             return ($a['distance_km'] ?? 999) <=> ($b['distance_km'] ?? 999);
         });
 
@@ -447,7 +460,8 @@ class FallbackLocationService
     }
 
     /**
-     * Calculate distance between two locations using fallback data
+     * Calculate distance between two locations using Haversine formula
+     * ✅ Updated to use actual coordinate-based distance
      */
     public function calculateDistance($origin, $destination)
     {
@@ -456,7 +470,6 @@ class FallbackLocationService
         // Find origin
         $originData = $this->findLocation($origin);
         if (!$originData) {
-            // Try harder to find origin
             $originData = $this->findLocationByPartialMatch($origin);
             if (!$originData) {
                 Log::warning('Origin not found in fallback data', ['origin' => $origin]);
@@ -480,24 +493,55 @@ class FallbackLocationService
             }
         }
 
-        $distanceKm = $destData['distance_km'] ?? 35.0;
+        // ✅ Calculate actual distance using Haversine formula
+        $distanceKm = $this->haversineDistance(
+            $originData['lat'], $originData['lng'],
+            $destData['lat'], $destData['lng']
+        );
+        
+        // If Haversine gives 0, use stored distance as fallback
+        if ($distanceKm < 0.1) {
+            $distanceKm = $destData['distance_km'] ?? 35.0;
+        }
+        
         $durationMinutes = round($distanceKm / 40 * 60, 1);
 
         Log::info('Fallback distance calculated', [
             'origin' => $originData['name'],
             'destination' => $destData['name'],
             'distance_km' => $distanceKm,
-            'duration_minutes' => $durationMinutes
+            'duration_minutes' => $durationMinutes,
+            'source' => 'haversine'
         ]);
 
         return [
             'success' => true,
-            'distance_km' => $distanceKm,
+            'distance_km' => round($distanceKm, 2),
             'duration_minutes' => $durationMinutes,
             'origin' => $originData['name'] ?? 'Laguindingan Municipal Hall',
             'destination' => $destData['name'],
-            'source' => 'fallback',
+            'source' => 'haversine',
         ];
+    }
+
+    /**
+     * ✅ Haversine formula for accurate distance calculation
+     * No API needed - pure math!
+     */
+    private function haversineDistance($lat1, $lon1, $lat2, $lon2)
+    {
+        $earthRadius = 6371; // Earth's radius in kilometers
+        
+        $dLat = deg2rad($lat2 - $lat1);
+        $dLon = deg2rad($lon2 - $lon1);
+        
+        $a = sin($dLat / 2) * sin($dLat / 2) +
+             cos(deg2rad($lat1)) * cos(deg2rad($lat2)) *
+             sin($dLon / 2) * sin($dLon / 2);
+        
+        $c = 2 * atan2(sqrt($a), sqrt(1 - $a));
+        
+        return $earthRadius * $c;
     }
 
     /**
@@ -583,5 +627,87 @@ class FallbackLocationService
             'success' => false,
             'message' => 'Location not found in fallback data'
         ];
+    }
+
+    /**
+     * ✅ Calculate complete trip estimate with fuel calculations
+     */
+    public function calculateTripEstimate($originAddress, $destinationAddress, $vehicleId = null, $roundTrip = true)
+    {
+        $result = $this->calculateDistance($originAddress, $destinationAddress);
+        
+        if (!$result['success']) {
+            return $result;
+        }
+
+        // Get vehicle efficiency
+        $efficiency = 10;
+        $fuelType = 'regular';
+        
+        if ($vehicleId) {
+            try {
+                $vehicle = \App\Models\Vehicle::find($vehicleId);
+                if ($vehicle) {
+                    $efficiency = $vehicle->fuel_efficiency ?? 10;
+                    $fuelType = $vehicle->fuel_type ?? 'regular';
+                }
+            } catch (\Exception $e) {
+                Log::error('Error getting vehicle: ' . $e->getMessage());
+            }
+        }
+
+        $fuelPrice = $this->getFuelPrice($fuelType);
+        $multiplier = $roundTrip ? 2 : 1;
+        $distanceKm = $result['distance_km'] * $multiplier;
+        $durationMinutes = $result['duration_minutes'] * $multiplier;
+        $estimatedLiters = round($distanceKm / $efficiency, 2);
+        $estimatedCost = round($estimatedLiters * $fuelPrice, 2);
+
+        // Add 10% buffer
+        $bufferPercentage = 10;
+        $estimatedLitersWithBuffer = round($estimatedLiters * (1 + ($bufferPercentage / 100)), 2);
+        $estimatedCostWithBuffer = round($estimatedCost * (1 + ($bufferPercentage / 100)), 2);
+
+        return [
+            'success' => true,
+            'origin' => $result['origin'],
+            'destination' => $result['destination'],
+            'distance_km' => round($distanceKm, 2),
+            'duration_minutes' => round($durationMinutes, 1),
+            'estimated_liters' => $estimatedLitersWithBuffer,
+            'estimated_cost' => $estimatedCostWithBuffer,
+            'fuel_efficiency_km_per_liter' => $efficiency,
+            'fuel_price_per_liter' => $fuelPrice,
+            'fuel_type' => $fuelType,
+            'is_round_trip' => $roundTrip,
+            'one_way_distance_km' => $result['distance_km'],
+            'one_way_duration_minutes' => $result['duration_minutes'],
+            'round_trip_multiplier' => $multiplier,
+            'buffer_percentage' => $bufferPercentage,
+            'source' => 'fallback',
+        ];
+    }
+
+    /**
+     * Get fuel price from system settings
+     */
+    private function getFuelPrice($fuelType = null)
+    {
+        $fuelPriceMap = [
+            'diesel' => 'diesel_price_per_liter',
+            'premium' => 'premium_price_per_liter',
+            'regular' => 'regular_price_per_liter',
+            'gasoline' => 'regular_price_per_liter',
+        ];
+        
+        $settingKey = $fuelPriceMap[strtolower($fuelType)] ?? 'regular_price_per_liter';
+        
+        try {
+            $setting = \App\Models\SystemSetting::where('setting_key', $settingKey)->first();
+            return $setting ? (float) $setting->setting_value : 75.00;
+        } catch (\Exception $e) {
+            Log::error('Error getting fuel price: ' . $e->getMessage());
+            return 75.00;
+        }
     }
 }

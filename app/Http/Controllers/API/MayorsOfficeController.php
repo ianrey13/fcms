@@ -291,7 +291,7 @@ private function getWeeklyRemainingBudget($departmentId)
     }
 
 /**
- * Approve ticket and release funds (Updated with Annual Budget + Cross-Department)
+ * Approve ticket and release funds and gaslip generation
  */
 public function approveTicket(Request $request, $id)
 {
@@ -329,7 +329,7 @@ public function approveTicket(Request $request, $id)
         $crossDepartmentReason = $request->cross_department_reason ?? null;
         $isMoFundedTicket = $ticket->created_by_mo_user_id !== null;
 
-        // ✅ NEW VALIDATION: Cross-department with same department
+        
         if ($isCrossDepartment && $chargeDepartmentId == $ticket->department_id) {
             return response()->json([
                 'success' => false,
@@ -337,7 +337,7 @@ public function approveTicket(Request $request, $id)
             ], 422);
         }
 
-        // ✅ NEW VALIDATION: Cross-department requires a reason
+      
         if ($isCrossDepartment && empty($crossDepartmentReason)) {
             return response()->json([
                 'success' => false,
@@ -351,7 +351,7 @@ public function approveTicket(Request $request, $id)
         $weeklyRemaining = 0;
         $annualRemaining = 0;
 
-        // ✅ CHECK AND DEDUCT BUDGET
+        //  CHECK AND DEDUCT BUDGET
         if (!$isMoFundedTicket) {
             $weeklyRemaining = $this->getWeeklyRemainingBudget($chargeDepartmentId);
             $annualRemaining = $this->budgetService->getRemainingBudget($chargeDepartmentId);
@@ -411,7 +411,7 @@ public function approveTicket(Request $request, $id)
 
         DB::beginTransaction();
 
-        // ✅ STEP 1: Create GasSlip using DB facade
+        //  Create GasSlip 
         $gasSlipData = [
             'trip_ticket_id' => $id,
             'created_by' => $user->user_id,
@@ -429,12 +429,12 @@ public function approveTicket(Request $request, $id)
 
         $gasSlipId = DB::table('gas_slip')->insertGetId($gasSlipData);
 
-        // ✅ If insertGetId returns 0, try getting the ID manually
+        // 
         if ($gasSlipId == 0) {
             $gasSlipId = DB::getPdo()->lastInsertId();
         }
 
-        // ✅ If still 0, query the database
+        //
         if ($gasSlipId == 0) {
             $record = DB::table('gas_slip')
                 ->where('trip_ticket_id', $id)
@@ -446,7 +446,7 @@ public function approveTicket(Request $request, $id)
             }
         }
 
-        // ✅ If gas_slip_id is still 0, throw exception
+        
         if ($gasSlipId == 0) {
             Log::error('❌ GasSlip creation failed - ID is: ' . $gasSlipId);
             Log::error('❌ GasSlip Data:', $gasSlipData);
@@ -455,7 +455,7 @@ public function approveTicket(Request $request, $id)
 
         Log::info('✅ GasSlip created - ID: ' . $gasSlipId . ' for trip: ' . $id);
 
-        // ✅ STEP 2: Create CrossDepartmentUsage ONLY AFTER gas slip is created
+       
         if ($isCrossDepartment) {
             $crossData = [
                 'from_department_id' => $ticket->department_id,

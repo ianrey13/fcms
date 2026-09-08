@@ -2,7 +2,13 @@
 import React, { useState, useMemo, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useOptimizedQuery } from "../../hooks/useOptimizedQuery";
+import {
+    SkeletonPage,
+    SkeletonStats,
+    SkeletonTable,
+} from "../../components/ui/SkeletonCard";
 import {
     gsoAPI,
     userAPI,
@@ -97,7 +103,7 @@ import echo from "../../services/echo";
 import eventBus from "../../utils/eventBus";
 
 // ============================================
-//  MAP IMPORTS
+// MAP IMPORTS
 // ============================================
 
 import {
@@ -111,7 +117,6 @@ import {
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
-// Fix for default markers in React-Leaflet
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
     iconRetinaUrl:
@@ -162,7 +167,6 @@ const getStatusConfig = (status) => {
             label: "Pending Validation",
             icon: FileCheck,
         },
-        // ✅ FIXED: Add 'completed' status for validation tab
         completed: {
             color: "bg-amber-500",
             label: "Ready for Validation",
@@ -784,7 +788,7 @@ const StatsCard = ({
 };
 
 // ============================================
-// TICKET TABLE COMPONENT (UPDATED)
+// TICKET TABLE COMPONENT
 // ============================================
 
 const TicketTable = ({
@@ -858,7 +862,6 @@ const TicketTable = ({
                 <TableBody>
                     {tickets.map((ticket, index) => {
                         const ticketId = getTicketId(ticket);
-                        // ✅ Check if trip needs validation (completed OR pending_gso_validation)
                         const needsValidation =
                             ticket?.status === "pending_gso_validation" ||
                             ticket?.status === "completed";
@@ -919,7 +922,6 @@ const TicketTable = ({
                                                     <Eye className="h-4 w-4" />
                                                 </Button>
                                             )}
-                                            {/* ✅ Show validate for BOTH completed AND pending_gso_validation */}
                                             {showValidate &&
                                                 needsValidation && (
                                                     <Button
@@ -995,14 +997,14 @@ const GsoDashboard = () => {
             .replace("PNP - ", "") || "General Services Office";
 
     // ============================================
-    // QUERIES
+    // OPTIMIZED QUERIES
     // ============================================
 
     const {
         data: auditLogs = [],
         isLoading: auditLoading,
         refetch: refetchAudit,
-    } = useQuery({
+    } = useOptimizedQuery({
         queryKey: ["audit-logs"],
         queryFn: async () => {
             try {
@@ -1013,8 +1015,9 @@ const GsoDashboard = () => {
                 return [];
             }
         },
-        refetchInterval: 10000,
+        refetchInterval: 30000,
         enabled: showAuditLog,
+        staleTime: 30000,
     });
 
     const {
@@ -1022,7 +1025,7 @@ const GsoDashboard = () => {
         isLoading: gpsLoading,
         refetch: refetchGps,
         isFetching: gpsFetching,
-    } = useQuery({
+    } = useOptimizedQuery({
         queryKey: ["gps-active-trips"],
         queryFn: async () => {
             try {
@@ -1033,7 +1036,7 @@ const GsoDashboard = () => {
                 return [];
             }
         },
-        refetchInterval: 10000,
+        refetchInterval: 15000,
         staleTime: 5000,
     });
 
@@ -1041,7 +1044,7 @@ const GsoDashboard = () => {
         data: pendingTickets = [],
         isLoading: pendingLoading,
         refetch: refetchPending,
-    } = useQuery({
+    } = useOptimizedQuery({
         queryKey: ["gso-pending-mo"],
         queryFn: async () => {
             try {
@@ -1053,15 +1056,14 @@ const GsoDashboard = () => {
                 return [];
             }
         },
+        staleTime: 60000,
     });
-
-    // ❌ REMOVED: returnedTickets query (no longer needed)
 
     const {
         data: pendingValidation = [],
         isLoading: validationLoading,
         refetch: refetchValidation,
-    } = useQuery({
+    } = useOptimizedQuery({
         queryKey: ["gso-pending-validation"],
         queryFn: async () => {
             try {
@@ -1073,13 +1075,14 @@ const GsoDashboard = () => {
                 return [];
             }
         },
+        staleTime: 60000,
     });
 
     const {
         data: allTrips = [],
         isLoading: allTripsLoading,
         refetch: refetchAllTrips,
-    } = useQuery({
+    } = useOptimizedQuery({
         queryKey: ["gso-all-trips"],
         queryFn: async () => {
             try {
@@ -1091,9 +1094,11 @@ const GsoDashboard = () => {
                 return [];
             }
         },
+        staleTime: 60000,
+        keepPreviousData: true,
     });
 
-    const { data: users = [], isLoading: usersLoading } = useQuery({
+    const { data: users = [], isLoading: usersLoading } = useOptimizedQuery({
         queryKey: ["admin-users-stats"],
         queryFn: async () => {
             try {
@@ -1103,9 +1108,10 @@ const GsoDashboard = () => {
                 return [];
             }
         },
+        staleTime: 120000,
     });
 
-    const { data: vehicles = [], isLoading: vehiclesLoading } = useQuery({
+    const { data: vehicles = [], isLoading: vehiclesLoading } = useOptimizedQuery({
         queryKey: ["admin-vehicles-stats"],
         queryFn: async () => {
             try {
@@ -1115,9 +1121,10 @@ const GsoDashboard = () => {
                 return [];
             }
         },
+        staleTime: 120000,
     });
 
-    const { data: departments = [], isLoading: departmentsLoading } = useQuery({
+    const { data: departments = [], isLoading: departmentsLoading } = useOptimizedQuery({
         queryKey: ["admin-departments-stats"],
         queryFn: async () => {
             try {
@@ -1127,6 +1134,7 @@ const GsoDashboard = () => {
                 return [];
             }
         },
+        staleTime: 120000,
     });
 
     // ============================================
@@ -1263,7 +1271,6 @@ const GsoDashboard = () => {
         () => filterTickets(pendingTickets),
         [pendingTickets, searchQuery],
     );
-    // ❌ REMOVED: filteredReturned
     const filteredAllTrips = useMemo(
         () => filterTickets(allTrips),
         [allTrips, searchQuery],
@@ -1374,7 +1381,7 @@ const GsoDashboard = () => {
     };
 
     // ============================================
-    // WEBSOCKET: Real-time updates for dashboard
+    // WEBSOCKET REAL-TIME UPDATES
     // ============================================
 
     useEffect(() => {
@@ -1385,25 +1392,20 @@ const GsoDashboard = () => {
             return;
         }
 
-        console.log("📊 Setting up GSO dashboard WebSocket...");
-
         const channel = echo.channel("gso-live-tracking");
 
         channel.listen(".location.updated", (data) => {
-            console.log("📍 Dashboard: Location updated", data);
             setForceUpdate((prev) => prev + 1);
             const timer = setTimeout(() => fetchAllData(), 1000);
             return () => clearTimeout(timer);
         });
 
         channel.listen(".trip.completed", (data) => {
-            console.log("🏁 Dashboard: Trip completed", data);
             toast.success(`Trip ${data.trip_id || "unknown"} completed`);
             fetchAllData();
         });
 
         channel.listen(".trip.started", (data) => {
-            console.log("🚗 Dashboard: Trip started", data);
             toast.info(`Trip ${data.trip_id || "unknown"} started`);
             fetchAllData();
         });
@@ -1424,7 +1426,7 @@ const GsoDashboard = () => {
     }, [user]);
 
     // ============================================
-    // LOADING STATE
+    // LOADING STATE WITH SKELETON
     // ============================================
 
     const isLoading =
@@ -1432,12 +1434,9 @@ const GsoDashboard = () => {
 
     if (isLoading && allTrips.length === 0 && activeTrips.length === 0) {
         return (
-            <div className="flex items-center justify-center h-96">
-                <div className="text-center">
-                    <Loader2 className="h-12 w-12 animate-spin text-blue-600 dark:text-blue-400 mx-auto mb-4" />
-                    <p className="text-slate-500 dark:text-slate-400">
-                        Loading dashboard data...
-                    </p>
+            <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
+                <div className="p-4 md:p-6">
+                    <SkeletonPage />
                 </div>
             </div>
         );
@@ -1652,7 +1651,7 @@ const GsoDashboard = () => {
                 />
             </div>
 
-            {/* Tabs for Trip Management - Removed "Returned" tab */}
+            {/* Tabs for Trip Management */}
             <Tabs
                 value={activeTab}
                 onValueChange={setActiveTab}
@@ -1760,7 +1759,7 @@ const GsoDashboard = () => {
                     </Card>
                 </TabsContent>
 
-                {/* Validation Tab - Shows both completed and pending_gso_validation */}
+                {/* Validation Tab */}
                 <TabsContent value="validation" className="space-y-4 mt-6">
                     <Card className="dark:bg-slate-800/80 dark:border-slate-700">
                         <CardHeader className="border-b dark:border-slate-700">
@@ -1797,8 +1796,6 @@ const GsoDashboard = () => {
                     </Card>
                 </TabsContent>
             </Tabs>
-
-            {/* ❌ REMOVED: Returned Tab */}
 
             {/* Audit Log Section */}
             <Card className="dark:bg-slate-800/80 dark:border-slate-700">
@@ -1857,7 +1854,7 @@ const GsoDashboard = () => {
                 )}
             </Card>
 
-            {/* Validation Dialog - Only Close, No Reject */}
+            {/* Validation Dialog */}
             <Dialog
                 open={showValidateDialog}
                 onOpenChange={setShowValidateDialog}
@@ -1876,7 +1873,6 @@ const GsoDashboard = () => {
                         </DialogDescription>
                     </DialogHeader>
 
-                    {/* Trip Details */}
                     <div className="bg-blue-50 dark:bg-blue-950/30 rounded-xl p-4 space-y-2 border border-blue-200 dark:border-blue-800">
                         <p className="text-sm font-medium text-blue-800 dark:text-blue-400">
                             Trip Details
@@ -1937,7 +1933,6 @@ const GsoDashboard = () => {
                         </div>
                     </div>
 
-                    {/* Validation Note Input */}
                     <div className="space-y-2">
                         <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
                             Closing Note (Optional)

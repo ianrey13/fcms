@@ -1,192 +1,190 @@
 <?php
 
-return [
-    /*
-    |--------------------------------------------------------------------------
-    | FCMS Location Database
-    |--------------------------------------------------------------------------
-    | This file contains all pre-calculated distances from LGU Laguindingan
-    | Based on actual Excel records and verified routes
-    | Last Updated: May 1, 2026
-    */
-    
-    // Origin point (LGU Building Laguindingan - Poblacion)
-    'origin' => [
-        'name' => 'LGU  Laguindingan',
-        'address' => 'Poblacion, Laguindingan, Misamis Oriental',
-        'coordinates' => [124.4432, 8.5731], 
-        'lat' => 8.5731,
-        'lng' => 124.4432,
-    ],
-    
-    // Barangays of Laguindingan with accurate coordinates
-    'barangays' => [
-        'poblacion' => [
-            'name' => 'Poblacion', 
-            'distance_km' => 0,
-            'coordinates' => [124.4432, 8.5731],
-            'lat' => 8.5731,
-            'lng' => 124.4432,
-            'description' => 'Municipal Hall / Town Center'
-        ],
-        'sinai' => [
-            'name' => 'Sinai', 
-            'distance_km' => 2.4,
-            'coordinates' => [124.4282, 8.5781],
-            'lat' => 8.5781,
-            'lng' => 124.4282,
-            'description' => 'Western barangay'
-        ],
-        'gasi' => [
-            'name' => 'Gasi', 
-            'distance_km' => 3.0,
-            'coordinates' => [124.4428, 8.5858],
-            'lat' => 8.5858,
-            'lng' => 124.4428,
-            'description' => 'Northern barangay'
-        ],
-        'aromahon' => [
-            'name' => 'Aromahon', 
-            'distance_km' => 2.9,
-            'coordinates' => [124.4251, 8.5679],
-            'lat' => 8.5679,
-            'lng' => 124.4251,
-            'description' => 'Southwestern barangay'
-        ],
-        'kibaghot' => [
-            'name' => 'Kibaghot', 
-            'distance_km' => 3.0,
-            'coordinates' => [124.4525, 8.5892],
-            'lat' => 8.5892,
-            'lng' => 124.4525,
-            'description' => 'Northeastern barangay'
-        ],
-        'lapad' => [
-            'name' => 'Lapad', 
-            'distance_km' => 2.8,
-            'coordinates' => [124.4311, 8.5523],
-            'lat' => 8.5523,
-            'lng' => 124.4311,
-            'description' => 'Southern barangay'
-        ],
-        'liberty' => [
-            'name' => 'Liberty', 
-            'distance_km' => 4.6,
-            'coordinates' => [124.4411, 8.5984],
-            'lat' => 8.5984,
-            'lng' => 124.4411,
-            'description' => 'Northern barangay'
-        ],
-        'mauswagon' => [
-            'name' => 'Mauswagon', 
-            'distance_km' => 5.1,
-            'coordinates' => [124.4147, 8.5996],
-            'lat' => 8.5996,
-            'lng' => 124.4147,
-            'description' => 'Northwestern barangay'
-        ],
-        'moog' => [
-            'name' => 'Moog', 
-            'distance_km' => 5.8,
-            'coordinates' => [124.4693, 8.6078],
-            'lat' => 8.6078,
-            'lng' => 124.4693,
-            'description' => 'Eastern barangay near airport'
-        ],
-        'tubajon' => [
-            'name' => 'Tubajon', 
-            'distance_km' => 11.5,
-            'coordinates' => [124.4628, 8.6226],
-            'lat' => 8.6226,
-            'lng' => 124.4628,
-            'description' => 'Farthest barangay, northernmost'
-        ],
-    ],
-    
-    // Municipalities with distances (km) from Laguindingan
-    'municipalities' => [
-        // First District - Closest municipalities
-        'alubijid' => ['name' => 'Alubijid', 'distance_km' => 3.7],
-        'gitagum' => ['name' => 'Gitagum', 'distance_km' => 5.6],
-        'opol' => ['name' => 'Opol', 'distance_km' => 17.9],
-        'el salvador' => ['name' => 'El Salvador', 'distance_km' => 10.1],
-        'initao' => ['name' => 'Initao', 'distance_km' => 22.3],
-        'naawan' => ['name' => 'Naawan', 'distance_km' => 31.2],
-        'manticao' => ['name' => 'Manticao', 'distance_km' => 35.1],
-        'lugait' => ['name' => 'Lugait', 'distance_km' => 43.4],
+namespace App\Services;
+
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Cache;
+
+class LocationService
+{
+    protected $nominatimService;
+    protected $fallbackService;
+
+    public function __construct(
+        NominatimService $nominatimService,
+        FallbackLocationService $fallbackService
+    ) {
+        $this->nominatimService = $nominatimService;
+        $this->fallbackService = $fallbackService;
+    }
+
+    /**
+     * Search for places using Nominatim with fallback
+     */
+    public function searchPlaces($query, $limit = 10)
+    {
+        // Try Nominatim first
+        $result = $this->nominatimService->searchPlaces($query, $limit);
         
-        // Second District - Municipalities east of Laguindingan
-        'cagayan de oro' => ['name' => 'Cagayan de Oro', 'distance_km' => 29.0],
-        'cdo' => ['name' => 'Cagayan de Oro', 'distance_km' => 29.0],
-        'tagoloan' => ['name' => 'Tagoloan', 'distance_km' => 46.0],
-        'villanueva' => ['name' => 'Villanueva', 'distance_km' => 52.2],
-        'jasaan' => ['name' => 'Jasaan', 'distance_km' => 62.1],
-        'salay' => ['name' => 'Salay', 'distance_km' => 98.0],
-        'balingasag' => ['name' => 'Balingasag', 'distance_km' => 78.5],
-        'lagonglong' => ['name' => 'Lagonglong', 'distance_km' => 84.6],
+        // If Nominatim returns results, use them
+        if ($result['success'] && !empty($result['predictions'])) {
+            return $result;
+        }
         
-        // Third District - Municipalities east of Balingasag
-        'balingoan' => ['name' => 'Balingoan', 'distance_km' => 125.0],
-        'talisayan' => ['name' => 'Talisayan', 'distance_km' =>127.0],
-        'kinoguitan' => ['name' => 'Kinoguitan', 'distance_km' => 112.0],
-        'medina' => ['name' => 'Medina', 'distance_km' => 139.0],
-        'claveria' => ['name' => 'Claveria', 'distance_km' => 71.2],
-        'sugbongcogon' => ['name' => 'Sugbongcogon', 'distance_km' => 103.0],
+        // Otherwise use fallback
+        Log::info('Nominatim returned no results, using fallback', ['query' => $query]);
+        return $this->fallbackService->searchPlaces($query);
+    }
+
+    /**
+     * Calculate distance between two locations
+     */
+    public function calculateDistance($originAddress, $destinationAddress, $vehicleId = null)
+    {
+        // Try Nominatim first
+        $result = $this->nominatimService->calculateDistance($originAddress, $destinationAddress);
         
-        // Other municipalities
-        'libertad' => ['name' => 'Libertad', 'distance_km' => 12.1],
-        'magsaysay' => ['name' => 'Magsaysay', 'distance_km' => 159.0],
-    ],
-    
-    // Major cities outside Misamis Oriental
-    'major_cities' => [
-        'butuan' => ['name' => 'Butuan City', 'distance_km' => 202, 'province' => 'Agusan del Norte'],
-        'surigao' => ['name' => 'Surigao City', 'distance_km' => 322, 'province' => 'Surigao del Norte'],
-        'malaybalay' => ['name' => 'Malaybalay City', 'distance_km' => 123, 'province' => 'Bukidnon'],
-        'valencia' => ['name' => 'Valencia City', 'distance_km' => 154, 'province' => 'Bukidnon'],
-        'iligan' => ['name' => 'Iligan City', 'distance_km' => 88.5, 'province' => 'Lanao del Norte'],
-        'ozamiz' => ['name' => 'Ozamiz City', 'distance_km' => 118, 'province' => 'Misamis Occidental'],
-        'cotabato' => ['name' => 'Cotabato City', 'distance_km' => 263, 'province' => 'Maguindanao'],
-        'davao' => ['name' => 'Davao City', 'distance_km' => 317, 'province' => 'Davao del Sur'],
-        'zamboanga' => ['name' => 'Zamboanga City', 'distance_km' => 465, 'province' => 'Zamboanga del Sur'],
-        'gensan' => ['name' => 'General Santos City', 'distance_km' => 395, 'province' => 'South Cotabato'],
-    ],
-    
-    // Fuel consumption rates (L/km) by vehicle type
-    'fuel_rates' => [
-        // Cars
-        'car' => 0.12,
-        'car_diesel' => 0.12,
-        'car_gasoline' => 0.11,
-        'car_premium' => 0.10,
-        'car_regular' => 0.11,
+        if ($result['success']) {
+            return $result;
+        }
         
-        // Trucks
-        'truck' => 0.15,
-        'truck_diesel' => 0.15,
-        'cargo_truck' => 0.18,
-        'dump_truck' => 0.20,
+        // Fallback to local data
+        Log::info('Nominatim distance failed, using fallback', [
+            'origin' => $originAddress,
+            'destination' => $destinationAddress
+        ]);
+        return $this->fallbackService->calculateDistance($originAddress, $destinationAddress);
+    }
+
+    /**
+     * Geocode an address
+     */
+    public function geocode($address)
+    {
+        $result = $this->nominatimService->geocode($address);
         
-        // Special vehicles
-        'motorcycle' => 0.08,
-        'van' => 0.13,
-        'ambulance' => 0.18,
-        'suv' => 0.14,
-        'pickup' => 0.13,
+        if ($result['success']) {
+            return $result;
+        }
         
-        // Default
-        'default' => 0.12,
-    ],
-    
-    // Travel settings
-    'travel' => [
-        'average_speed_kmh' => 40,    
-        'average_speed_highway_kmh' => 60,  
-        'round_trip_default' => true,  
-        'buffer_percentage' => 10,     
-    ],
-    
-    // Version tracking for future updates
-    'version' => '1.0.0',
-    'last_updated' => '2026-05-01',
-];
+        return $this->fallbackService->geocode($address);
+    }
+
+    /**
+     * Reverse geocode coordinates to address
+     */
+    public function reverseGeocode($lat, $lng)
+    {
+        $result = $this->nominatimService->reverseGeocode($lat, $lng);
+        
+        if ($result['success']) {
+            return $result;
+        }
+        
+        return [
+            'success' => false,
+            'message' => 'Reverse geocoding failed'
+        ];
+    }
+
+    /**
+     * Calculate complete trip estimate
+     */
+    public function calculateTripEstimate($originAddress, $destinationAddress, $vehicleId = null, $roundTrip = true)
+    {
+        // Try Nominatim first
+        $result = $this->nominatimService->calculateTripEstimate(
+            $originAddress, 
+            $destinationAddress, 
+            $vehicleId, 
+            $roundTrip
+        );
+        
+        if ($result['success']) {
+            return $result;
+        }
+        
+        // Fallback to local calculation
+        Log::info('Nominatim trip estimate failed, using fallback', [
+            'origin' => $originAddress,
+            'destination' => $destinationAddress
+        ]);
+        
+        // Get distance from fallback
+        $distanceResult = $this->fallbackService->calculateDistance($originAddress, $destinationAddress);
+        
+        if (!$distanceResult['success']) {
+            return ['success' => false, 'message' => 'Unable to calculate distance'];
+        }
+
+        // Get vehicle efficiency
+        $efficiency = 10;
+        $fuelType = 'regular';
+        
+        if ($vehicleId) {
+            try {
+                $vehicle = \App\Models\Vehicle::find($vehicleId);
+                if ($vehicle) {
+                    $efficiency = $vehicle->fuel_efficiency ?? 10;
+                    $fuelType = $vehicle->fuel_type ?? 'regular';
+                }
+            } catch (\Exception $e) {
+                Log::error('Error getting vehicle: ' . $e->getMessage());
+            }
+        }
+
+        $fuelPrice = $this->getFuelPrice($fuelType);
+        $multiplier = $roundTrip ? 2 : 1;
+        $distanceKm = $distanceResult['distance_km'] * $multiplier;
+        $durationMinutes = $distanceResult['duration_minutes'] * $multiplier;
+        $estimatedLiters = round($distanceKm / $efficiency, 2);
+        $estimatedCost = round($estimatedLiters * $fuelPrice, 2);
+
+        // Add 10% buffer
+        $bufferPercentage = 10;
+        $estimatedLitersWithBuffer = round($estimatedLiters * (1 + ($bufferPercentage / 100)), 2);
+        $estimatedCostWithBuffer = round($estimatedCost * (1 + ($bufferPercentage / 100)), 2);
+
+        return [
+            'success' => true,
+            'origin' => $distanceResult['origin'] ?? $originAddress,
+            'destination' => $distanceResult['destination'] ?? $destinationAddress,
+            'distance_km' => round($distanceKm, 2),
+            'duration_minutes' => round($durationMinutes, 1),
+            'estimated_liters' => $estimatedLitersWithBuffer,
+            'estimated_cost' => $estimatedCostWithBuffer,
+            'fuel_efficiency_km_per_liter' => $efficiency,
+            'fuel_price_per_liter' => $fuelPrice,
+            'fuel_type' => $fuelType,
+            'is_round_trip' => $roundTrip,
+            'one_way_distance_km' => $distanceResult['distance_km'],
+            'one_way_duration_minutes' => $distanceResult['duration_minutes'],
+            'round_trip_multiplier' => $multiplier,
+            'buffer_percentage' => $bufferPercentage,
+            'source' => 'fallback',
+        ];
+    }
+
+    /**
+     * Get fuel price from system settings
+     */
+    private function getFuelPrice($fuelType = null)
+    {
+        $fuelPriceMap = [
+            'diesel' => 'diesel_price_per_liter',
+            'premium' => 'premium_price_per_liter',
+            'regular' => 'regular_price_per_liter',
+            'gasoline' => 'regular_price_per_liter',
+        ];
+        
+        $settingKey = $fuelPriceMap[strtolower($fuelType)] ?? 'regular_price_per_liter';
+        
+        try {
+            $setting = \App\Models\SystemSetting::where('setting_key', $settingKey)->first();
+            return $setting ? (float) $setting->setting_value : 75.00;
+        } catch (\Exception $e) {
+            Log::error('Error getting fuel price: ' . $e->getMessage());
+            return 75.00;
+        }
+    }
+}

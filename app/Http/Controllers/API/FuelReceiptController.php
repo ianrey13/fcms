@@ -16,17 +16,17 @@ use Illuminate\Support\Facades\Validator;
 class FuelReceiptController extends Controller  
 {
     /**
-     * Upload receipt photo (mandatory gate)
-     * POST /api/fuel-receipts/upload/{gasSlipId}
+     * Upload receipt photo 
+     *
      */
     public function uploadReceipt(Request $request, $gasSlipId)
     {
         $validator = Validator::make($request->all(), [
-            'receipt_photo' => 'required|image|max:5120', // 5MB max
+            'receipt_photo' => 'required|image|max:5120', 
             'liters_availed' => 'required|numeric|min:0.01',
             'amount_on_receipt' => 'required|numeric|min:0.01',
-            'odometer_start' => 'nullable|integer|min:0',  // ✅ Fixed field name
-            'odometer_end' => 'nullable|integer|min:0',    // ✅ Fixed field name
+            'odometer_start' => 'nullable|integer|min:0',  
+            'odometer_end' => 'nullable|integer|min:0',    
         ]);
         
         if ($validator->fails()) {
@@ -54,16 +54,16 @@ class FuelReceiptController extends Controller
             // Store the receipt photo
             $photoPath = $request->file('receipt_photo')->store('receipts', 'public');
             
-            // Create or update fuel receipt  // ✅ Changed comment
-            $fuelReceipt = FuelReceipt::updateOrCreate(  // ✅ Changed variable name
+            // Create or update fuel receipt  
+            $fuelReceipt = FuelReceipt::updateOrCreate( 
                 ['gas_slip_id' => $gasSlipId],
                 [
                     'liters_availed' => $request->liters_availed,
                     'amount_on_receipt' => $request->amount_on_receipt,
                     'receipt_photo_path' => $photoPath,
                     'receipt_uploaded_at' => now(),
-                    'odometer_start' => $request->odometer_start,  // ✅ Fixed field
-                    'odometer_end' => $request->odometer_end,      // ✅ Fixed field
+                    'odometer_start' => $request->odometer_start, 
+                    'odometer_end' => $request->odometer_end,     
                     'has_movement_flag' => $request->has('has_movement_flag') ? $request->has_movement_flag : false,
                 ]
             );

@@ -26,7 +26,6 @@ import {
   RefreshCw,
   Loader2,
   Calendar,
-  Trash2,
   CheckCircle,
   XCircle,
   AlertCircle,
@@ -39,7 +38,6 @@ const FiscalYearManagement = () => {
   const queryClient = useQueryClient();
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [newYear, setNewYear] = useState('');
-  const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
 
   // Fetch fiscal years
   const { data, isLoading, refetch } = useQuery({
@@ -74,25 +72,11 @@ const FiscalYearManagement = () => {
       return response.data;
     },
     onSuccess: () => {
-      toast.success('Status updated');
+      toast.success('Status updated successfully');
       queryClient.invalidateQueries(['fiscal-years']);
     },
     onError: (error) => {
       toast.error(error.response?.data?.message || 'Failed to update status');
-    },
-  });
-
-  // Delete mutation
-  const deleteMutation = useMutation({
-    mutationFn: async (id) => {
-      await api.delete(`/admin/fiscal-years/${id}`);
-    },
-    onSuccess: () => {
-      toast.success('Calendar year deleted');
-      queryClient.invalidateQueries(['fiscal-years']);
-    },
-    onError: (error) => {
-      toast.error(error.response?.data?.message || 'Failed to delete fiscal year');
     },
   });
 
@@ -104,18 +88,6 @@ const FiscalYearManagement = () => {
       return;
     }
     addMutation.mutate(year);
-  };
-
-  const handleDelete = (year) => {
-    if (window.confirm(`Delete fiscal year ${year.year}?`)) {
-      deleteMutation.mutate(year.fiscal_year_id);
-    }
-  };
-
-  // Count departments without budget for each year
-  const getDepartmentCount = (year) => {
-    // This would come from API, but for now just show placeholder
-    return '—';
   };
 
   return (
@@ -139,22 +111,7 @@ const FiscalYearManagement = () => {
         </Button>
       </div>
 
-      {/* Info Card */}
-      <Card className="bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800">
-        <CardContent className="pt-6">
-          <div className="flex items-start gap-3">
-            <AlertCircle className="h-5 w-5 text-blue-500 dark:text-blue-400 mt-0.5 flex-shrink-0" />
-            <div className="text-sm text-blue-700 dark:text-blue-300">
-              <p className="font-medium">How it works:</p>
-              <ol className="list-decimal list-inside mt-1 space-y-1">
-                <li>GSO adds fiscal years (e.g., 2026, 2027)</li>
-                <li>Mayor's Office will set the annual budget and weekly ceiling for each department</li>
-                <li>Only active fiscal years are available for budget setting</li>
-              </ol>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+     
 
       {/* Fiscal Years Table */}
       <Card className="dark:bg-slate-800/80 dark:border-slate-700 overflow-hidden">
@@ -191,7 +148,6 @@ const FiscalYearManagement = () => {
                   <TableRow className="bg-slate-50 dark:bg-slate-900/50">
                     <TableHead className="font-semibold">Year</TableHead>
                     <TableHead className="font-semibold">Status</TableHead>
-                    <TableHead className="font-semibold">Departments</TableHead>
                     <TableHead className="font-semibold">Created By</TableHead>
                     <TableHead className="font-semibold">Created At</TableHead>
                     <TableHead className="text-right font-semibold">Actions</TableHead>
@@ -221,14 +177,7 @@ const FiscalYearManagement = () => {
                           )}
                         </Badge>
                       </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1">
-                          <Building2 className="h-3 w-3 text-slate-400" />
-                          <span className="text-slate-600 dark:text-slate-400">
-                            {getDepartmentCount(year)}
-                          </span>
-                        </div>
-                      </TableCell>
+                   
                       <TableCell className="text-slate-600 dark:text-slate-400">
                         {year.creator?.full_name || 'System'}
                       </TableCell>
@@ -250,15 +199,7 @@ const FiscalYearManagement = () => {
                           >
                             {year.is_active ? 'Deactivate' : 'Activate'}
                           </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleDelete(year)}
-                            className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:text-red-300 dark:hover:bg-red-950/30 h-8 w-8 p-0"
-                            disabled={deleteMutation.isPending}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                          {/* ✅ DELETE BUTTON REMOVED */}
                         </div>
                       </TableCell>
                     </TableRow>

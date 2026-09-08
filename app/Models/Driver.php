@@ -10,13 +10,13 @@ class Driver extends Model
     protected $primaryKey = 'driver_id';
     
     protected $fillable = [
-        'user_id', 'license_number', 'license_expiry', 'status'
+        'user_id',  'status'
     ];
     
     protected $casts = [
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
-        'license_expiry' => 'date',
+        
     ];
     
     // Relationships
@@ -36,8 +36,8 @@ class Driver extends Model
         return $this->status === 'active';
     }
     
-    public function hasValidLicense()
-    {
-        return $this->license_expiry && $this->license_expiry->isFuture();
-    }
+    // public function hasValidLicense()
+    // {
+    //     return $this->license_expiry && $this->license_expiry->isFuture();
+    // }
 }

@@ -1,8 +1,16 @@
 // src/pages/mayor/budget/BudgetAllocation.jsx
 import React, { useState, useEffect, useMemo } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient ,useMutation} from "@tanstack/react-query";
+import { useOptimizedQuery } from "../../../hooks/useOptimizedQuery";
+import {
+    SkeletonPage,
+    SkeletonStats,
+    SkeletonTable,
+    SkeletonCard,
+} from "../../../components/ui/SkeletonCard";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -109,15 +117,14 @@ const DepartmentTooltip = ({ code, name }) => {
                 {code}
             </span>
             {show && (
-                <div className="absolute z-[9999] left-1/2 -translate-x-1/2 bottom-full mb-2 px-3 py-1.5 bg-slate-800 dark:bg-slate-700 text-white text-xs rounded-lg shadow-xl whitespace-nowrap pointer-events-none">
+                <div className="absolute z-[9999] left-0 bottom-full mb-2 px-3 py-1.5 bg-slate-800 dark:bg-slate-700 text-white text-xs rounded-lg shadow-xl whitespace-nowrap pointer-events-none max-w-[300px] overflow-hidden text-ellipsis">
                     {name}
-                    <div className="absolute left-1/2 -translate-x-1/2 top-full border-4 border-transparent border-t-slate-800 dark:border-t-slate-700"></div>
+                    <div className="absolute left-4 top-full border-4 border-transparent border-t-slate-800 dark:border-t-slate-700"></div>
                 </div>
             )}
         </div>
     );
 };
-
 // ============================================
 // FILTER SECTION COMPONENT
 // ============================================
@@ -163,7 +170,6 @@ const FilterSection = ({ filters, setFilters, departments, isFilterOpen, setIsFi
 
             {isFilterOpen && (
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-slate-200 dark:border-slate-700">
-                    {/* Search by Department Name */}
                     <div>
                         <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Search Department</label>
                         <div className="relative mt-1">
@@ -177,7 +183,6 @@ const FilterSection = ({ filters, setFilters, departments, isFilterOpen, setIsFi
                         </div>
                     </div>
 
-                    {/* Department Dropdown */}
                     <div>
                         <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Department</label>
                         <select
@@ -194,7 +199,6 @@ const FilterSection = ({ filters, setFilters, departments, isFilterOpen, setIsFi
                         </select>
                     </div>
 
-                    {/* Allocation Status */}
                     <div>
                         <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Allocation Status</label>
                         <select
@@ -211,7 +215,6 @@ const FilterSection = ({ filters, setFilters, departments, isFilterOpen, setIsFi
                         </select>
                     </div>
 
-                    {/* Budget Range */}
                     <div>
                         <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Budget Range</label>
                         <select
@@ -259,7 +262,6 @@ const BudgetAllocation = () => {
     const [bulkData, setBulkData] = useState({});
     const [isFilterOpen, setIsFilterOpen] = useState(false);
 
-    // Weekly Ceiling state
     const [showWeeklyDialog, setShowWeeklyDialog] = useState(false);
     const [weeklyData, setWeeklyData] = useState({
         department_id: "",
@@ -268,7 +270,6 @@ const BudgetAllocation = () => {
     });
     const [weeklyDepartment, setWeeklyDepartment] = useState(null);
 
-    // ============ FILTERS STATE ============
     const [filters, setFilters] = useState({
         searchTerm: '',
         departmentId: 'all',
@@ -277,11 +278,10 @@ const BudgetAllocation = () => {
     });
 
     // ============================================
-    // QUERIES
+    // OPTIMIZED QUERIES
     // ============================================
 
-    // Fetch active fiscal years
-    const { data: yearsData, isLoading: yearsLoading } = useQuery({
+    const { data: yearsData, isLoading: yearsLoading } = useOptimizedQuery({
         queryKey: ["fiscal-years-active"],
         queryFn: async () => {
             try {
@@ -292,9 +292,10 @@ const BudgetAllocation = () => {
                 return [];
             }
         },
+        staleTime: 5 * 60 * 1000,
+        keepPreviousData: true,
     });
 
-    // Set selected year to 2026 if available
     useEffect(() => {
         if (yearsData && yearsData.length > 0) {
             const has2026 = yearsData.some((y) => y.year === 2026);
@@ -306,14 +307,13 @@ const BudgetAllocation = () => {
         }
     }, [yearsData]);
 
-    // Fetch budget data for selected year
     const {
         data: budgetData,
         isLoading,
         refetch,
         isFetching,
         error: budgetError,
-    } = useQuery({
+    } = useOptimizedQuery({
         queryKey: ["annual-budgets", selectedYear],
         queryFn: async () => {
             try {
@@ -325,6 +325,8 @@ const BudgetAllocation = () => {
             }
         },
         enabled: !!selectedYear,
+        staleTime: 2 * 60 * 1000,
+        keepPreviousData: true,
         retry: 1,
     });
 
@@ -332,7 +334,6 @@ const BudgetAllocation = () => {
     // MUTATIONS
     // ============================================
 
-    // Set budget mutation (Annual Budget only)
     const setBudgetMutation = useMutation({
         mutationFn: async ({ data }) => {
             const response = await api.post("/mayors-office/annual-budgets", {
@@ -352,7 +353,6 @@ const BudgetAllocation = () => {
         },
     });
 
-    // Weekly Ceiling Update Mutation
     const updateWeeklyMutation = useMutation({
         mutationFn: async ({ departmentId, data }) => {
             const response = await api.put(`/mayors-office/budget/weekly/${departmentId}`, {
@@ -377,7 +377,6 @@ const BudgetAllocation = () => {
         },
     });
 
-    // Add Budget Mutation
     const addBudgetMutation = useMutation({
         mutationFn: async (data) => {
             const response = await api.post("/mayors-office/annual-budgets/add", {
@@ -401,7 +400,6 @@ const BudgetAllocation = () => {
         },
     });
 
-    // Bulk update mutation
     const bulkUpdateMutation = useMutation({
         mutationFn: async () => {
             const budgets = Object.entries(bulkData).map(([departmentId, data]) => ({
@@ -458,7 +456,6 @@ const BudgetAllocation = () => {
     const filteredBudgets = useMemo(() => {
         let filtered = [...budgets];
 
-        // Search by department name or code
         if (filters.searchTerm) {
             const search = filters.searchTerm.toLowerCase();
             filtered = filtered.filter(b => 
@@ -467,12 +464,10 @@ const BudgetAllocation = () => {
             );
         }
 
-        // Department filter
         if (filters.departmentId !== 'all') {
             filtered = filtered.filter(b => b.department_id === parseInt(filters.departmentId));
         }
 
-        // Allocation Status filter
         if (filters.allocationStatus !== 'all') {
             filtered = filtered.filter(b => {
                 const annualAmount = b.annual_amount || 0;
@@ -496,7 +491,6 @@ const BudgetAllocation = () => {
             });
         }
 
-        // Budget Range filter
         if (filters.budgetRange !== 'all') {
             filtered = filtered.filter(b => {
                 const amount = b.annual_amount || 0;
@@ -619,7 +613,6 @@ const BudgetAllocation = () => {
         setBulkData({});
     };
 
-    // Initialize bulk data
     useEffect(() => {
         if (budgets.length > 0 && isBulkMode) {
             const initialBulk = {};
@@ -657,13 +650,11 @@ const BudgetAllocation = () => {
 
     if (yearsLoading || isLoading) {
         return (
-            <div className="flex justify-center items-center h-96">
-                <div className="text-center">
-                    <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-500/20">
-                        <Loader2 className="h-8 w-8 text-white animate-spin" />
-                    </div>
-                    <p className="text-slate-600 dark:text-slate-400 font-medium">Loading budget data...</p>
-                    <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">Please wait while we fetch your data</p>
+            <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
+                <div className="p-4 md:p-6">
+                    <SkeletonPage />
+                    <SkeletonStats count={4} />
+                    <SkeletonTable rows={5} cols={8} />
                 </div>
             </div>
         );
@@ -675,7 +666,7 @@ const BudgetAllocation = () => {
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
-            <div className="space-y-6 p-4 md:p-6 animate-fade-in-up">
+            <div className="space-y-6 p-4 md:p-6">
                 {/* Header */}
                 <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                     <div className="flex items-center gap-3">
@@ -841,7 +832,7 @@ const BudgetAllocation = () => {
                     />
                 </div>
 
-                {/* ========== FILTER SECTION ========== */}
+                {/* Filter Section */}
                 <FilterSection
                     filters={filters}
                     setFilters={setFilters}
@@ -852,7 +843,6 @@ const BudgetAllocation = () => {
 
                 {/* Budget Table Container */}
                 <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xl shadow-black/5">
-                    {/* Fixed Header */}
                     <div className="border-b border-slate-200/60 dark:border-slate-700/60 px-6 py-4 flex-shrink-0">
                         <div className="flex items-center justify-between">
                             <div>
@@ -880,7 +870,7 @@ const BudgetAllocation = () => {
                         </div>
                     </div>
 
-                    {/* TABLE HEADER - Sticky */}
+                    {/* TABLE HEADER */}
                     <div 
                         className="sticky top-0 z-40 bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700"
                         style={{ 
@@ -899,12 +889,12 @@ const BudgetAllocation = () => {
                                             font-semibold
                                             text-slate-600 dark:text-slate-400
                                             text-xs uppercase tracking-wider
-                                            min-w-[100px]
+                                            min-w-[131.5px]
                                             border-r border-slate-200 dark:border-slate-700
                                         "
                                     >
                                         <span className="flex items-center gap-1">
-                                            <Building2 className="h-3 w-3" />
+                                            <Building2 className="h-3 w-5" />
                                             Code
                                         </span>
                                     </TableHead>
@@ -1060,7 +1050,6 @@ const BudgetAllocation = () => {
                                                         : ""
                                                 )}
                                             >
-                                                {/* Department Code */}
                                                 <TableCell
                                                     className="
                                                         sticky left-0 z-30
@@ -1068,24 +1057,14 @@ const BudgetAllocation = () => {
                                                         border-r border-slate-200 dark:border-slate-700
                                                     "
                                                 >
-                                                    <div className="flex items-center gap-2 min-w-[80px]">
+                                                    <div className="flex items-center gap-2 min-w-[101.6px]">
                                                         <DepartmentTooltip
                                                             code={budget.department_code || "N/A"}
                                                             name={budget.department_name}
                                                         />
-
-                                                        {isNew && (
-                                                            <Badge
-                                                                variant="outline"
-                                                                className="text-yellow-600 border-yellow-300 text-xs whitespace-nowrap"
-                                                            >
-                                                                New
-                                                            </Badge>
-                                                        )}
                                                     </div>
                                                 </TableCell>
 
-                                                {/* Annual Budget */}
                                                 <TableCell className="text-right">
                                                     {isBulkMode ? (
                                                         <Input
@@ -1118,7 +1097,6 @@ const BudgetAllocation = () => {
                                                     )}
                                                 </TableCell>
 
-                                                {/* Weekly Ceiling */}
                                                 <TableCell className="text-right">
                                                     {isBulkMode ? (
                                                         <Input
@@ -1169,7 +1147,6 @@ const BudgetAllocation = () => {
                                                     )}
                                                 </TableCell>
 
-                                                {/* Used */}
                                                 <TableCell className="text-right">
                                                     <span className="font-medium text-yellow-600 dark:text-yellow-400">
                                                         {formatCurrency(
@@ -1187,7 +1164,6 @@ const BudgetAllocation = () => {
                                                     )}
                                                 </TableCell>
 
-                                                {/* Remaining */}
                                                 <TableCell className="text-right">
                                                     <span className="font-medium text-emerald-600 dark:text-emerald-400">
                                                         {formatCurrency(
@@ -1206,7 +1182,6 @@ const BudgetAllocation = () => {
                                                     )}
                                                 </TableCell>
 
-                                                {/* Weekly Used */}
                                                 <TableCell className="text-right">
                                                     <span
                                                         className={cn(
@@ -1229,7 +1204,6 @@ const BudgetAllocation = () => {
                                                         )}
                                                 </TableCell>
 
-                                                {/* Weekly Remaining */}
                                                 <TableCell className="text-right">
                                                     <span
                                                         className={cn(
@@ -1261,12 +1235,10 @@ const BudgetAllocation = () => {
                                                         )}
                                                 </TableCell>
 
-                                                {/* Status */}
                                                 <TableCell className="text-center">
                                                     {getStatusBadge(budget.status)}
                                                 </TableCell>
 
-                                                {/* Actions */}
                                                 <TableCell
                                                     className="
                                                         sticky right-0 z-30
@@ -1275,7 +1247,7 @@ const BudgetAllocation = () => {
                                                         border-l border-slate-200 dark:border-slate-700
                                                     "
                                                 >
-                                                    <div className="flex items-center justify-end gap-1 min-w-[180px]">
+                                                    <div className="flex items-center justify-end gap-1 min-w-[120px]">
                                                         <Button
                                                             variant="ghost"
                                                             size="sm"
@@ -1355,7 +1327,7 @@ const BudgetAllocation = () => {
                 </div>
             </div>
 
-            {/* ========== DIALOGS (Keep existing dialogs) ========== */}
+            {/* ========== DIALOGS ========== */}
 
             {/* ANNUAL BUDGET EDIT DIALOG */}
             <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
@@ -1577,7 +1549,6 @@ const BudgetAllocation = () => {
                             />
                         </div>
 
-                        {/* Impact Preview */}
                         {weeklyData.weekly_ceiling && weeklyDepartment && (
                             <div className="bg-blue-50 dark:bg-blue-950/30 rounded-xl p-3 border border-blue-200 dark:border-blue-800">
                                 <p className="text-xs font-medium text-blue-700 dark:text-blue-300 mb-1">📊 Impact:</p>
@@ -1801,7 +1772,6 @@ const BudgetAllocation = () => {
 
                     {viewingBudget && (
                         <div className="space-y-4">
-                            {/* Department Info */}
                             <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-4 border border-slate-200 dark:border-slate-700">
                                 <div className="grid grid-cols-2 gap-2 text-sm">
                                     <div>
@@ -1829,7 +1799,6 @@ const BudgetAllocation = () => {
                                 </div>
                             </div>
 
-                            {/* Annual Stats */}
                             <div className="grid grid-cols-3 gap-3">
                                 <div className="bg-blue-50 dark:bg-blue-950/30 rounded-xl p-3 text-center border border-blue-200 dark:border-blue-800">
                                     <p className="text-xs text-blue-600 dark:text-blue-400 font-medium">Annual Budget</p>
@@ -1861,7 +1830,6 @@ const BudgetAllocation = () => {
                                 </div>
                             </div>
 
-                            {/* Weekly Stats */}
                             <div className="grid grid-cols-3 gap-3">
                                 <div className="bg-purple-50 dark:bg-purple-950/30 rounded-xl p-3 text-center border border-purple-200 dark:border-purple-800">
                                     <p className="text-xs text-purple-600 dark:text-purple-400 font-medium">Weekly Ceiling</p>
@@ -1924,7 +1892,6 @@ const BudgetAllocation = () => {
                                 </div>
                             </div>
 
-                            {/* Utilization Bars */}
                             <div className="space-y-3">
                                 <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-3 border border-slate-200 dark:border-slate-700">
                                     <div className="flex justify-between items-center">
