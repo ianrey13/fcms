@@ -406,3 +406,149 @@ html {
 .animate-fade-in {
   animation: fade-in 0.3s ease-out forwards;
 }
+
+
+/* src/index.css - Add at the end */
+
+/* Toast with error details */
+.toast-error-details {
+  max-width: 400px;
+}
+
+.toast-error-details ul {
+  list-style: none;
+  padding: 0;
+  margin: 4px 0 0 0;
+}
+
+.toast-error-details li {
+  padding: 2px 0;
+  font-size: 13px;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.toast-error-details li::before {
+  content: "•";
+  color: #ef4444;
+  font-weight: bold;
+}
+
+/* Fade in animation for error messages */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.25s ease-out;
+}
+
+/* Field error shake animation */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  75% { transform: translateX(4px); }
+}
+
+.field-error-shake {
+  animation: shake 0.3s ease-out;
+}
+
+/* src/index.css - Add at the end */
+
+/* Toast animations */
+@keyframes slideInRight {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+@keyframes slideOutRight {
+    from {
+        transform: translateX(0);
+        opacity: 1;
+    }
+    to {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+}
+
+.toast-enter {
+    animation: slideInRight 0.3s ease-out;
+}
+
+.toast-exit {
+    animation: slideOutRight 0.3s ease-in;
+}
+
+/* Custom toast styling */
+.go4031840883 {
+    border-radius: 12px !important;
+    padding: 16px 20px !important;
+    background: hsl(var(--card)) !important;
+    color: hsl(var(--card-foreground)) !important;
+    border: 1px solid hsl(var(--border)) !important;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1) !important;
+}
+
+.go4031840883 .go3431970985 {
+    font-size: 14px !important;
+}
+
+/* Error toast special styling */
+.go4031840883[class*="error"] {
+    border-left: 4px solid #ef4444 !important;
+}
+
+.go4031840883[class*="success"] {
+    border-left: 4px solid #22c55e !important;
+}
+
+.go4031840883[class*="warning"] {
+    border-left: 4px solid #f59e0b !important;
+}
+
+/* Notification pulse animation */
+@keyframes pulse-soft {
+    0%, 100% {
+        transform: scale(1);
+    }
+    50% {
+        transform: scale(1.05);
+    }
+}
+
+.animate-pulse-soft {
+    animation: pulse-soft 2s ease-in-out infinite;
+}
+
+/* Scale in animation for notification dropdown */
+@keyframes scaleIn {
+    from {
+        transform: scale(0.95);
+        opacity: 0;
+    }
+    to {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+.animate-scale-in {
+    animation: scaleIn 0.2s ease-out;
+    transform-origin: top right;
+}

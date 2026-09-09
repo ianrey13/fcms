@@ -1,16 +1,20 @@
 // src/pages/mayor/budget/BudgetAllocation.jsx
-import React, { useState, useEffect, useMemo } from "react";
-import { useQueryClient ,useMutation} from "@tanstack/react-query";
+// ============================================
+// ENHANCED: Improved validation with field highlighting
+// No duplicate toasts - single toast with all errors
+// Auto-focus first error field
+// ============================================
+
+import React, { useState, useEffect, useMemo, useRef } from "react";
+import { useQueryClient, useMutation } from "@tanstack/react-query";
 import { useOptimizedQuery } from "../../../hooks/useOptimizedQuery";
 import {
     SkeletonPage,
     SkeletonStats,
     SkeletonTable,
-    SkeletonCard,
 } from "../../../components/ui/SkeletonCard";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -44,19 +48,18 @@ import {
     Eye,
     Plus,
     Info,
-    CalendarRange,
-    Clock,
     ArrowLeft,
     Zap,
     Shield,
-    Wallet,
-    Gauge,
+    Clock,
     Activity,
     CheckCircle,
     Search,
     Filter,
     ChevronDown,
     ChevronUp,
+    Wallet,
+    Gauge,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { useNavigate } from "react-router-dom";
@@ -125,6 +128,59 @@ const DepartmentTooltip = ({ code, name }) => {
         </div>
     );
 };
+
+// ============================================
+// ✅ ENHANCED: Form Field with error highlighting
+// ============================================
+
+const FormField = ({
+    label,
+    icon: Icon,
+    required,
+    error,
+    touched,
+    helper,
+    children,
+    className,
+}) => {
+    const hasError = touched && error;
+    
+    return (
+        <div className={cn("space-y-1.5", className)}>
+            <label className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300">
+                {Icon && <Icon className="h-4 w-4 text-slate-400" />}
+                {label}
+                {required && <span className="text-red-500">*</span>}
+            </label>
+            <div className="relative">
+                {React.cloneElement(children, {
+                    className: cn(
+                        children.props.className,
+                        hasError && "border-red-500 ring-red-500 focus:ring-red-500 bg-red-50/50 dark:bg-red-950/10"
+                    )
+                })}
+                {hasError && (
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                        <AlertCircle className="h-4 w-4 text-red-500 animate-pulse" />
+                    </div>
+                )}
+            </div>
+            {hasError && (
+                <p className="text-red-500 text-xs flex items-center gap-1 mt-1 animate-fadeIn">
+                    <AlertCircle className="h-3 w-3 flex-shrink-0" />
+                    {error}
+                </p>
+            )}
+            {helper && !hasError && (
+                <p className="text-xs text-slate-400 dark:text-slate-500 flex items-center gap-1 mt-1">
+                    <Info className="h-3 w-3" />
+                    {helper}
+                </p>
+            )}
+        </div>
+    );
+};
+
 // ============================================
 // FILTER SECTION COMPONENT
 // ============================================
@@ -159,7 +215,7 @@ const FilterSection = ({ filters, setFilters, departments, isFilterOpen, setIsFi
                     <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => setFilters({ searchTerm: '', allocationStatus: 'all', budgetRange: 'all' })}
+                        onClick={() => setFilters({ searchTerm: '', departmentId: 'all', allocationStatus: 'all', budgetRange: 'all' })}
                         className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30 h-8 px-2"
                     >
                         <X className="h-3.5 w-3.5 mr-1" />
@@ -243,6 +299,8 @@ const FilterSection = ({ filters, setFilters, departments, isFilterOpen, setIsFi
 const BudgetAllocation = () => {
     const navigate = useNavigate();
     const queryClient = useQueryClient();
+    const toastIdRef = useRef(null);
+    
     const [selectedYear, setSelectedYear] = useState(2026);
     const [editingBudget, setEditingBudget] = useState(null);
     const [showEditDialog, setShowEditDialog] = useState(false);
@@ -269,6 +327,14 @@ const BudgetAllocation = () => {
         reason: "",
     });
     const [weeklyDepartment, setWeeklyDepartment] = useState(null);
+
+    // Form validation states
+    const [editErrors, setEditErrors] = useState({});
+    const [editTouched, setEditTouched] = useState({});
+    const [addErrors, setAddErrors] = useState({});
+    const [addTouched, setAddTouched] = useState({});
+    const [weeklyErrors, setWeeklyErrors] = useState({});
+    const [weeklyTouched, setWeeklyTouched] = useState({});
 
     const [filters, setFilters] = useState({
         searchTerm: '',
@@ -343,13 +409,17 @@ const BudgetAllocation = () => {
             return response.data;
         },
         onSuccess: () => {
-            toast.success("Annual budget set successfully");
+            if (toastIdRef.current) toast.dismiss(toastIdRef.current);
+            toastIdRef.current = toast.success("Annual budget set successfully");
             setShowEditDialog(false);
             setEditingBudget(null);
+            setEditErrors({});
+            setEditTouched({});
             queryClient.invalidateQueries(["annual-budgets"]);
         },
         onError: (error) => {
-            toast.error(error.response?.data?.message || "Failed to set budget");
+            if (toastIdRef.current) toast.dismiss(toastIdRef.current);
+            toastIdRef.current = toast.error(error.response?.data?.message || "Failed to set budget");
         },
     });
 
@@ -362,7 +432,8 @@ const BudgetAllocation = () => {
             return response.data;
         },
         onSuccess: () => {
-            toast.success("Weekly ceiling updated successfully");
+            if (toastIdRef.current) toast.dismiss(toastIdRef.current);
+            toastIdRef.current = toast.success("Weekly ceiling updated successfully");
             setShowWeeklyDialog(false);
             setWeeklyData({
                 department_id: "",
@@ -370,10 +441,13 @@ const BudgetAllocation = () => {
                 reason: "",
             });
             setWeeklyDepartment(null);
+            setWeeklyErrors({});
+            setWeeklyTouched({});
             queryClient.invalidateQueries(["annual-budgets"]);
         },
         onError: (error) => {
-            toast.error(error.response?.data?.message || "Failed to update weekly ceiling");
+            if (toastIdRef.current) toast.dismiss(toastIdRef.current);
+            toastIdRef.current = toast.error(error.response?.data?.message || "Failed to update weekly ceiling");
         },
     });
 
@@ -386,17 +460,21 @@ const BudgetAllocation = () => {
             return response.data;
         },
         onSuccess: () => {
-            toast.success("Additional budget added successfully");
+            if (toastIdRef.current) toast.dismiss(toastIdRef.current);
+            toastIdRef.current = toast.success("Additional budget added successfully");
             setShowAddBudgetDialog(false);
             setAddBudgetData({
                 department_id: "",
                 additional_amount: "",
                 reason: "",
             });
+            setAddErrors({});
+            setAddTouched({});
             queryClient.invalidateQueries(["annual-budgets"]);
         },
         onError: (error) => {
-            toast.error(error.response?.data?.message || "Failed to add budget");
+            if (toastIdRef.current) toast.dismiss(toastIdRef.current);
+            toastIdRef.current = toast.error(error.response?.data?.message || "Failed to add budget");
         },
     });
 
@@ -415,13 +493,15 @@ const BudgetAllocation = () => {
             return response.data;
         },
         onSuccess: () => {
-            toast.success("All budgets saved successfully");
+            if (toastIdRef.current) toast.dismiss(toastIdRef.current);
+            toastIdRef.current = toast.success("All budgets saved successfully");
             setIsBulkMode(false);
             setBulkData({});
             queryClient.invalidateQueries(["annual-budgets"]);
         },
         onError: (error) => {
-            toast.error(error.response?.data?.message || "Failed to save budgets");
+            if (toastIdRef.current) toast.dismiss(toastIdRef.current);
+            toastIdRef.current = toast.error(error.response?.data?.message || "Failed to save budgets");
         },
     });
 
@@ -447,6 +527,253 @@ const BudgetAllocation = () => {
             return <Badge className="bg-slate-400">Not Set</Badge>;
         }
         return <Badge className="bg-green-500">Active</Badge>;
+    };
+
+    // ============================================
+    // ✅ ENHANCED VALIDATION FUNCTIONS
+    // ============================================
+
+    const validateEditBudget = () => {
+        const newErrors = {};
+        const newTouched = {};
+
+        if (!formData.annual_amount || parseFloat(formData.annual_amount) <= 0) {
+            newErrors.annual_amount = "Annual budget must be greater than 0";
+            newTouched.annual_amount = true;
+        }
+
+        setEditErrors(newErrors);
+        setEditTouched(prev => ({ ...prev, ...newTouched }));
+
+        if (Object.keys(newErrors).length > 0) {
+            const errorMessages = Object.entries(newErrors).map(([field, msg]) => {
+                const labels = { annual_amount: 'Annual Budget' };
+                const label = labels[field] || field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                return `• ${label}: ${msg}`;
+            });
+
+            if (toastIdRef.current) toast.dismiss(toastIdRef.current);
+            toastIdRef.current = toast.error(
+                <div className="space-y-1">
+                    <div className="font-semibold text-red-600 dark:text-red-400">Please fix the following errors:</div>
+                    <div className="text-sm text-red-500 dark:text-red-300 space-y-0.5">
+                        {errorMessages.map((msg, i) => (
+                            <div key={i}>{msg}</div>
+                        ))}
+                    </div>
+                </div>,
+                { duration: 5000 }
+            );
+
+            const firstField = Object.keys(newErrors)[0];
+            if (firstField) {
+                const element = document.querySelector(`[name="${firstField}"]`) || document.getElementById(firstField);
+                if (element) setTimeout(() => element.focus(), 100);
+            }
+            return false;
+        }
+        return true;
+    };
+
+    const validateWeeklyBudget = () => {
+        const newErrors = {};
+        const newTouched = {};
+
+        if (!weeklyData.department_id) {
+            newErrors.department_id = "Department is required";
+            newTouched.department_id = true;
+        }
+        if (!weeklyData.weekly_ceiling || parseFloat(weeklyData.weekly_ceiling) <= 0) {
+            newErrors.weekly_ceiling = "Weekly ceiling must be greater than 0";
+            newTouched.weekly_ceiling = true;
+        }
+        if (!weeklyData.reason || weeklyData.reason.trim().length < 3) {
+            newErrors.reason = "Reason must be at least 3 characters";
+            newTouched.reason = true;
+        }
+
+        setWeeklyErrors(newErrors);
+        setWeeklyTouched(prev => ({ ...prev, ...newTouched }));
+
+        if (Object.keys(newErrors).length > 0) {
+            const errorMessages = Object.entries(newErrors).map(([field, msg]) => {
+                const labels = {
+                    department_id: 'Department',
+                    weekly_ceiling: 'Weekly Ceiling',
+                    reason: 'Reason'
+                };
+                const label = labels[field] || field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                return `• ${label}: ${msg}`;
+            });
+
+            if (toastIdRef.current) toast.dismiss(toastIdRef.current);
+            toastIdRef.current = toast.error(
+                <div className="space-y-1">
+                    <div className="font-semibold text-red-600 dark:text-red-400">Please fix the following errors:</div>
+                    <div className="text-sm text-red-500 dark:text-red-300 space-y-0.5">
+                        {errorMessages.map((msg, i) => (
+                            <div key={i}>{msg}</div>
+                        ))}
+                    </div>
+                </div>,
+                { duration: 5000 }
+            );
+
+            const firstField = Object.keys(newErrors)[0];
+            if (firstField) {
+                const element = document.querySelector(`[name="${firstField}"]`) || document.getElementById(firstField);
+                if (element) setTimeout(() => element.focus(), 100);
+            }
+            return false;
+        }
+        return true;
+    };
+
+    const validateAddBudget = () => {
+        const newErrors = {};
+        const newTouched = {};
+
+        if (!addBudgetData.department_id) {
+            newErrors.department_id = "Department is required";
+            newTouched.department_id = true;
+        }
+        if (!addBudgetData.additional_amount || parseFloat(addBudgetData.additional_amount) <= 0) {
+            newErrors.additional_amount = "Amount must be greater than 0";
+            newTouched.additional_amount = true;
+        }
+        if (!addBudgetData.reason || addBudgetData.reason.trim().length < 3) {
+            newErrors.reason = "Reason must be at least 3 characters";
+            newTouched.reason = true;
+        }
+
+        setAddErrors(newErrors);
+        setAddTouched(prev => ({ ...prev, ...newTouched }));
+
+        if (Object.keys(newErrors).length > 0) {
+            const errorMessages = Object.entries(newErrors).map(([field, msg]) => {
+                const labels = {
+                    department_id: 'Department',
+                    additional_amount: 'Amount',
+                    reason: 'Reason'
+                };
+                const label = labels[field] || field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                return `• ${label}: ${msg}`;
+            });
+
+            if (toastIdRef.current) toast.dismiss(toastIdRef.current);
+            toastIdRef.current = toast.error(
+                <div className="space-y-1">
+                    <div className="font-semibold text-red-600 dark:text-red-400">Please fix the following errors:</div>
+                    <div className="text-sm text-red-500 dark:text-red-300 space-y-0.5">
+                        {errorMessages.map((msg, i) => (
+                            <div key={i}>{msg}</div>
+                        ))}
+                    </div>
+                </div>,
+                { duration: 5000 }
+            );
+
+            const firstField = Object.keys(newErrors)[0];
+            if (firstField) {
+                const element = document.querySelector(`[name="${firstField}"]`) || document.getElementById(firstField);
+                if (element) setTimeout(() => element.focus(), 100);
+            }
+            return false;
+        }
+        return true;
+    };
+
+    // ============================================
+    // HANDLERS
+    // ============================================
+
+    const openWeeklyDialog = (budget) => {
+        setWeeklyDepartment(budget);
+        setWeeklyData({
+            department_id: budget.department_id.toString(),
+            weekly_ceiling: budget.weekly_ceiling?.toString() || "",
+            reason: "",
+        });
+        setWeeklyErrors({});
+        setWeeklyTouched({});
+        setShowWeeklyDialog(true);
+    };
+
+    const handleWeeklyUpdate = () => {
+        if (toastIdRef.current) toast.dismiss(toastIdRef.current);
+        if (!validateWeeklyBudget()) return;
+
+        updateWeeklyMutation.mutate({
+            departmentId: parseInt(weeklyData.department_id),
+            data: {
+                weekly_ceiling: parseFloat(weeklyData.weekly_ceiling),
+                reason: weeklyData.reason || "Weekly ceiling update",
+            },
+        });
+    };
+
+    const handleEdit = (budget) => {
+        setEditingBudget(budget);
+        setFormData({
+            annual_amount: budget.annual_amount?.toString() || "",
+            weekly_ceiling: budget.weekly_ceiling?.toString() || "",
+        });
+        setEditErrors({});
+        setEditTouched({});
+        setShowEditDialog(true);
+    };
+
+    const handleView = (budget) => {
+        setViewingBudget(budget);
+        setShowViewDialog(true);
+    };
+
+    const handleSetBudget = () => {
+        if (toastIdRef.current) toast.dismiss(toastIdRef.current);
+        if (!validateEditBudget()) return;
+
+        const data = {
+            department_id: editingBudget.department_id,
+            annual_amount: parseFloat(formData.annual_amount) || 0,
+        };
+        setBudgetMutation.mutate({ data });
+    };
+
+    const handleAddBudget = () => {
+        if (toastIdRef.current) toast.dismiss(toastIdRef.current);
+        if (!validateAddBudget()) return;
+
+        addBudgetMutation.mutate({
+            department_id: parseInt(addBudgetData.department_id),
+            additional_amount: parseFloat(addBudgetData.additional_amount),
+            reason: addBudgetData.reason || "Additional budget allocation",
+        });
+    };
+
+    const handleBulkChange = (departmentId, field, value) => {
+        setBulkData((prev) => {
+            const current = prev[departmentId] || {
+                annual_amount: "",
+                weekly_ceiling: "",
+            };
+            return {
+                ...prev,
+                [departmentId]: {
+                    ...current,
+                    [field]: value,
+                },
+            };
+        });
+    };
+
+    const handleBulkSave = () => {
+        if (toastIdRef.current) toast.dismiss(toastIdRef.current);
+        bulkUpdateMutation.mutate();
+    };
+
+    const handleBulkCancel = () => {
+        setIsBulkMode(false);
+        setBulkData({});
     };
 
     // ============================================
@@ -513,105 +840,6 @@ const BudgetAllocation = () => {
 
         return filtered;
     }, [budgets, filters]);
-
-    // ============================================
-    // HANDLERS
-    // ============================================
-
-    const openWeeklyDialog = (budget) => {
-        setWeeklyDepartment(budget);
-        setWeeklyData({
-            department_id: budget.department_id.toString(),
-            weekly_ceiling: budget.weekly_ceiling?.toString() || "",
-            reason: "",
-        });
-        setShowWeeklyDialog(true);
-    };
-
-    const handleWeeklyUpdate = () => {
-        if (!weeklyData.department_id) {
-            toast.error("Please select a department");
-            return;
-        }
-        if (!weeklyData.weekly_ceiling || parseFloat(weeklyData.weekly_ceiling) <= 0) {
-            toast.error("Please enter a valid weekly ceiling amount");
-            return;
-        }
-
-        updateWeeklyMutation.mutate({
-            departmentId: parseInt(weeklyData.department_id),
-            data: {
-                weekly_ceiling: parseFloat(weeklyData.weekly_ceiling),
-                reason: weeklyData.reason || "Weekly ceiling update",
-            },
-        });
-    };
-
-    const handleEdit = (budget) => {
-        setEditingBudget(budget);
-        setFormData({
-            annual_amount: budget.annual_amount?.toString() || "",
-            weekly_ceiling: budget.weekly_ceiling?.toString() || "",
-        });
-        setShowEditDialog(true);
-    };
-
-    const handleView = (budget) => {
-        setViewingBudget(budget);
-        setShowViewDialog(true);
-    };
-
-    const handleSetBudget = () => {
-        if (!editingBudget) return;
-
-        const data = {
-            department_id: editingBudget.department_id,
-            annual_amount: parseFloat(formData.annual_amount) || 0,
-        };
-        setBudgetMutation.mutate({ data });
-    };
-
-    const handleAddBudget = () => {
-        if (!addBudgetData.department_id) {
-            toast.error("Please select a department");
-            return;
-        }
-        if (!addBudgetData.additional_amount || parseFloat(addBudgetData.additional_amount) <= 0) {
-            toast.error("Please enter a valid amount");
-            return;
-        }
-
-        addBudgetMutation.mutate({
-            department_id: parseInt(addBudgetData.department_id),
-            additional_amount: parseFloat(addBudgetData.additional_amount),
-            reason: addBudgetData.reason || "Additional budget allocation",
-        });
-    };
-
-    const handleBulkChange = (departmentId, field, value) => {
-        setBulkData((prev) => {
-            const current = prev[departmentId] || {
-                annual_amount: "",
-                weekly_ceiling: "",
-            };
-            return {
-                ...prev,
-                [departmentId]: {
-                    ...current,
-                    [field]: value,
-                },
-            };
-        });
-    };
-
-    const handleBulkSave = () => {
-        bulkUpdateMutation.mutate();
-    };
-
-    const handleBulkCancel = () => {
-        setIsBulkMode(false);
-        setBulkData({});
-    };
 
     useEffect(() => {
         if (budgets.length > 0 && isBulkMode) {
@@ -1285,7 +1513,8 @@ const BudgetAllocation = () => {
                                                                                 "",
                                                                             reason: "",
                                                                         });
-
+                                                                        setAddErrors({});
+                                                                        setAddTouched({});
                                                                         setShowAddBudgetDialog(
                                                                             true
                                                                         );
@@ -1374,11 +1603,16 @@ const BudgetAllocation = () => {
                             </div>
                         </div>
 
-                        <div>
-                            <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                                Annual Budget (₱) <span className="text-red-500">*</span>
-                            </label>
+                        <FormField
+                            label="Annual Budget (₱)"
+                            icon={DollarSign}
+                            required
+                            error={editErrors.annual_amount}
+                            touched={editTouched.annual_amount}
+                        >
                             <Input
+                                id="annual_amount"
+                                name="annual_amount"
                                 type="number"
                                 step="0.01"
                                 min="0"
@@ -1388,11 +1622,15 @@ const BudgetAllocation = () => {
                                         ...formData,
                                         annual_amount: e.target.value,
                                     });
+                                    if (editErrors.annual_amount) {
+                                        setEditErrors(prev => ({ ...prev, annual_amount: "" }));
+                                    }
                                 }}
+                                onBlur={() => setEditTouched(prev => ({ ...prev, annual_amount: true }))}
                                 className="mt-1.5 dark:bg-slate-900 dark:border-slate-700 dark:text-white"
                                 placeholder="Enter annual budget"
                             />
-                        </div>
+                        </FormField>
 
                         <div className="bg-purple-50 dark:bg-purple-950/30 rounded-xl p-3 border border-purple-200 dark:border-purple-800">
                             <p className="text-xs text-purple-700 dark:text-purple-300 flex items-center gap-1">
@@ -1414,6 +1652,8 @@ const BudgetAllocation = () => {
                             onClick={() => {
                                 setShowEditDialog(false);
                                 setEditingBudget(null);
+                                setEditErrors({});
+                                setEditTouched({});
                             }}
                             className="dark:border-slate-700 dark:text-slate-300"
                         >
@@ -1480,74 +1720,99 @@ const BudgetAllocation = () => {
                             </div>
                         </div>
 
-                        <div>
-                            <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                                Weekly Fueling Ceiling (₱) <span className="text-red-500">*</span>
-                            </label>
+                        <FormField
+                            label="Weekly Fueling Ceiling (₱)"
+                            icon={Clock}
+                            required
+                            error={weeklyErrors.weekly_ceiling}
+                            touched={weeklyTouched.weekly_ceiling}
+                        >
                             <Input
+                                id="weekly_ceiling"
+                                name="weekly_ceiling"
                                 type="number"
                                 step="0.01"
                                 min="0"
                                 value={weeklyData.weekly_ceiling}
-                                onChange={(e) =>
+                                onChange={(e) => {
                                     setWeeklyData({
                                         ...weeklyData,
                                         weekly_ceiling: e.target.value,
-                                    })
-                                }
+                                    });
+                                    if (weeklyErrors.weekly_ceiling) {
+                                        setWeeklyErrors(prev => ({ ...prev, weekly_ceiling: "" }));
+                                    }
+                                }}
+                                onBlur={() => setWeeklyTouched(prev => ({ ...prev, weekly_ceiling: true }))}
                                 className="mt-1.5 dark:bg-slate-900 dark:border-slate-700 dark:text-white"
                                 placeholder="Enter weekly ceiling"
                             />
-                            <div className="flex items-center gap-2 mt-1.5">
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        if (weeklyDepartment?.suggested_ceiling) {
-                                            setWeeklyData({
-                                                ...weeklyData,
-                                                weekly_ceiling: weeklyDepartment.suggested_ceiling.toString(),
-                                            });
+                        </FormField>
+
+                        <div className="flex items-center gap-2 mt-1">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    if (weeklyDepartment?.suggested_ceiling) {
+                                        setWeeklyData({
+                                            ...weeklyData,
+                                            weekly_ceiling: weeklyDepartment.suggested_ceiling.toString(),
+                                        });
+                                        if (weeklyErrors.weekly_ceiling) {
+                                            setWeeklyErrors(prev => ({ ...prev, weekly_ceiling: "" }));
                                         }
-                                    }}
-                                    className="text-xs text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 underline"
-                                >
-                                    Use suggested ({formatCurrency(weeklyDepartment?.suggested_ceiling || 0)})
-                                </button>
-                                <span className="text-xs text-slate-400 dark:text-slate-500">|</span>
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        if (weeklyDepartment?.weekly_ceiling) {
-                                            setWeeklyData({
-                                                ...weeklyData,
-                                                weekly_ceiling: weeklyDepartment.weekly_ceiling.toString(),
-                                            });
+                                    }
+                                }}
+                                className="text-xs text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 underline"
+                            >
+                                Use suggested ({formatCurrency(weeklyDepartment?.suggested_ceiling || 0)})
+                            </button>
+                            <span className="text-xs text-slate-400 dark:text-slate-500">|</span>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    if (weeklyDepartment?.weekly_ceiling) {
+                                        setWeeklyData({
+                                            ...weeklyData,
+                                            weekly_ceiling: weeklyDepartment.weekly_ceiling.toString(),
+                                        });
+                                        if (weeklyErrors.weekly_ceiling) {
+                                            setWeeklyErrors(prev => ({ ...prev, weekly_ceiling: "" }));
                                         }
-                                    }}
-                                    className="text-xs text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 underline"
-                                >
-                                    Reset to current
-                                </button>
-                            </div>
+                                    }
+                                }}
+                                className="text-xs text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 underline"
+                            >
+                                Reset to current
+                            </button>
                         </div>
 
-                        <div>
-                            <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                                Reason <span className="text-red-500">*</span>
-                            </label>
+                        <FormField
+                            label="Reason"
+                            icon={Info}
+                            required
+                            error={weeklyErrors.reason}
+                            touched={weeklyTouched.reason}
+                        >
                             <Input
+                                id="reason"
+                                name="reason"
                                 type="text"
                                 value={weeklyData.reason}
-                                onChange={(e) =>
+                                onChange={(e) => {
                                     setWeeklyData({
                                         ...weeklyData,
                                         reason: e.target.value,
-                                    })
-                                }
+                                    });
+                                    if (weeklyErrors.reason) {
+                                        setWeeklyErrors(prev => ({ ...prev, reason: "" }));
+                                    }
+                                }}
+                                onBlur={() => setWeeklyTouched(prev => ({ ...prev, reason: true }))}
                                 className="mt-1.5 dark:bg-slate-900 dark:border-slate-700 dark:text-white"
                                 placeholder="e.g., Adjust weekly fuel allocation"
                             />
-                        </div>
+                        </FormField>
 
                         {weeklyData.weekly_ceiling && weeklyDepartment && (
                             <div className="bg-blue-50 dark:bg-blue-950/30 rounded-xl p-3 border border-blue-200 dark:border-blue-800">
@@ -1596,6 +1861,8 @@ const BudgetAllocation = () => {
                                     reason: "",
                                 });
                                 setWeeklyDepartment(null);
+                                setWeeklyErrors({});
+                                setWeeklyTouched({});
                             }}
                             className="dark:border-slate-700 dark:text-slate-300"
                         >
@@ -1647,19 +1914,31 @@ const BudgetAllocation = () => {
                             </div>
                         </div>
 
-                        <div>
-                            <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                                Department <span className="text-red-500">*</span>
-                            </label>
+                        <FormField
+                            label="Department"
+                            icon={Building2}
+                            required
+                            error={addErrors.department_id}
+                            touched={addTouched.department_id}
+                        >
                             <select
+                                id="department_id"
+                                name="department_id"
                                 value={addBudgetData.department_id}
-                                onChange={(e) =>
+                                onChange={(e) => {
                                     setAddBudgetData({
                                         ...addBudgetData,
                                         department_id: e.target.value,
-                                    })
-                                }
-                                className="w-full mt-1.5 px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-900 dark:text-white"
+                                    });
+                                    if (addErrors.department_id) {
+                                        setAddErrors(prev => ({ ...prev, department_id: "" }));
+                                    }
+                                }}
+                                onBlur={() => setAddTouched(prev => ({ ...prev, department_id: true }))}
+                                className={cn(
+                                    "w-full mt-1.5 px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-900 dark:text-white",
+                                    addErrors.department_id && "border-red-500 ring-red-500 bg-red-50/50 dark:bg-red-950/10"
+                                )}
                             >
                                 <option value="">Select Department</option>
                                 {budgets.map((budget) => (
@@ -1669,45 +1948,63 @@ const BudgetAllocation = () => {
                                     </option>
                                 ))}
                             </select>
-                        </div>
+                        </FormField>
 
-                        <div>
-                            <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                                Additional Amount (₱) <span className="text-red-500">*</span>
-                            </label>
+                        <FormField
+                            label="Additional Amount (₱)"
+                            icon={DollarSign}
+                            required
+                            error={addErrors.additional_amount}
+                            touched={addTouched.additional_amount}
+                        >
                             <Input
+                                id="additional_amount"
+                                name="additional_amount"
                                 type="number"
                                 step="0.01"
                                 min="0.01"
                                 value={addBudgetData.additional_amount}
-                                onChange={(e) =>
+                                onChange={(e) => {
                                     setAddBudgetData({
                                         ...addBudgetData,
                                         additional_amount: e.target.value,
-                                    })
-                                }
+                                    });
+                                    if (addErrors.additional_amount) {
+                                        setAddErrors(prev => ({ ...prev, additional_amount: "" }));
+                                    }
+                                }}
+                                onBlur={() => setAddTouched(prev => ({ ...prev, additional_amount: true }))}
                                 className="mt-1.5 dark:bg-slate-900 dark:border-slate-700 dark:text-white"
                                 placeholder="Enter amount to add"
                             />
-                        </div>
+                        </FormField>
 
-                        <div>
-                            <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                                Reason <span className="text-red-500">*</span>
-                            </label>
+                        <FormField
+                            label="Reason"
+                            icon={Info}
+                            required
+                            error={addErrors.reason}
+                            touched={addTouched.reason}
+                        >
                             <Input
+                                id="reason"
+                                name="reason"
                                 type="text"
                                 value={addBudgetData.reason}
-                                onChange={(e) =>
+                                onChange={(e) => {
                                     setAddBudgetData({
                                         ...addBudgetData,
                                         reason: e.target.value,
-                                    })
-                                }
+                                    });
+                                    if (addErrors.reason) {
+                                        setAddErrors(prev => ({ ...prev, reason: "" }));
+                                    }
+                                }}
+                                onBlur={() => setAddTouched(prev => ({ ...prev, reason: true }))}
                                 className="mt-1.5 dark:bg-slate-900 dark:border-slate-700 dark:text-white"
                                 placeholder="e.g., Mayor's Memo No. 2026-001"
                             />
-                        </div>
+                        </FormField>
 
                         {addBudgetData.department_id && addBudgetData.additional_amount && (
                             <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-3 border border-slate-200 dark:border-slate-700">
@@ -1734,6 +2031,8 @@ const BudgetAllocation = () => {
                                     additional_amount: "",
                                     reason: "",
                                 });
+                                setAddErrors({});
+                                setAddTouched({});
                             }}
                             className="dark:border-slate-700 dark:text-slate-300"
                         >

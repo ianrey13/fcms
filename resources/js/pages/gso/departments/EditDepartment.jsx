@@ -1,5 +1,11 @@
 // src/pages/mayor/departments/EditDepartment.jsx
-import React, { useState, useEffect } from "react";
+// ============================================
+// ENHANCED: Improved validation with field highlighting
+// No duplicate toasts - single toast with all errors
+// Auto-focus first error field
+// ============================================
+
+import React, { useState, useEffect, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -15,10 +21,6 @@ import {
   CheckCircle,
   AlertCircle,
   Info,
-  Mail,
-  Phone,
-  MapPin,
-  Shield,
   Zap,
   Save,
   X
@@ -28,7 +30,7 @@ import { toast } from "react-hot-toast";
 import { cn } from "@/lib/utils";
 
 // ============================================
-// FORM FIELD COMPONENT
+// ✅ ENHANCED: Form Field with error highlighting
 // ============================================
 
 const FormField = ({ 
@@ -36,31 +38,48 @@ const FormField = ({
   icon: Icon, 
   required, 
   error, 
+  touched,
   helper, 
   children,
   className 
-}) => (
-  <div className={cn("space-y-1.5", className)}>
-    <Label className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300">
-      {Icon && <Icon className="h-4 w-4 text-slate-400" />}
-      {label}
-      {required && <span className="text-red-500">*</span>}
-    </Label>
-    {children}
-    {error && (
-      <p className="text-red-500 text-xs flex items-center gap-1 mt-1">
-        <AlertCircle className="h-3 w-3" />
-        {error}
-      </p>
-    )}
-    {helper && !error && (
-      <p className="text-xs text-slate-400 dark:text-slate-500 flex items-center gap-1 mt-1">
-        <Info className="h-3 w-3" />
-        {helper}
-      </p>
-    )}
-  </div>
-);
+}) => {
+  const hasError = touched && error;
+  
+  return (
+    <div className={cn("space-y-1.5", className)}>
+      <Label className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300">
+        {Icon && <Icon className="h-4 w-4 text-slate-400" />}
+        {label}
+        {required && <span className="text-red-500">*</span>}
+      </Label>
+      <div className="relative">
+        {React.cloneElement(children, {
+          className: cn(
+            children.props.className,
+            hasError && "border-red-500 ring-red-500 focus:ring-red-500 bg-red-50/50 dark:bg-red-950/10"
+          )
+        })}
+        {hasError && (
+          <div className="absolute right-3 top-1/2 -translate-y-1/2">
+            <AlertCircle className="h-4 w-4 text-red-500 animate-pulse" />
+          </div>
+        )}
+      </div>
+      {hasError && (
+        <p className="text-red-500 text-xs flex items-center gap-1 mt-1 animate-fadeIn">
+          <AlertCircle className="h-3 w-3 flex-shrink-0" />
+          {error}
+        </p>
+      )}
+      {helper && !hasError && (
+        <p className="text-xs text-slate-400 dark:text-slate-500 flex items-center gap-1 mt-1">
+          <Info className="h-3 w-3" />
+          {helper}
+        </p>
+      )}
+    </div>
+  );
+};
 
 // ============================================
 // LOADING SKELETON
@@ -80,8 +99,6 @@ const LoadingSkeleton = () => (
         <div className="h-12 bg-slate-200 dark:bg-slate-700 rounded" />
         <div className="h-12 bg-slate-200 dark:bg-slate-700 rounded" />
         <div className="h-12 bg-slate-200 dark:bg-slate-700 rounded" />
-        <div className="h-12 bg-slate-200 dark:bg-slate-700 rounded" />
-        <div className="h-12 bg-slate-200 dark:bg-slate-700 rounded" />
       </div>
     </div>
   </div>
@@ -96,13 +113,12 @@ const EditDepartment = () => {
   const { id } = useParams();
   const { data: departments = [], isLoading } = useDepartments();
   const updateDepartment = useUpdateDepartment();
+  const toastIdRef = useRef(null);
+  
   const [formData, setFormData] = useState({ 
     department_name: "", 
     department_code: "",
     head_of_office: "",
-    email: "",
-    phone: "",
-    address: "",
   });
   const [errors, setErrors] = useState({});
   const [touched, setTouched] = useState({});
@@ -117,51 +133,102 @@ const EditDepartment = () => {
           department_name: dept.department_name || "",
           department_code: dept.department_code || "",
           head_of_office: dept.head_of_office || "",
-          email: dept.email || "",
-          phone: dept.phone || "",
-          address: dept.address || "",
         };
         setFormData(data);
         setOriginalData(data);
       } else {
-        toast.error("Department not found");
+        if (toastIdRef.current) toast.dismiss(toastIdRef.current);
+        toastIdRef.current = toast.error("Department not found");
         navigate("/admin/departments");
       }
     }
   }, [departments, id, navigate]);
 
-  // ============ VALIDATION ============
+  // ============================================
+  // ✅ ENHANCED VALIDATION - Single toast with all errors
+  // ============================================
+
   const validate = () => {
     const newErrors = {};
     const newTouched = {};
 
+    // Department Name validation
     if (!formData.department_name.trim()) {
       newErrors.department_name = "Department name is required";
       newTouched.department_name = true;
     } else if (formData.department_name.trim().length < 3) {
       newErrors.department_name = "Department name must be at least 3 characters";
       newTouched.department_name = true;
+    } else if (formData.department_name.trim().length > 150) {
+      newErrors.department_name = "Department name must be 150 characters or less";
+      newTouched.department_name = true;
     }
 
+    // Department Code validation
     if (!formData.department_code.trim()) {
       newErrors.department_code = "Department code is required";
       newTouched.department_code = true;
     } else if (formData.department_code.trim().length > 20) {
       newErrors.department_code = "Code must be 20 characters or less";
       newTouched.department_code = true;
+    } else if (formData.department_code.trim().length < 2) {
+      newErrors.department_code = "Code must be at least 2 characters";
+      newTouched.department_code = true;
     } else if (!/^[A-Z0-9_]+$/.test(formData.department_code.trim().toUpperCase())) {
       newErrors.department_code = "Code must contain only letters, numbers, and underscores";
       newTouched.department_code = true;
     }
 
-    if (formData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
-      newErrors.email = "Please enter a valid email address";
-      newTouched.email = true;
+    // Head of Office validation
+    if (formData.head_of_office && formData.head_of_office.trim().length > 150) {
+      newErrors.head_of_office = "Head of office name is too long (max 150 characters)";
+      newTouched.head_of_office = true;
     }
 
     setErrors(newErrors);
-    setTouched(newTouched);
-    return Object.keys(newErrors).length === 0;
+    setTouched(prev => ({ ...prev, ...newTouched }));
+
+    // ✅ Show single toast with all errors
+    if (Object.keys(newErrors).length > 0) {
+      const errorMessages = Object.entries(newErrors).map(([field, msg]) => {
+        const labels = {
+          department_name: 'Department Name',
+          department_code: 'Department Code',
+          head_of_office: 'Head of Office'
+        };
+        const label = labels[field] || field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+        return `• ${label}: ${msg}`;
+      });
+
+      // ✅ Dismiss any existing toast
+      if (toastIdRef.current) toast.dismiss(toastIdRef.current);
+
+      toastIdRef.current = toast.error(
+        <div className="space-y-1">
+          <div className="font-semibold text-red-600 dark:text-red-400">Please fix the following errors:</div>
+          <div className="text-sm text-red-500 dark:text-red-300 space-y-0.5">
+            {errorMessages.map((msg, i) => (
+              <div key={i}>{msg}</div>
+            ))}
+          </div>
+        </div>,
+        { duration: 5000 }
+      );
+
+      // ✅ Auto-focus first error field
+      const firstField = Object.keys(newErrors)[0];
+      if (firstField) {
+        const element = document.querySelector(`[name="${firstField}"]`) || 
+                        document.getElementById(firstField);
+        if (element) {
+          setTimeout(() => element.focus(), 100);
+        }
+      }
+
+      return false;
+    }
+
+    return true;
   };
 
   const handleBlur = (field) => {
@@ -170,7 +237,6 @@ const EditDepartment = () => {
 
   const hasError = (field) => touched[field] && errors[field];
 
-  // ============ HANDLERS ============
   const handleChange = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
     if (errors[field]) {
@@ -180,8 +246,11 @@ const EditDepartment = () => {
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    
+    // ✅ Dismiss any existing toast before validation
+    if (toastIdRef.current) toast.dismiss(toastIdRef.current);
+    
     if (!validate()) {
-      toast.error("Please fix all errors before submitting");
       return;
     }
 
@@ -192,29 +261,33 @@ const EditDepartment = () => {
           department_name: formData.department_name.trim(),
           department_code: formData.department_code.trim().toUpperCase(),
           head_of_office: formData.head_of_office.trim() || null,
-          email: formData.email.trim() || null,
-          phone: formData.phone.trim() || null,
-          address: formData.address.trim() || null,
         },
       },
       {
         onSuccess: () => {
-          toast.success("Department updated successfully!");
+          if (toastIdRef.current) toast.dismiss(toastIdRef.current);
+          toastIdRef.current = toast.success("✅ Department updated successfully!");
           navigate("/admin/departments");
         },
         onError: (error) => {
+          if (toastIdRef.current) toast.dismiss(toastIdRef.current);
           const message = error.response?.data?.message || "Failed to update department";
-          toast.error(message);
+          
+          // Check for duplicate code error
+          if (error.response?.data?.errors?.department_code) {
+            toastIdRef.current = toast.error(`Department code "${formData.department_code}" already exists. Please use a different code.`);
+            setErrors(prev => ({ ...prev, department_code: "This code is already in use" }));
+            setTouched(prev => ({ ...prev, department_code: true }));
+            document.querySelector('[name="department_code"]')?.focus();
+          } else {
+            toastIdRef.current = toast.error(message);
+          }
         },
       }
     );
   };
 
   const hasChanges = JSON.stringify(formData) !== JSON.stringify(originalData);
-
-  // ============================================
-  // RENDER
-  // ============================================
 
   if (isLoading) {
     return <LoadingSkeleton />;
@@ -250,7 +323,7 @@ const EditDepartment = () => {
           </div>
           <div className="ml-auto">
             <Badge className="bg-blue-500/20 text-blue-600 dark:text-blue-400 border-blue-500/30">
-              <Shield className="h-3 w-3 mr-1" />
+              <Code className="h-3 w-3 mr-1" />
               {formData.department_code || "Editing"}
             </Badge>
           </div>
@@ -284,18 +357,18 @@ const EditDepartment = () => {
                 label="Department Code"
                 icon={Code}
                 required
-                error={hasError("department_code") && errors.department_code}
-                helper="Short, unique identifier (max 20 characters). Use letters, numbers, and underscores only."
+                error={errors.department_code}
+                touched={touched.department_code}
+                helper="Short, unique identifier (2-20 characters). Use letters, numbers, and underscores only."
               >
                 <Input
+                  id="department_code"
+                  name="department_code"
                   placeholder="e.g., ENGR"
                   value={formData.department_code}
                   onChange={(e) => handleChange("department_code", e.target.value.toUpperCase())}
                   onBlur={() => handleBlur("department_code")}
-                  className={cn(
-                    "font-mono uppercase bg-white dark:bg-slate-900 dark:border-slate-700",
-                    hasError("department_code") && "border-red-500 ring-red-500"
-                  )}
+                  className="font-mono uppercase bg-white dark:bg-slate-900 dark:border-slate-700"
                   maxLength={20}
                 />
               </FormField>
@@ -305,18 +378,19 @@ const EditDepartment = () => {
                 label="Department Name"
                 icon={Building2}
                 required
-                error={hasError("department_name") && errors.department_name}
-                helper="Full, descriptive name of the department"
+                error={errors.department_name}
+                touched={touched.department_name}
+                helper="Full, descriptive name of the department (3-150 characters)"
               >
                 <Input
+                  id="department_name"
+                  name="department_name"
                   placeholder="e.g., Engineering Office"
                   value={formData.department_name}
                   onChange={(e) => handleChange("department_name", e.target.value)}
                   onBlur={() => handleBlur("department_name")}
-                  className={cn(
-                    "bg-white dark:bg-slate-900 dark:border-slate-700",
-                    hasError("department_name") && "border-red-500 ring-red-500"
-                  )}
+                  className="bg-white dark:bg-slate-900 dark:border-slate-700"
+                  maxLength={150}
                 />
               </FormField>
 
@@ -324,53 +398,23 @@ const EditDepartment = () => {
               <FormField
                 label="Head of Office"
                 icon={User}
+                error={errors.head_of_office}
+                touched={touched.head_of_office}
                 helper="Full name of the department head (appears on trip tickets)"
               >
                 <Input
-                  placeholder="e.g., Dr. Zelyn Denampo"
+                  id="head_of_office"
+                  name="head_of_office"
+                  placeholder="e.g., Engr. Karl John G. Madridano"
                   value={formData.head_of_office}
                   onChange={(e) => handleChange("head_of_office", e.target.value)}
                   onBlur={() => handleBlur("head_of_office")}
                   className="bg-white dark:bg-slate-900 dark:border-slate-700"
+                  maxLength={150}
                 />
               </FormField>
 
             
-
-              {/* Form Preview */}
-              <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-4 border border-slate-200 dark:border-slate-700">
-                <h4 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
-                  Preview
-                </h4>
-                <div className="grid grid-cols-2 gap-2 text-sm">
-                  <div>
-                    <span className="text-slate-400">Code:</span>
-                    <span className="font-mono font-semibold text-slate-700 dark:text-slate-300 ml-2">
-                      {formData.department_code || "—"}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400">Name:</span>
-                    <span className="font-medium text-slate-700 dark:text-slate-300 ml-2">
-                      {formData.department_name || "—"}
-                    </span>
-                  </div>
-                  <div className="col-span-2">
-                    <span className="text-slate-400">Head:</span>
-                    <span className="text-slate-700 dark:text-slate-300 ml-2">
-                      {formData.head_of_office || "Not set"}
-                    </span>
-                  </div>
-                  {formData.email && (
-                    <div className="col-span-2">
-                      <span className="text-slate-400">Email:</span>
-                      <span className="text-slate-700 dark:text-slate-300 ml-2">
-                        {formData.email}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              </div>
 
               {/* Action Buttons */}
               <div className="flex gap-3 pt-4 border-t border-slate-200/60 dark:border-slate-700/60">

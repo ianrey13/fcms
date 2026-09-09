@@ -1,11 +1,8 @@
 // src/pages/gso/GsoCreateTrip.jsx
 // ============================================
-// CLEANED: Removed console logs, debug details
-// Driver Datalist shows ALL drivers
-// Department auto-fills from selected driver
-// Vehicle dropdown filters by department
-// charge_to auto-fills from department code only
-// Auto-refresh drivers every 30 seconds
+// ENHANCED: Improved validation with field highlighting
+// No duplicate toasts - single toast with all errors
+// Auto-focus first error field
 // ============================================
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
@@ -63,16 +60,6 @@ const FormSection = ({ title, icon: Icon, children, className }) => (
     </div>
 );
 
-const FieldError = ({ error }) => {
-    if (!error) return null;
-    return (
-        <p className="text-red-500 text-xs mt-1.5 flex items-center gap-1">
-            <AlertTriangle className="h-3 w-3" />
-            {error}
-        </p>
-    );
-};
-
 const FormSkeleton = () => (
     <div className="max-w-5xl mx-auto p-4 md:p-6">
         <div className="flex items-center gap-4 mb-6">
@@ -116,16 +103,70 @@ const FormSkeleton = () => (
 );
 
 // ============================================
+// ✅ ENHANCED: FieldError with highlighting
+// ============================================
+
+const FieldError = ({ error }) => {
+    if (!error) return null;
+    return (
+        <p className="text-red-500 text-xs mt-1.5 flex items-center gap-1 animate-fadeIn">
+            <AlertTriangle className="h-3 w-3 flex-shrink-0" />
+            {error}
+        </p>
+    );
+};
+
+// ============================================
+// ✅ ENHANCED: Field wrapper with error highlighting
+// ============================================
+
+const FormFieldWrapper = ({ children, error, touched, label, required, icon: Icon, helper }) => {
+    const hasError = touched && error;
+    
+    return (
+        <div className="space-y-1.5">
+            {label && (
+                <Label className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300">
+                    {Icon && <Icon className="h-4 w-4 text-slate-400" />}
+                    {label}
+                    {required && <span className="text-red-500">*</span>}
+                </Label>
+            )}
+            <div className="relative">
+                {React.cloneElement(children, {
+                    className: cn(
+                        children.props.className,
+                        hasError && "border-red-500 ring-red-500 focus:ring-red-500 bg-red-50/50 dark:bg-red-950/10"
+                    )
+                })}
+                {hasError && (
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                        <AlertTriangle className="h-4 w-4 text-red-500 animate-pulse" />
+                    </div>
+                )}
+            </div>
+            {hasError && <FieldError error={error} />}
+            {helper && !hasError && (
+                <p className="text-xs text-slate-400 dark:text-slate-500 flex items-center gap-1 mt-1">
+                    {helper}
+                </p>
+            )}
+        </div>
+    );
+};
+
+// ============================================
 // DRIVER DATALIST COMPONENT
 // ============================================
 
-const DriverDatalist = ({ value, onChange, onBlur, error, drivers, loading, onDriverSelect }) => {
+const DriverDatalist = ({ value, onChange, onBlur, error, touched, drivers, loading, onDriverSelect }) => {
     const [searchTerm, setSearchTerm] = useState("");
     const [selectedDriver, setSelectedDriver] = useState(null);
     const [isOpen, setIsOpen] = useState(false);
     const [filteredDrivers, setFilteredDrivers] = useState([]);
     const inputRef = useRef(null);
     const wrapperRef = useRef(null);
+    const hasError = touched && error;
 
     useEffect(() => {
         if (!value) {
@@ -237,8 +278,8 @@ const DriverDatalist = ({ value, onChange, onBlur, error, drivers, loading, onDr
                     onBlur={() => { setTimeout(() => setIsOpen(false), 250); if (onBlur) onBlur(); }}
                     className={cn(
                         "pl-10 pr-10 bg-white dark:bg-slate-900 dark:border-slate-700",
-                        error && "border-red-500 ring-red-500",
-                        selectedDriver && "border-emerald-500 ring-emerald-500/30 bg-emerald-50/30 dark:bg-emerald-950/20"
+                        hasError && "border-red-500 ring-red-500 focus:ring-red-500 bg-red-50/50 dark:bg-red-950/10",
+                        selectedDriver && !hasError && "border-emerald-500 ring-emerald-500/30 bg-emerald-50/30 dark:bg-emerald-950/20"
                     )}
                 />
                 {searchTerm && (
@@ -251,13 +292,18 @@ const DriverDatalist = ({ value, onChange, onBlur, error, drivers, loading, onDr
                         <Loader2 className="h-4 w-4 animate-spin text-slate-400" />
                     </div>
                 )}
-                {selectedDriver && !searchTerm && (
+                {selectedDriver && !searchTerm && !hasError && (
                     <div className="absolute right-3 top-1/2 -translate-y-1/2">
                         <CheckCircle className="h-4 w-4 text-emerald-500" />
                     </div>
                 )}
+                {hasError && (
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                        <AlertTriangle className="h-4 w-4 text-red-500 animate-pulse" />
+                    </div>
+                )}
             </div>
-            {selectedDriver && !searchTerm && (
+            {selectedDriver && !searchTerm && !hasError && (
                 <div className="mt-2 flex items-center gap-2 p-2 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-lg">
                     <User className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
                     <span className="font-medium text-slate-800 dark:text-white">{getDriverDisplayName(selectedDriver)}</span>
@@ -267,6 +313,11 @@ const DriverDatalist = ({ value, onChange, onBlur, error, drivers, loading, onDr
                     <button type="button" onClick={handleClear} className="ml-auto text-xs text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-950/30 px-2 py-1 rounded-lg transition-colors">
                         Change
                     </button>
+                </div>
+            )}
+            {hasError && !selectedDriver && (
+                <div className="mt-2">
+                    <FieldError error={error} />
                 </div>
             )}
             {isOpen && filteredDrivers.length > 0 && (
@@ -322,7 +373,9 @@ const DriverDatalist = ({ value, onChange, onBlur, error, drivers, loading, onDr
 // DEPARTMENT DISPLAY COMPONENT
 // ============================================
 
-const DepartmentDisplay = ({ department, error, driver }) => {
+const DepartmentDisplay = ({ department, error, driver, touched }) => {
+    const hasError = touched && error;
+    
     if (department) {
         return (
             <div className="relative">
@@ -334,7 +387,7 @@ const DepartmentDisplay = ({ department, error, driver }) => {
                     disabled
                     className={cn(
                         "pl-10 bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 font-medium cursor-default",
-                        error && "border-red-500"
+                        hasError && "border-red-500 ring-red-500 bg-red-50/50 dark:bg-red-950/10"
                     )}
                 />
                 <div className="absolute right-3 top-1/2 -translate-y-1/2">
@@ -342,6 +395,7 @@ const DepartmentDisplay = ({ department, error, driver }) => {
                         {department.department_code || "Auto-filled"}
                     </Badge>
                 </div>
+                {hasError && <FieldError error={error} />}
             </div>
         );
     }
@@ -359,7 +413,7 @@ const DepartmentDisplay = ({ department, error, driver }) => {
                         disabled
                         className={cn(
                             "pl-10 bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 font-medium cursor-default",
-                            error && "border-red-500"
+                            hasError && "border-red-500 ring-red-500 bg-red-50/50 dark:bg-red-950/10"
                         )}
                     />
                     <div className="absolute right-3 top-1/2 -translate-y-1/2">
@@ -367,6 +421,7 @@ const DepartmentDisplay = ({ department, error, driver }) => {
                             {deptCode || "Auto-filled"}
                         </Badge>
                     </div>
+                    {hasError && <FieldError error={error} />}
                 </div>
             );
         }
@@ -380,9 +435,10 @@ const DepartmentDisplay = ({ department, error, driver }) => {
                     disabled
                     className={cn(
                         "pl-10 bg-yellow-50 dark:bg-yellow-950/20 border-yellow-300 dark:border-yellow-700 text-yellow-700 dark:text-yellow-300 cursor-default",
-                        error && "border-red-500"
+                        hasError && "border-red-500 ring-red-500 bg-red-50/50 dark:bg-red-950/10"
                     )}
                 />
+                {hasError && <FieldError error={error} />}
             </div>
         );
     }
@@ -396,9 +452,10 @@ const DepartmentDisplay = ({ department, error, driver }) => {
                 disabled
                 className={cn(
                     "pl-10 bg-slate-100 dark:bg-slate-800 cursor-not-allowed text-slate-400 dark:text-slate-500",
-                    error && "border-red-500"
+                    hasError && "border-red-500 ring-red-500 bg-red-50/50 dark:bg-red-950/10"
                 )}
             />
+            {hasError && <FieldError error={error} />}
         </div>
     );
 };
@@ -532,6 +589,8 @@ const GsoCreateTrip = () => {
     const navigate = useNavigate();
     const queryClient = useQueryClient();
     const abortControllerRef = useRef(null);
+    const firstErrorRef = useRef(null);
+    const toastIdRef = useRef(null);
 
     const [formData, setFormData] = useState({
         department_id: "",
@@ -640,7 +699,9 @@ const GsoCreateTrip = () => {
                     charge_to: chargeTo,
                 }));
                 setErrors(prev => ({ ...prev, department_id: "", driver_id: "", charge_to: "" }));
-                toast.success(`Driver selected: ${driver.full_name || driver.user?.full_name || driver.name}`);
+                // ✅ Single toast - dismiss previous first
+                if (toastIdRef.current) toast.dismiss(toastIdRef.current);
+                toastIdRef.current = toast.success(`Driver selected: ${driver.full_name || driver.user?.full_name || driver.name}`);
             } else {
                 toast.warning("Selected driver has no department assigned.");
                 setFormData(prev => ({ ...prev, driver_id: driverId?.toString() || "", charge_to: "" }));
@@ -656,7 +717,8 @@ const GsoCreateTrip = () => {
 
     const handleManualSearch = async () => {
         if (!manualSearchQuery.trim() || manualSearchQuery.trim().length < 2) {
-            toast.error("Please enter at least 2 characters to search");
+            if (toastIdRef.current) toast.dismiss(toastIdRef.current);
+            toastIdRef.current = toast.error("Please enter at least 2 characters to search");
             return;
         }
         setIsManualSearching(true);
@@ -675,15 +737,16 @@ const GsoCreateTrip = () => {
                     if (filtered.length > 0) {
                         setDestinationSuggestions(filtered);
                         setShowSuggestions(true);
-                        toast.success(`Found ${filtered.length} results`);
+                        if (toastIdRef.current) toast.dismiss(toastIdRef.current);
+                        toastIdRef.current = toast.success(`Found ${filtered.length} results`);
                     } else if (predictions.length > 0) {
                         setDestinationSuggestions(predictions);
                         setShowSuggestions(true);
-                        toast("Showing results without coordinates", { icon: "⚠️", duration: 3000 });
                     } else {
                         setDestinationSuggestions([]);
                         setShowSuggestions(false);
-                        toast.error("No results found. Try a different search term.");
+                        if (toastIdRef.current) toast.dismiss(toastIdRef.current);
+                        toastIdRef.current = toast.error("No results found. Try a different search term.");
                     }
                 } else {
                     toast.error(data.message || "Search failed");
@@ -778,10 +841,12 @@ const GsoCreateTrip = () => {
                         setFormData(prev => ({ ...prev, destination: data.address }));
                     }
                 } else {
-                    toast.error(response.data.message || "Failed to calculate distance");
+                    if (toastIdRef.current) toast.dismiss(toastIdRef.current);
+                    toastIdRef.current = toast.error(response.data.message || "Failed to calculate distance");
                 }
             } catch (error) {
-                toast.error("Failed to calculate distance. Please try again.");
+                if (toastIdRef.current) toast.dismiss(toastIdRef.current);
+                toastIdRef.current = toast.error("Failed to calculate distance. Please try again.");
             } finally {
                 setIsCalculating(false);
             }
@@ -820,6 +885,10 @@ const GsoCreateTrip = () => {
             setDestinationSuggestions([]);
             setShowSuggestions(false);
         }
+        // Clear error when typing
+        if (errors.destination) {
+            setErrors(prev => ({ ...prev, destination: "" }));
+        }
     };
 
     const clearDestination = () => {
@@ -832,6 +901,9 @@ const GsoCreateTrip = () => {
         setShowSuggestions(false);
         setShowMap(false);
         if (abortControllerRef.current) abortControllerRef.current.abort();
+        if (errors.destination) {
+            setErrors(prev => ({ ...prev, destination: "" }));
+        }
     };
 
     // ============================================
@@ -878,30 +950,116 @@ const GsoCreateTrip = () => {
     }, [formData.vehicle_id]);
 
     // ============================================
-    // VALIDATION
+    // ✅ ENHANCED VALIDATION - Single toast with all errors
     // ============================================
 
     const validateForm = () => {
         const newErrors = {};
         const newTouched = {};
-        if (!formData.department_id) { newErrors.department_id = "Department is required"; newTouched.department_id = true; }
-        if (!formData.driver_id) { newErrors.driver_id = "Driver is required"; newTouched.driver_id = true; }
-        if (!formData.vehicle_id) { newErrors.vehicle_id = "Vehicle is required"; newTouched.vehicle_id = true; }
-        if (!formData.trip_date) { newErrors.trip_date = "Trip date is required"; newTouched.trip_date = true; }
+
+        // Department validation
+        if (!formData.department_id) {
+            newErrors.department_id = "Department is required";
+            newTouched.department_id = true;
+        }
+
+        // Driver validation
+        if (!formData.driver_id) {
+            newErrors.driver_id = "Driver is required";
+            newTouched.driver_id = true;
+        }
+
+        // Vehicle validation
+        if (!formData.vehicle_id) {
+            newErrors.vehicle_id = "Vehicle is required";
+            newTouched.vehicle_id = true;
+        }
+
+        // Trip date validation
+        if (!formData.trip_date) {
+            newErrors.trip_date = "Trip date is required";
+            newTouched.trip_date = true;
+        } else {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const tripDate = new Date(formData.trip_date);
+            if (tripDate < today) {
+                newErrors.trip_date = "Trip date cannot be in the past";
+                newTouched.trip_date = true;
+            }
+        }
+
+        // Destination validation
         if (!formData.destination || formData.destination.trim().length < 2) {
             newErrors.destination = "Destination must be at least 2 characters";
             newTouched.destination = true;
         }
+
+        // Purpose validation
         if (!formData.purpose || formData.purpose.trim().length < 5) {
             newErrors.purpose = "Purpose must be at least 5 characters";
             newTouched.purpose = true;
         }
+
+        // Estimated distance validation
+        if (!formData.estimated_distance_km || parseFloat(formData.estimated_distance_km) <= 0) {
+            newErrors.estimated_distance_km = "Please calculate the distance first";
+            newTouched.estimated_distance_km = true;
+        }
+
         setErrors(newErrors);
         setTouched(prev => ({ ...prev, ...newTouched }));
-        return Object.keys(newErrors).length === 0;
+
+        // ✅ Show single toast with all errors
+        if (Object.keys(newErrors).length > 0) {
+            const errorMessages = Object.entries(newErrors).map(([field, msg]) => {
+                const labels = {
+                    department_id: 'Department',
+                    driver_id: 'Driver',
+                    vehicle_id: 'Vehicle',
+                    trip_date: 'Trip Date',
+                    destination: 'Destination',
+                    purpose: 'Purpose',
+                    estimated_distance_km: 'Estimated Distance'
+                };
+                const label = labels[field] || field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                return `• ${label}: ${msg}`;
+            });
+
+            // ✅ Dismiss any existing toast
+            if (toastIdRef.current) toast.dismiss(toastIdRef.current);
+
+            toastIdRef.current = toast.error(
+                <div className="space-y-1">
+                    <div className="font-semibold text-red-600 dark:text-red-400">Please fix the following errors:</div>
+                    <div className="text-sm text-red-500 dark:text-red-300 space-y-0.5">
+                        {errorMessages.map((msg, i) => (
+                            <div key={i}>{msg}</div>
+                        ))}
+                    </div>
+                </div>,
+                { duration: 5000 }
+            );
+
+            // ✅ Auto-focus first error field
+            const firstField = Object.keys(newErrors)[0];
+            if (firstField) {
+                const element = document.querySelector(`[name="${firstField}"]`) || 
+                                document.getElementById(firstField);
+                if (element) {
+                    setTimeout(() => element.focus(), 100);
+                }
+            }
+
+            return false;
+        }
+
+        return true;
     };
 
-    const handleFieldBlur = (field) => setTouched(prev => ({ ...prev, [field]: true }));
+    const handleFieldBlur = (field) => {
+        setTouched(prev => ({ ...prev, [field]: true }));
+    };
 
     // ============================================
     // MUTATIONS
@@ -913,13 +1071,15 @@ const GsoCreateTrip = () => {
             return response.data;
         },
         onSuccess: () => {
-            toast.success("✅ Trip ticket created successfully!");
+            if (toastIdRef.current) toast.dismiss(toastIdRef.current);
+            toastIdRef.current = toast.success("✅ Trip ticket created successfully!");
             queryClient.invalidateQueries({ queryKey: ["gso"] });
             queryClient.invalidateQueries({ queryKey: ["drivers"] });
             navigate("/gso/dashboard");
         },
         onError: (error) => {
-            toast.error(error.response?.data?.message || "Failed to create trip");
+            if (toastIdRef.current) toast.dismiss(toastIdRef.current);
+            toastIdRef.current = toast.error(error.response?.data?.message || "Failed to create trip");
         },
     });
 
@@ -934,8 +1094,10 @@ const GsoCreateTrip = () => {
 
     const handleSubmit = (e) => {
         e.preventDefault();
+        // ✅ Dismiss any existing toast before validation
+        if (toastIdRef.current) toast.dismiss(toastIdRef.current);
+        
         if (!validateForm()) {
-            toast.error("Please fix all errors before submitting");
             return;
         }
         createTripMutation.mutate(formData);
@@ -1010,20 +1172,22 @@ const GsoCreateTrip = () => {
                         <FormSection title="Driver Selection" icon={User}>
                             <div className="space-y-4">
                                 <div>
-                                    <Label htmlFor="driver_search">Search Driver <span className="text-red-500">*</span></Label>
+                                    <Label htmlFor="driver_id">Search Driver <span className="text-red-500">*</span></Label>
                                     <p className="text-xs text-slate-400 dark:text-slate-500 mb-2">
                                         Type driver name to search across all departments
                                     </p>
                                     <DriverDatalist
+                                        id="driver_id"
+                                        name="driver_id"
                                         value={formData.driver_id}
                                         onChange={(value) => handleChange("driver_id", value)}
                                         onBlur={() => handleFieldBlur("driver_id")}
-                                        error={hasError("driver_id")}
+                                        error={errors.driver_id}
+                                        touched={touched.driver_id}
                                         drivers={drivers}
                                         loading={driversLoading}
                                         onDriverSelect={handleDriverSelect}
                                     />
-                                    <FieldError error={errors.driver_id} />
                                 </div>
                             </div>
                         </FormSection>
@@ -1031,23 +1195,23 @@ const GsoCreateTrip = () => {
                         {/* Destination */}
                         <FormSection title="Trip Details" icon={MapPin}>
                             <div className="space-y-4">
-                                <div className="relative">
-                                    <Label htmlFor="destination">Destination <span className="text-red-500">*</span></Label>
-                                    <div className="relative mt-1 flex gap-2">
+                                <FormFieldWrapper
+                                    label="Destination"
+                                    icon={MapPin}
+                                    required
+                                    error={errors.destination}
+                                    touched={touched.destination}
+                                >
+                                    <div className="relative flex gap-2">
                                         <div className="relative flex-1">
-                                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                                <MapPin className="h-4 w-4 text-gray-400" />
-                                            </div>
                                             <Input
                                                 id="destination"
+                                                name="destination"
                                                 placeholder="Type destination name..."
                                                 value={formData.destination}
                                                 onChange={(e) => handleDestinationChange(e.target.value)}
                                                 onBlur={() => handleFieldBlur("destination")}
-                                                className={cn(
-                                                    "pl-10 pr-10",
-                                                    hasError("destination") && "border-red-500 ring-red-500"
-                                                )}
+                                                className="pl-10 pr-10"
                                             />
                                             {formData.destination && (
                                                 <button type="button" onClick={clearDestination} className="absolute inset-y-0 right-0 pr-3 flex items-center">
@@ -1069,33 +1233,33 @@ const GsoCreateTrip = () => {
                                             {isManualSearching ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Search className="h-4 w-4 mr-1" /> Search</>}
                                         </Button>
                                     </div>
-                                    {showSuggestions && destinationSuggestions.length > 0 && (
-                                        <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg max-h-60 overflow-auto">
-                                            <div className="sticky top-0 bg-gray-100 dark:bg-gray-700 px-4 py-2 text-xs text-gray-500 dark:text-gray-400 flex justify-between items-center border-b border-gray-200 dark:border-gray-600">
-                                                <span>Suggestions</span>
-                                                <span className="text-blue-500">{destinationSuggestions.length} results</span>
-                                            </div>
-                                            {destinationSuggestions.map((suggestion, index) => (
-                                                <div
-                                                    key={index}
-                                                    onClick={() => handleSelectDestination(suggestion)}
-                                                    className="px-4 py-3 hover:bg-blue-50 dark:hover:bg-gray-700 cursor-pointer flex items-start gap-3 transition-colors border-b border-gray-100 dark:border-gray-700 last:border-0"
-                                                >
-                                                    <MapPin className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
-                                                    <div>
-                                                        <p className="text-sm text-gray-900 dark:text-white">{suggestion.description}</p>
-                                                        <p className="text-xs text-gray-500 dark:text-gray-400">
-                                                            {suggestion.lat && suggestion.lng
-                                                                ? `${suggestion.lat.toFixed(4)}, ${suggestion.lng.toFixed(4)}`
-                                                                : "Click to calculate distance"}
-                                                        </p>
-                                                    </div>
-                                                </div>
-                                            ))}
+                                </FormFieldWrapper>
+
+                                {showSuggestions && destinationSuggestions.length > 0 && (
+                                    <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg max-h-60 overflow-auto">
+                                        <div className="sticky top-0 bg-gray-100 dark:bg-gray-700 px-4 py-2 text-xs text-gray-500 dark:text-gray-400 flex justify-between items-center border-b border-gray-200 dark:border-gray-600">
+                                            <span>Suggestions</span>
+                                            <span className="text-blue-500">{destinationSuggestions.length} results</span>
                                         </div>
-                                    )}
-                                    <FieldError error={errors.destination} />
-                                </div>
+                                        {destinationSuggestions.map((suggestion, index) => (
+                                            <div
+                                                key={index}
+                                                onClick={() => handleSelectDestination(suggestion)}
+                                                className="px-4 py-3 hover:bg-blue-50 dark:hover:bg-gray-700 cursor-pointer flex items-start gap-3 transition-colors border-b border-gray-100 dark:border-gray-700 last:border-0"
+                                            >
+                                                <MapPin className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                                                <div>
+                                                    <p className="text-sm text-gray-900 dark:text-white">{suggestion.description}</p>
+                                                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                                                        {suggestion.lat && suggestion.lng
+                                                            ? `${suggestion.lat.toFixed(4)}, ${suggestion.lng.toFixed(4)}`
+                                                            : "Click to calculate distance"}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
 
                                 {/* Trip Estimate */}
                                 {tripEstimate && (
@@ -1210,63 +1374,77 @@ const GsoCreateTrip = () => {
                         <FormSection title="Assignment" icon={Building2}>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div>
-                                    <Label htmlFor="department_id">Department <span className="text-red-500">*</span></Label>
+                                    <Label>Department <span className="text-red-500">*</span></Label>
                                     <p className="text-xs text-slate-400 dark:text-slate-500 mb-2">Auto-filled from driver selection</p>
                                     <DepartmentDisplay
                                         department={selectedDepartment}
-                                        error={hasError("department_id")}
+                                        error={errors.department_id}
                                         driver={selectedDriverObj}
+                                        touched={touched.department_id}
                                     />
-                                    <FieldError error={errors.department_id} />
                                 </div>
                                 <div>
-                                    <Label htmlFor="vehicle_id">Vehicle <span className="text-red-500">*</span></Label>
-                                    <Select
-                                        value={formData.vehicle_id?.toString() || undefined}
-                                        onValueChange={(value) => handleChange("vehicle_id", value)}
-                                        onOpenChange={() => handleFieldBlur("vehicle_id")}
+                                    <FormFieldWrapper
+                                        label="Vehicle"
+                                        icon={Truck}
+                                        required
+                                        error={errors.vehicle_id}
+                                        touched={touched.vehicle_id}
                                     >
-                                        <SelectTrigger className={cn(hasError("vehicle_id") && "border-red-500 ring-red-500")}>
-                                            <SelectValue
-                                                placeholder={
-                                                    !formData.department_id
-                                                        ? "Select a driver first"
-                                                        : availableVehicles.length === 0
-                                                            ? "No vehicles available for this department"
-                                                            : "Select vehicle"
-                                                }
-                                            />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {availableVehicles.length === 0 ? (
-                                                <SelectItem value="no-vehicle" disabled>
-                                                    {!formData.department_id ? "Select a driver first" : "No vehicles available for this department"}
-                                                </SelectItem>
-                                            ) : (
-                                                availableVehicles.map((vehicle) => (
-                                                    <SelectItem key={vehicle.vehicle_id} value={vehicle.vehicle_id.toString()}>
-                                                        <div className="flex items-center gap-2">
-                                                            <Truck className="h-4 w-4" />
-                                                            {vehicle.plate_number} - {vehicle.vehicle_model}
-                                                        </div>
+                                        <Select
+                                            value={formData.vehicle_id?.toString() || undefined}
+                                            onValueChange={(value) => handleChange("vehicle_id", value)}
+                                            onOpenChange={() => handleFieldBlur("vehicle_id")}
+                                        >
+                                            <SelectTrigger className={cn(hasError("vehicle_id") && "border-red-500 ring-red-500")}>
+                                                <SelectValue
+                                                    placeholder={
+                                                        !formData.department_id
+                                                            ? "Select a driver first"
+                                                            : availableVehicles.length === 0
+                                                                ? "No vehicles available for this department"
+                                                                : "Select vehicle"
+                                                    }
+                                                />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {availableVehicles.length === 0 ? (
+                                                    <SelectItem value="no-vehicle" disabled>
+                                                        {!formData.department_id ? "Select a driver first" : "No vehicles available for this department"}
                                                     </SelectItem>
-                                                ))
-                                            )}
-                                        </SelectContent>
-                                    </Select>
-                                    <FieldError error={errors.vehicle_id} />
+                                                ) : (
+                                                    availableVehicles.map((vehicle) => (
+                                                        <SelectItem key={vehicle.vehicle_id} value={vehicle.vehicle_id.toString()}>
+                                                            <div className="flex items-center gap-2">
+                                                                <Truck className="h-4 w-4" />
+                                                                {vehicle.plate_number} - {vehicle.vehicle_model}
+                                                            </div>
+                                                        </SelectItem>
+                                                    ))
+                                                )}
+                                            </SelectContent>
+                                        </Select>
+                                    </FormFieldWrapper>
                                 </div>
                                 <div>
-                                    <Label htmlFor="trip_date">Trip Date <span className="text-red-500">*</span></Label>
-                                    <Input
-                                        id="trip_date"
-                                        type="date"
-                                        value={formData.trip_date}
-                                        onChange={(e) => handleChange("trip_date", e.target.value)}
-                                        onBlur={() => handleFieldBlur("trip_date")}
-                                        className={cn(hasError("trip_date") && "border-red-500 ring-red-500")}
-                                    />
-                                    <FieldError error={errors.trip_date} />
+                                    <FormFieldWrapper
+                                        label="Trip Date"
+                                        icon={Calendar}
+                                        required
+                                        error={errors.trip_date}
+                                        touched={touched.trip_date}
+                                        helper="Select the date of the trip"
+                                    >
+                                        <Input
+                                            id="trip_date"
+                                            name="trip_date"
+                                            type="date"
+                                            value={formData.trip_date}
+                                            onChange={(e) => handleChange("trip_date", e.target.value)}
+                                            onBlur={() => handleFieldBlur("trip_date")}
+                                            className={cn(hasError("trip_date") && "border-red-500 ring-red-500")}
+                                        />
+                                    </FormFieldWrapper>
                                 </div>
                             </div>
                         </FormSection>
@@ -1303,10 +1481,17 @@ const GsoCreateTrip = () => {
                         {/* Purpose & Passenger */}
                         <FormSection title="Additional Details" icon={FileText}>
                             <div className="space-y-4">
-                                <div>
-                                    <Label htmlFor="purpose">Purpose <span className="text-red-500">*</span></Label>
+                                <FormFieldWrapper
+                                    label="Purpose"
+                                    icon={FileText}
+                                    required
+                                    error={errors.purpose}
+                                    touched={touched.purpose}
+                                    helper="Describe the reason for this trip"
+                                >
                                     <Textarea
                                         id="purpose"
+                                        name="purpose"
                                         placeholder="Describe the purpose of this trip..."
                                         value={formData.purpose}
                                         onChange={(e) => handleChange("purpose", e.target.value)}
@@ -1314,21 +1499,24 @@ const GsoCreateTrip = () => {
                                         rows={3}
                                         className={cn(hasError("purpose") && "border-red-500 ring-red-500")}
                                     />
-                                    <FieldError error={errors.purpose} />
-                                </div>
+                                </FormFieldWrapper>
+
                                 <div>
                                     <Label htmlFor="passenger_name">Passenger Name (Optional)</Label>
                                     <Input
                                         id="passenger_name"
+                                        name="passenger_name"
                                         placeholder="Name of passenger"
                                         value={formData.passenger_name}
                                         onChange={(e) => handleChange("passenger_name", e.target.value)}
                                     />
                                 </div>
+
                                 <div>
                                     <Label htmlFor="charge_to">Charge To</Label>
                                     <Input
                                         id="charge_to"
+                                        name="charge_to"
                                         value={formData.charge_to || ''}
                                         disabled
                                         className={cn(

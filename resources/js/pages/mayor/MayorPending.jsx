@@ -1,5 +1,11 @@
 // src/pages/mayor/MayorPending.jsx
-import React, { useState, useEffect, useCallback } from "react";
+// ============================================
+// ENHANCED: Improved validation with field highlighting
+// No duplicate toasts - single toast with all errors
+// Auto-focus first error field
+// ============================================
+
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { mayorsOfficeAPI } from "../../services/api";
 import { Button } from "@/components/ui/button";
@@ -64,6 +70,58 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "react-hot-toast";
 import { cn } from "@/lib/utils";
 import GasSlipView from "../../pages/mayor/reports/GasSlipView";
+
+// ============================================
+// ✅ ENHANCED: Form Field with error highlighting
+// ============================================
+
+const FormField = ({
+  label,
+  icon: Icon,
+  required,
+  error,
+  touched,
+  helper,
+  children,
+  className,
+}) => {
+  const hasError = touched && error;
+  
+  return (
+    <div className={cn("space-y-1.5", className)}>
+      <Label className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300">
+        {Icon && <Icon className="h-4 w-4 text-slate-400" />}
+        {label}
+        {required && <span className="text-red-500">*</span>}
+      </Label>
+      <div className="relative">
+        {React.cloneElement(children, {
+          className: cn(
+            children.props.className,
+            hasError && "border-red-500 ring-red-500 focus:ring-red-500 bg-red-50/50 dark:bg-red-950/10"
+          )
+        })}
+        {hasError && (
+          <div className="absolute right-3 top-1/2 -translate-y-1/2">
+            <AlertCircle className="h-4 w-4 text-red-500 animate-pulse" />
+          </div>
+        )}
+      </div>
+      {hasError && (
+        <p className="text-red-500 text-xs flex items-center gap-1 mt-1 animate-fadeIn">
+          <AlertCircle className="h-3 w-3 flex-shrink-0" />
+          {error}
+        </p>
+      )}
+      {helper && !hasError && (
+        <p className="text-xs text-slate-400 dark:text-slate-500 flex items-center gap-1 mt-1">
+          <Info className="h-3 w-3" />
+          {helper}
+        </p>
+      )}
+    </div>
+  );
+};
 
 // ============================================================
 // STATS CARD COMPONENT
@@ -364,6 +422,8 @@ const ReceiptVerificationModal = ({
 
 const MayorPending = () => {
   const navigate = useNavigate();
+  const toastIdRef = useRef(null);
+  
   const [tickets, setTickets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -394,6 +454,10 @@ const MayorPending = () => {
   const [chargeToDepartmentId, setChargeToDepartmentId] = useState("");
   const [availableDepartments, setAvailableDepartments] = useState([]);
   const [loadingDepartments, setLoadingDepartments] = useState(false);
+
+  // ✅ Validation states for Approve Dialog
+  const [approveErrors, setApproveErrors] = useState({});
+  const [approveTouched, setApproveTouched] = useState({});
 
   // ✅ Calculate estimated cost from ticket
   const getEstimatedCost = (ticket) => {
@@ -603,6 +667,72 @@ const MayorPending = () => {
   }, [tickets]);
 
   // ============================================================
+  // ✅ ENHANCED VALIDATION FOR APPROVE DIALOG
+  // ============================================================
+
+  const validateApprove = () => {
+    const newErrors = {};
+    const newTouched = {};
+
+    if (!amountReleased || parseFloat(amountReleased) <= 0) {
+      newErrors.amount = "Please enter a valid amount to release";
+      newTouched.amount = true;
+    }
+
+    if (isForceApprove && !forceApproveReason.trim()) {
+      newErrors.forceReason = "Please provide a reason for early fund release";
+      newTouched.forceReason = true;
+    }
+
+    if (isCrossDepartment && !crossDepartmentReason.trim()) {
+      newErrors.crossReason = "Please provide a reason for cross-department fuel usage";
+      newTouched.crossReason = true;
+    }
+
+    if (isCrossDepartment && chargeToDepartmentId === selectedTicket?.department_id?.toString()) {
+      newErrors.crossDepartment = "Please select a different department for cross-department usage";
+      newTouched.crossDepartment = true;
+    }
+
+    setApproveErrors(newErrors);
+    setApproveTouched(prev => ({ ...prev, ...newTouched }));
+
+    if (Object.keys(newErrors).length > 0) {
+      const errorMessages = Object.entries(newErrors).map(([field, msg]) => {
+        const labels = {
+          amount: 'Amount',
+          forceReason: 'Force Approve Reason',
+          crossReason: 'Cross-Department Reason',
+          crossDepartment: 'Cross-Department Selection'
+        };
+        const label = labels[field] || field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+        return `• ${label}: ${msg}`;
+      });
+
+      if (toastIdRef.current) toast.dismiss(toastIdRef.current);
+      toastIdRef.current = toast.error(
+        <div className="space-y-1">
+          <div className="font-semibold text-red-600 dark:text-red-400">Please fix the following errors:</div>
+          <div className="text-sm text-red-500 dark:text-red-300 space-y-0.5">
+            {errorMessages.map((msg, i) => (
+              <div key={i}>{msg}</div>
+            ))}
+          </div>
+        </div>,
+        { duration: 5000 }
+      );
+
+      const firstField = Object.keys(newErrors)[0];
+      if (firstField) {
+        const element = document.querySelector(`[name="${firstField}"]`) || document.getElementById(firstField);
+        if (element) setTimeout(() => element.focus(), 100);
+      }
+      return false;
+    }
+    return true;
+  };
+
+  // ============================================================
   // ✅ HANDLE VIEW GAS SLIP
   // ============================================================
   
@@ -622,6 +752,8 @@ const MayorPending = () => {
   const openApproveDialog = async (ticket) => {
     setSelectedTicket(ticket);
     setAmountReleased("");
+    setApproveErrors({});
+    setApproveTouched({});
     
     setIsCrossDepartment(false);
     setCrossDepartmentReason("");
@@ -696,13 +828,8 @@ const MayorPending = () => {
       return;
     }
 
-    if (!amountReleased || parseFloat(amountReleased) <= 0) {
-      toast.error("Please enter a valid amount to release");
-      return;
-    }
-
-    if (isForceApprove && !forceApproveReason.trim()) {
-      toast.error("Please provide a reason for early fund release");
+    // ✅ Run validation
+    if (!validateApprove()) {
       return;
     }
 
@@ -713,16 +840,6 @@ const MayorPending = () => {
 
     if (!finalChargeDeptId) {
       toast.error("Please select which department to charge");
-      return;
-    }
-
-    if (isCrossDepartment && finalChargeDeptId === selectedTicket?.department_id?.toString()) {
-      toast.error("❌ Cross-Department usage selected but same department is chosen. Please select a different department or uncheck the Cross-Department option.");
-      return;
-    }
-
-    if (isCrossDepartment && !crossDepartmentReason.trim()) {
-      toast.error("Please provide a reason for cross-department fuel usage");
       return;
     }
 
@@ -749,7 +866,8 @@ const MayorPending = () => {
             "Reason: " + forceApproveReason + "\n\n" +
             "✅ This action has been recorded in the audit log.";
         }
-        toast.success(successMessage);
+        if (toastIdRef.current) toast.dismiss(toastIdRef.current);
+        toastIdRef.current = toast.success(successMessage);
         
         setShowApproveDialog(false);
         setSelectedTicket(null);
@@ -759,12 +877,15 @@ const MayorPending = () => {
         setCrossDepartmentReason("");
         setIsForceApprove(false);
         setForceApproveReason("");
+        setApproveErrors({});
+        setApproveTouched({});
         fetchTickets();
       }
     } catch (error) {
       console.error("API Error:", error);
       const errorMessage = error.response?.data?.message || "Failed to release funds";
-      toast.error(errorMessage);
+      if (toastIdRef.current) toast.dismiss(toastIdRef.current);
+      toastIdRef.current = toast.error(errorMessage);
       
       if (error.response?.data?.budget_info) {
         const budgetInfo = error.response.data.budget_info;
@@ -779,8 +900,13 @@ const MayorPending = () => {
 
   const handleReject = async () => {
     if (!selectedTicket) return;
+    
+    // ✅ Validate rejection note
     if (!rejectionNote.trim()) {
-      toast.error("Please provide a reason for rejection");
+      if (toastIdRef.current) toast.dismiss(toastIdRef.current);
+      toastIdRef.current = toast.error("Please provide a reason for rejection");
+      setApproveErrors(prev => ({ ...prev, rejectNote: "Reason is required" }));
+      setApproveTouched(prev => ({ ...prev, rejectNote: true }));
       return;
     }
 
@@ -793,11 +919,15 @@ const MayorPending = () => {
       setShowRejectDialog(false);
       setSelectedTicket(null);
       setRejectionNote("");
+      setApproveErrors({});
+      setApproveTouched({});
       fetchTickets();
-      toast.success("Ticket rejected and returned to department");
+      if (toastIdRef.current) toast.dismiss(toastIdRef.current);
+      toastIdRef.current = toast.success("Ticket rejected and returned to department");
     } catch (error) {
       console.error("Failed to reject ticket:", error);
-      toast.error(error.response?.data?.message || "Failed to reject ticket");
+      if (toastIdRef.current) toast.dismiss(toastIdRef.current);
+      toastIdRef.current = toast.error(error.response?.data?.message || "Failed to reject ticket");
     } finally {
       setSubmitting(false);
     }
@@ -1230,6 +1360,9 @@ const MayorPending = () => {
                         const checked = e.target.checked;
                         setIsForceApprove(checked);
                         if (!checked) setForceApproveReason("");
+                        if (approveErrors.forceReason) {
+                          setApproveErrors(prev => ({ ...prev, forceReason: "" }));
+                        }
                       }}
                       className="mt-1 h-4 w-4 rounded border-slate-300 text-orange-600 focus:ring-orange-500 dark:border-slate-600 dark:bg-slate-700"
                     />
@@ -1240,13 +1373,29 @@ const MayorPending = () => {
                         <span className="text-[10px] px-1.5 py-0.5 border border-orange-500 text-orange-500 rounded-full">Override</span>
                       </Label>
                       {isForceApprove && (
-                        <Textarea
-                          placeholder="Reason for early release..."
-                          value={forceApproveReason}
-                          onChange={(e) => setForceApproveReason(e.target.value)}
-                          rows={2}
-                          className="mt-1.5 text-sm resize-none dark:bg-slate-900 dark:border-slate-700 dark:text-white"
-                        />
+                        <FormField
+                          label="Reason for early release"
+                          icon={Info}
+                          required
+                          error={approveErrors.forceReason}
+                          touched={approveTouched.forceReason}
+                        >
+                          <Textarea
+                            id="forceReason"
+                            name="forceReason"
+                            placeholder="Reason for early release..."
+                            value={forceApproveReason}
+                            onChange={(e) => {
+                              setForceApproveReason(e.target.value);
+                              if (approveErrors.forceReason) {
+                                setApproveErrors(prev => ({ ...prev, forceReason: "" }));
+                              }
+                            }}
+                            onBlur={() => setApproveTouched(prev => ({ ...prev, forceReason: true }))}
+                            rows={2}
+                            className="mt-1.5 text-sm resize-none dark:bg-slate-900 dark:border-slate-700 dark:text-white"
+                          />
+                        </FormField>
                       )}
                     </div>
                   </div>
@@ -1296,17 +1445,29 @@ const MayorPending = () => {
               </div>
 
               {/* Department Selector */}
-              <div>
-                <Label htmlFor="charge_to_department" className="text-sm text-slate-700 dark:text-slate-300">
-                  Charge To Department <span className="text-red-500">*</span>
-                </Label>
+              <FormField
+                label="Charge To Department"
+                icon={Building2}
+                required
+                error={approveErrors.crossDepartment}
+                touched={approveTouched.crossDepartment}
+                helper={!isCrossDepartment ? "Check 'Cross-Department Usage' to select another department" : ""}
+              >
                 <select
                   id="charge_to_department"
+                  name="charge_to_department"
                   value={chargeToDepartmentId}
-                  onChange={(e) => setChargeToDepartmentId(e.target.value)}
+                  onChange={(e) => {
+                    setChargeToDepartmentId(e.target.value);
+                    if (approveErrors.crossDepartment) {
+                      setApproveErrors(prev => ({ ...prev, crossDepartment: "" }));
+                    }
+                  }}
+                  onBlur={() => setApproveTouched(prev => ({ ...prev, crossDepartment: true }))}
                   disabled={!isCrossDepartment}
                   className={cn(
                     "w-full mt-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-900 dark:text-white text-sm",
+                    approveErrors.crossDepartment && "border-red-500 ring-red-500 bg-red-50/50 dark:bg-red-950/10",
                     isCrossDepartment 
                       ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20 dark:border-blue-700" 
                       : "border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 cursor-not-allowed opacity-60"
@@ -1326,33 +1487,7 @@ const MayorPending = () => {
                       </option>
                     ))}
                 </select>
-
-                {isCrossDepartment && chargeToDepartmentId === selectedTicket?.department_id?.toString() && (
-                  <p className="text-xs text-red-500 mt-1 flex items-center gap-1">
-                    <AlertCircle className="h-3 w-3" />
-                    ⚠️ Please select a DIFFERENT department for cross-department usage
-                  </p>
-                )}
-
-                {!isCrossDepartment && (
-                  <p className="text-xs text-slate-400 mt-1 flex items-center gap-1">
-                    <Info className="h-3 w-3" />
-                    Check "Cross-Department Usage" to select another department
-                  </p>
-                )}
-                {isCrossDepartment && availableDepartments.length === 0 && !loadingDepartments && (
-                  <p className="text-xs text-yellow-600 mt-1 flex items-center gap-1">
-                    <AlertCircle className="h-3 w-3" />
-                    No departments available. Please refresh.
-                  </p>
-                )}
-                {loadingDepartments && (
-                  <p className="text-xs text-slate-400 mt-1 flex items-center gap-1">
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                    Loading departments...
-                  </p>
-                )}
-              </div>
+              </FormField>
 
               {/* Cross-Department */}
               <div className="border-t dark:border-slate-700 pt-3">
@@ -1370,6 +1505,9 @@ const MayorPending = () => {
                           setChargeToDepartmentId(selectedTicket.department_id.toString());
                         }
                       }
+                      if (approveErrors.crossReason) {
+                        setApproveErrors(prev => ({ ...prev, crossReason: "" }));
+                      }
                     }}
                     className="mt-1 h-4 w-4 rounded border-slate-300 text-orange-600 focus:ring-orange-500 dark:border-slate-600 dark:bg-slate-700"
                   />
@@ -1380,65 +1518,96 @@ const MayorPending = () => {
                       <span className="text-[10px] px-1.5 py-0.5 border border-orange-500 text-orange-500 rounded-full">Check to enable</span>
                     </Label>
                     {isCrossDepartment && (
-                      <Textarea
-                        placeholder="Reason for cross-department usage..."
-                        value={crossDepartmentReason}
-                        onChange={(e) => setCrossDepartmentReason(e.target.value)}
-                        rows={2}
-                        className="mt-1.5 text-sm resize-none dark:bg-slate-900 dark:border-slate-700 dark:text-white"
-                      />
+                      <FormField
+                        label="Reason for cross-department usage"
+                        icon={Info}
+                        required
+                        error={approveErrors.crossReason}
+                        touched={approveTouched.crossReason}
+                      >
+                        <Textarea
+                          id="crossReason"
+                          name="crossReason"
+                          placeholder="Reason for cross-department usage..."
+                          value={crossDepartmentReason}
+                          onChange={(e) => {
+                            setCrossDepartmentReason(e.target.value);
+                            if (approveErrors.crossReason) {
+                              setApproveErrors(prev => ({ ...prev, crossReason: "" }));
+                            }
+                          }}
+                          onBlur={() => setApproveTouched(prev => ({ ...prev, crossReason: true }))}
+                          rows={2}
+                          className="mt-1.5 text-sm resize-none dark:bg-slate-900 dark:border-slate-700 dark:text-white"
+                        />
+                      </FormField>
                     )}
                   </div>
                 </div>
               </div>
 
               {/* Amount */}
-              <div>
-                <Label htmlFor="amount" className="text-sm text-slate-700 dark:text-slate-300">Amount (₱)</Label>
-                <Input
-                  id="amount"
-                  type="number"
-                  step="0.01"
-                  placeholder="Enter amount"
-                  value={amountReleased}
-                  onChange={(e) => setAmountReleased(e.target.value)}
-                  className="mt-1 dark:bg-slate-900 dark:border-slate-700 dark:text-white"
-                />
-                {selectedTicket && getEstimatedCost(selectedTicket) > 0 && (
-                  <div className="flex items-center gap-2 mt-1.5">
-                    <div className="flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
-                      <Calculator className="h-3.5 w-3.5 text-blue-400" />
-                      <span>Suggested:</span>
-                      <span className="font-semibold text-blue-600 dark:text-blue-400">
-                        {formatCurrency(getEstimatedCost(selectedTicket))}
-                      </span>
-                    </div>
-                    {selectedTicket.estimated_fuel_liters && (
-                      <span className="text-xs text-slate-400 dark:text-slate-500">
-                        ({selectedTicket.estimated_fuel_liters} L × ₱88)
-                      </span>
-                    )}
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 px-2 text-xs text-blue-500 hover:text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:text-blue-300 dark:hover:bg-blue-950/30"
-                      onClick={() => {
-                        const estimated = getEstimatedCost(selectedTicket);
-                        if (estimated > 0) {
-                          setAmountReleased(estimated.toString());
-                          toast.success("Suggested amount applied");
-                        }
-                      }}
-                    >
-                      Apply
-                    </Button>
+              <FormField
+                label="Amount (₱)"
+                icon={DollarSign}
+                required
+                error={approveErrors.amount}
+                touched={approveTouched.amount}
+              >
+                <div className="relative">
+                  <Input
+                    id="amount"
+                    name="amount"
+                    type="number"
+                    step="0.01"
+                    placeholder="Enter amount"
+                    value={amountReleased}
+                    onChange={(e) => {
+                      setAmountReleased(e.target.value);
+                      if (approveErrors.amount) {
+                        setApproveErrors(prev => ({ ...prev, amount: "" }));
+                      }
+                    }}
+                    onBlur={() => setApproveTouched(prev => ({ ...prev, amount: true }))}
+                    className="mt-1 dark:bg-slate-900 dark:border-slate-700 dark:text-white"
+                  />
+                </div>
+              </FormField>
+
+              {selectedTicket && getEstimatedCost(selectedTicket) > 0 && (
+                <div className="flex items-center gap-2 mt-1.5">
+                  <div className="flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
+                    <Calculator className="h-3.5 w-3.5 text-blue-400" />
+                    <span>Suggested:</span>
+                    <span className="font-semibold text-blue-600 dark:text-blue-400">
+                      {formatCurrency(getEstimatedCost(selectedTicket))}
+                    </span>
                   </div>
-                )}
-                <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
-                  Enter the amount to release. The suggested amount is based on estimated fuel consumption.
-                </p>
-              </div>
+                  {selectedTicket.estimated_fuel_liters && (
+                    <span className="text-xs text-slate-400 dark:text-slate-500">
+                      ({selectedTicket.estimated_fuel_liters} L × ₱88)
+                    </span>
+                  )}
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-2 text-xs text-blue-500 hover:text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:text-blue-300 dark:hover:bg-blue-950/30"
+                    onClick={() => {
+                      const estimated = getEstimatedCost(selectedTicket);
+                      if (estimated > 0) {
+                        setAmountReleased(estimated.toString());
+                        if (approveErrors.amount) {
+                          setApproveErrors(prev => ({ ...prev, amount: "" }));
+                        }
+                        toast.success("Suggested amount applied");
+                      }
+                    }}
+                  >
+                    Apply
+                  </Button>
+                </div>
+              )}
             </div>
 
             {/* Footer */}
@@ -1451,6 +1620,8 @@ const MayorPending = () => {
                   setCrossDepartmentReason("");
                   setIsForceApprove(false);
                   setForceApproveReason("");
+                  setApproveErrors({});
+                  setApproveTouched({});
                 }}
                 className="dark:border-slate-700 dark:text-slate-300"
               >
@@ -1507,18 +1678,39 @@ const MayorPending = () => {
                   <strong>Destination:</strong> {selectedTicket?.destination}
                 </p>
               </div>
-              <Textarea
-                placeholder="Enter rejection reason..."
-                value={rejectionNote}
-                onChange={(e) => setRejectionNote(e.target.value)}
-                rows={4}
-                className="resize-none dark:bg-slate-900 dark:border-slate-700 dark:text-white"
-              />
+              <FormField
+                label="Rejection Reason"
+                icon={AlertCircle}
+                required
+                error={approveErrors.rejectNote}
+                touched={approveTouched.rejectNote}
+              >
+                <Textarea
+                  id="rejectNote"
+                  name="rejectNote"
+                  placeholder="Enter rejection reason..."
+                  value={rejectionNote}
+                  onChange={(e) => {
+                    setRejectionNote(e.target.value);
+                    if (approveErrors.rejectNote) {
+                      setApproveErrors(prev => ({ ...prev, rejectNote: "" }));
+                    }
+                  }}
+                  onBlur={() => setApproveTouched(prev => ({ ...prev, rejectNote: true }))}
+                  rows={4}
+                  className="resize-none dark:bg-slate-900 dark:border-slate-700 dark:text-white"
+                />
+              </FormField>
             </div>
             <DialogFooter className="gap-3">
               <Button
                 variant="outline"
-                onClick={() => setShowRejectDialog(false)}
+                onClick={() => {
+                  setShowRejectDialog(false);
+                  setRejectionNote("");
+                  setApproveErrors({});
+                  setApproveTouched({});
+                }}
                 className="dark:border-slate-700 dark:text-slate-300"
               >
                 Cancel

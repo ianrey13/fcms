@@ -314,11 +314,11 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
                             href: "/mo/receipt-verification",
                             icon: Receipt,
                         },
-                        {
-                            name: "Fund Release History",
-                            href: "/mo/fund-release-history",
-                            icon: DollarSign,
-                        },
+                        // {
+                        //     name: "Fund Release History",
+                        //     href: "/mo/fund-release-history",
+                        //     icon: DollarSign,
+                        // },
                     ],
                 },
                 {

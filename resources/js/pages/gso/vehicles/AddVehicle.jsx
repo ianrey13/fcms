@@ -1,4 +1,10 @@
 // src/pages/gso/vehicles/AddVehicle.jsx
+// ============================================
+// ENHANCED: Improved validation with field highlighting
+// No duplicate toasts - single toast with all errors
+// Auto-focus first error field
+// ============================================
+
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -12,29 +18,20 @@ import {
   Truck,
   Fuel,
   Building2,
-  Wrench,
   Loader2,
   CheckCircle,
   AlertCircle,
   Info,
   Zap,
   Shield,
-  Gauge,
-  Calendar,
-  Users,
-  MapPin,
-  Phone,
-  Mail,
-  Plus,
   X,
-  Search,
 } from "lucide-react";
 import { useCreateVehicle, useDepartmentsForVehicles } from "../../../hooks/useVehicleManagement";
 import { toast } from "react-hot-toast";
 import { cn } from "@/lib/utils";
 
 // ============================================
-// FORM FIELD COMPONENT
+// ✅ ENHANCED: Form Field with error highlighting
 // ============================================
 
 const FormField = ({
@@ -42,40 +39,58 @@ const FormField = ({
   icon: Icon,
   required,
   error,
+  touched,
   helper,
   children,
   className,
-}) => (
-  <div className={cn("space-y-1.5", className)}>
-    <Label className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300">
-      {Icon && <Icon className="h-4 w-4 text-slate-400" />}
-      {label}
-      {required && <span className="text-red-500">*</span>}
-    </Label>
-    {children}
-    {error && (
-      <p className="text-red-500 text-xs flex items-center gap-1 mt-1">
-        <AlertCircle className="h-3 w-3" />
-        {error}
-      </p>
-    )}
-    {helper && !error && (
-      <p className="text-xs text-slate-400 dark:text-slate-500 flex items-center gap-1 mt-1">
-        <Info className="h-3 w-3" />
-        {helper}
-      </p>
-    )}
-  </div>
-);
+}) => {
+  const hasError = touched && error;
+  
+  return (
+    <div className={cn("space-y-1.5", className)}>
+      <Label className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300">
+        {Icon && <Icon className="h-4 w-4 text-slate-400" />}
+        {label}
+        {required && <span className="text-red-500">*</span>}
+      </Label>
+      <div className="relative">
+        {React.cloneElement(children, {
+          className: cn(
+            children.props.className,
+            hasError && "border-red-500 ring-red-500 focus:ring-red-500 bg-red-50/50 dark:bg-red-950/10"
+          )
+        })}
+        {hasError && (
+          <div className="absolute right-3 top-1/2 -translate-y-1/2">
+            <AlertCircle className="h-4 w-4 text-red-500 animate-pulse" />
+          </div>
+        )}
+      </div>
+      {hasError && (
+        <p className="text-red-500 text-xs flex items-center gap-1 mt-1 animate-fadeIn">
+          <AlertCircle className="h-3 w-3 flex-shrink-0" />
+          {error}
+        </p>
+      )}
+      {helper && !hasError && (
+        <p className="text-xs text-slate-400 dark:text-slate-500 flex items-center gap-1 mt-1">
+          <Info className="h-3 w-3" />
+          {helper}
+        </p>
+      )}
+    </div>
+  );
+};
 
 // ============================================
-// DEPARTMENT DATALIST COMPONENT
+// DEPARTMENT DATALIST COMPONENT (with error highlighting)
 // ============================================
 
-const DepartmentDatalist = ({ value, onChange, onBlur, error, departments, loading }) => {
+const DepartmentDatalist = ({ value, onChange, onBlur, error, touched, departments, loading }) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedDepartment, setSelectedDepartment] = useState(null);
   const inputRef = useRef(null);
+  const hasError = touched && error;
 
   useEffect(() => {
     if (value) {
@@ -154,7 +169,7 @@ const DepartmentDatalist = ({ value, onChange, onBlur, error, departments, loadi
           }}
           className={cn(
             "pl-10 pr-10 bg-white dark:bg-slate-900 dark:border-slate-700",
-            error && "border-red-500 ring-red-500"
+            hasError && "border-red-500 ring-red-500 bg-red-50/50 dark:bg-red-950/10"
           )}
         />
         {searchTerm && (
@@ -169,6 +184,11 @@ const DepartmentDatalist = ({ value, onChange, onBlur, error, departments, loadi
         {loading && (
           <div className="absolute right-3 top-1/2 -translate-y-1/2">
             <Loader2 className="h-4 w-4 animate-spin text-slate-400" />
+          </div>
+        )}
+        {hasError && (
+          <div className="absolute right-10 top-1/2 -translate-y-1/2">
+            <AlertCircle className="h-4 w-4 text-red-500 animate-pulse" />
           </div>
         )}
       </div>
@@ -221,6 +241,12 @@ const DepartmentDatalist = ({ value, onChange, onBlur, error, departments, loadi
           </div>
         </div>
       )}
+      {hasError && !selectedDepartment && (
+        <p className="text-red-500 text-xs flex items-center gap-1 mt-2 animate-fadeIn">
+          <AlertCircle className="h-3 w-3 flex-shrink-0" />
+          {error}
+        </p>
+      )}
     </div>
   );
 };
@@ -232,15 +258,17 @@ const DepartmentDatalist = ({ value, onChange, onBlur, error, departments, loadi
 const AddVehicle = () => {
   const navigate = useNavigate();
   const createVehicle = useCreateVehicle();
+  const toastIdRef = useRef(null);
   const { data: departments = [], isLoading: loadingDepartments } = useDepartmentsForVehicles();
+  
   const [formData, setFormData] = useState({
     department_id: "",
     vehicle_model: "",
     plate_number: "",
     fuel_type: "diesel",
-    status: "active",      // Backend: active, maintenance_flag, inactive
+    status: "active",
     maintenance_flag: false,
-    display_status: "Serviceable", // Frontend: Serviceable, Under Maintenance, Unserviceable
+    display_status: "Serviceable",
   });
   const [errors, setErrors] = useState({});
   const [touched, setTouched] = useState({});
@@ -252,55 +280,116 @@ const AddVehicle = () => {
     { value: "Unserviceable", backendStatus: "inactive", maintenanceFlag: false },
   ];
 
-  // ============ VALIDATION ============
+  // ============================================
+  // ✅ ENHANCED VALIDATION - Single toast with all errors
+  // ============================================
+
   const validate = () => {
     const newErrors = {};
     const newTouched = {};
 
+    // Department validation
     if (!formData.department_id) {
       newErrors.department_id = "Department is required";
       newTouched.department_id = true;
     }
 
+    // Vehicle Model validation
     if (!formData.vehicle_model.trim()) {
       newErrors.vehicle_model = "Vehicle model is required";
       newTouched.vehicle_model = true;
     } else if (formData.vehicle_model.trim().length < 2) {
       newErrors.vehicle_model = "Vehicle model must be at least 2 characters";
       newTouched.vehicle_model = true;
+    } else if (formData.vehicle_model.trim().length > 120) {
+      newErrors.vehicle_model = "Vehicle model must be 120 characters or less";
+      newTouched.vehicle_model = true;
     }
 
+    // Plate Number validation
     if (!formData.plate_number.trim()) {
       newErrors.plate_number = "Plate number is required";
       newTouched.plate_number = true;
     } else if (formData.plate_number.trim().length < 3) {
       newErrors.plate_number = "Plate number must be at least 3 characters";
       newTouched.plate_number = true;
+    } else if (formData.plate_number.trim().length > 20) {
+      newErrors.plate_number = "Plate number must be 20 characters or less";
+      newTouched.plate_number = true;
+    } else if (!/^[A-Z0-9-]+$/.test(formData.plate_number.trim().toUpperCase())) {
+      newErrors.plate_number = "Plate number can only contain letters, numbers, and hyphens";
+      newTouched.plate_number = true;
+    }
+
+    // Fuel Type validation
+    if (!formData.fuel_type) {
+      newErrors.fuel_type = "Fuel type is required";
+      newTouched.fuel_type = true;
     }
 
     setErrors(newErrors);
-    setTouched(newTouched);
-    return Object.keys(newErrors).length === 0;
+    setTouched(prev => ({ ...prev, ...newTouched }));
+
+    // ✅ Show single toast with all errors
+    if (Object.keys(newErrors).length > 0) {
+      const errorMessages = Object.entries(newErrors).map(([field, msg]) => {
+        const labels = {
+          department_id: 'Department',
+          vehicle_model: 'Vehicle Model',
+          plate_number: 'Plate Number',
+          fuel_type: 'Fuel Type',
+        };
+        const label = labels[field] || field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+        return `• ${label}: ${msg}`;
+      });
+
+      if (toastIdRef.current) toast.dismiss(toastIdRef.current);
+
+      toastIdRef.current = toast.error(
+        <div className="space-y-1">
+          <div className="font-semibold text-red-600 dark:text-red-400">Please fix the following errors:</div>
+          <div className="text-sm text-red-500 dark:text-red-300 space-y-0.5">
+            {errorMessages.map((msg, i) => (
+              <div key={i}>{msg}</div>
+            ))}
+          </div>
+        </div>,
+        { duration: 5000 }
+      );
+
+      // ✅ Auto-focus first error field
+      const firstField = Object.keys(newErrors)[0];
+      if (firstField) {
+        const element = document.querySelector(`[name="${firstField}"]`) || 
+                        document.getElementById(firstField);
+        if (element) {
+          setTimeout(() => element.focus(), 100);
+        }
+      }
+
+      return false;
+    }
+
+    return true;
   };
 
   const handleBlur = (field) => {
-    setTouched((prev) => ({ ...prev, [field]: true }));
+    setTouched(prev => ({ ...prev, [field]: true }));
   };
 
   const hasError = (field) => touched[field] && errors[field];
 
-  // ============ HANDLERS ============
   const handleChange = (field, value) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
+    setFormData(prev => ({ ...prev, [field]: value }));
     if (errors[field]) {
-      setErrors((prev) => ({ ...prev, [field]: "" }));
+      setErrors(prev => ({ ...prev, [field]: "" }));
     }
   };
 
   const handleStatusChange = (displayStatus) => {
     const option = statusOptions.find(s => s.value === displayStatus);
     if (option) {
-      setFormData((prev) => ({
+      setFormData(prev => ({
         ...prev,
         display_status: displayStatus,
         status: option.backendStatus,
@@ -311,8 +400,10 @@ const AddVehicle = () => {
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    
+    if (toastIdRef.current) toast.dismiss(toastIdRef.current);
+    
     if (!validate()) {
-      toast.error("Please fix all errors before submitting");
       return;
     }
 
@@ -327,23 +418,29 @@ const AddVehicle = () => {
       },
       {
         onSuccess: () => {
-          toast.success("Vehicle registered successfully!");
+          if (toastIdRef.current) toast.dismiss(toastIdRef.current);
+          toastIdRef.current = toast.success("✅ Vehicle registered successfully!");
           navigate("/admin/vehicles");
         },
         onError: (error) => {
-          console.error("Create vehicle error:", error);
-          toast.error(error.response?.data?.message || "Failed to register vehicle");
+          if (toastIdRef.current) toast.dismiss(toastIdRef.current);
+          const message = error.response?.data?.message || "Failed to register vehicle";
+          
+          // Handle duplicate plate number
+          if (error.response?.data?.errors?.plate_number) {
+            toastIdRef.current = toast.error(`Plate number "${formData.plate_number}" already exists. Please use a different plate number.`);
+            setErrors(prev => ({ ...prev, plate_number: "This plate number is already registered" }));
+            setTouched(prev => ({ ...prev, plate_number: true }));
+            document.querySelector('[name="plate_number"]')?.focus();
+          } else {
+            toastIdRef.current = toast.error(message);
+          }
         },
       }
     );
   };
 
-  // Get current display status
   const currentDisplayStatus = formData.display_status || "Serviceable";
-
-  // ============================================
-  // RENDER
-  // ============================================
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
@@ -396,18 +493,22 @@ const AddVehicle = () => {
           </CardHeader>
           <CardContent className="pt-6">
             <form onSubmit={handleSubmit} className="space-y-5">
-              {/* Department - WITH DATALIST */}
+              {/* Department */}
               <FormField
                 label="Department"
                 icon={Building2}
                 required
-                error={hasError("department_id") && errors.department_id}
+                error={errors.department_id}
+                touched={touched.department_id}
               >
                 <DepartmentDatalist
+                  id="department_id"
+                  name="department_id"
                   value={formData.department_id}
                   onChange={(value) => handleChange("department_id", value)}
                   onBlur={() => handleBlur("department_id")}
-                  error={hasError("department_id")}
+                  error={errors.department_id}
+                  touched={touched.department_id}
                   departments={departments}
                   loading={loadingDepartments}
                 />
@@ -418,18 +519,19 @@ const AddVehicle = () => {
                 label="Vehicle Model"
                 icon={Car}
                 required
-                error={hasError("vehicle_model") && errors.vehicle_model}
-                helper="e.g., Toyota Hilux, Mitsubishi L300"
+                error={errors.vehicle_model}
+                touched={touched.vehicle_model}
+                helper="e.g., Toyota Hilux, Mitsubishi L300 (max 120 characters)"
               >
                 <Input
+                  id="vehicle_model"
+                  name="vehicle_model"
                   placeholder="Enter vehicle model"
                   value={formData.vehicle_model}
                   onChange={(e) => handleChange("vehicle_model", e.target.value)}
                   onBlur={() => handleBlur("vehicle_model")}
-                  className={cn(
-                    "bg-white dark:bg-slate-900 dark:border-slate-700",
-                    hasError("vehicle_model") && "border-red-500 ring-red-500"
-                  )}
+                  className="bg-white dark:bg-slate-900 dark:border-slate-700"
+                  maxLength={120}
                 />
               </FormField>
 
@@ -438,18 +540,19 @@ const AddVehicle = () => {
                 label="Plate Number"
                 icon={Truck}
                 required
-                error={hasError("plate_number") && errors.plate_number}
-                helper="Unique identifier for the vehicle"
+                error={errors.plate_number}
+                touched={touched.plate_number}
+                helper="Unique identifier for the vehicle (letters, numbers, hyphens only)"
               >
                 <Input
+                  id="plate_number"
+                  name="plate_number"
                   placeholder="e.g., ABC-1234"
                   value={formData.plate_number}
                   onChange={(e) => handleChange("plate_number", e.target.value.toUpperCase())}
                   onBlur={() => handleBlur("plate_number")}
-                  className={cn(
-                    "font-mono uppercase bg-white dark:bg-slate-900 dark:border-slate-700",
-                    hasError("plate_number") && "border-red-500 ring-red-500"
-                  )}
+                  className="font-mono uppercase bg-white dark:bg-slate-900 dark:border-slate-700"
+                  maxLength={20}
                 />
               </FormField>
 
@@ -458,12 +561,19 @@ const AddVehicle = () => {
                 label="Fuel Type"
                 icon={Fuel}
                 required
+                error={errors.fuel_type}
+                touched={touched.fuel_type}
                 helper="Select the fuel type for this vehicle"
               >
                 <select
+                  id="fuel_type"
+                  name="fuel_type"
                   value={formData.fuel_type}
                   onChange={(e) => handleChange("fuel_type", e.target.value)}
-                  className="w-full mt-1 px-3 py-2.5 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-slate-900 dark:border-slate-700"
+                  className={cn(
+                    "w-full mt-1 px-3 py-2.5 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-slate-900 dark:border-slate-700",
+                    hasError("fuel_type") && "border-red-500 ring-red-500 bg-red-50/50 dark:bg-red-950/10"
+                  )}
                 >
                   <option value="diesel">Diesel</option>
                   <option value="premium">Premium</option>
@@ -471,7 +581,7 @@ const AddVehicle = () => {
                 </select>
               </FormField>
 
-              {/* Status - Frontend Display */}
+              {/* Status */}
               <FormField
                 label="Vehicle Status"
                 icon={Shield}
@@ -491,51 +601,7 @@ const AddVehicle = () => {
                 </select>
               </FormField>
 
-              {/* Form Preview */}
-              <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-4 border border-slate-200 dark:border-slate-700">
-                <h4 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
-                  Preview
-                </h4>
-                <div className="grid grid-cols-2 gap-2 text-sm">
-                  <div>
-                    <span className="text-slate-400">Model:</span>
-                    <span className="font-medium text-slate-700 dark:text-slate-300 ml-2">
-                      {formData.vehicle_model || "—"}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400">Plate:</span>
-                    <span className="font-mono font-semibold text-slate-700 dark:text-slate-300 ml-2">
-                      {formData.plate_number || "—"}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400">Fuel:</span>
-                    <span className="text-slate-700 dark:text-slate-300 ml-2 capitalize">
-                      {formData.fuel_type || "—"}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400">Status:</span>
-                    <span className={cn(
-                      "font-medium ml-2",
-                      currentDisplayStatus === "Serviceable" 
-                        ? "text-emerald-600 dark:text-emerald-400" 
-                        : currentDisplayStatus === "Under Maintenance"
-                        ? "text-yellow-600 dark:text-yellow-400"
-                        : "text-red-600 dark:text-red-400"
-                    )}>
-                      {currentDisplayStatus}
-                    </span>
-                  </div>
-                  <div className="col-span-2">
-                    <span className="text-slate-400">Department:</span>
-                    <span className="text-slate-700 dark:text-slate-300 ml-2">
-                      {departments.find(d => d.department_id === parseInt(formData.department_id))?.department_name || "—"}
-                    </span>
-                  </div>
-                </div>
-              </div>
+            
 
               {/* Action Buttons */}
               <div className="flex gap-3 pt-4 border-t border-slate-200/60 dark:border-slate-700/60">

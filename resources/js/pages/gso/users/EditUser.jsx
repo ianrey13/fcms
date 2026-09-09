@@ -1,4 +1,10 @@
 // src/pages/gso/users/EditUser.jsx
+// ============================================
+// ENHANCED: Improved validation with field highlighting
+// No duplicate toasts - single toast with all errors
+// Auto-focus first error field
+// ============================================
+
 import React, { useState, useEffect, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -26,7 +32,6 @@ import {
   X,
   Zap,
   Users,
-  Search,
 } from "lucide-react";
 import { useUsers, useUpdateUser, useDepartments } from "../../../hooks/useUserManagement";
 import { toast } from "react-hot-toast";
@@ -43,7 +48,6 @@ const getAvailableRoles = (departmentId, departments) => {
     
     const code = department.department_code?.toUpperCase() || '';
     
-    // ✅ GSO Department → GSO Staff + Driver
     if (code === 'GSO') {
         return [
             { value: '', label: 'Select Role' },
@@ -52,7 +56,6 @@ const getAvailableRoles = (departmentId, departments) => {
         ];
     }
     
-    // ✅ Mayor's Office → Disbursing Officer + Driver
     if (code === 'MO') {
         return [
             { value: '', label: 'Select Role' },
@@ -61,7 +64,6 @@ const getAvailableRoles = (departmentId, departments) => {
         ];
     }
     
-    // ✅ Other Departments → Driver only
     return [
         { value: '', label: 'Select Role' },
         { value: 'driver', label: 'Driver' },
@@ -69,13 +71,65 @@ const getAvailableRoles = (departmentId, departments) => {
 };
 
 // ============================================
+// ✅ ENHANCED: Form Field with error highlighting
+// ============================================
+
+const FormField = ({
+  label,
+  icon: Icon,
+  required,
+  error,
+  touched,
+  helper,
+  children,
+  className,
+}) => {
+  const hasError = touched && error;
+  
+  return (
+    <div className={cn("space-y-1.5", className)}>
+      <Label className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300">
+        {Icon && <Icon className="h-4 w-4 text-slate-400" />}
+        {label}
+        {required && <span className="text-red-500">*</span>}
+      </Label>
+      <div className="relative">
+        {React.cloneElement(children, {
+          className: cn(
+            children.props.className,
+            hasError && "border-red-500 ring-red-500 focus:ring-red-500 bg-red-50/50 dark:bg-red-950/10"
+          )
+        })}
+        {hasError && (
+          <div className="absolute right-3 top-1/2 -translate-y-1/2">
+            <AlertCircle className="h-4 w-4 text-red-500 animate-pulse" />
+          </div>
+        )}
+      </div>
+      {hasError && (
+        <p className="text-red-500 text-xs flex items-center gap-1 mt-1 animate-fadeIn">
+          <AlertCircle className="h-3 w-3 flex-shrink-0" />
+          {error}
+        </p>
+      )}
+      {helper && !hasError && (
+        <p className="text-xs text-slate-400 dark:text-slate-500 flex items-center gap-1 mt-1">
+          <Info className="h-3 w-3" />
+          {helper}
+        </p>
+      )}
+    </div>
+  );
+};
+
+// ============================================
 // ✅ ROLE SELECT COMPONENT WITH DYNAMIC OPTIONS
 // ============================================
 
-const RoleSelect = ({ value, onChange, onBlur, error, departmentId, departments }) => {
+const RoleSelect = ({ value, onChange, onBlur, error, touched, departmentId, departments }) => {
     const roleOptions = getAvailableRoles(departmentId, departments);
+    const hasError = touched && error;
     
-    // If only driver is available, auto-select it
     useEffect(() => {
         if (departmentId && roleOptions.length === 2 && roleOptions[1]?.value === 'driver') {
             if (!value || value === '') {
@@ -85,69 +139,42 @@ const RoleSelect = ({ value, onChange, onBlur, error, departmentId, departments 
     }, [departmentId, roleOptions, value, onChange]);
     
     return (
-        <select
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            onBlur={onBlur}
-            className={cn(
-                "w-full mt-1 px-3 py-2.5 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-slate-900 dark:border-slate-700",
-                error && "border-red-500 ring-red-500",
-                roleOptions.length === 2 && roleOptions[1]?.value === 'driver' && "cursor-not-allowed opacity-60"
+        <div className="relative">
+            <select
+                value={value}
+                onChange={(e) => onChange(e.target.value)}
+                onBlur={onBlur}
+                className={cn(
+                    "w-full mt-1 px-3 py-2.5 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-slate-900 dark:border-slate-700 appearance-none",
+                    hasError && "border-red-500 ring-red-500 bg-red-50/50 dark:bg-red-950/10",
+                    roleOptions.length === 2 && roleOptions[1]?.value === 'driver' && "cursor-not-allowed opacity-60"
+                )}
+                disabled={roleOptions.length === 2 && roleOptions[1]?.value === 'driver'}
+            >
+                {roleOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                        {option.label}
+                    </option>
+                ))}
+            </select>
+            {hasError && (
+                <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                    <AlertCircle className="h-4 w-4 text-red-500 animate-pulse" />
+                </div>
             )}
-            disabled={roleOptions.length === 2 && roleOptions[1]?.value === 'driver'}
-        >
-            {roleOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                    {option.label}
-                </option>
-            ))}
-        </select>
+        </div>
     );
 };
-
-// ============================================
-// FORM FIELD COMPONENT
-// ============================================
-
-const FormField = ({
-  label,
-  icon: Icon,
-  required,
-  error,
-  helper,
-  children,
-  className,
-}) => (
-  <div className={cn("space-y-1.5", className)}>
-    <Label className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300">
-      {Icon && <Icon className="h-4 w-4 text-slate-400" />}
-      {label}
-      {required && <span className="text-red-500">*</span>}
-    </Label>
-    {children}
-    {error && (
-      <p className="text-red-500 text-xs flex items-center gap-1 mt-1">
-        <AlertCircle className="h-3 w-3" />
-        {error}
-      </p>
-    )}
-    {helper && !error && (
-      <p className="text-xs text-slate-400 dark:text-slate-500 flex items-center gap-1 mt-1">
-        <Info className="h-3 w-3" />
-        {helper}
-      </p>
-    )}
-  </div>
-);
 
 // ============================================
 // DEPARTMENT DATALIST COMPONENT
 // ============================================
 
-const DepartmentDatalist = ({ value, onChange, onBlur, error, departments }) => {
+const DepartmentDatalist = ({ value, onChange, onBlur, error, touched, departments }) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedDepartment, setSelectedDepartment] = useState(null);
   const inputRef = useRef(null);
+  const hasError = touched && error;
 
   useEffect(() => {
     if (value) {
@@ -226,7 +253,7 @@ const DepartmentDatalist = ({ value, onChange, onBlur, error, departments }) => 
           }}
           className={cn(
             "pl-10 pr-10 bg-white dark:bg-slate-900 dark:border-slate-700",
-            error && "border-red-500 ring-red-500"
+            hasError && "border-red-500 ring-red-500 bg-red-50/50 dark:bg-red-950/10"
           )}
         />
         {searchTerm && (
@@ -237,6 +264,11 @@ const DepartmentDatalist = ({ value, onChange, onBlur, error, departments }) => 
           >
             <X className="h-4 w-4" />
           </button>
+        )}
+        {hasError && (
+          <div className="absolute right-10 top-1/2 -translate-y-1/2">
+            <AlertCircle className="h-4 w-4 text-red-500 animate-pulse" />
+          </div>
         )}
       </div>
 
@@ -288,12 +320,18 @@ const DepartmentDatalist = ({ value, onChange, onBlur, error, departments }) => 
           </div>
         </div>
       )}
+      {hasError && !selectedDepartment && (
+        <p className="text-red-500 text-xs flex items-center gap-1 mt-2 animate-fadeIn">
+          <AlertCircle className="h-3 w-3 flex-shrink-0" />
+          {error}
+        </p>
+      )}
     </div>
   );
 };
 
 // ============================================
-// ROLE BADGE COMPONENT (Updated - No "Staff")
+// ROLE BADGE COMPONENT
 // ============================================
 
 const RoleBadge = ({ role }) => {
@@ -352,6 +390,8 @@ const EditUser = () => {
   const { data: users = [], isLoading } = useUsers();
   const { data: departments = [] } = useDepartments();
   const updateUser = useUpdateUser();
+  const toastIdRef = useRef(null);
+  
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [formData, setFormData] = useState({
@@ -390,7 +430,8 @@ const EditUser = () => {
         setFormData(data);
         setOriginalData(data);
       } else {
-        toast.error("User not found");
+        if (toastIdRef.current) toast.dismiss(toastIdRef.current);
+        toastIdRef.current = toast.error("User not found");
         navigate("/admin/users");
       }
     }
@@ -400,7 +441,6 @@ const EditUser = () => {
   useEffect(() => {
     if (formData.department_id && departments.length > 0) {
       const available = getAvailableRoles(formData.department_id, departments);
-      // If only one role available (driver), auto-select it
       if (available.length === 2 && available[1]?.value === 'driver') {
         if (formData.role !== 'driver') {
           setFormData(prev => ({ ...prev, role: 'driver' }));
@@ -409,11 +449,15 @@ const EditUser = () => {
     }
   }, [formData.department_id, departments]);
 
-  // ============ VALIDATION ============
+  // ============================================
+  // ✅ ENHANCED VALIDATION - Single toast with all errors
+  // ============================================
+
   const validate = () => {
     const newErrors = {};
     const newTouched = {};
 
+    // Email validation
     if (!formData.email) {
       newErrors.email = "Email is required";
       newTouched.email = true;
@@ -422,64 +466,133 @@ const EditUser = () => {
       newTouched.email = true;
     }
 
+    // First Name validation
     if (!formData.first_name) {
       newErrors.first_name = "First name is required";
       newTouched.first_name = true;
     } else if (formData.first_name.length < 2) {
       newErrors.first_name = "First name must be at least 2 characters";
       newTouched.first_name = true;
+    } else if (formData.first_name.length > 50) {
+      newErrors.first_name = "First name must be 50 characters or less";
+      newTouched.first_name = true;
     }
 
+    // Last Name validation
     if (!formData.last_name) {
       newErrors.last_name = "Last name is required";
       newTouched.last_name = true;
     } else if (formData.last_name.length < 2) {
       newErrors.last_name = "Last name must be at least 2 characters";
       newTouched.last_name = true;
+    } else if (formData.last_name.length > 50) {
+      newErrors.last_name = "Last name must be 50 characters or less";
+      newTouched.last_name = true;
     }
 
+    // Middle Name validation (optional)
+    if (formData.middle_name && formData.middle_name.length > 50) {
+      newErrors.middle_name = "Middle name must be 50 characters or less";
+      newTouched.middle_name = true;
+    }
+
+    // Department validation
     if (!formData.department_id) {
       newErrors.department_id = "Department is required";
       newTouched.department_id = true;
     }
 
+    // Role validation
     if (!formData.role) {
       newErrors.role = "Role is required";
       newTouched.role = true;
+    } else {
+      const availableRoles = getAvailableRoles(formData.department_id, departments);
+      const validRoles = availableRoles.map(r => r.value).filter(v => v !== '');
+      if (!validRoles.includes(formData.role)) {
+        newErrors.role = "Invalid role for selected department";
+        newTouched.role = true;
+      }
     }
 
+    // Password validation (optional - only if provided)
     if (formData.password && formData.password.length < 8) {
       newErrors.password = "Password must be at least 8 characters";
       newTouched.password = true;
     }
-
     if (formData.password !== formData.password_confirmation) {
       newErrors.password_confirmation = "Passwords do not match";
       newTouched.password_confirmation = true;
     }
 
     setErrors(newErrors);
-    setTouched(newTouched);
-    return Object.keys(newErrors).length === 0;
+    setTouched(prev => ({ ...prev, ...newTouched }));
+
+    // ✅ Show single toast with all errors
+    if (Object.keys(newErrors).length > 0) {
+      const errorMessages = Object.entries(newErrors).map(([field, msg]) => {
+        const labels = {
+          email: 'Email',
+          first_name: 'First Name',
+          last_name: 'Last Name',
+          middle_name: 'Middle Name',
+          department_id: 'Department',
+          role: 'Role',
+          password: 'Password',
+          password_confirmation: 'Confirm Password'
+        };
+        const label = labels[field] || field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+        return `• ${label}: ${msg}`;
+      });
+
+      if (toastIdRef.current) toast.dismiss(toastIdRef.current);
+
+      toastIdRef.current = toast.error(
+        <div className="space-y-1">
+          <div className="font-semibold text-red-600 dark:text-red-400">Please fix the following errors:</div>
+          <div className="text-sm text-red-500 dark:text-red-300 space-y-0.5">
+            {errorMessages.map((msg, i) => (
+              <div key={i}>{msg}</div>
+            ))}
+          </div>
+        </div>,
+        { duration: 5000 }
+      );
+
+      const firstField = Object.keys(newErrors)[0];
+      if (firstField) {
+        const element = document.querySelector(`[name="${firstField}"]`) || 
+                        document.getElementById(firstField);
+        if (element) {
+          setTimeout(() => element.focus(), 100);
+        }
+      }
+
+      return false;
+    }
+
+    return true;
   };
 
   const handleBlur = (field) => {
-    setTouched((prev) => ({ ...prev, [field]: true }));
+    setTouched(prev => ({ ...prev, [field]: true }));
   };
 
   const hasError = (field) => touched[field] && errors[field];
 
   const handleChange = (field, value) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
+    setFormData(prev => ({ ...prev, [field]: value }));
     if (errors[field]) {
-      setErrors((prev) => ({ ...prev, [field]: "" }));
+      setErrors(prev => ({ ...prev, [field]: "" }));
     }
   };
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    
+    if (toastIdRef.current) toast.dismiss(toastIdRef.current);
+    
     if (!validate()) {
-      toast.error("Please fix all errors before submitting");
       return;
     }
 
@@ -493,12 +606,22 @@ const EditUser = () => {
       { userId: parseInt(id), userData: updateData },
       {
         onSuccess: () => {
-          toast.success("User updated successfully!");
+          if (toastIdRef.current) toast.dismiss(toastIdRef.current);
+          toastIdRef.current = toast.success("✅ User updated successfully!");
           navigate("/admin/users");
         },
         onError: (error) => {
+          if (toastIdRef.current) toast.dismiss(toastIdRef.current);
           const message = error.response?.data?.message || "Failed to update user";
-          toast.error(message);
+          
+          if (error.response?.data?.errors?.email) {
+            toastIdRef.current = toast.error(`Email "${formData.email}" already exists. Please use a different email.`);
+            setErrors(prev => ({ ...prev, email: "Email already exists" }));
+            setTouched(prev => ({ ...prev, email: true }));
+            document.querySelector('[name="email"]')?.focus();
+          } else {
+            toastIdRef.current = toast.error(message);
+          }
         },
       }
     );
@@ -506,10 +629,6 @@ const EditUser = () => {
 
   const showCanDrive = formData.role === "driver";
   const hasChanges = JSON.stringify(formData) !== JSON.stringify(originalData);
-
-  // ============================================
-  // RENDER
-  // ============================================
 
   if (isLoading) {
     return <LoadingSkeleton />;
@@ -575,28 +694,32 @@ const EditUser = () => {
                   label="Email Address"
                   icon={Mail}
                   required
-                  error={hasError("email") && errors.email}
+                  error={errors.email}
+                  touched={touched.email}
                   helper="User's login email address"
                 >
                   <Input
+                    id="email"
+                    name="email"
                     type="email"
                     placeholder="user@example.com"
                     value={formData.email}
                     onChange={(e) => handleChange("email", e.target.value)}
                     onBlur={() => handleBlur("email")}
-                    className={cn(
-                      "bg-white dark:bg-slate-900 dark:border-slate-700",
-                      hasError("email") && "border-red-500 ring-red-500"
-                    )}
+                    className="bg-white dark:bg-slate-900 dark:border-slate-700"
                   />
                 </FormField>
 
                 <FormField
                   label="Employee Number"
                   icon={IdCard}
+                  error={errors.employee_number}
+                  touched={touched.employee_number}
                   helper="Unique employee identifier"
                 >
                   <Input
+                    id="employee_number"
+                    name="employee_number"
                     placeholder="EMP-0001"
                     value={formData.employee_number}
                     onChange={(e) => handleChange("employee_number", e.target.value)}
@@ -612,17 +735,18 @@ const EditUser = () => {
                   label="First Name"
                   icon={User}
                   required
-                  error={hasError("first_name") && errors.first_name}
+                  error={errors.first_name}
+                  touched={touched.first_name}
                 >
                   <Input
+                    id="first_name"
+                    name="first_name"
                     placeholder="First name"
                     value={formData.first_name}
                     onChange={(e) => handleChange("first_name", e.target.value)}
                     onBlur={() => handleBlur("first_name")}
-                    className={cn(
-                      "bg-white dark:bg-slate-900 dark:border-slate-700",
-                      hasError("first_name") && "border-red-500 ring-red-500"
-                    )}
+                    className="bg-white dark:bg-slate-900 dark:border-slate-700"
+                    maxLength={50}
                   />
                 </FormField>
 
@@ -630,17 +754,18 @@ const EditUser = () => {
                   label="Last Name"
                   icon={User}
                   required
-                  error={hasError("last_name") && errors.last_name}
+                  error={errors.last_name}
+                  touched={touched.last_name}
                 >
                   <Input
+                    id="last_name"
+                    name="last_name"
                     placeholder="Last name"
                     value={formData.last_name}
                     onChange={(e) => handleChange("last_name", e.target.value)}
                     onBlur={() => handleBlur("last_name")}
-                    className={cn(
-                      "bg-white dark:bg-slate-900 dark:border-slate-700",
-                      hasError("last_name") && "border-red-500 ring-red-500"
-                    )}
+                    className="bg-white dark:bg-slate-900 dark:border-slate-700"
+                    maxLength={50}
                   />
                 </FormField>
               </div>
@@ -649,14 +774,19 @@ const EditUser = () => {
               <FormField
                 label="Middle Name"
                 icon={User}
+                error={errors.middle_name}
+                touched={touched.middle_name}
                 helper="Optional - user's middle name"
               >
                 <Input
+                  id="middle_name"
+                  name="middle_name"
                   placeholder="Middle name (optional)"
                   value={formData.middle_name}
                   onChange={(e) => handleChange("middle_name", e.target.value)}
                   onBlur={() => handleBlur("middle_name")}
                   className="bg-white dark:bg-slate-900 dark:border-slate-700"
+                  maxLength={50}
                 />
               </FormField>
 
@@ -665,37 +795,41 @@ const EditUser = () => {
                 label="Department"
                 icon={Building2}
                 required
-                error={hasError("department_id") && errors.department_id}
+                error={errors.department_id}
+                touched={touched.department_id}
               >
                 <DepartmentDatalist
                   value={formData.department_id}
                   onChange={(value) => handleChange("department_id", value)}
                   onBlur={() => handleBlur("department_id")}
-                  error={hasError("department_id")}
+                  error={errors.department_id}
+                  touched={touched.department_id}
                   departments={departments}
                 />
               </FormField>
 
-              {/* ✅ Role - Dynamic based on department */}
+              {/* Role - Dynamic based on department */}
               <FormField
                 label="User Role"
                 icon={Shield}
                 required
-                error={hasError("role") && errors.role}
+                error={errors.role}
+                touched={touched.role}
                 helper="Determines what the user can access"
               >
                 <RoleSelect
                   value={formData.role}
                   onChange={(value) => handleChange("role", value)}
                   onBlur={() => handleBlur("role")}
-                  error={hasError("role")}
+                  error={errors.role}
+                  touched={touched.role}
                   departmentId={formData.department_id}
                   departments={departments}
                 />
               </FormField>
 
               {/* Can Drive Toggle - Only for Drivers */}
-              {showCanDrive && (
+              {/* {showCanDrive && (
                 <div className="bg-cyan-50/50 dark:bg-cyan-950/20 rounded-xl p-4 border border-cyan-200 dark:border-cyan-800">
                   <div className="flex items-center gap-4">
                     <Car className="h-5 w-5 text-cyan-600 dark:text-cyan-400" />
@@ -727,7 +861,7 @@ const EditUser = () => {
                     </p>
                   </div>
                 </div>
-              )}
+              )} */}
 
               {/* Password Section */}
               <div className="bg-amber-50/50 dark:bg-amber-950/20 rounded-xl p-4 border border-amber-200 dark:border-amber-800">
@@ -742,10 +876,13 @@ const EditUser = () => {
                   label="New Password"
                   icon={Key}
                   helper="Minimum 8 characters (optional)"
-                  error={hasError("password") && errors.password}
+                  error={errors.password}
+                  touched={touched.password}
                 >
                   <div className="relative">
                     <Input
+                      id="password"
+                      name="password"
                       type={showPassword ? "text" : "password"}
                       placeholder="••••••••"
                       value={formData.password}
@@ -761,11 +898,7 @@ const EditUser = () => {
                       onClick={() => setShowPassword(!showPassword)}
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
                     >
-                      {showPassword ? (
-                        <EyeOff className="h-4 w-4" />
-                      ) : (
-                        <Eye className="h-4 w-4" />
-                      )}
+                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </button>
                   </div>
                 </FormField>
@@ -773,10 +906,13 @@ const EditUser = () => {
                 <FormField
                   label="Confirm New Password"
                   icon={Key}
-                  error={hasError("password_confirmation") && errors.password_confirmation}
+                  error={errors.password_confirmation}
+                  touched={touched.password_confirmation}
                 >
                   <div className="relative">
                     <Input
+                      id="password_confirmation"
+                      name="password_confirmation"
                       type={showConfirmPassword ? "text" : "password"}
                       placeholder="••••••••"
                       value={formData.password_confirmation}
@@ -792,11 +928,7 @@ const EditUser = () => {
                       onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
                     >
-                      {showConfirmPassword ? (
-                        <EyeOff className="h-4 w-4" />
-                      ) : (
-                        <Eye className="h-4 w-4" />
-                      )}
+                      {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </button>
                   </div>
                 </FormField>
@@ -821,19 +953,13 @@ const EditUser = () => {
                       />
                     </div>
                     <span className="text-xs font-medium text-slate-500 dark:text-slate-400 min-w-[60px]">
-                      {formData.password.length < 4
-                        ? "Weak"
-                        : formData.password.length < 8
-                        ? "Fair"
-                        : formData.password.length < 12
-                        ? "Good"
-                        : "Strong"}
+                      {formData.password.length < 4 ? "Weak" : formData.password.length < 8 ? "Fair" : formData.password.length < 12 ? "Good" : "Strong"}
                     </span>
                   </div>
                 </div>
               )}
 
-            
+         
 
               {/* Action Buttons */}
               <div className="flex gap-3 pt-4 border-t border-slate-200/60 dark:border-slate-700/60">
