@@ -1,6 +1,9 @@
 // src/pages/gso/vehicles/VehicleManagement.jsx
 import React, { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
+import { useAutoRefresh } from "../../../hooks/useAutoRefresh";
+import { useRealtime } from "../../../contexts/RealtimeContext";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,6 +36,7 @@ import {
   Users,
   Clock,
   MapPin,
+  X,
 } from "lucide-react";
 import { useVehicles, useDeleteVehicle, useToggleVehicleStatus } from "../../../hooks/useVehicleManagement";
 import { useQuery } from "@tanstack/react-query";
@@ -113,6 +117,8 @@ const LoadingSkeleton = () => (
 
 const VehicleManagement = () => {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { isConnected } = useRealtime();
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [fuelFilter, setFuelFilter] = useState("all");
@@ -121,6 +127,21 @@ const VehicleManagement = () => {
   const { data: vehicles = [], isLoading, refetch } = useVehicles();
   const deleteVehicle = useDeleteVehicle();
   const toggleStatus = useToggleVehicleStatus();
+
+  // ============================================
+  // ✅ AUTO-REFRESH - No manual refresh needed
+  // ============================================
+
+  useAutoRefresh(
+    [
+      "gso-trip-updated",
+      "new-notification",
+    ],
+    () => {
+      queryClient.invalidateQueries({ queryKey: ["vehicles"] });
+      queryClient.invalidateQueries({ queryKey: ["departments"] });
+    }
+  );
 
   // Fetch departments
   const { data: departments = [] } = useQuery({
@@ -266,7 +287,10 @@ const VehicleManagement = () => {
           maintenance_flag: newMaintenanceFlag 
         },
         {
-          onSuccess: () => toast.success(`Vehicle ${action}d successfully!`),
+          onSuccess: () => {
+            toast.success(`Vehicle ${action}d successfully!`);
+            queryClient.invalidateQueries({ queryKey: ["vehicles"] });
+          },
           onError: () => toast.error(`Failed to ${action} vehicle`),
         }
       );
@@ -280,6 +304,10 @@ const VehicleManagement = () => {
   };
 
   const hasActiveFilters = searchTerm || statusFilter !== "all" || fuelFilter !== "all";
+
+  // Connection status
+  const connectionStatus = isConnected ? "🟢 Live" : "🔴 Offline";
+  const isRealTime = isConnected;
 
   // ============================================
   // RENDER
@@ -318,6 +346,12 @@ const VehicleManagement = () => {
                   </h1>
                   <p className="text-sm text-slate-500 dark:text-slate-400">
                     Manage fleet vehicles, track status, and maintenance
+                    <span className="ml-2 text-xs opacity-70">{connectionStatus}</span>
+                    {isRealTime && (
+                      <span className="ml-2 text-xs text-emerald-400 animate-pulse">
+                        ● Auto-refresh
+                      </span>
+                    )}
                   </p>
                 </div>
               </div>
@@ -352,7 +386,7 @@ const VehicleManagement = () => {
                     placeholder="Search by model, plate, type, or department..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-10 h-11 bg-white dark:bg-slate-900 dark:border-slate-700 rounded-xl"
+                    className="pl-10 h-11 bg-white dark:bg-slate-900 dark:border-slate-700 rounded-xl text-slate-800 dark:text-white"
                   />
                 </div>
                 <div className="flex gap-2">
@@ -374,14 +408,7 @@ const VehicleManagement = () => {
                       <ChevronDown className="h-4 w-4 ml-2" />
                     )}
                   </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => refetch()}
-                    className="dark:border-slate-700 dark:text-slate-300"
-                  >
-                    <RefreshCw className="h-4 w-4 mr-2" />
-                    Refresh
-                  </Button>
+                  {/* ❌ REFRESH BUTTON REMOVED - Auto-refresh handles everything */}
                 </div>
               </div>
 
@@ -392,7 +419,7 @@ const VehicleManagement = () => {
                     <select
                       value={statusFilter}
                       onChange={(e) => setStatusFilter(e.target.value)}
-                      className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
+                      className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm dark:text-white"
                     >
                       <option value="all">All Statuses</option>
                       <option value="serviceable">Serviceable</option>
@@ -405,7 +432,7 @@ const VehicleManagement = () => {
                     <select
                       value={fuelFilter}
                       onChange={(e) => setFuelFilter(e.target.value)}
-                      className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
+                      className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm dark:text-white"
                     >
                       <option value="all">All Fuel Types</option>
                       <option value="diesel">Diesel</option>
@@ -442,6 +469,11 @@ const VehicleManagement = () => {
                 <CardDescription className="dark:text-slate-400">
                   {filteredVehicles.length} vehicle{filteredVehicles.length !== 1 ? 's' : ''} found
                   {filteredVehicles.length !== vehicles.length && ` (filtered from ${vehicles.length} total)`}
+                  {isRealTime && (
+                    <span className="ml-2 text-xs text-emerald-500 animate-pulse">
+                      ● Live updates
+                    </span>
+                  )}
                 </CardDescription>
               </div>
               {filteredVehicles.length > 0 && (

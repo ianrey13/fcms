@@ -1,5 +1,8 @@
 // src/pages/gso/FuelReceipts.jsx
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useCallback } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useAutoRefresh } from "../../hooks/useAutoRefresh";
+import { useRealtime } from "../../contexts/RealtimeContext";
 import { useOptimizedQuery } from "../../hooks/useOptimizedQuery";
 import {
     SkeletonPage,
@@ -340,9 +343,28 @@ const LoadingSkeleton = () => (
 // ============================================
 
 const FuelReceipts = () => {
+    const queryClient = useQueryClient();
+    const { isConnected } = useRealtime();
     const [searchTerm, setSearchTerm] = useState("");
     const [selectedReceipt, setSelectedReceipt] = useState(null);
     const [showReceiptDialog, setShowReceiptDialog] = useState(false);
+
+    // ============================================
+    // ✅ AUTO-REFRESH - No manual refresh needed
+    // ============================================
+
+    useAutoRefresh(
+        [
+            "gso-trip-updated",
+            "gso-trip-status-changed",
+            "new-notification",
+            "trip-completed",
+            "gso-funds-released",
+        ],
+        () => {
+            queryClient.invalidateQueries({ queryKey: ["gso-fuel-receipts"] });
+        }
+    );
 
     // ============ OPTIMIZED QUERY ============
     const { data: receipts = [], isLoading, refetch, isFetching } = useOptimizedQuery({
@@ -372,6 +394,10 @@ const FuelReceipts = () => {
             receipt.vehicle_model?.toLowerCase().includes(search)
         );
     }, [receipts, searchTerm]);
+
+    // Connection status
+    const connectionStatus = isConnected ? "🟢 Live" : "🔴 Offline";
+    const isRealTime = isConnected;
 
     // ============ STATS ============
     const stats = useMemo(() => [
@@ -432,19 +458,15 @@ const FuelReceipts = () => {
                     </h1>
                     <p className="text-slate-500 dark:text-slate-400 text-sm">
                         View and manage driver uploaded fuel receipts
+                        <span className="ml-2 text-xs opacity-70">{connectionStatus}</span>
+                        {isRealTime && (
+                            <span className="ml-2 text-xs text-emerald-400 animate-pulse">
+                                ● Auto-refresh
+                            </span>
+                        )}
                     </p>
                 </div>
-                <div className="flex gap-3">
-                    <Button
-                        variant="outline"
-                        onClick={() => refetch()}
-                        disabled={isFetching}
-                        className="dark:border-slate-700 dark:text-slate-300"
-                    >
-                        <RefreshCw className={`h-4 w-4 mr-2 ${isFetching ? 'animate-spin' : ''}`} />
-                        Refresh
-                    </Button>
-                </div>
+                {/* ❌ REFRESH BUTTON REMOVED - Auto-refresh handles everything */}
             </div>
 
             {/* Stats Cards */}
@@ -461,7 +483,7 @@ const FuelReceipts = () => {
                     placeholder="Search by ticket number, plate number, driver name, or vehicle model..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-11 h-12 bg-white dark:bg-slate-800 dark:border-slate-700 rounded-xl shadow-sm"
+                    className="pl-11 h-12 bg-white dark:bg-slate-800 dark:border-slate-700 rounded-xl shadow-sm text-slate-800 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500"
                 />
                 {searchTerm && (
                     <button
@@ -485,6 +507,11 @@ const FuelReceipts = () => {
                             <CardDescription className="dark:text-slate-400">
                                 {filteredReceipts.length} receipt(s) found
                                 {filteredReceipts.length !== receipts.length && ` (filtered from ${receipts.length} total)`}
+                                {isRealTime && (
+                                    <span className="ml-2 text-xs text-emerald-500 animate-pulse">
+                                        ● Live updates
+                                    </span>
+                                )}
                             </CardDescription>
                         </div>
                         {filteredReceipts.length > 0 && (

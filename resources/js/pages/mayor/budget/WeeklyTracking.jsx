@@ -1,5 +1,8 @@
 // src/pages/mayor/budget/WeeklyTracking.jsx
 import React, { useState, useEffect, useMemo } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useAutoRefresh } from "../../../hooks/useAutoRefresh";
+import { useRealtime } from "../../../contexts/RealtimeContext";
 import { useOptimizedQuery } from "../../../hooks/useOptimizedQuery";
 import {
     SkeletonPage,
@@ -136,10 +139,30 @@ const LoadingSkeleton = () => (
 
 const WeeklyTracking = () => {
     const navigate = useNavigate();
+    const queryClient = useQueryClient();
+    const { isConnected } = useRealtime();
     const [currentWeek, setCurrentWeek] = useState(() => {
         const today = new Date();
         return startOfWeek(today, { weekStartsOn: 1 });
     });
+
+    // ============================================
+    // ✅ AUTO-REFRESH - No manual refresh needed
+    // ============================================
+
+    useAutoRefresh(
+        [
+            "mayor-budget-updated",
+            "mayor-trip-updated",
+            "gso-funds-released",
+            "new-notification",
+        ],
+        () => {
+            queryClient.invalidateQueries({ queryKey: ['departments-selector'] });
+            queryClient.invalidateQueries({ queryKey: ['departments-with-budget'] });
+            queryClient.invalidateQueries({ queryKey: ['budget-periods', currentWeek] });
+        }
+    );
 
     // ============================================
     // OPTIMIZED QUERIES
@@ -265,11 +288,6 @@ const WeeklyTracking = () => {
     // HANDLERS
     // ============================================
 
-    const handleRefresh = () => {
-        refetch();
-        toast.success("Data refreshed");
-    };
-
     const handlePrevWeek = () => {
         const newDate = subWeeks(currentWeek, 1);
         setCurrentWeek(startOfWeek(newDate, { weekStartsOn: 1 }));
@@ -300,6 +318,10 @@ const WeeklyTracking = () => {
     const weekStart = startOfWeek(currentWeek, { weekStartsOn: 1 });
     const weekEnd = endOfWeek(currentWeek, { weekStartsOn: 1 });
     const currentWeekNumber = getWeek(weekStart);
+
+    // Connection status
+    const connectionStatus = isConnected ? "🟢 Live" : "🔴 Offline";
+    const isRealTime = isConnected;
 
     // ============================================
     // STATS
@@ -384,20 +406,18 @@ const WeeklyTracking = () => {
                                     </h1>
                                     <p className="text-sm text-slate-500 dark:text-slate-400">
                                         Track weekly budget consumption per department
+                                        <span className="ml-2 text-xs opacity-70">{connectionStatus}</span>
+                                        {isRealTime && (
+                                            <span className="ml-2 text-xs text-emerald-400 animate-pulse">
+                                                ● Auto-refresh
+                                            </span>
+                                        )}
                                     </p>
                                 </div>
                             </div>
                         </div>
                     </div>
-                    <Button
-                        variant="outline"
-                        onClick={handleRefresh}
-                        disabled={isFetching}
-                        className="dark:border-slate-700 dark:text-slate-300"
-                    >
-                        <RefreshCw className={`h-4 w-4 mr-2 ${isFetching ? "animate-spin" : ""}`} />
-                        Refresh
-                    </Button>
+                    {/* ❌ REFRESH BUTTON REMOVED - Auto-refresh handles everything */}
                 </div>
 
                 {/* Navigation */}
@@ -467,6 +487,11 @@ const WeeklyTracking = () => {
                                 <CardDescription className="dark:text-slate-400">
                                     Week {currentWeekNumber} • {departmentsList.length} departments
                                     {departmentsList.length > 0 && ` • ${weekData?.departments_with_budget || 0} with budget`}
+                                    {isRealTime && (
+                                        <span className="ml-2 text-xs text-emerald-500 animate-pulse">
+                                            ● Live updates
+                                        </span>
+                                    )}
                                 </CardDescription>
                             </div>
                             {departmentsList.length > 0 && (

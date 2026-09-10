@@ -1,12 +1,13 @@
 // src/pages/mayor/MayorApproved.jsx
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
+import { useAutoRefresh } from "../../hooks/useAutoRefresh";
+import { useRealtime } from "../../contexts/RealtimeContext";
 import { mayorsOfficeAPI } from "../../services/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import municipalLogo from '../../assets/img/465557735_866766092283213_5502511239926698684_n.svg';
-import bagongPilipinasLogo from '../../assets/img/Bagong_Pilipinas_Logo.svg.png';
 import {
   Table,
   TableBody,
@@ -338,17 +339,41 @@ const LoadingSkeleton = () => (
 
 const MayorApproved = () => {
   const navigate = useNavigate();
+  const { isConnected } = useRealtime();
+  const queryClient = useQueryClient();
   const [tickets, setTickets] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [showGasSlip, setShowGasSlip] = useState(false);
   const [selectedTicket, setSelectedTicket] = useState(null);
 
-  useEffect(() => {
-    fetchTickets();
-  }, []);
+  // ============================================
+  // ✅ REFRESH FUNCTION - Auto-refresh only
+  // ============================================
 
-  const fetchTickets = async () => {
+  const fetchAllData = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ["mayor-approved-tickets"] });
+  }, [queryClient]);
+
+  // ============================================
+  // ✅ AUTO-REFRESH - No manual refresh needed
+  // ============================================
+
+  useAutoRefresh(
+    [
+      "mayor-trip-updated",
+      "gso-funds-released",
+      "trip-completed",
+      "trip-started",
+      "new-notification",
+    ],
+    fetchAllData
+  );
+
+  // ============================================
+  // FETCH TICKETS
+  // ============================================
+
+  const fetchTickets = useCallback(async () => {
     setLoading(true);
     try {
       const response = await mayorsOfficeAPI.getApprovedTickets();
@@ -358,14 +383,20 @@ const MayorApproved = () => {
       console.error("Failed to fetch tickets:", error);
     } finally {
       setLoading(false);
-      setRefreshing(false);
     }
-  };
+  }, []);
 
-  const handleRefresh = () => {
-    setRefreshing(true);
+  // ============================================
+  // INITIAL LOAD
+  // ============================================
+
+  useEffect(() => {
     fetchTickets();
-  };
+  }, [fetchTickets]);
+
+  // ============================================
+  // HELPERS
+  // ============================================
 
   const getDriverName = (ticket) => {
     if (!ticket) return "N/A";
@@ -410,6 +441,10 @@ const MayorApproved = () => {
   const avgAmount = tickets.length > 0 ? totalAmount / tickets.length : 0;
   const inTransitCount = tickets.filter(t => t.status === 'in_transit').length;
   const crossDepartmentCount = tickets.filter(t => t.is_cross_department).length;
+
+  // Connection status
+  const connectionStatus = isConnected ? "🟢 Live" : "🔴 Offline";
+  const isRealTime = isConnected;
 
   const stats = [
     {
@@ -475,22 +510,18 @@ const MayorApproved = () => {
                   </h1>
                   <p className="text-sm text-slate-500 dark:text-slate-400">
                     Trip tickets with released funds
+                    <span className="ml-2 text-xs opacity-70">{connectionStatus}</span>
+                    {isRealTime && (
+                      <span className="ml-2 text-xs text-emerald-400 animate-pulse">
+                        ● Auto-refresh
+                      </span>
+                    )}
                   </p>
                 </div>
               </div>
             </div>
           </div>
-          <div className="flex flex-wrap gap-3">
-            <Button
-              variant="outline"
-              onClick={handleRefresh}
-              disabled={refreshing}
-              className="dark:border-slate-700 dark:text-slate-300"
-            >
-              <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
-              Refresh
-            </Button>
-          </div>
+          {/* ❌ REFRESH BUTTON REMOVED - Auto-refresh handles everything */}
         </div>
 
         {/* Stats Cards */}
@@ -511,6 +542,11 @@ const MayorApproved = () => {
                 </CardTitle>
                 <CardDescription className="dark:text-slate-400">
                   {tickets.length} ticket{tickets.length !== 1 ? 's' : ''} found
+                  {isRealTime && (
+                    <span className="ml-2 text-xs text-emerald-500 animate-pulse">
+                      ● Live updates
+                    </span>
+                  )}
                 </CardDescription>
               </div>
               {tickets.length > 0 && (
@@ -677,4 +713,4 @@ const MayorApproved = () => {
   );
 };
 
-export default MayorApproved;     
+export default MayorApproved;

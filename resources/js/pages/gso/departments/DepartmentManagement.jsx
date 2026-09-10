@@ -1,6 +1,9 @@
 // src/pages/mayor/departments/DepartmentManagement.jsx
 import React, { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
+import { useAutoRefresh } from "../../../hooks/useAutoRefresh";
+import { useRealtime } from "../../../contexts/RealtimeContext";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,6 +35,7 @@ import {
   Mail,
   Phone,
   MapPin,
+  X,
 } from "lucide-react";
 import { useDepartments, useDeleteDepartment, useToggleDepartmentStatus } from "../../../hooks/useDepartmentManagement";
 import { toast } from "react-hot-toast";
@@ -81,6 +85,8 @@ const LoadingSkeleton = () => (
 
 const DepartmentManagement = () => {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { isConnected } = useRealtime();
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [showFilters, setShowFilters] = useState(false);
@@ -88,6 +94,20 @@ const DepartmentManagement = () => {
   const { data: departments = [], isLoading, refetch } = useDepartments();
   const deleteDepartment = useDeleteDepartment();
   const toggleStatus = useToggleDepartmentStatus();
+
+  // ============================================
+  // ✅ AUTO-REFRESH - No manual refresh needed
+  // ============================================
+
+  useAutoRefresh(
+    [
+      "mayor-trip-updated",
+      "new-notification",
+    ],
+    () => {
+      queryClient.invalidateQueries({ queryKey: ["departments"] });
+    }
+  );
 
   // ============ STATS ============
   const stats = useMemo(() => {
@@ -154,7 +174,10 @@ const DepartmentManagement = () => {
       toggleStatus.mutate(
         { id, status: newStatus },
         {
-          onSuccess: () => toast.success(`Department ${action}d successfully!`),
+          onSuccess: () => {
+            toast.success(`Department ${action}d successfully!`);
+            queryClient.invalidateQueries({ queryKey: ["departments"] });
+          },
           onError: () => toast.error(`Failed to ${action} department`),
         }
       );
@@ -175,6 +198,10 @@ const DepartmentManagement = () => {
   };
 
   const hasActiveFilters = searchTerm || statusFilter !== "all";
+
+  // Connection status
+  const connectionStatus = isConnected ? "🟢 Live" : "🔴 Offline";
+  const isRealTime = isConnected;
 
   // ============================================
   // RENDER
@@ -213,6 +240,12 @@ const DepartmentManagement = () => {
                   </h1>
                   <p className="text-sm text-slate-500 dark:text-slate-400">
                     Manage system departments and their heads
+                    <span className="ml-2 text-xs opacity-70">{connectionStatus}</span>
+                    {isRealTime && (
+                      <span className="ml-2 text-xs text-emerald-400 animate-pulse">
+                        ● Auto-refresh
+                      </span>
+                    )}
                   </p>
                 </div>
               </div>
@@ -247,7 +280,7 @@ const DepartmentManagement = () => {
                     placeholder="Search by name, code, or head of office..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-10 h-11 bg-white dark:bg-slate-900 dark:border-slate-700 rounded-xl"
+                    className="pl-10 h-11 bg-white dark:bg-slate-900 dark:border-slate-700 rounded-xl text-slate-800 dark:text-white"
                   />
                 </div>
                 <div className="flex gap-2">
@@ -269,14 +302,7 @@ const DepartmentManagement = () => {
                       <ChevronDown className="h-4 w-4 ml-2" />
                     )}
                   </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => refetch()}
-                    className="dark:border-slate-700 dark:text-slate-300"
-                  >
-                    <RefreshCw className="h-4 w-4 mr-2" />
-                    Refresh
-                  </Button>
+                  {/* ❌ REFRESH BUTTON REMOVED - Auto-refresh handles everything */}
                 </div>
               </div>
 
@@ -287,7 +313,7 @@ const DepartmentManagement = () => {
                     <select
                       value={statusFilter}
                       onChange={(e) => setStatusFilter(e.target.value)}
-                      className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
+                      className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm dark:text-white"
                     >
                       <option value="all">All Statuses</option>
                       <option value="active">Active</option>
@@ -324,6 +350,11 @@ const DepartmentManagement = () => {
                 <CardDescription className="dark:text-slate-400">
                   {filteredDepartments.length} department{filteredDepartments.length !== 1 ? 's' : ''} found
                   {filteredDepartments.length !== departments.length && ` (filtered from ${departments.length} total)`}
+                  {isRealTime && (
+                    <span className="ml-2 text-xs text-emerald-500 animate-pulse">
+                      ● Live updates
+                    </span>
+                  )}
                 </CardDescription>
               </div>
               {filteredDepartments.length > 0 && (

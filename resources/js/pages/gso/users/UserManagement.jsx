@@ -1,6 +1,9 @@
 // src/pages/gso/users/UserManagement.jsx
 import React, { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
+import { useAutoRefresh } from "../../../hooks/useAutoRefresh";
+import { useRealtime } from "../../../contexts/RealtimeContext";
 import { useAuth } from "../../../contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -32,6 +35,7 @@ import {
   Eye,
   EyeOff,
   AlertTriangle,
+  X,
 } from "lucide-react";
 import { useUsers, useDeleteUser, useToggleUserStatus } from "../../../hooks/useUserManagement";
 import { toast } from "react-hot-toast";
@@ -117,6 +121,8 @@ const LoadingSkeleton = () => (
 
 const UserManagement = () => {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { isConnected } = useRealtime();
   const { user: currentUser } = useAuth();
   const [searchTerm, setSearchTerm] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
@@ -126,6 +132,20 @@ const UserManagement = () => {
   const { data: users = [], isLoading, refetch } = useUsers();
   const deleteUser = useDeleteUser();
   const toggleStatus = useToggleUserStatus();
+
+  // ============================================
+  // ✅ AUTO-REFRESH - No manual refresh needed
+  // ============================================
+
+  useAutoRefresh(
+    [
+      "gso-trip-updated",
+      "new-notification",
+    ],
+    () => {
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+    }
+  );
 
   // ============ STATS ============
   const stats = useMemo(() => {
@@ -203,7 +223,10 @@ const UserManagement = () => {
     toggleStatus.mutate(
       { userId, status: newStatus },
       {
-        onSuccess: () => toast.success(`User ${newStatus === "active" ? "activated" : "deactivated"}!`),
+        onSuccess: () => {
+          toast.success(`User ${newStatus === "active" ? "activated" : "deactivated"}!`);
+          queryClient.invalidateQueries({ queryKey: ["users"] });
+        },
         onError: () => toast.error("Failed to update status"),
       }
     );
@@ -212,7 +235,10 @@ const UserManagement = () => {
   const handleDelete = (id, name) => {
     if (window.confirm(`Are you sure you want to deactivate "${name}"?`)) {
       deleteUser.mutate(id, {
-        onSuccess: () => toast.success("User deactivated!"),
+        onSuccess: () => {
+          toast.success("User deactivated!");
+          queryClient.invalidateQueries({ queryKey: ["users"] });
+        },
         onError: () => toast.error("Failed to deactivate user"),
       });
     }
@@ -225,6 +251,10 @@ const UserManagement = () => {
   };
 
   const hasActiveFilters = searchTerm || roleFilter !== "all" || statusFilter !== "all";
+
+  // Connection status
+  const connectionStatus = isConnected ? "🟢 Live" : "🔴 Offline";
+  const isRealTime = isConnected;
 
   // ============================================
   // RENDER
@@ -263,6 +293,12 @@ const UserManagement = () => {
                   </h1>
                   <p className="text-sm text-slate-500 dark:text-slate-400">
                     Manage system users, roles, and permissions
+                    <span className="ml-2 text-xs opacity-70">{connectionStatus}</span>
+                    {isRealTime && (
+                      <span className="ml-2 text-xs text-emerald-400 animate-pulse">
+                        ● Auto-refresh
+                      </span>
+                    )}
                   </p>
                 </div>
               </div>
@@ -297,7 +333,7 @@ const UserManagement = () => {
                     placeholder="Search by name, email, employee number, or department..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-10 h-11 bg-white dark:bg-slate-900 dark:border-slate-700 rounded-xl"
+                    className="pl-10 h-11 bg-white dark:bg-slate-900 dark:border-slate-700 rounded-xl text-slate-800 dark:text-white"
                   />
                 </div>
                 <div className="flex gap-2">
@@ -319,14 +355,7 @@ const UserManagement = () => {
                       <ChevronDown className="h-4 w-4 ml-2" />
                     )}
                   </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => refetch()}
-                    className="dark:border-slate-700 dark:text-slate-300"
-                  >
-                    <RefreshCw className="h-4 w-4 mr-2" />
-                    Refresh
-                  </Button>
+                  {/* ❌ REFRESH BUTTON REMOVED - Auto-refresh handles everything */}
                 </div>
               </div>
 
@@ -337,12 +366,11 @@ const UserManagement = () => {
                     <select
                       value={roleFilter}
                       onChange={(e) => setRoleFilter(e.target.value)}
-                      className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
+                      className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm dark:text-white"
                     >
                       <option value="all">All Roles</option>
                       <option value="gso_office">GSO Office</option>
                       <option value="mayors_office">Disbursing Officer</option>
-                      {/* ❌ "Staff" option removed */}
                       <option value="driver">Driver</option>
                     </select>
                   </div>
@@ -351,7 +379,7 @@ const UserManagement = () => {
                     <select
                       value={statusFilter}
                       onChange={(e) => setStatusFilter(e.target.value)}
-                      className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
+                      className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm dark:text-white"
                     >
                       <option value="all">All Statuses</option>
                       <option value="active">Active</option>
@@ -388,6 +416,11 @@ const UserManagement = () => {
                 <CardDescription className="dark:text-slate-400">
                   {filteredUsers.length} user{filteredUsers.length !== 1 ? 's' : ''} found
                   {filteredUsers.length !== users.length && ` (filtered from ${users.length} total)`}
+                  {isRealTime && (
+                    <span className="ml-2 text-xs text-emerald-500 animate-pulse">
+                      ● Live updates
+                    </span>
+                  )}
                 </CardDescription>
               </div>
               {filteredUsers.length > 0 && (

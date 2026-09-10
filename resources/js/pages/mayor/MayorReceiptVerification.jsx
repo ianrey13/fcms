@@ -1,6 +1,8 @@
 // src/pages/mayor/MayorReceiptVerification.jsx
 import React, { useState, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useAutoRefresh } from "../../hooks/useAutoRefresh";
+import { useRealtime } from "../../contexts/RealtimeContext";
 import { mayorsOfficeAPI } from "../../services/api";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -137,7 +139,7 @@ const ReceiptImage = ({ receipt }) => {
                 <div className="w-16 h-16 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto mb-3">
                     <ImageIcon className="h-8 w-8 text-slate-400 dark:text-slate-500" />
                 </div>
-                <p className="text-slate-500 dark:text-slate-400 font-medium">No receipt image uploaded</p>
+                <p className="text-slate-600 dark:text-slate-400 font-medium">No receipt image uploaded</p>
                 <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">Driver did not attach a photo</p>
             </div>
         );
@@ -312,6 +314,7 @@ const LoadingSkeleton = () => (
 
 const MayorReceiptVerification = () => {
   const queryClient = useQueryClient();
+  const { isConnected } = useRealtime();
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedReceipt, setSelectedReceipt] = useState(null);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
@@ -335,6 +338,21 @@ const MayorReceiptVerification = () => {
       return response.data?.data || [];
     },
   });
+
+  // ============================================
+  // ✅ AUTO-REFRESH - No manual refresh needed
+  // ============================================
+
+  useAutoRefresh(
+    [
+      "mayor-trip-updated",
+      "new-notification",
+      "trip-completed",
+    ],
+    () => {
+      queryClient.invalidateQueries({ queryKey: ["mayor-receipt-verification"] });
+    }
+  );
 
   const verifyMutation = useMutation({
     mutationFn: async ({ receiptId, data }) => {
@@ -361,11 +379,6 @@ const MayorReceiptVerification = () => {
       toast.error(message);
     },
   });
-
-  const handleRefresh = () => {
-    refetch();
-    toast.success("Receipts refreshed");
-  };
 
   const openReceiptModal = (receipt) => {
     setSelectedReceipt(receipt);
@@ -457,6 +470,10 @@ const MayorReceiptVerification = () => {
   const verifiedCount = receipts.filter(r => r.status === "verified").length;
   const totalAmount = receipts.reduce((sum, r) => sum + parseFloat(r.amount || 0), 0);
 
+  // Connection status
+  const connectionStatus = isConnected ? "🟢 Live" : "🔴 Offline";
+  const isRealTime = isConnected;
+
   const stats = [
     {
       title: "Total Receipts",
@@ -508,7 +525,7 @@ const MayorReceiptVerification = () => {
               onClick={() => window.history.back()}
               className="rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 h-10 w-10"
             >
-              <ArrowLeft className="h-5 w-5" />
+              <ArrowLeft className="h-5 w-5 text-slate-600 dark:text-slate-300" />
             </Button>
             <div>
               <div className="flex items-center gap-3">
@@ -521,22 +538,18 @@ const MayorReceiptVerification = () => {
                   </h1>
                   <p className="text-sm text-slate-500 dark:text-slate-400">
                     Verify and edit driver uploaded fuel receipts
+                    <span className="ml-2 text-xs opacity-70">{connectionStatus}</span>
+                    {isRealTime && (
+                      <span className="ml-2 text-xs text-emerald-400 animate-pulse">
+                        ● Auto-refresh
+                      </span>
+                    )}
                   </p>
                 </div>
               </div>
             </div>
           </div>
-          <div className="flex flex-wrap gap-3">
-            <Button
-              variant="outline"
-              onClick={handleRefresh}
-              disabled={isFetching}
-              className="dark:border-slate-700 dark:text-slate-300"
-            >
-              <RefreshCw className={`h-4 w-4 mr-2 ${isFetching ? 'animate-spin' : ''}`} />
-              Refresh
-            </Button>
-          </div>
+          {/* ❌ REFRESH BUTTON REMOVED - Auto-refresh handles everything */}
         </div>
 
         {/* Stats Cards */}
@@ -553,7 +566,7 @@ const MayorReceiptVerification = () => {
             placeholder="Search by ticket number, driver, plate, or department..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-11 h-12 bg-white dark:bg-slate-800 dark:border-slate-700 rounded-xl shadow-sm"
+            className="pl-11 h-12 bg-white dark:bg-slate-800 dark:border-slate-700 rounded-xl shadow-sm text-slate-800 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500"
           />
         </div>
 
@@ -569,6 +582,11 @@ const MayorReceiptVerification = () => {
                 <CardDescription className="dark:text-slate-400">
                   {filteredReceipts.length} receipt{filteredReceipts.length !== 1 ? 's' : ''} found
                   {filteredReceipts.length !== receipts.length && ` (filtered from ${receipts.length} total)`}
+                  {isRealTime && (
+                    <span className="ml-2 text-xs text-emerald-500 animate-pulse">
+                      ● Live updates
+                    </span>
+                  )}
                 </CardDescription>
               </div>
               {filteredReceipts.length > 0 && (
@@ -595,28 +613,28 @@ const MayorReceiptVerification = () => {
                 <Table>
                   <TableHeader>
                     <TableRow className="bg-slate-50 dark:bg-slate-900/50">
-                      <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
+                      <TableHead className="font-semibold text-slate-600 dark:text-slate-300 text-xs uppercase tracking-wider">
                         Ticket #
                       </TableHead>
-                      <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
+                      <TableHead className="font-semibold text-slate-600 dark:text-slate-300 text-xs uppercase tracking-wider">
                         Driver
                       </TableHead>
-                      <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
+                      <TableHead className="font-semibold text-slate-600 dark:text-slate-300 text-xs uppercase tracking-wider">
                         Vehicle
                       </TableHead>
-                      <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
+                      <TableHead className="font-semibold text-slate-600 dark:text-slate-300 text-xs uppercase tracking-wider">
                         Department
                       </TableHead>
-                      <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
+                      <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-300 text-xs uppercase tracking-wider">
                         Liters
                       </TableHead>
-                      <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
+                      <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-300 text-xs uppercase tracking-wider">
                         Amount
                       </TableHead>
-                      <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
+                      <TableHead className="font-semibold text-slate-600 dark:text-slate-300 text-xs uppercase tracking-wider">
                         Status
                       </TableHead>
-                      <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
+                      <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-300 text-xs uppercase tracking-wider">
                         Actions
                       </TableHead>
                     </TableRow>
@@ -625,7 +643,8 @@ const MayorReceiptVerification = () => {
                     {filteredReceipts.map((receipt, index) => (
                       <TableRow 
                         key={receipt.id || receipt.fuel_receipt_id}
-                        className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors group"
+                        className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors group cursor-pointer"
+                        onClick={() => openReceiptModal(receipt)}
                       >
                         <TableCell className="font-mono font-semibold text-slate-800 dark:text-white">
                           {receipt.ticket_number}
@@ -633,7 +652,7 @@ const MayorReceiptVerification = () => {
                         <TableCell>
                           <div className="flex items-center gap-2">
                             <User className="h-3.5 w-3.5 text-slate-400 flex-shrink-0" />
-                            <span className="text-slate-600 dark:text-slate-400 truncate max-w-[100px]">
+                            <span className="text-slate-700 dark:text-slate-300 truncate max-w-[100px]">
                               {receipt.driver_name}
                             </span>
                           </div>
@@ -641,13 +660,13 @@ const MayorReceiptVerification = () => {
                         <TableCell>
                           <div className="flex items-center gap-2">
                             <Truck className="h-3.5 w-3.5 text-slate-400 flex-shrink-0" />
-                            <span className="text-slate-600 dark:text-slate-400">{receipt.plate_number}</span>
+                            <span className="text-slate-700 dark:text-slate-300">{receipt.plate_number}</span>
                           </div>
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-2">
                             <Building2 className="h-3.5 w-3.5 text-slate-400 flex-shrink-0" />
-                            <span className="text-slate-600 dark:text-slate-400 truncate max-w-[100px]">
+                            <span className="text-slate-700 dark:text-slate-300 truncate max-w-[100px]">
                               {receipt.department_name}
                             </span>
                           </div>
@@ -664,40 +683,26 @@ const MayorReceiptVerification = () => {
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-2">
                             <Button
-                              variant="ghost"
                               size="sm"
-                              onClick={() => openReceiptModal(receipt)}
-                              className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:text-blue-300 dark:hover:bg-blue-950/30 h-9 w-9 p-0 rounded-lg transition-all duration-200 group-hover:scale-110"
-                              title="View & Edit Receipt"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openReceiptModal(receipt);
+                              }}
+                              className={cn(
+                                "h-8 px-3 rounded-lg shadow-sm transition-all duration-200 hover:scale-105 active:scale-95",
+                                receipt.status !== "verified" 
+                                  ? "bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700 text-white shadow-emerald-500/20"
+                                  : "bg-slate-400 hover:bg-slate-500 text-white cursor-not-allowed"
+                              )}
+                              disabled={receipt.status === "verified"}
                             >
-                              <Eye className="h-4 w-4" />
+                              {verifyMutation.isPending ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+                              ) : (
+                                <CheckCircle className="h-3.5 w-3.5 mr-1" />
+                              )}
+                              {receipt.status === "verified" ? "Verified" : "Verify"}
                             </Button>
-                            {receipt.status !== "verified" && (
-                              <Button
-                                size="sm"
-                                onClick={() => {
-                                  const quickData = {
-                                    invoice_number: receipt.invoice_number || null,
-                                    amount_on_receipt: parseFloat(receipt.amount) || 0,
-                                    unit_price: parseFloat(receipt.unit_price) || 0,
-                                    liters_availed: parseFloat(receipt.liters) || 0,
-                                  };
-                                  verifyMutation.mutate({
-                                    receiptId: receipt.id || receipt.fuel_receipt_id,
-                                    data: quickData,
-                                  });
-                                }}
-                                className="bg-emerald-600 hover:bg-emerald-700 text-white h-8 px-3 rounded-lg shadow-sm shadow-emerald-500/20 transition-all duration-200 hover:scale-105 active:scale-95"
-                                disabled={verifyMutation.isPending}
-                              >
-                                {verifyMutation.isPending ? (
-                                  <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
-                                ) : (
-                                  <CheckCircle className="h-3.5 w-3.5 mr-1" />
-                                )}
-                                Verify
-                              </Button>
-                            )}
                           </div>
                         </TableCell>
                       </TableRow>
@@ -716,7 +721,7 @@ const MayorReceiptVerification = () => {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className="p-2.5 rounded-xl bg-green-500/10">
-                    <Receipt className="h-5 w-5 text-green-600" />
+                    <Receipt className="h-5 w-5 text-green-600 dark:text-green-400" />
                   </div>
                   <div>
                     <DialogTitle className="text-slate-900 dark:text-white">
@@ -732,7 +737,7 @@ const MayorReceiptVerification = () => {
                     variant="ghost"
                     size="sm"
                     onClick={handleEditToggle}
-                    className="text-blue-600 hover:text-blue-700 dark:text-blue-400"
+                    className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
                   >
                     {isEditing ? (
                       <>
@@ -768,49 +773,49 @@ const MayorReceiptVerification = () => {
                   </div>
                 </div>
 
-                {/* Receipt Image - Using the ReceiptImage component */}
+                {/* Receipt Image */}
                 <ReceiptImage receipt={selectedReceipt} />
 
-                {/* Receipt Details Grid */}
+                {/* Receipt Details Grid - Dark mode text visible */}
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                   <div className="p-2 rounded-lg bg-slate-50 dark:bg-slate-900/50">
                     <p className="text-xs text-slate-500 dark:text-slate-400">Ticket Number</p>
-                    <p className="font-medium text-slate-900 dark:text-white flex items-center gap-1">
+                    <p className="font-medium text-slate-800 dark:text-white flex items-center gap-1">
                       <FileText className="h-3 w-3 text-slate-400" />
                       {selectedReceipt.ticket_number}
                     </p>
                   </div>
                   <div className="p-2 rounded-lg bg-slate-50 dark:bg-slate-900/50">
                     <p className="text-xs text-slate-500 dark:text-slate-400">Driver</p>
-                    <p className="font-medium text-slate-900 dark:text-white flex items-center gap-1">
+                    <p className="font-medium text-slate-800 dark:text-white flex items-center gap-1">
                       <User className="h-3 w-3 text-slate-400" />
                       {selectedReceipt.driver_name}
                     </p>
                   </div>
                   <div className="p-2 rounded-lg bg-slate-50 dark:bg-slate-900/50">
                     <p className="text-xs text-slate-500 dark:text-slate-400">Vehicle</p>
-                    <p className="font-medium text-slate-900 dark:text-white flex items-center gap-1">
+                    <p className="font-medium text-slate-800 dark:text-white flex items-center gap-1">
                       <Truck className="h-3 w-3 text-slate-400" />
                       {selectedReceipt.plate_number}
                     </p>
                   </div>
                   <div className="p-2 rounded-lg bg-slate-50 dark:bg-slate-900/50">
                     <p className="text-xs text-slate-500 dark:text-slate-400">Department</p>
-                    <p className="font-medium text-slate-900 dark:text-white flex items-center gap-1">
+                    <p className="font-medium text-slate-800 dark:text-white flex items-center gap-1">
                       <Building2 className="h-3 w-3 text-slate-400" />
                       {selectedReceipt.department_name}
                     </p>
                   </div>
                   <div className="p-2 rounded-lg bg-slate-50 dark:bg-slate-900/50">
                     <p className="text-xs text-slate-500 dark:text-slate-400">Fuel Type</p>
-                    <p className="font-medium text-slate-900 dark:text-white flex items-center gap-1">
+                    <p className="font-medium text-slate-800 dark:text-white flex items-center gap-1">
                       <Fuel className="h-3 w-3 text-slate-400" />
                       {selectedReceipt.fuel_type || "N/A"}
                     </p>
                   </div>
                   <div className="p-2 rounded-lg bg-slate-50 dark:bg-slate-900/50">
                     <p className="text-xs text-slate-500 dark:text-slate-400">Trip Date</p>
-                    <p className="font-medium text-slate-900 dark:text-white flex items-center gap-1">
+                    <p className="font-medium text-slate-800 dark:text-white flex items-center gap-1">
                       <Calendar className="h-3 w-3 text-slate-400" />
                       {formatDate(selectedReceipt.trip_date)}
                     </p>
@@ -825,11 +830,11 @@ const MayorReceiptVerification = () => {
                       <Input
                         value={editData.invoice_number}
                         onChange={(e) => handleInputChange('invoice_number', e.target.value)}
-                        className="mt-1 dark:bg-slate-900 dark:border-slate-700 h-9 text-sm"
+                        className="mt-1 dark:bg-slate-900 dark:border-slate-700 h-9 text-sm dark:text-white"
                         placeholder="Invoice #"
                       />
                     ) : (
-                      <p className="font-medium text-slate-900 dark:text-white text-sm">
+                      <p className="font-medium text-slate-800 dark:text-white text-sm">
                         {editData.invoice_number || selectedReceipt.invoice_number || "N/A"}
                       </p>
                     )}
@@ -838,14 +843,14 @@ const MayorReceiptVerification = () => {
                     <p className="text-xs text-slate-500 dark:text-slate-400">Amount (₱)</p>
                     {isEditing ? (
                       <div className="relative mt-1">
-                        <span className="absolute left-2.5 top-1/2 transform -translate-y-1/2 text-slate-400 text-sm">₱</span>
+                        <span className="absolute left-2.5 top-1/2 transform -translate-y-1/2 text-slate-400 dark:text-slate-500 text-sm">₱</span>
                         <Input
                           type="number"
                           step="0.01"
                           min="0"
                           value={editData.amount_on_receipt}
                           onChange={(e) => handleInputChange('amount_on_receipt', e.target.value)}
-                          className="pl-6 dark:bg-slate-900 dark:border-slate-700 h-9 text-sm"
+                          className="pl-6 dark:bg-slate-900 dark:border-slate-700 h-9 text-sm dark:text-white"
                           placeholder="0.00"
                         />
                       </div>
@@ -859,19 +864,19 @@ const MayorReceiptVerification = () => {
                     <p className="text-xs text-slate-500 dark:text-slate-400">Unit Price (₱/L)</p>
                     {isEditing ? (
                       <div className="relative mt-1">
-                        <span className="absolute left-2.5 top-1/2 transform -translate-y-1/2 text-slate-400 text-sm">₱</span>
+                        <span className="absolute left-2.5 top-1/2 transform -translate-y-1/2 text-slate-400 dark:text-slate-500 text-sm">₱</span>
                         <Input
                           type="number"
                           step="0.01"
                           min="0"
                           value={editData.unit_price}
                           onChange={(e) => handleInputChange('unit_price', e.target.value)}
-                          className="pl-6 dark:bg-slate-900 dark:border-slate-700 h-9 text-sm"
+                          className="pl-6 dark:bg-slate-900 dark:border-slate-700 h-9 text-sm dark:text-white"
                           placeholder="0.00"
                         />
                       </div>
                     ) : (
-                      <p className="font-medium text-slate-900 dark:text-white text-sm">
+                      <p className="font-medium text-slate-800 dark:text-white text-sm">
                         {formatCurrency(editData.unit_price || selectedReceipt.unit_price)}
                       </p>
                     )}
@@ -891,12 +896,12 @@ const MayorReceiptVerification = () => {
                         step="0.01"
                         min="0"
                         value={editData.liters_availed}
-                        className="mt-1 dark:bg-slate-900 dark:border-slate-700 h-9 text-sm bg-slate-50 dark:bg-slate-800 cursor-not-allowed"
+                        className="mt-1 dark:bg-slate-800 dark:border-slate-600 h-9 text-sm dark:text-slate-400 bg-slate-50 dark:bg-slate-800 cursor-not-allowed"
                         placeholder="Auto-calc"
                         disabled={true}
                       />
                     ) : (
-                      <p className="font-medium text-slate-900 dark:text-white text-sm">
+                      <p className="font-medium text-slate-800 dark:text-white text-sm">
                         {editData.liters_availed || selectedReceipt.liters} L
                       </p>
                     )}
@@ -905,8 +910,8 @@ const MayorReceiptVerification = () => {
 
                 {/* Edit Help */}
                 {isEditing && (
-                  <div className="text-xs text-slate-400 dark:text-slate-500 bg-blue-50 dark:bg-blue-950/30 p-3 rounded-lg border border-blue-200 dark:border-blue-800">
-                    <Info className="h-4 w-4 inline mr-1 text-blue-500" />
+                  <div className="text-xs text-slate-600 dark:text-slate-300 bg-blue-50 dark:bg-blue-950/30 p-3 rounded-lg border border-blue-200 dark:border-blue-800">
+                    <Info className="h-4 w-4 inline mr-1 text-blue-500 dark:text-blue-400" />
                     Enter the <strong>Amount (₱)</strong> and <strong>Unit Price (₱/L)</strong>. 
                     Liters will be auto-calculated using: <strong>Liters = Amount ÷ Unit Price</strong>
                   </div>
@@ -928,7 +933,7 @@ const MayorReceiptVerification = () => {
                       <Button
                         variant="outline"
                         onClick={handleEditToggle}
-                        className="dark:border-slate-600"
+                        className="dark:border-slate-600 dark:text-slate-300"
                       >
                         <X className="h-4 w-4 mr-2" />
                         Cancel
@@ -938,7 +943,7 @@ const MayorReceiptVerification = () => {
                     {selectedReceipt.status !== "verified" && (
                       <Button
                         onClick={handleVerify}
-                        className="bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700 shadow-lg shadow-emerald-500/20 transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]"
+                        className="bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700 shadow-lg shadow-emerald-500/20 transition-all duration-300 hover:scale-[1.02] active:scale-[0.98] text-white"
                         disabled={verifyMutation.isPending}
                       >
                         {verifyMutation.isPending ? (
@@ -956,7 +961,7 @@ const MayorReceiptVerification = () => {
                     )}
                     
                     {selectedReceipt.status === "verified" && (
-                      <Button variant="outline" disabled className="dark:border-slate-700 dark:text-slate-400">
+                      <Button variant="outline" disabled className="dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800">
                         <CheckCircle className="h-4 w-4 mr-2 text-green-500" />
                         Already Verified
                       </Button>

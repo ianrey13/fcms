@@ -1,9 +1,18 @@
 // src/pages/gso/GsoDashboard.jsx
-import React, { useState, useMemo, useEffect, useRef } from "react";
+// ============================================
+// ✅ FIXED: Auto-refresh with real-time updates
+// ✅ REMOVED: Manual refresh buttons
+// ✅ REMOVED: Live Tracking component (commented out)
+// ✅ ADDED: Real-time connection status
+// ============================================
+
+import React, { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useOptimizedQuery } from "../../hooks/useOptimizedQuery";
+import { useAutoRefresh } from "../../hooks/useAutoRefresh";
+import { useRealtime } from "../../contexts/RealtimeContext";
 import {
     SkeletonPage,
     SkeletonStats,
@@ -99,33 +108,7 @@ import {
     ResponsiveContainer,
 } from "recharts";
 import { toast } from "react-hot-toast";
-import echo from "../../services/echo";
 import eventBus from "../../utils/eventBus";
-
-// ============================================
-// MAP IMPORTS
-// ============================================
-
-import {
-    MapContainer,
-    TileLayer,
-    Marker,
-    Popup,
-    Polyline,
-    Circle,
-} from "react-leaflet";
-import L from "leaflet";
-import "leaflet/dist/leaflet.css";
-
-delete L.Icon.Default.prototype._getIconUrl;
-L.Icon.Default.mergeOptions({
-    iconRetinaUrl:
-        "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png",
-    iconUrl:
-        "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png",
-    shadowUrl:
-        "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png",
-});
 
 // ============================================
 // CONSTANTS & HELPERS
@@ -262,455 +245,19 @@ const getAuditActionIcon = (action) => {
 };
 
 // ============================================
-// REAL-TIME NOTIFICATIONS SETUP
+// STATUS BADGE COMPONENT
 // ============================================
 
-const setupGsoRealtimeNotifications = (
-    user,
-    fetchAllDataRef,
-    setForceUpdate,
-) => {
-    if (!user) return;
-
-    console.log(
-        "🔔 Setting up GSO real-time notifications for user:",
-        user.user_id,
-    );
-
-    if (!echo.connector || !echo.connector.pusher) {
-        console.warn("⚠️ Echo connector not available, retrying in 2s...");
-        setTimeout(
-            () =>
-                setupGsoRealtimeNotifications(
-                    user,
-                    fetchAllDataRef,
-                    setForceUpdate,
-                ),
-            2000,
-        );
-        return;
-    }
-
-    const connection = echo.connector.pusher.connection;
-
-    const subscribeToPrivateChannel = () => {
-        try {
-            const channel = echo.private(`notifications.${user.user_id}`);
-
-            channel.listen(".notification.new", (data) => {
-                console.log("🔔 GSO Private notification received:", data);
-                eventBus.emit("notification-received", data);
-                handleNotificationByType(data);
-            });
-
-            channel.subscribed(() => {
-                console.log(
-                    `✅ Subscribed to private notifications.${user.user_id}`,
-                );
-            });
-
-            channel.error((error) => {
-                console.error("❌ Private subscription error:", error);
-            });
-        } catch (error) {
-            console.error("⚠️ Error subscribing to private channel:", error);
-        }
-    };
-
-    const handleNotificationByType = (data) => {
-        const type = data.notification_type;
-        const refreshDelay = 500;
-
-        switch (type) {
-            case "fund_released":
-            case "fund_issued":
-                console.log("💰 Fund release detected - refreshing data");
-                setTimeout(() => {
-                    fetchAllDataRef.current?.();
-                    setForceUpdate((prev) => prev + 1);
-                }, refreshDelay);
-                break;
-            case "trip_started":
-            case "trip_completed":
-            case "trip_created":
-            case "trip_pending_validation":
-                console.log("🚗 Trip update detected - refreshing data");
-                setTimeout(() => {
-                    fetchAllDataRef.current?.();
-                    setForceUpdate((prev) => prev + 1);
-                }, refreshDelay);
-                break;
-            default:
-                setTimeout(() => {
-                    fetchAllDataRef.current?.();
-                    setForceUpdate((prev) => prev + 1);
-                }, refreshDelay);
-                break;
-        }
-    };
-
-    if (connection.state === "connected") {
-        console.log("✅ Already connected, subscribing...");
-        subscribeToPrivateChannel();
-    } else {
-        connection.bind("connected", () => {
-            console.log("✅ WebSocket connected!");
-            subscribeToPrivateChannel();
-        });
-
-        if (
-            connection.state === "disconnected" ||
-            connection.state === "unavailable"
-        ) {
-            console.log("🔄 Attempting to connect...");
-            connection.connect();
-        }
-    }
-};
-
-// ============================================
-// LIVE TRACKING MAP COMPONENT
-// ============================================
-
-const LiveTrackingMap = ({ activeTrips, loading }) => {
-    const [selectedTrip, setSelectedTrip] = useState(null);
-    const center = [8.5833, 124.6667];
-    const zoom = 13;
-
-    if (loading) {
-        return (
-            <div className="flex items-center justify-center h-64 bg-slate-50 dark:bg-slate-800/50 rounded-xl">
-                <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
-            </div>
-        );
-    }
-
-    if (!activeTrips || activeTrips.length === 0) {
-        return (
-            <div className="flex flex-col items-center justify-center h-64 bg-slate-50 dark:bg-slate-800/50 rounded-xl">
-                <Satellite className="h-12 w-12 text-slate-300 dark:text-slate-600 mb-3" />
-                <p className="text-slate-500 dark:text-slate-400">
-                    No active trips with GPS data
-                </p>
-                <p className="text-sm text-slate-400 dark:text-slate-500">
-                    Active trips with GPS tracking will appear here
-                </p>
-            </div>
-        );
-    }
-
-    const tripsWithLocation = activeTrips.filter(
-        (trip) => trip.current_location,
-    );
-
-    if (tripsWithLocation.length === 0) {
-        return (
-            <div className="flex flex-col items-center justify-center h-64 bg-slate-50 dark:bg-slate-800/50 rounded-xl">
-                <Navigation className="h-12 w-12 text-slate-300 dark:text-slate-600 mb-3" />
-                <p className="text-slate-500 dark:text-slate-400">
-                    No GPS data available
-                </p>
-                <p className="text-sm text-slate-400 dark:text-slate-500">
-                    Waiting for drivers to share location
-                </p>
-            </div>
-        );
-    }
-
+const StatusBadge = ({ status }) => {
+    const config = getStatusConfig(status);
+    const Icon = config.icon;
     return (
-        <div className="relative rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700">
-            <MapContainer
-                center={center}
-                zoom={zoom}
-                style={{ height: "400px", width: "100%" }}
-                className="z-0"
-            >
-                <TileLayer
-                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                />
-
-                {tripsWithLocation.map((trip) => {
-                    const { current_location } = trip;
-                    const isSelected = selectedTrip?.trip_id === trip.trip_id;
-
-                    return (
-                        <div key={trip.trip_id}>
-                            {trip.route && trip.route.length > 1 && (
-                                <Polyline
-                                    positions={trip.route.map((p) => [
-                                        p.latitude,
-                                        p.longitude,
-                                    ])}
-                                    color={isSelected ? "#2563eb" : "#94a3b8"}
-                                    weight={isSelected ? 4 : 2}
-                                    opacity={isSelected ? 0.9 : 0.5}
-                                    dashArray={isSelected ? null : "5, 5"}
-                                />
-                            )}
-
-                            <Marker
-                                position={[
-                                    current_location.latitude,
-                                    current_location.longitude,
-                                ]}
-                                eventHandlers={{
-                                    click: () => setSelectedTrip(trip),
-                                }}
-                            >
-                                <Popup>
-                                    <div className="p-2 min-w-[200px]">
-                                        <div className="flex items-center gap-2 mb-2">
-                                            <div className="w-3 h-3 rounded-full bg-green-500 animate-pulse" />
-                                            <span className="font-semibold text-sm">
-                                                {trip.ticket_number}
-                                            </span>
-                                        </div>
-                                        <div className="space-y-1 text-sm">
-                                            <p>
-                                                <span className="text-slate-500">
-                                                    Vehicle:
-                                                </span>{" "}
-                                                {trip.vehicle?.plate_number}
-                                            </p>
-                                            <p>
-                                                <span className="text-slate-500">
-                                                    Driver:
-                                                </span>{" "}
-                                                {trip.driver?.name}
-                                            </p>
-                                            <p>
-                                                <span className="text-slate-500">
-                                                    Destination:
-                                                </span>{" "}
-                                                {trip.destination}
-                                            </p>
-                                            <p>
-                                                <span className="text-slate-500">
-                                                    Speed:
-                                                </span>{" "}
-                                                {current_location.speed_kmh ||
-                                                    0}{" "}
-                                                km/h
-                                            </p>
-                                            <p className="text-xs text-slate-400">
-                                                Updated:{" "}
-                                                {new Date(
-                                                    current_location.recorded_at,
-                                                ).toLocaleTimeString()}
-                                            </p>
-                                        </div>
-                                        <div className="mt-2 flex gap-2">
-                                            <button
-                                                onClick={() =>
-                                                    (window.location.href = `/gso/trip/${trip.trip_id}`)
-                                                }
-                                                className="text-xs bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700"
-                                            >
-                                                View Trip
-                                            </button>
-                                            <button
-                                                onClick={() =>
-                                                    setSelectedTrip(trip)
-                                                }
-                                                className="text-xs bg-slate-200 text-slate-700 px-3 py-1 rounded hover:bg-slate-300"
-                                            >
-                                                Center
-                                            </button>
-                                        </div>
-                                    </div>
-                                </Popup>
-                            </Marker>
-
-                            {current_location.accuracy_meters &&
-                                current_location.accuracy_meters < 100 && (
-                                    <Circle
-                                        center={[
-                                            current_location.latitude,
-                                            current_location.longitude,
-                                        ]}
-                                        radius={
-                                            current_location.accuracy_meters
-                                        }
-                                        color={
-                                            isSelected ? "#2563eb" : "#94a3b8"
-                                        }
-                                        fillColor={
-                                            isSelected ? "#2563eb" : "#94a3b8"
-                                        }
-                                        fillOpacity={0.1}
-                                    />
-                                )}
-                        </div>
-                    );
-                })}
-            </MapContainer>
-
-            <div className="absolute bottom-4 left-4 bg-white dark:bg-slate-800 rounded-lg shadow-lg p-3 text-xs z-[1000]">
-                <div className="flex items-center gap-3">
-                    <div className="flex items-center gap-1.5">
-                        <div className="w-3 h-3 rounded-full bg-green-500 animate-pulse" />
-                        <span className="text-slate-600 dark:text-slate-300">
-                            Live
-                        </span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                        <div className="w-3 h-3 rounded-full bg-blue-500" />
-                        <span className="text-slate-600 dark:text-slate-300">
-                            Selected
-                        </span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                        <div className="w-6 h-0.5 bg-slate-400" />
-                        <span className="text-slate-600 dark:text-slate-300">
-                            Route
-                        </span>
-                    </div>
-                </div>
-            </div>
-
-            <div className="absolute top-4 right-4 bg-white dark:bg-slate-800 rounded-lg shadow-lg px-3 py-2 text-xs z-[1000]">
-                <span className="font-semibold text-slate-700 dark:text-slate-300">
-                    {tripsWithLocation.length} active
-                </span>
-            </div>
-        </div>
-    );
-};
-
-// ============================================
-// AUDIT LOG TABLE COMPONENT
-// ============================================
-
-const AuditLogTable = ({ logs, loading }) => {
-    const [searchTerm, setSearchTerm] = useState("");
-
-    if (loading) {
-        return (
-            <div className="flex justify-center py-8">
-                <Loader2 className="h-6 w-6 animate-spin text-blue-600 dark:text-blue-400" />
-            </div>
-        );
-    }
-
-    const filteredLogs =
-        logs?.filter((log) => {
-            const search = searchTerm.toLowerCase();
-            return (
-                log?.action?.toLowerCase().includes(search) ||
-                log?.table_name?.toLowerCase().includes(search) ||
-                log?.user?.email?.toLowerCase().includes(search) ||
-                log?.user?.full_name?.toLowerCase().includes(search)
-            );
-        }) || [];
-
-    if (filteredLogs.length === 0) {
-        return (
-            <div className="text-center py-8">
-                <History className="h-8 w-8 text-slate-400 dark:text-slate-500 mx-auto mb-2" />
-                <p className="text-slate-500 dark:text-slate-400 text-sm">
-                    No audit logs found
-                </p>
-            </div>
-        );
-    }
-
-    return (
-        <div>
-            <div className="relative mb-3 max-w-sm">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-                <Input
-                    placeholder="Search logs..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-8 py-1.5 h-9 text-sm dark:bg-slate-900 dark:border-slate-700"
-                />
-            </div>
-
-            <div className="overflow-x-auto">
-                <Table>
-                    <TableHeader>
-                        <TableRow className="bg-slate-50 dark:bg-slate-900/50 border-b dark:border-slate-700">
-                            <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs">
-                                Action
-                            </TableHead>
-                            <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs">
-                                User
-                            </TableHead>
-                            <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs">
-                                Table
-                            </TableHead>
-                            <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs">
-                                Date & Time
-                            </TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        {filteredLogs.slice(0, 50).map((log, index) => {
-                            const ActionIcon = getAuditActionIcon(log.action);
-                            const colorClass = getAuditActionColor(log.action);
-                            const user = log.user || {};
-
-                            return (
-                                <TableRow
-                                    key={log.log_id || index}
-                                    className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors"
-                                >
-                                    <TableCell>
-                                        <Badge
-                                            className={`${colorClass} text-white flex items-center gap-1 px-2 py-1 rounded-lg text-[10px]`}
-                                        >
-                                            <ActionIcon className="h-2.5 w-2.5" />
-                                            {log.action
-                                                ?.replace(/_/g, " ")
-                                                .toUpperCase()}
-                                        </Badge>
-                                    </TableCell>
-                                    <TableCell>
-                                        <div className="flex items-center gap-2">
-                                            <div className="w-6 h-6 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-[10px] font-semibold text-slate-700 dark:text-slate-300">
-                                                {user?.full_name?.charAt(0) ||
-                                                    user?.first_name?.charAt(
-                                                        0,
-                                                    ) ||
-                                                    "?"}
-                                            </div>
-                                            <div>
-                                                <p className="text-sm font-medium text-slate-800 dark:text-white">
-                                                    {user?.full_name ||
-                                                        user?.first_name ||
-                                                        "System"}
-                                                </p>
-                                            </div>
-                                        </div>
-                                    </TableCell>
-                                    <TableCell>
-                                        <span className="font-mono text-xs text-slate-600 dark:text-slate-400">
-                                            {log.table_name
-                                                ?.replace(/_/g, " ")
-                                                .toUpperCase()}
-                                        </span>
-                                    </TableCell>
-                                    <TableCell>
-                                        <div className="flex items-center gap-1.5">
-                                            <ClockIcon className="h-3 w-3 text-slate-400" />
-                                            <span className="text-xs text-slate-600 dark:text-slate-400">
-                                                {formatTime(log.created_at)}
-                                            </span>
-                                        </div>
-                                    </TableCell>
-                                </TableRow>
-                            );
-                        })}
-                    </TableBody>
-                </Table>
-            </div>
-            {filteredLogs.length > 50 && (
-                <p className="text-xs text-slate-400 dark:text-slate-500 mt-2 text-center">
-                    Showing last 50 entries
-                </p>
-            )}
-        </div>
+        <Badge
+            className={`${config.color} text-white flex items-center gap-1 px-2.5 py-1.5 rounded-lg`}
+        >
+            <Icon className="h-3 w-3" />
+            {config.label}
+        </Badge>
     );
 };
 
@@ -956,19 +503,138 @@ const TicketTable = ({
 };
 
 // ============================================
-// STATUS BADGE COMPONENT
+// AUDIT LOG TABLE COMPONENT
 // ============================================
 
-const StatusBadge = ({ status }) => {
-    const config = getStatusConfig(status);
-    const Icon = config.icon;
+const AuditLogTable = ({ logs, loading }) => {
+    const [searchTerm, setSearchTerm] = useState("");
+
+    if (loading) {
+        return (
+            <div className="flex justify-center py-8">
+                <Loader2 className="h-6 w-6 animate-spin text-blue-600 dark:text-blue-400" />
+            </div>
+        );
+    }
+
+    const filteredLogs =
+        logs?.filter((log) => {
+            const search = searchTerm.toLowerCase();
+            return (
+                log?.action?.toLowerCase().includes(search) ||
+                log?.table_name?.toLowerCase().includes(search) ||
+                log?.user?.email?.toLowerCase().includes(search) ||
+                log?.user?.full_name?.toLowerCase().includes(search)
+            );
+        }) || [];
+
+    if (filteredLogs.length === 0) {
+        return (
+            <div className="text-center py-8">
+                <History className="h-8 w-8 text-slate-400 dark:text-slate-500 mx-auto mb-2" />
+                <p className="text-slate-500 dark:text-slate-400 text-sm">
+                    No audit logs found
+                </p>
+            </div>
+        );
+    }
+
     return (
-        <Badge
-            className={`${config.color} text-white flex items-center gap-1 px-2.5 py-1.5 rounded-lg`}
-        >
-            <Icon className="h-3 w-3" />
-            {config.label}
-        </Badge>
+        <div>
+            <div className="relative mb-3 max-w-sm">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                <Input
+                    placeholder="Search logs..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-8 py-1.5 h-9 text-sm dark:bg-slate-900 dark:border-slate-700"
+                />
+            </div>
+
+            <div className="overflow-x-auto">
+                <Table>
+                    <TableHeader>
+                        <TableRow className="bg-slate-50 dark:bg-slate-900/50 border-b dark:border-slate-700">
+                            <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs">
+                                Action
+                            </TableHead>
+                            <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs">
+                                User
+                            </TableHead>
+                            <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs">
+                                Table
+                            </TableHead>
+                            <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs">
+                                Date & Time
+                            </TableHead>
+                        </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                        {filteredLogs.slice(0, 50).map((log, index) => {
+                            const ActionIcon = getAuditActionIcon(log.action);
+                            const colorClass = getAuditActionColor(log.action);
+                            const user = log.user || {};
+
+                            return (
+                                <TableRow
+                                    key={log.log_id || index}
+                                    className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors"
+                                >
+                                    <TableCell>
+                                        <Badge
+                                            className={`${colorClass} text-white flex items-center gap-1 px-2 py-1 rounded-lg text-[10px]`}
+                                        >
+                                            <ActionIcon className="h-2.5 w-2.5" />
+                                            {log.action
+                                                ?.replace(/_/g, " ")
+                                                .toUpperCase()}
+                                        </Badge>
+                                    </TableCell>
+                                    <TableCell>
+                                        <div className="flex items-center gap-2">
+                                            <div className="w-6 h-6 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-[10px] font-semibold text-slate-700 dark:text-slate-300">
+                                                {user?.full_name?.charAt(0) ||
+                                                    user?.first_name?.charAt(
+                                                        0,
+                                                    ) ||
+                                                    "?"}
+                                            </div>
+                                            <div>
+                                                <p className="text-sm font-medium text-slate-800 dark:text-white">
+                                                    {user?.full_name ||
+                                                        user?.first_name ||
+                                                        "System"}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </TableCell>
+                                    <TableCell>
+                                        <span className="font-mono text-xs text-slate-600 dark:text-slate-400">
+                                            {log.table_name
+                                                ?.replace(/_/g, " ")
+                                                .toUpperCase()}
+                                        </span>
+                                    </TableCell>
+                                    <TableCell>
+                                        <div className="flex items-center gap-1.5">
+                                            <ClockIcon className="h-3 w-3 text-slate-400" />
+                                            <span className="text-xs text-slate-600 dark:text-slate-400">
+                                                {formatTime(log.created_at)}
+                                            </span>
+                                        </div>
+                                    </TableCell>
+                                </TableRow>
+                            );
+                        })}
+                    </TableBody>
+                </Table>
+            </div>
+            {filteredLogs.length > 50 && (
+                <p className="text-xs text-slate-400 dark:text-slate-500 mt-2 text-center">
+                    Showing last 50 entries
+                </p>
+            )}
+        </div>
     );
 };
 
@@ -980,16 +646,13 @@ const GsoDashboard = () => {
     const { user } = useAuth();
     const navigate = useNavigate();
     const queryClient = useQueryClient();
+    const { isConnected } = useRealtime();
     const [selectedTicket, setSelectedTicket] = useState(null);
     const [showValidateDialog, setShowValidateDialog] = useState(false);
     const [activeTab, setActiveTab] = useState("pending");
     const [searchQuery, setSearchQuery] = useState("");
-    const [showLiveTracking, setShowLiveTracking] = useState(true);
     const [showAuditLog, setShowAuditLog] = useState(false);
-    const [forceUpdate, setForceUpdate] = useState(0);
     const [validationNote, setValidationNote] = useState("");
-
-    const fetchAllDataRef = useRef(null);
 
     const departmentName =
         user?.department_name
@@ -997,13 +660,58 @@ const GsoDashboard = () => {
             .replace("PNP - ", "") || "General Services Office";
 
     // ============================================
+    // ✅ REFRESH FUNCTION - Auto-refresh only
+    // ============================================
+
+const fetchAllData = useCallback(() => {
+    // ✅ Add flag to prevent concurrent refreshes
+    if (window._isRefreshing) return;
+    window._isRefreshing = true;
+
+    // ✅ Use Promise.allSettled to prevent cascading failures
+    Promise.allSettled([
+        queryClient.invalidateQueries({ queryKey: ["gso-pending-mo"] }),
+        queryClient.invalidateQueries({ queryKey: ["gso-pending-validation"] }),
+        queryClient.invalidateQueries({ queryKey: ["gso-all-trips"] }),
+        queryClient.invalidateQueries({ queryKey: ["gps-active-trips"] }),
+        queryClient.invalidateQueries({ queryKey: ["audit-logs"] }),
+        queryClient.invalidateQueries({ queryKey: ["admin-users-stats"] }),
+        queryClient.invalidateQueries({ queryKey: ["admin-vehicles-stats"] }),
+        queryClient.invalidateQueries({ queryKey: ["admin-departments-stats"] }),
+    ]).finally(() => {
+        // ✅ Release flag after 2 seconds
+        setTimeout(() => {
+            window._isRefreshing = false;
+        }, 2000);
+    });
+}, [queryClient]);
+
+    // ============================================
+    // ✅ AUTO-REFRESH - No manual refresh needed
+    // ============================================
+
+   
+useAutoRefresh(
+    [
+        "gso-trip-updated",
+        "gso-trip-status-changed",
+        "gso-funds-released",
+        "trip-completed",
+        "trip-started",
+        "gps-location-updated",
+        "new-notification",
+        "gso-trip-created",
+    ],
+    fetchAllData,
+    1000 // ✅ 1 second debounce
+);
+    // ============================================
     // OPTIMIZED QUERIES
     // ============================================
 
     const {
         data: auditLogs = [],
         isLoading: auditLoading,
-        refetch: refetchAudit,
     } = useOptimizedQuery({
         queryKey: ["audit-logs"],
         queryFn: async () => {
@@ -1023,7 +731,6 @@ const GsoDashboard = () => {
     const {
         data: activeTrips = [],
         isLoading: gpsLoading,
-        refetch: refetchGps,
         isFetching: gpsFetching,
     } = useOptimizedQuery({
         queryKey: ["gps-active-trips"],
@@ -1040,29 +747,34 @@ const GsoDashboard = () => {
         staleTime: 5000,
     });
 
-    const {
-        data: pendingTickets = [],
-        isLoading: pendingLoading,
-        refetch: refetchPending,
-    } = useOptimizedQuery({
-        queryKey: ["gso-pending-mo"],
-        queryFn: async () => {
-            try {
-                const response = await gsoAPI.getPendingMO();
-                const data = response?.data?.data || response?.data || [];
-                return Array.isArray(data) ? data : [];
-            } catch (error) {
-                console.error("Error fetching pending tickets:", error);
-                return [];
+  const {
+    data: pendingTickets = [],
+    isLoading: pendingLoading,
+} = useOptimizedQuery({
+    queryKey: ["gso-pending-mo"],
+    queryFn: async () => {
+        try {
+            const response = await gsoAPI.getPendingMO();
+            const data = response?.data?.data || response?.data || [];
+            return Array.isArray(data) ? data : [];
+        } catch (error) {
+            if (error.response?.status === 429) {
+                console.warn('Rate limit hit for pending tickets, using cached data');
+                return []; // Return empty, cache will serve stale data
             }
-        },
-        staleTime: 60000,
-    });
+            console.error("Error fetching pending tickets:", error);
+            return [];
+        }
+    },
+    staleTime: 60000,
+    refetchInterval: 60000, // ✅ Reduced from default
+    retry: 2,
+    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 10000),
+});
 
     const {
         data: pendingValidation = [],
         isLoading: validationLoading,
-        refetch: refetchValidation,
     } = useOptimizedQuery({
         queryKey: ["gso-pending-validation"],
         queryFn: async () => {
@@ -1081,7 +793,6 @@ const GsoDashboard = () => {
     const {
         data: allTrips = [],
         isLoading: allTripsLoading,
-        refetch: refetchAllTrips,
     } = useOptimizedQuery({
         queryKey: ["gso-all-trips"],
         queryFn: async () => {
@@ -1098,7 +809,7 @@ const GsoDashboard = () => {
         keepPreviousData: true,
     });
 
-    const { data: users = [], isLoading: usersLoading } = useOptimizedQuery({
+    const { data: users = [] } = useOptimizedQuery({
         queryKey: ["admin-users-stats"],
         queryFn: async () => {
             try {
@@ -1111,7 +822,7 @@ const GsoDashboard = () => {
         staleTime: 120000,
     });
 
-    const { data: vehicles = [], isLoading: vehiclesLoading } = useOptimizedQuery({
+    const { data: vehicles = [] } = useOptimizedQuery({
         queryKey: ["admin-vehicles-stats"],
         queryFn: async () => {
             try {
@@ -1124,7 +835,7 @@ const GsoDashboard = () => {
         staleTime: 120000,
     });
 
-    const { data: departments = [], isLoading: departmentsLoading } = useOptimizedQuery({
+    const { data: departments = [] } = useOptimizedQuery({
         queryKey: ["admin-departments-stats"],
         queryFn: async () => {
             try {
@@ -1202,7 +913,7 @@ const GsoDashboard = () => {
                 icon: Satellite,
                 gradient: "from-green-500 to-emerald-600",
                 subtitle: "Live tracking",
-                onClick: () => setShowLiveTracking(!showLiveTracking),
+                onClick: () => setActiveTab("pending"),
                 trend: activeTrips.length > 0 ? 5 : 0,
             },
             {
@@ -1336,94 +1047,11 @@ const GsoDashboard = () => {
     }, [allTrips]);
 
     // ============================================
-    // SETUP REAL-TIME NOTIFICATIONS
+    // CONNECTION STATUS
     // ============================================
 
-    useEffect(() => {
-        fetchAllDataRef.current = fetchAllData;
-
-        if (user) {
-            setupGsoRealtimeNotifications(
-                user,
-                fetchAllDataRef,
-                setForceUpdate,
-            );
-        }
-
-        return () => {
-            try {
-                if (user) {
-                    echo.leave(`notifications.${user.user_id}`);
-                    echo.leave("gso.dashboard");
-                }
-            } catch (e) {
-                // Ignore cleanup errors
-            }
-        };
-    }, [user]);
-
-    // ============================================
-    // FETCH ALL DATA
-    // ============================================
-
-    const fetchAllData = () => {
-        refetchPending();
-        refetchValidation();
-        refetchAllTrips();
-        refetchGps();
-        refetchAudit();
-        queryClient.invalidateQueries({ queryKey: ["admin-users-stats"] });
-        queryClient.invalidateQueries({ queryKey: ["admin-vehicles-stats"] });
-        queryClient.invalidateQueries({
-            queryKey: ["admin-departments-stats"],
-        });
-        queryClient.invalidateQueries({ queryKey: ["audit-logs"] });
-    };
-
-    // ============================================
-    // WEBSOCKET REAL-TIME UPDATES
-    // ============================================
-
-    useEffect(() => {
-        if (!user) return;
-
-        if (!echo.connector || !echo.connector.pusher) {
-            console.warn("⚠️ Echo not ready for dashboard updates");
-            return;
-        }
-
-        const channel = echo.channel("gso-live-tracking");
-
-        channel.listen(".location.updated", (data) => {
-            setForceUpdate((prev) => prev + 1);
-            const timer = setTimeout(() => fetchAllData(), 1000);
-            return () => clearTimeout(timer);
-        });
-
-        channel.listen(".trip.completed", (data) => {
-            toast.success(`Trip ${data.trip_id || "unknown"} completed`);
-            fetchAllData();
-        });
-
-        channel.listen(".trip.started", (data) => {
-            toast.info(`Trip ${data.trip_id || "unknown"} started`);
-            fetchAllData();
-        });
-
-        channel.subscribed(() => {
-            console.log("✅ Dashboard subscribed to gso-live-tracking");
-        });
-
-        return () => {
-            try {
-                channel.stopListening(".location.updated");
-                channel.stopListening(".trip.completed");
-                channel.stopListening(".trip.started");
-            } catch (e) {
-                // Ignore cleanup errors
-            }
-        };
-    }, [user]);
+    const connectionStatus = isConnected ? "🟢 Live" : "🔴 Offline";
+    const isRealTime = isConnected;
 
     // ============================================
     // LOADING STATE WITH SKELETON
@@ -1468,6 +1096,12 @@ const GsoDashboard = () => {
                                 <Shield className="h-3 w-3 mr-1" />
                                 Super Admin
                             </Badge>
+                            {isRealTime && (
+                                <Badge className="bg-green-500/20 text-green-300 border-green-500/30 rounded-full px-3 py-1 backdrop-blur-sm animate-pulse">
+                                    <span className="h-1.5 w-1.5 rounded-full bg-green-400 mr-1.5 animate-pulse" />
+                                    Real-time
+                                </Badge>
+                            )}
                         </div>
                         <h1 className="text-2xl md:text-3xl font-bold bg-gradient-to-r from-white to-slate-300 bg-clip-text text-transparent">
                             GSO Dashboard
@@ -1475,6 +1109,14 @@ const GsoDashboard = () => {
                         <p className="text-slate-300 mt-1 text-sm md:text-base">
                             Manage trip tickets, users, departments, and
                             vehicles in one place
+                            <span className="ml-2 text-xs opacity-70">
+                                {connectionStatus}
+                            </span>
+                            {isRealTime && (
+                                <span className="ml-2 text-xs text-emerald-400 animate-pulse">
+                                    ● Auto-refresh
+                                </span>
+                            )}
                         </p>
                     </div>
                     <div className="flex gap-3 flex-wrap">
@@ -1485,17 +1127,7 @@ const GsoDashboard = () => {
                             <PlusCircle className="h-4 w-4 mr-2" />
                             Create Trip
                         </Button>
-                        <Button
-                            variant="outline"
-                            onClick={() => {
-                                fetchAllData();
-                                toast.success("Dashboard refreshed");
-                            }}
-                            className="bg-white/10 border-white/20 text-white hover:bg-white/20 rounded-xl backdrop-blur-sm transition-all duration-300"
-                        >
-                            <RefreshCw className="h-4 w-4 mr-2" />
-                            Refresh
-                        </Button>
+                        {/* ❌ REFRESH BUTTON REMOVED - Auto-refresh handles everything */}
                     </div>
                 </div>
             </div>
@@ -1518,6 +1150,11 @@ const GsoDashboard = () => {
                             </CardTitle>
                             <CardDescription className="dark:text-slate-400">
                                 Monthly trip volume for the last 6 months
+                                {isRealTime && (
+                                    <span className="ml-2 text-xs text-emerald-500 animate-pulse">
+                                        ● Live updates
+                                    </span>
+                                )}
                             </CardDescription>
                         </div>
                         <Badge className="bg-blue-500/20 text-blue-600 dark:text-blue-400 border-blue-500/30">
@@ -1583,62 +1220,7 @@ const GsoDashboard = () => {
                 </CardContent>
             </Card>
 
-            {/* Live Tracking Section */}
-            <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-                <CardHeader>
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <CardTitle className="flex items-center gap-2 text-slate-800 dark:text-white">
-                                <Satellite className="h-5 w-5 text-green-500" />
-                                Live GPS Tracking
-                                {gpsFetching && (
-                                    <Loader2 className="h-4 w-4 animate-spin text-blue-500 ml-2" />
-                                )}
-                            </CardTitle>
-                            <CardDescription className="dark:text-slate-400">
-                                Real-time location of active trips
-                                {activeTrips.length > 0 && (
-                                    <span className="ml-2 text-emerald-500 font-medium">
-                                        {activeTrips.length} active
-                                    </span>
-                                )}
-                            </CardDescription>
-                        </div>
-                        <div className="flex gap-2">
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => refetchGps()}
-                                disabled={gpsFetching}
-                                className="dark:border-slate-700"
-                            >
-                                <RefreshCw
-                                    className={`h-4 w-4 mr-1 ${gpsFetching ? "animate-spin" : ""}`}
-                                />
-                                Refresh
-                            </Button>
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() =>
-                                    setShowLiveTracking(!showLiveTracking)
-                                }
-                                className="dark:border-slate-700"
-                            >
-                                {showLiveTracking ? "Hide" : "Show"}
-                            </Button>
-                        </div>
-                    </div>
-                </CardHeader>
-                {showLiveTracking && (
-                    <CardContent>
-                        <LiveTrackingMap
-                            activeTrips={activeTrips}
-                            loading={gpsLoading}
-                        />
-                    </CardContent>
-                )}
-            </Card>
+            {/* ❌ LIVE TRACKING SECTION REMOVED per request */}
 
             {/* Search Bar */}
             <div className="relative">

@@ -1,8 +1,11 @@
 // src/pages/mayor/MayorDashboard.jsx
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import { useOptimizedQuery } from "../../hooks/useOptimizedQuery";
+import { useAutoRefresh } from "../../hooks/useAutoRefresh";
+import { useRealtime } from "../../contexts/RealtimeContext";
 import {
     SkeletonPage,
     SkeletonStats,
@@ -10,7 +13,6 @@ import {
 } from "../../components/ui/SkeletonCard";
 import { mayorsOfficeAPI } from "../../services/api";
 import toast from "react-hot-toast";
-import echo from "../../services/echo";
 import eventBus from "../../utils/eventBus";
 
 import {
@@ -244,16 +246,12 @@ const LoadingSkeleton = () => (
 const MayorDashboard = () => {
     const { user } = useAuth();
     const navigate = useNavigate();
+    const { isConnected } = useRealtime();
+    const queryClient = useQueryClient();
     const [pendingTickets, setPendingTickets] = useState([]);
     const [approvedTickets, setApprovedTickets] = useState([]);
     const [departmentBudgets, setDepartmentBudgets] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [refreshing, setRefreshing] = useState(false);
     const [recentReleases, setRecentReleases] = useState([]);
-    const [newNotificationCount, setNewNotificationCount] = useState(0);
-    const [latestNotification, setLatestNotification] = useState(null);
-    const [isMounted, setIsMounted] = useState(true);
-    const [forceUpdate, setForceUpdate] = useState(0);
     const [stats, setStats] = useState({
         pendingCount: 0,
         releasedCount: 0,
@@ -266,25 +264,47 @@ const MayorDashboard = () => {
         departmentsWithBudget: 0,
     });
 
-    const fetchAllDataRef = useRef();
-    const fetchPendingTicketsRef = useRef();
-    const fetchDepartmentBudgetsRef = useRef();
+    // ============================================
+    // ✅ REFRESH FUNCTION - Auto-refresh only
+    // ============================================
+
+    const fetchAllData = useCallback(() => {
+        queryClient.invalidateQueries({ queryKey: ["mayor-pending-tickets"] });
+        queryClient.invalidateQueries({ queryKey: ["mayor-approved-tickets"] });
+        queryClient.invalidateQueries({ queryKey: ["mayor-department-budgets"] });
+    }, [queryClient]);
+
+    // ============================================
+    // ✅ AUTO-REFRESH - No manual refresh needed
+    // ============================================
+
+    useAutoRefresh(
+        [
+            "mayor-trip-updated",
+            "mayor-new-pending",
+            "mayor-budget-updated",
+            "gso-funds-released",
+            "trip-completed",
+            "new-notification",
+        ],
+        fetchAllData
+    );
 
     // ============================================
     // OPTIMIZED QUERIES
     // ============================================
 
-    const { data: pendingData, isLoading: pendingLoading, refetch: refetchPending } = useOptimizedQuery({
+    const { data: pendingData, isLoading: pendingLoading } = useOptimizedQuery({
         queryKey: ["mayor-pending-tickets"],
         queryFn: async () => {
             const response = await mayorsOfficeAPI.getPendingTickets();
             return response.data?.data || response.data || [];
         },
-        staleTime: 30000,
+        staleTime: 60000,
         keepPreviousData: true,
     });
 
-    const { data: approvedData, isLoading: approvedLoading, refetch: refetchApproved } = useOptimizedQuery({
+    const { data: approvedData, isLoading: approvedLoading } = useOptimizedQuery({
         queryKey: ["mayor-approved-tickets"],
         queryFn: async () => {
             const response = await mayorsOfficeAPI.getApprovedTickets();
@@ -294,7 +314,7 @@ const MayorDashboard = () => {
         keepPreviousData: true,
     });
 
-    const { data: budgetData, isLoading: budgetLoading, refetch: refetchBudget } = useOptimizedQuery({
+    const { data: budgetData, isLoading: budgetLoading } = useOptimizedQuery({
         queryKey: ["mayor-department-budgets"],
         queryFn: async () => {
             const response = await mayorsOfficeAPI.getAllDepartmentsWithBudget();
@@ -389,139 +409,12 @@ const MayorDashboard = () => {
     }, [budgetData, budgetLoading]);
 
     // ============================================
-    // FETCH FUNCTIONS
-    // ============================================
-
-    const fetchAllData = useCallback(async () => {
-        setLoading(true);
-        try {
-            await Promise.all([
-                refetchPending(),
-                refetchApproved(),
-                refetchBudget(),
-            ]);
-        } catch (error) {
-            console.error("Error fetching dashboard data:", error);
-            toast.error("Failed to load dashboard data");
-        } finally {
-            if (isMounted) {
-                setLoading(false);
-                setRefreshing(false);
-            }
-        }
-    }, [refetchPending, refetchApproved, refetchBudget, isMounted]);
-
-    // Store refs for event listeners
-    useEffect(() => {
-        fetchAllDataRef.current = fetchAllData;
-        fetchPendingTicketsRef.current = refetchPending;
-        fetchDepartmentBudgetsRef.current = refetchBudget;
-    }, [fetchAllData, refetchPending, refetchBudget]);
-
-    // ============================================
-    // HANDLE NOTIFICATION
-    // ============================================
-
-    const handleNotificationByType = useCallback((data) => {
-        const type = data.notification_type;
-
-        setNewNotificationCount(prev => prev + 1);
-
-        if (type === 'trip_created' || type === 'trip_submitted') {
-            fetchPendingTicketsRef.current?.();
-            setForceUpdate(prev => prev + 1);
-        }
-
-        if (type === 'fund_issued' || type === 'fund_released') {
-            fetchAllDataRef.current?.();
-            setForceUpdate(prev => prev + 1);
-        }
-
-        if (type === 'trip_completed' || type === 'trip_started' ||
-            type === 'driver_acknowledged' || type === 'trip_reconciled') {
-            fetchAllDataRef.current?.();
-            setForceUpdate(prev => prev + 1);
-        }
-    }, []);
-
-    // ============================================
-    // SETUP REAL-TIME NOTIFICATIONS
-    // ============================================
-
-    const setupRealtimeNotifications = useCallback(() => {
-        if (!user) return;
-
-        if (!echo.connector || !echo.connector.pusher) {
-            setTimeout(setupRealtimeNotifications, 2000);
-            return;
-        }
-
-        const connection = echo.connector.pusher.connection;
-
-        const subscribeToPrivateChannel = () => {
-            try {
-                const channel = echo.private(`notifications.${user.user_id}`);
-
-                channel.listen('.notification.new', (data) => {
-                    handleNotificationByType(data);
-                });
-
-                channel.subscribed(() => {
-                    console.log(`✅ Subscribed to notifications.${user.user_id}`);
-                });
-
-                channel.error((error) => {
-                    console.error('❌ Private channel subscription error:', error);
-                });
-
-            } catch (error) {
-                console.error('⚠️ Error subscribing to private channel:', error);
-            }
-        };
-
-        if (connection.state === "connected") {
-            subscribeToPrivateChannel();
-        } else {
-            connection.bind("connected", () => {
-                subscribeToPrivateChannel();
-            });
-
-            if (connection.state === "disconnected" || connection.state === "unavailable") {
-                connection.connect();
-            }
-        }
-    }, [user, handleNotificationByType]);
-
-    // ============================================
-    // SETUP
+    // SETUP - Initial load
     // ============================================
 
     useEffect(() => {
-        setIsMounted(true);
         fetchAllData();
-
-        if (user) {
-            setupRealtimeNotifications();
-        }
-
-        return () => {
-            setIsMounted(false);
-            try {
-                if (user) {
-                    echo.leave(`notifications.${user.user_id}`);
-                }
-            } catch (e) {
-                // Ignore cleanup errors
-            }
-        };
-    }, [user, fetchAllData, setupRealtimeNotifications]);
-
-    const handleRefresh = () => {
-        setRefreshing(true);
-        setNewNotificationCount(0);
-        fetchAllData();
-        toast.success("Dashboard refreshed");
-    };
+    }, []); // ✅ Removed setIsMounted and loading state
 
     // ============================================
     // HELPERS
@@ -562,17 +455,24 @@ const MayorDashboard = () => {
 
     const topDepartments = departmentBudgets.slice(0, 6);
 
+    // Connection status
+    const connectionStatus = isConnected ? "🟢 Live" : "🔴 Offline";
+    const isRealTime = isConnected;
+
     // ============================================
-    // LOADING STATE
+    // ✅ LOADING STATE - Use query loading states
     // ============================================
 
-    if (loading || pendingLoading || approvedLoading || budgetLoading) {
-        return <LoadingSkeleton />;
-    }
+    const isLoading = pendingLoading || approvedLoading || budgetLoading;
 
     // ============================================
     // RENDER
     // ============================================
+
+    // ✅ Show skeleton only when ALL queries are loading and NO data exists
+    if (isLoading && pendingTickets.length === 0 && approvedTickets.length === 0 && departmentBudgets.length === 0) {
+        return <LoadingSkeleton />;
+    }
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
@@ -601,10 +501,10 @@ const MayorDashboard = () => {
                                     <Fuel className="mr-1 h-3 w-3" />
                                     FY {new Date().getFullYear()}
                                 </Badge>
-                                {newNotificationCount > 0 && (
-                                    <Badge className="border-red-500/30 bg-red-500/20 text-red-300 animate-pulse">
-                                        <Bell className="mr-1 h-3 w-3" />
-                                        {newNotificationCount} new
+                                {isRealTime && (
+                                    <Badge className="border-emerald-500/30 bg-emerald-500/20 text-emerald-300 animate-pulse">
+                                        <span className="mr-1.5 h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                        Real-time
                                     </Badge>
                                 )}
                             </div>
@@ -613,20 +513,15 @@ const MayorDashboard = () => {
                             </h1>
                             <p className="mt-1 text-sm text-slate-300">
                                 Monitor fund releases and department budget utilization for FY {new Date().getFullYear()}
+                                <span className="ml-2 text-xs opacity-70">{connectionStatus}</span>
+                                {isRealTime && (
+                                    <span className="ml-2 text-xs text-emerald-400 animate-pulse">
+                                        ● Auto-refresh
+                                    </span>
+                                )}
                             </p>
                         </div>
-                        <div className="flex gap-2">
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={handleRefresh}
-                                disabled={refreshing}
-                                className="bg-white/10 border-white/20 text-white hover:bg-white/20"
-                            >
-                                <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
-                                Refresh
-                            </Button>
-                        </div>
+                        {/* ❌ REFRESH BUTTON REMOVED - Auto-refresh handles everything */}
                     </div>
                 </div>
 
@@ -640,6 +535,11 @@ const MayorDashboard = () => {
                             <div>
                                 <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
                                     Annual Budget Overview FY {new Date().getFullYear()}
+                                    {isRealTime && (
+                                        <span className="ml-2 text-xs font-normal text-emerald-500 animate-pulse">
+                                            ● Live
+                                        </span>
+                                    )}
                                 </h3>
                                 <p className="text-sm text-slate-500 dark:text-slate-400">
                                     {stats.departmentsWithBudget} departments with active budgets
@@ -681,7 +581,7 @@ const MayorDashboard = () => {
                 </Card>
 
                 {/* Stats Grid */}
-                <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4" key={`stats-${forceUpdate}`}>
+                <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
                     <StatCard
                         title="Pending Release"
                         value={stats.pendingCount}
@@ -734,6 +634,11 @@ const MayorDashboard = () => {
                                     </CardTitle>
                                     <CardDescription className="text-sm text-slate-500 dark:text-slate-400">
                                         Real-time budget consumption across departments for FY {new Date().getFullYear()}
+                                        {isRealTime && (
+                                            <span className="ml-2 text-xs text-emerald-500 animate-pulse">
+                                                ● Live updates
+                                            </span>
+                                        )}
                                     </CardDescription>
                                 </div>
                             </div>
@@ -796,6 +701,11 @@ const MayorDashboard = () => {
                                     </CardTitle>
                                     <CardDescription className="text-sm text-slate-500 dark:text-slate-400">
                                         Last 5 transactions
+                                        {isRealTime && (
+                                            <span className="ml-2 text-xs text-emerald-500 animate-pulse">
+                                                ● Auto-update
+                                            </span>
+                                        )}
                                     </CardDescription>
                                 </div>
                             </div>

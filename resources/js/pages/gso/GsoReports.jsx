@@ -5,7 +5,10 @@
 // PDF Export via Backend API
 // ============================================
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import { useQueryClient } from "@tanstack/react-query";
+import { useAutoRefresh } from '../../hooks/useAutoRefresh';
+import { useRealtime } from '../../contexts/RealtimeContext';
 import { useOptimizedQuery } from '../../hooks/useOptimizedQuery';
 import {
     SkeletonPage,
@@ -242,6 +245,8 @@ const StatsCard = ({ title, value, icon: Icon, color, subtitle, trend }) => (
 
 const GsoReports = () => {
     const navigate = useNavigate();
+    const queryClient = useQueryClient();
+    const { isConnected } = useRealtime();
 
     // ============ GLOBAL FILTERS ============
     const [globalStartDate, setGlobalStartDate] = useState('');
@@ -277,6 +282,35 @@ const GsoReports = () => {
         auditTrail: true,
     });
 
+    // ============================================
+    // ✅ AUTO-REFRESH - No manual refresh needed
+    // ============================================
+
+    const fetchAllData = useCallback(() => {
+        queryClient.invalidateQueries({ queryKey: ['fuel-consumption'] });
+        queryClient.invalidateQueries({ queryKey: ['vehicle-summary'] });
+        queryClient.invalidateQueries({ queryKey: ['department-summary'] });
+        queryClient.invalidateQueries({ queryKey: ['monthly-summary'] });
+        queryClient.invalidateQueries({ queryKey: ['trip-ticket-report'] });
+        queryClient.invalidateQueries({ queryKey: ['gps-activity'] });
+        queryClient.invalidateQueries({ queryKey: ['reconciliation'] });
+        queryClient.invalidateQueries({ queryKey: ['fuel-receipt'] });
+        queryClient.invalidateQueries({ queryKey: ['driver-efficiency'] });
+        queryClient.invalidateQueries({ queryKey: ['audit-trail'] });
+    }, [queryClient]);
+
+    useAutoRefresh(
+        [
+            "gso-trip-updated",
+            "gso-trip-status-changed",
+            "gso-funds-released",
+            "trip-completed",
+            "trip-started",
+            "new-notification",
+        ],
+        fetchAllData
+    );
+
     // ============ FETCH DEPARTMENTS, VEHICLES & DRIVERS ============
     useEffect(() => {
         const fetchData = async () => {
@@ -301,6 +335,10 @@ const GsoReports = () => {
         }
         return getDateRange('monthly');
     }, [globalStartDate, globalEndDate]);
+
+    // Connection status
+    const connectionStatus = isConnected ? "🟢 Live" : "🔴 Offline";
+    const isRealTime = isConnected;
 
     // ============================================================
     // OPTIMIZED QUERIES - ALL 10 REPORTS
@@ -486,19 +524,7 @@ const GsoReports = () => {
     });
 
     // ============ HANDLERS ============
-    const handleRefresh = () => {
-        refetchFuel();
-        refetchVehicleSummary();
-        refetchDeptSummary();
-        refetchMonthly();
-        refetchTrips();
-        refetchGPS();
-        refetchReconciliation();
-        refetchReceipts();
-        refetchDrivers();
-        refetchAudit();
-        toast.success('All reports refreshed');
-    };
+    // ❌ REFRESH BUTTON REMOVED - Auto-refresh handles everything
 
     const toggleSection = (section) => {
         setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }));
@@ -608,6 +634,9 @@ const GsoReports = () => {
 
     // ---- REPORT 1: FUEL CONSUMPTION ----
     const renderFuelConsumption = () => {
+        // ... (same as original, just the render function)
+        // The key changes are in the main component above
+        // This function remains unchanged from your original
         const logs = fuelData?.recent_logs || [];
         const summary = fuelData?.summary || {};
 
@@ -648,6 +677,7 @@ const GsoReports = () => {
                 </CardHeader>
                 {expandedSections.fuelConsumption && (
                     <CardContent>
+                        {/* ... rest of fuel consumption render ... */}
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
                             <StatsCard title="Total Trips" value={summary.total_trips || 0} icon={Truck} color="from-blue-500 to-blue-600" />
                             <StatsCard title="Total Fuel" value={`${formatNumber(summary.total_fuel_liters || 0)} L`} icon={Fuel} color="from-emerald-500 to-emerald-600" />
@@ -1284,9 +1314,6 @@ const GsoReports = () => {
                                         <TableHead className="text-right font-semibold text-slate-700 dark:text-slate-300 text-xs uppercase">Expected Distance</TableHead>
                                         <TableHead className="text-right font-semibold text-slate-700 dark:text-slate-300 text-xs uppercase">Actual Distance</TableHead>
                                         <TableHead className="text-right font-semibold text-slate-700 dark:text-slate-300 text-xs uppercase">Distance Variance</TableHead>
-                                        {/* <TableHead className="text-right font-semibold text-slate-700 dark:text-slate-300 text-xs uppercase">Amount Released</TableHead>
-                                        <TableHead className="text-right font-semibold text-slate-700 dark:text-slate-300 text-xs uppercase">Actual Amount Paid</TableHead>
-                                        <TableHead className="text-right font-semibold text-slate-700 dark:text-slate-300 text-xs uppercase">Amount Variance</TableHead> */}
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
@@ -1301,9 +1328,6 @@ const GsoReports = () => {
                                                 <TableCell className="text-right">{r.expected_distance || 'N/A'}</TableCell>
                                                 <TableCell className="text-right">{r.actual_distance || 'N/A'}</TableCell>
                                                 <TableCell className={`text-right font-medium ${r.variance !== 0 ? 'text-red-600' : ''}`}>{r.variance || 0}</TableCell>
-                                                {/* <TableCell className="text-right">{formatCurrency(r.amount_released || 0)}</TableCell>
-                                                <TableCell className="text-right">{formatCurrency(r.actual_amount || 0)}</TableCell>
-                                                <TableCell className={`text-right font-medium ${r.amount_variance !== 0 ? 'text-red-600' : ''}`}>{formatCurrency(r.amount_variance || 0)}</TableCell> */}
                                             </TableRow>
                                         ))
                                     )}
@@ -1648,16 +1672,18 @@ const GsoReports = () => {
                                     </h1>
                                     <p className="text-sm text-slate-500 dark:text-slate-400">
                                         Report period: {dateRange.startDate} to {dateRange.endDate}
+                                        <span className="ml-2 text-xs opacity-70">{connectionStatus}</span>
+                                        {isRealTime && (
+                                            <span className="ml-2 text-xs text-emerald-400 animate-pulse">
+                                                ● Auto-refresh
+                                            </span>
+                                        )}
                                     </p>
                                 </div>
                             </div>
                         </div>
                     </div>
-                    <div className="flex gap-2 flex-wrap">
-                        <Button variant="outline" onClick={handleRefresh} className="dark:border-slate-700 dark:text-slate-300">
-                            <RefreshCw className="h-4 w-4 mr-2" /> Refresh All
-                        </Button>
-                    </div>
+                    {/* ❌ REFRESH BUTTON REMOVED - Auto-refresh handles everything */}
                 </div>
 
                 {/* ========== GLOBAL FILTERS ========== */}

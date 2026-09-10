@@ -1,12 +1,15 @@
 // src/pages/mayor/budget/BudgetAllocation.jsx
 // ============================================
-// ENHANCED: Improved validation with field highlighting
-// No duplicate toasts - single toast with all errors
-// Auto-focus first error field
+// ENHANCED: Auto-refresh with real-time updates
+// REMOVED: Manual refresh button
+// REMOVED: Add Budget button (kept inside dialog)
+// KEPT: Bulk Edit functionality
 // ============================================
 
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useQueryClient, useMutation } from "@tanstack/react-query";
+import { useAutoRefresh } from "../../../hooks/useAutoRefresh";
+import { useRealtime } from "../../../contexts/RealtimeContext";
 import { useOptimizedQuery } from "../../../hooks/useOptimizedQuery";
 import {
     SkeletonPage,
@@ -234,7 +237,7 @@ const FilterSection = ({ filters, setFilters, departments, isFilterOpen, setIsFi
                                 placeholder="Type department name..."
                                 value={filters.searchTerm}
                                 onChange={(e) => setFilters(prev => ({ ...prev, searchTerm: e.target.value }))}
-                                className="pl-9 h-9 text-sm dark:bg-slate-800 dark:border-slate-700"
+                                className="pl-9 h-9 text-sm dark:bg-slate-800 dark:border-slate-700 dark:text-white"
                             />
                         </div>
                     </div>
@@ -299,6 +302,7 @@ const FilterSection = ({ filters, setFilters, departments, isFilterOpen, setIsFi
 const BudgetAllocation = () => {
     const navigate = useNavigate();
     const queryClient = useQueryClient();
+    const { isConnected } = useRealtime();
     const toastIdRef = useRef(null);
     
     const [selectedYear, setSelectedYear] = useState(2026);
@@ -342,6 +346,23 @@ const BudgetAllocation = () => {
         allocationStatus: 'all',
         budgetRange: 'all',
     });
+
+    // ============================================
+    // ✅ AUTO-REFRESH - No manual refresh needed
+    // ============================================
+
+    useAutoRefresh(
+        [
+            "mayor-budget-updated",
+            "mayor-trip-updated",
+            "gso-funds-released",
+            "new-notification",
+        ],
+        () => {
+            queryClient.invalidateQueries({ queryKey: ["annual-budgets", selectedYear] });
+            queryClient.invalidateQueries({ queryKey: ["fiscal-years-active"] });
+        }
+    );
 
     // ============================================
     // OPTIMIZED QUERIES
@@ -530,7 +551,7 @@ const BudgetAllocation = () => {
     };
 
     // ============================================
-    // ✅ ENHANCED VALIDATION FUNCTIONS
+    // VALIDATION FUNCTIONS
     // ============================================
 
     const validateEditBudget = () => {
@@ -854,6 +875,10 @@ const BudgetAllocation = () => {
         }
     }, [budgets, isBulkMode]);
 
+    // Connection status
+    const connectionStatus = isConnected ? "🟢 Live" : "🔴 Offline";
+    const isRealTime = isConnected;
+
     // ============================================
     // LOADING & ERROR STATES
     // ============================================
@@ -868,10 +893,6 @@ const BudgetAllocation = () => {
                 <p className="text-slate-500 dark:text-slate-400 text-sm mb-4">
                     {budgetError.response?.data?.message || budgetError.message}
                 </p>
-                <Button onClick={() => refetch()} className="bg-blue-600 hover:bg-blue-700">
-                    <RefreshCw className="h-4 w-4 mr-2" />
-                    Retry
-                </Button>
             </div>
         );
     }
@@ -917,39 +938,28 @@ const BudgetAllocation = () => {
                                     </h1>
                                     <p className="text-sm text-slate-500 dark:text-slate-400">
                                         Set annual fuel budget and weekly ceiling per department
+                                        <span className="ml-2 text-xs opacity-70">{connectionStatus}</span>
+                                        {isRealTime && (
+                                            <span className="ml-2 text-xs text-emerald-400 animate-pulse">
+                                                ● Auto-refresh
+                                            </span>
+                                        )}
                                     </p>
                                 </div>
                             </div>
                         </div>
                     </div>
                     <div className="flex flex-wrap gap-3">
-                        <Button
-                            variant="outline"
-                            onClick={() => refetch()}
-                            disabled={isLoading || isFetching}
-                            className="dark:border-slate-700 dark:text-slate-300"
-                        >
-                            <RefreshCw className={`h-4 w-4 mr-2 ${isFetching ? "animate-spin" : ""}`} />
-                            Refresh
-                        </Button>
+                        {/* ❌ REFRESH BUTTON REMOVED - Auto-refresh handles everything */}
+                        {/* ❌ ADD BUDGET BUTTON REMOVED - Use the Plus icon in table or dialog */}
                         {budgets.length > 0 && (
-                            <>
-                                <Button
-                                    variant="outline"
-                                    onClick={() => setShowAddBudgetDialog(true)}
-                                    className="bg-emerald-600 hover:bg-emerald-700 text-white"
-                                >
-                                    <Plus className="h-4 w-4 mr-2" />
-                                    Add Budget
-                                </Button>
-                                <Button
-                                    variant={isBulkMode ? "default" : "outline"}
-                                    onClick={() => setIsBulkMode(!isBulkMode)}
-                                    className={isBulkMode ? "bg-blue-600 hover:bg-blue-700 text-white" : "dark:border-slate-700 dark:text-slate-300"}
-                                >
-                                    {isBulkMode ? "Exit Bulk Edit" : "Bulk Edit"}
-                                </Button>
-                            </>
+                            <Button
+                                variant={isBulkMode ? "default" : "outline"}
+                                onClick={() => setIsBulkMode(!isBulkMode)}
+                                className={isBulkMode ? "bg-blue-600 hover:bg-blue-700 text-white" : "dark:border-slate-700 dark:text-slate-300"}
+                            >
+                                {isBulkMode ? "Exit Bulk Edit" : "Bulk Edit"}
+                            </Button>
                         )}
                         {isBulkMode && (
                             <>

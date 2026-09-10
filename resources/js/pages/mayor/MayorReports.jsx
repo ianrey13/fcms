@@ -7,8 +7,10 @@
 // 3. Reconciliation Report (Viewable by Disbursing Officer)
 // ============================================
 
-import React, { useState, useMemo, useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useAutoRefresh } from '../../hooks/useAutoRefresh';
+import { useRealtime } from '../../contexts/RealtimeContext';
 import { reportsAPI, mayorsOfficeAPI, departmentAPI, vehicleAPI } from '../../services/api';
 import {
   Card,
@@ -169,6 +171,8 @@ const StatsCard = ({ title, value, icon: Icon, color, subtitle }) => (
 
 const MayorReports = () => {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { isConnected } = useRealtime();
   
   // ============ GLOBAL FILTERS ============
   const [globalStartDate, setGlobalStartDate] = useState('');
@@ -195,6 +199,26 @@ const MayorReports = () => {
     budgetUtilization: true,
     reconciliation: true,
   });
+
+  // ============================================
+  // ✅ AUTO-REFRESH - No manual refresh needed
+  // ============================================
+
+  const fetchAllData = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['mayor-fuel-receipt'] });
+    queryClient.invalidateQueries({ queryKey: ['mayor-budget'] });
+    queryClient.invalidateQueries({ queryKey: ['mayor-reconciliation'] });
+  }, [queryClient]);
+
+  useAutoRefresh(
+    [
+      "mayor-trip-updated",
+      "mayor-budget-updated",
+      "gso-funds-released",
+      "new-notification",
+    ],
+    fetchAllData
+  );
 
   // ============ FETCH DEPARTMENTS & VEHICLES ============
   useEffect(() => {
@@ -310,12 +334,7 @@ const MayorReports = () => {
   });
 
   // ============ HANDLERS ============
-  const handleRefresh = () => {
-    refetchReceipts();
-    refetchBudget();
-    refetchReconciliation();
-    toast.success('Reports refreshed');
-  };
+  // ❌ REFRESH BUTTON REMOVED - Auto-refresh handles everything
 
   const toggleSection = (section) => {
     setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }));
@@ -369,6 +388,10 @@ const MayorReports = () => {
   };
 
   const handlePrint = () => window.print();
+
+  // Connection status
+  const connectionStatus = isConnected ? "🟢 Live" : "🔴 Offline";
+  const isRealTime = isConnected;
 
   // ============================================================
   // RENDER - FUEL RECEIPT REPORT
@@ -692,9 +715,6 @@ const MayorReports = () => {
                     <TableHead className="font-semibold text-slate-700 dark:text-slate-300 text-xs uppercase">Trip Ticket No.</TableHead>
                     <TableHead className="font-semibold text-slate-700 dark:text-slate-300 text-xs uppercase">Vehicle</TableHead>
                     <TableHead className="font-semibold text-slate-700 dark:text-slate-300 text-xs uppercase">Driver</TableHead>
-                    {/* <TableHead className="text-right font-semibold text-slate-700 dark:text-slate-300 text-xs uppercase">Expected Distance</TableHead>
-                    <TableHead className="text-right font-semibold text-slate-700 dark:text-slate-300 text-xs uppercase">Actual Distance</TableHead>
-                    <TableHead className="text-right font-semibold text-slate-700 dark:text-slate-300 text-xs uppercase">Distance Variance</TableHead> */}
                     <TableHead className="text-right font-semibold text-slate-700 dark:text-slate-300 text-xs uppercase">Amount Released</TableHead>
                     <TableHead className="text-right font-semibold text-slate-700 dark:text-slate-300 text-xs uppercase">Actual Amount Paid</TableHead>
                     <TableHead className="text-right font-semibold text-slate-700 dark:text-slate-300 text-xs uppercase">Amount Variance</TableHead>
@@ -705,16 +725,12 @@ const MayorReports = () => {
                     <TableRow><TableCell colSpan="9" className="text-center py-8 text-slate-500">No reconciliation data available</TableCell></TableRow>
                   ) : (
                     reconciliations.map((r, i) => {
-                      const varianceColor = Math.abs(r.variance || 0) > 2 ? 'text-red-600' : '';
                       const amountVarianceColor = Math.abs(r.amount_variance || 0) > 100 ? 'text-red-600' : '';
                       return (
                         <TableRow key={i} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
                           <TableCell className="font-mono font-medium">{r.ticket_number}</TableCell>
                           <TableCell>{r.plate_number}</TableCell>
                           <TableCell>{r.driver_name}</TableCell>
-                          {/* <TableCell className="text-right">{r.expected_distance || 'N/A'}</TableCell>
-                          <TableCell className="text-right">{r.actual_distance || 'N/A'}</TableCell>
-                          <TableCell className={`text-right font-medium ${varianceColor}`}>{r.variance || 0}</TableCell> */}
                           <TableCell className="text-right">{formatCurrency(r.amount_released || 0)}</TableCell>
                           <TableCell className="text-right">{formatCurrency(r.actual_amount || 0)}</TableCell>
                           <TableCell className={`text-right font-medium ${amountVarianceColor}`}>{formatCurrency(r.amount_variance || 0)}</TableCell>
@@ -775,16 +791,18 @@ const MayorReports = () => {
                   </h1>
                   <p className="text-sm text-slate-500 dark:text-slate-400">
                     Period: {dateRange.startDate} to {dateRange.endDate}
+                    <span className="ml-2 text-xs opacity-70">{connectionStatus}</span>
+                    {isRealTime && (
+                      <span className="ml-2 text-xs text-emerald-400 animate-pulse">
+                        ● Auto-refresh
+                      </span>
+                    )}
                   </p>
                 </div>
               </div>
             </div>
           </div>
-          <div className="flex gap-2 flex-wrap">
-            <Button variant="outline" onClick={handleRefresh} disabled={receiptFetching || budgetFetching || reconciliationFetching} className="dark:border-slate-700 dark:text-slate-300">
-              <RefreshCw className={`h-4 w-4 mr-2 ${receiptFetching || budgetFetching || reconciliationFetching ? 'animate-spin' : ''}`} /> Refresh
-            </Button>
-          </div>
+          {/* ❌ REFRESH BUTTON REMOVED - Auto-refresh handles everything */}
         </div>
 
         {/* ========== GLOBAL FILTERS ========== */}

@@ -283,4 +283,104 @@ public function getAllBarangaysWithCoordinates()
     
     return $barangays;
 }
+
+/**
+ * Reverse geocode - Get location name from coordinates
+ * This finds the nearest known location from coordinates
+ */
+public function reverseGeocode($lat, $lng)
+{
+    Log::info('Reverse geocode request', ['lat' => $lat, 'lng' => $lng]);
+    
+    $bestMatch = null;
+    $bestDistance = PHP_FLOAT_MAX;
+    
+    // Check origin
+    $origin = config('locations.origin');
+    if ($origin && isset($origin['lat']) && isset($origin['lng'])) {
+        $dist = $this->haversineDistance($lat, $lng, $origin['lat'], $origin['lng']);
+        if ($dist < $bestDistance) {
+            $bestDistance = $dist;
+            $bestMatch = [
+                'name' => $origin['name'] ?? 'Laguindingan Municipal Hall',
+                'type' => 'origin',
+                'distance' => $dist,
+            ];
+        }
+    }
+    
+    // Check barangays
+    $barangays = config('locations.barangays', []);
+    foreach ($barangays as $key => $barangay) {
+        if (isset($barangay['lat']) && isset($barangay['lng'])) {
+            $dist = $this->haversineDistance($lat, $lng, $barangay['lat'], $barangay['lng']);
+            if ($dist < $bestDistance) {
+                $bestDistance = $dist;
+                $bestMatch = [
+                    'name' => $barangay['name'] . ', Laguindingan',
+                    'type' => 'barangay',
+                    'distance' => $dist,
+                ];
+            }
+        }
+    }
+    
+    // Check municipalities
+    $municipalities = config('locations.municipalities', []);
+    foreach ($municipalities as $key => $municipality) {
+        // If municipality has coordinates
+        if (isset($municipality['lat']) && isset($municipality['lng'])) {
+            $dist = $this->haversineDistance($lat, $lng, $municipality['lat'], $municipality['lng']);
+            if ($dist < $bestDistance) {
+                $bestDistance = $dist;
+                $bestMatch = [
+                    'name' => $municipality['name'] . ', Misamis Oriental',
+                    'type' => 'municipality',
+                    'distance' => $dist,
+                ];
+            }
+        }
+    }
+    
+    // If best match is within 2km, use it
+    if ($bestMatch && $bestDistance < 2) {
+        Log::info('Reverse geocode found nearby', ['match' => $bestMatch, 'distance' => $bestDistance]);
+        return [
+            'success' => true,
+            'address' => $bestMatch['name'],
+            'lat' => $lat,
+            'lng' => $lng,
+            'type' => $bestMatch['type'],
+            'source' => 'fallback',
+        ];
+    }
+    
+    // Default: return coordinates as address
+    Log::info('Reverse geocode fallback', ['lat' => $lat, 'lng' => $lng]);
+    return [
+        'success' => true,
+        'address' => "{$lat}, {$lng}",
+        'lat' => $lat,
+        'lng' => $lng,
+        'type' => 'coordinates',
+        'source' => 'fallback',
+    ];
+}
+
+/**
+ * Haversine distance calculation
+ */
+private function haversineDistance($lat1, $lon1, $lat2, $lon2)
+{
+    $earthRadius = 6371;
+    $dLat = deg2rad($lat2 - $lat1);
+    $dLon = deg2rad($lon2 - $lon1);
+    $a = sin($dLat / 2) * sin($dLat / 2) +
+         cos(deg2rad($lat1)) * cos(deg2rad($lat2)) *
+         sin($dLon / 2) * sin($dLon / 2);
+    $c = 2 * atan2(sqrt($a), sqrt(1 - $a));
+    return $earthRadius * $c;
+}
+
+
 }

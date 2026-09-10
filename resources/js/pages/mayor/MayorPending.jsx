@@ -1,12 +1,15 @@
 // src/pages/mayor/MayorPending.jsx
 // ============================================
-// ENHANCED: Improved validation with field highlighting
-// No duplicate toasts - single toast with all errors
-// Auto-focus first error field
+// ENHANCED: Auto-refresh with real-time updates
+// REMOVED: Manual refresh button
+// FIXED: Amount input - text field with numbers only, no spinner
 // ============================================
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
+import { useAutoRefresh } from "../../hooks/useAutoRefresh";
+import { useRealtime } from "../../contexts/RealtimeContext";
 import { mayorsOfficeAPI } from "../../services/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -123,9 +126,36 @@ const FormField = ({
   );
 };
 
-// ============================================================
+// ============================================
+// ✅ Number Input - Text field with numbers only, no spinner
+// ============================================
+
+const NumberInput = ({ value, onChange, placeholder, className, ...props }) => {
+  const handleChange = (e) => {
+    const val = e.target.value;
+    // Allow only numbers and decimal point
+    if (val === '' || /^[0-9]*\.?[0-9]*$/.test(val)) {
+      onChange(e);
+    }
+  };
+
+  return (
+    <Input
+      type="text"
+      inputMode="decimal"
+      pattern="[0-9]*\.?[0-9]*"
+      value={value}
+      onChange={handleChange}
+      placeholder={placeholder}
+      className={cn(className, "no-spinner")}
+      {...props}
+    />
+  );
+};
+
+// ============================================
 // STATS CARD COMPONENT
-// ============================================================
+// ============================================
 
 const StatsCard = ({ title, value, icon: Icon, color, subtitle, trend }) => (
   <Card className="dark:bg-slate-800/80 dark:border-slate-700 hover:shadow-lg transition-all duration-300">
@@ -160,9 +190,9 @@ const StatsCard = ({ title, value, icon: Icon, color, subtitle, trend }) => (
   </Card>
 );
 
-// ============================================================
+// ============================================
 // TRIP DATE BADGE COMPONENT
-// ============================================================
+// ============================================
 
 const TripDateBadge = ({ ticket }) => {
   if (!ticket?.trip_date) return null;
@@ -222,9 +252,9 @@ const TripDateBadge = ({ ticket }) => {
   );
 };
 
-// ============================================================
+// ============================================
 // RECEIPT VERIFICATION MODAL
-// ============================================================
+// ============================================
 
 const ReceiptVerificationModal = ({
   isOpen,
@@ -416,17 +446,18 @@ const ReceiptVerificationModal = ({
   );
 };
 
-// ============================================================
+// ============================================
 // MAIN COMPONENT
-// ============================================================
+// ============================================
 
 const MayorPending = () => {
   const navigate = useNavigate();
+  const { isConnected } = useRealtime();
+  const queryClient = useQueryClient();
   const toastIdRef = useRef(null);
   
   const [tickets, setTickets] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [selectedTicket, setSelectedTicket] = useState(null);
   const [showApproveDialog, setShowApproveDialog] = useState(false);
   const [showRejectDialog, setShowRejectDialog] = useState(false);
@@ -439,7 +470,7 @@ const MayorPending = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [departmentFilter, setDepartmentFilter] = useState("all");
 
-  // ✅ Gas Slip State
+  // Gas Slip State
   const [showGasSlip, setShowGasSlip] = useState(false);
   const [selectedGasSlipTicket, setSelectedGasSlipTicket] = useState(null);
 
@@ -455,22 +486,39 @@ const MayorPending = () => {
   const [availableDepartments, setAvailableDepartments] = useState([]);
   const [loadingDepartments, setLoadingDepartments] = useState(false);
 
-  // ✅ Validation states for Approve Dialog
+  // Validation states for Approve Dialog
   const [approveErrors, setApproveErrors] = useState({});
   const [approveTouched, setApproveTouched] = useState({});
 
-  // ✅ Calculate estimated cost from ticket
-  const getEstimatedCost = (ticket) => {
-    if (!ticket) return 0;
-    return ticket.estimated_cost || 
-           (ticket.estimated_fuel_liters ? ticket.estimated_fuel_liters * 88 : 0);
-  };
+  // ============================================
+  // ✅ REFRESH FUNCTION - Auto-refresh only
+  // ============================================
 
-  useEffect(() => {
-    fetchTickets();
-  }, []);
+  const fetchAllData = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ["mayor-pending-tickets"] });
+  }, [queryClient]);
 
-  const fetchTickets = async () => {
+  // ============================================
+  // ✅ AUTO-REFRESH - No manual refresh needed
+  // ============================================
+
+  useAutoRefresh(
+    [
+      "mayor-trip-updated",
+      "mayor-new-pending",
+      "mayor-budget-updated",
+      "gso-funds-released",
+      "trip-completed",
+      "new-notification",
+    ],
+    fetchAllData
+  );
+
+  // ============================================
+  // FETCH TICKETS
+  // ============================================
+
+  const fetchTickets = useCallback(async () => {
     setLoading(true);
     try {
       const response = await mayorsOfficeAPI.getPendingTickets();
@@ -481,15 +529,20 @@ const MayorPending = () => {
       toast.error("Failed to load tickets");
     } finally {
       setLoading(false);
-      setRefreshing(false);
     }
-  };
+  }, []);
 
-  const handleRefresh = () => {
-    setRefreshing(true);
+  // ============================================
+  // INITIAL LOAD
+  // ============================================
+
+  useEffect(() => {
     fetchTickets();
-    toast.success("Tickets refreshed");
-  };
+  }, [fetchTickets]);
+
+  // ============================================
+  // FILTERS
+  // ============================================
 
   const clearFilters = () => {
     setSearchTerm("");
@@ -519,9 +572,9 @@ const MayorPending = () => {
     return matchesSearch && matchesDepartment;
   });
 
-  // ============================================================
+  // ============================================
   // STATS
-  // ============================================================
+  // ============================================
 
   const stats = [
     {
@@ -573,9 +626,9 @@ const MayorPending = () => {
     },
   ];
 
-  // ============================================================
+  // ============================================
   // HELPERS
-  // ============================================================
+  // ============================================
 
   const checkTripDateValidation = (ticket) => {
     if (!ticket?.trip_date) return null;
@@ -633,9 +686,15 @@ const MayorPending = () => {
     };
   };
 
-  // ============================================================
-  // FETCH ALL DEPARTMENTS
-  // ============================================================
+  const getEstimatedCost = (ticket) => {
+    if (!ticket) return 0;
+    return ticket.estimated_cost || 
+           (ticket.estimated_fuel_liters ? ticket.estimated_fuel_liters * 88 : 0);
+  };
+
+  // ============================================
+  // FETCH DEPARTMENTS
+  // ============================================
   
   const fetchAllDepartments = useCallback(async () => {
     setLoadingDepartments(true);
@@ -666,9 +725,9 @@ const MayorPending = () => {
     }
   }, [tickets]);
 
-  // ============================================================
-  // ✅ ENHANCED VALIDATION FOR APPROVE DIALOG
-  // ============================================================
+  // ============================================
+  // VALIDATION FOR APPROVE DIALOG
+  // ============================================
 
   const validateApprove = () => {
     const newErrors = {};
@@ -732,22 +791,9 @@ const MayorPending = () => {
     return true;
   };
 
-  // ============================================================
-  // ✅ HANDLE VIEW GAS SLIP
-  // ============================================================
-  
-  const handleViewGasSlip = (ticket) => {
-    const ticketWithDriver = {
-      ...ticket,
-      driver_name: ticket.driver?.full_name || ticket.driver_name || "N/A",
-    };
-    setSelectedGasSlipTicket(ticketWithDriver);
-    setShowGasSlip(true);
-  };
-
-  // ============================================================
+  // ============================================
   // OPEN APPROVE DIALOG
-  // ============================================================
+  // ============================================
   
   const openApproveDialog = async (ticket) => {
     setSelectedTicket(ticket);
@@ -818,9 +864,9 @@ const MayorPending = () => {
     }
   };
 
-  // ============================================================
+  // ============================================
   // HANDLE APPROVE
-  // ============================================================
+  // ============================================
   
   const handleApprove = async () => {
     if (!selectedTicket) {
@@ -828,7 +874,6 @@ const MayorPending = () => {
       return;
     }
 
-    // ✅ Run validation
     if (!validateApprove()) {
       return;
     }
@@ -901,7 +946,6 @@ const MayorPending = () => {
   const handleReject = async () => {
     if (!selectedTicket) return;
     
-    // ✅ Validate rejection note
     if (!rejectionNote.trim()) {
       if (toastIdRef.current) toast.dismiss(toastIdRef.current);
       toastIdRef.current = toast.error("Please provide a reason for rejection");
@@ -931,6 +975,15 @@ const MayorPending = () => {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleViewGasSlip = (ticket) => {
+    const ticketWithDriver = {
+      ...ticket,
+      driver_name: ticket.driver?.full_name || ticket.driver_name || "N/A",
+    };
+    setSelectedGasSlipTicket(ticketWithDriver);
+    setShowGasSlip(true);
   };
 
   const getStatusBadge = (hasInsufficientBudget) => {
@@ -976,9 +1029,13 @@ const MayorPending = () => {
 
   const hasActiveFilters = searchTerm !== "" || departmentFilter !== "all";
 
-  // ============================================================
+  // Connection status
+  const connectionStatus = isConnected ? "🟢 Live" : "🔴 Offline";
+  const isRealTime = isConnected;
+
+  // ============================================
   // RENDER
-  // ============================================================
+  // ============================================
 
   if (loading) {
     return (
@@ -1019,22 +1076,18 @@ const MayorPending = () => {
                   </h1>
                   <p className="text-sm text-slate-500 dark:text-slate-400">
                     Review and approve trip tickets awaiting fund release
+                    <span className="ml-2 text-xs opacity-70">{connectionStatus}</span>
+                    {isRealTime && (
+                      <span className="ml-2 text-xs text-emerald-400 animate-pulse">
+                        ● Auto-refresh
+                      </span>
+                    )}
                   </p>
                 </div>
               </div>
             </div>
           </div>
-          <div className="flex flex-wrap gap-3">
-            <Button
-              variant="outline"
-              onClick={handleRefresh}
-              disabled={refreshing}
-              className="dark:border-slate-700 dark:text-slate-300"
-            >
-              <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
-              Refresh
-            </Button>
-          </div>
+          {/* ❌ REFRESH BUTTON REMOVED - Auto-refresh handles everything */}
         </div>
 
         {/* Stats Cards */}
@@ -1121,6 +1174,11 @@ const MayorPending = () => {
                 <CardDescription className="dark:text-slate-400">
                   {filteredTickets.length} ticket{filteredTickets.length !== 1 ? 's' : ''} found
                   {filteredTickets.length !== tickets.length && ` (filtered from ${tickets.length} total)`}
+                  {isRealTime && (
+                    <span className="ml-2 text-xs text-emerald-500 animate-pulse">
+                      ● Live updates
+                    </span>
+                  )}
                 </CardDescription>
               </div>
               {filteredTickets.length > 0 && (
@@ -1242,7 +1300,7 @@ const MayorPending = () => {
                               </Button>
                             )}
 
-                            {/* ✅ View Gas Slip */}
+                            {/* View Gas Slip */}
                             {ticket.gas_slip && (
                               <Button
                                 variant="ghost"
@@ -1279,9 +1337,9 @@ const MayorPending = () => {
           </CardContent>
         </Card>
 
-        {/* ============================================================ */}
+        {/* ============================================ */}
         {/* APPROVE DIALOG */}
-        {/* ============================================================ */}
+        {/* ============================================ */}
         <Dialog open={showApproveDialog} onOpenChange={setShowApproveDialog}>
           <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto dark:bg-slate-800 dark:border-slate-700 p-6">
             <DialogHeader className="pb-3">
@@ -1546,7 +1604,7 @@ const MayorPending = () => {
                 </div>
               </div>
 
-              {/* Amount */}
+              {/* Amount - ✅ Number Input as Text Field with no spinner */}
               <FormField
                 label="Amount (₱)"
                 icon={DollarSign}
@@ -1554,24 +1612,20 @@ const MayorPending = () => {
                 error={approveErrors.amount}
                 touched={approveTouched.amount}
               >
-                <div className="relative">
-                  <Input
-                    id="amount"
-                    name="amount"
-                    type="number"
-                    step="0.01"
-                    placeholder="Enter amount"
-                    value={amountReleased}
-                    onChange={(e) => {
-                      setAmountReleased(e.target.value);
-                      if (approveErrors.amount) {
-                        setApproveErrors(prev => ({ ...prev, amount: "" }));
-                      }
-                    }}
-                    onBlur={() => setApproveTouched(prev => ({ ...prev, amount: true }))}
-                    className="mt-1 dark:bg-slate-900 dark:border-slate-700 dark:text-white"
-                  />
-                </div>
+                <NumberInput
+                  id="amount"
+                  name="amount"
+                  placeholder="Enter amount"
+                  value={amountReleased}
+                  onChange={(e) => {
+                    setAmountReleased(e.target.value);
+                    if (approveErrors.amount) {
+                      setApproveErrors(prev => ({ ...prev, amount: "" }));
+                    }
+                  }}
+                  onBlur={() => setApproveTouched(prev => ({ ...prev, amount: true }))}
+                  className="mt-1 dark:bg-slate-900 dark:border-slate-700 dark:text-white font-mono text-lg"
+                />
               </FormField>
 
               {selectedTicket && getEstimatedCost(selectedTicket) > 0 && (

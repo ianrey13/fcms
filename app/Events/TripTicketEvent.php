@@ -1,5 +1,6 @@
 <?php
 // app/Events/TripTicketEvent.php
+
 namespace App\Events;
 
 use App\Models\TripTicket;
@@ -35,25 +36,29 @@ abstract class TripTicketEvent implements ShouldBroadcast
 
     public function broadcastOn()
     {
-        $channels = [
-            new PrivateChannel('gso.dashboard'),
-            new PrivateChannel('mayor.dashboard'),
-            new PrivateChannel('department.' . $this->tripTicket->department_id),
-        ];
+        $channels = [];
 
-        // If driver assigned, broadcast to driver
-        if ($this->tripTicket->driver_id) {
-            $channels[] = new PrivateChannel('driver.' . $this->tripTicket->driver_id);
+        // ✅ Use correct channel names matching routes/channels.php
+        $channels[] = new PrivateChannel('gso.dashboard');
+        $channels[] = new PrivateChannel('mayor.dashboard');
+        
+        // Department channel
+        if ($this->tripTicket->department_id) {
+            $channels[] = new PrivateChannel('department.' . $this->tripTicket->department_id);
         }
 
-        // If driver user exists, broadcast to their user channel too
-        if ($this->tripTicket->driver && $this->tripTicket->driver->user) {
-            $channels[] = new PrivateChannel('user.' . $this->tripTicket->driver->user->user_id);
-        }
+        // Trip-specific channel
+        $channels[] = new PrivateChannel('trip.' . $this->tripTicket->trip_ticket_id);
 
-        // Broadcast to submitter
+        // User channel for submitter
         if ($this->tripTicket->submitted_by) {
             $channels[] = new PrivateChannel('user.' . $this->tripTicket->submitted_by);
+        }
+
+        // Driver channel - ✅ Fixed: use user_id, not driver_id
+        if ($this->tripTicket->driver && $this->tripTicket->driver->user_id) {
+            $channels[] = new PrivateChannel('driver.' . $this->tripTicket->driver->driver_id);
+            $channels[] = new PrivateChannel('user.' . $this->tripTicket->driver->user_id);
         }
 
         Log::info('📡 Broadcasting to channels', [
@@ -85,7 +90,11 @@ abstract class TripTicketEvent implements ShouldBroadcast
             'updated_at' => now()->toDateTimeString(),
         ];
 
-        // Merge additional data
         return array_merge($data, $this->additionalData);
+    }
+
+    public function broadcastAs()
+    {
+        return 'trip.updated';
     }
 }

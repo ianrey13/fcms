@@ -1,6 +1,9 @@
 // src/pages/gso/LiveTracking.jsx
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQueryClient } from "@tanstack/react-query";
+import { useAutoRefresh } from '../../hooks/useAutoRefresh';
+import { useRealtime } from '../../contexts/RealtimeContext';
 import { useOptimizedQuery } from '../../hooks/useOptimizedQuery';
 import {
     SkeletonCard,
@@ -51,6 +54,7 @@ import {
     Minimize2,
     Plus,
     Minus,
+    Car,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -467,6 +471,8 @@ const LoadingSkeleton = () => (
 
 const LiveTracking = () => {
     const navigate = useNavigate();
+    const queryClient = useQueryClient();
+    const { isConnected } = useRealtime();
     const [selectedTrip, setSelectedTrip] = useState(null);
     const [focusedTrip, setFocusedTrip] = useState(null);
     const [focusModalOpen, setFocusModalOpen] = useState(false);
@@ -478,6 +484,8 @@ const LiveTracking = () => {
     const [tripsData, setTripsData] = useState([]);
     const [isWsConnected, setIsWsConnected] = useState(false);
     const [pingCount, setPingCount] = useState(0);
+    const [hasActiveTrips, setHasActiveTrips] = useState(false);
+    const [refreshAttempts, setRefreshAttempts] = useState(0);
     const mapRef = useRef(null);
     const dropdownRef = useRef(null);
     const pingCounterRef = useRef(0);
@@ -494,6 +502,33 @@ const LiveTracking = () => {
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
+
+    // ============================================
+    // ✅ AUTO-REFRESH - ONLY when there are active trips
+    // ============================================
+
+    // This function will be called by useAutoRefresh
+    const fetchAllData = useCallback(() => {
+        // ✅ Only refresh if there are active trips visible
+        if (hasActiveTrips) {
+            queryClient.invalidateQueries({ queryKey: ['gps-active-trips-live'] });
+        } else {
+            console.log('⏸️ Auto-refresh paused - No active trips');
+        }
+    }, [queryClient, hasActiveTrips]);
+
+    // ✅ Auto-refresh is ENABLED but the callback checks if there are active trips
+    useAutoRefresh(
+        [
+            "gps-location-updated",
+            "trip-started",
+            "trip-completed",
+            "gso-trip-updated",
+            "new-notification",
+        ],
+        fetchAllData,
+        2000 // 2 second debounce to prevent multiple rapid refreshes
+    );
 
     // ============================================
     // OPTIMIZED QUERY
@@ -520,20 +555,45 @@ const LiveTracking = () => {
                 }
 
                 const safeData = Array.isArray(data) ? data : [];
+                
+                // ✅ Update active trips state
+                const hasActive = safeData.some(trip => trip && trip.current_location);
+                setHasActiveTrips(hasActive);
                 setTripsData(safeData);
                 setLastUpdate(new Date());
+                
+                // ✅ Reset refresh attempts on success
+                setRefreshAttempts(0);
+                
                 return safeData;
             } catch (error) {
                 console.error('❌ Error fetching active trips:', error);
-                toast.error('Failed to load active trips. Please refresh.');
+                
+                // ✅ Only show toast on first few errors to avoid spam
+                setRefreshAttempts(prev => {
+                    const newAttempts = prev + 1;
+                    if (newAttempts === 1) {
+                        toast.error('Failed to load active trips. Retrying...');
+                    } else if (newAttempts === 5) {
+                        toast.error('Multiple connection errors. Please refresh the page.');
+                    }
+                    return newAttempts;
+                });
+                
+                // ✅ On error, check if we have cached data
+                if (tripsData.length > 0) {
+                    // Keep using cached data
+                    return tripsData;
+                }
                 return [];
             }
         },
-        refetchInterval: 15000,
+        refetchInterval: hasActiveTrips ? 15000 : false, // ✅ Only auto-refetch when there are active trips
         staleTime: 5000,
         keepPreviousData: true,
         retry: 2,
-        retryDelay: 1000,
+        retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 10000),
+        enabled: true,
     });
 
     // ============================================
@@ -576,6 +636,11 @@ const LiveTracking = () => {
                     }
                     return trip;
                 });
+                
+                // ✅ Check if there are still active trips
+                const hasActive = updated.some(trip => trip && trip.current_location);
+                setHasActiveTrips(hasActive);
+                
                 return updated;
             });
 
@@ -623,13 +688,18 @@ const LiveTracking = () => {
         channel.listen('.trip.completed', (data) => {
             console.log('🏁 Trip completed:', data);
             toast.success(`Trip ${data.trip_id || 'unknown'} has been completed`);
-            refetch();
+            // ✅ Refetch when trip completes to update active list
+            if (hasActiveTrips) {
+                queryClient.invalidateQueries({ queryKey: ['gps-active-trips-live'] });
+            }
         });
 
         channel.listen('.trip.started', (data) => {
             console.log('🚗 Trip started:', data);
             toast.info(`Trip ${data.trip_id || 'unknown'} has started`);
-            refetch();
+            // ✅ Refetch when trip starts to show new active trip
+            queryClient.invalidateQueries({ queryKey: ['gps-active-trips-live'] });
+            setHasActiveTrips(true);
         });
 
         channel.subscribed(() => {
@@ -664,7 +734,7 @@ const LiveTracking = () => {
                 // Ignore cleanup errors
             }
         };
-    }, []);
+    }, [hasActiveTrips]);
 
     // ============================================
     // DERIVED DATA
@@ -677,6 +747,10 @@ const LiveTracking = () => {
     }, [tripsData]);
 
     const activeCount = tripsWithLocation.length;
+
+    // Connection status
+    const connectionStatus = isConnected ? "🟢 Live" : "🔴 Offline";
+    const isRealTime = isConnected;
 
     // ============================================
     // STATS
@@ -790,10 +864,7 @@ const LiveTracking = () => {
         }
     };
 
-    const handleRefresh = () => {
-        refetch();
-        toast.success('Refreshing location data...');
-    };
+    // ❌ REFRESH BUTTON REMOVED - Auto-refresh handles everything
 
     // ============================================
     // RENDER MAP TILE
@@ -879,13 +950,21 @@ const LiveTracking = () => {
                         <h1 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
                             <Satellite className="h-5 w-5 text-blue-500" />
                             Live Tracking
+                            {!hasActiveTrips && (
+                                <Badge variant="outline" className="text-xs text-slate-400 border-slate-300 dark:border-slate-600 ml-2">
+                                    <Activity className="h-3 w-3 mr-1" />
+                                    Paused
+                                </Badge>
+                            )}
                         </h1>
                         <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2 flex-wrap">
                             <span className="flex items-center gap-1">
-                                <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
-                                {activeCount} active vehicle{activeCount !== 1 ? 's' : ''} tracking
+                                <span className={`h-2 w-2 rounded-full ${hasActiveTrips ? 'bg-green-500 animate-pulse' : 'bg-slate-400'}`} />
+                                {hasActiveTrips ? `${activeCount} active vehicle${activeCount !== 1 ? 's' : ''} tracking` : 'No active trips'}
                             </span>
-                            <span className="text-blue-500 text-[10px] font-medium">● Live</span>
+                            {hasActiveTrips && (
+                                <span className="text-blue-500 text-[10px] font-medium">● Live</span>
+                            )}
                             <span className="flex items-center gap-1">
                                 {isWsConnected ? (
                                     <Wifi className="h-3 w-3 text-emerald-500" />
@@ -896,10 +975,23 @@ const LiveTracking = () => {
                                     {isWsConnected ? 'Connected' : 'Disconnected'}
                                 </span>
                             </span>
-                            <span className="text-slate-400 text-[10px]">
-                                Pings: {pingCount}
-                            </span>
-                            {isFetching && (
+                            {hasActiveTrips && (
+                                <>
+                                    <span className="text-slate-400 text-[10px]">
+                                        Pings: {pingCount}
+                                    </span>
+                                    <span className="ml-2 text-xs opacity-70">{connectionStatus}</span>
+                                    <span className="text-xs text-emerald-400 animate-pulse">
+                                        ● Auto-refresh
+                                    </span>
+                                </>
+                            )}
+                            {!hasActiveTrips && (
+                                <span className="text-xs text-slate-400">
+                                    ⏸️ Waiting for trips
+                                </span>
+                            )}
+                            {isFetching && hasActiveTrips && (
                                 <span className="flex items-center gap-1 text-slate-400">
                                     <RefreshCw className="h-3 w-3 animate-spin" />
                                     Updating...
@@ -952,22 +1044,13 @@ const LiveTracking = () => {
                         variant="outline"
                         size="sm"
                         onClick={handleFitBounds}
+                        disabled={!hasActiveTrips}
                         className="dark:border-slate-700 dark:text-slate-300"
                     >
                         <Maximize2 className="h-4 w-4 mr-1.5" />
                         Fit All
                     </Button>
-
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={handleRefresh}
-                        disabled={isFetching}
-                        className="dark:border-slate-700 dark:text-slate-300"
-                    >
-                        <RefreshCw className={`h-4 w-4 mr-1.5 ${isFetching ? 'animate-spin' : ''}`} />
-                        Refresh
-                    </Button>
+                    {/* ❌ REFRESH BUTTON REMOVED - Auto-refresh handles everything */}
                 </div>
             </header>
 
@@ -1066,16 +1149,11 @@ const LiveTracking = () => {
                                             Vehicles with GPS tracking will appear here
                                         </p>
                                         <div className="mt-3 flex items-center justify-center gap-2">
-                                            <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                                            <span className="text-xs text-emerald-600 dark:text-emerald-400">Waiting for GPS pings</span>
+                                            <div className={`w-2 h-2 rounded-full ${hasActiveTrips ? 'bg-green-500 animate-pulse' : 'bg-slate-400'}`} />
+                                            <span className={`text-xs ${hasActiveTrips ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}`}>
+                                                {hasActiveTrips ? 'Receiving GPS pings' : 'Waiting for GPS pings'}
+                                            </span>
                                         </div>
-                                        <button
-                                            onClick={handleRefresh}
-                                            className="mt-4 text-sm bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors flex items-center gap-2 mx-auto"
-                                        >
-                                            <RefreshCw className="h-4 w-4" />
-                                            Check for updates
-                                        </button>
                                     </div>
                                 </div>
                             )}
@@ -1090,7 +1168,9 @@ const LiveTracking = () => {
                             <h2 className="font-semibold text-slate-800 dark:text-white flex items-center gap-2">
                                 <Truck className="h-4 w-4 text-blue-500" />
                                 Active Vehicles
-                                <span className="text-xs text-emerald-500 font-normal ml-2">● Live</span>
+                                <span className={`text-xs font-normal ml-2 ${hasActiveTrips ? 'text-emerald-500' : 'text-slate-400'}`}>
+                                    {hasActiveTrips ? '● Live' : '○ No active'}
+                                </span>
                             </h2>
                             {tripsWithLocation.length > 0 && (
                                 <button
@@ -1102,7 +1182,9 @@ const LiveTracking = () => {
                                 </button>
                             )}
                         </div>
-                        <p className="text-xs text-slate-500 dark:text-slate-400">Click a vehicle to focus on map</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                            {hasActiveTrips ? 'Click a vehicle to focus on map' : 'No active trips at the moment'}
+                        </p>
                     </div>
 
                     <div className="p-3 space-y-2">
@@ -1205,13 +1287,15 @@ const LiveTracking = () => {
                     {/* Sidebar Footer */}
                     <div className="p-3 border-t border-slate-200/60 dark:border-slate-800/60 text-[10px] text-slate-400 dark:text-slate-500 flex items-center justify-between">
                         <span className="flex items-center gap-1">
-                            <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
-                            Real-time via WebSocket
+                            <span className={`h-1.5 w-1.5 rounded-full ${hasActiveTrips ? 'bg-green-500 animate-pulse' : 'bg-slate-400'}`} />
+                            {hasActiveTrips ? 'Real-time via WebSocket' : 'Waiting for active trips'}
                         </span>
-                        <span className="flex items-center gap-1">
-                            <Activity className="h-3 w-3" />
-                            <span>Ping: 3s</span>
-                        </span>
+                        {hasActiveTrips && (
+                            <span className="flex items-center gap-1">
+                                <Activity className="h-3 w-3" />
+                                <span>Ping: 3s</span>
+                            </span>
+                        )}
                     </div>
                 </div>
             </div>

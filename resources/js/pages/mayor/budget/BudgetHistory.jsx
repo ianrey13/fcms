@@ -1,5 +1,8 @@
 // src/pages/mayor/budget/BudgetHistory.jsx
 import React, { useState, useEffect, useMemo } from 'react';
+import { useQueryClient } from "@tanstack/react-query";
+import { useAutoRefresh } from '../../../hooks/useAutoRefresh';
+import { useRealtime } from '../../../contexts/RealtimeContext';
 import { useOptimizedQuery } from '../../../hooks/useOptimizedQuery';
 import {
     SkeletonPage,
@@ -223,9 +226,27 @@ const LoadingSkeleton = () => (
 
 const BudgetHistory = () => {
     const navigate = useNavigate();
+    const queryClient = useQueryClient();
+    const { isConnected } = useRealtime();
     const [filter, setFilter] = useState('');
     const [departments, setDepartments] = useState([]);
     const [actionFilter, setActionFilter] = useState('all');
+
+    // ============================================
+    // ✅ AUTO-REFRESH - No manual refresh needed
+    // ============================================
+
+    useAutoRefresh(
+        [
+            "mayor-budget-updated",
+            "mayor-trip-updated",
+            "gso-funds-released",
+            "new-notification",
+        ],
+        () => {
+            queryClient.invalidateQueries({ queryKey: ['budget-history'] });
+        }
+    );
 
     // ============================================
     // OPTIMIZED QUERIES
@@ -273,13 +294,8 @@ const BudgetHistory = () => {
     }, []);
 
     // ============================================
-    // HANDLERS
+    // HELPERS
     // ============================================
-
-    const handleRefresh = () => {
-        refetch();
-        toast.success('History refreshed');
-    };
 
     const formatCurrency = (amount) => {
         return new Intl.NumberFormat('en-PH', {
@@ -338,6 +354,10 @@ const BudgetHistory = () => {
     const otherActions = history.filter(h => !isWeeklyAction(h.action) && !isAnnualAction(h.action)).length;
     const weeklyResetCount = history.filter(h => h.action === 'weekly_reset').length;
     const annualCreateCount = history.filter(h => h.action === 'annual_created').length;
+
+    // Connection status
+    const connectionStatus = isConnected ? "🟢 Live" : "🔴 Offline";
+    const isRealTime = isConnected;
 
     const stats = [
         {
@@ -411,20 +431,18 @@ const BudgetHistory = () => {
                                     </h1>
                                     <p className="text-sm text-slate-500 dark:text-slate-400">
                                         Track all budget changes across departments
+                                        <span className="ml-2 text-xs opacity-70">{connectionStatus}</span>
+                                        {isRealTime && (
+                                            <span className="ml-2 text-xs text-emerald-400 animate-pulse">
+                                                ● Auto-refresh
+                                            </span>
+                                        )}
                                     </p>
                                 </div>
                             </div>
                         </div>
                     </div>
-                    <Button
-                        variant="outline"
-                        onClick={handleRefresh}
-                        disabled={isFetching}
-                        className="dark:border-slate-700 dark:text-slate-300"
-                    >
-                        <RefreshCw className={`h-4 w-4 mr-2 ${isFetching ? 'animate-spin' : ''}`} />
-                        Refresh
-                    </Button>
+                    {/* ❌ REFRESH BUTTON REMOVED - Auto-refresh handles everything */}
                 </div>
 
                 {/* Stats Cards */}
@@ -498,6 +516,11 @@ const BudgetHistory = () => {
                                 <CardDescription className="dark:text-slate-400">
                                     {filteredHistory.length} entry{filteredHistory.length !== 1 ? 's' : ''} found
                                     {filteredHistory.length !== history.length && ` (filtered from ${history.length} total)`}
+                                    {isRealTime && (
+                                        <span className="ml-2 text-xs text-emerald-500 animate-pulse">
+                                            ● Live updates
+                                        </span>
+                                    )}
                                 </CardDescription>
                             </div>
                             {filteredHistory.length > 0 && (
