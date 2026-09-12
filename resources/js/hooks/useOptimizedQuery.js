@@ -6,12 +6,12 @@ export const useOptimizedQuery = ({
   queryKey,
   queryFn,
   enabled = true,
-  staleTime = 5 * 60 * 1000, // 5 minutes
-  cacheTime = 10 * 60 * 1000, // 10 minutes
+  staleTime = 5 * 60 * 1000,
+  cacheTime = 10 * 60 * 1000,
   refetchOnWindowFocus = false,
   refetchOnMount = false,
-  retry = 2,
-  retryDelay = 1000,
+  retry,               
+  retryDelay,
   keepPreviousData = true,
   onError,
 }) => {
@@ -22,9 +22,17 @@ export const useOptimizedQuery = ({
         const result = await queryFn();
         return result;
       } catch (error) {
-        console.error(`Query error [${queryKey.join('-')}]:`, error);
-        if (onError) onError(error);
-        toast.error(error?.response?.data?.message || 'Failed to load data');
+        const status = error?.response?.status;
+        
+       
+        if (status === 429) {
+          console.warn(`⏸️ Rate limited on [${queryKey.join('-')}] — will retry`);
+        } else {
+          console.error(`Query error [${queryKey.join('-')}]:`, error);
+          if (onError) onError(error);
+
+          toast.error(error?.response?.data?.message || 'Failed to load data');
+        }
         throw error;
       }
     },
@@ -33,8 +41,22 @@ export const useOptimizedQuery = ({
     cacheTime,
     refetchOnWindowFocus,
     refetchOnMount,
-    retry,
-    retryDelay,
+  
+    retry: (failureCount, error) => {
+      if (error?.response?.status === 429) {
+        return failureCount < 3; 
+      }
+      return failureCount < 1;   
+    },
+    retryDelay: (attemptIndex, error) => {
+      if (error?.response?.status === 429) {
+       
+        return 2000 * (attemptIndex + 1);
+      }
+      return Math.min(1000 * 2 ** attemptIndex, 5000);
+    },
     keepPreviousData,
+    
+    placeholderData: (previousData) => previousData,
   });
 };

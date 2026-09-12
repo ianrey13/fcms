@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from "react";
 import { href, NavLink, useLocation } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
+import { prefetchService } from "../../services/prefetchService"; // ✅ ADD THIS
 import {
     LayoutDashboard,
     FileText,
@@ -52,6 +53,46 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 
+// ============================================
+// ✅ PREFETCH HELPER — Maps route to prefetch function
+// ============================================
+
+const handlePrefetch = (href) => {
+    // Only prefetch known routes — silently ignore others
+    try {
+        switch (href) {
+            case "/gso/dashboard":
+                prefetchService.prefetchDashboard("gso_office");
+                break;
+            case "/gso/reports":
+                prefetchService.prefetchReports();
+                break;
+            case "/gso/fuel-receipts":
+                prefetchService.prefetchFuelReceipts();
+                break;
+            case "/mo/dashboard":
+                prefetchService.prefetchDashboard("mayors_office");
+                break;
+            case "/mo/reports":
+                prefetchService.prefetchReports();
+                break;
+            case "/mo/budget-allocation":
+                prefetchService.prefetchBudget(new Date().getFullYear());
+                break;
+            default:
+                // No prefetch for other routes — that's fine
+                break;
+        }
+    } catch (error) {
+        // Silent fail — prefetch should never break UX
+        console.warn(`Prefetch failed for ${href}:`, error);
+    }
+};
+
+// ============================================
+// SUBMENU ITEM
+// ============================================
+
 const SubMenuItem = ({ item, isOpen, isMobile, setIsMobile }) => {
     const [isExpanded, setIsExpanded] = useState(false);
     const location = useLocation();
@@ -68,6 +109,7 @@ const SubMenuItem = ({ item, isOpen, isMobile, setIsMobile }) => {
             <NavLink
                 to={item.href}
                 onClick={() => isMobile && setIsMobile(false)}
+                onMouseEnter={() => handlePrefetch(item.href)} // ✅ PREFETCH ON HOVER
                 className={({ isActive }) =>
                     cn(
                         "group flex items-center rounded-xl transition-all duration-200 relative",
@@ -178,6 +220,7 @@ const SubMenuItem = ({ item, isOpen, isMobile, setIsMobile }) => {
                                 key={sub.name}
                                 to={sub.href}
                                 onClick={() => isMobile && setIsMobile(false)}
+                                onMouseEnter={() => handlePrefetch(sub.href)} // ✅ PREFETCH ON HOVER
                                 className={({ isActive }) =>
                                     cn(
                                         "flex items-center rounded-lg py-2 px-3 text-sm transition-all duration-200",
@@ -234,16 +277,6 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
                     href: "/gso/dashboard",
                     icon: LayoutDashboard,
                 },
-                // { 
-                //     name: "All Trips",
-                //      href: "/gso/all-trips", 
-                //      icon: FileText
-                //      },
-                // {
-                //     name: "Trip History",
-                //     href: "/gso/trip-history",
-                //     icon: History,
-                // },
                 {
                     name: "Live Tracking",
                     href: "/gso/live-tracking",
@@ -254,12 +287,11 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
                     href: "/gso/fuel-receipts",
                     icon: Receipt,
                 },
-                 {
-                            name: "Fuel Consumption Report",
-                            href: "/gso/reports",
-                            icon: Receipt,
-                        },
-            
+                {
+                    name: "Fuel Consumption Report",
+                    href: "/gso/reports",
+                    icon: Receipt,
+                },
                 {
                     name: "Administration",
                     icon: Settings,
@@ -287,7 +319,6 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
                         },
                     ],
                 },
-                // ✅ NEW: Trip History - Separate item (not a submenu)
             ],
             mayors_office: [
                 {
@@ -314,11 +345,6 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
                             href: "/mo/receipt-verification",
                             icon: Receipt,
                         },
-                        // {
-                        //     name: "Fund Release History",
-                        //     href: "/mo/fund-release-history",
-                        //     icon: DollarSign,
-                        // },
                     ],
                 },
                 {
@@ -342,12 +368,11 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
                         },
                     ],
                 },
-                 {
-                            name: "Fuel Reports",
-                            href: "/mo/reports",
-                            icon: Receipt,
-                        },
-               
+                {
+                    name: "Fuel Reports",
+                    href: "/mo/reports",
+                    icon: Receipt,
+                },
             ],
             driver: [
                 {

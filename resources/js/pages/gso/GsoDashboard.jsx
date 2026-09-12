@@ -1,9 +1,9 @@
 // src/pages/gso/GsoDashboard.jsx
 // ============================================
-// ✅ FIXED: Auto-refresh with real-time updates
-// ✅ REMOVED: Manual refresh buttons
-// ✅ REMOVED: Live Tracking component (commented out)
-// ✅ ADDED: Real-time connection status
+// ✅ FULLY FIXED: Safe array extraction from all API responses
+// ✅ ADDED: Cancelled tab
+// ✅ FIXED: allTrips.filter crash
+// ✅ FIXED: gps-active-trips undefined
 // ============================================
 
 import React, { useState, useMemo, useEffect, useRef, useCallback } from "react";
@@ -69,6 +69,8 @@ import {
     Route,
     Gauge,
     Target,
+    Ban,
+    AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -111,8 +113,56 @@ import { toast } from "react-hot-toast";
 import eventBus from "../../utils/eventBus";
 
 // ============================================
+// ✅ SAFE ARRAY EXTRACTION HELPER
+// Handles every possible backend response shape
+// ============================================
+
+const extractArray = (response) => {
+    // Guard against null/undefined
+    if (!response) return [];
+
+    // Case 1: Already an array
+    if (Array.isArray(response)) return response;
+
+    // Case 2: { success, data: [...], total } ← YOUR BACKEND SHAPE
+    if (Array.isArray(response.data)) return response.data;
+
+    // Case 3: { data: { data: [...] } }
+    if (response.data && Array.isArray(response.data.data)) {
+        return response.data.data;
+    }
+
+    // Case 4: Other common keys
+    const keys = ['items', 'results', 'records', 'rows', 'list', 'tickets', 'trips'];
+    for (const key of keys) {
+        if (Array.isArray(response[key])) return response[key];
+        if (response.data && Array.isArray(response.data[key])) {
+            return response.data[key];
+        }
+    }
+
+    // Case 5: Object with a nested data
+    if (response.data?.data?.data && Array.isArray(response.data.data.data)) {
+        return response.data.data.data;
+    }
+
+    // Fallback: empty array
+    console.warn('⚠️ extractArray: unexpected response shape:', response);
+    return [];
+};
+
+// ============================================
 // CONSTANTS & HELPERS
 // ============================================
+
+const CANCELLABLE_STATUSES = [
+    "pending_mayors_office",
+    "returned_for_revision",
+];
+
+const canCancelTicket = (status) => {
+    return CANCELLABLE_STATUSES.includes(status);
+};
 
 const getStatusConfig = (status) => {
     const configs = {
@@ -138,7 +188,7 @@ const getStatusConfig = (status) => {
         },
         closed: { color: "bg-green-600", label: "Closed", icon: CheckCircle },
         rejected: { color: "bg-red-500", label: "Rejected", icon: XCircle },
-        cancelled: { color: "bg-slate-500", label: "Cancelled", icon: XCircle },
+        cancelled: { color: "bg-slate-600", label: "Cancelled", icon: Ban },
         returned_for_revision: {
             color: "bg-purple-500",
             label: "Returned",
@@ -154,6 +204,11 @@ const getStatusConfig = (status) => {
             color: "bg-amber-500",
             label: "Ready for Validation",
             icon: FileCheck,
+        },
+        pending_reconciliation: {
+            color: "bg-orange-500",
+            label: "Pending Recon",
+            icon: Clock,
         },
     };
     return (
@@ -222,6 +277,7 @@ const getAuditActionColor = (action) => {
         profile_updated: "bg-teal-500",
         password_changed: "bg-orange-500",
         receipt_verified: "bg-emerald-500",
+        trip_cancelled: "bg-slate-600",
     };
     return colors[action] || "bg-slate-500";
 };
@@ -240,6 +296,7 @@ const getAuditActionIcon = (action) => {
         profile_updated: User,
         password_changed: Shield,
         receipt_verified: FileCheck,
+        trip_cancelled: Ban,
     };
     return icons[action] || ClockIcon;
 };
@@ -341,12 +398,17 @@ const StatsCard = ({
 const TicketTable = ({
     tickets,
     showValidate = false,
+    showCancel = false,
     onView,
     onValidate,
+    onCancel,
     isLoading: tableLoading,
     showActions = true,
     maxHeight = "400px",
 }) => {
+    // ✅ Force array
+    const safeTickets = Array.isArray(tickets) ? tickets : [];
+
     if (tableLoading) {
         return (
             <div className="flex justify-center py-16">
@@ -360,7 +422,7 @@ const TicketTable = ({
         );
     }
 
-    if (!Array.isArray(tickets) || tickets.length === 0) {
+    if (safeTickets.length === 0) {
         return (
             <div className="text-center py-16">
                 <div className="w-16 h-16 bg-slate-100 dark:bg-slate-800 rounded-2xl flex items-center justify-center mx-auto mb-4">
@@ -407,11 +469,12 @@ const TicketTable = ({
                     </TableRow>
                 </TableHeader>
                 <TableBody>
-                    {tickets.map((ticket, index) => {
+                    {safeTickets.map((ticket, index) => {
                         const ticketId = getTicketId(ticket);
                         const needsValidation =
                             ticket?.status === "pending_gso_validation" ||
                             ticket?.status === "completed";
+                        const cancellable = canCancelTicket(ticket?.status);
 
                         return (
                             <TableRow
@@ -455,41 +518,49 @@ const TicketTable = ({
                                 </TableCell>
                                 {showActions && (
                                     <TableCell className="text-right">
-                                        <div className="flex items-center justify-end gap-2">
+                                        <div className="flex items-center justify-end gap-1">
                                             {onView && (
                                                 <Button
-                                                    variant="ghost"
+                                                    variant="outline"
                                                     size="sm"
-                                                    onClick={() =>
-                                                        onView(ticketId)
-                                                    }
-                                                    className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:text-blue-300 dark:hover:bg-blue-950/30 h-8 w-8 p-0"
+                                                    onClick={() => onView(ticketId)}
+                                                    className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:text-blue-300 dark:hover:bg-blue-950/30 h-8 px-3 border-blue-200 dark:border-blue-800"
                                                     title="View Details"
                                                 >
-                                                    <Eye className="h-4 w-4" />
+                                                    <Eye className="h-3.5 w-3.5 mr-1" />
+                                                    View
                                                 </Button>
                                             )}
-                                            {showValidate &&
-                                                needsValidation && (
-                                                    <Button
-                                                        size="sm"
-                                                        className={`${
-                                                            ticket?.status ===
-                                                            "pending_gso_validation"
-                                                                ? "bg-indigo-600 hover:bg-indigo-700"
-                                                                : "bg-amber-600 hover:bg-amber-700"
-                                                        } text-white shadow-sm h-8 px-3`}
-                                                        onClick={() =>
-                                                            onValidate?.(ticket)
-                                                        }
-                                                    >
-                                                        <FileCheck className="h-3.5 w-3.5 mr-1" />
-                                                        {ticket?.status ===
-                                                        "pending_gso_validation"
-                                                            ? "Validate"
-                                                            : "Review & Close"}
-                                                    </Button>
-                                                )}
+
+                                            {showCancel && cancellable && onCancel && (
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={() => onCancel(ticket)}
+                                                    className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:text-red-300 dark:hover:bg-red-950/30 h-8 px-3 border-red-200 dark:border-red-800"
+                                                    title="Cancel Ticket"
+                                                >
+                                                    <Ban className="h-3.5 w-3.5 mr-1" />
+                                                    Cancel
+                                                </Button>
+                                            )}
+
+                                            {showValidate && needsValidation && (
+                                                <Button
+                                                    size="sm"
+                                                    className={`${
+                                                        ticket?.status === "pending_gso_validation"
+                                                            ? "bg-indigo-600 hover:bg-indigo-700"
+                                                            : "bg-amber-600 hover:bg-amber-700"
+                                                    } text-white shadow-sm h-8 px-3`}
+                                                    onClick={() => onValidate?.(ticket)}
+                                                >
+                                                    <FileCheck className="h-3.5 w-3.5 mr-1" />
+                                                    {ticket?.status === "pending_gso_validation"
+                                                        ? "Validate"
+                                                        : "Review & Close"}
+                                                </Button>
+                                            )}
                                         </div>
                                     </TableCell>
                                 )}
@@ -517,16 +588,16 @@ const AuditLogTable = ({ logs, loading }) => {
         );
     }
 
-    const filteredLogs =
-        logs?.filter((log) => {
-            const search = searchTerm.toLowerCase();
-            return (
-                log?.action?.toLowerCase().includes(search) ||
-                log?.table_name?.toLowerCase().includes(search) ||
-                log?.user?.email?.toLowerCase().includes(search) ||
-                log?.user?.full_name?.toLowerCase().includes(search)
-            );
-        }) || [];
+    const safeLogs = Array.isArray(logs) ? logs : [];
+    const filteredLogs = safeLogs.filter((log) => {
+        const search = searchTerm.toLowerCase();
+        return (
+            log?.action?.toLowerCase().includes(search) ||
+            log?.table_name?.toLowerCase().includes(search) ||
+            log?.user?.email?.toLowerCase().includes(search) ||
+            log?.user?.full_name?.toLowerCase().includes(search)
+        );
+    });
 
     if (filteredLogs.length === 0) {
         return (
@@ -585,18 +656,14 @@ const AuditLogTable = ({ logs, loading }) => {
                                             className={`${colorClass} text-white flex items-center gap-1 px-2 py-1 rounded-lg text-[10px]`}
                                         >
                                             <ActionIcon className="h-2.5 w-2.5" />
-                                            {log.action
-                                                ?.replace(/_/g, " ")
-                                                .toUpperCase()}
+                                            {log.action?.replace(/_/g, " ").toUpperCase()}
                                         </Badge>
                                     </TableCell>
                                     <TableCell>
                                         <div className="flex items-center gap-2">
                                             <div className="w-6 h-6 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-[10px] font-semibold text-slate-700 dark:text-slate-300">
                                                 {user?.full_name?.charAt(0) ||
-                                                    user?.first_name?.charAt(
-                                                        0,
-                                                    ) ||
+                                                    user?.first_name?.charAt(0) ||
                                                     "?"}
                                             </div>
                                             <div>
@@ -610,9 +677,7 @@ const AuditLogTable = ({ logs, loading }) => {
                                     </TableCell>
                                     <TableCell>
                                         <span className="font-mono text-xs text-slate-600 dark:text-slate-400">
-                                            {log.table_name
-                                                ?.replace(/_/g, " ")
-                                                .toUpperCase()}
+                                            {log.table_name?.replace(/_/g, " ").toUpperCase()}
                                         </span>
                                     </TableCell>
                                     <TableCell>
@@ -649,6 +714,8 @@ const GsoDashboard = () => {
     const { isConnected } = useRealtime();
     const [selectedTicket, setSelectedTicket] = useState(null);
     const [showValidateDialog, setShowValidateDialog] = useState(false);
+    const [showCancelDialog, setShowCancelDialog] = useState(false);
+    const [cancelReason, setCancelReason] = useState("");
     const [activeTab, setActiveTab] = useState("pending");
     const [searchQuery, setSearchQuery] = useState("");
     const [showAuditLog, setShowAuditLog] = useState(false);
@@ -660,76 +727,75 @@ const GsoDashboard = () => {
             .replace("PNP - ", "") || "General Services Office";
 
     // ============================================
-    // ✅ REFRESH FUNCTION - Auto-refresh only
+    // ✅ REFRESH FUNCTION
     // ============================================
 
-const fetchAllData = useCallback(() => {
-    // ✅ Add flag to prevent concurrent refreshes
-    if (window._isRefreshing) return;
-    window._isRefreshing = true;
+    const fetchAllData = useCallback(() => {
+        if (window._isRefreshing) return;
+        window._isRefreshing = true;
 
-    // ✅ Use Promise.allSettled to prevent cascading failures
-    Promise.allSettled([
-        queryClient.invalidateQueries({ queryKey: ["gso-pending-mo"] }),
-        queryClient.invalidateQueries({ queryKey: ["gso-pending-validation"] }),
-        queryClient.invalidateQueries({ queryKey: ["gso-all-trips"] }),
-        queryClient.invalidateQueries({ queryKey: ["gps-active-trips"] }),
-        queryClient.invalidateQueries({ queryKey: ["audit-logs"] }),
-        queryClient.invalidateQueries({ queryKey: ["admin-users-stats"] }),
-        queryClient.invalidateQueries({ queryKey: ["admin-vehicles-stats"] }),
-        queryClient.invalidateQueries({ queryKey: ["admin-departments-stats"] }),
-    ]).finally(() => {
-        // ✅ Release flag after 2 seconds
-        setTimeout(() => {
-            window._isRefreshing = false;
-        }, 2000);
-    });
-}, [queryClient]);
+        Promise.allSettled([
+            queryClient.invalidateQueries({ queryKey: ["gso-pending-mo"] }),
+            queryClient.invalidateQueries({ queryKey: ["gso-pending-validation"] }),
+            queryClient.invalidateQueries({ queryKey: ["gso-all-trips"] }),
+            queryClient.invalidateQueries({ queryKey: ["gso-cancelled-trips"] }),
+            queryClient.invalidateQueries({ queryKey: ["gps-active-trips"] }),
+            queryClient.invalidateQueries({ queryKey: ["audit-logs"] }),
+            queryClient.invalidateQueries({ queryKey: ["admin-users-stats"] }),
+            queryClient.invalidateQueries({ queryKey: ["admin-vehicles-stats"] }),
+            queryClient.invalidateQueries({ queryKey: ["admin-departments-stats"] }),
+        ]).finally(() => {
+            setTimeout(() => {
+                window._isRefreshing = false;
+            }, 2000);
+        });
+    }, [queryClient]);
 
     // ============================================
-    // ✅ AUTO-REFRESH - No manual refresh needed
+    // ✅ AUTO-REFRESH
     // ============================================
 
-   
-useAutoRefresh(
-    [
-        "gso-trip-updated",
-        "gso-trip-status-changed",
-        "gso-funds-released",
-        "trip-completed",
-        "trip-started",
-        "gps-location-updated",
-        "new-notification",
-        "gso-trip-created",
-    ],
-    fetchAllData,
-    1000 // ✅ 1 second debounce
-);
+    useAutoRefresh(
+        [
+            "gso-trip-updated",
+            "gso-trip-status-changed",
+            "gso-funds-released",
+            "trip-completed",
+            "trip-started",
+            "gps-location-updated",
+            "new-notification",
+            "gso-trip-created",
+            "trip-cancelled",
+        ],
+        fetchAllData,
+        1000
+    );
+
     // ============================================
-    // OPTIMIZED QUERIES
+    // ✅ OPTIMIZED QUERIES — ALL use extractArray()
     // ============================================
 
     const {
-        data: auditLogs = [],
+        data: auditLogsRaw,
         isLoading: auditLoading,
     } = useOptimizedQuery({
         queryKey: ["audit-logs"],
         queryFn: async () => {
             try {
                 const response = await auditAPI.getLogs();
-                return response?.data?.data || [];
+                return extractArray(response);
             } catch (error) {
                 console.error("Error fetching audit logs:", error);
                 return [];
             }
         },
-        refetchInterval: 30000,
         enabled: showAuditLog,
         staleTime: 30000,
     });
+    const auditLogs = auditLogsRaw || [];
 
     const {
-        data: activeTrips = [],
+        data: activeTripsRaw,
         isLoading: gpsLoading,
         isFetching: gpsFetching,
     } = useOptimizedQuery({
@@ -737,51 +803,47 @@ useAutoRefresh(
         queryFn: async () => {
             try {
                 const response = await gpsAPI.getActiveTrips();
-                return response?.data?.data || [];
+                return extractArray(response);
             } catch (error) {
                 console.error("Error fetching active trips:", error);
                 return [];
             }
         },
-        refetchInterval: 15000,
-        staleTime: 5000,
+        staleTime: 30000,
     });
-
-  const {
-    data: pendingTickets = [],
-    isLoading: pendingLoading,
-} = useOptimizedQuery({
-    queryKey: ["gso-pending-mo"],
-    queryFn: async () => {
-        try {
-            const response = await gsoAPI.getPendingMO();
-            const data = response?.data?.data || response?.data || [];
-            return Array.isArray(data) ? data : [];
-        } catch (error) {
-            if (error.response?.status === 429) {
-                console.warn('Rate limit hit for pending tickets, using cached data');
-                return []; // Return empty, cache will serve stale data
-            }
-            console.error("Error fetching pending tickets:", error);
-            return [];
-        }
-    },
-    staleTime: 60000,
-    refetchInterval: 60000, // ✅ Reduced from default
-    retry: 2,
-    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 10000),
-});
+    const activeTrips = activeTripsRaw || [];
 
     const {
-        data: pendingValidation = [],
+        data: pendingTicketsRaw,
+        isLoading: pendingLoading,
+    } = useOptimizedQuery({
+        queryKey: ["gso-pending-mo"],
+        queryFn: async () => {
+            try {
+                const response = await gsoAPI.getPendingMO();
+                return extractArray(response);
+            } catch (error) {
+                if (error.response?.status === 429) {
+                    console.warn('Rate limit hit for pending tickets');
+                    return [];
+                }
+                console.error("Error fetching pending tickets:", error);
+                return [];
+            }
+        },
+        staleTime: 60000,
+    });
+    const pendingTickets = pendingTicketsRaw || [];
+
+    const {
+        data: pendingValidationRaw,
         isLoading: validationLoading,
     } = useOptimizedQuery({
         queryKey: ["gso-pending-validation"],
         queryFn: async () => {
             try {
                 const response = await gsoAPI.getPendingValidation();
-                const data = response?.data?.data || response?.data || [];
-                return Array.isArray(data) ? data : [];
+                return extractArray(response);
             } catch (error) {
                 console.error("Error fetching pending validation:", error);
                 return [];
@@ -789,17 +851,17 @@ useAutoRefresh(
         },
         staleTime: 60000,
     });
+    const pendingValidation = pendingValidationRaw || [];
 
     const {
-        data: allTrips = [],
+        data: allTripsRaw,
         isLoading: allTripsLoading,
     } = useOptimizedQuery({
         queryKey: ["gso-all-trips"],
         queryFn: async () => {
             try {
                 const response = await gsoAPI.getAllTrips();
-                const data = response?.data?.data || response?.data || [];
-                return Array.isArray(data) ? data : [];
+                return extractArray(response);
             } catch (error) {
                 console.error("Error fetching all trips:", error);
                 return [];
@@ -808,45 +870,70 @@ useAutoRefresh(
         staleTime: 60000,
         keepPreviousData: true,
     });
+    const allTrips = allTripsRaw || [];
 
-    const { data: users = [] } = useOptimizedQuery({
+    const {
+        data: cancelledTripsRaw,
+        isLoading: cancelledLoading,
+    } = useOptimizedQuery({
+        queryKey: ["gso-cancelled-trips"],
+        queryFn: async () => {
+            try {
+                if (typeof gsoAPI.getCancelledTrips !== 'function') {
+                    return [];
+                }
+                const response = await gsoAPI.getCancelledTrips();
+                return extractArray(response);
+            } catch (error) {
+                console.error("Error fetching cancelled trips:", error);
+                return [];
+            }
+        },
+        staleTime: 60000,
+    });
+    const cancelledTrips = cancelledTripsRaw || [];
+
+    const { data: usersRaw } = useOptimizedQuery({
         queryKey: ["admin-users-stats"],
         queryFn: async () => {
             try {
                 const response = await userAPI.getAll();
-                return response?.data?.data || [];
+                return extractArray(response);
             } catch {
                 return [];
             }
         },
         staleTime: 120000,
     });
+    const users = usersRaw || [];
 
-    const { data: vehicles = [] } = useOptimizedQuery({
+    const { data: vehiclesRaw } = useOptimizedQuery({
         queryKey: ["admin-vehicles-stats"],
         queryFn: async () => {
             try {
                 const response = await vehicleAPI.getAll();
-                return response?.data?.data || [];
+                return extractArray(response);
             } catch {
                 return [];
             }
         },
         staleTime: 120000,
     });
+    const vehicles = vehiclesRaw || [];
 
-    const { data: departments = [] } = useOptimizedQuery({
+    const { data: departmentsRaw } = useOptimizedQuery({
         queryKey: ["admin-departments-stats"],
         queryFn: async () => {
             try {
                 const response = await departmentAPI.getAll();
-                return response?.data?.data || [];
+                return extractArray(response);
             } catch {
                 return [];
             }
         },
         staleTime: 120000,
     });
+    const departments = departmentsRaw || [];
 
     // ============================================
     // MUTATIONS
@@ -859,9 +946,7 @@ useAutoRefresh(
         },
         onSuccess: (data) => {
             toast.success(data.message || "Trip validated successfully!");
-            queryClient.invalidateQueries({
-                queryKey: ["gso-pending-validation"],
-            });
+            queryClient.invalidateQueries({ queryKey: ["gso-pending-validation"] });
             queryClient.invalidateQueries({ queryKey: ["gso-all-trips"] });
             setShowValidateDialog(false);
             setSelectedTicket(null);
@@ -869,7 +954,28 @@ useAutoRefresh(
         },
         onError: (error) => {
             toast.error(
-                error?.response?.data?.message || "Failed to validate trip",
+                error?.response?.data?.message || "Failed to validate trip"
+            );
+        },
+    });
+
+    const cancelMutation = useMutation({
+        mutationFn: async ({ ticketId, reason }) => {
+            const response = await gsoAPI.cancelTrip(ticketId, { reason });
+            return response.data;
+        },
+        onSuccess: (data) => {
+            toast.success(data.message || "Trip cancelled successfully!");
+            queryClient.invalidateQueries({ queryKey: ["gso-pending-mo"] });
+            queryClient.invalidateQueries({ queryKey: ["gso-cancelled-trips"] });
+            queryClient.invalidateQueries({ queryKey: ["gso-all-trips"] });
+            setShowCancelDialog(false);
+            setSelectedTicket(null);
+            setCancelReason("");
+        },
+        onError: (error) => {
+            toast.error(
+                error?.response?.data?.message || "Failed to cancel trip"
             );
         },
     });
@@ -879,14 +985,10 @@ useAutoRefresh(
     // ============================================
 
     const stats = useMemo(() => {
-        const totalUsers = Array.isArray(users) ? users.length : 0;
-        const activeUsers = Array.isArray(users)
-            ? users.filter((u) => u?.status === "active").length
-            : 0;
-        const totalVehicles = Array.isArray(vehicles) ? vehicles.length : 0;
-        const activeVehicles = Array.isArray(vehicles)
-            ? vehicles.filter((v) => v?.status === "active").length
-            : 0;
+        const totalUsers = users.length;
+        const activeUsers = users.filter((u) => u?.status === "active").length;
+        const totalVehicles = vehicles.length;
+        const activeVehicles = vehicles.filter((v) => v?.status === "active").length;
 
         return [
             {
@@ -923,10 +1025,7 @@ useAutoRefresh(
                 gradient: "from-purple-500 to-purple-600",
                 subtitle: `${totalUsers} total users`,
                 onClick: () => navigate("/admin/users"),
-                trend:
-                    totalUsers > 0
-                        ? Math.round((activeUsers / totalUsers) * 100)
-                        : 0,
+                trend: totalUsers > 0 ? Math.round((activeUsers / totalUsers) * 100) : 0,
             },
             {
                 title: "Active Vehicles",
@@ -935,19 +1034,16 @@ useAutoRefresh(
                 gradient: "from-emerald-500 to-emerald-600",
                 subtitle: `${totalVehicles} total vehicles`,
                 onClick: () => navigate("/admin/vehicles"),
-                trend:
-                    totalVehicles > 0
-                        ? Math.round((activeVehicles / totalVehicles) * 100)
-                        : 0,
+                trend: totalVehicles > 0 ? Math.round((activeVehicles / totalVehicles) * 100) : 0,
             },
             {
-                title: "Pending Validation",
-                value: pendingValidation.length,
-                icon: FileCheck,
-                gradient: "from-indigo-500 to-indigo-600",
-                subtitle: "Ready for GSO review",
-                onClick: () => setActiveTab("validation"),
-                trend: pendingValidation.length > 0 ? 3 : 0,
+                title: "Cancelled",
+                value: cancelledTrips.length,
+                icon: Ban,
+                gradient: "from-red-500 to-rose-600",
+                subtitle: "Cancelled trips",
+                onClick: () => setActiveTab("cancelled"),
+                trend: cancelledTrips.length > 0 ? 3 : 0,
             },
         ];
     }, [
@@ -956,7 +1052,7 @@ useAutoRefresh(
         users,
         vehicles,
         activeTrips.length,
-        pendingValidation.length,
+        cancelledTrips.length,
         navigate,
     ]);
 
@@ -965,30 +1061,33 @@ useAutoRefresh(
     // ============================================
 
     const filterTickets = (tickets) => {
-        if (!searchQuery || !Array.isArray(tickets)) return tickets || [];
+        const safe = Array.isArray(tickets) ? tickets : [];
+        if (!searchQuery) return safe;
         const query = searchQuery.toLowerCase();
-        return tickets.filter(
+        return safe.filter(
             (ticket) =>
                 (getTicketNumber(ticket) || "").toLowerCase().includes(query) ||
                 (ticket?.destination || "").toLowerCase().includes(query) ||
                 (ticket?.department_name || "").toLowerCase().includes(query) ||
-                (ticket?.vehicle?.plate_number || "")
-                    .toLowerCase()
-                    .includes(query),
+                (ticket?.vehicle?.plate_number || "").toLowerCase().includes(query)
         );
     };
 
     const filteredPending = useMemo(
         () => filterTickets(pendingTickets),
-        [pendingTickets, searchQuery],
+        [pendingTickets, searchQuery]
     );
     const filteredAllTrips = useMemo(
         () => filterTickets(allTrips),
-        [allTrips, searchQuery],
+        [allTrips, searchQuery]
     );
     const filteredValidation = useMemo(
         () => filterTickets(pendingValidation),
-        [pendingValidation, searchQuery],
+        [pendingValidation, searchQuery]
+    );
+    const filteredCancelled = useMemo(
+        () => filterTickets(cancelledTrips),
+        [cancelledTrips, searchQuery]
     );
 
     // ============================================
@@ -996,7 +1095,7 @@ useAutoRefresh(
     // ============================================
 
     const chartData = useMemo(() => {
-        if (!Array.isArray(allTrips) || allTrips.length === 0) {
+        if (allTrips.length === 0) {
             return [
                 { month: "Jan", trips: 0 },
                 { month: "Feb", trips: 0 },
@@ -1009,18 +1108,8 @@ useAutoRefresh(
 
         const monthlyMap = new Map();
         const months = [
-            "Jan",
-            "Feb",
-            "Mar",
-            "Apr",
-            "May",
-            "Jun",
-            "Jul",
-            "Aug",
-            "Sep",
-            "Oct",
-            "Nov",
-            "Dec",
+            "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+            "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
         ];
         months.forEach((m) => monthlyMap.set(m, 0));
 
@@ -1030,10 +1119,7 @@ useAutoRefresh(
                     const date = new Date(trip.trip_date);
                     const monthKey = months[date.getMonth()];
                     if (monthKey) {
-                        monthlyMap.set(
-                            monthKey,
-                            (monthlyMap.get(monthKey) || 0) + 1,
-                        );
+                        monthlyMap.set(monthKey, (monthlyMap.get(monthKey) || 0) + 1);
                     }
                 } catch {
                     /* Skip invalid dates */
@@ -1054,11 +1140,11 @@ useAutoRefresh(
     const isRealTime = isConnected;
 
     // ============================================
-    // LOADING STATE WITH SKELETON
+    // LOADING STATE
     // ============================================
 
     const isLoading =
-        pendingLoading || allTripsLoading || gpsLoading;
+        pendingLoading || allTripsLoading || gpsLoading || cancelledLoading;
 
     if (isLoading && allTrips.length === 0 && activeTrips.length === 0) {
         return (
@@ -1127,7 +1213,6 @@ useAutoRefresh(
                             <PlusCircle className="h-4 w-4 mr-2" />
                             Create Trip
                         </Button>
-                        {/* ❌ REFRESH BUTTON REMOVED - Auto-refresh handles everything */}
                     </div>
                 </div>
             </div>
@@ -1220,8 +1305,6 @@ useAutoRefresh(
                 </CardContent>
             </Card>
 
-            {/* ❌ LIVE TRACKING SECTION REMOVED per request */}
-
             {/* Search Bar */}
             <div className="relative">
                 <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
@@ -1233,13 +1316,13 @@ useAutoRefresh(
                 />
             </div>
 
-            {/* Tabs for Trip Management */}
+            {/* Tabs - with 4 tabs including Cancelled */}
             <Tabs
                 value={activeTab}
                 onValueChange={setActiveTab}
                 className="w-full"
             >
-                <TabsList className="grid w-full max-w-3xl grid-cols-3 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
+                <TabsList className="grid w-full max-w-4xl grid-cols-4 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
                     <TabsTrigger
                         value="pending"
                         className="rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900 data-[state=active]:shadow-sm transition-all duration-200"
@@ -1270,6 +1353,16 @@ useAutoRefresh(
                             {pendingValidation.length}
                         </Badge>
                     </TabsTrigger>
+                    <TabsTrigger
+                        value="cancelled"
+                        className="rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900 data-[state=active]:shadow-sm transition-all duration-200"
+                    >
+                        <Ban className="h-4 w-4 mr-2" />
+                        Cancelled
+                        <Badge className="ml-2 bg-red-500/20 text-red-600 dark:text-red-400 border-red-500/30 text-[10px]">
+                            {cancelledTrips.length}
+                        </Badge>
+                    </TabsTrigger>
                 </TabsList>
 
                 {/* Pending MO Tab */}
@@ -1283,8 +1376,8 @@ useAutoRefresh(
                                         Trip Tickets Awaiting Fund Release
                                     </CardTitle>
                                     <CardDescription className="dark:text-slate-400 mt-1">
-                                        These trips are pending approval from
-                                        Mayor's Office
+                                        These trips are pending approval from Mayor's Office.
+                                        You can cancel before funds are issued.
                                     </CardDescription>
                                 </div>
                                 <Badge className="bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 border-yellow-500/30">
@@ -1296,6 +1389,12 @@ useAutoRefresh(
                             <TicketTable
                                 tickets={filteredPending}
                                 onView={(id) => navigate(`/gso/tickets/${id}`)}
+                                onCancel={(ticket) => {
+                                    setSelectedTicket(ticket);
+                                    setCancelReason("");
+                                    setShowCancelDialog(true);
+                                }}
+                                showCancel={true}
                                 isLoading={pendingLoading}
                                 showActions={true}
                                 maxHeight="450px"
@@ -1352,8 +1451,7 @@ useAutoRefresh(
                                         Ready for Validation
                                     </CardTitle>
                                     <CardDescription className="dark:text-slate-400 mt-1">
-                                        These trips are completed and need GSO
-                                        validation to close
+                                        These trips are completed and need GSO validation to close
                                     </CardDescription>
                                 </div>
                                 <Badge className="bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 border-indigo-500/30">
@@ -1371,6 +1469,37 @@ useAutoRefresh(
                                     setShowValidateDialog(true);
                                 }}
                                 isLoading={validationLoading}
+                                showActions={true}
+                                maxHeight="450px"
+                            />
+                        </CardContent>
+                    </Card>
+                </TabsContent>
+
+                {/* Cancelled Tab Content */}
+                <TabsContent value="cancelled" className="space-y-4 mt-6">
+                    <Card className="dark:bg-slate-800/80 dark:border-slate-700">
+                        <CardHeader className="border-b dark:border-slate-700">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <CardTitle className="flex items-center gap-2 text-slate-800 dark:text-white">
+                                        <Ban className="h-5 w-5 text-red-500" />
+                                        Cancelled Trip Tickets
+                                    </CardTitle>
+                                    <CardDescription className="dark:text-slate-400 mt-1">
+                                        These trips have been cancelled. You can create new tickets for these trips.
+                                    </CardDescription>
+                                </div>
+                                <Badge className="bg-red-500/20 text-red-600 dark:text-red-400 border-red-500/30">
+                                    {filteredCancelled.length} tickets
+                                </Badge>
+                            </div>
+                        </CardHeader>
+                        <CardContent className="pt-6">
+                            <TicketTable
+                                tickets={filteredCancelled}
+                                onView={(id) => navigate(`/gso/trip/${id}`)}
+                                isLoading={cancelledLoading}
                                 showActions={true}
                                 maxHeight="450px"
                             />
@@ -1436,11 +1565,119 @@ useAutoRefresh(
                 )}
             </Card>
 
+            {/* Cancel Dialog */}
+            <Dialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
+                <DialogContent className="sm:max-w-md dark:bg-slate-800 dark:border-slate-700">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2 text-red-600 dark:text-red-400">
+                            <div className="p-2 rounded-xl bg-red-500/10">
+                                <Ban className="h-5 w-5 text-red-600" />
+                            </div>
+                            Cancel Trip Ticket
+                        </DialogTitle>
+                        <DialogDescription className="dark:text-slate-400">
+                            This action cannot be undone. The ticket will be cancelled and you can create a new one.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="bg-red-50 dark:bg-red-950/30 rounded-xl p-4 space-y-2 border border-red-200 dark:border-red-800">
+                        <p className="text-sm font-medium text-red-800 dark:text-red-400 flex items-center gap-2">
+                            <AlertTriangle className="h-4 w-4" />
+                            Warning
+                        </p>
+                        <p className="text-sm text-red-700 dark:text-red-300">
+                            Cancelling this ticket will:
+                        </p>
+                        <ul className="text-xs text-red-600 dark:text-red-400 list-disc list-inside space-y-1 ml-2">
+                            <li>Mark the trip as cancelled</li>
+                            <li>Release any reserved budget allocation</li>
+                            <li>Allow you to create a new ticket for this trip</li>
+                        </ul>
+                    </div>
+
+                    <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-4 space-y-1 border border-slate-200 dark:border-slate-700">
+                        <div className="flex justify-between text-sm">
+                            <span className="text-slate-600 dark:text-slate-400">Ticket Number:</span>
+                            <span className="font-mono font-semibold text-slate-800 dark:text-white">
+                                {getTicketNumber(selectedTicket)}
+                            </span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                            <span className="text-slate-600 dark:text-slate-400">Destination:</span>
+                            <span className="text-slate-800 dark:text-white">
+                                {selectedTicket?.destination || "N/A"}
+                            </span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                            <span className="text-slate-600 dark:text-slate-400">Department:</span>
+                            <span className="text-slate-800 dark:text-white">
+                                {selectedTicket?.department_name || "N/A"}
+                            </span>
+                        </div>
+                    </div>
+
+                    <div className="space-y-2">
+                        <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                            Reason for Cancellation <span className="text-red-500">*</span>
+                        </label>
+                        <Textarea
+                            placeholder="Enter reason for cancelling this ticket..."
+                            className="resize-none dark:bg-slate-900 dark:border-slate-700"
+                            rows={3}
+                            value={cancelReason}
+                            onChange={(e) => setCancelReason(e.target.value)}
+                        />
+                        {cancelReason.trim().length > 0 && cancelReason.trim().length < 5 && (
+                            <p className="text-xs text-red-500">
+                                Reason must be at least 5 characters
+                            </p>
+                        )}
+                    </div>
+
+                    <DialogFooter className="gap-2">
+                        <Button
+                            variant="outline"
+                            onClick={() => {
+                                setShowCancelDialog(false);
+                                setSelectedTicket(null);
+                                setCancelReason("");
+                            }}
+                            className="dark:border-slate-700 dark:text-slate-300"
+                        >
+                            Keep Ticket
+                        </Button>
+                        <Button
+                            className="bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-500/20"
+                            onClick={() => {
+                                if (cancelReason.trim().length < 5) {
+                                    toast.error("Please provide a reason (at least 5 characters)");
+                                    return;
+                                }
+                                const ticketId = getTicketId(selectedTicket);
+                                if (!ticketId) {
+                                    toast.error("Invalid ticket");
+                                    return;
+                                }
+                                cancelMutation.mutate({
+                                    ticketId: ticketId,
+                                    reason: cancelReason,
+                                });
+                            }}
+                            disabled={cancelMutation.isPending || cancelReason.trim().length < 5}
+                        >
+                            {cancelMutation.isPending ? (
+                                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                            ) : (
+                                <Ban className="h-4 w-4 mr-2" />
+                            )}
+                            Cancel Ticket
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
             {/* Validation Dialog */}
-            <Dialog
-                open={showValidateDialog}
-                onOpenChange={setShowValidateDialog}
-            >
+            <Dialog open={showValidateDialog} onOpenChange={setShowValidateDialog}>
                 <DialogContent className="sm:max-w-md dark:bg-slate-800 dark:border-slate-700">
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2 text-slate-800 dark:text-white">
@@ -1450,8 +1687,7 @@ useAutoRefresh(
                             Close Trip
                         </DialogTitle>
                         <DialogDescription className="dark:text-slate-400">
-                            Review trip details and close it. This action is
-                            final.
+                            Review trip details and close it. This action is final.
                         </DialogDescription>
                     </DialogHeader>
 
@@ -1461,57 +1697,29 @@ useAutoRefresh(
                         </p>
                         <div className="space-y-1 text-sm">
                             <div className="flex justify-between">
-                                <span className="text-slate-600 dark:text-slate-400">
-                                    Number:
-                                </span>
+                                <span className="text-slate-600 dark:text-slate-400">Number:</span>
                                 <span className="font-mono font-semibold dark:text-white">
                                     {getTicketNumber(selectedTicket)}
                                 </span>
                             </div>
                             <div className="flex justify-between">
-                                <span className="text-slate-600 dark:text-slate-400">
-                                    Destination:
-                                </span>
+                                <span className="text-slate-600 dark:text-slate-400">Destination:</span>
                                 <span className="dark:text-white">
                                     {selectedTicket?.destination || "N/A"}
                                 </span>
                             </div>
                             <div className="flex justify-between">
-                                <span className="text-slate-600 dark:text-slate-400">
-                                    Department:
-                                </span>
+                                <span className="text-slate-600 dark:text-slate-400">Department:</span>
                                 <span className="dark:text-white">
                                     {selectedTicket?.department_name || "N/A"}
                                 </span>
                             </div>
                             <div className="flex justify-between">
-                                <span className="text-slate-600 dark:text-slate-400">
-                                    Total Trips:
-                                </span>
+                                <span className="text-slate-600 dark:text-slate-400">Total Trips:</span>
                                 <span className="font-semibold dark:text-white">
                                     {selectedTicket?.trip_count || 0}
                                 </span>
                             </div>
-                            {selectedTicket?.gps_distance_km && (
-                                <div className="flex justify-between">
-                                    <span className="text-slate-600 dark:text-slate-400">
-                                        GPS Distance:
-                                    </span>
-                                    <span className="font-semibold dark:text-white">
-                                        {selectedTicket.gps_distance_km} km
-                                    </span>
-                                </div>
-                            )}
-                            {selectedTicket?.has_receipt && (
-                                <div className="flex justify-between">
-                                    <span className="text-slate-600 dark:text-slate-400">
-                                        Receipt:
-                                    </span>
-                                    <span className="font-semibold text-emerald-600 dark:text-emerald-400">
-                                        ✅ Uploaded
-                                    </span>
-                                </div>
-                            )}
                         </div>
                     </div>
 
@@ -1552,8 +1760,7 @@ useAutoRefresh(
                                     ticketId: ticketId,
                                     data: {
                                         validation_note:
-                                            validationNote ||
-                                            "Trip closed by GSO",
+                                            validationNote || "Trip closed by GSO",
                                     },
                                 });
                                 setValidationNote("");

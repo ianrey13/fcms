@@ -1,8 +1,9 @@
 // src/pages/mayor/MayorPending.jsx
 // ============================================
-// ENHANCED: Auto-refresh with real-time updates
-// REMOVED: Manual refresh button
-// FIXED: Amount input - text field with numbers only, no spinner
+// ✅ SHOWS: Requesting department's balance (from trip ticket)
+// ✅ CROSS-DEPARTMENT: Charges Mayor's Office (backend handles)
+// ✅ LIVE BALANCE PREVIEW after amount entry
+// ✅ ADDED: MO Cancel feature (before funds released)
 // ============================================
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
@@ -58,6 +59,8 @@ import {
   Minus,
   Calculator,
   Printer,
+  Wallet,
+  Ban,
 } from "lucide-react";
 import {
   Dialog,
@@ -75,7 +78,7 @@ import { cn } from "@/lib/utils";
 import GasSlipView from "../../pages/mayor/reports/GasSlipView";
 
 // ============================================
-// ✅ ENHANCED: Form Field with error highlighting
+// Form Field Component
 // ============================================
 
 const FormField = ({
@@ -127,13 +130,12 @@ const FormField = ({
 };
 
 // ============================================
-// ✅ Number Input - Text field with numbers only, no spinner
+// Number Input
 // ============================================
 
 const NumberInput = ({ value, onChange, placeholder, className, ...props }) => {
   const handleChange = (e) => {
     const val = e.target.value;
-    // Allow only numbers and decimal point
     if (val === '' || /^[0-9]*\.?[0-9]*$/.test(val)) {
       onChange(e);
     }
@@ -318,7 +320,6 @@ const ReceiptVerificationModal = ({
         </DialogHeader>
 
         <div className="space-y-4">
-          {/* Receipt Image */}
           {receipt.receipt_url ? (
             <div className="border rounded-xl overflow-hidden bg-slate-50 dark:bg-slate-900/50">
               <img
@@ -334,13 +335,10 @@ const ReceiptVerificationModal = ({
           ) : (
             <div className="border rounded-xl p-8 text-center bg-slate-50 dark:bg-slate-900/50">
               <ImageIcon className="h-12 w-12 text-slate-300 mx-auto mb-3" />
-              <p className="text-slate-500 dark:text-slate-400">
-                No receipt image uploaded
-              </p>
+              <p className="text-slate-500 dark:text-slate-400">No receipt image uploaded</p>
             </div>
           )}
 
-          {/* Receipt Details Grid */}
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
             <div className="p-2 rounded-lg bg-slate-50 dark:bg-slate-900/50">
               <p className="text-xs text-slate-500 dark:text-slate-400">Ticket Number</p>
@@ -382,43 +380,6 @@ const ReceiptVerificationModal = ({
             </div>
           </div>
 
-          {/* Distance Details */}
-          {(receipt.odometer_start || receipt.odometer_end || receipt.gps_distance_km) && (
-            <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-4 border border-slate-200 dark:border-slate-700">
-              <h4 className="text-sm font-medium mb-2 text-slate-700 dark:text-slate-300 flex items-center gap-2">
-                <Gauge className="h-4 w-4 text-blue-500" />
-                Distance Details
-              </h4>
-              <div className="grid grid-cols-3 gap-3 text-sm">
-                <div>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">Method</p>
-                  <p className="font-medium text-slate-900 dark:text-white">
-                    {receipt.distance_calculation_method || "N/A"}
-                  </p>
-                </div>
-                {receipt.odometer_start && (
-                  <div>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">Odometer Start</p>
-                    <p className="font-medium text-slate-900 dark:text-white">{receipt.odometer_start} km</p>
-                  </div>
-                )}
-                {receipt.odometer_end && (
-                  <div>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">Odometer End</p>
-                    <p className="font-medium text-slate-900 dark:text-white">{receipt.odometer_end} km</p>
-                  </div>
-                )}
-                {receipt.gps_distance_km && (
-                  <div>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">GPS Distance</p>
-                    <p className="font-medium text-slate-900 dark:text-white">{receipt.gps_distance_km} km</p>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Actions */}
           <div className="flex gap-3 pt-4 border-t dark:border-slate-700">
             <Button
               onClick={handleVerify}
@@ -470,13 +431,22 @@ const MayorPending = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [departmentFilter, setDepartmentFilter] = useState("all");
 
+  // ✅ Cancel state
+  const [showCancelDialog, setShowCancelDialog] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
+  const [cancelling, setCancelling] = useState(false);
+
   // Gas Slip State
   const [showGasSlip, setShowGasSlip] = useState(false);
   const [selectedGasSlipTicket, setSelectedGasSlipTicket] = useState(null);
 
+  // Cross-department state
   const [isCrossDepartment, setIsCrossDepartment] = useState(false);
   const [crossDepartmentReason, setCrossDepartmentReason] = useState("");
-  const [showCrossDepartmentWarning, setShowCrossDepartmentWarning] = useState(false);
+
+  // ✅ Requesting Department's balance state
+  const [requestingDeptBalance, setRequestingDeptBalance] = useState(null);
+  const [loadingBalance, setLoadingBalance] = useState(false);
 
   const [tripDateValidation, setTripDateValidation] = useState(null);
   const [isForceApprove, setIsForceApprove] = useState(false);
@@ -484,14 +454,25 @@ const MayorPending = () => {
 
   const [chargeToDepartmentId, setChargeToDepartmentId] = useState("");
   const [availableDepartments, setAvailableDepartments] = useState([]);
-  const [loadingDepartments, setLoadingDepartments] = useState(false);
 
-  // Validation states for Approve Dialog
+  // Validation states
   const [approveErrors, setApproveErrors] = useState({});
   const [approveTouched, setApproveTouched] = useState({});
 
   // ============================================
-  // ✅ REFRESH FUNCTION - Auto-refresh only
+  // ✅ STATUSES THAT CAN BE CANCELLED BY MAYOR'S OFFICE
+  // ============================================
+  const CANCELLABLE_STATUSES = [
+    "pending_mayors_office",
+    "returned_for_revision",
+  ];
+
+  const canCancelTicket = (status) => {
+    return CANCELLABLE_STATUSES.includes(status);
+  };
+
+  // ============================================
+  // REFRESH FUNCTION
   // ============================================
 
   const fetchAllData = useCallback(() => {
@@ -499,7 +480,7 @@ const MayorPending = () => {
   }, [queryClient]);
 
   // ============================================
-  // ✅ AUTO-REFRESH - No manual refresh needed
+  // AUTO-REFRESH
   // ============================================
 
   useAutoRefresh(
@@ -507,6 +488,7 @@ const MayorPending = () => {
       "mayor-trip-updated",
       "mayor-new-pending",
       "mayor-budget-updated",
+      "mayor-trip-cancelled",
       "gso-funds-released",
       "trip-completed",
       "new-notification",
@@ -532,10 +514,6 @@ const MayorPending = () => {
     }
   }, []);
 
-  // ============================================
-  // INITIAL LOAD
-  // ============================================
-
   useEffect(() => {
     fetchTickets();
   }, [fetchTickets]);
@@ -559,9 +537,7 @@ const MayorPending = () => {
     const matchesSearch =
       searchTerm === "" ||
       ticket.ticket_number?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      ticket.trip_ticket_number
-        ?.toLowerCase()
-        .includes(searchTerm.toLowerCase()) ||
+      ticket.trip_ticket_number?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       ticket.destination?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       ticket.department_name?.toLowerCase().includes(searchTerm.toLowerCase());
 
@@ -693,11 +669,87 @@ const MayorPending = () => {
   };
 
   // ============================================
-  // FETCH DEPARTMENTS
+  // ✅ FETCH REQUESTING DEPARTMENT'S BALANCE
   // ============================================
-  
+
+  const fetchDepartmentBalance = useCallback(async (departmentId) => {
+    if (!departmentId) {
+      setRequestingDeptBalance(null);
+      return;
+    }
+
+    setLoadingBalance(true);
+    try {
+      let dept = null;
+      
+      try {
+        const budgetResponse = await mayorsOfficeAPI.getAnnualBudgets({ 
+          department_id: departmentId 
+        });
+        const budgets = budgetResponse.data?.data || budgetResponse.data || [];
+        dept = Array.isArray(budgets) 
+          ? budgets.find(d => String(d.department_id) === String(departmentId))
+          : null;
+      } catch (e) {
+        console.warn("getAnnualBudgets failed, trying getAllDepartmentsWithBudget");
+      }
+
+      if (!dept) {
+        const response = await mayorsOfficeAPI.getAllDepartmentsWithBudget();
+        const depts = response.data?.data || response.data || [];
+        dept = depts.find(d => String(d.department_id) === String(departmentId));
+      }
+
+      if (dept) {
+        const weeklyCeiling = parseFloat(
+          dept.weekly_ceiling || 
+          dept.weekly_allocation || 
+          dept.weekly_budget || 
+          dept.current_weekly_allocation || 
+          0
+        );
+
+        const weeklyUsed = parseFloat(
+          dept.weekly_used || 
+          dept.weekly_spent || 
+          dept.current_weekly_used || 
+          0
+        );
+
+        const weeklyRemaining = parseFloat(
+          dept.weekly_remaining !== undefined ? dept.weekly_remaining :
+          dept.current_weekly_remaining !== undefined ? dept.current_weekly_remaining :
+          (weeklyCeiling - weeklyUsed)
+        );
+
+        setRequestingDeptBalance({
+          department_id: dept.department_id,
+          department_name: dept.department_name,
+          department_code: dept.department_code,
+          allocated: parseFloat(dept.allocated_amount || dept.annual_amount || 0),
+          spent: parseFloat(dept.used_amount || dept.spent_amount || 0),
+          remaining: parseFloat(dept.remaining_amount || 0),
+          weekly_ceiling: weeklyCeiling,
+          weekly_used: weeklyUsed,
+          weekly_remaining: weeklyRemaining,
+          utilization: parseFloat(dept.utilization_percentage || dept.utilization || 0),
+        });
+      } else {
+        setRequestingDeptBalance(null);
+      }
+    } catch (error) {
+      console.error('Failed to fetch department balance:', error);
+      setRequestingDeptBalance(null);
+    } finally {
+      setLoadingBalance(false);
+    }
+  }, []);
+
+  // ============================================
+  // ✅ FETCH ALL DEPARTMENTS
+  // ============================================
+
   const fetchAllDepartments = useCallback(async () => {
-    setLoadingDepartments(true);
     try {
       const response = await mayorsOfficeAPI.getAllDepartmentsForSelector();
       const depts = response.data?.data || [];
@@ -714,14 +766,6 @@ const MayorPending = () => {
       }
     } catch (error) {
       console.error('Failed to fetch departments:', error);
-      const uniqueDepts = [
-        ...new Map(
-          tickets.map((ticket) => [ticket.department_id, ticket.department_name]),
-        ).entries(),
-      ].map(([id, name]) => ({ department_id: id, department_name: name }));
-      setAvailableDepartments(uniqueDepts);
-    } finally {
-      setLoadingDepartments(false);
     }
   }, [tickets]);
 
@@ -748,11 +792,6 @@ const MayorPending = () => {
       newTouched.crossReason = true;
     }
 
-    if (isCrossDepartment && chargeToDepartmentId === selectedTicket?.department_id?.toString()) {
-      newErrors.crossDepartment = "Please select a different department for cross-department usage";
-      newTouched.crossDepartment = true;
-    }
-
     setApproveErrors(newErrors);
     setApproveTouched(prev => ({ ...prev, ...newTouched }));
 
@@ -762,7 +801,6 @@ const MayorPending = () => {
           amount: 'Amount',
           forceReason: 'Force Approve Reason',
           crossReason: 'Cross-Department Reason',
-          crossDepartment: 'Cross-Department Selection'
         };
         const label = labels[field] || field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
         return `• ${label}: ${msg}`;
@@ -780,12 +818,6 @@ const MayorPending = () => {
         </div>,
         { duration: 5000 }
       );
-
-      const firstField = Object.keys(newErrors)[0];
-      if (firstField) {
-        const element = document.querySelector(`[name="${firstField}"]`) || document.getElementById(firstField);
-        if (element) setTimeout(() => element.focus(), 100);
-      }
       return false;
     }
     return true;
@@ -794,7 +826,7 @@ const MayorPending = () => {
   // ============================================
   // OPEN APPROVE DIALOG
   // ============================================
-  
+
   const openApproveDialog = async (ticket) => {
     setSelectedTicket(ticket);
     setAmountReleased("");
@@ -803,7 +835,6 @@ const MayorPending = () => {
     
     setIsCrossDepartment(false);
     setCrossDepartmentReason("");
-    setShowCrossDepartmentWarning(false);
     setIsForceApprove(false);
     setForceApproveReason("");
 
@@ -817,11 +848,75 @@ const MayorPending = () => {
     const requestingDeptId = ticket.department_id?.toString() ||
       ticket.department?.id?.toString() ||
       ticket.department?.department_id?.toString();
-
     setChargeToDepartmentId(requestingDeptId || "");
-    
-    await fetchAllDepartments();
+
+    await Promise.all([
+      fetchDepartmentBalance(ticket.department_id),
+      fetchAllDepartments(),
+    ]);
+
     setShowApproveDialog(true);
+  };
+
+  // ============================================
+  // ✅ OPEN CANCEL DIALOG
+  // ============================================
+
+  const openCancelDialog = (ticket) => {
+    setSelectedTicket(ticket);
+    setCancelReason("");
+    setShowCancelDialog(true);
+  };
+
+  // ============================================
+  // ✅ HANDLE CANCEL
+  // ============================================
+
+  const handleCancel = async () => {
+    if (!selectedTicket) return;
+
+    if (!cancelReason.trim() || cancelReason.trim().length < 5) {
+      if (toastIdRef.current) toast.dismiss(toastIdRef.current);
+      toastIdRef.current = toast.error("Please provide a reason (at least 5 characters)");
+      return;
+    }
+
+    setCancelling(true);
+    try {
+      const ticketId = selectedTicket.id || selectedTicket.trip_ticket_id;
+
+      // Try MO cancel endpoint first, fallback to gsoAPI
+      let response;
+      if (mayorsOfficeAPI.cancelTicket) {
+        response = await mayorsOfficeAPI.cancelTicket(ticketId, {
+          reason: cancelReason,
+        });
+      } else if (mayorsOfficeAPI.cancelTrip) {
+        response = await mayorsOfficeAPI.cancelTrip(ticketId, {
+          reason: cancelReason,
+        });
+      } else {
+        throw new Error("Cancel endpoint not available");
+      }
+
+      if (toastIdRef.current) toast.dismiss(toastIdRef.current);
+      toastIdRef.current = toast.success(
+        response?.data?.message || "Trip ticket cancelled successfully"
+      );
+
+      setShowCancelDialog(false);
+      setSelectedTicket(null);
+      setCancelReason("");
+      fetchTickets();
+    } catch (error) {
+      console.error("Failed to cancel ticket:", error);
+      if (toastIdRef.current) toast.dismiss(toastIdRef.current);
+      toastIdRef.current = toast.error(
+        error.response?.data?.message || "Failed to cancel ticket"
+      );
+    } finally {
+      setCancelling(false);
+    }
   };
 
   const openReceiptModal = (ticket) => {
@@ -844,10 +939,6 @@ const MayorPending = () => {
       status: fuelLog.reconciliation_status || "pending",
       fuel_type: ticket.vehicle?.fuel_type || "N/A",
       uploaded_at: fuelLog.receipt_uploaded_at || fuelLog.created_at,
-      odometer_start: fuelLog.odometer_start,
-      odometer_end: fuelLog.odometer_end,
-      gps_distance_km: fuelLog.gps_distance_km,
-      distance_calculation_method: fuelLog.distance_calculation_method,
     };
 
     setReceiptData(receipt);
@@ -867,7 +958,7 @@ const MayorPending = () => {
   // ============================================
   // HANDLE APPROVE
   // ============================================
-  
+
   const handleApprove = async () => {
     if (!selectedTicket) {
       toast.error("No ticket selected");
@@ -924,6 +1015,7 @@ const MayorPending = () => {
         setForceApproveReason("");
         setApproveErrors({});
         setApproveTouched({});
+        setRequestingDeptBalance(null);
         fetchTickets();
       }
     } catch (error) {
@@ -1029,9 +1121,20 @@ const MayorPending = () => {
 
   const hasActiveFilters = searchTerm !== "" || departmentFilter !== "all";
 
-  // Connection status
   const connectionStatus = isConnected ? "🟢 Live" : "🔴 Offline";
   const isRealTime = isConnected;
+
+  // ✅ Computed: Balance after release
+  const balanceAfterRelease = React.useMemo(() => {
+    if (!requestingDeptBalance || !amountReleased) return null;
+    const amount = parseFloat(amountReleased) || 0;
+    return {
+      remaining: requestingDeptBalance.remaining - amount,
+      weekly_remaining: requestingDeptBalance.weekly_remaining - amount,
+      is_insufficient: amount > requestingDeptBalance.remaining,
+      is_weekly_insufficient: amount > requestingDeptBalance.weekly_remaining,
+    };
+  }, [requestingDeptBalance, amountReleased]);
 
   // ============================================
   // RENDER
@@ -1087,7 +1190,6 @@ const MayorPending = () => {
               </div>
             </div>
           </div>
-          {/* ❌ REFRESH BUTTON REMOVED - Auto-refresh handles everything */}
         </div>
 
         {/* Stats Cards */}
@@ -1199,11 +1301,6 @@ const MayorPending = () => {
                 <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">
                   {hasActiveFilters ? 'Try adjusting your filters' : 'All tickets have been processed'}
                 </p>
-                {hasActiveFilters && (
-                  <Button variant="link" onClick={clearFilters} className="mt-2">
-                    Clear filters
-                  </Button>
-                )}
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -1313,6 +1410,20 @@ const MayorPending = () => {
                               </Button>
                             )}
 
+                            {/* ✅ Cancel Button - Only for cancellable statuses */}
+                            {canCancelTicket(ticket.status) && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => openCancelDialog(ticket)}
+                                className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:text-red-300 dark:hover:bg-red-950/30 h-9 px-3 border-red-200 dark:border-red-800 rounded-lg transition-all duration-200"
+                                title="Cancel Ticket"
+                              >
+                                <Ban className="h-3.5 w-3.5 mr-1" />
+                                Cancel
+                              </Button>
+                            )}
+
                             {/* Release Fund */}
                             <Button
                               size="sm"
@@ -1351,33 +1462,121 @@ const MayorPending = () => {
               </DialogTitle>
               <DialogDescription className="dark:text-slate-400 text-sm">
                 {selectedTicket?.has_insufficient_budget
-                  ? "Select which department's budget to charge. The requesting department has insufficient budget."
+                  ? "The requesting department has insufficient budget. Enable Cross-Department to charge Mayor's Office."
                   : "Funds will be deducted from the selected department's budget."}
               </DialogDescription>
             </DialogHeader>
 
             <div className="space-y-4">
-              {/* Info Box */}
-              <div className="bg-blue-50 dark:bg-blue-950/30 rounded-lg p-2.5 border border-blue-200 dark:border-blue-800">
-                <div className="flex items-center gap-2">
-                  <Info className="h-4 w-4 text-blue-500 dark:text-blue-400 flex-shrink-0" />
-                  <span className="text-xs text-blue-700 dark:text-blue-300">
-                    Charge to <strong>SELECTED department</strong>
-                  </span>
-                </div>
-              </div>
-
-              {/* Budget Warning */}
-              {selectedTicket?.has_insufficient_budget && (
-                <div className="bg-yellow-50 dark:bg-yellow-950/30 border border-yellow-200 dark:border-yellow-800 rounded-lg p-2.5">
+              {/* ✅ REQUESTING DEPARTMENT'S BALANCE DISPLAY */}
+              <div className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30 rounded-xl p-4 border border-blue-200 dark:border-blue-800">
+                <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
-                    <AlertCircle className="h-4 w-4 text-yellow-600 dark:text-yellow-400 flex-shrink-0" />
-                    <span className="text-xs text-yellow-700 dark:text-yellow-300">
-                      Insufficient Budget. Shortage: <strong>{formatCurrency(selectedTicket?.budget_shortage)}</strong>
-                    </span>
+                    <div className="p-2 rounded-lg bg-blue-500/20">
+                      <Wallet className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-blue-900 dark:text-blue-200">
+                        Requesting Department Balance
+                      </p>
+                      <p className="text-xs text-blue-700 dark:text-blue-300">
+                        {requestingDeptBalance?.department_name || selectedTicket?.department_name || "Department"}
+                        {requestingDeptBalance?.department_code && ` (${requestingDeptBalance.department_code})`}
+                      </p>
+                    </div>
                   </div>
+                  {loadingBalance && (
+                    <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
+                  )}
                 </div>
-              )}
+
+                {requestingDeptBalance ? (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-white/70 dark:bg-slate-900/50 rounded-lg p-3">
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">Annual Remaining</p>
+                      <p className={cn(
+                        "text-lg font-bold",
+                        requestingDeptBalance.remaining > 0 
+                          ? "text-emerald-600 dark:text-emerald-400" 
+                          : "text-red-600 dark:text-red-400"
+                      )}>
+                        {formatCurrency(requestingDeptBalance.remaining)}
+                      </p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">
+                        Allocated: {formatCurrency(requestingDeptBalance.allocated)}
+                      </p>
+                    </div>
+                    <div className="bg-white/70 dark:bg-slate-900/50 rounded-lg p-3">
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">Weekly Remaining</p>
+                      <p className={cn(
+                        "text-lg font-bold",
+                        requestingDeptBalance.weekly_remaining > 0 
+                          ? "text-emerald-600 dark:text-emerald-400" 
+                          : "text-red-600 dark:text-red-400"
+                      )}>
+                        {formatCurrency(requestingDeptBalance.weekly_remaining)}
+                      </p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">
+                        Ceiling: {formatCurrency(requestingDeptBalance.weekly_ceiling)}
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-3">
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      No active budget for this department
+                    </p>
+                  </div>
+                )}
+
+                {/* ✅ LIVE BALANCE PREVIEW after amount entered */}
+                {balanceAfterRelease && (
+                  <div className={cn(
+                    "mt-3 p-3 rounded-lg border",
+                    balanceAfterRelease.is_insufficient 
+                      ? "bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800" 
+                      : "bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800"
+                  )}>
+                    <p className="text-xs font-medium mb-1 flex items-center gap-1">
+                      {balanceAfterRelease.is_insufficient ? (
+                        <>
+                          <AlertTriangle className="h-3.5 w-3.5 text-red-600" />
+                          <span className="text-red-700 dark:text-red-300">Insufficient Balance</span>
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle className="h-3.5 w-3.5 text-emerald-600" />
+                          <span className="text-emerald-700 dark:text-emerald-300">Balance After Release</span>
+                        </>
+                      )}
+                    </p>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div>
+                        <span className="text-slate-500 dark:text-slate-400">New Annual:</span>
+                        <span className={cn(
+                          "font-bold ml-1",
+                          balanceAfterRelease.remaining < 0 
+                            ? "text-red-600 dark:text-red-400" 
+                            : "text-emerald-600 dark:text-emerald-400"
+                        )}>
+                          {formatCurrency(balanceAfterRelease.remaining)}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500 dark:text-slate-400">New Weekly:</span>
+                        <span className={cn(
+                          "font-bold ml-1",
+                          balanceAfterRelease.weekly_remaining < 0 
+                            ? "text-red-600 dark:text-red-400" 
+                            : "text-emerald-600 dark:text-emerald-400"
+                        )}>
+                          {formatCurrency(balanceAfterRelease.weekly_remaining)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
 
               {/* Trip Date Validation */}
               {tripDateValidation && (
@@ -1388,7 +1587,7 @@ const MayorPending = () => {
                   {tripDateValidation.category === 'past' && (
                     <Badge className="bg-blue-500 text-white">Past Trip</Badge>
                   )}
-                  {(tripDateValidation.category === 'future_friday' || tripDateValidation.category === 'future_friday_today') && (
+                  {tripDateValidation.category === 'future_friday' && (
                     <Badge className="bg-purple-500 text-white">Friday Trip</Badge>
                   )}
                   {tripDateValidation.category === 'tomorrow' && (
@@ -1418,9 +1617,6 @@ const MayorPending = () => {
                         const checked = e.target.checked;
                         setIsForceApprove(checked);
                         if (!checked) setForceApproveReason("");
-                        if (approveErrors.forceReason) {
-                          setApproveErrors(prev => ({ ...prev, forceReason: "" }));
-                        }
                       }}
                       className="mt-1 h-4 w-4 rounded border-slate-300 text-orange-600 focus:ring-orange-500 dark:border-slate-600 dark:bg-slate-700"
                     />
@@ -1443,12 +1639,7 @@ const MayorPending = () => {
                             name="forceReason"
                             placeholder="Reason for early release..."
                             value={forceApproveReason}
-                            onChange={(e) => {
-                              setForceApproveReason(e.target.value);
-                              if (approveErrors.forceReason) {
-                                setApproveErrors(prev => ({ ...prev, forceReason: "" }));
-                              }
-                            }}
+                            onChange={(e) => setForceApproveReason(e.target.value)}
                             onBlur={() => setApproveTouched(prev => ({ ...prev, forceReason: true }))}
                             rows={2}
                             className="mt-1.5 text-sm resize-none dark:bg-slate-900 dark:border-slate-700 dark:text-white"
@@ -1487,65 +1678,8 @@ const MayorPending = () => {
                       {selectedTicket?.driver?.full_name || "N/A"}
                     </p>
                   </div>
-                  <div>
-                    <p className="text-xs text-slate-400">Vehicle</p>
-                    <p className="text-sm text-slate-700 dark:text-slate-300 truncate">
-                      {selectedTicket?.vehicle?.plate_number || "N/A"}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-slate-400">Trip Date</p>
-                    <p className="text-sm text-slate-700 dark:text-slate-300 truncate">
-                      {selectedTicket?.trip_date ? formatDate(selectedTicket.trip_date) : "N/A"}
-                    </p>
-                  </div>
                 </div>
               </div>
-
-              {/* Department Selector */}
-              <FormField
-                label="Charge To Department"
-                icon={Building2}
-                required
-                error={approveErrors.crossDepartment}
-                touched={approveTouched.crossDepartment}
-                helper={!isCrossDepartment ? "Check 'Cross-Department Usage' to select another department" : ""}
-              >
-                <select
-                  id="charge_to_department"
-                  name="charge_to_department"
-                  value={chargeToDepartmentId}
-                  onChange={(e) => {
-                    setChargeToDepartmentId(e.target.value);
-                    if (approveErrors.crossDepartment) {
-                      setApproveErrors(prev => ({ ...prev, crossDepartment: "" }));
-                    }
-                  }}
-                  onBlur={() => setApproveTouched(prev => ({ ...prev, crossDepartment: true }))}
-                  disabled={!isCrossDepartment}
-                  className={cn(
-                    "w-full mt-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-900 dark:text-white text-sm",
-                    approveErrors.crossDepartment && "border-red-500 ring-red-500 bg-red-50/50 dark:bg-red-950/10",
-                    isCrossDepartment 
-                      ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20 dark:border-blue-700" 
-                      : "border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 cursor-not-allowed opacity-60"
-                  )}
-                >
-                  <option value="">Select Department</option>
-                  {selectedTicket?.department_id && (
-                    <option value={selectedTicket.department_id}>
-                      {selectedTicket.department_name} (Requesting)
-                    </option>
-                  )}
-                  {isCrossDepartment && availableDepartments
-                    .filter((dept) => dept.department_id?.toString() !== selectedTicket?.department_id?.toString())
-                    .map((dept) => (
-                      <option key={dept.department_id} value={dept.department_id}>
-                        {dept.department_name}
-                      </option>
-                    ))}
-                </select>
-              </FormField>
 
               {/* Cross-Department */}
               <div className="border-t dark:border-slate-700 pt-3">
@@ -1557,15 +1691,7 @@ const MayorPending = () => {
                     onChange={(e) => {
                       const checked = e.target.checked;
                       setIsCrossDepartment(checked);
-                      if (!checked) {
-                        setCrossDepartmentReason("");
-                        if (selectedTicket?.department_id) {
-                          setChargeToDepartmentId(selectedTicket.department_id.toString());
-                        }
-                      }
-                      if (approveErrors.crossReason) {
-                        setApproveErrors(prev => ({ ...prev, crossReason: "" }));
-                      }
+                      if (!checked) setCrossDepartmentReason("");
                     }}
                     className="mt-1 h-4 w-4 rounded border-slate-300 text-orange-600 focus:ring-orange-500 dark:border-slate-600 dark:bg-slate-700"
                   />
@@ -1573,8 +1699,13 @@ const MayorPending = () => {
                     <Label htmlFor="cross-department" className="text-sm font-medium cursor-pointer flex items-center gap-2 text-slate-700 dark:text-slate-300">
                       <AlertTriangle className="h-4 w-4 text-orange-500" />
                       Cross-Department Usage
-                      <span className="text-[10px] px-1.5 py-0.5 border border-orange-500 text-orange-500 rounded-full">Check to enable</span>
+                      <span className="text-[10px] px-1.5 py-0.5 border border-orange-500 text-orange-500 rounded-full">
+                        Charges Mayor's Office
+                      </span>
                     </Label>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                      When enabled, the cost will be charged to <strong className="text-blue-600 dark:text-blue-400">Mayor's Office budget</strong> instead of the requesting department.
+                    </p>
                     {isCrossDepartment && (
                       <FormField
                         label="Reason for cross-department usage"
@@ -1588,12 +1719,7 @@ const MayorPending = () => {
                           name="crossReason"
                           placeholder="Reason for cross-department usage..."
                           value={crossDepartmentReason}
-                          onChange={(e) => {
-                            setCrossDepartmentReason(e.target.value);
-                            if (approveErrors.crossReason) {
-                              setApproveErrors(prev => ({ ...prev, crossReason: "" }));
-                            }
-                          }}
+                          onChange={(e) => setCrossDepartmentReason(e.target.value)}
                           onBlur={() => setApproveTouched(prev => ({ ...prev, crossReason: true }))}
                           rows={2}
                           className="mt-1.5 text-sm resize-none dark:bg-slate-900 dark:border-slate-700 dark:text-white"
@@ -1604,7 +1730,7 @@ const MayorPending = () => {
                 </div>
               </div>
 
-              {/* Amount - ✅ Number Input as Text Field with no spinner */}
+              {/* Amount */}
               <FormField
                 label="Amount (₱)"
                 icon={DollarSign}
@@ -1637,23 +1763,15 @@ const MayorPending = () => {
                       {formatCurrency(getEstimatedCost(selectedTicket))}
                     </span>
                   </div>
-                  {selectedTicket.estimated_fuel_liters && (
-                    <span className="text-xs text-slate-400 dark:text-slate-500">
-                      ({selectedTicket.estimated_fuel_liters} L × ₱88)
-                    </span>
-                  )}
                   <Button
                     type="button"
                     variant="ghost"
                     size="sm"
-                    className="h-6 px-2 text-xs text-blue-500 hover:text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:text-blue-300 dark:hover:bg-blue-950/30"
+                    className="h-6 px-2 text-xs text-blue-500 hover:text-blue-700 hover:bg-blue-50"
                     onClick={() => {
                       const estimated = getEstimatedCost(selectedTicket);
                       if (estimated > 0) {
                         setAmountReleased(estimated.toString());
-                        if (approveErrors.amount) {
-                          setApproveErrors(prev => ({ ...prev, amount: "" }));
-                        }
                         toast.success("Suggested amount applied");
                       }
                     }}
@@ -1676,24 +1794,26 @@ const MayorPending = () => {
                   setForceApproveReason("");
                   setApproveErrors({});
                   setApproveTouched({});
+                  setRequestingDeptBalance(null);
                 }}
                 className="dark:border-slate-700 dark:text-slate-300"
               >
                 Cancel
               </Button>
               <Button
-                className={`${
+                className={cn(
+                  "text-white",
                   tripDateValidation?.canApprove
                     ? 'bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800'
                     : isForceApprove
                     ? 'bg-gradient-to-r from-orange-600 to-orange-700 hover:from-orange-700 hover:to-orange-800'
-                    : 'bg-slate-400 cursor-not-allowed'
-                } text-white`}
+                    : 'bg-slate-400 cursor-not-allowed',
+                  balanceAfterRelease?.is_insufficient && 'bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800'
+                )}
                 onClick={handleApprove}
                 disabled={
                   submitting || 
-                  (!tripDateValidation?.canApprove && !isForceApprove) ||
-                  (isCrossDepartment && chargeToDepartmentId === selectedTicket?.department_id?.toString())
+                  (!tripDateValidation?.canApprove && !isForceApprove)
                 }
               >
                 {submitting ? (
@@ -1707,6 +1827,103 @@ const MayorPending = () => {
           </DialogContent>
         </Dialog>
 
+        {/* ✅ CANCEL DIALOG */}
+        <Dialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
+          <DialogContent className="sm:max-w-md dark:bg-slate-800 dark:border-slate-700">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-red-600 dark:text-red-400">
+                <div className="p-2 rounded-xl bg-red-500/10">
+                  <Ban className="h-5 w-5 text-red-600" />
+                </div>
+                Cancel Trip Ticket
+              </DialogTitle>
+              <DialogDescription className="dark:text-slate-400">
+                This action cannot be undone. The ticket will be cancelled and the department can create a new one.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="bg-red-50 dark:bg-red-950/30 rounded-xl p-4 space-y-2 border border-red-200 dark:border-red-800">
+              <p className="text-sm font-medium text-red-800 dark:text-red-400 flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4" />
+                Warning
+              </p>
+              <p className="text-sm text-red-700 dark:text-red-300">
+                Cancelling this ticket will:
+              </p>
+              <ul className="text-xs text-red-600 dark:text-red-400 list-disc list-inside space-y-1 ml-2">
+                <li>Mark the trip as cancelled</li>
+                <li>Release any reserved budget allocation</li>
+                <li>Allow the department to create a new ticket</li>
+              </ul>
+            </div>
+
+            <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-4 space-y-1 border border-slate-200 dark:border-slate-700">
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-600 dark:text-slate-400">Ticket Number:</span>
+                <span className="font-mono font-semibold text-slate-800 dark:text-white">
+                  {selectedTicket?.ticket_number || selectedTicket?.trip_ticket_number || "N/A"}
+                </span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-600 dark:text-slate-400">Destination:</span>
+                <span className="text-slate-800 dark:text-white">
+                  {selectedTicket?.destination || "N/A"}
+                </span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-600 dark:text-slate-400">Department:</span>
+                <span className="text-slate-800 dark:text-white">
+                  {selectedTicket?.department_name || "N/A"}
+                </span>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                Reason for Cancellation <span className="text-red-500">*</span>
+              </label>
+              <Textarea
+                placeholder="Enter reason for cancelling this ticket..."
+                className="resize-none dark:bg-slate-900 dark:border-slate-700 dark:text-white"
+                rows={3}
+                value={cancelReason}
+                onChange={(e) => setCancelReason(e.target.value)}
+              />
+              {cancelReason.trim().length > 0 && cancelReason.trim().length < 5 && (
+                <p className="text-xs text-red-500">
+                  Reason must be at least 5 characters
+                </p>
+              )}
+            </div>
+
+            <DialogFooter className="gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowCancelDialog(false);
+                  setSelectedTicket(null);
+                  setCancelReason("");
+                }}
+                className="dark:border-slate-700 dark:text-slate-300"
+              >
+                Keep Ticket
+              </Button>
+              <Button
+                className="bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-500/20"
+                onClick={handleCancel}
+                disabled={cancelling || cancelReason.trim().length < 5}
+              >
+                {cancelling ? (
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                ) : (
+                  <Ban className="h-4 w-4 mr-2" />
+                )}
+                Cancel Ticket
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
         {/* Reject Dialog */}
         <Dialog open={showRejectDialog} onOpenChange={setShowRejectDialog}>
           <DialogContent className="dark:bg-slate-800 dark:border-slate-700">
@@ -1715,23 +1932,8 @@ const MayorPending = () => {
                 <XCircle className="h-5 w-5 text-red-600" />
                 Reject Trip Ticket
               </DialogTitle>
-              <DialogDescription className="dark:text-slate-400">
-                Please provide a reason for rejection. This will be sent back to
-                the department.
-              </DialogDescription>
             </DialogHeader>
             <div className="space-y-3">
-              <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-3">
-                <p className="text-sm text-slate-700 dark:text-slate-300">
-                  <strong>Ticket:</strong>{" "}
-                  {selectedTicket?.ticket_number ||
-                    selectedTicket?.trip_ticket_number}
-                  <br />
-                  <strong>Department:</strong> {selectedTicket?.department_name}
-                  <br />
-                  <strong>Destination:</strong> {selectedTicket?.destination}
-                </p>
-              </div>
               <FormField
                 label="Rejection Reason"
                 icon={AlertCircle}
@@ -1744,12 +1946,7 @@ const MayorPending = () => {
                   name="rejectNote"
                   placeholder="Enter rejection reason..."
                   value={rejectionNote}
-                  onChange={(e) => {
-                    setRejectionNote(e.target.value);
-                    if (approveErrors.rejectNote) {
-                      setApproveErrors(prev => ({ ...prev, rejectNote: "" }));
-                    }
-                  }}
+                  onChange={(e) => setRejectionNote(e.target.value)}
                   onBlur={() => setApproveTouched(prev => ({ ...prev, rejectNote: true }))}
                   rows={4}
                   className="resize-none dark:bg-slate-900 dark:border-slate-700 dark:text-white"
@@ -1762,23 +1959,17 @@ const MayorPending = () => {
                 onClick={() => {
                   setShowRejectDialog(false);
                   setRejectionNote("");
-                  setApproveErrors({});
-                  setApproveTouched({});
                 }}
                 className="dark:border-slate-700 dark:text-slate-300"
               >
                 Cancel
               </Button>
               <Button
-                className="bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800"
+                className="bg-gradient-to-r from-red-600 to-red-700"
                 onClick={handleReject}
                 disabled={submitting}
               >
-                {submitting ? (
-                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                ) : (
-                  <XCircle className="h-4 w-4 mr-2" />
-                )}
+                {submitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <XCircle className="h-4 w-4 mr-2" />}
                 Reject Ticket
               </Button>
             </DialogFooter>

@@ -51,6 +51,61 @@ import { toast } from "react-hot-toast";
 import { cn } from "@/lib/utils";
 
 // ============================================
+// ✅ HELPER: Robust array extraction from any API response shape
+// ============================================
+
+const extractReceiptsArray = (response) => {
+    // Guard against null/undefined
+    if (!response) return [];
+
+    // Case 1: Already an array
+    if (Array.isArray(response)) return response;
+
+    // Case 2: Object with array in known keys
+    const possibleKeys = [
+        'receipts',
+        'data',
+        'items',
+        'results',
+        'records',
+        'fuel_receipts',
+        'fuelReceipts',
+        'rows',
+        'list',
+        'payload',
+    ];
+
+    for (const key of possibleKeys) {
+        if (Array.isArray(response[key])) {
+            return response[key];
+        }
+    }
+
+    // Case 3: Nested one level deeper (e.g., { data: { receipts: [...] } })
+    if (response.data && typeof response.data === 'object') {
+        for (const key of possibleKeys) {
+            if (Array.isArray(response.data[key])) {
+                return response.data[key];
+            }
+        }
+    }
+
+    // Case 4: Single object → wrap in array (if it looks like a receipt)
+    if (typeof response === 'object') {
+        if (
+            response.id ||
+            response.fuel_receipt_id ||
+            response.ticket_number ||
+            response.trip_ticket_number
+        ) {
+            return [response];
+        }
+    }
+
+    return [];
+};
+
+// ============================================
 // HELPER FUNCTIONS
 // ============================================
 
@@ -366,32 +421,52 @@ const FuelReceipts = () => {
         }
     );
 
-    // ============ OPTIMIZED QUERY ============
-    const { data: receipts = [], isLoading, refetch, isFetching } = useOptimizedQuery({
-        queryKey: ["gso-fuel-receipts"],
-        queryFn: async () => {
-            try {
-                const response = await gsoAPI.getFuelReceipts();
-                return response.data?.data || [];
-            } catch (error) {
-                console.error('Error fetching fuel receipts:', error);
-                toast.error('Failed to load fuel receipts');
-                return [];
-            }
-        },
-        staleTime: 60000,
-        keepPreviousData: true,
-    });
+    // ============================================
+    // ✅ OPTIMIZED QUERY
+    // ============================================
 
-    // ============ FILTER ============
+   const { data: receiptsResponse, isLoading, refetch, isFetching } = useOptimizedQuery({
+    queryKey: ["gso-fuel-receipts"],
+    queryFn: async () => {
+        try {
+            const response = await gsoAPI.getFuelReceipts();
+            // ✅ Extract the actual array from response.data.data
+            const receipts = response?.data?.data;
+            console.log(`📦 Extracted ${receipts?.length || 0} receipts`);
+            return Array.isArray(receipts) ? receipts : [];
+        } catch (error) {
+            console.error('Error fetching fuel receipts:', error);
+            toast.error('Failed to load fuel receipts');
+            return [];
+        }
+    },
+    staleTime: 5 * 60 * 1000,
+    keepPreviousData: true,
+});
+
+    // ============================================
+    // ✅ ROBUST RECEIPTS EXTRACTION — always array
+    // ============================================
+
+    const receipts = useMemo(() => {
+        const result = extractReceiptsArray(receiptsResponse);
+        console.log(`📦 Extracted ${result.length} receipts from response`);
+        return result;
+    }, [receiptsResponse]);
+
+    // ============================================
+    // ✅ SAFE FILTER — always array
+    // ============================================
+
     const filteredReceipts = useMemo(() => {
-        if (!searchTerm) return receipts;
+        const safeReceipts = Array.isArray(receipts) ? receipts : [];
+        if (!searchTerm) return safeReceipts;
         const search = searchTerm.toLowerCase();
-        return receipts.filter((receipt) =>
-            receipt.ticket_number?.toLowerCase().includes(search) ||
-            receipt.plate_number?.toLowerCase().includes(search) ||
-            receipt.driver_name?.toLowerCase().includes(search) ||
-            receipt.vehicle_model?.toLowerCase().includes(search)
+        return safeReceipts.filter((receipt) =>
+            receipt?.ticket_number?.toLowerCase().includes(search) ||
+            receipt?.plate_number?.toLowerCase().includes(search) ||
+            receipt?.driver_name?.toLowerCase().includes(search) ||
+            receipt?.vehicle_model?.toLowerCase().includes(search)
         );
     }, [receipts, searchTerm]);
 
@@ -399,47 +474,53 @@ const FuelReceipts = () => {
     const connectionStatus = isConnected ? "🟢 Live" : "🔴 Offline";
     const isRealTime = isConnected;
 
-    // ============ STATS ============
-    const stats = useMemo(() => [
-        {
-            title: 'Total Receipts',
-            value: receipts.length,
-            icon: Receipt,
-            color: 'from-blue-500 to-blue-600',
-            subtitle: `${filteredReceipts.length} shown`,
-            trend: receipts.length > 0 ? 8 : 0,
-        },
-        {
-            title: 'Pending',
-            value: receipts.filter(r => r.status === 'pending').length,
-            icon: Clock,
-            color: 'from-yellow-500 to-yellow-600',
-            subtitle: 'Awaiting verification',
-            trend: receipts.filter(r => r.status === 'pending').length > 0 ? 12 : 0,
-        },
-        {
-            title: 'Verified',
-            value: receipts.filter(r => r.status === 'verified' || r.status === 'approved').length,
-            icon: CheckCircle,
-            color: 'from-green-500 to-emerald-600',
-            subtitle: 'Approved receipts',
-            trend: receipts.filter(r => r.status === 'verified' || r.status === 'approved').length > 0 ? 5 : 0,
-        },
-        {
-            title: 'Discrepancy',
-            value: receipts.filter(r => r.status === 'discrepancy' || r.status === 'rejected').length,
-            icon: AlertTriangle,
-            color: 'from-red-500 to-rose-600',
-            subtitle: 'Needs attention',
-            trend: receipts.filter(r => r.status === 'discrepancy' || r.status === 'rejected').length > 0 ? -10 : 0,
-        },
-    ], [receipts, filteredReceipts]);
+    // ============================================
+    // ✅ SAFE STATS
+    // ============================================
+
+    const stats = useMemo(() => {
+        const safeReceipts = Array.isArray(receipts) ? receipts : [];
+        return [
+            {
+                title: 'Total Receipts',
+                value: safeReceipts.length,
+                icon: Receipt,
+                color: 'from-blue-500 to-blue-600',
+                subtitle: `${filteredReceipts.length} shown`,
+                trend: safeReceipts.length > 0 ? 8 : 0,
+            },
+            {
+                title: 'Pending',
+                value: safeReceipts.filter(r => r?.status === 'pending').length,
+                icon: Clock,
+                color: 'from-yellow-500 to-yellow-600',
+                subtitle: 'Awaiting verification',
+                trend: 0,
+            },
+            {
+                title: 'Verified',
+                value: safeReceipts.filter(r => r?.status === 'verified' || r?.status === 'approved').length,
+                icon: CheckCircle,
+                color: 'from-green-500 to-emerald-600',
+                subtitle: 'Approved receipts',
+                trend: 0,
+            },
+            {
+                title: 'Discrepancy',
+                value: safeReceipts.filter(r => r?.status === 'discrepancy' || r?.status === 'rejected').length,
+                icon: AlertTriangle,
+                color: 'from-red-500 to-rose-600',
+                subtitle: 'Needs attention',
+                trend: 0,
+            },
+        ];
+    }, [receipts, filteredReceipts]);
 
     // ============================================
     // LOADING STATE
     // ============================================
 
-    if (isLoading) {
+    if (isLoading && !receiptsResponse) {
         return <LoadingSkeleton />;
     }
 
@@ -466,7 +547,6 @@ const FuelReceipts = () => {
                         )}
                     </p>
                 </div>
-                {/* ❌ REFRESH BUTTON REMOVED - Auto-refresh handles everything */}
             </div>
 
             {/* Stats Cards */}
@@ -532,7 +612,7 @@ const FuelReceipts = () => {
                                 No fuel receipts found
                             </p>
                             <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">
-                                {receipts.length === 0 
+                                {receipts.length === 0
                                     ? 'Drivers will upload receipts here after fuel purchases'
                                     : 'Try adjusting your search terms'}
                             </p>
@@ -567,22 +647,22 @@ const FuelReceipts = () => {
                                 </thead>
                                 <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
                                     {filteredReceipts.map((receipt) => (
-                                        <tr 
-                                            key={receipt.id || receipt.fuel_receipt_id} 
+                                        <tr
+                                            key={receipt.id || receipt.fuel_receipt_id}
                                             className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors group"
                                         >
                                             <td className="px-4 py-3">
                                                 <span className="font-mono font-semibold text-slate-800 dark:text-white">
-                                                    {receipt.ticket_number}
+                                                    {receipt.ticket_number || receipt.trip_ticket_number || 'N/A'}
                                                 </span>
                                             </td>
                                             <td className="px-4 py-3">
                                                 <div className="flex flex-col">
                                                     <span className="font-medium text-slate-700 dark:text-slate-300">
-                                                        {receipt.plate_number}
+                                                        {receipt.plate_number || 'N/A'}
                                                     </span>
                                                     <span className="text-xs text-slate-500 dark:text-slate-400">
-                                                        {receipt.vehicle_model}
+                                                        {receipt.vehicle_model || 'N/A'}
                                                     </span>
                                                 </div>
                                             </td>
@@ -590,14 +670,14 @@ const FuelReceipts = () => {
                                                 <div className="flex items-center gap-2">
                                                     <User className="h-3.5 w-3.5 text-slate-400" />
                                                     <span className="text-slate-700 dark:text-slate-300">
-                                                        {receipt.driver_name}
+                                                        {receipt.driver_name || 'N/A'}
                                                     </span>
                                                 </div>
                                             </td>
                                             <td className="px-4 py-3">
                                                 <div className="flex flex-col">
                                                     <span className="font-medium text-slate-700 dark:text-slate-300">
-                                                        {receipt.liters} L
+                                                        {receipt.liters || receipt.liters_availed || 0} L
                                                     </span>
                                                     <span className="text-xs text-slate-500 dark:text-slate-400">
                                                         {formatDateShort(receipt.trip_date)}
@@ -606,11 +686,11 @@ const FuelReceipts = () => {
                                             </td>
                                             <td className="px-4 py-3">
                                                 <span className="font-semibold text-emerald-600 dark:text-emerald-400">
-                                                    {formatCurrency(receipt.amount)}
+                                                    {formatCurrency(receipt.amount || receipt.amount_on_receipt || 0)}
                                                 </span>
                                             </td>
                                             <td className="px-4 py-3">
-                                                <StatusBadge status={receipt.status} />
+                                                <StatusBadge status={receipt.status || receipt.reconciliation_status || 'pending'} />
                                             </td>
                                             <td className="px-4 py-3 text-center">
                                                 <Button
@@ -647,7 +727,7 @@ const FuelReceipts = () => {
                                     Fuel Receipt Details
                                 </DialogTitle>
                                 <DialogDescription className="dark:text-slate-400">
-                                    {selectedReceipt?.ticket_number} • {formatDate(selectedReceipt?.uploaded_at)}
+                                    {selectedReceipt?.ticket_number || selectedReceipt?.trip_ticket_number} • {formatDate(selectedReceipt?.uploaded_at)}
                                 </DialogDescription>
                             </div>
                         </div>
@@ -663,7 +743,7 @@ const FuelReceipts = () => {
                                 <div className="flex-1">
                                     <p className="text-xs text-slate-500 dark:text-slate-400">Current Status</p>
                                     <div className="mt-1">
-                                        <StatusBadge status={selectedReceipt.status} />
+                                        <StatusBadge status={selectedReceipt.status || selectedReceipt.reconciliation_status || 'pending'} />
                                     </div>
                                 </div>
                                 <div className="text-right">
@@ -679,38 +759,38 @@ const FuelReceipts = () => {
                                 <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700">
                                     <p className="text-xs text-slate-500 dark:text-slate-400">Ticket Number</p>
                                     <p className="font-mono font-semibold text-slate-800 dark:text-white mt-0.5">
-                                        {selectedReceipt.ticket_number}
+                                        {selectedReceipt.ticket_number || selectedReceipt.trip_ticket_number || 'N/A'}
                                     </p>
                                 </div>
                                 <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700">
                                     <p className="text-xs text-slate-500 dark:text-slate-400">Vehicle</p>
                                     <p className="font-semibold text-slate-800 dark:text-white mt-0.5 flex items-center gap-1.5">
                                         <Truck className="h-3.5 w-3.5 text-slate-400" />
-                                        {selectedReceipt.plate_number}
+                                        {selectedReceipt.plate_number || 'N/A'}
                                     </p>
                                     <p className="text-xs text-slate-500 dark:text-slate-400">
-                                        {selectedReceipt.vehicle_model}
+                                        {selectedReceipt.vehicle_model || 'N/A'}
                                     </p>
                                 </div>
                                 <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700">
                                     <p className="text-xs text-slate-500 dark:text-slate-400">Driver</p>
                                     <p className="font-semibold text-slate-800 dark:text-white mt-0.5 flex items-center gap-1.5">
                                         <User className="h-3.5 w-3.5 text-slate-400" />
-                                        {selectedReceipt.driver_name}
+                                        {selectedReceipt.driver_name || 'N/A'}
                                     </p>
                                 </div>
                                 <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700">
                                     <p className="text-xs text-slate-500 dark:text-slate-400">Fuel Loaded</p>
                                     <p className="font-semibold text-slate-800 dark:text-white mt-0.5 flex items-center gap-1.5">
                                         <Fuel className="h-3.5 w-3.5 text-slate-400" />
-                                        {selectedReceipt.liters} L
+                                        {selectedReceipt.liters || selectedReceipt.liters_availed || 0} L
                                     </p>
                                 </div>
                                 <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700">
                                     <p className="text-xs text-slate-500 dark:text-slate-400">Amount</p>
                                     <p className="font-bold text-emerald-600 dark:text-emerald-400 mt-0.5 flex items-center gap-1.5">
                                         <DollarSign className="h-3.5 w-3.5" />
-                                        {formatCurrency(selectedReceipt.amount)}
+                                        {formatCurrency(selectedReceipt.amount || selectedReceipt.amount_on_receipt || 0)}
                                     </p>
                                 </div>
                                 <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700">

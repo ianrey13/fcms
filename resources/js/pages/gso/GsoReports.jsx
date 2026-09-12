@@ -2,10 +2,10 @@
 // ============================================
 // COMPLETE SINGLE-PAGE REPORTS DASHBOARD
 // ALL 10 REPORTS (Budget Utilization removed - Mayor's Office only)
-// PDF Export via Backend API
+// ✅ FIXED: 429 rate-limit protection, lazy loading, cached dropdowns
 // ============================================
 
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { useQueryClient } from "@tanstack/react-query";
 import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 import { useRealtime } from '../../contexts/RealtimeContext';
@@ -94,6 +94,13 @@ import {
 import { toast } from 'react-hot-toast';
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, endOfYear } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
+
+// ============================================
+// ✅ CACHE CONSTANTS
+// ============================================
+
+const CACHE_5MIN = 5 * 60 * 1000;
+const CACHE_10MIN = 10 * 60 * 1000;
 
 // ============================================
 // CONSTANTS & HELPERS
@@ -265,25 +272,24 @@ const GsoReports = () => {
     const [driverFilter, setDriverFilter] = useState('all');
     const [yearFilter, setYearFilter] = useState(new Date().getFullYear());
 
-    const [departments, setDepartments] = useState([]);
-    const [vehicles, setVehicles] = useState([]);
-    const [drivers, setDrivers] = useState([]);
     const [exportLoading, setExportLoading] = useState(false);
+
+    // ✅ OPTIMIZED: Only first 2 reports open by default (prevents 429 on mount)
     const [expandedSections, setExpandedSections] = useState({
         fuelConsumption: true,
-        vehicleSummary: true,
-        departmentSummary: true,
-        monthlySummary: true,
-        tripTicket: true,
-        gpsActivity: true,
-        reconciliation: true,
-        fuelReceipt: true,
-        driverEfficiency: true,
-        auditTrail: true,
+        vehicleSummary: false,
+        departmentSummary: false,
+        monthlySummary: false,
+        tripTicket: false,
+        gpsActivity: false,
+        reconciliation: false,
+        fuelReceipt: false,
+        driverEfficiency: false,
+        auditTrail: false,
     });
 
     // ============================================
-    // ✅ AUTO-REFRESH - No manual refresh needed
+    // ✅ AUTO-REFRESH - triggers only on real events
     // ============================================
 
     const fetchAllData = useCallback(() => {
@@ -311,22 +317,49 @@ const GsoReports = () => {
         fetchAllData
     );
 
-    // ============ FETCH DEPARTMENTS, VEHICLES & DRIVERS ============
-    useEffect(() => {
-        const fetchData = async () => {
+    // ============================================
+    // ✅ CACHED DROPDOWN DATA (10 min cache)
+    // ============================================
+
+    const { data: departments = [] } = useOptimizedQuery({
+        queryKey: ['departments-selector'],
+        queryFn: async () => {
+            const res = await departmentAPI.getAll();
+            return res.data?.data || [];
+        },
+        staleTime: CACHE_10MIN,
+        keepPreviousData: true,
+    });
+
+    const { data: vehicles = [] } = useOptimizedQuery({
+        queryKey: ['vehicles-list'],
+        queryFn: async () => {
+            const res = await vehicleAPI.getAll();
+            return res.data?.data || [];
+        },
+        staleTime: CACHE_10MIN,
+        keepPreviousData: true,
+    });
+
+    // ✅ FIXED: Guard against empty/invalid JSON response
+    const { data: drivers = [] } = useOptimizedQuery({
+        queryKey: ['drivers-list'],
+        queryFn: async () => {
             try {
-                const deptRes = await departmentAPI.getAll();
-                setDepartments(deptRes.data?.data || []);
-                const vehicleRes = await vehicleAPI.getAll();
-                setVehicles(vehicleRes.data?.data || []);
-                const driverRes = await fetch('/api/admin/drivers').then(r => r.json());
-                setDrivers(driverRes.data || []);
+                const res = await fetch('/api/admin/drivers');
+                if (!res.ok || res.status === 204) return [];
+                const text = await res.text();
+                if (!text) return [];
+                const data = JSON.parse(text);
+                return data.data || [];
             } catch (error) {
-                console.error('Error fetching data:', error);
+                console.warn('Drivers fetch failed:', error);
+                return [];
             }
-        };
-        fetchData();
-    }, []);
+        },
+        staleTime: CACHE_10MIN,
+        keepPreviousData: true,
+    });
 
     // ============ DATE RANGE ============
     const dateRange = useMemo(() => {
@@ -336,16 +369,16 @@ const GsoReports = () => {
         return getDateRange('monthly');
     }, [globalStartDate, globalEndDate]);
 
-    // Connection status
     const connectionStatus = isConnected ? "🟢 Live" : "🔴 Offline";
     const isRealTime = isConnected;
 
     // ============================================================
-    // OPTIMIZED QUERIES - ALL 10 REPORTS
+    // ✅ LAZY LOADED REPORT QUERIES
+    // Each query only fires when its section is expanded (enabled)
     // ============================================================
 
     // 1. FUEL CONSUMPTION REPORT
-    const { data: fuelData, isLoading: fuelLoading, refetch: refetchFuel } = useOptimizedQuery({
+    const { data: fuelData, isLoading: fuelLoading } = useOptimizedQuery({
         queryKey: ['fuel-consumption', dateRange, globalDepartmentFilter, globalVehicleFilter],
         queryFn: async () => {
             const params = {
@@ -357,12 +390,13 @@ const GsoReports = () => {
             const res = await reportsAPI.getFuelConsumptionReport(params);
             return res.data?.data || {};
         },
-        staleTime: 60000,
+        enabled: expandedSections.fuelConsumption, // ✅ Lazy
+        staleTime: CACHE_5MIN,
         keepPreviousData: true,
     });
 
     // 2. VEHICLE SUMMARY
-    const { data: vehicleSummaryData, isLoading: vehicleSummaryLoading, refetch: refetchVehicleSummary } = useOptimizedQuery({
+    const { data: vehicleSummaryData, isLoading: vehicleSummaryLoading } = useOptimizedQuery({
         queryKey: ['vehicle-summary', dateRange, globalDepartmentFilter],
         queryFn: async () => {
             const params = {
@@ -373,12 +407,13 @@ const GsoReports = () => {
             const res = await reportsAPI.getVehicleReport(params);
             return res.data?.data || [];
         },
-        staleTime: 60000,
+        enabled: expandedSections.vehicleSummary, // ✅ Lazy
+        staleTime: CACHE_5MIN,
         keepPreviousData: true,
     });
 
     // 3. DEPARTMENT SUMMARY
-    const { data: deptSummaryData, isLoading: deptSummaryLoading, refetch: refetchDeptSummary } = useOptimizedQuery({
+    const { data: deptSummaryData, isLoading: deptSummaryLoading } = useOptimizedQuery({
         queryKey: ['department-summary', dateRange, globalDepartmentFilter],
         queryFn: async () => {
             const params = {
@@ -389,12 +424,13 @@ const GsoReports = () => {
             const res = await reportsAPI.getDepartmentFuelConsumption(params);
             return res.data?.data || {};
         },
-        staleTime: 60000,
+        enabled: expandedSections.departmentSummary, // ✅ Lazy
+        staleTime: CACHE_5MIN,
         keepPreviousData: true,
     });
 
     // 4. MONTHLY SUMMARY
-    const { data: monthlyData, isLoading: monthlyLoading, refetch: refetchMonthly } = useOptimizedQuery({
+    const { data: monthlyData, isLoading: monthlyLoading } = useOptimizedQuery({
         queryKey: ['monthly-summary', yearFilter, globalDepartmentFilter],
         queryFn: async () => {
             const params = {
@@ -404,12 +440,13 @@ const GsoReports = () => {
             const res = await reportsAPI.getMonthlyFuelConsumption(params);
             return res.data?.data || {};
         },
-        staleTime: 120000,
+        enabled: expandedSections.monthlySummary, // ✅ Lazy
+        staleTime: CACHE_5MIN,
         keepPreviousData: true,
     });
 
     // 5. TRIP TICKET REPORT
-    const { data: tripData, isLoading: tripLoading, refetch: refetchTrips } = useOptimizedQuery({
+    const { data: tripData, isLoading: tripLoading } = useOptimizedQuery({
         queryKey: ['trip-ticket-report', dateRange, globalDepartmentFilter, statusFilter],
         queryFn: async () => {
             const params = {
@@ -421,12 +458,13 @@ const GsoReports = () => {
             const res = await reportsAPI.getTripTicketReport(params);
             return res.data?.data || {};
         },
-        staleTime: 60000,
+        enabled: expandedSections.tripTicket, // ✅ Lazy
+        staleTime: CACHE_5MIN,
         keepPreviousData: true,
     });
 
     // 6. GPS VEHICLE ACTIVITY
-    const { data: gpsData, isLoading: gpsLoading, refetch: refetchGPS } = useOptimizedQuery({
+    const { data: gpsData, isLoading: gpsLoading } = useOptimizedQuery({
         queryKey: ['gps-activity', dateRange, gpsVehicleFilter, matchFilter],
         queryFn: async () => {
             const params = {
@@ -438,12 +476,13 @@ const GsoReports = () => {
             const res = await reportsAPI.getGPSVehicleActivity(params);
             return res.data?.data || {};
         },
-        staleTime: 60000,
+        enabled: expandedSections.gpsActivity, // ✅ Lazy
+        staleTime: CACHE_5MIN,
         keepPreviousData: true,
     });
 
     // 7. RECONCILIATION REPORT
-    const { data: reconciliationData, isLoading: reconciliationLoading, refetch: refetchReconciliation } = useOptimizedQuery({
+    const { data: reconciliationData, isLoading: reconciliationLoading } = useOptimizedQuery({
         queryKey: ['reconciliation', dateRange, globalDepartmentFilter, reconciliationThreshold],
         queryFn: async () => {
             const params = {
@@ -461,12 +500,13 @@ const GsoReports = () => {
             }
             return data;
         },
-        staleTime: 60000,
+        enabled: expandedSections.reconciliation, // ✅ Lazy
+        staleTime: CACHE_5MIN,
         keepPreviousData: true,
     });
 
     // 8. FUEL RECEIPT REPORT
-    const { data: receiptData, isLoading: receiptLoading, refetch: refetchReceipts } = useOptimizedQuery({
+    const { data: receiptData, isLoading: receiptLoading } = useOptimizedQuery({
         queryKey: ['fuel-receipt', dateRange, globalDepartmentFilter, globalVehicleFilter, receiptStatusFilter],
         queryFn: async () => {
             const params = {
@@ -485,12 +525,13 @@ const GsoReports = () => {
             }
             return data;
         },
-        staleTime: 60000,
+        enabled: expandedSections.fuelReceipt, // ✅ Lazy
+        staleTime: CACHE_5MIN,
         keepPreviousData: true,
     });
 
     // 9. DRIVER EFFICIENCY
-    const { data: driverData, isLoading: driverLoading, refetch: refetchDrivers } = useOptimizedQuery({
+    const { data: driverData, isLoading: driverLoading } = useOptimizedQuery({
         queryKey: ['driver-efficiency', dateRange, globalDepartmentFilter, driverFilter],
         queryFn: async () => {
             const params = {
@@ -502,12 +543,13 @@ const GsoReports = () => {
             const res = await reportsAPI.getDriverEfficiency(params);
             return res.data?.data || {};
         },
-        staleTime: 60000,
+        enabled: expandedSections.driverEfficiency, // ✅ Lazy
+        staleTime: CACHE_5MIN,
         keepPreviousData: true,
     });
 
     // 10. AUDIT TRAIL
-    const { data: auditData, isLoading: auditLoading, refetch: refetchAudit } = useOptimizedQuery({
+    const { data: auditData, isLoading: auditLoading } = useOptimizedQuery({
         queryKey: ['audit-trail', dateRange, auditUserFilter, auditResultFilter],
         queryFn: async () => {
             const params = {
@@ -519,12 +561,12 @@ const GsoReports = () => {
             const res = await reportsAPI.getAuditTrail(params);
             return res.data?.data || {};
         },
-        staleTime: 120000,
+        enabled: expandedSections.auditTrail, // ✅ Lazy
+        staleTime: CACHE_5MIN,
         keepPreviousData: true,
     });
 
     // ============ HANDLERS ============
-    // ❌ REFRESH BUTTON REMOVED - Auto-refresh handles everything
 
     const toggleSection = (section) => {
         setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }));
@@ -602,13 +644,20 @@ const GsoReports = () => {
     };
 
     // ============================================================
-    // LOADING STATE WITH SKELETON
+    // ✅ LOADING STATE — only true when an expanded section has no data
     // ============================================================
 
-    const isLoading = fuelLoading || vehicleSummaryLoading || deptSummaryLoading ||
-        monthlyLoading || tripLoading || gpsLoading ||
-        reconciliationLoading || receiptLoading || driverLoading ||
-        auditLoading;
+    const isLoading =
+        (expandedSections.fuelConsumption && fuelLoading && !fuelData) ||
+        (expandedSections.vehicleSummary && vehicleSummaryLoading && !vehicleSummaryData) ||
+        (expandedSections.departmentSummary && deptSummaryLoading && !deptSummaryData) ||
+        (expandedSections.monthlySummary && monthlyLoading && !monthlyData) ||
+        (expandedSections.tripTicket && tripLoading && !tripData) ||
+        (expandedSections.gpsActivity && gpsLoading && !gpsData) ||
+        (expandedSections.reconciliation && reconciliationLoading && !reconciliationData) ||
+        (expandedSections.fuelReceipt && receiptLoading && !receiptData) ||
+        (expandedSections.driverEfficiency && driverLoading && !driverData) ||
+        (expandedSections.auditTrail && auditLoading && !auditData);
 
     if (isLoading) {
         return (
@@ -629,14 +678,11 @@ const GsoReports = () => {
     }
 
     // ============================================================
-    // RENDER FUNCTIONS
+    // RENDER FUNCTIONS (all the same as before)
     // ============================================================
 
     // ---- REPORT 1: FUEL CONSUMPTION ----
     const renderFuelConsumption = () => {
-        // ... (same as original, just the render function)
-        // The key changes are in the main component above
-        // This function remains unchanged from your original
         const logs = fuelData?.recent_logs || [];
         const summary = fuelData?.summary || {};
 
@@ -677,7 +723,6 @@ const GsoReports = () => {
                 </CardHeader>
                 {expandedSections.fuelConsumption && (
                     <CardContent>
-                        {/* ... rest of fuel consumption render ... */}
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
                             <StatsCard title="Total Trips" value={summary.total_trips || 0} icon={Truck} color="from-blue-500 to-blue-600" />
                             <StatsCard title="Total Fuel" value={`${formatNumber(summary.total_fuel_liters || 0)} L`} icon={Fuel} color="from-emerald-500 to-emerald-600" />
@@ -739,12 +784,12 @@ const GsoReports = () => {
 
     // ---- REPORT 2: VEHICLE SUMMARY ----
     const renderVehicleSummary = () => {
-        const vehicles = vehicleSummaryData || [];
+        const vehiclesList = vehicleSummaryData || [];
 
-        const totalVehicles = vehicles.length;
-        const totalTrips = vehicles.reduce((sum, v) => sum + (v.trip_count || 0), 0);
-        const totalFuel = vehicles.reduce((sum, v) => sum + (v.total_liters || 0), 0);
-        const totalCost = vehicles.reduce((sum, v) => sum + (v.total_cost || 0), 0);
+        const totalVehicles = vehiclesList.length;
+        const totalTrips = vehiclesList.reduce((sum, v) => sum + (v.trip_count || 0), 0);
+        const totalFuel = vehiclesList.reduce((sum, v) => sum + (v.total_liters || 0), 0);
+        const totalCost = vehiclesList.reduce((sum, v) => sum + (v.total_cost || 0), 0);
 
         return (
             <Card className="dark:bg-slate-800/80 dark:border-slate-700">
@@ -797,10 +842,10 @@ const GsoReports = () => {
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
-                                    {vehicles.length === 0 ? (
+                                    {vehiclesList.length === 0 ? (
                                         <TableRow><TableCell colSpan="6" className="text-center py-8 text-slate-500">No vehicle data available</TableCell></TableRow>
                                     ) : (
-                                        vehicles.map((v, i) => (
+                                        vehiclesList.map((v, i) => (
                                             <TableRow key={i} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
                                                 <TableCell className="font-medium">{v.model || 'N/A'}</TableCell>
                                                 <TableCell className="font-mono">{v.plate_number || 'N/A'}</TableCell>
@@ -822,7 +867,7 @@ const GsoReports = () => {
 
     // ---- REPORT 3: DEPARTMENT SUMMARY ----
     const renderDepartmentSummary = () => {
-        const departments = deptSummaryData?.departments || [];
+        const depts = deptSummaryData?.departments || [];
         const summary = deptSummaryData?.summary || {};
 
         return (
@@ -832,7 +877,7 @@ const GsoReports = () => {
                         <div className="flex items-center gap-2">
                             <Building2 className="h-5 w-5 text-purple-500" />
                             <CardTitle className="text-slate-800 dark:text-white">Department Fuel Consumption Report</CardTitle>
-                            <Badge className="bg-purple-500/20 text-purple-600 ml-2">{departments.length} departments</Badge>
+                            <Badge className="bg-purple-500/20 text-purple-600 ml-2">{depts.length} departments</Badge>
                         </div>
                         <div className="flex items-center gap-2">
                             {expandedSections.departmentSummary && (
@@ -875,10 +920,10 @@ const GsoReports = () => {
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
-                                    {departments.length === 0 ? (
+                                    {depts.length === 0 ? (
                                         <TableRow><TableCell colSpan="5" className="text-center py-8 text-slate-500">No department data available</TableCell></TableRow>
                                     ) : (
-                                        departments.map((d, i) => (
+                                        depts.map((d, i) => (
                                             <TableRow key={i} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
                                                 <TableCell className="font-medium">{d.department_name}</TableCell>
                                                 <TableCell className="text-right">{d.total_trips || 0}</TableCell>
@@ -1318,7 +1363,7 @@ const GsoReports = () => {
                                 </TableHeader>
                                 <TableBody>
                                     {reconciliations.length === 0 ? (
-                                        <TableRow><TableCell colSpan="9" className="text-center py-8 text-slate-500">No reconciliation data available</TableCell></TableRow>
+                                        <TableRow><TableCell colSpan="6" className="text-center py-8 text-slate-500">No reconciliation data available</TableCell></TableRow>
                                     ) : (
                                         reconciliations.map((r, i) => (
                                             <TableRow key={i} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
@@ -1450,10 +1495,10 @@ const GsoReports = () => {
 
     // ---- REPORT 9: DRIVER EFFICIENCY ----
     const renderDriverEfficiency = () => {
-        const drivers = driverData?.drivers || [];
+        const driverList = driverData?.drivers || [];
         const summary = driverData?.summary || {};
 
-        const sortedDrivers = [...drivers].sort((a, b) => (b.fuel_efficiency_kmpl || 0) - (a.fuel_efficiency_kmpl || 0));
+        const sortedDrivers = [...driverList].sort((a, b) => (b.fuel_efficiency_kmpl || 0) - (a.fuel_efficiency_kmpl || 0));
 
         return (
             <Card className="dark:bg-slate-800/80 dark:border-slate-700">
@@ -1462,7 +1507,7 @@ const GsoReports = () => {
                         <div className="flex items-center gap-2">
                             <Users className="h-5 w-5 text-emerald-500" />
                             <CardTitle className="text-slate-800 dark:text-white">Driver Fuel Efficiency Report</CardTitle>
-                            <Badge className="bg-emerald-500/20 text-emerald-600 ml-2">{drivers.length} drivers</Badge>
+                            <Badge className="bg-emerald-500/20 text-emerald-600 ml-2">{driverList.length} drivers</Badge>
                         </div>
                         <div className="flex items-center gap-2">
                             {expandedSections.driverEfficiency && (
@@ -1683,7 +1728,6 @@ const GsoReports = () => {
                             </div>
                         </div>
                     </div>
-                    {/* ❌ REFRESH BUTTON REMOVED - Auto-refresh handles everything */}
                 </div>
 
                 {/* ========== GLOBAL FILTERS ========== */}
@@ -1759,7 +1803,7 @@ const GsoReports = () => {
                     </CardContent>
                 </Card>
 
-                {/* ========== ALL 10 REPORTS ========== */}
+                {/* ========== ALL 10 REPORTS (lazy loaded) ========== */}
                 <div className="space-y-6">
                     {renderFuelConsumption()}
                     {renderVehicleSummary()}

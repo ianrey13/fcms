@@ -7,15 +7,14 @@ export const useAutoRefresh = (eventNames, refreshFn, debounceMs = 500) => {
     const [lastUpdated, setLastUpdated] = useState(null);
     const timeoutRef = useRef(null);
     const isRefreshingRef = useRef(false);
+    const isMountedRef = useRef(false);  
 
     // ✅ Debounced refresh
     const debouncedRefresh = useCallback(() => {
-        // Clear any pending timeout
         if (timeoutRef.current) {
             clearTimeout(timeoutRef.current);
         }
 
-        // Set new timeout
         timeoutRef.current = setTimeout(() => {
             if (!isRefreshingRef.current && refreshFn) {
                 isRefreshingRef.current = true;
@@ -31,15 +30,17 @@ export const useAutoRefresh = (eventNames, refreshFn, debounceMs = 500) => {
         if (!refreshFn) return;
 
         const events = Array.isArray(eventNames) ? eventNames : [eventNames];
-        
-        // ✅ Initial refresh with delay
-        const initialTimeout = setTimeout(() => {
-            refreshFn();
-        }, 1000);
 
-        // ✅ Subscribe to events
+       
+        
+        isMountedRef.current = true;
+
+        
         const unsubscribers = events.map(eventName => {
             return on(eventName, (data) => {
+               
+                if (!isMountedRef.current) return;
+
                 console.log(`🔄 Auto-refresh triggered by: ${eventName}`);
                 setLastUpdated(new Date());
                 debouncedRefresh();
@@ -47,7 +48,7 @@ export const useAutoRefresh = (eventNames, refreshFn, debounceMs = 500) => {
         });
 
         return () => {
-            clearTimeout(initialTimeout);
+           
             if (timeoutRef.current) {
                 clearTimeout(timeoutRef.current);
             }

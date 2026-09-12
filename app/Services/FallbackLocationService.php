@@ -7,355 +7,459 @@ use Illuminate\Support\Facades\Log;
 class FallbackLocationService
 {
     protected $locations = [];
+    protected $priorityMap = [];
 
     public function __construct()
     {
         // Complete location data with guaranteed coordinates
         $this->locations = [
-            // === ORIGIN / MUNICIPAL HALL ===
+            // === PRIORITY 1: LAGUINDINGAN BARANGAYS ===
             'laguindingan_municipal_hall' => [
                 'name' => 'Laguindingan Municipal Hall',
                 'distance_km' => 0,
                 'lat' => 8.5731,
                 'lng' => 124.4432,
-                'type' => 'origin'
+                'type' => 'origin',
+                'priority' => 1,
+                'region' => 'Laguindingan',
             ],
             'laguindingan' => [
                 'name' => 'Laguindingan',
                 'distance_km' => 0,
                 'lat' => 8.5731,
                 'lng' => 124.4432,
-                'type' => 'municipality'
+                'type' => 'municipality',
+                'priority' => 1,
+                'region' => 'Laguindingan',
             ],
             'poblacion' => [
                 'name' => 'Poblacion, Laguindingan',
                 'distance_km' => 0,
                 'lat' => 8.5731,
                 'lng' => 124.4432,
-                'type' => 'barangay'
+                'type' => 'barangay',
+                'priority' => 1,
+                'region' => 'Laguindingan',
             ],
-            // === MUNICIPALITIES IN MISAMIS ORIENTAL ===
-            'alubijid' => [
-                'name' => 'Alubijid',
-                'distance_km' => 3.9,
-                'lat' => 8.5712669, 
-                'lng' => 124.4744229,
-                'type' => 'municipality'
-            ],
-            'gitagum' => [
-                'name' => 'Gitagum',
-                'distance_km' => 5.6,
-                'lat' => 8.6000,
-                'lng' => 124.4100,
-                'type' => 'municipality'
-            ],
-            'el_salvador' => [
-                'name' => 'El Salvador City',
-                'distance_km' => 10.1,
-                'lat' => 8.5600,
-                'lng' => 124.5300,
-                'type' => 'city'
-            ],
-            'opol' => [
-                'name' => 'Opol',
-                'distance_km' => 17.9,
-                'lat' => 8.5200,
-                'lng' => 124.5800,
-                'type' => 'municipality'
-            ],
-            'initao' => [
-                'name' => 'Initao',
-                'distance_km' => 22.3,
-                'lat' => 8.5000,
-                'lng' => 124.3000,
-                'type' => 'municipality'
-            ],
-            'cagayan_de_oro' => [
-                'name' => 'Cagayan de Oro City',
-                'distance_km' => 29.0,
-                'lat' => 8.4767,
-                'lng' => 124.6439,
-                'type' => 'city'
-            ],
-            'cagayan' => [
-                'name' => 'Cagayan de Oro City',
-                'distance_km' => 29.0,
-                'lat' => 8.4767,
-                'lng' => 124.6439,
-                'type' => 'city'
-            ],
-            'cdo' => [
-                'name' => 'Cagayan de Oro City',
-                'distance_km' => 29.0,
-                'lat' => 8.4767,
-                'lng' => 124.6439,
-                'type' => 'city'
-            ],
-            'naawan' => [
-                'name' => 'Naawan',
-                'distance_km' => 31.2,
-                'lat' => 8.4300,
-                'lng' => 124.2900,
-                'type' => 'municipality'
-            ],
-            'manticao' => [
-                'name' => 'Manticao',
-                'distance_km' => 35.1,
-                'lat' => 8.4800,
-                'lng' => 124.2900,
-                'type' => 'municipality'
-            ],
-            'lugait' => [
-                'name' => 'Lugait',
-                'distance_km' => 43.4,
-                'lat' => 8.3400,
-                'lng' => 124.2600,
-                'type' => 'municipality'
-            ],
-            'tagoloan' => [
-                'name' => 'Tagoloan',
-                'distance_km' => 46.0,
-                'lat' => 8.5300,
-                'lng' => 124.5700,
-                'type' => 'municipality'
-            ],
-            'villanueva' => [
-                'name' => 'Villanueva',
-                'distance_km' => 52.2,
-                'lat' => 8.5800,
-                'lng' => 124.7700,
-                'type' => 'municipality'
-            ],
-            'jasaan' => [
-                'name' => 'Jasaan',
-                'distance_km' => 62.1,
-                'lat' => 8.6500,
-                'lng' => 124.7500,
-                'type' => 'municipality'
-            ],
-            'claveria' => [
-                'name' => 'Claveria',
-                'distance_km' => 71.2,
-                'lat' => 8.6100,
-                'lng' => 124.9000,
-                'type' => 'municipality'
-            ],
-            'balingasag' => [
-                'name' => 'Balingasag',
-                'distance_km' => 78.5,
-                'lat' => 8.7500,
-                'lng' => 124.7700,
-                'type' => 'municipality'
-            ],
-            'lagonglong' => [
-                'name' => 'Lagonglong',
-                'distance_km' => 84.6,
-                'lat' => 8.8000,
-                'lng' => 124.7800,
-                'type' => 'municipality'
-            ],
-            'salay' => [
-                'name' => 'Salay',
-                'distance_km' => 98.0,
-                'lat' => 8.8600,
-                'lng' => 124.8400,
-                'type' => 'municipality'
-            ],
-            'sugbongcogon' => [
-                'name' => 'Sugbongcogon',
-                'distance_km' => 103.0,
-                'lat' => 8.9500,
-                'lng' => 124.9000,
-                'type' => 'municipality'
-            ],
-            'kinoguitan' => [
-                'name' => 'Kinoguitan',
-                'distance_km' => 112.0,
-                'lat' => 8.9800,
-                'lng' => 124.8800,
-                'type' => 'municipality'
-            ],
-            'balingoan' => [
-                'name' => 'Balingoan',
-                'distance_km' => 125.0,
-                'lat' => 9.0000,
-                'lng' => 124.8000,
-                'type' => 'municipality'
-            ],
-            'talisayan' => [
-                'name' => 'Talisayan',
-                'distance_km' => 127.0,
-                'lat' => 8.8000,
-                'lng' => 124.6500,
-                'type' => 'municipality'
-            ],
-            'medina' => [
-                'name' => 'Medina',
-                'distance_km' => 139.0,
-                'lat' => 8.9000,
-                'lng' => 124.9300,
-                'type' => 'municipality'
-            ],
-            'libertad' => [
-                'name' => 'Libertad',
-                'distance_km' => 12.1,
-                'lat' => 8.9300,
-                'lng' => 124.6500,
-                'type' => 'municipality'
-            ],
-            // === CITIES ===
-            'iligan' => [
-                'name' => 'Iligan City',
-                'distance_km' => 88.5,
-                'lat' => 8.2280,
-                'lng' => 124.2383,
-                'type' => 'city'
-            ],
-            'ozamiz' => [
-                'name' => 'Ozamiz City',
-                'distance_km' => 118.0,
-                'lat' => 8.1455,
-                'lng' => 123.8445,
-                'type' => 'city'
-            ],
-            'malaybalay' => [
-                'name' => 'Malaybalay City',
-                'distance_km' => 123.0,
-                'lat' => 8.1567,
-                'lng' => 125.1331,
-                'type' => 'city'
-            ],
-            'valencia' => [
-                'name' => 'Valencia City',
-                'distance_km' => 154.0,
-                'lat' => 7.9044,
-                'lng' => 125.0928,
-                'type' => 'city'
-            ],
-            'gingoog' => [
-                'name' => 'Gingoog City',
-                'distance_km' => 60.0,
-                'lat' => 8.8167,
-                'lng' => 125.1000,
-                'type' => 'city'
-            ],
-            'davao' => [
-                'name' => 'Davao City',
-                'distance_km' => 317.0,
-                'lat' => 7.1907,
-                'lng' => 125.4553,
-                'type' => 'city'
-            ],
-            'zamboanga' => [
-                'name' => 'Zamboanga City',
-                'distance_km' => 465.0,
-                'lat' => 6.9127,
-                'lng' => 122.0680,
-                'type' => 'city'
-            ],
-            'butuan' => [
-                'name' => 'Butuan City',
-                'distance_km' => 202.0,
-                'lat' => 8.9475,
-                'lng' => 125.5437,
-                'type' => 'city'
-            ],
-            'surigao' => [
-                'name' => 'Surigao City',
-                'distance_km' => 322.0,
-                'lat' => 9.7836,
-                'lng' => 125.4955,
-                'type' => 'city'
-            ],
-            // === BARANGAYS IN LAGUINDINGAN ===
             'sinai' => [
                 'name' => 'Sinai, Laguindingan',
                 'distance_km' => 2.4,
                 'lat' => 8.5781,
                 'lng' => 124.4282,
-                'type' => 'barangay'
+                'type' => 'barangay',
+                'priority' => 1,
+                'region' => 'Laguindingan',
             ],
             'gasi' => [
                 'name' => 'Gasi, Laguindingan',
                 'distance_km' => 3.0,
                 'lat' => 8.5858,
                 'lng' => 124.4428,
-                'type' => 'barangay'
+                'type' => 'barangay',
+                'priority' => 1,
+                'region' => 'Laguindingan',
             ],
             'aromahon' => [
                 'name' => 'Aromahon, Laguindingan',
                 'distance_km' => 2.9,
                 'lat' => 8.5679,
                 'lng' => 124.4251,
-                'type' => 'barangay'
+                'type' => 'barangay',
+                'priority' => 1,
+                'region' => 'Laguindingan',
             ],
             'kibaghot' => [
                 'name' => 'Kibaghot, Laguindingan',
                 'distance_km' => 3.0,
                 'lat' => 8.5892,
                 'lng' => 124.4525,
-                'type' => 'barangay'
+                'type' => 'barangay',
+                'priority' => 1,
+                'region' => 'Laguindingan',
             ],
             'lapad' => [
                 'name' => 'Lapad, Laguindingan',
                 'distance_km' => 2.8,
                 'lat' => 8.5523,
                 'lng' => 124.4311,
-                'type' => 'barangay'
+                'type' => 'barangay',
+                'priority' => 1,
+                'region' => 'Laguindingan',
             ],
             'liberty' => [
                 'name' => 'Liberty, Laguindingan',
                 'distance_km' => 4.6,
                 'lat' => 8.5984,
                 'lng' => 124.4411,
-                'type' => 'barangay'
+                'type' => 'barangay',
+                'priority' => 1,
+                'region' => 'Laguindingan',
             ],
             'mauswagon' => [
                 'name' => 'Mauswagon, Laguindingan',
                 'distance_km' => 5.1,
                 'lat' => 8.5996,
                 'lng' => 124.4147,
-                'type' => 'barangay'
+                'type' => 'barangay',
+                'priority' => 1,
+                'region' => 'Laguindingan',
             ],
             'moog' => [
                 'name' => 'Moog, Laguindingan',
                 'distance_km' => 5.8,
                 'lat' => 8.6078,
                 'lng' => 124.4693,
-                'type' => 'barangay'
+                'type' => 'barangay',
+                'priority' => 1,
+                'region' => 'Laguindingan',
             ],
             'tubajon' => [
                 'name' => 'Tubajon, Laguindingan',
                 'distance_km' => 11.5,
                 'lat' => 8.6226,
                 'lng' => 124.4628,
-                'type' => 'barangay'
+                'type' => 'barangay',
+                'priority' => 1,
+                'region' => 'Laguindingan',
             ],
-            // === ADDITIONAL POPULAR PLACES ===
             'laguindingan_airport' => [
                 'name' => 'Laguindingan Airport',
                 'distance_km' => 5.0,
                 'lat' => 8.6100,
                 'lng' => 124.4500,
-                'type' => 'landmark'
+                'type' => 'landmark',
+                'priority' => 1,
+                'region' => 'Laguindingan',
             ],
+
+            // === PRIORITY 2: MISAMIS ORIENTAL ===
+            'alubijid' => [
+                'name' => 'Alubijid',
+                'distance_km' => 3.9,
+                'lat' => 8.5712669,
+                'lng' => 124.4744229,
+                'type' => 'municipality',
+                'priority' => 2,
+                'region' => 'Misamis Oriental',
+            ],
+            'gitagum' => [
+                'name' => 'Gitagum',
+                'distance_km' => 5.6,
+                'lat' => 8.6000,
+                'lng' => 124.4100,
+                'type' => 'municipality',
+                'priority' => 2,
+                'region' => 'Misamis Oriental',
+            ],
+            'el_salvador' => [
+                'name' => 'El Salvador City',
+                'distance_km' => 10.1,
+                'lat' => 8.5600,
+                'lng' => 124.5300,
+                'type' => 'city',
+                'priority' => 2,
+                'region' => 'Misamis Oriental',
+            ],
+            'opol' => [
+                'name' => 'Opol',
+                'distance_km' => 17.9,
+                'lat' => 8.5200,
+                'lng' => 124.5800,
+                'type' => 'municipality',
+                'priority' => 2,
+                'region' => 'Misamis Oriental',
+            ],
+            'initao' => [
+                'name' => 'Initao',
+                'distance_km' => 22.3,
+                'lat' => 8.5000,
+                'lng' => 124.3000,
+                'type' => 'municipality',
+                'priority' => 2,
+                'region' => 'Misamis Oriental',
+            ],
+            'cagayan_de_oro' => [
+                'name' => 'Cagayan de Oro City',
+                'distance_km' => 29.0,
+                'lat' => 8.4767,
+                'lng' => 124.6439,
+                'type' => 'city',
+                'priority' => 2,
+                'region' => 'Misamis Oriental',
+            ],
+            'cagayan' => [
+                'name' => 'Cagayan de Oro City',
+                'distance_km' => 29.0,
+                'lat' => 8.4767,
+                'lng' => 124.6439,
+                'type' => 'city',
+                'priority' => 2,
+                'region' => 'Misamis Oriental',
+            ],
+            'cdo' => [
+                'name' => 'Cagayan de Oro City',
+                'distance_km' => 29.0,
+                'lat' => 8.4767,
+                'lng' => 124.6439,
+                'type' => 'city',
+                'priority' => 2,
+                'region' => 'Misamis Oriental',
+            ],
+            'naawan' => [
+                'name' => 'Naawan',
+                'distance_km' => 31.2,
+                'lat' => 8.4300,
+                'lng' => 124.2900,
+                'type' => 'municipality',
+                'priority' => 2,
+                'region' => 'Misamis Oriental',
+            ],
+            'manticao' => [
+                'name' => 'Manticao',
+                'distance_km' => 35.1,
+                'lat' => 8.4800,
+                'lng' => 124.2900,
+                'type' => 'municipality',
+                'priority' => 2,
+                'region' => 'Misamis Oriental',
+            ],
+            'lugait' => [
+                'name' => 'Lugait',
+                'distance_km' => 43.4,
+                'lat' => 8.3400,
+                'lng' => 124.2600,
+                'type' => 'municipality',
+                'priority' => 2,
+                'region' => 'Misamis Oriental',
+            ],
+            'tagoloan' => [
+                'name' => 'Tagoloan',
+                'distance_km' => 46.0,
+                'lat' => 8.5300,
+                'lng' => 124.5700,
+                'type' => 'municipality',
+                'priority' => 2,
+                'region' => 'Misamis Oriental',
+            ],
+            'villanueva' => [
+                'name' => 'Villanueva',
+                'distance_km' => 52.2,
+                'lat' => 8.5800,
+                'lng' => 124.7700,
+                'type' => 'municipality',
+                'priority' => 2,
+                'region' => 'Misamis Oriental',
+            ],
+            'jasaan' => [
+                'name' => 'Jasaan',
+                'distance_km' => 62.1,
+                'lat' => 8.6500,
+                'lng' => 124.7500,
+                'type' => 'municipality',
+                'priority' => 2,
+                'region' => 'Misamis Oriental',
+            ],
+            'claveria' => [
+                'name' => 'Claveria',
+                'distance_km' => 71.2,
+                'lat' => 8.6100,
+                'lng' => 124.9000,
+                'type' => 'municipality',
+                'priority' => 2,
+                'region' => 'Misamis Oriental',
+            ],
+            'balingasag' => [
+                'name' => 'Balingasag',
+                'distance_km' => 78.5,
+                'lat' => 8.7500,
+                'lng' => 124.7700,
+                'type' => 'municipality',
+                'priority' => 2,
+                'region' => 'Misamis Oriental',
+            ],
+            'lagonglong' => [
+                'name' => 'Lagonglong',
+                'distance_km' => 84.6,
+                'lat' => 8.8000,
+                'lng' => 124.7800,
+                'type' => 'municipality',
+                'priority' => 2,
+                'region' => 'Misamis Oriental',
+            ],
+            'salay' => [
+                'name' => 'Salay',
+                'distance_km' => 98.0,
+                'lat' => 8.8600,
+                'lng' => 124.8400,
+                'type' => 'municipality',
+                'priority' => 2,
+                'region' => 'Misamis Oriental',
+            ],
+            'sugbongcogon' => [
+                'name' => 'Sugbongcogon',
+                'distance_km' => 103.0,
+                'lat' => 8.9500,
+                'lng' => 124.9000,
+                'type' => 'municipality',
+                'priority' => 2,
+                'region' => 'Misamis Oriental',
+            ],
+            'kinoguitan' => [
+                'name' => 'Kinoguitan',
+                'distance_km' => 112.0,
+                'lat' => 8.9800,
+                'lng' => 124.8800,
+                'type' => 'municipality',
+                'priority' => 2,
+                'region' => 'Misamis Oriental',
+            ],
+            'balingoan' => [
+                'name' => 'Balingoan',
+                'distance_km' => 125.0,
+                'lat' => 9.0000,
+                'lng' => 124.8000,
+                'type' => 'municipality',
+                'priority' => 2,
+                'region' => 'Misamis Oriental',
+            ],
+            'talisayan' => [
+                'name' => 'Talisayan',
+                'distance_km' => 127.0,
+                'lat' => 8.8000,
+                'lng' => 124.6500,
+                'type' => 'municipality',
+                'priority' => 2,
+                'region' => 'Misamis Oriental',
+            ],
+            'medina' => [
+                'name' => 'Medina',
+                'distance_km' => 139.0,
+                'lat' => 8.9000,
+                'lng' => 124.9300,
+                'type' => 'municipality',
+                'priority' => 2,
+                'region' => 'Misamis Oriental',
+            ],
+            'libertad' => [
+                'name' => 'Libertad',
+                'distance_km' => 12.1,
+                'lat' => 8.9300,
+                'lng' => 124.6500,
+                'type' => 'municipality',
+                'priority' => 2,
+                'region' => 'Misamis Oriental',
+            ],
+            'gingoog' => [
+                'name' => 'Gingoog City',
+                'distance_km' => 60.0,
+                'lat' => 8.8167,
+                'lng' => 125.1000,
+                'type' => 'city',
+                'priority' => 2,
+                'region' => 'Misamis Oriental',
+            ],
+
+            // === PRIORITY 3: REGION 10 / NORTHERN MINDANAO ===
+            'iligan' => [
+                'name' => 'Iligan City',
+                'distance_km' => 88.5,
+                'lat' => 8.2280,
+                'lng' => 124.2383,
+                'type' => 'city',
+                'priority' => 3,
+                'region' => 'Lanao del Norte',
+            ],
+            'ozamiz' => [
+                'name' => 'Ozamiz City',
+                'distance_km' => 118.0,
+                'lat' => 8.1455,
+                'lng' => 123.8445,
+                'type' => 'city',
+                'priority' => 3,
+                'region' => 'Misamis Occidental',
+            ],
+            'malaybalay' => [
+                'name' => 'Malaybalay City',
+                'distance_km' => 123.0,
+                'lat' => 8.1567,
+                'lng' => 125.1331,
+                'type' => 'city',
+                'priority' => 3,
+                'region' => 'Bukidnon',
+            ],
+            'valencia' => [
+                'name' => 'Valencia City',
+                'distance_km' => 154.0,
+                'lat' => 7.9044,
+                'lng' => 125.0928,
+                'type' => 'city',
+                'priority' => 3,
+                'region' => 'Bukidnon',
+            ],
+
+            // === PRIORITY 4: REST OF MINDANAO ===
+            'davao' => [
+                'name' => 'Davao City',
+                'distance_km' => 317.0,
+                'lat' => 7.1907,
+                'lng' => 125.4553,
+                'type' => 'city',
+                'priority' => 4,
+                'region' => 'Davao',
+            ],
+            'zamboanga' => [
+                'name' => 'Zamboanga City',
+                'distance_km' => 465.0,
+                'lat' => 6.9127,
+                'lng' => 122.0680,
+                'type' => 'city',
+                'priority' => 4,
+                'region' => 'Zamboanga',
+            ],
+            'butuan' => [
+                'name' => 'Butuan City',
+                'distance_km' => 202.0,
+                'lat' => 8.9475,
+                'lng' => 125.5437,
+                'type' => 'city',
+                'priority' => 4,
+                'region' => 'Agusan del Norte',
+            ],
+            'surigao' => [
+                'name' => 'Surigao City',
+                'distance_km' => 322.0,
+                'lat' => 9.7836,
+                'lng' => 125.4955,
+                'type' => 'city',
+                'priority' => 4,
+                'region' => 'Surigao del Norte',
+            ],
+
+            // === LANDMARKS IN MISAMIS ORIENTAL ===
             'sm_cdo' => [
                 'name' => 'SM City Cagayan de Oro',
                 'distance_km' => 30.0,
                 'lat' => 8.4900,
                 'lng' => 124.6500,
-                'type' => 'landmark'
+                'type' => 'landmark',
+                'priority' => 2,
+                'region' => 'Misamis Oriental',
             ],
             'limketkai' => [
                 'name' => 'Limketkai Center',
                 'distance_km' => 29.5,
                 'lat' => 8.4800,
                 'lng' => 124.6400,
-                'type' => 'landmark'
+                'type' => 'landmark',
+                'priority' => 2,
+                'region' => 'Misamis Oriental',
             ],
         ];
     }
 
+    /**
+     * ✅ Enhanced search with priority filtering
+     */
     public function searchPlaces($query)
     {
         $query = strtolower(trim($query));
@@ -375,7 +479,7 @@ class FallbackLocationService
             $name = strtolower($location['name'] ?? '');
             $searchTerms = [$name, $key];
             
-            // Add extra search terms for better matching
+            // Add extra search terms
             if (strpos($name, 'city') !== false) {
                 $searchTerms[] = str_replace(' city', '', $name);
             }
@@ -388,6 +492,8 @@ class FallbackLocationService
             
             $matchFound = false;
             foreach ($searchTerms as $term) {
+                $term = trim($term);
+                if (empty($term)) continue;
                 if (strpos($term, $query) !== false || strpos($query, $term) !== false) {
                     $matchFound = true;
                     break;
@@ -398,20 +504,17 @@ class FallbackLocationService
                 $lat = $location['lat'] ?? null;
                 $lng = $location['lng'] ?? null;
                 
-                if ($lat === null || $lng === null) {
-                    continue;
-                }
+                if ($lat === null || $lng === null) continue;
                 
                 $description = $location['name'];
                 
+                // Add region to description
                 if ($location['type'] === 'barangay') {
                     $description .= ', Laguindingan, Misamis Oriental';
-                } elseif ($location['type'] === 'municipality') {
+                } elseif ($location['type'] === 'municipality' || $location['type'] === 'landmark') {
                     $description .= ', Misamis Oriental';
                 } elseif ($location['type'] === 'city') {
                     $description .= ', Philippines';
-                } elseif ($location['type'] === 'landmark') {
-                    $description .= ', Misamis Oriental';
                 } elseif ($location['type'] === 'origin') {
                     $description = 'Laguindingan Municipal Hall';
                 }
@@ -423,32 +526,38 @@ class FallbackLocationService
                     'lng' => (float) $lng,
                     'type' => $location['type'] ?? 'location',
                     'distance_km' => (float) ($location['distance_km'] ?? 0),
+                    'priority' => $location['priority'] ?? 5,
+                    'region' => $location['region'] ?? 'Unknown',
                 ];
             }
         }
 
-        // Sort by relevance first (exact matches), then by distance
+        // ✅ SORT: Priority first, then distance, then relevance
         usort($results, function($a, $b) use ($query) {
-            $aName = strtolower($a['description'] ?? '');
-            $bName = strtolower($b['description'] ?? '');
-            $queryLower = strtolower($query);
-            
-            // Exact match gets highest priority
-            $aExact = strpos($aName, $queryLower) === 0 ? 1 : 0;
-            $bExact = strpos($bName, $queryLower) === 0 ? 1 : 0;
-            
-            if ($aExact !== $bExact) {
-                return $bExact - $aExact;
+            // 1. Priority (1 = highest)
+            if ($a['priority'] !== $b['priority']) {
+                return $a['priority'] <=> $b['priority'];
             }
             
-            // Then sort by distance
-            return ($a['distance_km'] ?? 999) <=> ($b['distance_km'] ?? 999);
+            // 2. Distance (closer = higher priority)
+            $distDiff = ($a['distance_km'] ?? 999) <=> ($b['distance_km'] ?? 999);
+            if ($distDiff !== 0) return $distDiff;
+            
+            // 3. Exact match
+            $aExact = strpos(strtolower($a['description'] ?? ''), $query) === 0 ? 1 : 0;
+            $bExact = strpos(strtolower($b['description'] ?? ''), $query) === 0 ? 1 : 0;
+            return $bExact - $aExact;
         });
 
         Log::info('Fallback search results', [
             'query' => $query,
             'total' => count($results),
-            'first_result' => count($results) > 0 ? $results[0]['description'] : null
+            'priority_breakdown' => [
+                'p1_laguindingan' => count(array_filter($results, fn($r) => $r['priority'] === 1)),
+                'p2_misamis_oriental' => count(array_filter($results, fn($r) => $r['priority'] === 2)),
+                'p3_region10' => count(array_filter($results, fn($r) => $r['priority'] === 3)),
+                'p4_mindanao' => count(array_filter($results, fn($r) => $r['priority'] === 4)),
+            ],
         ]);
 
         return [
@@ -460,59 +569,38 @@ class FallbackLocationService
     }
 
     /**
-     * Calculate distance between two locations using Haversine formula
-     * ✅ Updated to use actual coordinate-based distance
+     * Calculate distance between two locations
      */
     public function calculateDistance($origin, $destination)
     {
         Log::info('Fallback calculateDistance', ['origin' => $origin, 'destination' => $destination]);
         
-        // Find origin
-        $originData = $this->findLocation($origin);
+        $originData = $this->findLocation($origin) ?? $this->findLocationByPartialMatch($origin);
         if (!$originData) {
-            $originData = $this->findLocationByPartialMatch($origin);
-            if (!$originData) {
-                Log::warning('Origin not found in fallback data', ['origin' => $origin]);
-                return [
-                    'success' => false,
-                    'message' => 'Origin not found in fallback data'
-                ];
-            }
+            return [
+                'success' => false,
+                'message' => 'Origin not found in fallback data'
+            ];
         }
         
-        // Find destination
-        $destData = $this->findLocation($destination);
+        $destData = $this->findLocation($destination) ?? $this->findLocationByPartialMatch($destination);
         if (!$destData) {
-            $destData = $this->findLocationByPartialMatch($destination);
-            if (!$destData) {
-                Log::warning('Destination not found in fallback data', ['destination' => $destination]);
-                return [
-                    'success' => false,
-                    'message' => 'Destination not found in fallback data'
-                ];
-            }
+            return [
+                'success' => false,
+                'message' => 'Destination not found in fallback data'
+            ];
         }
 
-        // ✅ Calculate actual distance using Haversine formula
         $distanceKm = $this->haversineDistance(
             $originData['lat'], $originData['lng'],
             $destData['lat'], $destData['lng']
         );
         
-        // If Haversine gives 0, use stored distance as fallback
         if ($distanceKm < 0.1) {
             $distanceKm = $destData['distance_km'] ?? 35.0;
         }
         
         $durationMinutes = round($distanceKm / 40 * 60, 1);
-
-        Log::info('Fallback distance calculated', [
-            'origin' => $originData['name'],
-            'destination' => $destData['name'],
-            'distance_km' => $distanceKm,
-            'duration_minutes' => $durationMinutes,
-            'source' => 'haversine'
-        ]);
 
         return [
             'success' => true,
@@ -525,12 +613,11 @@ class FallbackLocationService
     }
 
     /**
-     * ✅ Haversine formula for accurate distance calculation
-     * No API needed - pure math!
+     * Haversine formula for accurate distance calculation
      */
     private function haversineDistance($lat1, $lon1, $lat2, $lon2)
     {
-        $earthRadius = 6371; // Earth's radius in kilometers
+        $earthRadius = 6371;
         
         $dLat = deg2rad($lat2 - $lat1);
         $dLon = deg2rad($lon2 - $lon1);
@@ -557,17 +644,14 @@ class FallbackLocationService
             $name = strtolower($location['name'] ?? '');
             $score = 0;
             
-            // Check if query is contained in name
             if (strpos($name, $query) !== false) {
-                $score = strlen($query) / strlen($name) * 100;
+                $score = strlen($query) / max(strlen($name), 1) * 100;
             }
             
-            // Check if name is contained in query
-            if (strpos($query, $name) !== false) {
-                $score = strlen($name) / strlen($query) * 100;
+            if (strpos($query, $name) !== false && strlen($name) > 3) {
+                $score = strlen($name) / max(strlen($query), 1) * 100;
             }
             
-            // Check if key matches
             if (strpos($key, $query) !== false) {
                 $score = max($score, 50);
             }
@@ -603,16 +687,9 @@ class FallbackLocationService
      */
     public function geocode($address)
     {
-        Log::info('Fallback geocode', ['address' => $address]);
-        
-        $location = $this->findLocation($address);
-        
-        if (!$location) {
-            $location = $this->findLocationByPartialMatch($address);
-        }
+        $location = $this->findLocation($address) ?? $this->findLocationByPartialMatch($address);
         
         if ($location) {
-            Log::info('Geocode found', ['location' => $location['name']]);
             return [
                 'success' => true,
                 'lat' => $location['lat'],
@@ -622,7 +699,6 @@ class FallbackLocationService
             ];
         }
 
-        Log::warning('Geocode not found', ['address' => $address]);
         return [
             'success' => false,
             'message' => 'Location not found in fallback data'
@@ -630,17 +706,14 @@ class FallbackLocationService
     }
 
     /**
-     * ✅ Calculate complete trip estimate with fuel calculations
+     * Calculate complete trip estimate with fuel calculations
      */
     public function calculateTripEstimate($originAddress, $destinationAddress, $vehicleId = null, $roundTrip = true)
     {
         $result = $this->calculateDistance($originAddress, $destinationAddress);
         
-        if (!$result['success']) {
-            return $result;
-        }
+        if (!$result['success']) return $result;
 
-        // Get vehicle efficiency
         $efficiency = 10;
         $fuelType = 'regular';
         
@@ -706,7 +779,6 @@ class FallbackLocationService
             $setting = \App\Models\SystemSetting::where('setting_key', $settingKey)->first();
             return $setting ? (float) $setting->setting_value : 75.00;
         } catch (\Exception $e) {
-            Log::error('Error getting fuel price: ' . $e->getMessage());
             return 75.00;
         }
     }

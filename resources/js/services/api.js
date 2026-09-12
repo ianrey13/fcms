@@ -81,6 +81,8 @@ export const gsoAPI = {
     return uncachedApi.post("/admin/fuel-receipts/record", formData, {
       headers: { "Content-Type": "multipart/form-data" },
     });
+
+    
   },
 
   // Completed Trips
@@ -112,6 +114,9 @@ export const gsoAPI = {
   getPendingValidation: (params) => cachedApi.get("/gso/pending-validation", { params }),
   validateTrip: (id, data) => uncachedApi.post(`/gso/tickets/${id}/validate`, data),
   getTripHistory: (tripId) => cachedApi.get(`/gso/tickets/${tripId}/history`),
+
+   getCancelledTrips: (params) => cachedApi.get("/gso/cancelled-trips", { params }),
+  cancelTrip: (tripId, data) => uncachedApi.post(`/gso/trips/${tripId}/cancel`, data),
 };
 
 // ============ MAYOR'S OFFICE API ============
@@ -195,6 +200,14 @@ export const mayorsOfficeAPI = {
     cachedApi.get('/mayors-office/budget/surplus-history', { params }),
   getBudgetPeriods: (params) =>
     cachedApi.get('/mayors-office/budget-periods', { params }),
+
+
+  // cancel
+  cancelTrip: (tripId, data) => 
+    uncachedApi.post(`/mayors-office/tickets/${tripId}/cancel`, data),
+  
+  getCancelledTrips: (params) => 
+    cachedApi.get("/mayors-office/cancelled-trips", { params }),
 };
 
 // ============ DRIVER API ============

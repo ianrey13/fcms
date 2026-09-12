@@ -1,7 +1,7 @@
 // src/components/map/RouteMap.jsx
 // ============================================
-// CLEANED: Removed annoying guides, prevents double reload
-// Simple map with markers and route line only
+// MULTI-WAYPOINT: Supports multiple stops with drag
+// Origin → Stop 1 → Stop 2 → ... → Origin (round trip)
 // ============================================
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
@@ -9,425 +9,374 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import 'leaflet-routing-machine/dist/leaflet-routing-machine.css';
 import 'leaflet-routing-machine';
-import { locationAPI } from '../../services/api';
 
 // Fix Leaflet marker icons
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
-  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+    iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
+    iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
+    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 });
 
 const ORIGIN_COORDS = { lat: 8.5731, lng: 124.4432 };
-const ORIGIN_NAME = 'LGU Laguindingan';
+const ORIGIN_NAME = 'Laguindingan Municipal Hall';
 
-const RouteMap = ({
-  destination,
-  coordinates,
-  height = '250px',
-  showRoute = true,
-  className = '',
-  interactive = false,
-  onMapClick = null,
-  showMarker = true,
-  draggableMarker = false,
-  onMarkerDrag = null,
-  onRouteCalculated = null,
-  vehicleId = null,
-  roundTrip = true,
-}) => {
-  const mapRef = useRef(null);
-  const mapInstanceRef = useRef(null);
-  const routingControlRef = useRef(null);
-  const routeLineRef = useRef(null);
-  const originMarkerRef = useRef(null);
-  const destinationMarkerRef = useRef(null);
-  const markerRefs = useRef([]);
-  const [mapReady, setMapReady] = useState(false);
-  const [routeInfo, setRouteInfo] = useState(null);
-  const [isCalculating, setIsCalculating] = useState(false);
-  const [isInitialized, setIsInitialized] = useState(false);
-  const [apiError, setApiError] = useState(null);
-  const isMountedRef = useRef(true);
+// ============================================
+// ICON CREATORS
+// ============================================
 
-  // Initialize map only once
-  useEffect(() => {
-    if (!mapRef.current || mapInstanceRef.current) return;
+const createOriginIcon = () => L.divIcon({
+    className: 'origin-marker',
+    html: `<div style="
+        background: #22c55e;
+        width: 32px; height: 32px;
+        border-radius: 50%;
+        border: 3px solid white;
+        box-shadow: 0 4px 12px rgba(34,197,94,0.4);
+        display: flex; align-items: center; justify-content: center;
+        font-size: 14px;
+    ">🏠</div>`,
+    iconSize: [32, 32],
+    iconAnchor: [16, 16],
+    popupAnchor: [0, -16],
+});
 
-    isMountedRef.current = true;
-
-    mapInstanceRef.current = L.map(mapRef.current, {
-      center: [ORIGIN_COORDS.lat, ORIGIN_COORDS.lng],
-      zoom: 13,
-      zoomControl: true,
-      dragging: true,
-      scrollWheelZoom: true,
-      attributionControl: true,
-    });
-
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-      maxZoom: 19,
-    }).addTo(mapInstanceRef.current);
-
-    setMapReady(true);
-    setIsInitialized(true);
-
-    // Scale control
-    L.control.scale({
-      position: 'bottomleft',
-      metric: true,
-      imperial: false,
-    }).addTo(mapInstanceRef.current);
-
-    // Click handler
-    if (interactive && onMapClick) {
-      mapInstanceRef.current.on('click', onMapClick);
-    }
-
-    return () => {
-      isMountedRef.current = false;
-      // Cleanup routing control
-      if (routingControlRef.current) {
-        try {
-          mapInstanceRef.current?.removeControl(routingControlRef.current);
-        } catch (e) {}
-        routingControlRef.current = null;
-      }
-      // Cleanup markers
-      markerRefs.current.forEach(m => {
-        try { mapInstanceRef.current?.removeLayer(m); } catch (e) {}
-      });
-      markerRefs.current = [];
-      originMarkerRef.current = null;
-      destinationMarkerRef.current = null;
-      // Remove map
-      if (mapInstanceRef.current) {
-        try {
-          mapInstanceRef.current.remove();
-        } catch (e) {}
-        mapInstanceRef.current = null;
-      }
-      setMapReady(false);
-      setIsInitialized(false);
-    };
-  }, []);
-
-  // Update click handler when interactive changes
-  useEffect(() => {
-    if (!mapInstanceRef.current) return;
-    if (interactive && onMapClick) {
-      mapInstanceRef.current.on('click', onMapClick);
-    } else {
-      mapInstanceRef.current.off('click');
-    }
-  }, [interactive, onMapClick]);
-
-  // Calculate route via API
-  const calculateRouteViaAPI = useCallback(async (coords) => {
-    if (!coords || !coords.lat || !coords.lng || !isMountedRef.current) return null;
-
-    setIsCalculating(true);
-    setApiError(null);
-
-    try {
-      const destAddress = destination || `${coords.lat.toFixed(6)}, ${coords.lng.toFixed(6)}`;
-      const params = {
-        origin: ORIGIN_NAME,
-        destination: destAddress,
-        vehicle_id: vehicleId || '',
-        round_trip: roundTrip ? 1 : 0,
-        dest_lat: coords.lat,
-        dest_lng: coords.lng,
-      };
-
-      const response = await locationAPI.calculateDistance(params);
-
-      if (response?.data?.success && isMountedRef.current) {
-        const data = response.data;
-        const info = {
-          distance: data.distance_km || 0,
-          duration: data.duration_minutes || 0,
-          distanceText: (data.distance_km || 0).toFixed(1) + ' km',
-          durationText: (data.duration_minutes || 0) + ' mins',
-          estimatedLiters: data.estimated_liters,
-          estimatedCost: data.estimated_cost,
-        };
-        setRouteInfo(info);
-
-        if (onRouteCalculated) {
-          onRouteCalculated({
-            distance_km: data.distance_km || 0,
-            duration_minutes: data.duration_minutes || 0,
-            estimated_liters: data.estimated_liters,
-            estimated_cost: data.estimated_cost,
-            fuel_efficiency_km_per_liter: data.fuel_efficiency_km_per_liter,
-            fuel_price_per_liter: data.fuel_price_per_liter,
-            fuel_type: data.fuel_type,
-            is_round_trip: data.is_round_trip,
-            one_way_distance_km: data.one_way_distance_km,
-            round_trip_multiplier: data.round_trip_multiplier,
-          });
-        }
-        return data;
-      } else if (response?.data?.message) {
-        setApiError(response.data.message);
-      }
-      return null;
-    } catch (error) {
-      if (isMountedRef.current) {
-        setApiError(error.response?.data?.message || error.message || 'Failed to calculate');
-      }
-      return null;
-    } finally {
-      if (isMountedRef.current) setIsCalculating(false);
-    }
-  }, [destination, vehicleId, roundTrip, onRouteCalculated]);
-
-  // Update route on map
-  const updateRouteOnMap = useCallback((coords) => {
-    if (!mapInstanceRef.current || !mapReady || !isMountedRef.current) return;
-    if (!coords || !coords.lat || !coords.lng) return;
-
-    // Remove old routing control if exists
-    if (routingControlRef.current) {
-      try {
-        mapInstanceRef.current.removeControl(routingControlRef.current);
-      } catch (e) {}
-      routingControlRef.current = null;
-    }
-
-    // Remove old route line
-    if (routeLineRef.current) {
-      try {
-        mapInstanceRef.current.removeLayer(routeLineRef.current);
-      } catch (e) {}
-      routeLineRef.current = null;
-    }
-
-    // Remove old destination marker (keep origin)
-    if (destinationMarkerRef.current) {
-      try {
-        mapInstanceRef.current.removeLayer(destinationMarkerRef.current);
-      } catch (e) {}
-      destinationMarkerRef.current = null;
-    }
-
-    const destLatLng = L.latLng(coords.lat, coords.lng);
-    const originLatLng = L.latLng(ORIGIN_COORDS.lat, ORIGIN_COORDS.lng);
-
-    // Origin marker (keep if exists)
-    if (!originMarkerRef.current) {
-      const originIcon = L.divIcon({
-        className: 'origin-marker',
-        html: `<div style="background:#22c55e;width:20px;height:20px;border-radius:50%;border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;font-size:10px;">📍</div>`,
-        iconSize: [20, 20],
-        iconAnchor: [10, 10],
-      });
-      originMarkerRef.current = L.marker(originLatLng, { icon: originIcon, interactive: false })
-        .addTo(mapInstanceRef.current)
-        .bindPopup(`<b>${ORIGIN_NAME}</b><br>${ORIGIN_COORDS.lat.toFixed(6)}, ${ORIGIN_COORDS.lng.toFixed(6)}`);
-    }
-
-    // Destination marker
-    if (showMarker) {
-      const destIcon = L.divIcon({
-        className: 'destination-marker',
-        html: `<div style="background:#2563eb;width:28px;height:28px;border-radius:50%;border:3px solid white;box-shadow:0 2px 12px rgba(37,99,235,0.4);display:flex;align-items:center;justify-content:center;font-size:14px;">📍</div>`,
+const createStopIcon = (index, total) => {
+    const colors = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#06b6d4', '#ef4444'];
+    const color = colors[index % colors.length];
+    
+    return L.divIcon({
+        className: 'stop-marker',
+        html: `<div style="
+            background: ${color};
+            width: 28px; height: 28px;
+            border-radius: 50%;
+            border: 3px solid white;
+            box-shadow: 0 4px 12px ${color}66;
+            display: flex; align-items: center; justify-content: center;
+            color: white;
+            font-weight: bold;
+            font-size: 12px;
+            cursor: grab;
+        ">${index + 1}</div>`,
         iconSize: [28, 28],
         iconAnchor: [14, 14],
-      });
+        popupAnchor: [0, -14],
+    });
+};
 
-      const marker = L.marker(destLatLng, {
-        icon: destIcon,
-        draggable: draggableMarker,
-        zIndexOffset: 1000,
-      }).addTo(mapInstanceRef.current);
+// ============================================
+// MAIN COMPONENT
+// ============================================
 
-      destinationMarkerRef.current = marker;
-      markerRefs.current.push(marker);
+const RouteMap = ({
+    waypoints = [],           // Array of { lat, lng, name }
+    origin = ORIGIN_COORDS,   // Origin coords
+    height = '350px',
+    showRoute = true,
+    className = '',
+    interactive = false,
+    onMapClick = null,
+    draggableMarker = true,
+    onWaypointDragStart = null,
+    onWaypointDrag = null,
+    onWaypointDragEnd = null,
+    roundTrip = true,
+    // Legacy support (single coordinates)
+    coordinates = null,
+    destination = null,
+}) => {
+    const mapRef = useRef(null);
+    const mapInstanceRef = useRef(null);
+    const routingControlRef = useRef(null);
+    const routeLineRef = useRef(null);
+    const originMarkerRef = useRef(null);
+    const stopMarkersRef = useRef([]);
+    const [mapReady, setMapReady] = useState(false);
+    const [isInitialized, setIsInitialized] = useState(false);
+    const isMountedRef = useRef(true);
 
-      const popupContent = `<b>${destination || 'Destination'}</b><br><span class="text-xs">${coords.lat.toFixed(6)}, ${coords.lng.toFixed(6)}</span>`;
-      marker.bindPopup(popupContent);
+    // ✅ Normalize waypoints (support legacy single coordinate)
+    const normalizedWaypoints = React.useMemo(() => {
+        if (waypoints && waypoints.length > 0) return waypoints;
+        if (coordinates) return [{ ...coordinates, name: destination || 'Destination' }];
+        return [];
+    }, [waypoints, coordinates, destination]);
 
-      // Drag handler
-      if (draggableMarker && onMarkerDrag) {
-        marker.on('dragend', async (e) => {
-          const pos = marker.getLatLng();
-          const newCoords = { lat: pos.lat, lng: pos.lng };
-          if (onMarkerDrag) onMarkerDrag(newCoords);
-          await calculateRouteViaAPI(newCoords);
-          updateRouteOnMap(newCoords);
-          marker.openPopup();
+    // ============================================
+    // INITIALIZE MAP (once)
+    // ============================================
+    useEffect(() => {
+        if (!mapRef.current || mapInstanceRef.current) return;
+
+        isMountedRef.current = true;
+
+        mapInstanceRef.current = L.map(mapRef.current, {
+            center: [origin.lat || ORIGIN_COORDS.lat, origin.lng || ORIGIN_COORDS.lng],
+            zoom: 12,
+            zoomControl: true,
+            dragging: true,
+            scrollWheelZoom: true,
+            attributionControl: true,
         });
-      }
-    }
 
-    // Draw route
-    if (showRoute) {
-      try {
-        routingControlRef.current = L.Routing.control({
-          waypoints: [originLatLng, destLatLng],
-          routeWhileDragging: false,
-          showAlternatives: false,
-          fitSelectedRoutes: false,
-          show: false, // ✅ Hides the annoying summary panel
-          lineOptions: {
-            styles: [{ color: '#2563eb', weight: 4, opacity: 0.9 }],
-            extendToWaypoints: true,
-          },
-          createMarker: () => null,
-          addWaypoints: false,
-          draggableWaypoints: false,
-          geocoder: null,
-          router: L.Routing.osrmv1({
-            serviceUrl: 'https://router.project-osrm.org/route/v1',
-            profile: 'driving',
-          }),
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+            maxZoom: 19,
         }).addTo(mapInstanceRef.current);
 
-        routingControlRef.current.on('routesfound', (e) => {
-          const route = e.routes?.[0];
-          if (route?.summary && isMountedRef.current) {
-            const dist = route.summary.totalDistance / 1000;
-            const dur = Math.round(route.summary.totalTime / 60);
-            setRouteInfo(prev => ({
-              ...prev,
-              distance: dist,
-              duration: dur,
-              distanceText: dist.toFixed(1) + ' km',
-              durationText: dur + ' mins',
-            }));
-          }
-        });
-
-        routingControlRef.current.on('routingerror', () => {
-          // Fallback: draw straight line
-          routeLineRef.current = L.polyline([originLatLng, destLatLng], {
-            color: '#2563eb',
-            weight: 3,
-            opacity: 0.6,
-            dashArray: '6,6',
-          }).addTo(mapInstanceRef.current);
-        });
-
-      } catch (error) {
-        // Fallback: draw straight line
-        routeLineRef.current = L.polyline([originLatLng, destLatLng], {
-          color: '#2563eb',
-          weight: 3,
-          opacity: 0.6,
-          dashArray: '6,6',
+        L.control.scale({
+            position: 'bottomleft',
+            metric: true,
+            imperial: false,
         }).addTo(mapInstanceRef.current);
-      }
-    }
 
-    // Fit bounds
-    const bounds = L.latLngBounds([originLatLng, destLatLng]);
-    setTimeout(() => {
-      if (mapInstanceRef.current && isMountedRef.current) {
-        mapInstanceRef.current.fitBounds(bounds, { padding: [60, 60], maxZoom: 14 });
-      }
-    }, 300);
-  }, [mapReady, showMarker, draggableMarker, destination, showRoute, calculateRouteViaAPI, onMarkerDrag]);
+        setMapReady(true);
+        setIsInitialized(true);
 
-  // Initial route setup - runs once when coordinates are provided
-  useEffect(() => {
-    if (!mapReady || !isInitialized || !coordinates || !isMountedRef.current) return;
+        return () => {
+            isMountedRef.current = false;
+            if (routingControlRef.current) {
+                try { mapInstanceRef.current?.removeControl(routingControlRef.current); } catch (e) {}
+                routingControlRef.current = null;
+            }
+            if (routeLineRef.current) {
+                try { mapInstanceRef.current?.removeLayer(routeLineRef.current); } catch (e) {}
+                routeLineRef.current = null;
+            }
+            stopMarkersRef.current.forEach(m => {
+                try { mapInstanceRef.current?.removeLayer(m); } catch (e) {}
+            });
+            stopMarkersRef.current = [];
+            if (mapInstanceRef.current) {
+                try { mapInstanceRef.current.remove(); } catch (e) {}
+                mapInstanceRef.current = null;
+            }
+            setMapReady(false);
+            setIsInitialized(false);
+        };
+    }, []);
 
-    // Use a ref to track if we've already initialized
-    const initKey = `${coordinates.lat}_${coordinates.lng}`;
-    if (window._routeMapInitialized === initKey) return;
-    window._routeMapInitialized = initKey;
+    // ============================================
+    // MAP CLICK HANDLER
+    // ============================================
+    useEffect(() => {
+        if (!mapInstanceRef.current) return;
+        const map = mapInstanceRef.current;
 
-    const timer = setTimeout(() => {
-      if (coordinates?.lat && coordinates?.lng && isMountedRef.current) {
-        updateRouteOnMap(coordinates);
-        calculateRouteViaAPI(coordinates);
-      }
-    }, 300);
+        if (interactive && onMapClick) {
+            map.on('click', onMapClick);
+        } else {
+            map.off('click');
+        }
 
-    return () => clearTimeout(timer);
-  }, [coordinates, mapReady, isInitialized]);
+        return () => {
+            try { map.off('click'); } catch (e) {}
+        };
+    }, [interactive, onMapClick]);
 
-  // Update when coordinates change (but not on every render)
-  useEffect(() => {
-    if (!mapReady || !isInitialized || !coordinates || !isMountedRef.current) return;
-    if (!coordinates.lat || !coordinates.lng) return;
+    // ============================================
+    // DRAW ORIGIN MARKER (once)
+    // ============================================
+    useEffect(() => {
+        if (!mapReady || !mapInstanceRef.current || originMarkerRef.current) return;
 
-    // Only update if coordinates actually changed
-    const currentCoords = `${coordinates.lat}_${coordinates.lng}`;
-    const lastCoords = window._lastRouteCoords;
-    if (lastCoords === currentCoords) return;
-    window._lastRouteCoords = currentCoords;
+        const originLatLng = L.latLng(origin.lat || ORIGIN_COORDS.lat, origin.lng || ORIGIN_COORDS.lng);
+        const marker = L.marker(originLatLng, {
+            icon: createOriginIcon(),
+            interactive: true,
+            draggable: false,
+            zIndexOffset: 500,
+        })
+            .addTo(mapInstanceRef.current)
+            .bindPopup(`<b>🏠 ${origin.name || ORIGIN_NAME}</b><br><span style="font-size:11px;color:#666">Starting point</span>`);
 
-    const timer = setTimeout(() => {
-      if (isMountedRef.current) {
-        updateRouteOnMap(coordinates);
-        calculateRouteViaAPI(coordinates);
-      }
-    }, 200);
+        originMarkerRef.current = marker;
+    }, [mapReady, origin]);
 
-    return () => clearTimeout(timer);
-  }, [coordinates, mapReady, isInitialized]);
+    // ============================================
+    // UPDATE ROUTE & STOP MARKERS
+    // ============================================
+    const updateRouteAndMarkers = useCallback(() => {
+        if (!mapInstanceRef.current || !mapReady || !isMountedRef.current) return;
 
-  // Invalidate size when height changes
-  useEffect(() => {
-    if (mapInstanceRef.current) {
-      setTimeout(() => mapInstanceRef.current?.invalidateSize(), 200);
-    }
-  }, [height]);
+        const map = mapInstanceRef.current;
+        const originLatLng = L.latLng(origin.lat || ORIGIN_COORDS.lat, origin.lng || ORIGIN_COORDS.lng);
 
-  return (
-    <div className="relative w-full h-full">
-      <div
-        ref={mapRef}
-        className={`rounded-xl overflow-hidden border border-slate-200/60 dark:border-slate-700/60 ${className}`}
-        style={{ height, width: '100%' }}
-      />
+        // ✅ Remove existing stop markers
+        stopMarkersRef.current.forEach(m => {
+            try { map.removeLayer(m); } catch (e) {}
+        });
+        stopMarkersRef.current = [];
 
-      {/* ✅ Interactive hint - clean and simple */}
-      {interactive && (
-        <div className="absolute bottom-3 left-3 z-10 bg-black/60 backdrop-blur-sm text-white text-xs px-3 py-1.5 rounded-lg pointer-events-none">
-          {draggableMarker ? '📍 Drag marker to adjust destination' : '📍 Click map to place destination'}
-        </div>
-      )}
+        // ✅ Remove old route
+        if (routingControlRef.current) {
+            try { map.removeControl(routingControlRef.current); } catch (e) {}
+            routingControlRef.current = null;
+        }
+        if (routeLineRef.current) {
+            try { map.removeLayer(routeLineRef.current); } catch (e) {}
+            routeLineRef.current = null;
+        }
 
-      {/* ✅ Route info - clean mini display */}
-      {routeInfo && showRoute && (
-        <div className="absolute bottom-3 right-3 z-10 bg-white/90 dark:bg-slate-800/90 backdrop-blur-sm rounded-lg shadow-lg px-3 py-2 border border-slate-200 dark:border-slate-700 pointer-events-none">
-          <div className="flex items-center gap-3 text-xs">
-            <div>
-              <span className="text-gray-400 text-[10px]">Dist</span>
-              <div className="font-bold text-blue-600 dark:text-blue-400">{routeInfo.distanceText}</div>
-            </div>
-            <div className="w-px h-6 bg-slate-200 dark:bg-slate-700" />
-            <div>
-              <span className="text-gray-400 text-[10px]">Time</span>
-              <div className="font-bold text-blue-600 dark:text-blue-400">{routeInfo.durationText}</div>
-            </div>
-            {routeInfo.estimatedCost && (
-              <>
-                <div className="w-px h-6 bg-slate-200 dark:bg-slate-700" />
-                <div>
-                  <span className="text-gray-400 text-[10px]">Fuel</span>
-                  <div className="font-bold text-emerald-600 dark:text-emerald-400">₱{routeInfo.estimatedCost}</div>
+        // ✅ Add stop markers
+        const validStops = normalizedWaypoints.filter(w => w && w.lat && w.lng);
+        
+        validStops.forEach((wp, index) => {
+            const latlng = L.latLng(wp.lat, wp.lng);
+            const marker = L.marker(latlng, {
+                icon: createStopIcon(index, validStops.length),
+                draggable: draggableMarker,
+                zIndexOffset: 1000 + index,
+            }).addTo(map);
+
+            marker.bindPopup(`
+                <div style="min-width:180px;">
+                    <b style="font-size:13px;">Stop ${index + 1}</b><br>
+                    <span style="font-size:12px;color:#333;">${wp.name || 'Unnamed'}</span><br>
+                    <span style="font-size:10px;color:#999;font-family:monospace;">
+                        ${wp.lat.toFixed(6)}, ${wp.lng.toFixed(6)}
+                    </span>
                 </div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
+            `);
 
-      {/* Error indicator */}
-      {apiError && (
-        <div className="absolute top-3 right-3 z-10 bg-red-500/90 text-white text-xs px-3 py-1.5 rounded-lg max-w-xs pointer-events-none">
-          ⚠️ {apiError}
+            // ✅ Drag handlers
+            if (draggableMarker) {
+                marker.on('dragstart', () => {
+                    if (onWaypointDragStart) onWaypointDragStart(index);
+                });
+
+                marker.on('drag', () => {
+                    const pos = marker.getLatLng();
+                    if (onWaypointDrag) {
+                        onWaypointDrag(index, { lat: pos.lat, lng: pos.lng });
+                    }
+                });
+
+                marker.on('dragend', () => {
+                    const pos = marker.getLatLng();
+                    if (onWaypointDragEnd) {
+                        onWaypointDragEnd(index, { lat: pos.lat, lng: pos.lng });
+                    }
+                });
+            }
+
+            stopMarkersRef.current.push(marker);
+        });
+
+        // ✅ Draw route with all waypoints
+        if (showRoute && validStops.length > 0) {
+            const allPoints = [
+                originLatLng,
+                ...validStops.map(w => L.latLng(w.lat, w.lng)),
+            ];
+
+            // Add return to origin if round trip
+            if (roundTrip) {
+                allPoints.push(originLatLng);
+            }
+
+            try {
+                routingControlRef.current = L.Routing.control({
+                    waypoints: allPoints,
+                    routeWhileDragging: false,
+                    showAlternatives: false,
+                    fitSelectedRoutes: false,
+                    show: false,
+                    lineOptions: {
+                        styles: [
+                            { color: '#2563eb', weight: 5, opacity: 0.9 },
+                        ],
+                        extendToWaypoints: true,
+                    },
+                    createMarker: () => null,
+                    addWaypoints: false,
+                    draggableWaypoints: false,
+                    geocoder: null,
+                    router: L.Routing.osrmv1({
+                        serviceUrl: 'https://router.project-osrm.org/route/v1',
+                        profile: 'driving',
+                    }),
+                }).addTo(map);
+            } catch (error) {
+                // Fallback: straight lines
+                routeLineRef.current = L.polyline(allPoints, {
+                    color: '#2563eb',
+                    weight: 3,
+                    opacity: 0.6,
+                    dashArray: '6,6',
+                }).addTo(map);
+            }
+        }
+
+        // ✅ Fit bounds to include everything
+        if (validStops.length > 0) {
+            const boundsPoints = [originLatLng, ...validStops.map(w => L.latLng(w.lat, w.lng))];
+            const bounds = L.latLngBounds(boundsPoints);
+            setTimeout(() => {
+                if (mapInstanceRef.current && isMountedRef.current) {
+                    mapInstanceRef.current.fitBounds(bounds, { padding: [60, 60], maxZoom: 14 });
+                }
+            }, 200);
+        }
+    }, [mapReady, normalizedWaypoints, origin, showRoute, roundTrip, draggableMarker, onWaypointDragStart, onWaypointDrag, onWaypointDragEnd]);
+
+    // ============================================
+    // TRIGGER UPDATE ON WAYPOINT CHANGE
+    // ============================================
+    useEffect(() => {
+        if (!mapReady || !isInitialized) return;
+
+        const timer = setTimeout(() => {
+            if (isMountedRef.current) {
+                updateRouteAndMarkers();
+            }
+        }, 150);
+
+        return () => clearTimeout(timer);
+    }, [normalizedWaypoints, mapReady, isInitialized, updateRouteAndMarkers]);
+
+    // ============================================
+    // INVALIDATE SIZE
+    // ============================================
+    useEffect(() => {
+        if (mapInstanceRef.current) {
+            setTimeout(() => mapInstanceRef.current?.invalidateSize(), 200);
+        }
+    }, [height]);
+
+    return (
+        <div className="relative w-full h-full">
+            <div
+                ref={mapRef}
+                className={`rounded-xl overflow-hidden border border-slate-200/60 dark:border-slate-700/60 ${className}`}
+                style={{ height, width: '100%' }}
+            />
+
+            {/* Legend */}
+            {normalizedWaypoints.length > 0 && (
+                <div className="absolute top-3 left-3 z-10 bg-white/95 dark:bg-slate-800/95 backdrop-blur-sm rounded-lg shadow-lg px-3 py-2 border border-slate-200 dark:border-slate-700 pointer-events-none">
+                    <div className="flex items-center gap-2 text-xs">
+                        <span className="flex items-center gap-1">
+                            <span className="w-3 h-3 rounded-full bg-emerald-500"></span>
+                            <span className="text-slate-600 dark:text-slate-400">Origin</span>
+                        </span>
+                        <span className="flex items-center gap-1">
+                            <span className="w-3 h-3 rounded-full bg-blue-500"></span>
+                            <span className="text-slate-600 dark:text-slate-400">{normalizedWaypoints.length} Stop{normalizedWaypoints.length !== 1 ? 's' : ''}</span>
+                        </span>
+                    </div>
+                </div>
+            )}
+
+            {/* Interactive hint */}
+            {interactive && (
+                <div className="absolute bottom-3 left-3 z-10 bg-black/60 backdrop-blur-sm text-white text-xs px-3 py-1.5 rounded-lg pointer-events-none">
+                    {draggableMarker ? '📍 Click map to add stop • Drag markers to adjust' : '📍 Click map to add stop'}
+                </div>
+            )}
         </div>
-      )}
-    </div>
-  );
+    );
 };
 
 export default RouteMap;

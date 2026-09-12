@@ -213,6 +213,10 @@ Route::prefix('reports')->group(function () {
         // ✅ GSO GPS Live Tracking
         Route::get('live-tracking', [GpsPingController::class, 'getActiveTrips']);
         Route::get('trip/{id}/location', [GpsPingController::class, 'getTripWithLocations']);
+
+         // ✅ Cancellation
+    Route::get('/cancelled-trips', [GsoController::class, 'getCancelledTrips']);
+    Route::post('/trips/{id}/cancel', [GsoController::class, 'cancelTrip']);
     });
 
     // ============ MAYOR'S OFFICE ============
@@ -280,6 +284,12 @@ Route::prefix('reports')->group(function () {
             Route::put('/{id}', [AnnualBudgetController::class, 'update']);
             Route::get('/{departmentId}', [AnnualBudgetController::class, 'show']);
         });
+
+        //CANCEL
+
+         Route::get('cancelled-trips', [MayorsOfficeController::class, 'getCancelledTrips']);
+    Route::post('tickets/{id}/cancel', [MayorsOfficeController::class, 'cancelTrip']);
+    
     });
 
     // ============ DRIVER ============

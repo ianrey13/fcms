@@ -49,6 +49,9 @@ class TripTicket extends Model
         'odometer_end',
         'is_fuel_issued_without_trip',
         'trip_count',
+         'cancellation_reason',
+    'cancelled_at',
+    'cancelled_by',
     ];
 
     protected $casts = [
@@ -68,6 +71,7 @@ class TripTicket extends Model
         'odometer_start' => 'decimal:2',
         'odometer_end' => 'decimal:2',
         'is_fuel_issued_without_trip' => 'boolean',
+         'cancelled_at' => 'datetime',
     ];
 
     // ============ STATUS CONSTANTS ============
@@ -312,6 +316,14 @@ public function currentTrip()
     return $this->hasOne(TripHistory::class, 'trip_ticket_id', 'trip_ticket_id')
         ->where('status', 'in_progress')
         ->orderBy('trip_number', 'desc');
+}
+
+public function canBeCancelled(): bool
+{
+    return in_array($this->status, [
+        self::STATUS_PENDING_MAYORS_OFFICE,
+        self::STATUS_RETURNED_FOR_REVISION,
+    ]) && !$this->gasSlip()->exists();
 }
 
 

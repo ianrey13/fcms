@@ -23,6 +23,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Log;
+use App\Helpers\NotificationHelper;
 use Carbon\Carbon;
 
 class MayorsOfficeController extends Controller
@@ -52,7 +53,7 @@ class MayorsOfficeController extends Controller
             'pending_fund_release' => TripTicket::where('status', 'pending_mayors_office')->count(),
             'funds_issued' => TripTicket::where('status', TripTicket::STATUS_FUNDS_ISSUED)->count(),
             'total_amount_released' => GasSlip::sum('amount_released'),
-            'pending_reconciliation' => TripTicket::where('status', TripTicket::STATUS_PENDING_RECONCILIATION)->count(),
+            //'pending_reconciliation' => TripTicket::where('status', TripTicket::STATUS_PENDING_RECONCILIATION)->count(),
             'pending_budget_assistance' => $this->getPendingBudgetAssistanceCount(),
             'total_budget_allocated' => $annualBudgetSummary['total_allocated'],
             'total_budget_used' => $annualBudgetSummary['total_used'],
@@ -911,12 +912,12 @@ public function getReceiptsForVerification(Request $request)
                     // ✅ Use public/receipts path directly (no storage)
                     $receipt->receipt_url = asset('receipts/' . $filename);
                     
-                    // ✅ Log for debugging
-                    \Log::info('Receipt URL (public):', [
-                        'path' => $receipt->receipt_photo_path,
-                        'filename' => $filename,
-                        'url' => $receipt->receipt_url,
-                    ]);
+                    // // ✅ Log for debugging
+                    // \Log::info('Receipt URL (public):', [
+                    //     'path' => $receipt->receipt_photo_path,
+                    //     'filename' => $filename,
+                    //     'url' => $receipt->receipt_url,
+                    // ]);
                 } else {
                     $receipt->receipt_url = null;
                 }
@@ -1346,6 +1347,175 @@ public function getAllDepartmentsWithBudget(Request $request)
     
     $period = $this->createBudgetPeriod($departmentId);
     return $period->period_id;  // ✅ Returns int
+}
+
+
+/**
+ * ✅ Get cancelled trips for Mayor's Office
+ */
+public function getCancelledTrips(Request $request)
+{
+    try {
+        $user = $request->user();
+
+        if (!$user->isMayorsOffice()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $trips = TripTicket::with(['vehicle', 'department', 'driver.user', 'gasSlip'])
+            ->where('status', TripTicket::STATUS_CANCELLED)
+            ->orderBy('cancelled_at', 'desc')
+            ->get()
+            ->map(function ($ticket) {
+                return [
+                    'id' => $ticket->trip_ticket_id,
+                    'ticket_number' => $ticket->trip_ticket_number,
+                    'trip_date' => $ticket->trip_date,
+                    'destination' => $ticket->destination,
+                    'purpose' => $ticket->purpose,
+                    'status' => $ticket->status,
+                    'submitted_at' => $ticket->submitted_at,
+                    'cancelled_at' => $ticket->cancelled_at,
+                    'cancellation_reason' => $ticket->cancellation_reason,
+                    'vehicle' => $ticket->vehicle ? [
+                        'plate_number' => $ticket->vehicle->plate_number,
+                        'vehicle_model' => $ticket->vehicle->vehicle_model,
+                    ] : null,
+                    'driver' => $ticket->driver && $ticket->driver->user ? [
+                        'full_name' => $ticket->driver->user->full_name,
+                    ] : null,
+                    'department_name' => $ticket->department?->department_name,
+                ];
+            });
+
+        return response()->json([
+            'success' => true,
+            'data' => $trips,
+            'meta' => ['total' => $trips->count()]
+        ]);
+    } catch (\Exception $e) {
+        Log::error('MO get cancelled trips error: ' . $e->getMessage());
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to fetch cancelled trips: ' . $e->getMessage()
+        ], 500);
+    }
+}
+
+/**
+ * ✅ Cancel a trip ticket (Mayor's Office)
+ * Only allows cancellation before funds are released
+ */
+public function cancelTrip(Request $request, $id)
+{
+    try {
+        $user = $request->user();
+
+        if (!$user->isMayorsOffice()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'reason' => 'required|string|min:5|max:500',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        // ✅ Only allow cancellation for cancellable statuses
+        $cancellableStatuses = [
+            TripTicket::STATUS_PENDING_MAYORS_OFFICE,
+            TripTicket::STATUS_RETURNED_FOR_REVISION,
+        ];
+
+        $ticket = TripTicket::where('trip_ticket_id', $id)
+            ->whereIn('status', $cancellableStatuses)
+            ->first();
+
+        if (!$ticket) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Ticket cannot be cancelled. Only tickets pending approval or returned for revision can be cancelled.'
+            ], 422);
+        }
+
+        // ✅ Extra safety: block if gas slip already exists (funds already released)
+        $existingGasSlip = GasSlip::where('trip_ticket_id', $id)->first();
+        if ($existingGasSlip) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Cannot cancel ticket. Funds have already been released for this trip.'
+            ], 422);
+        }
+
+        DB::beginTransaction();
+
+        $ticket->status = TripTicket::STATUS_CANCELLED;
+        $ticket->cancellation_reason = $request->reason;
+        $ticket->cancelled_at = now();
+        $ticket->cancelled_by = $user->user_id;
+        $ticket->save();
+
+        DB::commit();
+
+        // ✅ Broadcast the cancellation event
+        try {
+            broadcast(new \App\Events\TripTicketCancelled($ticket, $request->reason, $user));
+            Log::info('📡 MO Broadcasted TripTicketCancelled for trip: ' . $ticket->trip_ticket_number);
+        } catch (\Exception $e) {
+            Log::error('Failed to broadcast cancellation: ' . $e->getMessage());
+        }
+
+        // ✅ Notify the driver/requester
+        if ($ticket->submitted_by) {
+            NotificationHelper::send(
+                $ticket->submitted_by,
+                'trip_cancelled',
+                'trip_ticket',
+                $ticket->trip_ticket_id,
+                "Trip {$ticket->trip_ticket_number} has been cancelled by Mayor's Office: {$request->reason}"
+            );
+        }
+
+        // ✅ Notify GSO
+        $gsoStaff = User::where('role', 'gso_office')->where('status', 'active')->get();
+        foreach ($gsoStaff as $gso) {
+            NotificationHelper::send(
+                $gso->user_id,
+                'trip_cancelled',
+                'trip_ticket',
+                $ticket->trip_ticket_id,
+                "Trip {$ticket->trip_ticket_number} has been cancelled by Mayor's Office"
+            );
+        }
+
+        Log::info('Trip cancelled by Mayor\'s Office', [
+            'trip_id' => $ticket->trip_ticket_id,
+            'cancelled_by' => $user->user_id,
+            'reason' => $request->reason,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Trip ticket cancelled successfully.',
+            'data' => [
+                'trip_ticket_id' => $ticket->trip_ticket_id,
+                'trip_ticket_number' => $ticket->trip_ticket_number,
+                'status' => $ticket->status,
+                'cancelled_at' => $ticket->cancelled_at,
+                'cancellation_reason' => $ticket->cancellation_reason,
+            ]
+        ]);
+
+    } catch (\Exception $e) {
+        DB::rollBack();
+        Log::error('MO cancel trip error: ' . $e->getMessage());
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to cancel trip: ' . $e->getMessage()
+        ], 500);
+    }
 }
 
 }

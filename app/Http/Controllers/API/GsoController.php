@@ -1531,4 +1531,171 @@ public function getTripHistory(Request $request, $id)
         ], 500);
     }
 }
+
+/**
+ * ✅ Get cancelled trips for GSO
+ */
+public function getCancelledTrips(Request $request)
+{
+    try {
+        $user = $request->user();
+
+        if (!$user->isGsoOffice()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $trips = TripTicket::with(['vehicle', 'department', 'driver.user', 'gasSlip'])
+            ->where('status', TripTicket::STATUS_CANCELLED)
+            ->orderBy('updated_at', 'desc')
+            ->get()
+            ->map(function ($ticket) {
+                return [
+                    'id' => $ticket->trip_ticket_id,
+                    'ticket_number' => $ticket->trip_ticket_number,
+                    'trip_date' => $ticket->trip_date,
+                    'destination' => $ticket->destination,
+                    'purpose' => $ticket->purpose,
+                    'status' => $ticket->status,
+                    'submitted_at' => $ticket->submitted_at,
+                    'updated_at' => $ticket->updated_at,
+                    'cancelled_at' => $ticket->cancelled_at,
+                    'cancellation_reason' => $ticket->cancellation_reason,
+                    'vehicle' => $ticket->vehicle ? [
+                        'plate_number' => $ticket->vehicle->plate_number,
+                        'vehicle_model' => $ticket->vehicle->vehicle_model,
+                    ] : null,
+                    'driver' => $ticket->driver && $ticket->driver->user ? [
+                        'full_name' => $ticket->driver->user->full_name,
+                    ] : null,
+                    'department_name' => $ticket->department?->department_name,
+                ];
+            });
+
+        return response()->json([
+            'success' => true,
+            'data' => $trips,
+            'meta' => [
+                'total' => $trips->count(),
+            ]
+        ]);
+    } catch (\Exception $e) {
+        Log::error('Get cancelled trips error: ' . $e->getMessage());
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to fetch cancelled trips: ' . $e->getMessage()
+        ], 500);
+    }
+}
+
+/**
+ * ✅ Cancel a trip ticket (only before funds released)
+ */
+public function cancelTrip(Request $request, $id)
+{
+    try {
+        $user = $request->user();
+
+        if (!$user->isGsoOffice()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'reason' => 'required|string|min:5|max:500',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        // ✅ Only allow cancellation for cancellable statuses
+        $cancellableStatuses = [
+            TripTicket::STATUS_PENDING_MAYORS_OFFICE,
+            TripTicket::STATUS_RETURNED_FOR_REVISION,
+        ];
+
+        $ticket = TripTicket::where('trip_ticket_id', $id)
+            ->whereIn('status', $cancellableStatuses)
+            ->first();
+
+        if (!$ticket) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Ticket cannot be cancelled. Only tickets pending approval or returned for revision can be cancelled.'
+            ], 422);
+        }
+
+        // ✅ Extra safety: block if gas slip already exists (funds already released)
+        $existingGasSlip = GasSlip::where('trip_ticket_id', $id)->first();
+        if ($existingGasSlip) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Cannot cancel ticket. Funds have already been released for this trip.'
+            ], 422);
+        }
+
+        DB::beginTransaction();
+
+        // ✅ Update ticket status
+        $ticket->status = TripTicket::STATUS_CANCELLED;
+        $ticket->cancellation_reason = $request->reason;
+        $ticket->cancelled_at = now();
+        $ticket->cancelled_by = $user->user_id;
+        $ticket->save();
+
+        DB::commit();
+
+        // ✅ Broadcast the cancellation event
+        try {
+            broadcast(new \App\Events\TripTicketCancelled($ticket, $request->reason, $user));
+            Log::info('📡 Broadcasted TripTicketCancelled for trip: ' . $ticket->trip_ticket_number);
+        } catch (\Exception $e) {
+            Log::error('Failed to broadcast cancellation: ' . $e->getMessage());
+        }
+
+        // ✅ Notify the driver/requester
+        if ($ticket->submitted_by) {
+            NotificationHelper::send(
+                $ticket->submitted_by,
+                'trip_cancelled',
+                'trip_ticket',
+                $ticket->trip_ticket_id,
+                "Trip {$ticket->trip_ticket_number} has been cancelled: {$request->reason}"
+            );
+        }
+
+        // ✅ Notify Mayor's Office (in case they had it pending)
+        $moStaff = User::where('role', 'mayors_office')->where('status', 'active')->get();
+        foreach ($moStaff as $mo) {
+            NotificationHelper::send(
+                $mo->user_id,
+                'trip_cancelled',
+                'trip_ticket',
+                $ticket->trip_ticket_id,
+                "Trip {$ticket->trip_ticket_number} has been cancelled by GSO"
+            );
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Trip ticket cancelled successfully. You can now create a new ticket.',
+            'data' => [
+                'trip_ticket_id' => $ticket->trip_ticket_id,
+                'trip_ticket_number' => $ticket->trip_ticket_number,
+                'status' => $ticket->status,
+                'cancelled_at' => $ticket->cancelled_at,
+                'cancellation_reason' => $ticket->cancellation_reason,
+            ]
+        ]);
+
+    } catch (\Exception $e) {
+        DB::rollBack();
+        Log::error('Cancel trip error: ' . $e->getMessage());
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to cancel trip: ' . $e->getMessage()
+        ], 500);
+    }
+}
+
+
 }

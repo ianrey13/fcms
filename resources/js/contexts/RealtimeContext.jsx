@@ -182,73 +182,82 @@ export const RealtimeProvider = ({ children }) => {
         }
     }, []);
 
-    // ============================================
-    // GSO SUBSCRIPTIONS
-    // ============================================
+   // ============================================
+// GSO SUBSCRIPTIONS
+// ============================================
 
-    const subscribeToGSO = useCallback((user) => {
-        try {
-            // 1. GSO Dashboard
-            const gsoChannel = echo.private('gso.dashboard');
-            
-            gsoChannel.listen('.trip.updated', (data) => {
-                console.log('📋 GSO: Trip updated:', data);
-                eventBus.emit('gso-trip-updated', data);
-                eventBus.emit('refresh-gso-dashboard');
-            });
-            
-            gsoChannel.listen('.trip.status_changed', (data) => {
-                console.log('📋 GSO: Trip status changed:', data);
-                toast.info(`Trip ${data.ticket_number} status: ${data.new_status}`);
-                eventBus.emit('gso-trip-status-changed', data);
-                eventBus.emit('refresh-gso-dashboard');
-            });
-            
-            gsoChannel.listen('.trip.funds_released', (data) => {
-                console.log('💰 GSO: Funds released:', data);
-                toast.success(`Funds released for trip ${data.ticket_number}`);
-                eventBus.emit('gso-funds-released', data);
-                eventBus.emit('refresh-gso-dashboard');
-            });
-            
-            subscriptionsRef.current.gso = () => {
-                gsoChannel.unsubscribe();
-            };
+const subscribeToGSO = useCallback((user) => {
+    try {
+        // 1. GSO Dashboard
+        const gsoChannel = echo.private('gso.dashboard');
+        
+        gsoChannel.listen('.trip.updated', (data) => {
+            console.log('📋 GSO: Trip updated:', data);
+            eventBus.emit('gso-trip-updated', data);
+            eventBus.emit('refresh-gso-dashboard');
+        });
+        
+        gsoChannel.listen('.trip.status_changed', (data) => {
+            console.log('📋 GSO: Trip status changed:', data);
+            toast.info(`Trip ${data.ticket_number} status: ${data.new_status}`);
+            eventBus.emit('gso-trip-status-changed', data);
+            eventBus.emit('refresh-gso-dashboard');
+        });
+        
+        gsoChannel.listen('.trip.funds_released', (data) => {
+            console.log('💰 GSO: Funds released:', data);
+            toast.success(`Funds released for trip ${data.ticket_number}`);
+            eventBus.emit('gso-funds-released', data);
+            eventBus.emit('refresh-gso-dashboard');
+        });
 
-            // 2. GSO Live Tracking
-            const trackingChannel = echo.channel('gso-live-tracking');
-            
-            trackingChannel.listen('.location.updated', (data) => {
-                console.log('📍 GSO: Location updated:', data);
-                eventBus.emit('gps-location-updated', data);
-                eventBus.emit('refresh-gso-tracking');
-            });
-            
-            trackingChannel.listen('.trip.started', (data) => {
-                console.log('🚗 GSO: Trip started:', data);
-                toast.info(`Trip ${data.trip_id} has started`);
-                eventBus.emit('trip-started', data);
-                eventBus.emit('refresh-gso-tracking');
-            });
-            
-            trackingChannel.listen('.trip.completed', (data) => {
-                console.log('🏁 GSO: Trip completed:', data);
-                toast.success(`Trip ${data.trip_id} completed!`);
-                eventBus.emit('trip-completed', data);
-                eventBus.emit('refresh-gso-tracking');
-                eventBus.emit('refresh-gso-dashboard');
-            });
-            
-            subscriptionsRef.current.tracking = () => {
-                trackingChannel.unsubscribe();
-            };
+        // ✅ NEW: Trip cancelled listener
+        gsoChannel.listen('.trip.cancelled', (data) => {
+            console.log('❌ GSO: Trip cancelled:', data);
+            toast.info(`Trip ${data.trip_ticket_number || data.ticket_number} was cancelled`);
+            eventBus.emit('trip-cancelled', data);
+            eventBus.emit('gso-trip-updated', data);
+            eventBus.emit('refresh-gso-dashboard');
+        });
+        
+        subscriptionsRef.current.gso = () => {
+            gsoChannel.unsubscribe();
+        };
 
-            console.log('✅ GSO real-time subscriptions active');
+        // 2. GSO Live Tracking
+        const trackingChannel = echo.channel('gso-live-tracking');
+        
+        trackingChannel.listen('.location.updated', (data) => {
+            console.log('📍 GSO: Location updated:', data);
+            eventBus.emit('gps-location-updated', data);
+            eventBus.emit('refresh-gso-tracking');
+        });
+        
+        trackingChannel.listen('.trip.started', (data) => {
+            console.log('🚗 GSO: Trip started:', data);
+            toast.info(`Trip ${data.trip_id} has started`);
+            eventBus.emit('trip-started', data);
+            eventBus.emit('refresh-gso-tracking');
+        });
+        
+        trackingChannel.listen('.trip.completed', (data) => {
+            console.log('🏁 GSO: Trip completed:', data);
+            toast.success(`Trip ${data.trip_id} completed!`);
+            eventBus.emit('trip-completed', data);
+            eventBus.emit('refresh-gso-tracking');
+            eventBus.emit('refresh-gso-dashboard');
+        });
+        
+        subscriptionsRef.current.tracking = () => {
+            trackingChannel.unsubscribe();
+        };
 
-        } catch (error) {
-            console.error('❌ Failed to subscribe to GSO:', error);
-        }
-    }, []);
+        console.log('✅ GSO real-time subscriptions active');
+
+    } catch (error) {
+        console.error('❌ Failed to subscribe to GSO:', error);
+    }
+}, []);
 
     // ============================================
     // MAYOR SUBSCRIPTIONS
@@ -285,6 +294,13 @@ export const RealtimeProvider = ({ children }) => {
                 eventBus.emit('mayor-budget-warning', data);
                 eventBus.emit('refresh-mayor-budget');
             });
+            channel.listen('.trip.cancelled', (data) => {
+    console.log('🏛️ Mayor: Trip cancelled:', data);
+    toast.info(`Trip ${data.ticket_number} was cancelled by GSO`);
+    eventBus.emit('mayor-trip-cancelled', data);
+    eventBus.emit('refresh-mayor-dashboard');
+    eventBus.emit('refresh-mayor-pending');
+});
             
             subscriptionsRef.current.mayor = () => {
                 channel.unsubscribe();

@@ -20,19 +20,23 @@ class EventServiceProvider extends ServiceProvider
      *
      * @var array<class-string, array<int, class-string>>
      */
-    protected $listen = [
-        Registered::class => [
-            SendEmailVerificationNotification::class,
-
-        ],
-       
-        TripTicketCreated::class => [
-            'App\Listeners\SendTripNotification',
-        ],
-        NewNotification::class => [
-            'App\Listeners\BroadcastNotification',
-        ],
-    ];
+  protected $listen = [
+    Registered::class => [
+        SendEmailVerificationNotification::class,
+    ],
+   
+    TripTicketCreated::class => [
+        'App\Listeners\SendTripNotification',
+    ],
+    NewNotification::class => [
+        'App\Listeners\BroadcastNotification',
+    ],
+    
+    // ✅ Cancellation event registered (broadcast only, no listeners needed)
+    \App\Events\TripTicketCancelled::class => [
+        // No listeners needed - broadcast only
+    ],
+];
 
     /**
      * Register any events for your application.
