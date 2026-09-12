@@ -5,13 +5,17 @@
 // 1. Fuel Receipt Report
 // 2. Budget Utilization Report  
 // 3. Reconciliation Report (Viewable by Disbursing Officer)
+// ✅ FIXED: Uses Mayor's Office endpoints (no /admin 403s)
+// ✅ FIXED: Safe array extraction from all API responses
+// ✅ FIXED: Lazy loaded sections (only fetch when expanded)
 // ============================================
 
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 import { useRealtime } from '../../contexts/RealtimeContext';
-import { reportsAPI, mayorsOfficeAPI, departmentAPI, vehicleAPI } from '../../services/api';
+import { useOptimizedQuery } from '../../hooks/useOptimizedQuery';
+import { reportsAPI, mayorsOfficeAPI } from '../../services/api';
 import {
   Card,
   CardContent,
@@ -80,14 +84,39 @@ import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, 
 import { useNavigate } from 'react-router-dom';
 
 // ============================================
-// CONSTANTS & HELPERS
+// ✅ SAFE ARRAY EXTRACTION HELPER
 // ============================================
 
-const PERIOD_TYPES = [
-  { value: 'weekly', label: 'Weekly' },
-  { value: 'monthly', label: 'Monthly' },
-  { value: 'yearly', label: 'Yearly' },
-];
+const extractArray = (response) => {
+  if (!response) return [];
+  if (Array.isArray(response)) return response;
+  if (Array.isArray(response.data)) return response.data;
+  if (response.data && Array.isArray(response.data.data)) return response.data.data;
+
+  const keys = ['receipts', 'items', 'results', 'records', 'rows', 'list', 'periods', 'reconciliations', 'vehicles'];
+  for (const key of keys) {
+    if (Array.isArray(response[key])) return response[key];
+    if (response.data && Array.isArray(response.data[key])) return response.data[key];
+  }
+
+  if (response.data?.data?.data && Array.isArray(response.data.data.data)) {
+    return response.data.data.data;
+  }
+
+  console.warn('⚠️ extractArray: unexpected response shape:', response);
+  return [];
+};
+
+// ============================================
+// CACHE CONSTANTS
+// ============================================
+
+const CACHE_5MIN = 5 * 60 * 1000;
+const CACHE_10MIN = 10 * 60 * 1000;
+
+// ============================================
+// CONSTANTS & HELPERS
+// ============================================
 
 const RECEIPT_STATUS_OPTIONS = [
   { value: 'all', label: 'All Status' },
@@ -181,27 +210,22 @@ const MayorReports = () => {
   const [globalVehicleFilter, setGlobalVehicleFilter] = useState('all');
   
   // ============ SECTION-SPECIFIC FILTERS ============
-  // Fuel Receipt Report filter
   const [receiptStatusFilter, setReceiptStatusFilter] = useState('all');
-  
-  // Reconciliation Report filter
   const [reconciliationThreshold, setReconciliationThreshold] = useState('all');
-  
-  // Budget Report filter
   const [budgetYearFilter, setBudgetYearFilter] = useState(new Date().getFullYear());
 
-  const [departments, setDepartments] = useState([]);
-  const [vehicles, setVehicles] = useState([]);
   const [exportLoading, setExportLoading] = useState(false);
   const [showBudgetChart, setShowBudgetChart] = useState(false);
+  
+  // ✅ Only first section expanded by default (prevents 429 on mount)
   const [expandedSections, setExpandedSections] = useState({
     fuelReceipt: true,
-    budgetUtilization: true,
-    reconciliation: true,
+    budgetUtilization: false,
+    reconciliation: false,
   });
 
   // ============================================
-  // ✅ AUTO-REFRESH - No manual refresh needed
+  // ✅ AUTO-REFRESH
   // ============================================
 
   const fetchAllData = useCallback(() => {
@@ -220,32 +244,6 @@ const MayorReports = () => {
     fetchAllData
   );
 
-  // ============ FETCH DEPARTMENTS & VEHICLES ============
-  useEffect(() => {
-    const fetchDepartments = async () => {
-      try {
-        const response = await departmentAPI.getAll();
-        setDepartments(response.data?.data || []);
-      } catch (error) {
-        console.error('Error fetching departments:', error);
-      }
-    };
-    fetchDepartments();
-  }, []);
-
-  useEffect(() => {
-    const fetchVehicles = async () => {
-      try {
-        const params = globalDepartmentFilter !== 'all' ? { department_id: globalDepartmentFilter } : {};
-        const response = await vehicleAPI.getAll(params);
-        setVehicles(response.data?.data || []);
-      } catch (error) {
-        console.error('Error fetching vehicles:', error);
-      }
-    };
-    fetchVehicles();
-  }, [globalDepartmentFilter]);
-
   // ============ DATE RANGE ============
   const dateRange = useMemo(() => {
     if (globalStartDate && globalEndDate) {
@@ -254,14 +252,54 @@ const MayorReports = () => {
     return getDateRange('monthly');
   }, [globalStartDate, globalEndDate]);
 
-  // ============ QUERIES ============
+  // ============================================
+  // ✅ FIXED: Use Mayor's Office endpoints (no /admin 403s)
+  // ============================================
+
+  // Departments — Mayor's Office endpoint
+  const { data: departmentsRaw = [] } = useOptimizedQuery({
+    queryKey: ['mayor-departments-selector'],
+    queryFn: async () => {
+      try {
+        const response = await mayorsOfficeAPI.getAllDepartmentsForSelector();
+        return extractArray(response);
+      } catch (error) {
+        console.error('Failed to load departments:', error);
+        return [];
+      }
+    },
+    staleTime: CACHE_10MIN,
+    keepPreviousData: true,
+  });
+  const departments = departmentsRaw || [];
+
+  // Vehicles — use reports endpoint (which Mayor CAN access)
+  const { data: vehiclesRaw = [] } = useOptimizedQuery({
+    queryKey: ['mayor-vehicles-list', globalDepartmentFilter],
+    queryFn: async () => {
+      try {
+        const response = await reportsAPI.getVehicleReport({
+          department_id: globalDepartmentFilter !== 'all' ? globalDepartmentFilter : undefined,
+        });
+        return extractArray(response);
+      } catch (error) {
+        console.error('Failed to load vehicles:', error);
+        return [];
+      }
+    },
+    staleTime: CACHE_10MIN,
+    keepPreviousData: true,
+  });
+  const vehicles = vehiclesRaw || [];
+
+  // ============================================
+  // QUERIES — Lazy loaded + safe extraction
+  // ============================================
 
   // 1. FUEL RECEIPT REPORT
   const {
     data: receiptData,
     isLoading: receiptLoading,
-    refetch: refetchReceipts,
-    isFetching: receiptFetching,
   } = useQuery({
     queryKey: ['mayor-fuel-receipt', dateRange, globalDepartmentFilter, globalVehicleFilter, receiptStatusFilter],
     queryFn: async () => {
@@ -272,25 +310,27 @@ const MayorReports = () => {
         vehicle_id: globalVehicleFilter !== 'all' ? globalVehicleFilter : undefined,
       };
       const res = await reportsAPI.getFuelReceiptReport(params);
-      let data = res.data?.data || {};
       
-      // Apply status filter
-      if (receiptStatusFilter !== 'all' && data.receipts) {
-        data.receipts = data.receipts.filter(r => 
-          r.reconciliation_status === receiptStatusFilter
-        );
-      }
-      return data;
+      const data = res?.data?.data ?? res?.data ?? {};
+      const receipts = extractArray(data);
+      
+      const filteredReceipts = receiptStatusFilter !== 'all'
+        ? receipts.filter(r => r.reconciliation_status === receiptStatusFilter)
+        : receipts;
+      
+      return {
+        receipts: filteredReceipts,
+        summary: data?.summary || {},
+      };
     },
-    enabled: true,
+    enabled: expandedSections.fuelReceipt,
+    staleTime: CACHE_5MIN,
   });
 
   // 2. BUDGET UTILIZATION REPORT
   const {
     data: budgetData,
     isLoading: budgetLoading,
-    refetch: refetchBudget,
-    isFetching: budgetFetching,
   } = useQuery({
     queryKey: ['mayor-budget', dateRange, globalDepartmentFilter, budgetYearFilter],
     queryFn: async () => {
@@ -299,17 +339,23 @@ const MayorReports = () => {
         year: budgetYearFilter,
       };
       const res = await reportsAPI.getBudgetReport(params);
-      return res.data?.data || {};
+      
+      const data = res?.data?.data ?? res?.data ?? {};
+      const periods = extractArray(data);
+      
+      return {
+        periods,
+        summary: data?.summary || {},
+      };
     },
-    enabled: true,
+    enabled: expandedSections.budgetUtilization,
+    staleTime: CACHE_5MIN,
   });
 
   // 3. RECONCILIATION REPORT
   const {
     data: reconciliationData,
     isLoading: reconciliationLoading,
-    refetch: refetchReconciliation,
-    isFetching: reconciliationFetching,
   } = useQuery({
     queryKey: ['mayor-reconciliation', dateRange, globalDepartmentFilter, reconciliationThreshold],
     queryFn: async () => {
@@ -319,22 +365,24 @@ const MayorReports = () => {
         department_id: globalDepartmentFilter !== 'all' ? globalDepartmentFilter : undefined,
       };
       const res = await reportsAPI.getReconciliation(params);
-      let data = res.data?.data || {};
       
-      // Apply threshold filter
-      if (reconciliationThreshold !== 'all' && data.reconciliations) {
-        const threshold = parseFloat(reconciliationThreshold);
-        data.reconciliations = data.reconciliations.filter(r => 
-          Math.abs(r.variance || 0) >= threshold
-        );
-      }
-      return data;
+      const data = res?.data?.data ?? res?.data ?? {};
+      const reconciliations = extractArray(data);
+      
+      const filteredReconciliations = reconciliationThreshold !== 'all'
+        ? reconciliations.filter(r => Math.abs(r.variance || 0) >= parseFloat(reconciliationThreshold))
+        : reconciliations;
+      
+      return {
+        reconciliations: filteredReconciliations,
+        summary: data?.summary || {},
+      };
     },
-    enabled: true,
+    enabled: expandedSections.reconciliation,
+    staleTime: CACHE_5MIN,
   });
 
   // ============ HANDLERS ============
-  // ❌ REFRESH BUTTON REMOVED - Auto-refresh handles everything
 
   const toggleSection = (section) => {
     setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }));
@@ -389,7 +437,6 @@ const MayorReports = () => {
 
   const handlePrint = () => window.print();
 
-  // Connection status
   const connectionStatus = isConnected ? "🟢 Live" : "🔴 Offline";
   const isRealTime = isConnected;
 
@@ -398,7 +445,7 @@ const MayorReports = () => {
   // ============================================================
 
   const renderFuelReceipt = () => {
-    const receipts = receiptData?.receipts || [];
+    const receipts = Array.isArray(receiptData?.receipts) ? receiptData.receipts : [];
     const summary = receiptData?.summary || {};
 
     const totals = receipts.reduce((acc, r) => {
@@ -512,7 +559,7 @@ const MayorReports = () => {
   // ============================================================
 
   const renderBudgetUtilization = () => {
-    const periods = budgetData?.periods || [];
+    const periods = Array.isArray(budgetData?.periods) ? budgetData.periods : [];
     const summary = budgetData?.summary || {};
 
     const chartData = periods.map(p => ({
@@ -608,7 +655,6 @@ const MayorReports = () => {
               </Table>
             </div>
 
-            {/* Budget Chart */}
             <div className="mt-6">
               <div className="flex items-center justify-between cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 p-3 rounded-lg transition-colors" onClick={() => setShowBudgetChart(!showBudgetChart)}>
                 <div className="flex items-center gap-2">
@@ -655,7 +701,9 @@ const MayorReports = () => {
   // ============================================================
 
   const renderReconciliation = () => {
-    const reconciliations = reconciliationData?.reconciliations || [];
+    const reconciliations = Array.isArray(reconciliationData?.reconciliations) 
+      ? reconciliationData.reconciliations 
+      : [];
     const summary = reconciliationData?.summary || {};
 
     return (
@@ -722,7 +770,7 @@ const MayorReports = () => {
                 </TableHeader>
                 <TableBody>
                   {reconciliations.length === 0 ? (
-                    <TableRow><TableCell colSpan="9" className="text-center py-8 text-slate-500">No reconciliation data available</TableCell></TableRow>
+                    <TableRow><TableCell colSpan="6" className="text-center py-8 text-slate-500">No reconciliation data available</TableCell></TableRow>
                   ) : (
                     reconciliations.map((r, i) => {
                       const amountVarianceColor = Math.abs(r.amount_variance || 0) > 100 ? 'text-red-600' : '';
@@ -751,7 +799,10 @@ const MayorReports = () => {
   // LOADING STATE
   // ============================================================
 
-  const isLoading = receiptLoading || budgetLoading || reconciliationLoading;
+  const isLoading =
+    (expandedSections.fuelReceipt && receiptLoading && !receiptData) ||
+    (expandedSections.budgetUtilization && budgetLoading && !budgetData) ||
+    (expandedSections.reconciliation && reconciliationLoading && !reconciliationData);
 
   if (isLoading) {
     return (
@@ -774,7 +825,7 @@ const MayorReports = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
       <div className="space-y-6 p-4 md:p-6 print:p-4">
-        {/* ========== HEADER ========== */}
+        {/* HEADER */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 print:hidden">
           <div className="flex items-center gap-3">
             <Button variant="ghost" size="icon" onClick={() => navigate('/mo/dashboard')} className="rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 h-10 w-10">
@@ -802,10 +853,9 @@ const MayorReports = () => {
               </div>
             </div>
           </div>
-          {/* ❌ REFRESH BUTTON REMOVED - Auto-refresh handles everything */}
         </div>
 
-        {/* ========== GLOBAL FILTERS ========== */}
+        {/* GLOBAL FILTERS */}
         <Card className="dark:bg-slate-800/80 dark:border-slate-700 print:hidden">
           <CardContent className="pt-6">
             <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
@@ -878,7 +928,7 @@ const MayorReports = () => {
           </CardContent>
         </Card>
 
-        {/* ========== ALL 3 REPORTS ========== */}
+        {/* ALL 3 REPORTS */}
         <div className="space-y-6">
           {renderFuelReceipt()}
           {renderBudgetUtilization()}
