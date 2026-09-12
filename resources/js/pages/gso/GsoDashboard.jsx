@@ -574,6 +574,11 @@ const GsoDashboard = () => {
     // ✅ QUERIES
     // ============================================
 
+      // ============================================
+    // ✅ OPTIMIZED QUERIES — 5 core data sources
+    // ============================================
+
+    // 1. AUDIT LOGS (only fetch when expanded)
     const { data: auditLogsRaw, isLoading: auditLoading } = useOptimizedQuery({
         queryKey: ["audit-logs"],
         queryFn: async () => {
@@ -590,6 +595,7 @@ const GsoDashboard = () => {
     });
     const auditLogs = useSafeArray(auditLogsRaw);
 
+    // 2. PENDING MO
     const { data: pendingTicketsRaw, isLoading: pendingLoading } = useOptimizedQuery({
         queryKey: ["gso-pending-mo"],
         queryFn: async () => {
@@ -606,6 +612,7 @@ const GsoDashboard = () => {
     });
     const pendingTickets = useSafeArray(pendingTicketsRaw);
 
+    // 3. PENDING VALIDATION
     const { data: pendingValidationRaw, isLoading: validationLoading } = useOptimizedQuery({
         queryKey: ["gso-pending-validation"],
         queryFn: async () => {
@@ -621,6 +628,7 @@ const GsoDashboard = () => {
     });
     const pendingValidation = useSafeArray(pendingValidationRaw);
 
+    // 4. ALL TRIPS
     const { data: allTripsRaw, isLoading: allTripsLoading } = useOptimizedQuery({
         queryKey: ["gso-all-trips"],
         queryFn: async () => {
@@ -635,9 +643,9 @@ const GsoDashboard = () => {
         staleTime: 60000,
         keepPreviousData: true,
     });
-    // ✅ BULLETPROOF - re-checks on every render
     const allTrips = useSafeArray(allTripsRaw);
 
+    // 5. CANCELLED TRIPS
     const { data: cancelledTripsRaw, isLoading: cancelledLoading } = useOptimizedQuery({
         queryKey: ["gso-cancelled-trips"],
         queryFn: async () => {
@@ -654,6 +662,7 @@ const GsoDashboard = () => {
     });
     const cancelledTrips = useSafeArray(cancelledTripsRaw);
 
+    // 6. USERS (for stats only — cached long)
     const { data: usersRaw } = useOptimizedQuery({
         queryKey: ["admin-users-stats"],
         queryFn: async () => {
@@ -666,6 +675,7 @@ const GsoDashboard = () => {
     });
     const users = useSafeArray(usersRaw);
 
+    // 7. VEHICLES (for stats only — cached long)
     const { data: vehiclesRaw } = useOptimizedQuery({
         queryKey: ["admin-vehicles-stats"],
         queryFn: async () => {
