@@ -294,6 +294,7 @@ const MayorDashboard = () => {
         },
         staleTime: 60000,
         keepPreviousData: true,
+        refetchOnMount: 'always',
     });
     const pendingTickets = useSafeArray(pendingRaw);
 
@@ -310,6 +311,7 @@ const MayorDashboard = () => {
         },
         staleTime: 60000,
         keepPreviousData: true,
+        refetchOnMount: 'always',
     });
     const approvedTickets = useSafeArray(approvedRaw);
 
@@ -326,6 +328,7 @@ const MayorDashboard = () => {
         },
         staleTime: 120000,
         keepPreviousData: true,
+        refetchOnMount: 'always',
     });
     const budgetData = useSafeArray(budgetRaw);
 

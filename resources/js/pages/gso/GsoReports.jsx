@@ -114,14 +114,14 @@ const GsoReports = () => {
     // ✅ Only 2 reports open by default
     const [expandedSections, setExpandedSections] = useState({
         fuelConsumption: true,
-        vehicleSummary: false,
-        departmentSummary: false,
-        monthlySummary: false,
-        tripTicket: false,
-        gpsActivity: false,
-        reconciliation: false,
-        fuelReceipt: false,
-        driverEfficiency: false,
+        vehicleSummary: true,
+        departmentSummary: true,
+        monthlySummary: true,
+        tripTicket: true,
+        gpsActivity: true,
+        reconciliation: true,
+        fuelReceipt: true,
+        driverEfficiency: true,
         auditTrail: false,
     });
 

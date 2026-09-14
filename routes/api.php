@@ -54,7 +54,7 @@ Route::post('/broadcasting/auth', function (Request $request) {
 })->middleware('auth:sanctum');
 
 // ============ PROTECTED ROUTES ============
-Route::middleware('auth:sanctum')->group(function () {
+Route::middleware(['auth:sanctum', 'throttle:120,1'])->group(function () {
 
     // Auth
     Route::prefix('auth')->group(function () {

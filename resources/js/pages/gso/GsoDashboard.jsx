@@ -21,6 +21,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useOptimizedQuery } from "../../hooks/useOptimizedQuery";
 import { useAutoRefresh } from "../../hooks/useAutoRefresh";
 import { useRealtime } from "../../contexts/RealtimeContext";
+import { useQuery } from "@tanstack/react-query";
 import {
     SkeletonPage,
     SkeletonStats,
@@ -32,6 +33,7 @@ import {
     vehicleAPI,
     departmentAPI,
     auditAPI,
+    gpsAPI,
 } from "../../services/api";
 import {
     Clock,
@@ -743,6 +745,7 @@ const GsoDashboard = () => {
             }
         },
         staleTime: 60000,
+        refetchOnMount: 'always', 
     });
     const pendingTickets = useSafeArray(pendingTicketsRaw);
 
@@ -759,6 +762,7 @@ const GsoDashboard = () => {
             }
         },
         staleTime: 60000,
+        refetchOnMount: 'always', 
     });
     const pendingValidation = useSafeArray(pendingValidationRaw);
 
@@ -776,6 +780,7 @@ const GsoDashboard = () => {
         },
         staleTime: 60000,
         keepPreviousData: true,
+        refetchOnMount: 'always', 
     });
     const allTrips = useSafeArray(allTripsRaw);
 
@@ -793,6 +798,7 @@ const GsoDashboard = () => {
             }
         },
         staleTime: 60000,
+        refetchOnMount: 'always', 
     });
     const cancelledTrips = useSafeArray(cancelledTripsRaw);
 
@@ -839,6 +845,21 @@ const GsoDashboard = () => {
         },
         staleTime: 120000,
     });
+
+    const { data: activeTrips = [] } = useQuery({
+    queryKey: ['gps-active-trips'],
+    queryFn: async () => {
+        try {
+            const res = await gpsAPI.getActiveTrips();
+            const data = res.data?.data;
+            return Array.isArray(data) ? data : [];   // ✅ Always array
+        } catch (err) {
+            console.error(err);
+            return [];   // ✅ Return empty array on error
+        }
+    },
+    refetchInterval: 30000,   // ✅ 30 sec instead of 15
+});
 
     // ============================================
     // MUTATIONS
