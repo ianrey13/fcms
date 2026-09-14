@@ -1,5 +1,13 @@
 // src/pages/mayor/MayorDashboard.jsx
-import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
+// ============================================
+// ✅ BULLETPROOF: extractArray + useSafeArray
+// ✅ FIXED: Removed redundant useState/useEffect
+// ✅ FIXED: Throttled fetchAllData (no 429)
+// ✅ FIXED: Removed initial fetch on mount
+// ✅ CACHED: All queries with staleTime
+// ============================================
+
+import React, { useMemo, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
@@ -12,15 +20,11 @@ import {
     SkeletonCard,
 } from "../../components/ui/SkeletonCard";
 import { mayorsOfficeAPI } from "../../services/api";
-import toast from "react-hot-toast";
-import eventBus from "../../utils/eventBus";
 
 import {
-    LayoutDashboard,
     Clock,
     CheckCircle,
     DollarSign,
-    RefreshCw,
     Loader2,
     Eye,
     Calendar,
@@ -28,7 +32,6 @@ import {
     Building2,
     TrendingUp,
     Wallet,
-    FileText,
     BarChart3,
     ArrowRight,
     AlertCircle,
@@ -39,17 +42,10 @@ import {
     Activity,
     PieChart,
     ChevronRight,
-    Bell,
     TrendingDown,
     Fuel,
     AlertTriangle,
-    Users,
-    FileCheck,
     Receipt,
-    Gauge,
-    Navigation,
-    Sun,
-    Moon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -58,7 +54,35 @@ import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 
 // ============================================
-// STAT CARD COMPONENT
+// ✅ SAFE ARRAY EXTRACTION HELPER
+// ============================================
+
+const extractArray = (response) => {
+    if (!response) return [];
+    if (Array.isArray(response)) return response;
+    if (Array.isArray(response.data)) return response.data;
+    if (response.data && Array.isArray(response.data.data)) return response.data.data;
+
+    const keys = ['items', 'results', 'records', 'rows', 'list', 'tickets', 'trips', 'departments', 'budgets'];
+    for (const key of keys) {
+        if (Array.isArray(response[key])) return response[key];
+        if (response.data && Array.isArray(response.data[key])) {
+            return response.data[key];
+        }
+    }
+
+    if (response.data?.data?.data && Array.isArray(response.data.data.data)) {
+        return response.data.data.data;
+    }
+
+    console.warn('⚠️ extractArray (MayorDashboard): unexpected shape:', response);
+    return [];
+};
+
+const useSafeArray = (value) => useMemo(() => Array.isArray(value) ? value : [], [value]);
+
+// ============================================
+// STAT CARD
 // ============================================
 
 const StatCard = ({ title, value, icon: Icon, color, subtitle, trend, trendValue }) => (
@@ -66,15 +90,9 @@ const StatCard = ({ title, value, icon: Icon, color, subtitle, trend, trendValue
         <CardContent className="p-6">
             <div className="flex items-start justify-between">
                 <div>
-                    <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
-                        {title}
-                    </p>
-                    <p className="mt-2 text-3xl font-bold text-slate-900 dark:text-white">
-                        {value}
-                    </p>
-                    {subtitle && (
-                        <p className="mt-1 text-xs text-slate-400">{subtitle}</p>
-                    )}
+                    <p className="text-sm font-medium text-slate-500 dark:text-slate-400">{title}</p>
+                    <p className="mt-2 text-3xl font-bold text-slate-900 dark:text-white">{value}</p>
+                    {subtitle && <p className="mt-1 text-xs text-slate-400">{subtitle}</p>}
                     {trend && (
                         <div className="mt-2 flex items-center gap-1">
                             {trendValue > 0 ? (
@@ -105,32 +123,22 @@ const StatCard = ({ title, value, icon: Icon, color, subtitle, trend, trendValue
 );
 
 // ============================================
-// QUICK LINK CARD COMPONENT
+// QUICK LINK CARD
 // ============================================
 
-const QuickLinkCard = ({ title, description, icon: Icon, href, color, count, onClick }) => (
+const QuickLinkCard = ({ title, description, icon: Icon, color, count, onClick }) => (
     <button
-        onClick={onClick || (() => window.location.href = href)}
+        onClick={onClick}
         className="group relative overflow-hidden rounded-xl bg-white dark:bg-slate-800 p-4 text-left transition-all duration-300 hover:shadow-lg hover:-translate-y-1 border border-slate-100 dark:border-slate-700"
     >
-        <div
-            className={`absolute right-0 top-0 h-20 w-20 -translate-y-8 translate-x-8 rounded-full bg-gradient-to-br ${color} opacity-10 transition-transform duration-300 group-hover:scale-150`}
-        />
+        <div className={`absolute right-0 top-0 h-20 w-20 -translate-y-8 translate-x-8 rounded-full bg-gradient-to-br ${color} opacity-10 transition-transform duration-300 group-hover:scale-150`} />
         <div className="relative flex items-start justify-between">
             <div className="flex-1">
-                <div
-                    className={`inline-flex rounded-lg ${color.replace("from-", "bg-").replace("to-", "bg-")}/10 p-2.5`}
-                >
-                    <Icon
-                        className={`h-5 w-5 ${color.replace("from-", "text-").split(" ")[0]}`}
-                    />
+                <div className={`inline-flex rounded-lg ${color.replace("from-", "bg-").replace("to-", "bg-")}/10 p-2.5`}>
+                    <Icon className={`h-5 w-5 ${color.replace("from-", "text-").split(" ")[0]}`} />
                 </div>
-                <h3 className="mt-3 font-semibold text-slate-900 dark:text-white">
-                    {title}
-                </h3>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                    {description}
-                </p>
+                <h3 className="mt-3 font-semibold text-slate-900 dark:text-white">{title}</h3>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{description}</p>
                 {count !== undefined && (
                     <div className="mt-2 flex items-center gap-1 text-xs font-medium text-blue-600 dark:text-blue-400">
                         <span>{count} items</span>
@@ -144,39 +152,30 @@ const QuickLinkCard = ({ title, description, icon: Icon, href, color, count, onC
 );
 
 // ============================================
-// BUDGET PROGRESS BAR COMPONENT
+// BUDGET PROGRESS BAR
 // ============================================
 
 const BudgetProgressBar = ({ department }) => {
-    const utilization = parseFloat(department.utilization);
+    const utilization = parseFloat(department.utilization) || 0;
     const isCritical = utilization >= 80;
     const isWarning = utilization >= 60 && utilization < 80;
     const isGood = utilization < 60 && department.has_budget;
 
-    const getStatusColor = () => {
-        if (isCritical) return "text-red-600 dark:text-red-400";
-        if (isWarning) return "text-amber-600 dark:text-amber-400";
-        return "text-emerald-600 dark:text-emerald-400";
-    };
+    const getStatusColor = () => isCritical ? "text-red-600 dark:text-red-400"
+        : isWarning ? "text-amber-600 dark:text-amber-400"
+            : "text-emerald-600 dark:text-emerald-400";
 
-    const getProgressColor = () => {
-        if (isCritical) return "bg-gradient-to-r from-red-500 to-red-600";
-        if (isWarning) return "bg-gradient-to-r from-amber-500 to-amber-600";
-        return "bg-gradient-to-r from-emerald-500 to-emerald-600";
-    };
+    const getProgressColor = () => isCritical ? "bg-gradient-to-r from-red-500 to-red-600"
+        : isWarning ? "bg-gradient-to-r from-amber-500 to-amber-600"
+            : "bg-gradient-to-r from-emerald-500 to-emerald-600";
 
-    const getStatusIcon = () => {
-        if (isCritical) return <AlertCircle className="h-4 w-4 text-red-500" />;
-        if (isWarning) return <Activity className="h-4 w-4 text-amber-500" />;
-        return <CheckCircle className="h-4 w-4 text-emerald-500" />;
-    };
+    const getStatusIcon = () => isCritical ? <AlertCircle className="h-4 w-4 text-red-500" />
+        : isWarning ? <Activity className="h-4 w-4 text-amber-500" />
+            : <CheckCircle className="h-4 w-4 text-emerald-500" />;
 
-    const getStatusMessage = () => {
-        if (isCritical) return "⚠️ Approaching or exceeding annual budget limit";
-        if (isWarning) return "📊 Moderate budget utilization";
-        if (isGood) return "✅ Good budget utilization";
-        return null;
-    };
+    const getStatusMessage = () => isCritical ? "⚠️ Approaching or exceeding annual budget limit"
+        : isWarning ? "📊 Moderate budget utilization"
+            : isGood ? "✅ Good budget utilization" : null;
 
     return (
         <div className="group">
@@ -193,7 +192,7 @@ const BudgetProgressBar = ({ department }) => {
                 </div>
                 <div className="flex items-center gap-3">
                     <span className="text-sm text-slate-500 dark:text-slate-400">
-                        ₱{department.spent.toLocaleString()} / ₱{department.allocated.toLocaleString()}
+                        ₱{(department.spent || 0).toLocaleString()} / ₱{(department.allocated || 0).toLocaleString()}
                     </span>
                     <span className={`text-sm font-semibold ${getStatusColor()}`}>
                         {department.utilization}%
@@ -201,22 +200,16 @@ const BudgetProgressBar = ({ department }) => {
                 </div>
             </div>
             <div className="relative">
-                <Progress
-                    value={Math.min(utilization, 100)}
-                    className="h-2.5 rounded-full bg-slate-100 dark:bg-slate-700"
-                />
+                <Progress value={Math.min(utilization, 100)} className="h-2.5 rounded-full bg-slate-100 dark:bg-slate-700" />
                 <div
                     className={`absolute top-0 left-0 h-2.5 rounded-full transition-all duration-500 ${getProgressColor()}`}
-                    style={{
-                        width: `${Math.min(utilization, 100)}%`,
-                    }}
+                    style={{ width: `${Math.min(utilization, 100)}%` }}
                 />
             </div>
             {department.has_budget && getStatusMessage() && (
-                <p className={`mt-1.5 text-xs flex items-center gap-1 ${isCritical ? 'text-amber-600 dark:text-amber-400' :
-                        isWarning ? 'text-blue-600 dark:text-blue-400' :
-                            'text-emerald-600 dark:text-emerald-400'
-                    }`}>
+                <p className={`mt-1.5 text-xs flex items-center gap-1 ${isCritical ? 'text-amber-600 dark:text-amber-400'
+                    : isWarning ? 'text-blue-600 dark:text-blue-400'
+                        : 'text-emerald-600 dark:text-emerald-400'}`}>
                     {getStatusMessage()}
                 </p>
             )}
@@ -248,34 +241,26 @@ const MayorDashboard = () => {
     const navigate = useNavigate();
     const { isConnected } = useRealtime();
     const queryClient = useQueryClient();
-    const [pendingTickets, setPendingTickets] = useState([]);
-    const [approvedTickets, setApprovedTickets] = useState([]);
-    const [departmentBudgets, setDepartmentBudgets] = useState([]);
-    const [recentReleases, setRecentReleases] = useState([]);
-    const [stats, setStats] = useState({
-        pendingCount: 0,
-        releasedCount: 0,
-        totalAmount: 0,
-        avgUtilization: 0,
-        criticalDepartments: 0,
-        totalAnnualBudget: 0,
-        totalAnnualUsed: 0,
-        totalAnnualRemaining: 0,
-        departmentsWithBudget: 0,
-    });
 
     // ============================================
-    // ✅ REFRESH FUNCTION - Auto-refresh only
+    // ✅ THROTTLED REFRESH FUNCTION
     // ============================================
 
     const fetchAllData = useCallback(() => {
-        queryClient.invalidateQueries({ queryKey: ["mayor-pending-tickets"] });
-        queryClient.invalidateQueries({ queryKey: ["mayor-approved-tickets"] });
-        queryClient.invalidateQueries({ queryKey: ["mayor-department-budgets"] });
+        if (window._isRefreshing) return;
+        window._isRefreshing = true;
+
+        Promise.allSettled([
+            queryClient.invalidateQueries({ queryKey: ["mayor-pending-tickets"] }),
+            queryClient.invalidateQueries({ queryKey: ["mayor-approved-tickets"] }),
+            queryClient.invalidateQueries({ queryKey: ["mayor-department-budgets"] }),
+        ]).finally(() => {
+            setTimeout(() => { window._isRefreshing = false; }, 2000);
+        });
     }, [queryClient]);
 
     // ============================================
-    // ✅ AUTO-REFRESH - No manual refresh needed
+    // ✅ AUTO-REFRESH (event-driven only)
     // ============================================
 
     useAutoRefresh(
@@ -287,134 +272,119 @@ const MayorDashboard = () => {
             "trip-completed",
             "new-notification",
         ],
-        fetchAllData
+        fetchAllData,
+        1000
     );
 
     // ============================================
-    // OPTIMIZED QUERIES
+    // ✅ OPTIMIZED QUERIES (with extractArray)
     // ============================================
 
-    const { data: pendingData, isLoading: pendingLoading } = useOptimizedQuery({
+    const { data: pendingRaw, isLoading: pendingLoading } = useOptimizedQuery({
         queryKey: ["mayor-pending-tickets"],
         queryFn: async () => {
-            const response = await mayorsOfficeAPI.getPendingTickets();
-            return response.data?.data || response.data || [];
+            try {
+                const response = await mayorsOfficeAPI.getPendingTickets();
+                return extractArray(response);
+            } catch (error) {
+                if (error.response?.status === 429) return [];
+                console.error("Error fetching pending tickets:", error);
+                return [];
+            }
         },
         staleTime: 60000,
         keepPreviousData: true,
     });
+    const pendingTickets = useSafeArray(pendingRaw);
 
-    const { data: approvedData, isLoading: approvedLoading } = useOptimizedQuery({
+    const { data: approvedRaw, isLoading: approvedLoading } = useOptimizedQuery({
         queryKey: ["mayor-approved-tickets"],
         queryFn: async () => {
-            const response = await mayorsOfficeAPI.getApprovedTickets();
-            return response.data?.data || response.data || [];
+            try {
+                const response = await mayorsOfficeAPI.getApprovedTickets();
+                return extractArray(response);
+            } catch (error) {
+                console.error("Error fetching approved tickets:", error);
+                return [];
+            }
         },
         staleTime: 60000,
         keepPreviousData: true,
     });
+    const approvedTickets = useSafeArray(approvedRaw);
 
-    const { data: budgetData, isLoading: budgetLoading } = useOptimizedQuery({
+    const { data: budgetRaw, isLoading: budgetLoading } = useOptimizedQuery({
         queryKey: ["mayor-department-budgets"],
         queryFn: async () => {
-            const response = await mayorsOfficeAPI.getAllDepartmentsWithBudget();
-            return response.data?.data || response.data || [];
+            try {
+                const response = await mayorsOfficeAPI.getAllDepartmentsWithBudget();
+                return extractArray(response);
+            } catch (error) {
+                console.error("Error fetching budgets:", error);
+                return [];
+            }
         },
         staleTime: 120000,
         keepPreviousData: true,
     });
+    const budgetData = useSafeArray(budgetRaw);
 
     // ============================================
-    // PROCESS DATA
+    // ✅ COMPUTED DATA (useMemo — no useState/useEffect)
     // ============================================
 
-    useEffect(() => {
-        if (!pendingLoading && pendingData) {
-            const tickets = Array.isArray(pendingData) ? pendingData : [];
-            setPendingTickets(tickets);
-            setStats(prev => ({
-                ...prev,
-                pendingCount: tickets.length,
-            }));
-        }
-    }, [pendingData, pendingLoading]);
+    const departmentBudgets = useMemo(() => {
+        const formatted = budgetData.map((dept) => ({
+            department_id: dept.department_id,
+            department_name: dept.department_name,
+            allocated: parseFloat(dept.allocated_amount || dept.annual_amount || dept.allocated || 0),
+            spent: parseFloat(dept.spent_amount || dept.used_amount || dept.spent || 0),
+            remaining: parseFloat(dept.remaining_amount || 0),
+            has_budget: dept.has_budget || false,
+            utilization: dept.utilization_percentage || dept.utilization || 0,
+            fiscal_year: dept.fiscal_year || new Date().getFullYear(),
+            budget_type: dept.budget_type || 'annual',
+            allocated_amount: parseFloat(dept.allocated_amount || dept.annual_amount || 0),
+            used_amount: parseFloat(dept.used_amount || 0),
+            annual_amount: parseFloat(dept.annual_amount || 0),
+        }));
+        formatted.sort((a, b) => parseFloat(b.utilization) - parseFloat(a.utilization));
+        return formatted;
+    }, [budgetData]);
 
-    useEffect(() => {
-        if (!approvedLoading && approvedData) {
-            const tickets = Array.isArray(approvedData) ? approvedData : [];
-            setApprovedTickets(tickets);
+    const stats = useMemo(() => {
+        const total = approvedTickets.reduce((sum, t) => {
+            let amount = 0;
+            if (t.amount_released) amount = parseFloat(t.amount_released);
+            else if (t.gas_slip?.amount_released) amount = parseFloat(t.gas_slip.amount_released);
+            return sum + (isNaN(amount) ? 0 : amount);
+        }, 0);
 
-            const total = tickets.reduce((sum, t) => {
-                let amount = 0;
-                if (t.amount_released) amount = parseFloat(t.amount_released);
-                else if (t.gas_slip?.amount_released)
-                    amount = parseFloat(t.gas_slip.amount_released);
-                return sum + (isNaN(amount) ? 0 : amount);
-            }, 0);
+        const totalAllocated = departmentBudgets.reduce((sum, d) => sum + d.allocated, 0);
+        const totalUsed = departmentBudgets.reduce((sum, d) => sum + d.spent, 0);
+        const totalRemaining = totalAllocated - totalUsed;
+        const deptsWithBudget = departmentBudgets.filter(d => d.has_budget).length;
+        const budgetedDepts = departmentBudgets.filter(d => d.has_budget);
 
-            setStats(prev => ({
-                ...prev,
-                releasedCount: tickets.length,
-                totalAmount: total,
-            }));
-            setRecentReleases(tickets.slice(0, 5));
-        }
-    }, [approvedData, approvedLoading]);
+        const avgUtil = budgetedDepts.length > 0
+            ? budgetedDepts.reduce((sum, d) => sum + parseFloat(d.utilization), 0) / budgetedDepts.length
+            : 0;
 
-    useEffect(() => {
-        if (!budgetLoading && budgetData) {
-            const budgetDataArray = Array.isArray(budgetData) ? budgetData : [];
+        return {
+            pendingCount: pendingTickets.length,
+            releasedCount: approvedTickets.length,
+            totalAmount: total,
+            avgUtilization: avgUtil.toFixed(1),
+            criticalDepartments: budgetedDepts.filter(d => parseFloat(d.utilization) >= 80).length,
+            totalAnnualBudget: totalAllocated,
+            totalAnnualUsed: totalUsed,
+            totalAnnualRemaining: totalRemaining,
+            departmentsWithBudget: deptsWithBudget,
+        };
+    }, [pendingTickets, approvedTickets, departmentBudgets]);
 
-            const formatted = budgetDataArray.map((dept) => ({
-                department_id: dept.department_id,
-                department_name: dept.department_name,
-                allocated: parseFloat(dept.allocated_amount || dept.annual_amount || dept.allocated || 0),
-                spent: parseFloat(dept.spent_amount || dept.used_amount || dept.spent || 0),
-                remaining: parseFloat(dept.remaining_amount || 0),
-                has_budget: dept.has_budget || false,
-                utilization: dept.utilization_percentage || dept.utilization || 0,
-                fiscal_year: dept.fiscal_year || new Date().getFullYear(),
-                budget_type: dept.budget_type || 'annual',
-                allocated_amount: parseFloat(dept.allocated_amount || dept.annual_amount || 0),
-                used_amount: parseFloat(dept.used_amount || 0),
-                annual_amount: parseFloat(dept.annual_amount || 0),
-            }));
-
-            const totalAllocated = formatted.reduce((sum, d) => sum + d.allocated, 0);
-            const totalUsed = formatted.reduce((sum, d) => sum + d.spent, 0);
-            const totalRemaining = totalAllocated - totalUsed;
-            const deptsWithBudget = formatted.filter(d => d.has_budget).length;
-
-            formatted.sort((a, b) => parseFloat(b.utilization) - parseFloat(a.utilization));
-
-            setDepartmentBudgets(formatted);
-
-            const avgUtil = formatted.filter(d => d.has_budget).length > 0
-                ? formatted.filter(d => d.has_budget).reduce((sum, d) => sum + parseFloat(d.utilization), 0) /
-                (formatted.filter(d => d.has_budget).length || 1)
-                : 0;
-
-            setStats(prev => ({
-                ...prev,
-                avgUtilization: avgUtil.toFixed(1),
-                criticalDepartments: formatted.filter(
-                    (d) => parseFloat(d.utilization) >= 80 && d.has_budget,
-                ).length,
-                totalAnnualBudget: totalAllocated,
-                totalAnnualUsed: totalUsed,
-                totalAnnualRemaining: totalRemaining,
-                departmentsWithBudget: deptsWithBudget,
-            }));
-        }
-    }, [budgetData, budgetLoading]);
-
-    // ============================================
-    // SETUP - Initial load
-    // ============================================
-
-    useEffect(() => {
-        fetchAllData();
-    }, []); // ✅ Removed setIsMounted and loading state
+    const recentReleases = useMemo(() => approvedTickets.slice(0, 5), [approvedTickets]);
+    const topDepartments = useMemo(() => departmentBudgets.slice(0, 6), [departmentBudgets]);
 
     // ============================================
     // HELPERS
@@ -422,19 +392,14 @@ const MayorDashboard = () => {
 
     const formatDate = (dateString) => {
         if (!dateString) return "N/A";
-        return new Date(dateString).toLocaleDateString("en-PH", {
-            month: "short",
-            day: "numeric",
-        });
+        return new Date(dateString).toLocaleDateString("en-PH", { month: "short", day: "numeric" });
     };
 
     const formatCurrency = (amount) => {
         const numAmount = parseFloat(amount);
         if (isNaN(numAmount) || numAmount === 0) return "₱0";
         return new Intl.NumberFormat("en-PH", {
-            style: "currency",
-            currency: "PHP",
-            minimumFractionDigits: 0,
+            style: "currency", currency: "PHP", minimumFractionDigits: 0,
         }).format(numAmount);
     };
 
@@ -453,26 +418,22 @@ const MayorDashboard = () => {
         return "Good Evening";
     };
 
-    const topDepartments = departmentBudgets.slice(0, 6);
-
-    // Connection status
     const connectionStatus = isConnected ? "🟢 Live" : "🔴 Offline";
     const isRealTime = isConnected;
 
     // ============================================
-    // ✅ LOADING STATE - Use query loading states
+    // LOADING STATE
     // ============================================
 
     const isLoading = pendingLoading || approvedLoading || budgetLoading;
 
-    // ============================================
-    // RENDER
-    // ============================================
-
-    // ✅ Show skeleton only when ALL queries are loading and NO data exists
     if (isLoading && pendingTickets.length === 0 && approvedTickets.length === 0 && departmentBudgets.length === 0) {
         return <LoadingSkeleton />;
     }
+
+    // ============================================
+    // RENDER
+    // ============================================
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
@@ -492,9 +453,7 @@ const MayorDashboard = () => {
                                 </Badge>
                                 <Badge className="border-blue-500/30 bg-blue-500/20 text-blue-300">
                                     {new Date().toLocaleDateString("en-PH", {
-                                        weekday: "long",
-                                        month: "long",
-                                        day: "numeric",
+                                        weekday: "long", month: "long", day: "numeric",
                                     })}
                                 </Badge>
                                 <Badge className="border-amber-500/30 bg-amber-500/20 text-amber-300">
@@ -515,13 +474,10 @@ const MayorDashboard = () => {
                                 Monitor fund releases and department budget utilization for FY {new Date().getFullYear()}
                                 <span className="ml-2 text-xs opacity-70">{connectionStatus}</span>
                                 {isRealTime && (
-                                    <span className="ml-2 text-xs text-emerald-400 animate-pulse">
-                                        ● Auto-refresh
-                                    </span>
+                                    <span className="ml-2 text-xs text-emerald-400 animate-pulse">● Auto-refresh</span>
                                 )}
                             </p>
                         </div>
-                        {/* ❌ REFRESH BUTTON REMOVED - Auto-refresh handles everything */}
                     </div>
                 </div>
 
@@ -536,9 +492,7 @@ const MayorDashboard = () => {
                                 <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
                                     Annual Budget Overview FY {new Date().getFullYear()}
                                     {isRealTime && (
-                                        <span className="ml-2 text-xs font-normal text-emerald-500 animate-pulse">
-                                            ● Live
-                                        </span>
+                                        <span className="ml-2 text-xs font-normal text-emerald-500 animate-pulse">● Live</span>
                                     )}
                                 </h3>
                                 <p className="text-sm text-slate-500 dark:text-slate-400">
@@ -635,9 +589,7 @@ const MayorDashboard = () => {
                                     <CardDescription className="text-sm text-slate-500 dark:text-slate-400">
                                         Real-time budget consumption across departments for FY {new Date().getFullYear()}
                                         {isRealTime && (
-                                            <span className="ml-2 text-xs text-emerald-500 animate-pulse">
-                                                ● Live updates
-                                            </span>
+                                            <span className="ml-2 text-xs text-emerald-500 animate-pulse">● Live updates</span>
                                         )}
                                     </CardDescription>
                                 </div>
@@ -657,9 +609,7 @@ const MayorDashboard = () => {
                         {topDepartments.length === 0 || topDepartments.every(d => !d.has_budget) ? (
                             <div className="py-12 text-center">
                                 <Building2 className="mx-auto h-12 w-12 text-slate-300 dark:text-slate-600" />
-                                <p className="mt-3 text-slate-500 dark:text-slate-400">
-                                    No annual budget data available
-                                </p>
+                                <p className="mt-3 text-slate-500 dark:text-slate-400">No annual budget data available</p>
                                 <p className="text-sm text-slate-400 dark:text-slate-500">
                                     Please set up annual budgets for departments
                                 </p>
@@ -702,9 +652,7 @@ const MayorDashboard = () => {
                                     <CardDescription className="text-sm text-slate-500 dark:text-slate-400">
                                         Last 5 transactions
                                         {isRealTime && (
-                                            <span className="ml-2 text-xs text-emerald-500 animate-pulse">
-                                                ● Auto-update
-                                            </span>
+                                            <span className="ml-2 text-xs text-emerald-500 animate-pulse">● Auto-update</span>
                                         )}
                                     </CardDescription>
                                 </div>
@@ -714,13 +662,11 @@ const MayorDashboard = () => {
                             {recentReleases.length === 0 ? (
                                 <div className="py-12 text-center">
                                     <DollarSign className="mx-auto h-12 w-12 text-slate-300 dark:text-slate-600" />
-                                    <p className="mt-3 text-slate-500 dark:text-slate-400">
-                                        No funds released yet
-                                    </p>
+                                    <p className="mt-3 text-slate-500 dark:text-slate-400">No funds released yet</p>
                                 </div>
                             ) : (
                                 <div className="divide-y divide-slate-100 dark:divide-slate-700">
-                                    {recentReleases.map((ticket, idx) => (
+                                    {recentReleases.map((ticket) => (
                                         <div
                                             key={ticket.id || ticket.trip_ticket_id}
                                             className="group flex items-center justify-between py-3 first:pt-0 last:pb-0"
@@ -730,10 +676,7 @@ const MayorDashboard = () => {
                                                     <span className="font-mono text-sm font-medium text-slate-900 dark:text-white">
                                                         {ticket.ticket_number || ticket.trip_ticket_number}
                                                     </span>
-                                                    <Badge
-                                                        variant="outline"
-                                                        className="text-xs dark:border-slate-600 dark:text-slate-400"
-                                                    >
+                                                    <Badge variant="outline" className="text-xs dark:border-slate-600 dark:text-slate-400">
                                                         {formatDate(ticket.trip_date)}
                                                     </Badge>
                                                     {ticket.is_mo_funded && (
@@ -768,11 +711,7 @@ const MayorDashboard = () => {
                                                 <Button
                                                     variant="ghost"
                                                     size="sm"
-                                                    onClick={() =>
-                                                        navigate(
-                                                            `/mo/tickets/${ticket.id || ticket.trip_ticket_id}`,
-                                                        )
-                                                    }
+                                                    onClick={() => navigate(`/mo/tickets/${ticket.id || ticket.trip_ticket_id}`)}
                                                     className="mt-1 h-7 text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
                                                 >
                                                     <Eye className="mr-1 h-3 w-3" />
@@ -821,7 +760,6 @@ const MayorDashboard = () => {
                                     title="Pending Fund Release"
                                     description="Review and release funds"
                                     icon={Clock}
-                                    href="/mo/pending"
                                     color="from-amber-500 to-amber-600"
                                     count={stats.pendingCount}
                                     onClick={() => navigate("/mo/pending")}
@@ -830,7 +768,6 @@ const MayorDashboard = () => {
                                     title="Financial Reports"
                                     description="Budget vs Actual analysis"
                                     icon={BarChart3}
-                                    href="/mo/reports"
                                     color="from-blue-500 to-blue-600"
                                     onClick={() => navigate("/mo/reports")}
                                 />
@@ -838,7 +775,6 @@ const MayorDashboard = () => {
                                     title="Released Tickets"
                                     description="View all released funds"
                                     icon={CheckCircle}
-                                    href="/mo/approved"
                                     color="from-purple-500 to-purple-600"
                                     count={stats.releasedCount}
                                     onClick={() => navigate("/mo/approved")}
@@ -847,13 +783,11 @@ const MayorDashboard = () => {
                                     title="Receipt Verification"
                                     description="Verify fuel receipts"
                                     icon={Receipt}
-                                    href="/mo/receipt-verification"
                                     color="from-emerald-500 to-emerald-600"
                                     onClick={() => navigate("/mo/receipt-verification")}
                                 />
                             </div>
 
-                            {/* Quick Stats Footer */}
                             <div className="mt-6 rounded-xl bg-gradient-to-r from-slate-50 to-gray-50 dark:from-slate-900 dark:to-slate-800 p-4">
                                 <div className="flex flex-wrap items-center justify-between gap-4">
                                     <div className="flex items-center gap-2">
@@ -865,36 +799,21 @@ const MayorDashboard = () => {
                                     <div className="flex gap-4">
                                         <div className="text-center">
                                             <div className="text-lg font-bold text-emerald-600 dark:text-emerald-400">
-                                                {departmentBudgets.filter(
-                                                    (d) => parseFloat(d.utilization) < 60 && d.has_budget,
-                                                ).length}
+                                                {departmentBudgets.filter(d => parseFloat(d.utilization) < 60 && d.has_budget).length}
                                             </div>
-                                            <div className="text-xs text-slate-500 dark:text-slate-400">
-                                                Good Standing
-                                            </div>
+                                            <div className="text-xs text-slate-500 dark:text-slate-400">Good Standing</div>
                                         </div>
                                         <div className="text-center">
                                             <div className="text-lg font-bold text-amber-600 dark:text-amber-400">
-                                                {departmentBudgets.filter(
-                                                    (d) =>
-                                                        parseFloat(d.utilization) >= 60 &&
-                                                        parseFloat(d.utilization) < 80 &&
-                                                        d.has_budget,
-                                                ).length}
+                                                {departmentBudgets.filter(d => parseFloat(d.utilization) >= 60 && parseFloat(d.utilization) < 80 && d.has_budget).length}
                                             </div>
-                                            <div className="text-xs text-slate-500 dark:text-slate-400">
-                                                Warning
-                                            </div>
+                                            <div className="text-xs text-slate-500 dark:text-slate-400">Warning</div>
                                         </div>
                                         <div className="text-center">
                                             <div className="text-lg font-bold text-red-600 dark:text-red-400">
-                                                {departmentBudgets.filter(
-                                                    (d) => parseFloat(d.utilization) >= 80 && d.has_budget,
-                                                ).length}
+                                                {departmentBudgets.filter(d => parseFloat(d.utilization) >= 80 && d.has_budget).length}
                                             </div>
-                                            <div className="text-xs text-slate-500 dark:text-slate-400">
-                                                Critical
-                                            </div>
+                                            <div className="text-xs text-slate-500 dark:text-slate-400">Critical</div>
                                         </div>
                                     </div>
                                 </div>

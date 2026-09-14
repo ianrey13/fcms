@@ -1,190 +1,55 @@
 <?php
 
-namespace App\Services;
+// config/locations.php
+// ============================================
+// Location service configuration
+// ============================================
 
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Cache;
+return [
+    // ============ NOMINATIM ============
+    'nominatim' => [
+        'enabled' => env('NOMINATIM_ENABLED', true),
+        'base_url' => env('NOMINATIM_BASE_URL', 'https://nominatim.openstreetmap.org'),
+        'user_agent' => env('NOMINATIM_USER_AGENT', 'FCMS/1.0'),
+        'country' => env('NOMINATIM_COUNTRY', 'ph'),
+        'language' => env('NOMINATIM_LANGUAGE', 'en'),
+        'rate_limit' => env('NOMINATIM_RATE_LIMIT', 1),
+        'timeout' => env('NOMINATIM_TIMEOUT', 10),
+    ],
 
-class LocationService
-{
-    protected $nominatimService;
-    protected $fallbackService;
+    // ============ FALLBACK LOCATION DATA ============
+    // Local coordinates for common Laguindingan destinations
+    'fallback_locations' => [
+        'laguindingan' => ['lat' => 8.6, 'lng' => 124.4333],
+        'cagayan de oro' => ['lat' => 8.4822, 'lng' => 124.6472],
+        'cdo' => ['lat' => 8.4822, 'lng' => 124.6472],
+        'iligan' => ['lat' => 8.2281, 'lng' => 124.2452],
+        'alubijid' => ['lat' => 8.5500, 'lng' => 124.4167],
+        'el salvador' => ['lat' => 8.5667, 'lng' => 124.4667],
+        'opon' => ['lat' => 8.4667, 'lng' => 124.5500],
+        'molugan' => ['lat' => 8.5667, 'lng' => 124.4167],
+        'initao' => ['lat' => 8.5167, 'lng' => 124.3167],
+        'naawan' => ['lat' => 8.4333, 'lng' => 124.2833],
+        'talisayan' => ['lat' => 8.9833, 'lng' => 124.8667],
+        'gitagum' => ['lat' => 8.5833, 'lng' => 124.4000],
+        'libertad' => ['lat' => 8.5500, 'lng' => 124.3500],
+        'claveria' => ['lat' => 8.6167, 'lng' => 124.8833],
+        'jasaan' => ['lat' => 8.6500, 'lng' => 124.7500],
+        'villanueva' => ['lat' => 8.5833, 'lng' => 124.7667],
+        'tagoloan' => ['lat' => 8.5333, 'lng' => 124.7500],
+        'malitbog' => ['lat' => 8.5333, 'lng' => 124.8833],
+    ],
 
-    public function __construct(
-        NominatimService $nominatimService,
-        FallbackLocationService $fallbackService
-    ) {
-        $this->nominatimService = $nominatimService;
-        $this->fallbackService = $fallbackService;
-    }
+    // ============ FALLBACK DEFAULTS ============
+    'defaults' => [
+        // Default center point (Laguindingan town proper)
+        'default_lat' => 8.6,
+        'default_lng' => 124.4333,
 
-    /**
-     * Search for places using Nominatim with fallback
-     */
-    public function searchPlaces($query, $limit = 10)
-    {
-        // Try Nominatim first
-        $result = $this->nominatimService->searchPlaces($query, $limit);
-        
-        // If Nominatim returns results, use them
-        if ($result['success'] && !empty($result['predictions'])) {
-            return $result;
-        }
-        
-        // Otherwise use fallback
-        Log::info('Nominatim returned no results, using fallback', ['query' => $query]);
-        return $this->fallbackService->searchPlaces($query);
-    }
+        // Default speed for ETA (km/h)
+        'avg_speed_kmh' => 40,
 
-    /**
-     * Calculate distance between two locations
-     */
-    public function calculateDistance($originAddress, $destinationAddress, $vehicleId = null)
-    {
-        // Try Nominatim first
-        $result = $this->nominatimService->calculateDistance($originAddress, $destinationAddress);
-        
-        if ($result['success']) {
-            return $result;
-        }
-        
-        // Fallback to local data
-        Log::info('Nominatim distance failed, using fallback', [
-            'origin' => $originAddress,
-            'destination' => $destinationAddress
-        ]);
-        return $this->fallbackService->calculateDistance($originAddress, $destinationAddress);
-    }
-
-    /**
-     * Geocode an address
-     */
-    public function geocode($address)
-    {
-        $result = $this->nominatimService->geocode($address);
-        
-        if ($result['success']) {
-            return $result;
-        }
-        
-        return $this->fallbackService->geocode($address);
-    }
-
-    /**
-     * Reverse geocode coordinates to address
-     */
-    public function reverseGeocode($lat, $lng)
-    {
-        $result = $this->nominatimService->reverseGeocode($lat, $lng);
-        
-        if ($result['success']) {
-            return $result;
-        }
-        
-        return [
-            'success' => false,
-            'message' => 'Reverse geocoding failed'
-        ];
-    }
-
-    /**
-     * Calculate complete trip estimate
-     */
-    public function calculateTripEstimate($originAddress, $destinationAddress, $vehicleId = null, $roundTrip = true)
-    {
-        // Try Nominatim first
-        $result = $this->nominatimService->calculateTripEstimate(
-            $originAddress, 
-            $destinationAddress, 
-            $vehicleId, 
-            $roundTrip
-        );
-        
-        if ($result['success']) {
-            return $result;
-        }
-        
-        // Fallback to local calculation
-        Log::info('Nominatim trip estimate failed, using fallback', [
-            'origin' => $originAddress,
-            'destination' => $destinationAddress
-        ]);
-        
-        // Get distance from fallback
-        $distanceResult = $this->fallbackService->calculateDistance($originAddress, $destinationAddress);
-        
-        if (!$distanceResult['success']) {
-            return ['success' => false, 'message' => 'Unable to calculate distance'];
-        }
-
-        // Get vehicle efficiency
-        $efficiency = 10;
-        $fuelType = 'regular';
-        
-        if ($vehicleId) {
-            try {
-                $vehicle = \App\Models\Vehicle::find($vehicleId);
-                if ($vehicle) {
-                    $efficiency = $vehicle->fuel_efficiency ?? 10;
-                    $fuelType = $vehicle->fuel_type ?? 'regular';
-                }
-            } catch (\Exception $e) {
-                Log::error('Error getting vehicle: ' . $e->getMessage());
-            }
-        }
-
-        $fuelPrice = $this->getFuelPrice($fuelType);
-        $multiplier = $roundTrip ? 2 : 1;
-        $distanceKm = $distanceResult['distance_km'] * $multiplier;
-        $durationMinutes = $distanceResult['duration_minutes'] * $multiplier;
-        $estimatedLiters = round($distanceKm / $efficiency, 2);
-        $estimatedCost = round($estimatedLiters * $fuelPrice, 2);
-
-        // Add 10% buffer
-        $bufferPercentage = 10;
-        $estimatedLitersWithBuffer = round($estimatedLiters * (1 + ($bufferPercentage / 100)), 2);
-        $estimatedCostWithBuffer = round($estimatedCost * (1 + ($bufferPercentage / 100)), 2);
-
-        return [
-            'success' => true,
-            'origin' => $distanceResult['origin'] ?? $originAddress,
-            'destination' => $distanceResult['destination'] ?? $destinationAddress,
-            'distance_km' => round($distanceKm, 2),
-            'duration_minutes' => round($durationMinutes, 1),
-            'estimated_liters' => $estimatedLitersWithBuffer,
-            'estimated_cost' => $estimatedCostWithBuffer,
-            'fuel_efficiency_km_per_liter' => $efficiency,
-            'fuel_price_per_liter' => $fuelPrice,
-            'fuel_type' => $fuelType,
-            'is_round_trip' => $roundTrip,
-            'one_way_distance_km' => $distanceResult['distance_km'],
-            'one_way_duration_minutes' => $distanceResult['duration_minutes'],
-            'round_trip_multiplier' => $multiplier,
-            'buffer_percentage' => $bufferPercentage,
-            'source' => 'fallback',
-        ];
-    }
-
-    /**
-     * Get fuel price from system settings
-     */
-    private function getFuelPrice($fuelType = null)
-    {
-        $fuelPriceMap = [
-            'diesel' => 'diesel_price_per_liter',
-            'premium' => 'premium_price_per_liter',
-            'regular' => 'regular_price_per_liter',
-            'gasoline' => 'regular_price_per_liter',
-        ];
-        
-        $settingKey = $fuelPriceMap[strtolower($fuelType)] ?? 'regular_price_per_liter';
-        
-        try {
-            $setting = \App\Models\SystemSetting::where('setting_key', $settingKey)->first();
-            return $setting ? (float) $setting->setting_value : 75.00;
-        } catch (\Exception $e) {
-            Log::error('Error getting fuel price: ' . $e->getMessage());
-            return 75.00;
-        }
-    }
-}
+        // Haversine distance multiplier (accounts for actual road distance vs straight line)
+        'road_distance_factor' => 1.3,
+    ],
+];
