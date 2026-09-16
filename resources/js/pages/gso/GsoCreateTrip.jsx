@@ -1,13 +1,17 @@
 // src/pages/gso/GsoCreateTrip.jsx
 // ============================================
-// ENHANCED: Improved validation with field highlighting
-// No duplicate toasts - single toast with all errors
-// Auto-focus first error field
+// Multi-stop trip tickets (max 5 stops)
+// Distance = sum of all legs × 2 (round trip)
+// FIXED: Fuel price ALWAYS from backend (uses DB settings)
+// FIXED: Cache clears on vehicle change (fresh fuel fetch)
+// FIXED: Debounce + cache to prevent 429 rate limit
+// FIXED: Map restored with multi-stop route display
+// FIXED: Themed Trip Estimate card (dark mode ready)
+// FIXED: Plain object cache (no Map naming collision)
 // ============================================
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { useAuth } from "../../contexts/AuthContext";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useOptimizedQuery } from "../../hooks/useOptimizedQuery";
 import { SkeletonCard, SkeletonText, SkeletonTitle } from "../../components/ui/SkeletonCard";
@@ -21,17 +25,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import {
-    Truck, User, MapPin, Calendar, Building2, Loader2, CheckCircle, Search,
+    Truck, User, MapPin, Calendar, Building2, Loader2, CheckCircle,
     AlertTriangle, Fuel, DollarSign, FileText, Clock, X, ArrowLeft,
-    Navigation, Gauge, Zap, Shield, Map, Minus, Plus, Maximize2, Move,
-    MousePointer
+    Navigation, Gauge, Shield, Plus, Trash2, Map as MapIcon, Maximize2,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { debounce } from "lodash";
 import { cn } from "@/lib/utils";
 import RouteMap from "../../components/map/RouteMap";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 // ============================================
 // CONSTANTS
@@ -39,7 +41,8 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 
 const ORIGIN_ADDRESS = "Laguindingan Municipal Hall";
 const SEARCH_DEBOUNCE_MS = 500;
-const DISTANCE_CALC_DELAY_MS = 800;
+const MAX_STOPS = 5;
+const SHARED_DEPARTMENT_CODES = ["MO"];
 
 // ============================================
 // SUB-COMPONENTS
@@ -71,58 +74,28 @@ const FormSkeleton = () => (
         </div>
         <SkeletonCard className="p-6">
             <div className="space-y-6">
+                <SkeletonCard className="p-5"><SkeletonText width="w-full" className="h-10" /></SkeletonCard>
                 <SkeletonCard className="p-5">
-                    <div className="flex items-center gap-2 mb-4">
-                        <SkeletonCard className="h-6 w-6 rounded-lg" />
-                        <SkeletonText width="w-32" />
-                    </div>
-                    <SkeletonText width="w-full" className="h-10" />
-                    <SkeletonText width="w-full" className="h-10 mt-3" />
-                </SkeletonCard>
-                <SkeletonCard className="p-5">
-                    <div className="flex items-center gap-2 mb-4">
-                        <SkeletonCard className="h-6 w-6 rounded-lg" />
-                        <SkeletonText width="w-32" />
-                    </div>
                     <SkeletonText width="w-full" className="h-10" />
                     <SkeletonText width="w-full" className="h-24 mt-3" />
                 </SkeletonCard>
-                <SkeletonCard className="p-5">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <SkeletonText width="w-full" className="h-10" />
-                        <SkeletonText width="w-full" className="h-10" />
-                    </div>
-                </SkeletonCard>
-                <div className="flex justify-end gap-3">
-                    <SkeletonCard className="h-10 w-24" />
-                    <SkeletonCard className="h-10 w-32" />
-                </div>
             </div>
         </SkeletonCard>
     </div>
 );
 
-// ============================================
-// ✅ ENHANCED: FieldError with highlighting
-// ============================================
-
 const FieldError = ({ error }) => {
     if (!error) return null;
     return (
-        <p className="text-red-500 text-xs mt-1.5 flex items-center gap-1 animate-fadeIn">
+        <p className="text-red-500 text-xs mt-1.5 flex items-center gap-1">
             <AlertTriangle className="h-3 w-3 flex-shrink-0" />
             {error}
         </p>
     );
 };
 
-// ============================================
-// ✅ ENHANCED: Field wrapper with error highlighting
-// ============================================
-
 const FormFieldWrapper = ({ children, error, touched, label, required, icon: Icon, helper }) => {
     const hasError = touched && error;
-    
     return (
         <div className="space-y-1.5">
             {label && (
@@ -136,7 +109,7 @@ const FormFieldWrapper = ({ children, error, touched, label, required, icon: Ico
                 {React.cloneElement(children, {
                     className: cn(
                         children.props.className,
-                        hasError && "border-red-500 ring-red-500 focus:ring-red-500 bg-red-50/50 dark:bg-red-950/10"
+                        hasError && "border-red-500 ring-red-500 bg-red-50/50 dark:bg-red-950/10"
                     )
                 })}
                 {hasError && (
@@ -147,19 +120,19 @@ const FormFieldWrapper = ({ children, error, touched, label, required, icon: Ico
             </div>
             {hasError && <FieldError error={error} />}
             {helper && !hasError && (
-                <p className="text-xs text-slate-400 dark:text-slate-500 flex items-center gap-1 mt-1">
-                    {helper}
-                </p>
+                <p className="text-xs text-slate-400 dark:text-slate-500 flex items-center gap-1 mt-1">{helper}</p>
             )}
         </div>
     );
 };
 
 // ============================================
-// DRIVER DATALIST COMPONENT
+// DRIVER DATALIST
 // ============================================
 
-const DriverDatalist = ({ value, onChange, onBlur, error, touched, drivers, loading, onDriverSelect }) => {
+const DriverDatalist = ({
+    value, onChange, onBlur, error, touched, drivers, loading, onDriverSelect, registerFocusRef,
+}) => {
     const [searchTerm, setSearchTerm] = useState("");
     const [selectedDriver, setSelectedDriver] = useState(null);
     const [isOpen, setIsOpen] = useState(false);
@@ -167,6 +140,10 @@ const DriverDatalist = ({ value, onChange, onBlur, error, touched, drivers, load
     const inputRef = useRef(null);
     const wrapperRef = useRef(null);
     const hasError = touched && error;
+
+    useEffect(() => {
+        if (registerFocusRef) registerFocusRef(() => inputRef.current?.focus());
+    }, [registerFocusRef]);
 
     useEffect(() => {
         if (!value) {
@@ -194,15 +171,10 @@ const DriverDatalist = ({ value, onChange, onBlur, error, touched, drivers, load
         const search = searchTerm.toLowerCase().trim();
         const filtered = drivers.filter(d => {
             const fullName = d.full_name || d.user?.full_name || d.name || "";
-            const firstName = d.first_name || d.user?.first_name || "";
-            const lastName = d.last_name || d.user?.last_name || "";
             const deptName = d.department_name || d.user?.department_name || d.department?.department_name || "";
             const deptCode = d.department_code || d.user?.department_code || d.department?.department_code || "";
             const empNum = d.employee_number || d.user?.employee_number || "";
-            const name = `${fullName} ${firstName} ${lastName}`.toLowerCase();
-            const department = `${deptName} ${deptCode}`.toLowerCase();
-            const employee = empNum.toLowerCase();
-            return name.includes(search) || department.includes(search) || employee.includes(search);
+            return `${fullName} ${deptName} ${deptCode} ${empNum}`.toLowerCase().includes(search);
         });
         setFilteredDrivers(filtered);
     }, [drivers, searchTerm]);
@@ -223,17 +195,10 @@ const DriverDatalist = ({ value, onChange, onBlur, error, touched, drivers, load
             onChange("");
             if (onDriverSelect) onDriverSelect(null);
         }
-        if (input.length > 0) setIsOpen(true);
-        else setIsOpen(false);
-        if (input.length > 0) {
-            const match = drivers.find(d => (d.full_name || d.user?.full_name || d.name || "").toLowerCase() === input.toLowerCase().trim());
-            if (match) handleSelect(match);
-        }
+        setIsOpen(input.length > 0);
     };
 
     const handleSelect = (driver) => {
-        const driverName = driver.full_name || driver.user?.full_name || driver.name || "Unknown Driver";
-        const driverId = driver.driver_id || driver.id || driver.user_id;
         setSelectedDriver(driver);
         setSearchTerm("");
         onChange((driver.driver_id || driver.id)?.toString() || "");
@@ -258,16 +223,14 @@ const DriverDatalist = ({ value, onChange, onBlur, error, touched, drivers, load
         }
     };
 
-    const getDriverDisplayName = (driver) => driver?.full_name || driver?.user?.full_name || driver?.name || "Unknown Driver";
-    const getDriverDepartment = (driver) => driver?.department_name || driver?.user?.department_name || driver?.department?.department_name || "No Dept";
-    const getDriverId = (driver) => driver?.driver_id || driver?.id || driver?.user_id;
+    const getDriverDisplayName = (d) => d?.full_name || d?.user?.full_name || d?.name || "Unknown";
+    const getDriverDepartment = (d) => d?.department_name || d?.user?.department_name || d?.department?.department_name || "No Dept";
+    const getDriverId = (d) => d?.driver_id || d?.id || d?.user_id;
 
     return (
         <div className="relative w-full" ref={wrapperRef}>
             <div className="relative">
-                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-                    <User className="h-4 w-4" />
-                </div>
+                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><User className="h-4 w-4" /></div>
                 <Input
                     ref={inputRef}
                     type="text"
@@ -278,91 +241,61 @@ const DriverDatalist = ({ value, onChange, onBlur, error, touched, drivers, load
                     onBlur={() => { setTimeout(() => setIsOpen(false), 250); if (onBlur) onBlur(); }}
                     className={cn(
                         "pl-10 pr-10 bg-white dark:bg-slate-900 dark:border-slate-700",
-                        hasError && "border-red-500 ring-red-500 focus:ring-red-500 bg-red-50/50 dark:bg-red-950/10",
-                        selectedDriver && !hasError && "border-emerald-500 ring-emerald-500/30 bg-emerald-50/30 dark:bg-emerald-950/20"
+                        hasError && "border-red-500 ring-red-500 bg-red-50/50",
+                        selectedDriver && !hasError && "border-emerald-500 ring-emerald-500/30 bg-emerald-50/30"
                     )}
                 />
                 {searchTerm && (
-                    <button type="button" onClick={handleClear} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors">
+                    <button type="button" onClick={handleClear} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
                         <X className="h-4 w-4" />
                     </button>
                 )}
                 {loading && (
-                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                        <Loader2 className="h-4 w-4 animate-spin text-slate-400" />
-                    </div>
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2"><Loader2 className="h-4 w-4 animate-spin text-slate-400" /></div>
                 )}
                 {selectedDriver && !searchTerm && !hasError && (
-                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                        <CheckCircle className="h-4 w-4 text-emerald-500" />
-                    </div>
-                )}
-                {hasError && (
-                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                        <AlertTriangle className="h-4 w-4 text-red-500 animate-pulse" />
-                    </div>
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2"><CheckCircle className="h-4 w-4 text-emerald-500" /></div>
                 )}
             </div>
             {selectedDriver && !searchTerm && !hasError && (
-                <div className="mt-2 flex items-center gap-2 p-2 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-lg">
-                    <User className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                    <span className="font-medium text-slate-800 dark:text-white">{getDriverDisplayName(selectedDriver)}</span>
-                    <Badge variant="outline" className="border-emerald-300 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300 text-[10px]">
-                        {getDriverDepartment(selectedDriver)}
-                    </Badge>
-                    <button type="button" onClick={handleClear} className="ml-auto text-xs text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-950/30 px-2 py-1 rounded-lg transition-colors">
-                        Change
-                    </button>
+                <div className="mt-2 flex items-center gap-2 p-2 bg-emerald-50 border border-emerald-200 rounded-lg">
+                    <User className="h-4 w-4 text-emerald-600" />
+                    <span className="font-medium text-slate-800">{getDriverDisplayName(selectedDriver)}</span>
+                    <Badge variant="outline" className="border-emerald-300 text-emerald-700 text-[10px]">{getDriverDepartment(selectedDriver)}</Badge>
+                    <button type="button" onClick={handleClear} className="ml-auto text-xs text-red-500 hover:text-red-700 px-2 py-1 rounded-lg">Change</button>
                 </div>
             )}
-            {hasError && !selectedDriver && (
-                <div className="mt-2">
-                    <FieldError error={error} />
-                </div>
-            )}
+            {hasError && !selectedDriver && <FieldError error={error} />}
             {isOpen && filteredDrivers.length > 0 && (
-                <div className="absolute z-50 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-lg max-h-60 overflow-auto">
-                    <div className="sticky top-0 bg-slate-50 dark:bg-slate-900/50 px-4 py-2 text-xs text-slate-500 dark:text-slate-400 border-b dark:border-slate-700 flex justify-between items-center">
+                <div className="absolute z-50 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 rounded-xl shadow-lg max-h-60 overflow-auto">
+                    <div className="sticky top-0 bg-slate-50 px-4 py-2 text-xs text-slate-500 border-b flex justify-between">
                         <span>{filteredDrivers.length} driver{filteredDrivers.length !== 1 ? "s" : ""} found</span>
                         <span className="text-slate-400 text-[10px]">● All drivers</span>
                     </div>
                     {filteredDrivers.map((driver) => {
                         const driverId = getDriverId(driver);
-                        const driverName = getDriverDisplayName(driver);
-                        const deptName = getDriverDepartment(driver);
-                        const empNum = driver.employee_number || driver.user?.employee_number || "";
-                        const isSelected = selectedDriver && getDriverId(selectedDriver) === driverId;
                         return (
                             <div
                                 key={driverId}
                                 onMouseDown={(e) => { e.preventDefault(); handleSelect(driver); }}
-                                className={cn(
-                                    "px-4 py-2.5 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors flex items-center justify-between",
-                                    isSelected && "bg-blue-50 dark:bg-blue-900/30"
-                                )}
+                                className="px-4 py-2.5 cursor-pointer hover:bg-slate-100 flex items-center justify-between"
                             >
                                 <div className="flex-1 min-w-0">
-                                    <span className="font-medium text-slate-800 dark:text-white block truncate">
-                                        {driverName}
-                                        {isSelected && <span className="ml-2 text-xs text-blue-600 dark:text-blue-400 font-normal">✓ Selected</span>}
-                                    </span>
-                                    <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                                    <span className="font-medium text-slate-800 block truncate">{getDriverDisplayName(driver)}</span>
+                                    <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
                                         <Building2 className="h-3 w-3" />
-                                        <span className="truncate">{deptName}</span>
-                                        {empNum && <><span className="text-slate-300 dark:text-slate-600">•</span><span className="font-mono">{empNum}</span></>}
+                                        <span className="truncate">{getDriverDepartment(driver)}</span>
                                     </div>
                                 </div>
-                                {isSelected && <CheckCircle className="h-4 w-4 text-blue-600 flex-shrink-0 ml-2" />}
                             </div>
                         );
                     })}
                 </div>
             )}
-            {isOpen && searchTerm && searchTerm.length > 0 && filteredDrivers.length === 0 && !loading && (
-                <div className="absolute z-50 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-lg p-4 text-center">
-                    <User className="h-8 w-8 text-slate-300 dark:text-slate-600 mx-auto mb-2" />
-                    <p className="text-sm text-slate-500 dark:text-slate-400">No drivers found</p>
-                    <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">Try a different search term</p>
+            {isOpen && searchTerm && filteredDrivers.length === 0 && !loading && (
+                <div className="absolute z-50 w-full mt-1 bg-white border rounded-xl shadow-lg p-4 text-center">
+                    <User className="h-8 w-8 text-slate-300 mx-auto mb-2" />
+                    <p className="text-sm text-slate-500">No drivers found</p>
                 </div>
             )}
         </div>
@@ -370,214 +303,453 @@ const DriverDatalist = ({ value, onChange, onBlur, error, touched, drivers, load
 };
 
 // ============================================
-// DEPARTMENT DISPLAY COMPONENT
+// DEPARTMENT DISPLAY
 // ============================================
 
 const DepartmentDisplay = ({ department, error, driver, touched }) => {
     const hasError = touched && error;
-    
     if (department) {
         return (
             <div className="relative">
-                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-500">
-                    <Building2 className="h-4 w-4" />
-                </div>
-                <Input
-                    value={department.department_name}
-                    disabled
-                    className={cn(
-                        "pl-10 bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 font-medium cursor-default",
-                        hasError && "border-red-500 ring-red-500 bg-red-50/50 dark:bg-red-950/10"
-                    )}
-                />
+                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-500"><Building2 className="h-4 w-4" /></div>
+                <Input value={department.department_name} disabled className={cn("pl-10 bg-blue-50 border-blue-200 text-blue-700 font-medium", hasError && "border-red-500")} />
                 <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                    <Badge variant="outline" className="border-blue-300 dark:border-blue-700 text-xs">
-                        {department.department_code || "Auto-filled"}
-                    </Badge>
+                    <Badge variant="outline" className="border-blue-300 text-xs">{department.department_code || "Auto"}</Badge>
                 </div>
                 {hasError && <FieldError error={error} />}
             </div>
         );
     }
     if (driver) {
-        const deptName = driver.department_name || driver.user?.department_name || driver.department?.department_name;
-        const deptCode = driver.department_code || driver.user?.department_code || driver.department?.department_code;
+        const deptName = driver.department_name || driver.user?.department_name;
+        const deptCode = driver.department_code || driver.user?.department_code;
         if (deptName) {
             return (
                 <div className="relative">
-                    <div className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-500">
-                        <Building2 className="h-4 w-4" />
-                    </div>
-                    <Input
-                        value={deptName}
-                        disabled
-                        className={cn(
-                            "pl-10 bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 font-medium cursor-default",
-                            hasError && "border-red-500 ring-red-500 bg-red-50/50 dark:bg-red-950/10"
-                        )}
-                    />
+                    <div className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-500"><Building2 className="h-4 w-4" /></div>
+                    <Input value={deptName} disabled className={cn("pl-10 bg-blue-50 border-blue-200 text-blue-700 font-medium", hasError && "border-red-500")} />
                     <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                        <Badge variant="outline" className="border-blue-300 dark:border-blue-700 text-xs">
-                            {deptCode || "Auto-filled"}
-                        </Badge>
+                        <Badge variant="outline" className="border-blue-300 text-xs">{deptCode || "Auto"}</Badge>
                     </div>
-                    {hasError && <FieldError error={error} />}
                 </div>
             );
         }
-        return (
-            <div className="relative">
-                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-yellow-500">
-                    <AlertTriangle className="h-4 w-4" />
-                </div>
-                <Input
-                    value="No department assigned to this driver"
-                    disabled
-                    className={cn(
-                        "pl-10 bg-yellow-50 dark:bg-yellow-950/20 border-yellow-300 dark:border-yellow-700 text-yellow-700 dark:text-yellow-300 cursor-default",
-                        hasError && "border-red-500 ring-red-500 bg-red-50/50 dark:bg-red-950/10"
-                    )}
-                />
-                {hasError && <FieldError error={error} />}
-            </div>
-        );
     }
     return (
         <div className="relative">
-            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-                <Building2 className="h-4 w-4" />
-            </div>
-            <Input
-                value="Select a driver first"
-                disabled
-                className={cn(
-                    "pl-10 bg-slate-100 dark:bg-slate-800 cursor-not-allowed text-slate-400 dark:text-slate-500",
-                    hasError && "border-red-500 ring-red-500 bg-red-50/50 dark:bg-red-950/10"
-                )}
-            />
-            {hasError && <FieldError error={error} />}
+            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><Building2 className="h-4 w-4" /></div>
+            <Input value="Select a driver first" disabled className="pl-10 bg-slate-100 text-slate-400" />
         </div>
     );
 };
 
 // ============================================
-// INTERACTIVE MAP MODAL COMPONENT
+// MULTI-STOP DESTINATION COMPONENT
 // ============================================
 
-const InteractiveMapModal = ({ isOpen, onClose, destination, coordinates, origin, onLocationSelect, onCalculateRoute }) => {
-    const [isInteractive, setIsInteractive] = useState(true);
-    const [selectedPoint, setSelectedPoint] = useState(coordinates);
-    const [isCalculating, setIsCalculating] = useState(false);
+const MultiStopDestination = ({
+    stops,
+    onChange,
+    vehicleId,
+    onEstimateChange,
+    maxStops = MAX_STOPS,
+}) => {
+    const [activeIndex, setActiveIndex] = useState(null);
+    const [suggestions, setSuggestions] = useState([]);
+    const [showSuggestions, setShowSuggestions] = useState(false);
+    const [searching, setSearching] = useState(false);
+    const [calculating, setCalculating] = useState(false);
+    const wrapperRefs = useRef([]);
+    const abortRef = useRef(null);
+    const calcVersionRef = useRef(0);
+    const calcCacheRef = useRef({});
+    const lastCalcKeyRef = useRef("");
 
-    useEffect(() => { if (coordinates) setSelectedPoint(coordinates); }, [coordinates]);
-
-    const handleMapClick = (e) => {
-        if (!isInteractive) return;
-        const lat = e.latLng?.lat() || e.latLng?.lat;
-        const lng = e.latLng?.lng() || e.latLng?.lng;
-        if (lat && lng) {
-            setSelectedPoint({ lat, lng });
-            reverseGeocode(lat, lng);
-        }
-    };
-
-    const reverseGeocode = async (lat, lng) => {
-        try {
-            const response = await locationAPI.reverseGeocode({ lat, lng });
-            if (response.data.success) {
-                const address = response.data.address;
-                setSelectedPoint({ lat, lng, address });
-                onLocationSelect({ lat, lng, address });
+    const searchDestinations = useCallback(
+        debounce(async (query) => {
+            if (query.length < 2) {
+                setSuggestions([]);
+                setShowSuggestions(false);
+                return;
             }
-        } catch (error) { console.error("Reverse geocoding error:", error); }
-    };
+            setSearching(true);
+            if (abortRef.current) abortRef.current.abort();
+            abortRef.current = new AbortController();
+            try {
+                const response = await locationAPI.searchPlaces(query);
+                const data = response?.data;
+                if (data?.success !== false) {
+                    let predictions = data.predictions || [];
+                    if (predictions.length === 0 && data.data) predictions = data.data;
+                    const filtered = predictions.filter(item => {
+                        const lat = parseFloat(item.lat);
+                        const lng = parseFloat(item.lng);
+                        return !isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0;
+                    });
+                    setSuggestions(filtered.length > 0 ? filtered : predictions);
+                    setShowSuggestions(true);
+                }
+            } catch (error) {
+                if (error.name !== 'AbortError') {
+                    setSuggestions([]);
+                    setShowSuggestions(false);
+                }
+            } finally {
+                setSearching(false);
+            }
+        }, SEARCH_DEBOUNCE_MS),
+        []
+    );
 
-    const handleRecalculate = async () => {
-        if (!selectedPoint) return;
-        setIsCalculating(true);
+    const calculateTotal = useCallback(async (currentStops, currentVehicleId) => {
+        const validStops = currentStops.filter(s => s.address && s.lat && s.lng);
+        if (validStops.length === 0) {
+            onEstimateChange(null);
+            return;
+        }
+
+        const version = ++calcVersionRef.current;
+        setCalculating(true);
+
         try {
-            const address = selectedPoint.address || destination;
-            await onCalculateRoute(address, selectedPoint);
-            toast.success("Route recalculated successfully!");
+            let totalDistance = 0;
+            let totalDuration = 0;
+            // ✅ Defaults matching DB (fallback if backend doesn't return fuel info)
+            let efficiency = 10;
+            let fuelPrice = 78;        // regular_price_per_liter
+            let fuelType = "regular";
+            let vehicleInfoCaptured = false;
+
+            for (let i = 0; i < validStops.length; i++) {
+                const stop = validStops[i];
+                const legOrigin = i === 0
+                    ? ORIGIN_ADDRESS
+                    : (validStops[i - 1].shortName || validStops[i - 1].address);
+
+                const cacheKey = `${legOrigin}→${stop.address}|${currentVehicleId || 'none'}`;
+
+                // ✅ Cache hit — plain object
+                if (calcCacheRef.current[cacheKey]) {
+                    const cached = calcCacheRef.current[cacheKey];
+                    console.log(`[Leg ${i + 1}] (cached) ${legOrigin} → ${stop.address}`);
+                    totalDistance += parseFloat(cached.distance_km) || 0;
+                    totalDuration += parseFloat(cached.duration_minutes) || 0;
+                    // ✅ Always capture fuel info (backend returns it either way)
+                    if (!vehicleInfoCaptured && cached.fuel_price_per_liter) {
+                        efficiency = parseFloat(cached.fuel_efficiency_km_per_liter) || 10;
+                        fuelPrice = parseFloat(cached.fuel_price_per_liter) || 78;
+                        fuelType = cached.fuel_type || "regular";
+                        vehicleInfoCaptured = true;
+                    }
+                    continue;
+                }
+
+                const params = {
+                    origin: legOrigin,
+                    destination: stop.address,
+                    vehicle_id: currentVehicleId || undefined,
+                    round_trip: false,
+                    dest_lat: stop.lat,
+                    dest_lng: stop.lng,
+                };
+                if (i > 0) {
+                    params.origin_lat = validStops[i - 1].lat;
+                    params.origin_lng = validStops[i - 1].lng;
+                }
+
+                try {
+                    const response = await locationAPI.calculateDistance(params);
+                    console.log(`[Leg ${i + 1}] ${legOrigin} → ${stop.address}:`, response.data);
+
+                    if (response.data?.success) {
+                        calcCacheRef.current[cacheKey] = response.data;
+
+                        totalDistance += parseFloat(response.data.distance_km) || 0;
+                        totalDuration += parseFloat(response.data.duration_minutes) || 0;
+
+                        // ✅ Always use backend fuel info (diesel/regular/premium)
+                        if (!vehicleInfoCaptured && response.data.fuel_price_per_liter) {
+                            efficiency = parseFloat(response.data.fuel_efficiency_km_per_liter) || 10;
+                            fuelPrice = parseFloat(response.data.fuel_price_per_liter) || 78;
+                            fuelType = response.data.fuel_type || "regular";
+                            vehicleInfoCaptured = true;
+                            console.log(`[Fuel] Captured from backend:`, { fuelType, fuelPrice, efficiency });
+                        }
+                    } else {
+                        console.warn(`[Leg ${i + 1}] failed:`, response.data?.message);
+                    }
+                } catch (err) {
+                    console.error(`[Leg ${i + 1}] error:`, err);
+                    if (err.response?.status === 429) {
+                        console.warn(`[Leg ${i + 1}] Rate limited, waiting 2s...`);
+                        await new Promise(r => setTimeout(r, 2000));
+                        try {
+                            const retry = await locationAPI.calculateDistance(params);
+                            if (retry.data?.success) {
+                                calcCacheRef.current[cacheKey] = retry.data;
+                                totalDistance += parseFloat(retry.data.distance_km) || 0;
+                                totalDuration += parseFloat(retry.data.duration_minutes) || 0;
+                                if (!vehicleInfoCaptured && retry.data.fuel_price_per_liter) {
+                                    efficiency = parseFloat(retry.data.fuel_efficiency_km_per_liter) || 10;
+                                    fuelPrice = parseFloat(retry.data.fuel_price_per_liter) || 78;
+                                    fuelType = retry.data.fuel_type || "regular";
+                                    vehicleInfoCaptured = true;
+                                }
+                            }
+                        } catch (e2) {
+                            console.error(`[Leg ${i + 1}] retry failed:`, e2);
+                        }
+                    }
+                }
+            }
+
+            if (version !== calcVersionRef.current) return;
+
+            if (totalDistance === 0) {
+                console.warn("[Multi-stop] Total distance is 0");
+                onEstimateChange(null);
+                return;
+            }
+
+            const roundTripDistance = Math.round(totalDistance * 2 * 100) / 100;
+            const roundTripDuration = Math.round(totalDuration * 2);
+            const estimatedLiters = Math.round((roundTripDistance / efficiency) * 1.1 * 100) / 100;
+            const estimatedCost = Math.round(estimatedLiters * fuelPrice * 100) / 100;
+
+            const estimate = {
+                success: true,
+                distance_km: roundTripDistance,
+                duration_minutes: roundTripDuration,
+                estimated_liters: estimatedLiters,
+                estimated_cost: estimatedCost,
+                fuel_efficiency_km_per_liter: efficiency,
+                fuel_price_per_liter: fuelPrice,
+                fuel_type: fuelType,
+                is_round_trip: true,
+                is_multi_stop: validStops.length > 1,
+                stops_count: validStops.length,
+                source: 'multi_stop_sum',
+            };
+
+            console.log("[Multi-stop] ✅ Estimate:", estimate);
+            onEstimateChange(estimate);
         } catch (error) {
-            console.error("Recalculation error:", error);
-            toast.error("Failed to recalculate route");
+            console.error("[Multi-stop] error:", error);
+            onEstimateChange(null);
         } finally {
-            setIsCalculating(false);
+            if (version === calcVersionRef.current) {
+                setCalculating(false);
+            }
+        }
+    }, [onEstimateChange]);
+
+    const debouncedCalcRef = useRef(null);
+    if (!debouncedCalcRef.current) {
+        debouncedCalcRef.current = debounce((s, v) => calculateTotal(s, v), 600);
+    }
+    const debouncedCalc = debouncedCalcRef.current;
+
+    const stopsKey = stops.map(s => `${s.address}|${s.lat}|${s.lng}`).join("::");
+    useEffect(() => {
+        const currentKey = `${stopsKey}||${vehicleId || ''}`;
+        if (currentKey === lastCalcKeyRef.current) return;
+        lastCalcKeyRef.current = currentKey;
+
+        // ✅ ALWAYS clear cache when stops/vehicle change (forces fresh fuel fetch)
+        calcCacheRef.current = {};
+
+        debouncedCalc(stops, vehicleId);
+        return () => debouncedCalc.cancel();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [stopsKey, vehicleId]);
+
+    useEffect(() => () => debouncedCalc.cancel(), []);
+
+    useEffect(() => {
+        const handleClick = (e) => {
+            const isInsideAny = wrapperRefs.current.some(ref => ref && ref.contains(e.target));
+            if (!isInsideAny) setShowSuggestions(false);
+        };
+        document.addEventListener("mousedown", handleClick);
+        return () => document.removeEventListener("mousedown", handleClick);
+    }, []);
+
+    const updateStop = (index, field, value) => {
+        const newStops = [...stops];
+        newStops[index] = { ...newStops[index], [field]: value };
+        if (field === "address") {
+            newStops[index].lat = null;
+            newStops[index].lng = null;
+            newStops[index].shortName = null;
+        }
+        onChange(newStops);
+    };
+
+    const handleStopInputChange = (index, value) => {
+        updateStop(index, "address", value);
+        setActiveIndex(index);
+        if (value.length > 1) {
+            searchDestinations(value);
+        } else {
+            setSuggestions([]);
+            setShowSuggestions(false);
         }
     };
 
-    const handleUseCurrentLocation = () => {
-        if (navigator.geolocation) {
-            navigator.geolocation.getCurrentPosition(
-                (position) => {
-                    const { latitude, longitude } = position.coords;
-                    setSelectedPoint({ lat: latitude, lng: longitude });
-                    reverseGeocode(latitude, longitude);
-                    toast.success("Current location detected!");
-                },
-                () => toast.error("Unable to get current location")
-            );
-        } else {
-            toast.error("Geolocation is not supported by your browser");
-        }
+    const handleSelectSuggestion = (index, suggestion) => {
+        const newStops = [...stops];
+        const fullDescription = suggestion.description;
+        const parts = fullDescription.split(",").map(p => p.trim());
+        const shortName = parts.length >= 2 ? `${parts[0]}, ${parts[1]}` : parts[0];
+
+        newStops[index] = {
+            address: fullDescription,
+            shortName: shortName,
+            lat: parseFloat(suggestion.lat),
+            lng: parseFloat(suggestion.lng),
+        };
+        onChange(newStops);
+        setShowSuggestions(false);
+        setSuggestions([]);
+        setActiveIndex(null);
     };
+
+    const addStop = () => {
+        if (stops.length >= maxStops) {
+            toast.error(`Maximum ${maxStops} stops allowed`);
+            return;
+        }
+        onChange([...stops, { address: "", lat: null, lng: null, shortName: null }]);
+    };
+
+    const removeStop = (index) => {
+        if (stops.length === 1) {
+            onChange([{ address: "", lat: null, lng: null, shortName: null }]);
+            return;
+        }
+        onChange(stops.filter((_, i) => i !== index));
+    };
+
+    const canAddMore = stops.length < maxStops;
+    const routePreview = stops.map(s => s.address).filter(Boolean);
 
     return (
-        <Dialog open={isOpen} onOpenChange={onClose}>
-            <DialogContent className="max-w-6xl w-[95vw] h-[90vh] p-0 overflow-hidden">
-                <DialogHeader className="p-4 border-b border-slate-200 dark:border-slate-700 flex flex-row items-center justify-between flex-wrap gap-2">
-                    <DialogTitle className="flex items-center gap-2">
-                        <Map className="h-5 w-5 text-blue-600" />
-                        Interactive Route Map
-                        <span className="text-sm font-normal text-gray-500 dark:text-gray-400 hidden sm:inline">
-                            {origin} → {destination}
-                        </span>
-                    </DialogTitle>
-                    <div className="flex items-center gap-2 flex-wrap">
-                        <TooltipProvider>
-                            <Tooltip>
-                                <TooltipTrigger asChild>
-                                    <Button type="button" variant={isInteractive ? "default" : "outline"} size="sm" onClick={() => setIsInteractive(!isInteractive)} className="h-8">
-                                        {isInteractive ? <><MousePointer className="h-4 w-4 mr-1" /> Click to Place</> : <><Move className="h-4 w-4 mr-1" /> Pan Mode</>}
-                                    </Button>
-                                </TooltipTrigger>
-                                <TooltipContent>{isInteractive ? "Click on map to place destination" : "Drag to pan the map"}</TooltipContent>
-                            </Tooltip>
-                        </TooltipProvider>
-                        <Button type="button" variant="outline" size="sm" onClick={handleUseCurrentLocation} className="h-8">
-                            <MapPin className="h-4 w-4 mr-1" /> My Location
-                        </Button>
-                        <Button type="button" variant="default" size="sm" onClick={handleRecalculate} disabled={isCalculating || !selectedPoint} className="h-8 bg-blue-600 hover:bg-blue-700">
-                            {isCalculating ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Calculating...</> : <><Navigation className="h-4 w-4 mr-1" /> Recalculate</>}
-                        </Button>
-                        <DialogClose asChild>
-                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0"><X className="h-4 w-4" /></Button>
-                        </DialogClose>
-                    </div>
-                </DialogHeader>
-                <div className="flex-1 h-full min-h-[400px] p-4 relative">
-                    {coordinates && (
-                        <RouteMap
-                            destination={destination}
-                            coordinates={selectedPoint || coordinates}
-                            height="100%"
-                            showRoute={true}
-                            interactive={isInteractive}
-                            onMapClick={handleMapClick}
-                            className="w-full h-full rounded-lg"
-                            showMarker={true}
-                            draggableMarker={isInteractive}
-                        />
-                    )}
-                    {isInteractive && selectedPoint && (
-                        <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 bg-black/75 text-white px-4 py-2 rounded-lg text-sm z-10">
-                            <MousePointer className="h-4 w-4 inline mr-2" /> Click on the map to move the destination point
+        <div className="space-y-3">
+            <div className="space-y-2">
+                {stops.map((stop, index) => (
+                    <div key={index} className="relative" ref={el => wrapperRefs.current[index] = el}>
+                        <div className="flex gap-2 items-start">
+                            <div className="flex-shrink-0 mt-2.5">
+                                <Badge variant="outline" className="text-[10px] h-6 w-6 rounded-full flex items-center justify-center p-0 border-blue-300 text-blue-600">
+                                    {index + 1}
+                                </Badge>
+                            </div>
+                            <div className="relative flex-1">
+                                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><MapPin className="h-4 w-4" /></div>
+                                <Input
+                                    placeholder={index === 0 ? "First stop (e.g., Sinai, Laguindingan)" : `Stop ${index + 1}`}
+                                    value={stop.address}
+                                    onChange={(e) => handleStopInputChange(index, e.target.value)}
+                                    onFocus={() => {
+                                        setActiveIndex(index);
+                                        if (suggestions.length > 0) setShowSuggestions(true);
+                                    }}
+                                    className="pl-10 pr-10"
+                                />
+                                {stop.address && stop.lat && (
+                                    <div className="absolute right-3 top-1/2 -translate-y-1/2"><CheckCircle className="h-4 w-4 text-emerald-500" /></div>
+                                )}
+                                {searching && activeIndex === index && !stop.lat && (
+                                    <div className="absolute right-3 top-1/2 -translate-y-1/2"><Loader2 className="h-4 w-4 animate-spin text-blue-500" /></div>
+                                )}
+
+                                {activeIndex === index && showSuggestions && suggestions.length > 0 && (
+                                    <div className="absolute z-30 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 rounded-xl shadow-lg max-h-60 overflow-auto">
+                                        <div className="sticky top-0 bg-gray-100 px-4 py-2 text-xs text-gray-500 flex justify-between items-center border-b">
+                                            <span>Suggestions</span>
+                                            <span className="text-blue-500">{suggestions.length} results</span>
+                                        </div>
+                                        {suggestions.map((suggestion, sIndex) => (
+                                            <div
+                                                key={sIndex}
+                                                onClick={() => handleSelectSuggestion(index, suggestion)}
+                                                className="px-4 py-3 hover:bg-blue-50 cursor-pointer flex items-start gap-3 border-b last:border-0"
+                                            >
+                                                <MapPin className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                                                <div>
+                                                    <p className="text-sm text-gray-900">{suggestion.description}</p>
+                                                    <p className="text-xs text-gray-500">
+                                                        {suggestion.lat && suggestion.lng
+                                                            ? `${parseFloat(suggestion.lat).toFixed(4)}, ${parseFloat(suggestion.lng).toFixed(4)}`
+                                                            : "Click to calculate"}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                            {stops.length > 1 && (
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => removeStop(index)}
+                                    className="shrink-0 h-10 w-10 text-red-500 hover:text-red-700 hover:bg-red-50"
+                                >
+                                    <Trash2 className="h-4 w-4" />
+                                </Button>
+                            )}
                         </div>
-                    )}
+                    </div>
+                ))}
+            </div>
+
+            {canAddMore && (
+                <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={addStop}
+                    className="w-full border-dashed border-2 border-slate-300 hover:border-blue-400 hover:bg-blue-50/50"
+                >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add Another Stop ({stops.length}/{maxStops})
+                </Button>
+            )}
+
+            {!canAddMore && (
+                <p className="text-xs text-slate-500 text-center py-2">Maximum {maxStops} stops reached</p>
+            )}
+
+            {routePreview.length > 0 && (
+                <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
+                    <div className="flex items-start gap-2">
+                        <Navigation className="h-4 w-4 text-blue-500 mt-0.5 flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                            <p className="text-xs text-slate-500 mb-1">Route preview (round trip):</p>
+                            <p className="text-sm font-medium text-slate-700 break-words">
+                                {ORIGIN_ADDRESS}
+                                {routePreview.map((addr, i) => (
+                                    <React.Fragment key={i}>
+                                        {" → "}
+                                        <span className="text-blue-600">{addr}</span>
+                                    </React.Fragment>
+                                ))}
+                                {" → "}
+                                {ORIGIN_ADDRESS}
+                            </p>
+                            {calculating && (
+                                <p className="text-xs text-blue-600 mt-1 flex items-center gap-1">
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                    Calculating total distance...
+                                </p>
+                            )}
+                        </div>
+                    </div>
                 </div>
-            </DialogContent>
-        </Dialog>
+            )}
+        </div>
     );
 };
 
@@ -588,16 +760,14 @@ const InteractiveMapModal = ({ isOpen, onClose, destination, coordinates, origin
 const GsoCreateTrip = () => {
     const navigate = useNavigate();
     const queryClient = useQueryClient();
-    const abortControllerRef = useRef(null);
-    const firstErrorRef = useRef(null);
     const toastIdRef = useRef(null);
+    const driverFocusRef = useRef(null);
 
     const [formData, setFormData] = useState({
         department_id: "",
         driver_id: "",
         vehicle_id: "",
         trip_date: new Date().toISOString().split("T")[0],
-        destination: "",
         purpose: "",
         charge_to: "",
         passenger_name: "",
@@ -606,91 +776,86 @@ const GsoCreateTrip = () => {
         estimated_cost: "",
     });
 
+    const [stops, setStops] = useState([{ address: "", lat: null, lng: null, shortName: null }]);
+    const [tripEstimate, setTripEstimate] = useState(null);
     const [errors, setErrors] = useState({});
     const [touched, setTouched] = useState({});
-    const [destinationSuggestions, setDestinationSuggestions] = useState([]);
-    const [showSuggestions, setShowSuggestions] = useState(false);
-    const [isCalculating, setIsCalculating] = useState(false);
-    const [tripEstimate, setTripEstimate] = useState(null);
-    const [manualSearchQuery, setManualSearchQuery] = useState("");
-    const [isManualSearching, setIsManualSearching] = useState(false);
-    const [selectedCoords, setSelectedCoords] = useState(null);
-    const [showMap, setShowMap] = useState(false);
     const [isMapModalOpen, setIsMapModalOpen] = useState(false);
-    const [isDestinationSelected, setIsDestinationSelected] = useState(false);
 
     // ============================================
-    // OPTIMIZED QUERIES
+    // QUERIES
     // ============================================
 
     const { data: departments = [], isLoading: deptsLoading } = useOptimizedQuery({
         queryKey: ["departments"],
         queryFn: async () => {
             try {
-                const response = await adminDepartmentAPI.getSelector();
-                return Array.isArray(response.data?.data) ? response.data.data : Array.isArray(response.data) ? response.data : [];
-            } catch (error) {
-                toast.error("Failed to load departments");
-                return [];
-            }
+                const r = await adminDepartmentAPI.getSelector();
+                return Array.isArray(r.data?.data) ? r.data.data : Array.isArray(r.data) ? r.data : [];
+            } catch { return []; }
         },
         staleTime: 5 * 60 * 1000,
-        keepPreviousData: true,
     });
 
     const { data: vehicles = [], isLoading: vehiclesLoading } = useOptimizedQuery({
         queryKey: ["vehicles"],
         queryFn: async () => {
             try {
-                const response = await vehicleAPI.getAll();
-                return Array.isArray(response.data?.data) ? response.data.data : Array.isArray(response.data) ? response.data : [];
-            } catch (error) {
-                return [];
-            }
+                const r = await vehicleAPI.getAll();
+                return Array.isArray(r.data?.data) ? r.data.data : Array.isArray(r.data) ? r.data : [];
+            } catch { return []; }
         },
         staleTime: 5 * 60 * 1000,
-        keepPreviousData: true,
     });
 
     const { data: drivers = [], isLoading: driversLoading } = useOptimizedQuery({
         queryKey: ["drivers"],
         queryFn: async () => {
             try {
-                const response = await driverManagementAPI.getAll();
-                return Array.isArray(response.data?.data) ? response.data.data : Array.isArray(response.data) ? response.data : [];
-            } catch (error) {
-                return [];
-            }
+                const r = await driverManagementAPI.getAll();
+                return Array.isArray(r.data?.data) ? r.data.data : Array.isArray(r.data) ? r.data : [];
+            } catch { return []; }
         },
         staleTime: 5 * 60 * 1000,
-        keepPreviousData: true,
     });
 
-    // ============================================
-    // AUTO-REFRESH DRIVERS EVERY 30 SECONDS
-    // ============================================
-
     useEffect(() => {
-        if (!formData.department_id) return;
         const interval = setInterval(async () => {
-            try {
-                await queryClient.refetchQueries({ queryKey: ["drivers"] });
-            } catch (error) { /* silent */ }
+            try { await queryClient.refetchQueries({ queryKey: ["drivers"] }); } catch {}
         }, 30000);
         return () => clearInterval(interval);
-    }, [formData.department_id, queryClient]);
+    }, [queryClient]);
 
     // ============================================
-    // DRIVER SELECT HANDLER
+    // SHARED VEHICLES (MO)
+    // ============================================
+
+    const sharedVehicleDeptId = useMemo(() => {
+        const mo = departments.find(d => SHARED_DEPARTMENT_CODES.includes(d.department_code));
+        return mo?.department_id;
+    }, [departments]);
+
+    const availableVehicles = useMemo(() => {
+        if (!formData.department_id) return [];
+        const deptId = parseInt(formData.department_id);
+        return vehicles.filter(v => {
+            if (v.department_id === deptId) return true;
+            if (sharedVehicleDeptId && v.department_id === sharedVehicleDeptId) return true;
+            return false;
+        });
+    }, [vehicles, formData.department_id, sharedVehicleDeptId]);
+
+    // ============================================
+    // HANDLERS
     // ============================================
 
     const handleDriverSelect = useCallback((driver) => {
         if (driver) {
             const driverId = driver.driver_id || driver.id || driver.user_id;
-            const departmentId = driver.department_id || driver.user?.department_id || driver.department?.department_id;
+            const departmentId = driver.department_id || driver.user?.department_id;
             if (departmentId) {
                 const dept = departments.find(d => d.department_id === parseInt(departmentId));
-                const chargeTo = dept?.department_code || dept?.department_name || '';
+                const chargeTo = dept?.department_code || '';
                 setFormData(prev => ({
                     ...prev,
                     department_id: departmentId.toString(),
@@ -699,370 +864,119 @@ const GsoCreateTrip = () => {
                     charge_to: chargeTo,
                 }));
                 setErrors(prev => ({ ...prev, department_id: "", driver_id: "", charge_to: "" }));
-                // ✅ Single toast - dismiss previous first
                 if (toastIdRef.current) toast.dismiss(toastIdRef.current);
-                toastIdRef.current = toast.success(`Driver selected: ${driver.full_name || driver.user?.full_name || driver.name}`);
+                toastIdRef.current = toast.success(`Driver: ${driver.full_name || driver.user?.full_name || driver.name}`);
             } else {
-                toast.warning("Selected driver has no department assigned.");
-                setFormData(prev => ({ ...prev, driver_id: driverId?.toString() || "", charge_to: "" }));
+                toast.warning("Driver has no department");
+                setFormData(prev => ({ ...prev, driver_id: driverId?.toString() || "" }));
             }
         } else {
             setFormData(prev => ({ ...prev, driver_id: "", department_id: "", vehicle_id: "", charge_to: "" }));
         }
     }, [departments]);
 
-    // ============================================
-    // DESTINATION SEARCH
-    // ============================================
-
-    const handleManualSearch = async () => {
-        if (!manualSearchQuery.trim() || manualSearchQuery.trim().length < 2) {
-            if (toastIdRef.current) toast.dismiss(toastIdRef.current);
-            toastIdRef.current = toast.error("Please enter at least 2 characters to search");
-            return;
-        }
-        setIsManualSearching(true);
-        try {
-            const response = await locationAPI.searchPlaces(manualSearchQuery);
-            if (response?.data) {
-                const data = response.data;
-                if (data.success !== false) {
-                    let predictions = data.predictions || [];
-                    if (predictions.length === 0 && data.data) predictions = data.data;
-                    const filtered = predictions.filter(item => {
-                        const lat = parseFloat(item.lat);
-                        const lng = parseFloat(item.lng);
-                        return !isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0;
-                    });
-                    if (filtered.length > 0) {
-                        setDestinationSuggestions(filtered);
-                        setShowSuggestions(true);
-                        if (toastIdRef.current) toast.dismiss(toastIdRef.current);
-                        toastIdRef.current = toast.success(`Found ${filtered.length} results`);
-                    } else if (predictions.length > 0) {
-                        setDestinationSuggestions(predictions);
-                        setShowSuggestions(true);
-                    } else {
-                        setDestinationSuggestions([]);
-                        setShowSuggestions(false);
-                        if (toastIdRef.current) toast.dismiss(toastIdRef.current);
-                        toastIdRef.current = toast.error("No results found. Try a different search term.");
-                    }
-                } else {
-                    toast.error(data.message || "Search failed");
-                    setDestinationSuggestions([]);
-                    setShowSuggestions(false);
-                }
-            } else {
-                toast.error("Invalid response from server");
-                setDestinationSuggestions([]);
-                setShowSuggestions(false);
-            }
-        } catch (error) {
-            toast.error("Search failed. Please try again.");
-            setDestinationSuggestions([]);
-            setShowSuggestions(false);
-        } finally {
-            setIsManualSearching(false);
-        }
-    };
-
-    const searchDestinations = useCallback(
-        debounce(async (query) => {
-            if (query.length < 2) {
-                setDestinationSuggestions([]);
-                setShowSuggestions(false);
-                return;
-            }
-            if (abortControllerRef.current) abortControllerRef.current.abort();
-            abortControllerRef.current = new AbortController();
-            try {
-                const response = await locationAPI.searchPlaces(query);
-                if (response?.data) {
-                    const data = response.data;
-                    if (data.success !== false) {
-                        let predictions = data.predictions || [];
-                        if (predictions.length === 0 && data.data) predictions = data.data;
-                        const filtered = predictions.filter(item => {
-                            const lat = parseFloat(item.lat);
-                            const lng = parseFloat(item.lng);
-                            return !isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0;
-                        });
-                        if (filtered.length > 0) {
-                            setDestinationSuggestions(filtered);
-                            setShowSuggestions(true);
-                        } else if (predictions.length > 0) {
-                            setDestinationSuggestions(predictions);
-                            setShowSuggestions(true);
-                        } else {
-                            setDestinationSuggestions([]);
-                            setShowSuggestions(false);
-                        }
-                    } else {
-                        setDestinationSuggestions([]);
-                        setShowSuggestions(false);
-                    }
-                } else {
-                    setDestinationSuggestions([]);
-                    setShowSuggestions(false);
-                }
-            } catch (error) {
-                if (error.name === 'AbortError') return;
-                setDestinationSuggestions([]);
-                setShowSuggestions(false);
-            }
-        }, SEARCH_DEBOUNCE_MS),
-        []
-    );
-
-    // ============================================
-    // TRIP ESTIMATE CALCULATION
-    // ============================================
-
-    const calculateTripEstimate = useCallback(
-        debounce(async (destination, vehicleId, coordinates = null) => {
-            if (!destination || destination.length < 2) return;
-            if (!isDestinationSelected && !coordinates) return;
-            setIsCalculating(true);
-            try {
-                const payload = { origin: ORIGIN_ADDRESS, destination, vehicle_id: vehicleId || formData.vehicle_id || undefined };
-                if (coordinates) payload.destination_coords = coordinates;
-                const response = await locationAPI.calculateDistance(payload);
-                if (response.data.success) {
-                    const data = response.data;
-                    setTripEstimate(data);
-                    setFormData(prev => ({
-                        ...prev,
-                        estimated_distance_km: data.distance_km,
-                        estimated_fuel_liters: data.estimated_liters,
-                        estimated_cost: data.estimated_cost,
-                    }));
-                    if (data.address && data.address !== destination) {
-                        setFormData(prev => ({ ...prev, destination: data.address }));
-                    }
-                } else {
-                    if (toastIdRef.current) toast.dismiss(toastIdRef.current);
-                    toastIdRef.current = toast.error(response.data.message || "Failed to calculate distance");
-                }
-            } catch (error) {
-                if (toastIdRef.current) toast.dismiss(toastIdRef.current);
-                toastIdRef.current = toast.error("Failed to calculate distance. Please try again.");
-            } finally {
-                setIsCalculating(false);
-            }
-        }, DISTANCE_CALC_DELAY_MS),
-        [formData.vehicle_id, isDestinationSelected]
-    );
-
-    // ============================================
-    // HANDLE DESTINATION
-    // ============================================
-
-    const handleSelectDestination = (suggestion) => {
-        setIsDestinationSelected(true);
-        setFormData(prev => ({ ...prev, destination: suggestion.description }));
-        if (suggestion.lat && suggestion.lng) {
-            setSelectedCoords({ lat: suggestion.lat, lng: suggestion.lng });
-        }
-        setShowSuggestions(false);
-        setManualSearchQuery("");
-        calculateTripEstimate(suggestion.description, formData.vehicle_id,
-            suggestion.lat && suggestion.lng ? { lat: suggestion.lat, lng: suggestion.lng } : null
-        );
-        setShowMap(true);
-    };
-
-    const handleDestinationChange = (value) => {
-        setIsDestinationSelected(false);
-        setFormData(prev => ({ ...prev, destination: value }));
-        setManualSearchQuery(value);
-        setTripEstimate(null);
-        setSelectedCoords(null);
-        setShowMap(false);
-        if (value.length > 1) {
-            searchDestinations(value);
+    const handleEstimateChange = useCallback((estimate) => {
+        setTripEstimate(estimate);
+        if (estimate) {
+            setFormData(prev => ({
+                ...prev,
+                estimated_distance_km: estimate.distance_km,
+                estimated_fuel_liters: estimate.estimated_liters,
+                estimated_cost: estimate.estimated_cost,
+            }));
         } else {
-            setDestinationSuggestions([]);
-            setShowSuggestions(false);
+            setFormData(prev => ({
+                ...prev,
+                estimated_distance_km: "",
+                estimated_fuel_liters: "",
+                estimated_cost: "",
+            }));
         }
-        // Clear error when typing
-        if (errors.destination) {
-            setErrors(prev => ({ ...prev, destination: "" }));
-        }
+    }, []);
+
+    const handleChange = (field, value) => {
+        setFormData(prev => ({ ...prev, [field]: value }));
+        if (errors[field]) setErrors(prev => ({ ...prev, [field]: "" }));
     };
 
-    const clearDestination = () => {
-        setIsDestinationSelected(false);
-        setFormData(prev => ({ ...prev, destination: "" }));
-        setManualSearchQuery("");
-        setTripEstimate(null);
-        setSelectedCoords(null);
-        setDestinationSuggestions([]);
-        setShowSuggestions(false);
-        setShowMap(false);
-        if (abortControllerRef.current) abortControllerRef.current.abort();
-        if (errors.destination) {
-            setErrors(prev => ({ ...prev, destination: "" }));
-        }
-    };
+    const handleFieldBlur = (field) => setTouched(prev => ({ ...prev, [field]: true }));
 
     // ============================================
-    // HANDLE INTERACTIVE MAP
+    // COMPUTED
     // ============================================
 
-    const handleInteractiveLocationSelect = (coords) => {
-        setSelectedCoords(coords);
-        if (coords.address) {
-            setIsDestinationSelected(true);
-            setFormData(prev => ({ ...prev, destination: coords.address }));
-            setManualSearchQuery(coords.address);
-        }
-    };
-
-    const handleInteractiveRouteCalculate = async (address, coords) => {
-        if (address && coords) {
-            setIsDestinationSelected(true);
-            setFormData(prev => ({ ...prev, destination: address }));
-            setManualSearchQuery(address);
-            await calculateTripEstimate(address, formData.vehicle_id, coords);
-        }
-    };
+    const isLoading = deptsLoading || vehiclesLoading || driversLoading;
+    const selectedVehicle = vehicles.find(v => v.vehicle_id === parseInt(formData.vehicle_id));
+    const selectedDepartment = departments.find(d => d.department_id === parseInt(formData.department_id));
+    const selectedDriverObj = drivers.find(d => (d.driver_id || d.id) === parseInt(formData.driver_id));
+    const hasError = (field) => touched[field] && errors[field];
+    const validStopsCount = stops.filter(s => s.address && s.lat && s.lng).length;
+    const hasMapCoordinates = stops.some(s => s.lat && s.lng);
 
     // ============================================
-    // EFFECTS
-    // ============================================
-
-    useEffect(() => {
-        if (formData.department_id) {
-            const selectedDept = departments.find(d => d.department_id === parseInt(formData.department_id));
-            if (selectedDept) {
-                const chargeTo = selectedDept.department_code || selectedDept.department_name || '';
-                setFormData(prev => ({ ...prev, charge_to: chargeTo }));
-                setErrors(prev => ({ ...prev, department_id: "", charge_to: "" }));
-            }
-        }
-    }, [formData.department_id, departments]);
-
-    useEffect(() => {
-        if (formData.destination && formData.vehicle_id && formData.destination.length > 2 && isDestinationSelected) {
-            calculateTripEstimate(formData.destination, formData.vehicle_id, selectedCoords);
-        }
-    }, [formData.vehicle_id]);
-
-    // ============================================
-    // ✅ ENHANCED VALIDATION - Single toast with all errors
+    // VALIDATION
     // ============================================
 
     const validateForm = () => {
         const newErrors = {};
         const newTouched = {};
 
-        // Department validation
-        if (!formData.department_id) {
-            newErrors.department_id = "Department is required";
-            newTouched.department_id = true;
-        }
-
-        // Driver validation
-        if (!formData.driver_id) {
-            newErrors.driver_id = "Driver is required";
-            newTouched.driver_id = true;
-        }
-
-        // Vehicle validation
-        if (!formData.vehicle_id) {
-            newErrors.vehicle_id = "Vehicle is required";
-            newTouched.vehicle_id = true;
-        }
-
-        // Trip date validation
-        if (!formData.trip_date) {
-            newErrors.trip_date = "Trip date is required";
-            newTouched.trip_date = true;
-        } else {
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
-            const tripDate = new Date(formData.trip_date);
-            if (tripDate < today) {
+        if (!formData.department_id) { newErrors.department_id = "Department is required"; newTouched.department_id = true; }
+        if (!formData.driver_id) { newErrors.driver_id = "Driver is required"; newTouched.driver_id = true; }
+        if (!formData.vehicle_id) { newErrors.vehicle_id = "Vehicle is required"; newTouched.vehicle_id = true; }
+        if (!formData.trip_date) { newErrors.trip_date = "Trip date is required"; newTouched.trip_date = true; }
+        else {
+            const today = new Date(); today.setHours(0, 0, 0, 0);
+            if (new Date(formData.trip_date) < today) {
                 newErrors.trip_date = "Trip date cannot be in the past";
                 newTouched.trip_date = true;
             }
         }
-
-        // Destination validation
-        if (!formData.destination || formData.destination.trim().length < 2) {
-            newErrors.destination = "Destination must be at least 2 characters";
+        if (validStopsCount === 0) {
+            newErrors.destination = "At least one destination is required";
             newTouched.destination = true;
         }
-
-        // Purpose validation
         if (!formData.purpose || formData.purpose.trim().length < 5) {
             newErrors.purpose = "Purpose must be at least 5 characters";
             newTouched.purpose = true;
         }
-
-        // Estimated distance validation
         if (!formData.estimated_distance_km || parseFloat(formData.estimated_distance_km) <= 0) {
-            newErrors.estimated_distance_km = "Please calculate the distance first";
+            newErrors.estimated_distance_km = "Distance not calculated. Check destinations.";
             newTouched.estimated_distance_km = true;
         }
 
         setErrors(newErrors);
         setTouched(prev => ({ ...prev, ...newTouched }));
 
-        // ✅ Show single toast with all errors
         if (Object.keys(newErrors).length > 0) {
-            const errorMessages = Object.entries(newErrors).map(([field, msg]) => {
-                const labels = {
-                    department_id: 'Department',
-                    driver_id: 'Driver',
-                    vehicle_id: 'Vehicle',
-                    trip_date: 'Trip Date',
-                    destination: 'Destination',
-                    purpose: 'Purpose',
-                    estimated_distance_km: 'Estimated Distance'
-                };
-                const label = labels[field] || field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-                return `• ${label}: ${msg}`;
-            });
-
-            // ✅ Dismiss any existing toast
+            const labels = {
+                department_id: 'Department', driver_id: 'Driver', vehicle_id: 'Vehicle',
+                trip_date: 'Trip Date', destination: 'Destination', purpose: 'Purpose',
+                estimated_distance_km: 'Estimated Distance'
+            };
+            const msgs = Object.entries(newErrors).map(([f, m]) => `• ${labels[f] || f}: ${m}`);
             if (toastIdRef.current) toast.dismiss(toastIdRef.current);
-
             toastIdRef.current = toast.error(
                 <div className="space-y-1">
-                    <div className="font-semibold text-red-600 dark:text-red-400">Please fix the following errors:</div>
-                    <div className="text-sm text-red-500 dark:text-red-300 space-y-0.5">
-                        {errorMessages.map((msg, i) => (
-                            <div key={i}>{msg}</div>
-                        ))}
+                    <div className="font-semibold text-red-600">Please fix:</div>
+                    <div className="text-sm text-red-500 space-y-0.5">
+                        {msgs.map((m, i) => <div key={i}>{m}</div>)}
                     </div>
-                </div>,
-                { duration: 5000 }
+                </div>, { duration: 5000 }
             );
 
-            // ✅ Auto-focus first error field
             const firstField = Object.keys(newErrors)[0];
-            if (firstField) {
-                const element = document.querySelector(`[name="${firstField}"]`) || 
-                                document.getElementById(firstField);
-                if (element) {
-                    setTimeout(() => element.focus(), 100);
-                }
-            }
-
+            setTimeout(() => {
+                if (firstField === "driver_id" && driverFocusRef.current) driverFocusRef.current();
+                else document.querySelector(`[name="${firstField}"]`)?.focus();
+            }, 100);
             return false;
         }
-
         return true;
     };
 
-    const handleFieldBlur = (field) => {
-        setTouched(prev => ({ ...prev, [field]: true }));
-    };
-
     // ============================================
-    // MUTATIONS
+    // MUTATION
     // ============================================
 
     const createTripMutation = useMutation({
@@ -1075,6 +989,7 @@ const GsoCreateTrip = () => {
             toastIdRef.current = toast.success("✅ Trip ticket created successfully!");
             queryClient.invalidateQueries({ queryKey: ["gso"] });
             queryClient.invalidateQueries({ queryKey: ["drivers"] });
+            queryClient.invalidateQueries({ queryKey: ["vehicles"] });
             navigate("/gso/dashboard");
         },
         onError: (error) => {
@@ -1083,299 +998,244 @@ const GsoCreateTrip = () => {
         },
     });
 
-    // ============================================
-    // HANDLERS
-    // ============================================
-
-    const handleChange = (field, value) => {
-        setFormData(prev => ({ ...prev, [field]: value }));
-        if (errors[field]) setErrors(prev => ({ ...prev, [field]: "" }));
-    };
-
     const handleSubmit = (e) => {
         e.preventDefault();
-        // ✅ Dismiss any existing toast before validation
         if (toastIdRef.current) toast.dismiss(toastIdRef.current);
-        
-        if (!validateForm()) {
-            return;
-        }
-        createTripMutation.mutate(formData);
+        if (!validateForm()) return;
+
+       const destinationString = (() => {
+    const parts = stops
+        .filter(s => s.address)
+        .map(s => {
+            // Extract location name (first comma-separated chunk)
+            const firstComma = s.address.indexOf(",");
+            return firstComma > -1 ? s.address.substring(0, firstComma).trim() : s.address;
+        });
+
+    // Check if all stops are within Laguindingan (region contains "Laguindingan")
+    const allInLaguindingan = stops
+        .filter(s => s.address)
+        .every(s => s.address.toLowerCase().includes("laguindingan"));
+
+    // Build the final string
+    if (allInLaguindingan) {
+        return `${parts.join(", ")}, Laguindingan, Misamis Oriental`;
+    } else {
+        // Mixed regions — just append Misamis Oriental
+        return `${parts.join(", ")}, Misamis Oriental`;
+    }
+})();
+
+        createTripMutation.mutate({ ...formData, destination: destinationString });
     };
-
-    // ============================================
-    // COMPUTED VALUES
-    // ============================================
-
-    const isLoading = deptsLoading || vehiclesLoading || driversLoading;
-    const selectedVehicle = vehicles.find(v => v.vehicle_id === parseInt(formData.vehicle_id));
-    const selectedDepartment = departments.find(d => d.department_id === parseInt(formData.department_id));
-    const selectedDriverObj = drivers.find(d => (d.driver_id || d.id) === parseInt(formData.driver_id));
-
-    const availableVehicles = (() => {
-        let departmentId = selectedDepartment?.department_id || formData.department_id || selectedDriverObj?.department_id || selectedDriverObj?.user?.department_id || selectedDriverObj?.department?.department_id;
-        return departmentId ? vehicles.filter(v => v.department_id === parseInt(departmentId)) : [];
-    })();
-
-    const hasError = (field) => touched[field] && errors[field];
-
-    // ============================================
-    // LOADING STATE
-    // ============================================
 
     if (isLoading) return <FormSkeleton />;
 
-    // ============================================
-    // RENDER
-    // ============================================
-
     return (
         <div className="max-w-5xl mx-auto p-4 md:p-6">
-            {/* Header */}
             <div className="flex items-center gap-4 mb-6">
-                <Button variant="ghost" size="icon" onClick={() => navigate("/gso/dashboard")} className="rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 h-10 w-10">
+                <Button variant="ghost" size="icon" onClick={() => navigate("/gso/dashboard")} className="rounded-xl h-10 w-10">
                     <ArrowLeft className="h-5 w-5" />
                 </Button>
                 <div>
-                    <h1 className="text-2xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 bg-clip-text text-transparent">
-                        Create Trip Ticket
-                    </h1>
-                    <p className="text-slate-500 dark:text-slate-400 text-sm">GSO creates trip ticket directly for staff or requestor</p>
+                    <h1 className="text-2xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 bg-clip-text text-transparent">Create Trip Ticket</h1>
+                    <p className="text-slate-500 dark:text-slate-400 text-sm">Multi-stop trip (max {MAX_STOPS} stops, round trip)</p>
                 </div>
                 <div className="ml-auto flex items-center gap-2">
-                    <Badge className="bg-blue-500/20 text-blue-600 dark:text-blue-400 border-blue-500/30">
-                        <Shield className="h-3 w-3 mr-1" /> GSO
-                    </Badge>
-                    <Badge className="bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border-emerald-500/30">
-                        <Zap className="h-3 w-3 mr-1" /> New
-                    </Badge>
+                    <Badge className="bg-blue-500/20 text-blue-600 dark:text-blue-400 border-blue-500/30"><Shield className="h-3 w-3 mr-1" /> GSO</Badge>
+                    <Badge className="bg-purple-500/20 text-purple-600 dark:text-purple-400 border-purple-500/30"><Navigation className="h-3 w-3 mr-1" /> Multi-Stop</Badge>
                 </div>
             </div>
 
-            <Card className="dark:bg-slate-800/80 dark:border-slate-700 shadow-xl shadow-black/5">
+            <Card className="dark:bg-slate-800/80 dark:border-slate-700 shadow-xl">
                 <CardHeader className="border-b border-slate-200/60 dark:border-slate-700/60">
                     <div className="flex items-center gap-3">
-                        <div className="p-2.5 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 shadow-lg shadow-blue-500/20">
+                        <div className="p-2.5 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 shadow-lg">
                             <Truck className="h-5 w-5 text-white" />
                         </div>
                         <div>
-                            <CardTitle className="text-slate-800 dark:text-white">Trip Ticket Information</CardTitle>
-                            <CardDescription className="dark:text-slate-400">
-                                All fields marked with <span className="text-red-500">*</span> are required
-                            </CardDescription>
+                            <CardTitle className="dark:text-white">Trip Ticket Information</CardTitle>
+                            <CardDescription className="dark:text-slate-400">All fields marked with <span className="text-red-500">*</span> are required</CardDescription>
                         </div>
                     </div>
                 </CardHeader>
                 <CardContent className="pt-6">
                     <form onSubmit={handleSubmit} className="space-y-6">
-                        {/* Driver Selection */}
                         <FormSection title="Driver Selection" icon={User}>
+                            <Label htmlFor="driver_id">Search Driver <span className="text-red-500">*</span></Label>
+                            <p className="text-xs text-slate-400 dark:text-slate-500 mb-2">Type driver name to search across all departments</p>
+                            <DriverDatalist
+                                id="driver_id"
+                                name="driver_id"
+                                value={formData.driver_id}
+                                onChange={(v) => handleChange("driver_id", v)}
+                                onBlur={() => handleFieldBlur("driver_id")}
+                                error={errors.driver_id}
+                                touched={touched.driver_id}
+                                drivers={drivers}
+                                loading={driversLoading}
+                                onDriverSelect={handleDriverSelect}
+                                registerFocusRef={(fn) => { driverFocusRef.current = fn; }}
+                            />
+                        </FormSection>
+
+                        <FormSection title={`Destinations (${stops.length}/${MAX_STOPS})`} icon={MapPin}>
                             <div className="space-y-4">
-                                <div>
-                                    <Label htmlFor="driver_id">Search Driver <span className="text-red-500">*</span></Label>
-                                    <p className="text-xs text-slate-400 dark:text-slate-500 mb-2">
-                                        Type driver name to search across all departments
-                                    </p>
-                                    <DriverDatalist
-                                        id="driver_id"
-                                        name="driver_id"
-                                        value={formData.driver_id}
-                                        onChange={(value) => handleChange("driver_id", value)}
-                                        onBlur={() => handleFieldBlur("driver_id")}
-                                        error={errors.driver_id}
-                                        touched={touched.driver_id}
-                                        drivers={drivers}
-                                        loading={driversLoading}
-                                        onDriverSelect={handleDriverSelect}
-                                    />
-                                </div>
+                                <MultiStopDestination
+                                    stops={stops}
+                                    onChange={setStops}
+                                    vehicleId={formData.vehicle_id}
+                                    onEstimateChange={handleEstimateChange}
+                                    maxStops={MAX_STOPS}
+                                />
+
+                                {errors.destination && <FieldError error={errors.destination} />}
+
+                               {tripEstimate && (
+    <div className="rounded-xl border border-blue-200/70 dark:border-blue-800/50 bg-gradient-to-br from-blue-50 via-blue-50/60 to-card dark:from-blue-950/40 dark:via-slate-900/40 dark:to-slate-900/60 overflow-hidden shadow-sm">
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-blue-200/60 dark:border-blue-800/40 bg-card/50">
+            <div className="flex items-center gap-2">
+                <div className="p-1.5 rounded-lg bg-blue-500/15 dark:bg-blue-500/20">
+                    <Navigation className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                </div>
+                <h4 className="font-semibold text-foreground text-sm">Trip Estimate</h4>
+                {tripEstimate.is_multi_stop && (
+                    <Badge className="bg-purple-500/15 dark:bg-purple-500/20 text-purple-700 dark:text-purple-300 border border-purple-300/50 dark:border-purple-700/50 text-[10px] font-medium">
+                        {tripEstimate.stops_count} stops
+                    </Badge>
+                )}
+            </div>
+            {hasMapCoordinates && (
+                <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setIsMapModalOpen(true)}
+                    className="h-7 px-2.5 text-blue-600 dark:text-blue-400 border-blue-300/70 dark:border-blue-700/60 hover:bg-blue-50 dark:hover:bg-blue-950/30 text-xs"
+                >
+                    <MapIcon className="h-3 w-3 mr-1" /> View Map
+                </Button>
+            )}
+        </div>
+
+        {/* Metrics grid */}
+        <div className="p-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {/* Distance */}
+                <div className="rounded-lg border border-border bg-card/70 p-3">
+                    <div className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground mb-1">
+                        <MapPin className="h-3 w-3" />
+                        Distance
+                    </div>
+                    <p className="text-lg font-bold text-foreground leading-tight">
+                        {tripEstimate.distance_km}
+                        <span className="text-xs font-medium text-muted-foreground ml-1">km</span>
+                    </p>
+                    <p className="text-[10px] text-muted-foreground/70 mt-0.5">round trip</p>
+                </div>
+
+                {/* Duration */}
+                <div className="rounded-lg border border-border bg-card/70 p-3">
+                    <div className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground mb-1">
+                        <Clock className="h-3 w-3" />
+                        Duration
+                    </div>
+                    <p className="text-lg font-bold text-foreground leading-tight">
+                        {tripEstimate.duration_minutes}
+                        <span className="text-xs font-medium text-muted-foreground ml-1">min</span>
+                    </p>
+                </div>
+
+                {/* Fuel */}
+                <div className="rounded-lg border border-border bg-card/70 p-3">
+                    <div className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground mb-1">
+                        <Fuel className="h-3 w-3" />
+                        Fuel
+                        {tripEstimate.fuel_type && (
+                            <span className="ml-auto text-[9px] uppercase tracking-wide text-blue-600 dark:text-blue-400 font-semibold">
+                                {tripEstimate.fuel_type}
+                            </span>
+                        )}
+                    </div>
+                    <p className="text-lg font-bold text-foreground leading-tight">
+                        {tripEstimate.estimated_liters}
+                        <span className="text-xs font-medium text-muted-foreground ml-1">L</span>
+                    </p>
+                </div>
+
+                {/* Cost */}
+                <div className="rounded-lg border border-emerald-200/60 dark:border-emerald-800/50 bg-emerald-50/60 dark:bg-emerald-950/20 p-3">
+                    <div className="flex items-center gap-1.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-400 mb-1">
+                        <DollarSign className="h-3 w-3" />
+                        Estimated Cost
+                    </div>
+                    <p className="text-lg font-bold text-emerald-700 dark:text-emerald-400 leading-tight">
+                        ₱{tripEstimate.estimated_cost}
+                    </p>
+                </div>
+            </div>
+
+            {/* Footer info */}
+            <div className="mt-3 flex items-center gap-2 text-[11px] text-muted-foreground">
+                <Gauge className="h-3 w-3 flex-shrink-0" />
+                <span>
+                    {tripEstimate.fuel_efficiency_km_per_liter} km/L @
+                    <span className="font-medium text-foreground"> ₱{tripEstimate.fuel_price_per_liter}/L</span>
+                    <span className="mx-1.5 text-muted-foreground/50">•</span>
+                    <span>+10% buffer included</span>
+                </span>
+            </div>
+        </div>
+
+        {/* Inline map preview */}
+        {hasMapCoordinates && (
+            <div className="border-t border-blue-200/60 dark:border-blue-800/40 p-4 bg-card/30">
+                <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-1.5 text-xs font-medium text-foreground">
+                        <MapIcon className="h-3.5 w-3.5" /> Route Preview
+                    </div>
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setIsMapModalOpen(true)}
+                        className="h-6 px-2 text-blue-600 dark:text-blue-400 text-xs hover:bg-blue-50 dark:hover:bg-blue-950/30"
+                    >
+                        <Maximize2 className="h-3 w-3 mr-1" /> Expand
+                    </Button>
+                </div>
+                <div className="rounded-lg overflow-hidden border border-border">
+                    <RouteMap
+                        destination={stops[stops.length - 1]?.address || ""}
+                        coordinates={{ lat: stops[0].lat, lng: stops[0].lng }}
+                        waypoints={stops.filter(s => s.lat && s.lng).map(s => ({
+                            lat: s.lat,
+                            lng: s.lng,
+                            address: s.address,
+                        }))}
+                        height="250px"
+                        showRoute={true}
+                        interactive={false}
+                        className="w-full"
+                        showMarker={true}
+                        draggableMarker={false}
+                        vehicleId={formData.vehicle_id}
+                        roundTrip={true}
+                    />
+                </div>
+            </div>
+        )}
+    </div>
+)}
                             </div>
                         </FormSection>
 
-                        {/* Destination */}
-                        <FormSection title="Trip Details" icon={MapPin}>
-                            <div className="space-y-4">
-                                <FormFieldWrapper
-                                    label="Destination"
-                                    icon={MapPin}
-                                    required
-                                    error={errors.destination}
-                                    touched={touched.destination}
-                                >
-                                    <div className="relative flex gap-2">
-                                        <div className="relative flex-1">
-                                            <Input
-                                                id="destination"
-                                                name="destination"
-                                                placeholder="Type destination name..."
-                                                value={formData.destination}
-                                                onChange={(e) => handleDestinationChange(e.target.value)}
-                                                onBlur={() => handleFieldBlur("destination")}
-                                                className="pl-10 pr-10"
-                                            />
-                                            {formData.destination && (
-                                                <button type="button" onClick={clearDestination} className="absolute inset-y-0 right-0 pr-3 flex items-center">
-                                                    <X className="h-4 w-4 text-gray-400 hover:text-gray-600" />
-                                                </button>
-                                            )}
-                                            {isCalculating && (
-                                                <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
-                                                    <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
-                                                </div>
-                                            )}
-                                        </div>
-                                        <Button
-                                            type="button"
-                                            onClick={handleManualSearch}
-                                            disabled={isManualSearching || !manualSearchQuery.trim()}
-                                            className="shrink-0 bg-blue-600 hover:bg-blue-700"
-                                        >
-                                            {isManualSearching ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Search className="h-4 w-4 mr-1" /> Search</>}
-                                        </Button>
-                                    </div>
-                                </FormFieldWrapper>
-
-                                {showSuggestions && destinationSuggestions.length > 0 && (
-                                    <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg max-h-60 overflow-auto">
-                                        <div className="sticky top-0 bg-gray-100 dark:bg-gray-700 px-4 py-2 text-xs text-gray-500 dark:text-gray-400 flex justify-between items-center border-b border-gray-200 dark:border-gray-600">
-                                            <span>Suggestions</span>
-                                            <span className="text-blue-500">{destinationSuggestions.length} results</span>
-                                        </div>
-                                        {destinationSuggestions.map((suggestion, index) => (
-                                            <div
-                                                key={index}
-                                                onClick={() => handleSelectDestination(suggestion)}
-                                                className="px-4 py-3 hover:bg-blue-50 dark:hover:bg-gray-700 cursor-pointer flex items-start gap-3 transition-colors border-b border-gray-100 dark:border-gray-700 last:border-0"
-                                            >
-                                                <MapPin className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
-                                                <div>
-                                                    <p className="text-sm text-gray-900 dark:text-white">{suggestion.description}</p>
-                                                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                                                        {suggestion.lat && suggestion.lng
-                                                            ? `${suggestion.lat.toFixed(4)}, ${suggestion.lng.toFixed(4)}`
-                                                            : "Click to calculate distance"}
-                                                    </p>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-
-                                {/* Trip Estimate */}
-                                {tripEstimate && (
-                                    <div className="bg-gradient-to-br from-blue-50 to-blue-100/50 dark:from-blue-950/30 dark:to-blue-900/20 rounded-xl p-4 border border-blue-200 dark:border-blue-800">
-                                        <div className="flex items-center justify-between mb-3">
-                                            <h4 className="font-semibold text-blue-800 dark:text-blue-300 flex items-center gap-2">
-                                                <Navigation className="h-4 w-4" /> Trip Estimate
-                                            </h4>
-                                            <Button type="button" variant="ghost" size="sm" onClick={() => {
-                                                setTripEstimate(null);
-                                                setFormData(prev => ({ ...prev, estimated_distance_km: "", estimated_fuel_liters: "", estimated_cost: "" }));
-                                            }} className="h-6 px-2 text-gray-400 hover:text-gray-600">
-                                                <X className="h-3 w-3" />
-                                            </Button>
-                                        </div>
-                                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                                            <div className="bg-white/50 dark:bg-white/5 rounded-lg p-3">
-                                                <p className="text-xs text-gray-500 dark:text-gray-400">Distance</p>
-                                                <p className="font-bold text-blue-700 dark:text-blue-300 text-lg">{tripEstimate.distance_km} km</p>
-                                            </div>
-                                            <div className="bg-white/50 dark:bg-white/5 rounded-lg p-3">
-                                                <p className="text-xs text-gray-500 dark:text-gray-400">Duration</p>
-                                                <p className="font-bold text-blue-700 dark:text-blue-300 text-lg flex items-center gap-1">
-                                                    <Clock className="h-3 w-3" /> {tripEstimate.duration_minutes} mins
-                                                </p>
-                                            </div>
-                                            <div className="bg-white/50 dark:bg-white/5 rounded-lg p-3">
-                                                <p className="text-xs text-gray-500 dark:text-gray-400">Estimated Fuel</p>
-                                                <p className="font-bold text-blue-700 dark:text-blue-300 text-lg flex items-center gap-1">
-                                                    <Fuel className="h-3 w-3" /> {tripEstimate.estimated_liters} L
-                                                </p>
-                                            </div>
-                                            <div className="bg-white/50 dark:bg-white/5 rounded-lg p-3">
-                                                <p className="text-xs text-gray-500 dark:text-gray-400">Estimated Cost</p>
-                                                <p className="font-bold text-emerald-600 dark:text-emerald-400 text-lg flex items-center gap-1">
-                                                    <DollarSign className="h-3 w-3" /> ₱{tripEstimate.estimated_cost}
-                                                </p>
-                                            </div>
-                                        </div>
-                                        <div className="text-xs text-gray-400 dark:text-gray-500 mt-3 flex items-center gap-2">
-                                            <Gauge className="h-3 w-3" />
-                                            Based on {tripEstimate.fuel_efficiency_km_per_liter} km/L @ ₱{tripEstimate.fuel_price_per_liter}/L
-                                        </div>
-
-                                        {selectedCoords && (
-                                            <div className="mt-4 pt-4 border-t border-blue-200 dark:border-blue-800">
-                                                <div className="flex items-center justify-between mb-3">
-                                                    <h4 className="font-semibold text-blue-800 dark:text-blue-300 flex items-center gap-2">
-                                                        <Map className="h-4 w-4" /> Interactive Route Map
-                                                        <span className="text-xs font-normal text-gray-500 dark:text-gray-400">
-                                                            {ORIGIN_ADDRESS} → {formData.destination}
-                                                        </span>
-                                                    </h4>
-                                                    <div className="flex items-center gap-2">
-                                                        <Button type="button" variant="ghost" size="sm" onClick={() => setShowMap(!showMap)} className="h-8 px-2 text-gray-400 hover:text-gray-600">
-                                                            {showMap ? <><Minus className="h-4 w-4 mr-1" /> Hide</> : <><Plus className="h-4 w-4 mr-1" /> Show</>}
-                                                        </Button>
-                                                        <Button type="button" variant="outline" size="sm" onClick={() => setIsMapModalOpen(true)} className="h-8 px-3 text-blue-600 border-blue-300 hover:bg-blue-50 dark:text-blue-400 dark:border-blue-700 dark:hover:bg-blue-950/30">
-                                                            <Maximize2 className="h-4 w-4 mr-1" /> Interactive Map
-                                                        </Button>
-                                                    </div>
-                                                </div>
-                                                {showMap && (
-                                                    <div className="relative">
-                                                        <RouteMap
-                                                            key={JSON.stringify(selectedCoords)}
-                                                            destination={formData.destination}
-                                                            coordinates={selectedCoords}
-                                                            height="250px"
-                                                            showRoute={true}
-                                                            interactive={true}
-                                                            className="w-full rounded-lg"
-                                                            showMarker={true}
-                                                            draggableMarker={true}
-                                                            vehicleId={formData.vehicle_id}
-                                                            roundTrip={true}
-                                                            onMarkerDrag={(coords) => {
-                                                                setSelectedCoords(coords);
-                                                                const address = `${coords.lat.toFixed(6)}, ${coords.lng.toFixed(6)}`;
-                                                                setFormData(prev => ({ ...prev, destination: address }));
-                                                                setManualSearchQuery(address);
-                                                                calculateTripEstimate(address, formData.vehicle_id, coords);
-                                                            }}
-                                                            onRouteCalculated={(routeData) => {
-                                                                setFormData(prev => ({
-                                                                    ...prev,
-                                                                    estimated_distance_km: routeData.distance_km,
-                                                                    estimated_fuel_liters: routeData.estimated_liters,
-                                                                    estimated_cost: routeData.estimated_cost,
-                                                                }));
-                                                                setTripEstimate(prev => ({ ...prev, ...routeData }));
-                                                            }}
-                                                        />
-                                                        <div className="absolute bottom-3 right-3 z-20 flex gap-2">
-                                                            <Button type="button" variant="secondary" size="sm" onClick={() => setIsMapModalOpen(true)} className="shadow-lg bg-white/90 hover:bg-white dark:bg-slate-800/90 dark:hover:bg-slate-800">
-                                                                <Maximize2 className="h-4 w-4 mr-1" /> Open Interactive
-                                                            </Button>
-                                                        </div>
-                                                        <div className="absolute top-3 left-3 z-20 bg-black/60 text-white text-xs px-3 py-1.5 rounded-lg pointer-events-none">
-                                                            <MousePointer className="h-3 w-3 inline mr-1" /> Drag marker to adjust destination
-                                                        </div>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
-                        </FormSection>
-
-                        {/* Department & Vehicle */}
                         <FormSection title="Assignment" icon={Building2}>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div>
                                     <Label>Department <span className="text-red-500">*</span></Label>
-                                    <p className="text-xs text-slate-400 dark:text-slate-500 mb-2">Auto-filled from driver selection</p>
+                                    <p className="text-xs text-slate-400 dark:text-slate-500 mb-2">Auto-filled from driver</p>
                                     <DepartmentDisplay
                                         department={selectedDepartment}
                                         error={errors.department_id}
@@ -1390,51 +1250,51 @@ const GsoCreateTrip = () => {
                                         required
                                         error={errors.vehicle_id}
                                         touched={touched.vehicle_id}
+                                        helper={sharedVehicleDeptId && formData.department_id
+                                            ? "Mayor's Office vehicles are shared across all departments"
+                                            : null}
                                     >
                                         <Select
                                             value={formData.vehicle_id?.toString() || undefined}
-                                            onValueChange={(value) => handleChange("vehicle_id", value)}
+                                            onValueChange={(v) => handleChange("vehicle_id", v)}
                                             onOpenChange={() => handleFieldBlur("vehicle_id")}
                                         >
                                             <SelectTrigger className={cn(hasError("vehicle_id") && "border-red-500 ring-red-500")}>
-                                                <SelectValue
-                                                    placeholder={
-                                                        !formData.department_id
-                                                            ? "Select a driver first"
-                                                            : availableVehicles.length === 0
-                                                                ? "No vehicles available for this department"
-                                                                : "Select vehicle"
-                                                    }
-                                                />
+                                                <SelectValue placeholder={
+                                                    !formData.department_id ? "Select a driver first"
+                                                    : availableVehicles.length === 0 ? "No vehicles available"
+                                                    : "Select vehicle"
+                                                } />
                                             </SelectTrigger>
                                             <SelectContent>
                                                 {availableVehicles.length === 0 ? (
                                                     <SelectItem value="no-vehicle" disabled>
-                                                        {!formData.department_id ? "Select a driver first" : "No vehicles available for this department"}
+                                                        {!formData.department_id ? "Select a driver first" : "No vehicles available"}
                                                     </SelectItem>
                                                 ) : (
-                                                    availableVehicles.map((vehicle) => (
-                                                        <SelectItem key={vehicle.vehicle_id} value={vehicle.vehicle_id.toString()}>
-                                                            <div className="flex items-center gap-2">
-                                                                <Truck className="h-4 w-4" />
-                                                                {vehicle.plate_number} - {vehicle.vehicle_model}
-                                                            </div>
-                                                        </SelectItem>
-                                                    ))
+                                                    availableVehicles.map((v) => {
+                                                        const isShared = sharedVehicleDeptId && v.department_id === sharedVehicleDeptId;
+                                                        return (
+                                                            <SelectItem key={v.vehicle_id} value={v.vehicle_id.toString()}>
+                                                                <div className="flex items-center gap-2">
+                                                                    <Truck className="h-4 w-4" />
+                                                                    <span>{v.plate_number} - {v.vehicle_model}</span>
+                                                                    {isShared && (
+                                                                        <Badge variant="outline" className="text-[10px] ml-1 border-purple-300 text-purple-600">
+                                                                            Shared
+                                                                        </Badge>
+                                                                    )}
+                                                                </div>
+                                                            </SelectItem>
+                                                        );
+                                                    })
                                                 )}
                                             </SelectContent>
                                         </Select>
                                     </FormFieldWrapper>
                                 </div>
                                 <div>
-                                    <FormFieldWrapper
-                                        label="Trip Date"
-                                        icon={Calendar}
-                                        required
-                                        error={errors.trip_date}
-                                        touched={touched.trip_date}
-                                        helper="Select the date of the trip"
-                                    >
+                                    <FormFieldWrapper label="Trip Date" icon={Calendar} required error={errors.trip_date} touched={touched.trip_date}>
                                         <Input
                                             id="trip_date"
                                             name="trip_date"
@@ -1449,50 +1309,27 @@ const GsoCreateTrip = () => {
                             </div>
                         </FormSection>
 
-                        {/* Vehicle Details Preview */}
                         {selectedVehicle && (
-                            <div className="bg-gradient-to-br from-blue-50 to-blue-100/50 dark:from-blue-950/30 dark:to-blue-900/20 rounded-xl p-4 border border-blue-200 dark:border-blue-800">
+                            <div className="rounded-xl border border-blue-200/70 dark:border-blue-800/50 bg-gradient-to-br from-blue-50 to-blue-100/50 dark:from-blue-950/40 dark:to-blue-900/20 p-4">
                                 <h4 className="font-semibold mb-3 flex items-center gap-2 text-blue-800 dark:text-blue-300">
                                     <Truck className="h-4 w-4" /> Selected Vehicle
                                 </h4>
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                                    <div>
-                                        <p className="text-xs text-gray-500 dark:text-gray-400">Plate Number</p>
-                                        <p className="font-medium text-blue-700 dark:text-blue-300">{selectedVehicle.plate_number}</p>
-                                    </div>
-                                    <div>
-                                        <p className="text-xs text-gray-500 dark:text-gray-400">Model</p>
-                                        <p className="font-medium text-blue-700 dark:text-blue-300">{selectedVehicle.vehicle_model}</p>
-                                    </div>
-                                    <div>
-                                        <p className="text-xs text-gray-500 dark:text-gray-400">Fuel Type</p>
-                                        <Badge variant="outline" className="border-blue-300 dark:border-blue-700">{selectedVehicle.fuel_type}</Badge>
-                                    </div>
-                                    <div>
-                                        <p className="text-xs text-gray-500 dark:text-gray-400">Status</p>
-                                        <Badge className={selectedVehicle.status === "active" ? "bg-emerald-500" : "bg-yellow-500"}>
-                                            {selectedVehicle.status}
-                                        </Badge>
-                                    </div>
+                                    <div><p className="text-xs text-slate-500 dark:text-slate-400">Plate</p><p className="font-medium text-blue-700 dark:text-blue-300">{selectedVehicle.plate_number}</p></div>
+                                    <div><p className="text-xs text-slate-500 dark:text-slate-400">Model</p><p className="font-medium text-blue-700 dark:text-blue-300">{selectedVehicle.vehicle_model}</p></div>
+                                    <div><p className="text-xs text-slate-500 dark:text-slate-400">Fuel</p><Badge variant="outline" className="border-blue-300 dark:border-blue-700 uppercase">{selectedVehicle.fuel_type}</Badge></div>
+                                    <div><p className="text-xs text-slate-500 dark:text-slate-400">Status</p><Badge className={selectedVehicle.status === "active" ? "bg-emerald-500" : "bg-yellow-500"}>{selectedVehicle.status}</Badge></div>
                                 </div>
                             </div>
                         )}
 
-                        {/* Purpose & Passenger */}
                         <FormSection title="Additional Details" icon={FileText}>
                             <div className="space-y-4">
-                                <FormFieldWrapper
-                                    label="Purpose"
-                                    icon={FileText}
-                                    required
-                                    error={errors.purpose}
-                                    touched={touched.purpose}
-                                    helper="Describe the reason for this trip"
-                                >
+                                <FormFieldWrapper label="Purpose" icon={FileText} required error={errors.purpose} touched={touched.purpose} helper="Describe the reason for this trip">
                                     <Textarea
                                         id="purpose"
                                         name="purpose"
-                                        placeholder="Describe the purpose of this trip..."
+                                        placeholder="Describe purpose..."
                                         value={formData.purpose}
                                         onChange={(e) => handleChange("purpose", e.target.value)}
                                         onBlur={() => handleFieldBlur("purpose")}
@@ -1505,7 +1342,6 @@ const GsoCreateTrip = () => {
                                     <Label htmlFor="passenger_name">Passenger Name (Optional)</Label>
                                     <Input
                                         id="passenger_name"
-                                        name="passenger_name"
                                         placeholder="Name of passenger"
                                         value={formData.passenger_name}
                                         onChange={(e) => handleChange("passenger_name", e.target.value)}
@@ -1516,38 +1352,27 @@ const GsoCreateTrip = () => {
                                     <Label htmlFor="charge_to">Charge To</Label>
                                     <Input
                                         id="charge_to"
-                                        name="charge_to"
                                         value={formData.charge_to || ''}
                                         disabled
-                                        className={cn(
-                                            "bg-gray-100 dark:bg-gray-700 cursor-not-allowed font-mono",
-                                            formData.charge_to && "bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300"
-                                        )}
-                                        placeholder={formData.charge_to || "Auto-filled from department"}
+                                        className={cn("bg-gray-100 dark:bg-slate-700 font-mono", formData.charge_to && "bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300")}
                                     />
-                                    <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-                                        {formData.charge_to ? `Charged to: ${formData.charge_to}` : "Automatically set to the selected department's code"}
-                                    </p>
                                 </div>
                             </div>
                         </FormSection>
 
-                        {/* Department Info Alert */}
                         {selectedDepartment && (
                             <Alert className="bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800">
                                 <Building2 className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                                <AlertDescription>
+                                <AlertDescription className="dark:text-slate-300">
                                     Creating trip for <strong>{selectedDepartment.department_name}</strong>
+                                    {validStopsCount > 1 && ` • ${validStopsCount} stops`}
                                 </AlertDescription>
                             </Alert>
                         )}
 
-                        {/* Submit */}
                         <div className="flex flex-col sm:flex-row justify-end gap-3 pt-4 border-t border-slate-200/60 dark:border-slate-700/60">
-                            <Button variant="outline" onClick={() => navigate("/gso/dashboard")} type="button" className="dark:border-slate-700 dark:text-slate-300">
-                                Cancel
-                            </Button>
-                            <Button type="submit" disabled={createTripMutation.isPending} className="bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 shadow-lg shadow-blue-500/20 transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]">
+                            <Button variant="outline" onClick={() => navigate("/gso/dashboard")} type="button" className="dark:border-slate-700 dark:text-slate-300">Cancel</Button>
+                            <Button type="submit" disabled={createTripMutation.isPending} className="bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 shadow-lg shadow-blue-500/20">
                                 {createTripMutation.isPending ? (
                                     <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Creating...</>
                                 ) : (
@@ -1559,16 +1384,43 @@ const GsoCreateTrip = () => {
                 </CardContent>
             </Card>
 
-            {/* Interactive Map Modal */}
-            <InteractiveMapModal
-                isOpen={isMapModalOpen}
-                onClose={() => setIsMapModalOpen(false)}
-                destination={formData.destination}
-                coordinates={selectedCoords}
-                origin={ORIGIN_ADDRESS}
-                onLocationSelect={handleInteractiveLocationSelect}
-                onCalculateRoute={handleInteractiveRouteCalculate}
-            />
+            <Dialog open={isMapModalOpen} onOpenChange={setIsMapModalOpen}>
+                <DialogContent className="max-w-6xl w-[95vw] h-[90vh] p-0 overflow-hidden dark:bg-slate-800 dark:border-slate-700">
+                    <DialogHeader className="p-4 border-b border-slate-200 dark:border-slate-700 flex flex-row items-center justify-between">
+                        <DialogTitle className="flex items-center gap-2 dark:text-white">
+                            <MapIcon className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                            Multi-Stop Route Map
+                            <Badge className="bg-purple-500/20 text-purple-700 dark:text-purple-300 text-[10px] ml-2">
+                                {validStopsCount} stops
+                            </Badge>
+                        </DialogTitle>
+                        <DialogClose asChild>
+                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0"><X className="h-4 w-4" /></Button>
+                        </DialogClose>
+                    </DialogHeader>
+                    <div className="flex-1 h-full min-h-[400px] p-4">
+                        {hasMapCoordinates && (
+                            <RouteMap
+                                destination={stops[stops.length - 1]?.address || ""}
+                                coordinates={{ lat: stops[0].lat, lng: stops[0].lng }}
+                                waypoints={stops.filter(s => s.lat && s.lng).map(s => ({
+                                    lat: s.lat,
+                                    lng: s.lng,
+                                    address: s.address,
+                                }))}
+                                height="100%"
+                                showRoute={true}
+                                interactive={false}
+                                className="w-full h-full rounded-lg"
+                                showMarker={true}
+                                draggableMarker={false}
+                                vehicleId={formData.vehicle_id}
+                                roundTrip={true}
+                            />
+                        )}
+                    </div>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 };

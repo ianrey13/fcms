@@ -530,7 +530,19 @@ const BudgetAllocation = () => {
     // HELPERS
     // ============================================
 
-    const budgets = budgetData?.data || [];
+    const budgets = (() => {
+    const raw = budgetData?.data;
+    if (Array.isArray(raw)) return raw;
+    if (raw && Array.isArray(raw.data)) return raw.data;
+    if (budgetData && Array.isArray(budgetData)) return budgetData;
+    // Fallback: check for common keys
+    const keys = ['budgets', 'items', 'results', 'records'];
+    for (const k of keys) {
+        if (Array.isArray(budgetData?.[k])) return budgetData[k];
+        if (Array.isArray(raw?.[k])) return raw[k];
+    }
+    return [];
+})();
     const summary = budgetData?.summary || {};
     const fiscalYear = budgetData?.fiscal_year || {};
 

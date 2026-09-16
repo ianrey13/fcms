@@ -20,7 +20,22 @@ export const prefetchService = {
                 { key: ['gso-pending-mo'], fn: () => gsoAPI.getPendingMO() },
                 { key: ['gso-pending-validation'], fn: () => gsoAPI.getPendingValidation() },
                 { key: ['gso-all-trips'], fn: () => gsoAPI.getAllTrips() },
-                { key: ['gps-active-trips'], fn: () => gsoAPI.getActiveTrips?.() },
+                { 
+    key: ['gps-active-trips'], 
+    fn: async () => {
+        try {
+            const res = await gsoAPI.getActiveTrips?.();
+            if (!res) return [];
+            if (Array.isArray(res)) return res;
+            if (Array.isArray(res.data)) return res.data;
+            if (Array.isArray(res.data?.data)) return res.data.data;
+            return [];
+        } catch (err) {
+            console.warn('prefetch gps-active-trips failed:', err);
+            return [];
+        }
+    }
+},
             );
         } else if (role === 'mayors_office') {
             endpoints.push(

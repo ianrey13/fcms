@@ -1,7 +1,7 @@
 // src/pages/mayor/MayorPending.jsx
 // ============================================
 // ✅ SHOWS: Requesting department's balance (from trip ticket)
-// ✅ CROSS-DEPARTMENT: Charges Mayor's Office (backend handles)
+// ✅ CROSS-DEPARTMENT: Auto-selects Mayor's Office when enabled
 // ✅ LIVE BALANCE PREVIEW after amount entry
 // ✅ ADDED: MO Cancel feature (before funds released)
 // ============================================
@@ -790,6 +790,15 @@ const MayorPending = () => {
     if (isCrossDepartment && !crossDepartmentReason.trim()) {
       newErrors.crossReason = "Please provide a reason for cross-department fuel usage";
       newTouched.crossReason = true;
+    }
+
+    // ✅ Ensure cross-department is selecting a DIFFERENT department
+    if (isCrossDepartment && selectedTicket) {
+      const requestingDeptId = String(selectedTicket.department_id);
+      if (String(chargeToDepartmentId) === requestingDeptId) {
+        newErrors.crossReason = "Cross-department requires a different charge-to department. Please select another or uncheck.";
+        newTouched.crossReason = true;
+      }
     }
 
     setApproveErrors(newErrors);
@@ -1691,7 +1700,22 @@ const MayorPending = () => {
                     onChange={(e) => {
                       const checked = e.target.checked;
                       setIsCrossDepartment(checked);
-                      if (!checked) setCrossDepartmentReason("");
+                      
+                      if (checked) {
+                        // ✅ Auto-select Mayor's Office when cross-department is enabled
+                        const moDept = availableDepartments.find(d => 
+                          d.department_code === 'MO' || 
+                          d.department_name?.toLowerCase().includes("mayor")
+                        );
+                        if (moDept) {
+                          setChargeToDepartmentId(String(moDept.department_id));
+                        }
+                      } else {
+                        // Reset to requesting department
+                        setCrossDepartmentReason("");
+                        const requestingDeptId = selectedTicket?.department_id?.toString();
+                        if (requestingDeptId) setChargeToDepartmentId(requestingDeptId);
+                      }
                     }}
                     className="mt-1 h-4 w-4 rounded border-slate-300 text-orange-600 focus:ring-orange-500 dark:border-slate-600 dark:bg-slate-700"
                   />

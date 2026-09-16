@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\API;
 
 use App\Http\Controllers\Controller;
-use App\Services\NominatimService;
+use App\Services\LocationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
@@ -11,7 +11,7 @@ class LocationController extends Controller
 {
     protected $locationService;
 
-   public function __construct(NominatimService $locationService) 
+    public function __construct(LocationService $locationService)
     {
         $this->locationService = $locationService;
     }
@@ -59,76 +59,58 @@ class LocationController extends Controller
     /**
      * Calculate distance between locations
      */
-   public function calculateDistance(Request $request)
-{
-    try {
-        Log::info('=== calculateDistance START ===');
-        Log::info('Request params', $request->all());
+    public function calculateDistance(Request $request)
+    {
+        try {
+            Log::info('Calculate distance request received', $request->all());
 
-        $request->validate([
-            'origin' => 'required|string',
-            'destination' => 'required|string',
-            'vehicle_id' => 'nullable',
-            'round_trip' => 'nullable',
-            'dest_lat' => 'nullable',
-            'dest_lng' => 'nullable',
-            'origin_lat' => 'nullable',
-            'origin_lng' => 'nullable',
-        ]);
+            $request->validate([
+                'origin' => 'required|string',
+                'destination' => 'required|string',
+                'vehicle_id' => 'nullable|exists:vehicles,vehicle_id',
+                'round_trip' => 'nullable|boolean',
+                'dest_lat' => 'nullable|numeric',
+                'dest_lng' => 'nullable|numeric',
+            ]);
 
-        $roundTrip = filter_var($request->input('round_trip', true), FILTER_VALIDATE_BOOLEAN);
-        $destLat = $request->input('dest_lat');
-        $destLng = $request->input('dest_lng');
+            $roundTrip = $request->boolean('round_trip', true);
+            $destLat = $request->input('dest_lat');
+            $destLng = $request->input('dest_lng');
+            $destination = $request->input('destination');
 
-        // Only pass vehicle_id if it's numeric
-        $vehicleId = $request->input('vehicle_id');
-        if ($vehicleId !== null && !is_numeric($vehicleId)) {
-            $vehicleId = null;
+            // If coordinates are provided, use them for more accurate distance
+            if ($destLat && $destLng) {
+                $destination = $destination ?? "{$destLat}, {$destLng}";
+            }
+
+            $result = $this->locationService->calculateTripEstimate(
+                $request->input('origin'),
+                $destination,
+                $request->input('vehicle_id'),
+                $roundTrip
+            );
+
+            if ($result['success']) {
+                $result['fuel_type_used'] = $result['fuel_type'] ?? 'regular';
+                $result['price_source'] = 'database';
+                $result['is_round_trip'] = $roundTrip;
+            } else {
+                Log::warning('Trip estimate failed', ['result' => $result]);
+            }
+
+            return response()->json($result);
+
+        } catch (\Exception $e) {
+            Log::error('Calculate distance error: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Error calculating distance: ' . $e->getMessage()
+            ], 500);
         }
-
-        Log::info('Parsed inputs', [
-            'origin' => $request->input('origin'),
-            'destination' => $request->input('destination'),
-            'vehicle_id' => $vehicleId,
-            'round_trip' => $roundTrip,
-            'dest_lat' => $destLat,
-            'dest_lng' => $destLng,
-        ]);
-
-        $result = $this->locationService->calculateTripEstimate(
-            $request->input('origin'),
-            $request->input('destination'),
-            $vehicleId,
-            $roundTrip
-        );
-
-        Log::info('Service result', $result);
-
-        if ($result['success']) {
-            $result['fuel_type_used'] = $result['fuel_type'] ?? 'regular';
-            $result['price_source'] = 'database';
-            $result['is_round_trip'] = $roundTrip;
-        } else {
-            Log::warning('Trip estimate failed', ['result' => $result]);
-        }
-
-        return response()->json($result);
-
-    } catch (\Throwable $e) {
-        Log::error('Calculate distance error: ' . $e->getMessage(), [
-            'file' => $e->getFile(),
-            'line' => $e->getLine(),
-            'trace' => $e->getTraceAsString(),
-        ]);
-        
-        return response()->json([
-            'success' => false,
-            'message' => 'Error calculating distance: ' . $e->getMessage(),
-            'file' => $e->getFile(),
-            'line' => $e->getLine(),
-        ], 500);
     }
-}
 
     /**
      * Geocode a single address

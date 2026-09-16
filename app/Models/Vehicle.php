@@ -85,6 +85,7 @@ class Vehicle extends Model
             TripTicket::STATUS_FUNDS_ISSUED,
             TripTicket::STATUS_ACKNOWLEDGED,
             TripTicket::STATUS_IN_TRANSIT,
+           
             // TripTicket::STATUS_PENDING_RECONCILIATION,
         ];
     }

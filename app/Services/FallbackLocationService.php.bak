@@ -10,6 +10,10 @@ class FallbackLocationService
 
     public function __construct()
     {
+        // ============================================
+        // LOCATION DATABASE — Primary source for search
+        // Coordinates verified from actual barangay halls & landmarks
+        // ============================================
         $this->locations = [
 
             // ==================== ORIGIN ====================
@@ -136,7 +140,7 @@ class FallbackLocationService
                 'aliases' => ['liberty barangay hall'],
             ],
 
-            // ==================== MISAMIS ORIENTAL ====================
+            // ==================== MISAMIS ORIENTAL MUNICIPALITIES ====================
             'alubijid' => [
                 'name' => 'Alubijid',
                 'distance_km' => 3.6,
@@ -228,7 +232,7 @@ class FallbackLocationService
                 'aliases' => ['lugait municipal hall'],
             ],
 
-            // ==================== CAGAYAN DE ORO ====================
+            // ==================== CAGAYAN DE ORO CITY ====================
             'cdo_city_hall' => [
                 'name' => 'Cagayan de Oro City Hall',
                 'distance_km' => 29.0,
@@ -247,7 +251,7 @@ class FallbackLocationService
                 'type' => 'landmark',
                 'priority' => 2,
                 'region' => 'Cagayan de Oro, Misamis Oriental',
-                'aliases' => ['capitol', 'misamis oriental capitol'],
+                'aliases' => ['capitol', 'misamis oriental capitol', 'provincial capitol cdo'],
             ],
             'nmmc' => [
                 'name' => 'Northern Mindanao Medical Center',
@@ -257,7 +261,7 @@ class FallbackLocationService
                 'type' => 'landmark',
                 'priority' => 2,
                 'region' => 'Cagayan de Oro, Misamis Oriental',
-                'aliases' => ['nmmc', 'nmmc cdo'],
+                'aliases' => ['nmmc', 'northern mindanao medical center', 'nmmc cdo'],
             ],
             'polymedic' => [
                 'name' => 'Cagayan de Oro Polymedic Medical Plaza',
@@ -267,7 +271,7 @@ class FallbackLocationService
                 'type' => 'landmark',
                 'priority' => 2,
                 'region' => 'Cagayan de Oro, Misamis Oriental',
-                'aliases' => ['polymedic', 'polymedic hospital'],
+                'aliases' => ['polymedic', 'polymedic hospital', 'polymedic medical plaza'],
             ],
             'doctors_sabal' => [
                 'name' => "Doctors' Sabal Hospital",
@@ -277,43 +281,58 @@ class FallbackLocationService
                 'type' => 'landmark',
                 'priority' => 2,
                 'region' => 'Cagayan de Oro, Misamis Oriental',
-                'aliases' => ['doctors sabal', 'sabal hospital'],
+                'aliases' => ['doctors sabal', 'sabal hospital', 'doctors hospital cdo'],
             ],
 
             // ==================== REGION 10 ====================
             'iligan' => [
                 'name' => 'Iligan City',
                 'distance_km' => 88.5,
-                'lat' => 8.2280, 'lng' => 124.2383,
-                'type' => 'city', 'priority' => 3, 'region' => 'Lanao del Norte',
+                'lat' => 8.2280,
+                'lng' => 124.2383,
+                'type' => 'city',
+                'priority' => 3,
+                'region' => 'Lanao del Norte',
                 'aliases' => ['iligan city hall'],
             ],
             'ozamiz' => [
                 'name' => 'Ozamiz City',
                 'distance_km' => 118.0,
-                'lat' => 8.1455, 'lng' => 123.8445,
-                'type' => 'city', 'priority' => 3, 'region' => 'Misamis Occidental',
+                'lat' => 8.1455,
+                'lng' => 123.8445,
+                'type' => 'city',
+                'priority' => 3,
+                'region' => 'Misamis Occidental',
                 'aliases' => ['ozamiz city hall'],
             ],
             'malaybalay' => [
                 'name' => 'Malaybalay City',
                 'distance_km' => 123.0,
-                'lat' => 8.1567, 'lng' => 125.1331,
-                'type' => 'city', 'priority' => 3, 'region' => 'Bukidnon',
+                'lat' => 8.1567,
+                'lng' => 125.1331,
+                'type' => 'city',
+                'priority' => 3,
+                'region' => 'Bukidnon',
                 'aliases' => ['malaybalay city hall'],
             ],
             'valencia' => [
                 'name' => 'Valencia City',
                 'distance_km' => 154.0,
-                'lat' => 7.9044, 'lng' => 125.0928,
-                'type' => 'city', 'priority' => 3, 'region' => 'Bukidnon',
+                'lat' => 7.9044,
+                'lng' => 125.0928,
+                'type' => 'city',
+                'priority' => 3,
+                'region' => 'Bukidnon',
                 'aliases' => ['valencia city hall'],
             ],
             'gingoog' => [
                 'name' => 'Gingoog City',
                 'distance_km' => 60.0,
-                'lat' => 8.8167, 'lng' => 125.1000,
-                'type' => 'city', 'priority' => 3, 'region' => 'Misamis Oriental',
+                'lat' => 8.8167,
+                'lng' => 125.1000,
+                'type' => 'city',
+                'priority' => 3,
+                'region' => 'Misamis Oriental',
                 'aliases' => ['gingoog city hall'],
             ],
 
@@ -321,43 +340,60 @@ class FallbackLocationService
             'davao' => [
                 'name' => 'Davao City',
                 'distance_km' => 317.0,
-                'lat' => 7.1907, 'lng' => 125.4553,
-                'type' => 'city', 'priority' => 4, 'region' => 'Davao',
+                'lat' => 7.1907,
+                'lng' => 125.4553,
+                'type' => 'city',
+                'priority' => 4,
+                'region' => 'Davao',
                 'aliases' => ['davao city hall'],
             ],
             'butuan' => [
                 'name' => 'Butuan City',
                 'distance_km' => 202.0,
-                'lat' => 8.9475, 'lng' => 125.5437,
-                'type' => 'city', 'priority' => 4, 'region' => 'Agusan del Norte',
+                'lat' => 8.9475,
+                'lng' => 125.5437,
+                'type' => 'city',
+                'priority' => 4,
+                'region' => 'Agusan del Norte',
                 'aliases' => ['butuan city hall'],
             ],
             'zamboanga' => [
                 'name' => 'Zamboanga City',
                 'distance_km' => 465.0,
-                'lat' => 6.9127, 'lng' => 122.0680,
-                'type' => 'city', 'priority' => 4, 'region' => 'Zamboanga',
+                'lat' => 6.9127,
+                'lng' => 122.0680,
+                'type' => 'city',
+                'priority' => 4,
+                'region' => 'Zamboanga',
                 'aliases' => ['zamboanga city hall'],
             ],
             'surigao' => [
                 'name' => 'Surigao City',
                 'distance_km' => 322.0,
-                'lat' => 9.7836, 'lng' => 125.4955,
-                'type' => 'city', 'priority' => 4, 'region' => 'Surigao del Norte',
+                'lat' => 9.7836,
+                'lng' => 125.4955,
+                'type' => 'city',
+                'priority' => 4,
+                'region' => 'Surigao del Norte',
                 'aliases' => ['surigao city hall'],
             ],
         ];
     }
 
     /**
-     * Search places — always returns success
+     * Search places — always returns success (with empty predictions if no match)
      */
     public function searchPlaces($query)
     {
         $query = strtolower(trim($query));
 
         if (empty($query) || strlen($query) < 2) {
-            return ['success' => true, 'predictions' => [], 'total' => 0, 'source' => 'fallback'];
+            return [
+                'success' => true,
+                'predictions' => [],
+                'total' => 0,
+                'source' => 'fallback',
+            ];
         }
 
         $results = [];
@@ -376,42 +412,23 @@ class FallbackLocationService
                     break;
                 }
             }
+
             if (!$matchFound) continue;
 
             $lat = $location['lat'] ?? null;
             $lng = $location['lng'] ?? null;
             if ($lat === null || $lng === null) continue;
 
-            // ✅ FIXED: Avoid duplicate "Laguindingan"
-            $name = $location['name'];
-            $description = $name;
-            $nameLower = strtolower($name);
+            $description = $location['name'];
 
+            // Append region context
             if ($location['type'] === 'barangay') {
-                // If name already contains "Laguindingan" (like "Sinai, Laguindingan"),
-                // only append ", Misamis Oriental"
-                if (strpos($nameLower, 'laguindingan') !== false) {
-                    $description = $name . ', Misamis Oriental';
-                } else {
-                    $description = $name . ', Laguindingan, Misamis Oriental';
-                }
-            } elseif ($location['type'] === 'municipality') {
-                if (strpos($nameLower, 'misamis oriental') === false) {
-                    $description = $name . ', Misamis Oriental';
-                }
-            } elseif ($location['type'] === 'landmark') {
-                if (strpos($nameLower, 'cagayan de oro') !== false || strpos($nameLower, 'misamis oriental') !== false) {
-                    // Already has region context, don't append
-                    $description = $name;
-                } else {
-                    $description = $name . ', Misamis Oriental';
-                }
+                $description .= ', Laguindingan, Misamis Oriental';
+            } elseif (in_array($location['type'], ['municipality', 'landmark'])) {
+                $description .= ', Misamis Oriental';
             } elseif ($location['type'] === 'city') {
-                if (strpos($nameLower, 'philippines') === false) {
-                    $description = $name . ', Philippines';
-                }
+                $description .= ', Philippines';
             }
-            // 'origin' type — leave name as is
 
             $results[] = [
                 'description' => $description,
@@ -425,8 +442,11 @@ class FallbackLocationService
             ];
         }
 
+        // Sort: priority → distance → relevance
         usort($results, function ($a, $b) use ($query) {
-            if ($a['priority'] !== $b['priority']) return $a['priority'] <=> $b['priority'];
+            if ($a['priority'] !== $b['priority']) {
+                return $a['priority'] <=> $b['priority'];
+            }
             $distDiff = ($a['distance_km'] ?? 999) <=> ($b['distance_km'] ?? 999);
             if ($distDiff !== 0) return $distDiff;
             $aExact = strpos(strtolower($a['description']), $query) === 0 ? 1 : 0;
@@ -442,19 +462,27 @@ class FallbackLocationService
         ];
     }
 
+    /**
+     * Calculate distance (Haversine)
+     */
     public function calculateDistance($origin, $destination)
     {
         $originData = $this->findLocation($origin) ?? $this->findLocationByPartialMatch($origin);
-        if (!$originData) return ['success' => false, 'message' => 'Origin not found: ' . $origin];
+        if (!$originData) {
+            return ['success' => false, 'message' => 'Origin not found'];
+        }
 
         $destData = $this->findLocation($destination) ?? $this->findLocationByPartialMatch($destination);
-        if (!$destData) return ['success' => false, 'message' => 'Destination not found: ' . $destination];
+        if (!$destData) {
+            return ['success' => false, 'message' => 'Destination not found'];
+        }
 
         $distanceKm = $this->haversineDistance(
             $originData['lat'], $originData['lng'],
             $destData['lat'], $destData['lng']
         );
 
+        // If too close, use stored distance
         if ($distanceKm < 0.1) {
             $distanceKm = $destData['distance_km'] ?? 0;
         }
@@ -508,8 +536,6 @@ class FallbackLocationService
     private function findLocation($query)
     {
         $query = strtolower(trim($query));
-
-        // Direct match first
         foreach ($this->locations as $key => $location) {
             $name = strtolower($location['name'] ?? '');
             $aliases = array_map('strtolower', $location['aliases'] ?? []);
@@ -520,22 +546,6 @@ class FallbackLocationService
                 if (strpos($alias, $query) !== false) return $location;
             }
         }
-
-        // ✅ NEW: Split query by comma and try each part
-        // Handles "Sinai, Laguindingan" → finds "Sinai" location
-        $parts = array_map('trim', explode(',', $query));
-        if (count($parts) > 1) {
-            foreach ($parts as $part) {
-                if (strlen($part) < 3) continue;
-                foreach ($this->locations as $key => $location) {
-                    $name = strtolower($location['name'] ?? '');
-                    if (strpos($name, $part) !== false || strpos(strtolower($key), $part) !== false) {
-                        return $location;
-                    }
-                }
-            }
-        }
-
         return null;
     }
 
@@ -570,7 +580,7 @@ class FallbackLocationService
                     $fuelType = $vehicle->fuel_type ?? 'regular';
                 }
             } catch (\Exception $e) {
-                Log::error('Error getting vehicle: ' . $e->getMessage());
+                \Log::error('Error getting vehicle: ' . $e->getMessage());
             }
         }
 
@@ -581,6 +591,7 @@ class FallbackLocationService
         $estimatedLiters = round($distanceKm / $efficiency, 2);
         $estimatedCost = round($estimatedLiters * $fuelPrice, 2);
 
+        $bufferPercentage = 10;
         $estimatedLitersWithBuffer = round($estimatedLiters * 1.1, 2);
         $estimatedCostWithBuffer = round($estimatedCost * 1.1, 2);
 
@@ -599,7 +610,7 @@ class FallbackLocationService
             'one_way_distance_km' => $result['distance_km'],
             'one_way_duration_minutes' => $result['duration_minutes'],
             'round_trip_multiplier' => $multiplier,
-            'buffer_percentage' => 10,
+            'buffer_percentage' => $bufferPercentage,
             'source' => 'fallback',
         ];
     }

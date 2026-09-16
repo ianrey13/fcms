@@ -1,4 +1,12 @@
 // src/pages/gso/LiveTracking.jsx
+// ============================================
+// ✅ FIXED: Removed render loop (hasActiveTrips dependency)
+// ✅ FIXED: No setState inside queryFn
+// ✅ FIXED: WebSocket only sets up once
+// ✅ ADDED: Plate number label above vehicle
+// ✅ ADDED: Car icon from lucide
+// ============================================
+
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from "@tanstack/react-query";
@@ -54,7 +62,7 @@ import {
     Minimize2,
     Plus,
     Minus,
-    Car,
+    Car,   // ✅ Import Car icon
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -69,10 +77,10 @@ L.Icon.Default.mergeOptions({
 });
 
 // ============================================
-// VEHICLE ICON
+// ✅ VEHICLE ICON WITH PLATE LABEL
 // ============================================
 
-const createVehicleIcon = (status, isSelected, isOnline = true, isFocused = false) => {
+const createVehicleIcon = (status, isSelected, isOnline = true, isFocused = false, plateNumber = '') => {
     const colors = {
         in_transit: '#22c55e',
         funds_issued: '#f59e0b',
@@ -86,6 +94,7 @@ const createVehicleIcon = (status, isSelected, isOnline = true, isFocused = fals
     };
     const color = colors[status] || '#6b7280';
     const size = isFocused ? 44 : (isSelected ? 38 : 32);
+    const labelBg = isFocused ? '#3b82f6' : '#1e293b';
 
     return L.divIcon({
         className: 'custom-vehicle-icon',
@@ -93,14 +102,57 @@ const createVehicleIcon = (status, isSelected, isOnline = true, isFocused = fals
             <div style="
                 position: relative;
                 width: ${size + 12}px;
-                height: ${size + 12}px;
+                height: ${size + 12 + 22}px;
                 cursor: pointer;
                 transition: all 0.3s ease;
             ">
+                <!-- ✅ Plate number label above the car -->
+                ${plateNumber ? `
+                    <div style="
+                        position: absolute;
+                        top: 0;
+                        left: 50%;
+                        transform: translateX(-50%);
+                        background: ${labelBg};
+                        color: white;
+                        padding: 2px 8px;
+                        border-radius: 6px;
+                        font-size: ${isFocused ? '11px' : '10px'};
+                        font-weight: 700;
+                        font-family: 'Courier New', monospace;
+                        letter-spacing: 0.5px;
+                        white-space: nowrap;
+                        box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+                        border: 1.5px solid white;
+                        z-index: 10;
+                        ${isFocused ? 'animation: label-glow 1.5s ease-in-out infinite;' : ''}
+                    ">
+                        ${plateNumber}
+                        <!-- Small arrow pointing down to vehicle -->
+                        <div style="
+                            position: absolute;
+                            bottom: -4px;
+                            left: 50%;
+                            transform: translateX(-50%);
+                            width: 0;
+                            height: 0;
+                            border-left: 4px solid transparent;
+                            border-right: 4px solid transparent;
+                            border-top: 4px solid ${labelBg};
+                        "></div>
+                    </div>
+                ` : ''}
+                
+                <!-- Focus rings -->
                 ${isFocused ? `
                     <div style="
                         position: absolute;
-                        inset: -8px;
+                        top: 22px;
+                        left: 50%;
+                        transform: translateX(-50%);
+                        width: ${size + 24}px;
+                        height: ${size + 24}px;
+                        margin-left: -${(size + 24) / 2}px;
                         border-radius: 50%;
                         background: rgba(59, 130, 246, 0.15);
                         border: 3px solid rgba(59, 130, 246, 0.5);
@@ -109,7 +161,12 @@ const createVehicleIcon = (status, isSelected, isOnline = true, isFocused = fals
                     "></div>
                     <div style="
                         position: absolute;
-                        inset: -4px;
+                        top: 26px;
+                        left: 50%;
+                        transform: translateX(-50%);
+                        width: ${size + 16}px;
+                        height: ${size + 16}px;
+                        margin-left: -${(size + 16) / 2}px;
                         border-radius: 50%;
                         background: rgba(59, 130, 246, 0.05);
                         border: 2px solid rgba(59, 130, 246, 0.2);
@@ -117,7 +174,12 @@ const createVehicleIcon = (status, isSelected, isOnline = true, isFocused = fals
                 ` : isSelected ? `
                     <div style="
                         position: absolute;
-                        inset: -4px;
+                        top: 26px;
+                        left: 50%;
+                        transform: translateX(-50%);
+                        width: ${size + 16}px;
+                        height: ${size + 16}px;
+                        margin-left: -${(size + 16) / 2}px;
                         border-radius: 50%;
                         background: rgba(59, 130, 246, 0.15);
                         border: 2px solid rgba(59, 130, 246, 0.3);
@@ -125,7 +187,12 @@ const createVehicleIcon = (status, isSelected, isOnline = true, isFocused = fals
                     "></div>
                 ` : ''}
                 
+                <!-- Vehicle icon -->
                 <div style="
+                    position: absolute;
+                    top: 22px;
+                    left: 50%;
+                    transform: translateX(-50%) ${isFocused ? 'scale(1.15)' : isSelected ? 'scale(1.08)' : 'scale(1)'};
                     width: ${size}px;
                     height: ${size}px;
                     background: ${color};
@@ -137,23 +204,25 @@ const createVehicleIcon = (status, isSelected, isOnline = true, isFocused = fals
                     display: flex;
                     align-items: center;
                     justify-content: center;
-                    font-size: ${size * 0.5}px;
                     color: white;
-                    position: relative;
                     z-index: 1;
                     transition: all 0.3s ease;
-                    ${isFocused ? 'transform: scale(1.15);' : ''}
-                    ${isSelected ? 'transform: scale(1.08);' : ''}
                     ${!isOnline ? 'opacity: 0.5;' : ''}
                 ">
-                    🚗
+                    <svg xmlns="http://www.w3.org/2000/svg" width="${size * 0.55}" height="${size * 0.55}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/>
+                        <circle cx="7" cy="17" r="2"/>
+                        <path d="M9 17h6"/>
+                        <circle cx="17" cy="17" r="2"/>
+                    </svg>
                 </div>
                 
+                <!-- Focus target icon -->
                 ${isFocused ? `
                     <div style="
                         position: absolute;
-                        top: -8px;
-                        right: -8px;
+                        top: 18px;
+                        right: 4px;
                         background: #3b82f6;
                         border-radius: 50%;
                         width: 18px;
@@ -172,9 +241,9 @@ const createVehicleIcon = (status, isSelected, isOnline = true, isFocused = fals
                 ` : ''}
             </div>
         `,
-        iconSize: [size + 12, size + 12],
-        iconAnchor: [(size + 12) / 2, (size + 12) / 2],
-        popupAnchor: [0, -(size + 12) / 2 - 5],
+        iconSize: [size + 12, size + 12 + 22],
+        iconAnchor: [(size + 12) / 2, size + 12 + 22 - 6],   // Anchor at bottom-center of vehicle
+        popupAnchor: [0, -(size + 12 + 22) / 2 + 10],
     });
 };
 
@@ -190,9 +259,13 @@ styleSheet.textContent = `
         50% { opacity: 1; transform: scale(1.05); }
         100% { opacity: 0.6; transform: scale(1); }
     }
+    @keyframes label-glow {
+        0% { box-shadow: 0 2px 8px rgba(59,130,246,0.3); }
+        50% { box-shadow: 0 2px 16px rgba(59,130,246,0.7); }
+        100% { box-shadow: 0 2px 8px rgba(59,130,246,0.3); }
+    }
     .custom-vehicle-icon:hover {
         filter: brightness(1.1);
-        transform: scale(1.05);
     }
     .focus-glow {
         animation: glow-pulse 2s ease-in-out infinite;
@@ -333,8 +406,8 @@ const TripPopupContent = ({ trip, onViewTrip, onCenter, onFocus }) => {
             <div className="space-y-2 text-sm">
                 <div className="flex items-center gap-2">
                     <Truck className="h-3.5 w-3.5 text-slate-400" />
-                    <span className="text-slate-500">Vehicle:</span>
-                    <span className="font-medium text-slate-700 dark:text-slate-300">
+                    <span className="text-slate-500">Plate:</span>
+                    <span className="font-bold text-slate-700 dark:text-slate-300 font-mono">
                         {trip?.vehicle?.plate_number || 'N/A'}
                     </span>
                 </div>
@@ -363,9 +436,6 @@ const TripPopupContent = ({ trip, onViewTrip, onCenter, onFocus }) => {
                     <Clock className="h-3 w-3" />
                     Updated: {formatTime(current_location?.recorded_at)}
                     <span className="text-emerald-500 text-[10px] font-medium ml-auto">● Live</span>
-                </div>
-                <div className="text-[10px] text-slate-400">
-                    GPS ping interval: 3s
                 </div>
             </div>
             <div className="mt-3 flex gap-2">
@@ -484,13 +554,18 @@ const LiveTracking = () => {
     const [tripsData, setTripsData] = useState([]);
     const [isWsConnected, setIsWsConnected] = useState(false);
     const [pingCount, setPingCount] = useState(0);
-    const [hasActiveTrips, setHasActiveTrips] = useState(false);
     const [refreshAttempts, setRefreshAttempts] = useState(0);
     const mapRef = useRef(null);
     const dropdownRef = useRef(null);
     const pingCounterRef = useRef(0);
     const markerRefs = useRef({});
     const [followedTripId, setFollowedTripId] = useState(null);
+    const hasSetupRef = useRef(false);   // ✅ Prevent double WebSocket setup
+
+    // ✅ Derive hasActiveTrips from data (no setState loop)
+    const hasActiveTrips = useMemo(() => {
+        return Array.isArray(tripsData) && tripsData.some(trip => trip && trip.current_location);
+    }, [tripsData]);
 
     // Close dropdown when clicking outside
     useEffect(() => {
@@ -504,20 +579,13 @@ const LiveTracking = () => {
     }, []);
 
     // ============================================
-    // ✅ AUTO-REFRESH - ONLY when there are active trips
+    // ✅ AUTO-REFRESH
     // ============================================
 
-    // This function will be called by useAutoRefresh
     const fetchAllData = useCallback(() => {
-        // ✅ Only refresh if there are active trips visible
-        if (hasActiveTrips) {
-            queryClient.invalidateQueries({ queryKey: ['gps-active-trips-live'] });
-        } else {
-            console.log('⏸️ Auto-refresh paused - No active trips');
-        }
-    }, [queryClient, hasActiveTrips]);
+        queryClient.invalidateQueries({ queryKey: ['gps-active-trips-live'] });
+    }, [queryClient]);
 
-    // ✅ Auto-refresh is ENABLED but the callback checks if there are active trips
     useAutoRefresh(
         [
             "gps-location-updated",
@@ -527,15 +595,15 @@ const LiveTracking = () => {
             "new-notification",
         ],
         fetchAllData,
-        2000 // 2 second debounce to prevent multiple rapid refreshes
+        2000
     );
 
     // ============================================
-    // OPTIMIZED QUERY
+    // ✅ OPTIMIZED QUERY (no setState inside queryFn)
     // ============================================
 
     const {
-        data: activeTrips = [],
+        data: activeTripsRaw,
         isLoading,
         refetch,
         isFetching,
@@ -555,21 +623,12 @@ const LiveTracking = () => {
                 }
 
                 const safeData = Array.isArray(data) ? data : [];
-                
-                // ✅ Update active trips state
-                const hasActive = safeData.some(trip => trip && trip.current_location);
-                setHasActiveTrips(hasActive);
-                setTripsData(safeData);
-                setLastUpdate(new Date());
-                
-                // ✅ Reset refresh attempts on success
+                // ✅ Don't call setState here — just return the data
                 setRefreshAttempts(0);
-                
                 return safeData;
             } catch (error) {
                 console.error('❌ Error fetching active trips:', error);
-                
-                // ✅ Only show toast on first few errors to avoid spam
+
                 setRefreshAttempts(prev => {
                     const newAttempts = prev + 1;
                     if (newAttempts === 1) {
@@ -579,16 +638,16 @@ const LiveTracking = () => {
                     }
                     return newAttempts;
                 });
-                
-                // ✅ On error, check if we have cached data
-                if (tripsData.length > 0) {
-                    // Keep using cached data
-                    return tripsData;
-                }
+
+                // ✅ Always return array on error
                 return [];
             }
         },
-        refetchInterval: hasActiveTrips ? 15000 : false, // ✅ Only auto-refetch when there are active trips
+        // ✅ Poll only when there are active trips
+        refetchInterval: (query) => {
+            const data = query?.state?.data;
+            return Array.isArray(data) && data.length > 0 ? 15000 : false;
+        },
         staleTime: 5000,
         keepPreviousData: true,
         retry: 2,
@@ -596,20 +655,31 @@ const LiveTracking = () => {
         enabled: true,
     });
 
+    const activeTrips = Array.isArray(activeTripsRaw) ? activeTripsRaw : [];
+
+    // ✅ Sync activeTrips to tripsData via effect
+    useEffect(() => {
+        if (Array.isArray(activeTrips)) {
+            setTripsData(activeTrips);
+            setLastUpdate(new Date());
+        }
+    }, [activeTrips]);
+
     // ============================================
-    // WEBSOCKET
+    // ✅ WEBSOCKET (setup only once)
     // ============================================
 
     useEffect(() => {
+        if (hasSetupRef.current) return;
         if (!echo.connector || !echo.connector.pusher) {
             console.warn('⚠️ Echo not ready, will retry...');
             return;
         }
 
+        hasSetupRef.current = true;
         console.log('🗺️ Setting up GSO live tracking WebSocket...');
 
         const channel = echo.channel('gso-live-tracking');
-
         setIsWsConnected(true);
 
         channel.listen('.location.updated', (data) => {
@@ -620,7 +690,7 @@ const LiveTracking = () => {
 
             setTripsData(prev => {
                 if (!Array.isArray(prev)) return [];
-                const updated = prev.map(trip => {
+                return prev.map(trip => {
                     if (trip && trip.trip_id === data.trip_id) {
                         return {
                             ...trip,
@@ -636,12 +706,6 @@ const LiveTracking = () => {
                     }
                     return trip;
                 });
-                
-                // ✅ Check if there are still active trips
-                const hasActive = updated.some(trip => trip && trip.current_location);
-                setHasActiveTrips(hasActive);
-                
-                return updated;
             });
 
             setSelectedTrip(prev => {
@@ -688,18 +752,13 @@ const LiveTracking = () => {
         channel.listen('.trip.completed', (data) => {
             console.log('🏁 Trip completed:', data);
             toast.success(`Trip ${data.trip_id || 'unknown'} has been completed`);
-            // ✅ Refetch when trip completes to update active list
-            if (hasActiveTrips) {
-                queryClient.invalidateQueries({ queryKey: ['gps-active-trips-live'] });
-            }
+            queryClient.invalidateQueries({ queryKey: ['gps-active-trips-live'] });
         });
 
         channel.listen('.trip.started', (data) => {
             console.log('🚗 Trip started:', data);
             toast.info(`Trip ${data.trip_id || 'unknown'} has started`);
-            // ✅ Refetch when trip starts to show new active trip
             queryClient.invalidateQueries({ queryKey: ['gps-active-trips-live'] });
-            setHasActiveTrips(true);
         });
 
         channel.subscribed(() => {
@@ -725,6 +784,7 @@ const LiveTracking = () => {
         }
 
         return () => {
+            hasSetupRef.current = false;
             try {
                 channel.stopListening('.location.updated');
                 channel.stopListening('.trip.completed');
@@ -734,7 +794,8 @@ const LiveTracking = () => {
                 // Ignore cleanup errors
             }
         };
-    }, [hasActiveTrips]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);   // ✅ Empty deps — only run once
 
     // ============================================
     // DERIVED DATA
@@ -748,7 +809,6 @@ const LiveTracking = () => {
 
     const activeCount = tripsWithLocation.length;
 
-    // Connection status
     const connectionStatus = isConnected ? "🟢 Live" : "🔴 Offline";
     const isRealTime = isConnected;
 
@@ -760,7 +820,7 @@ const LiveTracking = () => {
         {
             title: 'Active Vehicles',
             value: activeCount,
-            icon: Truck,
+            icon: Car,   // ✅ Use Car icon here too
             color: 'from-green-500 to-emerald-600',
             subtitle: `${activeCount} on the road`,
         },
@@ -863,8 +923,6 @@ const LiveTracking = () => {
             setMapZoom(prev => Math.max(prev, 14));
         }
     };
-
-    // ❌ REFRESH BUTTON REMOVED - Auto-refresh handles everything
 
     // ============================================
     // RENDER MAP TILE
@@ -1002,7 +1060,6 @@ const LiveTracking = () => {
                 </div>
 
                 <div className="flex items-center gap-2 flex-wrap">
-                    {/* Map Type Dropdown */}
                     <div className="relative" ref={dropdownRef}>
                         <button
                             onClick={() => setIsMapTypeDropdownOpen(!isMapTypeDropdownOpen)}
@@ -1050,7 +1107,6 @@ const LiveTracking = () => {
                         <Maximize2 className="h-4 w-4 mr-1.5" />
                         Fit All
                     </Button>
-                    {/* ❌ REFRESH BUTTON REMOVED - Auto-refresh handles everything */}
                 </div>
             </header>
 
@@ -1091,6 +1147,8 @@ const LiveTracking = () => {
                                     if (!trip || !trip.current_location) return null;
                                     const isSelected = selectedTrip?.trip_id === trip.trip_id;
                                     const isFocused = focusedTrip?.trip_id === trip.trip_id;
+                                    // ✅ Get plate number for label
+                                    const plateNumber = trip?.vehicle?.plate_number || trip?.plate_number || '';
 
                                     return (
                                         <div key={trip.trip_id}>
@@ -1106,7 +1164,13 @@ const LiveTracking = () => {
 
                                             <Marker
                                                 position={[trip.current_location.latitude, trip.current_location.longitude]}
-                                                icon={createVehicleIcon(trip.status, isSelected, true, isFocused)}
+                                                icon={createVehicleIcon(
+                                                    trip.status,
+                                                    isSelected,
+                                                    true,
+                                                    isFocused,
+                                                    plateNumber   // ✅ Pass plate number
+                                                )}
                                                 eventHandlers={{
                                                     click: () => handleTripSelect(trip),
                                                 }}
@@ -1166,7 +1230,7 @@ const LiveTracking = () => {
                     <div className="p-4 border-b border-slate-200/60 dark:border-slate-800/60">
                         <div className="flex items-center justify-between">
                             <h2 className="font-semibold text-slate-800 dark:text-white flex items-center gap-2">
-                                <Truck className="h-4 w-4 text-blue-500" />
+                                <Car className="h-4 w-4 text-blue-500" />
                                 Active Vehicles
                                 <span className={`text-xs font-normal ml-2 ${hasActiveTrips ? 'text-emerald-500' : 'text-slate-400'}`}>
                                     {hasActiveTrips ? '● Live' : '○ No active'}
@@ -1191,7 +1255,7 @@ const LiveTracking = () => {
                         {tripsWithLocation.length === 0 ? (
                             <div className="text-center py-12">
                                 <div className="w-12 h-12 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto mb-3">
-                                    <Truck className="h-6 w-6 text-slate-400 dark:text-slate-500" />
+                                    <Car className="h-6 w-6 text-slate-400 dark:text-slate-500" />
                                 </div>
                                 <p className="text-slate-500 dark:text-slate-400 text-sm">No active vehicles</p>
                                 <p className="text-xs text-slate-400 mt-1">Waiting for GPS pings...</p>
@@ -1235,8 +1299,10 @@ const LiveTracking = () => {
                                                     <span className="text-[10px] text-emerald-500 font-medium">● Live</span>
                                                 </div>
                                                 <div className="mt-1 text-sm text-slate-600 dark:text-slate-300 truncate flex items-center gap-1.5">
-                                                    <Truck className="h-3 w-3 text-slate-400" />
-                                                    {trip.vehicle?.plate_number || 'N/A'}
+                                                    <Car className="h-3 w-3 text-slate-400" />
+                                                    <span className="font-mono font-semibold">
+                                                        {trip.vehicle?.plate_number || 'N/A'}
+                                                    </span>
                                                     <span className="text-slate-400 mx-1">•</span>
                                                     <User className="h-3 w-3 text-slate-400" />
                                                     {trip.driver?.name || 'N/A'}
@@ -1284,7 +1350,6 @@ const LiveTracking = () => {
                         )}
                     </div>
 
-                    {/* Sidebar Footer */}
                     <div className="p-3 border-t border-slate-200/60 dark:border-slate-800/60 text-[10px] text-slate-400 dark:text-slate-500 flex items-center justify-between">
                         <span className="flex items-center gap-1">
                             <span className={`h-1.5 w-1.5 rounded-full ${hasActiveTrips ? 'bg-green-500 animate-pulse' : 'bg-slate-400'}`} />
