@@ -485,6 +485,13 @@ export const reportsAPI = {
       params,
       responseType: "blob",
     }),
+
+
+    exportVehicleReport: (format, params) =>
+  cachedApi.get(`/reports/vehicles/export/${format}`, {
+    params,
+    responseType: "blob",
+  }),
 };
 
 // ============ ADMIN DEPARTMENT API ============
