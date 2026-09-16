@@ -19,6 +19,10 @@ export default defineConfig({
             template: 'treemap',
         }),
     ],
+    // ✅ FIX: Expose `L` to plugins that expect a global
+    define: {
+        global: 'globalThis',
+    },
     build: {
         outDir: 'public/build',
         manifest: 'manifest.json',
@@ -29,50 +33,45 @@ export default defineConfig({
                 chunkFileNames: 'assets/[name].[hash].js',
                 assetFileNames: 'assets/[name].[hash].[ext]',
 
-                // ✅ FIXED: Function form (required by Vite 8 / Rolldown)
-               manualChunks(id) {
-    if (!id.includes('node_modules')) return;
+                manualChunks(id) {
+                    if (!id.includes('node_modules')) return;
 
-    if (id.includes('react-router')) return 'vendor-react';
-    if (id.includes('react-dom')) return 'vendor-react';
-    if (id.includes('/react/')) return 'vendor-react';
+                    if (id.includes('react-router')) return 'vendor-react';
+                    if (id.includes('react-dom')) return 'vendor-react';
+                    if (id.includes('/react/')) return 'vendor-react';
 
-    if (id.includes('@tanstack/react-query')) return 'vendor-query';
-    if (id.includes('axios')) return 'vendor-http';
+                    if (id.includes('@tanstack/react-query')) return 'vendor-query';
+                    if (id.includes('axios')) return 'vendor-http';
 
-    if (id.includes('recharts') || id.includes('d3-')) return 'vendor-charts';
+                    if (id.includes('recharts') || id.includes('d3-')) return 'vendor-charts';
 
-    // ✅ MAPS — usually huge
-    if (id.includes('leaflet')) return 'vendor-maps';
-    if (id.includes('maplibre') || id.includes('mapbox')) return 'vendor-maps';
-    if (id.includes('react-leaflet')) return 'vendor-maps';
+                    // ✅ MAPS — Leaflet + plugins MUST be together
+                    // so that `L` global set by leaflet is visible to leaflet-routing-machine
+                    if (id.includes('leaflet') || id.includes('maplibre') || id.includes('mapbox')) {
+                        return 'vendor-maps';
+                    }
 
-    if (id.includes('lucide-react')) return 'vendor-icons';
+                    if (id.includes('lucide-react')) return 'vendor-icons';
 
-    if (id.includes('date-fns')) return 'vendor-date';
-    if (id.includes('moment')) return 'vendor-date';
+                    if (id.includes('date-fns')) return 'vendor-date';
+                    if (id.includes('moment')) return 'vendor-date';
 
-    // ✅ UI LIBS
-    if (id.includes('@radix-ui')) return 'vendor-ui';
-    if (id.includes('@headlessui')) return 'vendor-ui';
+                    if (id.includes('@radix-ui')) return 'vendor-ui';
+                    if (id.includes('@headlessui')) return 'vendor-ui';
 
-    // ✅ ANIMATION
-    if (id.includes('framer-motion')) return 'vendor-animation';
+                    if (id.includes('framer-motion')) return 'vendor-animation';
 
-    // ✅ NOTIFICATIONS
-    if (id.includes('react-hot-toast') || id.includes('sonner')) return 'vendor-notify';
+                    if (id.includes('react-hot-toast') || id.includes('sonner')) return 'vendor-notify';
 
-    // ✅ FORMS
-    if (id.includes('react-hook-form') || id.includes('zod')) return 'vendor-forms';
+                    if (id.includes('react-hook-form') || id.includes('zod')) return 'vendor-forms';
 
-    // ✅ CHARTS (other than recharts)
-    if (id.includes('chart.js') || id.includes('apexcharts')) return 'vendor-charts';
+                    if (id.includes('chart.js') || id.includes('apexcharts')) return 'vendor-charts';
 
-    return 'vendor-misc';
-}
+                    return 'vendor-misc';
+                }
             },
         },
-        chunkSizeWarningLimit: 1000,
+        chunkSizeWarningLimit: 1500, // bumped — vendor-maps is ~700KB
         minify: 'terser',
         terserOptions: {
             compress: {
@@ -100,6 +99,8 @@ export default defineConfig({
             'axios',
             'date-fns',
             'recharts',
+            'leaflet',
+            'leaflet-routing-machine',
         ],
     },
     resolve: {
@@ -107,5 +108,4 @@ export default defineConfig({
             '@': '/resources/js',
         },
     },
-    
 });
