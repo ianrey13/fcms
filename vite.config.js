@@ -13,13 +13,13 @@ export default defineConfig({
         react(),
         visualizer({
             filename: 'public/build/stats.html',
-            open: true,
+            open: false, // ✅ Disabled auto-open (annoying in prod builds)
             gzipSize: true,
             brotliSize: true,
             template: 'treemap',
         }),
     ],
-    // ✅ FIX: Expose `L` to plugins that expect a global
+    // ✅ Expose `global` for plugins that expect it
     define: {
         global: 'globalThis',
     },
@@ -36,6 +36,25 @@ export default defineConfig({
                 manualChunks(id) {
                     if (!id.includes('node_modules')) return;
 
+                    // ✅ CRITICAL: Leaflet CORE must be its own chunk
+                    // loaded BEFORE leaflet-routing-machine
+                    if (
+                        id.includes('node_modules/leaflet/') &&
+                        !id.includes('leaflet-routing')
+                    ) {
+                        return 'vendor-leaflet';
+                    }
+
+                    // ✅ Routing machine depends on global L — separate chunk
+                    if (id.includes('leaflet-routing-machine')) {
+                        return 'vendor-leaflet-routing';
+                    }
+
+                    // Other map libs
+                    if (id.includes('maplibre') || id.includes('mapbox')) {
+                        return 'vendor-maps';
+                    }
+
                     if (id.includes('react-router')) return 'vendor-react';
                     if (id.includes('react-dom')) return 'vendor-react';
                     if (id.includes('/react/')) return 'vendor-react';
@@ -44,13 +63,6 @@ export default defineConfig({
                     if (id.includes('axios')) return 'vendor-http';
 
                     if (id.includes('recharts') || id.includes('d3-')) return 'vendor-charts';
-
-                    // ✅ MAPS — Leaflet + plugins MUST be together
-                    // so that `L` global set by leaflet is visible to leaflet-routing-machine
-                    if (id.includes('leaflet') || id.includes('maplibre') || id.includes('mapbox')) {
-                        return 'vendor-maps';
-                    }
-
                     if (id.includes('lucide-react')) return 'vendor-icons';
 
                     if (id.includes('date-fns')) return 'vendor-date';
@@ -71,7 +83,7 @@ export default defineConfig({
                 }
             },
         },
-        chunkSizeWarningLimit: 1500, // bumped — vendor-maps is ~700KB
+        chunkSizeWarningLimit: 1500,
         minify: 'terser',
         terserOptions: {
             compress: {
@@ -100,7 +112,8 @@ export default defineConfig({
             'date-fns',
             'recharts',
             'leaflet',
-            'leaflet-routing-machine',
+            // ✅ DO NOT include 'leaflet-routing-machine' here —
+            // it needs to be lazy-loaded after window.L is set
         ],
     },
     resolve: {

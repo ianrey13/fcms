@@ -2,15 +2,55 @@
 // ============================================
 // MULTI-WAYPOINT: Supports multiple stops with drag
 // Origin → Stop 1 → Stop 2 → ... → Origin (round trip)
+// ✅ LAZY LOADS leaflet-routing-machine after window.L is set
 // ============================================
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import 'leaflet-routing-machine/dist/leaflet-routing-machine.css';
-import 'leaflet-routing-machine';
 
-// Fix Leaflet marker icons
+// ============================================
+// ✅ CRITICAL: Ensure L is exposed globally BEFORE
+// leaflet-routing-machine is loaded
+// ============================================
+if (typeof window !== 'undefined' && !window.L) {
+    window.L = L;
+}
+
+// ============================================
+// ✅ LAZY LOADER for leaflet-routing-machine
+// ============================================
+let routingMachinePromise = null;
+
+function loadRoutingMachine() {
+    if (routingMachinePromise) return routingMachinePromise;
+
+    routingMachinePromise = (async () => {
+        // Ensure window.L is set
+        if (typeof window !== 'undefined') {
+            window.L = L;
+        }
+
+        // ✅ Import CSS first
+        await import('leaflet-routing-machine/dist/leaflet-routing-machine.css');
+
+        // ✅ Then import the plugin (it reads window.L at import time)
+        await import('leaflet-routing-machine');
+
+        console.log('✅ leaflet-routing-machine loaded');
+        return true;
+    })().catch((err) => {
+        console.error('❌ Failed to load leaflet-routing-machine:', err);
+        routingMachinePromise = null; // allow retry
+        throw err;
+    });
+
+    return routingMachinePromise;
+}
+
+// ============================================
+// LEAFLET ICON FIX
+// ============================================
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
     iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
@@ -41,10 +81,10 @@ const createOriginIcon = () => L.divIcon({
     popupAnchor: [0, -16],
 });
 
-const createStopIcon = (index, total) => {
+const createStopIcon = (index) => {
     const colors = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#06b6d4', '#ef4444'];
     const color = colors[index % colors.length];
-    
+
     return L.divIcon({
         className: 'stop-marker',
         html: `<div style="
@@ -70,8 +110,8 @@ const createStopIcon = (index, total) => {
 // ============================================
 
 const RouteMap = ({
-    waypoints = [],           // Array of { lat, lng, name }
-    origin = ORIGIN_COORDS,   // Origin coords
+    waypoints = [],
+    origin = ORIGIN_COORDS,
     height = '350px',
     showRoute = true,
     className = '',
@@ -82,7 +122,7 @@ const RouteMap = ({
     onWaypointDrag = null,
     onWaypointDragEnd = null,
     roundTrip = true,
-    // Legacy support (single coordinates)
+    // Legacy support
     coordinates = null,
     destination = null,
 }) => {
@@ -94,14 +134,38 @@ const RouteMap = ({
     const stopMarkersRef = useRef([]);
     const [mapReady, setMapReady] = useState(false);
     const [isInitialized, setIsInitialized] = useState(false);
+    const [routingReady, setRoutingReady] = useState(false); // ✅ Track routing machine load
     const isMountedRef = useRef(true);
 
-    // ✅ Normalize waypoints (support legacy single coordinate)
+    // ✅ Normalize waypoints
     const normalizedWaypoints = React.useMemo(() => {
         if (waypoints && waypoints.length > 0) return waypoints;
         if (coordinates) return [{ ...coordinates, name: destination || 'Destination' }];
         return [];
     }, [waypoints, coordinates, destination]);
+
+    // ============================================
+    // ✅ LAZY LOAD ROUTING MACHINE ON MOUNT
+    // ============================================
+    useEffect(() => {
+        let cancelled = false;
+
+        loadRoutingMachine()
+            .then(() => {
+                if (!cancelled) {
+                    setRoutingReady(true);
+                }
+            })
+            .catch(() => {
+                if (!cancelled) {
+                    setRoutingReady(false);
+                }
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, []);
 
     // ============================================
     // INITIALIZE MAP (once)
@@ -136,26 +200,35 @@ const RouteMap = ({
 
         return () => {
             isMountedRef.current = false;
-            if (routingControlRef.current) {
-                try { mapInstanceRef.current?.removeControl(routingControlRef.current); } catch (e) {}
-                routingControlRef.current = null;
-            }
-            if (routeLineRef.current) {
-                try { mapInstanceRef.current?.removeLayer(routeLineRef.current); } catch (e) {}
-                routeLineRef.current = null;
-            }
-            stopMarkersRef.current.forEach(m => {
-                try { mapInstanceRef.current?.removeLayer(m); } catch (e) {}
-            });
-            stopMarkersRef.current = [];
-            if (mapInstanceRef.current) {
-                try { mapInstanceRef.current.remove(); } catch (e) {}
+
+            // ✅ Safe cleanup with null checks
+            const map = mapInstanceRef.current;
+            if (map) {
+                if (routingControlRef.current) {
+                    try { map.removeControl(routingControlRef.current); } catch (e) {}
+                    routingControlRef.current = null;
+                }
+                if (routeLineRef.current) {
+                    try { map.removeLayer(routeLineRef.current); } catch (e) {}
+                    routeLineRef.current = null;
+                }
+                if (originMarkerRef.current) {
+                    try { map.removeLayer(originMarkerRef.current); } catch (e) {}
+                    originMarkerRef.current = null;
+                }
+                stopMarkersRef.current.forEach(m => {
+                    try { map.removeLayer(m); } catch (e) {}
+                });
+                stopMarkersRef.current = [];
+
+                try { map.remove(); } catch (e) {}
                 mapInstanceRef.current = null;
             }
+
             setMapReady(false);
             setIsInitialized(false);
         };
-    }, []);
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
     // ============================================
     // MAP CLICK HANDLER
@@ -176,12 +249,16 @@ const RouteMap = ({
     }, [interactive, onMapClick]);
 
     // ============================================
-    // DRAW ORIGIN MARKER (once)
+    // DRAW ORIGIN MARKER
     // ============================================
     useEffect(() => {
         if (!mapReady || !mapInstanceRef.current || originMarkerRef.current) return;
 
-        const originLatLng = L.latLng(origin.lat || ORIGIN_COORDS.lat, origin.lng || ORIGIN_COORDS.lng);
+        const originLatLng = L.latLng(
+            origin.lat || ORIGIN_COORDS.lat,
+            origin.lng || ORIGIN_COORDS.lng
+        );
+
         const marker = L.marker(originLatLng, {
             icon: createOriginIcon(),
             interactive: true,
@@ -189,7 +266,9 @@ const RouteMap = ({
             zIndexOffset: 500,
         })
             .addTo(mapInstanceRef.current)
-            .bindPopup(`<b>🏠 ${origin.name || ORIGIN_NAME}</b><br><span style="font-size:11px;color:#666">Starting point</span>`);
+            .bindPopup(
+                `<b>🏠 ${origin.name || ORIGIN_NAME}</b><br><span style="font-size:11px;color:#666">Starting point</span>`
+            );
 
         originMarkerRef.current = marker;
     }, [mapReady, origin]);
@@ -201,15 +280,18 @@ const RouteMap = ({
         if (!mapInstanceRef.current || !mapReady || !isMountedRef.current) return;
 
         const map = mapInstanceRef.current;
-        const originLatLng = L.latLng(origin.lat || ORIGIN_COORDS.lat, origin.lng || ORIGIN_COORDS.lng);
+        const originLatLng = L.latLng(
+            origin.lat || ORIGIN_COORDS.lat,
+            origin.lng || ORIGIN_COORDS.lng
+        );
 
-        // ✅ Remove existing stop markers
+        // Remove existing stop markers
         stopMarkersRef.current.forEach(m => {
             try { map.removeLayer(m); } catch (e) {}
         });
         stopMarkersRef.current = [];
 
-        // ✅ Remove old route
+        // Remove old route
         if (routingControlRef.current) {
             try { map.removeControl(routingControlRef.current); } catch (e) {}
             routingControlRef.current = null;
@@ -219,13 +301,13 @@ const RouteMap = ({
             routeLineRef.current = null;
         }
 
-        // ✅ Add stop markers
+        // Add stop markers
         const validStops = normalizedWaypoints.filter(w => w && w.lat && w.lng);
-        
+
         validStops.forEach((wp, index) => {
             const latlng = L.latLng(wp.lat, wp.lng);
             const marker = L.marker(latlng, {
-                icon: createStopIcon(index, validStops.length),
+                icon: createStopIcon(index),
                 draggable: draggableMarker,
                 zIndexOffset: 1000 + index,
             }).addTo(map);
@@ -240,7 +322,6 @@ const RouteMap = ({
                 </div>
             `);
 
-            // ✅ Drag handlers
             if (draggableMarker) {
                 marker.on('dragstart', () => {
                     if (onWaypointDragStart) onWaypointDragStart(index);
@@ -264,62 +345,96 @@ const RouteMap = ({
             stopMarkersRef.current.push(marker);
         });
 
-        // ✅ Draw route with all waypoints
+        // Draw route
         if (showRoute && validStops.length > 0) {
             const allPoints = [
                 originLatLng,
                 ...validStops.map(w => L.latLng(w.lat, w.lng)),
             ];
 
-            // Add return to origin if round trip
             if (roundTrip) {
                 allPoints.push(originLatLng);
             }
 
-            try {
-                routingControlRef.current = L.Routing.control({
-                    waypoints: allPoints,
-                    routeWhileDragging: false,
-                    showAlternatives: false,
-                    fitSelectedRoutes: false,
-                    show: false,
-                    lineOptions: {
-                        styles: [
-                            { color: '#2563eb', weight: 5, opacity: 0.9 },
-                        ],
-                        extendToWaypoints: true,
-                    },
-                    createMarker: () => null,
-                    addWaypoints: false,
-                    draggableWaypoints: false,
-                    geocoder: null,
-                    router: L.Routing.osrmv1({
-                        serviceUrl: 'https://router.project-osrm.org/route/v1',
-                        profile: 'driving',
-                    }),
-                }).addTo(map);
-            } catch (error) {
-                // Fallback: straight lines
-                routeLineRef.current = L.polyline(allPoints, {
-                    color: '#2563eb',
-                    weight: 3,
-                    opacity: 0.6,
-                    dashArray: '6,6',
-                }).addTo(map);
+            // ✅ Use routing machine ONLY if loaded successfully
+            if (routingReady && L.Routing && L.Routing.control) {
+                try {
+                    routingControlRef.current = L.Routing.control({
+                        waypoints: allPoints,
+                        routeWhileDragging: false,
+                        showAlternatives: false,
+                        fitSelectedRoutes: false,
+                        show: false,
+                        lineOptions: {
+                            styles: [{ color: '#2563eb', weight: 5, opacity: 0.9 }],
+                            extendToWaypoints: true,
+                        },
+                        createMarker: () => null,
+                        addWaypoints: false,
+                        draggableWaypoints: false,
+                        geocoder: null,
+                        router: L.Routing.osrmv1({
+                            serviceUrl: 'https://router.project-osrm.org/route/v1',
+                            profile: 'driving',
+                        }),
+                    }).addTo(map);
+                } catch (error) {
+                    console.warn('⚠️ Routing machine failed, falling back to straight lines:', error);
+                    drawFallbackRoute(map, allPoints);
+                }
+            } else {
+                // ✅ Fallback: straight dashed polyline
+                drawFallbackRoute(map, allPoints);
             }
         }
 
-        // ✅ Fit bounds to include everything
+        // Fit bounds
         if (validStops.length > 0) {
-            const boundsPoints = [originLatLng, ...validStops.map(w => L.latLng(w.lat, w.lng))];
+            const boundsPoints = [
+                originLatLng,
+                ...validStops.map(w => L.latLng(w.lat, w.lng)),
+            ];
             const bounds = L.latLngBounds(boundsPoints);
+
             setTimeout(() => {
                 if (mapInstanceRef.current && isMountedRef.current) {
-                    mapInstanceRef.current.fitBounds(bounds, { padding: [60, 60], maxZoom: 14 });
+                    try {
+                        mapInstanceRef.current.fitBounds(bounds, {
+                            padding: [60, 60],
+                            maxZoom: 14,
+                        });
+                    } catch (e) {}
                 }
             }, 200);
         }
-    }, [mapReady, normalizedWaypoints, origin, showRoute, roundTrip, draggableMarker, onWaypointDragStart, onWaypointDrag, onWaypointDragEnd]);
+    }, [
+        mapReady,
+        normalizedWaypoints,
+        origin,
+        showRoute,
+        roundTrip,
+        draggableMarker,
+        routingReady, // ✅ Re-run when routing becomes ready
+        onWaypointDragStart,
+        onWaypointDrag,
+        onWaypointDragEnd,
+    ]);
+
+    // ============================================
+    // FALLBACK ROUTE DRAWER
+    // ============================================
+    const drawFallbackRoute = (map, points) => {
+        try {
+            routeLineRef.current = L.polyline(points, {
+                color: '#2563eb',
+                weight: 3,
+                opacity: 0.6,
+                dashArray: '6,6',
+            }).addTo(map);
+        } catch (e) {
+            console.warn('⚠️ Failed to draw fallback route:', e);
+        }
+    };
 
     // ============================================
     // TRIGGER UPDATE ON WAYPOINT CHANGE
@@ -341,7 +456,10 @@ const RouteMap = ({
     // ============================================
     useEffect(() => {
         if (mapInstanceRef.current) {
-            setTimeout(() => mapInstanceRef.current?.invalidateSize(), 200);
+            const t = setTimeout(() => {
+                try { mapInstanceRef.current?.invalidateSize(); } catch (e) {}
+            }, 200);
+            return () => clearTimeout(t);
         }
     }, [height]);
 
@@ -363,7 +481,10 @@ const RouteMap = ({
                         </span>
                         <span className="flex items-center gap-1">
                             <span className="w-3 h-3 rounded-full bg-blue-500"></span>
-                            <span className="text-slate-600 dark:text-slate-400">{normalizedWaypoints.length} Stop{normalizedWaypoints.length !== 1 ? 's' : ''}</span>
+                            <span className="text-slate-600 dark:text-slate-400">
+                                {normalizedWaypoints.length} Stop
+                                {normalizedWaypoints.length !== 1 ? 's' : ''}
+                            </span>
                         </span>
                     </div>
                 </div>
@@ -372,7 +493,9 @@ const RouteMap = ({
             {/* Interactive hint */}
             {interactive && (
                 <div className="absolute bottom-3 left-3 z-10 bg-black/60 backdrop-blur-sm text-white text-xs px-3 py-1.5 rounded-lg pointer-events-none">
-                    {draggableMarker ? '📍 Click map to add stop • Drag markers to adjust' : '📍 Click map to add stop'}
+                    {draggableMarker
+                        ? '📍 Click map to add stop • Drag markers to adjust'
+                        : '📍 Click map to add stop'}
                 </div>
             )}
         </div>
