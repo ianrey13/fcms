@@ -483,11 +483,7 @@ return new class extends Migration
             $table->index(['connection', 'queue', 'failed_at']);
         });
 
-        Schema::create('migrations', function (Blueprint $table) {
-            $table->increments('id');
-            $table->string('migration');
-            $table->integer('batch');
-        });
+      
 
         Schema::create('personal_access_tokens', function (Blueprint $table) {
             $table->bigIncrements('id');
@@ -703,7 +699,7 @@ return new class extends Migration
         // Drop tables in reverse dependency order
         Schema::dropIfExists('sessions');
         Schema::dropIfExists('personal_access_tokens');
-        Schema::dropIfExists('migrations');
+
         Schema::dropIfExists('failed_jobs');
         Schema::dropIfExists('job_batches');
         Schema::dropIfExists('jobs');
