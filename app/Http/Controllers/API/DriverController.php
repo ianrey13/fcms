@@ -13,7 +13,7 @@ use App\Models\Notification;
 use App\Models\SystemSetting;
 use App\Models\TripHistory;
 use App\Helpers\NotificationHelper;
-use App\Events\TripCompleted;   // ✅ NEW: import for broadcast
+use App\Events\TripCompleted;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -668,9 +668,7 @@ class DriverController extends Controller
                 return response()->json(['success' => false, 'message' => 'Please upload receipt first before acknowledging'], 422);
             }
 
-            if (!$fuelReceipt->liters_availed || $fuelReceipt->liters_availed <= 0) {
-                return response()->json(['success' => false, 'message' => 'Receipt has 0 liters. Please update the receipt first.'], 422);
-            }
+            // ✅ REMOVED: 0-liters check (driver no longer enters liters)
 
             $gasSlip->acknowledged_by = $user->user_id;
             $gasSlip->acknowledged_at = now();
@@ -1070,7 +1068,7 @@ class DriverController extends Controller
     }
 
     /**
-     * ✅ Complete trip — now broadcasts TripCompleted so GSO frontend updates instantly
+     * ✅ Complete trip — broadcasts TripCompleted so GSO frontend updates instantly
      */
     public function completeTrip(Request $request, $id)
     {
@@ -1197,7 +1195,7 @@ class DriverController extends Controller
 
             DB::commit();
 
-            // ✅ NEW: Broadcast trip completion so GSO Live Tracking removes the marker instantly
+            // ✅ Broadcast trip completion so GSO Live Tracking removes the marker instantly
             try {
                 broadcast(new TripCompleted(
                     $ticket->trip_ticket_id,
@@ -1275,14 +1273,16 @@ class DriverController extends Controller
         }
     }
 
+    /**
+     * ✅ UPDATED: Upload receipt — PHOTO ONLY
+     * Liters + amount are entered by GSO/MO during validation.
+     */
     public function uploadReceipt(Request $request, $id)
     {
         try {
+            // ✅ Only the photo is required now
             $validator = Validator::make($request->all(), [
                 'receipt' => 'required|image|mimes:jpeg,png,jpg|max:5120',
-                'liters_availed' => 'required|numeric|min:0.01',
-                'amount_on_receipt' => 'required|numeric|min:0.01',
-                'unit_price' => 'nullable|numeric|min:0.01',
             ]);
 
             if ($validator->fails()) {
@@ -1308,6 +1308,7 @@ class DriverController extends Controller
                 return response()->json(['success' => false, 'message' => 'Trip ticket not found'], 404);
             }
 
+            // ✅ Block uploads for closed/cancelled/validated trips
             if (in_array($ticket->status, ['pending_gso_validation', 'closed', 'cancelled', 'rejected'])) {
                 return response()->json([
                     'success' => false,
@@ -1322,61 +1323,37 @@ class DriverController extends Controller
                 return response()->json(['success' => false, 'message' => 'Gas slip not found'], 404);
             }
 
-            $amountReleased = (float) $gasSlip->amount_released;
-            $amountOnReceipt = (float) $request->amount_on_receipt;
-            $litersAvailed = (float) $request->liters_availed;
-
-            if ($amountOnReceipt > $amountReleased) {
-                return response()->json([
-                    'success' => false,
-                    'message' => "Receipt amount (₱{$amountOnReceipt}) exceeds the released amount (₱{$amountReleased}).",
-                    'max_amount' => $amountReleased,
-                ], 422);
-            }
-
-            $fuelType = $ticket->vehicle ? $ticket->vehicle->fuel_type : 'regular';
-            $fuelPrice = $this->getFuelPrice($fuelType);
-            $expectedLiters = round($amountOnReceipt / $fuelPrice, 2);
-            $tolerance = 0.5;
-
-            if (abs($litersAvailed - $expectedLiters) > $tolerance) {
-                Log::warning('Liters mismatch on upload', [
-                    'trip_id' => $id,
-                    'liters_availed' => $litersAvailed,
-                    'expected_liters' => $expectedLiters,
-                    'fuel_price' => $fuelPrice,
-                ]);
-            }
-
+            // ✅ Save photo only — no liters, no amount
             $file = $request->file('receipt');
             $extension = $file->getClientOriginalExtension() ?: 'jpg';
             $filename = 'receipt_' . $id . '_' . time() . '_' . Str::uuid() . '.' . $extension;
             $file->move(public_path('receipts'), $filename);
             $dbPath = 'receipts/' . $filename;
 
+            // Upsert fuel receipt
             $fuelReceipt = FuelReceipt::firstOrNew(['gas_slip_id' => $gasSlip->gas_slip_id]);
+
+            // ✅ Delete old photo if replacing
+            if ($fuelReceipt->receipt_photo_path && $fuelReceipt->receipt_photo_path !== $dbPath) {
+                $oldPath = public_path($fuelReceipt->receipt_photo_path);
+                if (file_exists($oldPath)) {
+                    @unlink($oldPath);
+                }
+            }
+
             $fuelReceipt->receipt_photo_path = $dbPath;
             $fuelReceipt->receipt_uploaded_at = now();
-            $fuelReceipt->liters_availed = round($litersAvailed, 2);
-            $fuelReceipt->amount_on_receipt = round($amountOnReceipt, 2);
-            $fuelReceipt->unit_price = $request->unit_price
-                ?: round($amountOnReceipt / max($litersAvailed, 0.01), 2);
+            // ✅ Do NOT touch liters_availed / amount_on_receipt / unit_price
+            // They will be filled in by GSO/MO during validation.
             $fuelReceipt->save();
-
-            $ticket->syncActuals()->save();
 
             return response()->json([
                 'success' => true,
-                'message' => 'Receipt uploaded successfully',
+                'message' => 'Receipt photo uploaded. GSO will review and enter the fuel details.',
                 'data' => [
                     'receipt_path' => $dbPath,
                     'receipt_url' => asset($dbPath),
-                    'amount_released' => $amountReleased,
-                    'amount_on_receipt' => $fuelReceipt->amount_on_receipt,
-                    'liters_availed' => $fuelReceipt->liters_availed,
-                    'unit_price' => $fuelReceipt->unit_price,
-                    'actual_distance_km' => $ticket->actual_distance_km,
-                    'actual_fuel_used' => $ticket->actual_fuel_used,
+                    'amount_released' => (float) $gasSlip->amount_released,
                 ]
             ]);
         } catch (\Exception $e) {
