@@ -40,11 +40,12 @@ COPY . .
 ENV COMPOSER_ALLOW_SUPERUSER=1
 
 # ============================================
-# BUILD-TIME env — safe defaults so Laravel can boot during build
-# Railway's real env vars override these at runtime
+# BUILD-TIME ENV — safe defaults for Laravel boot during build
+# Railway overrides these at runtime via its Variables tab
 # ============================================
 ENV APP_ENV=production
 ENV APP_DEBUG=false
+ENV APP_KEY=base64:k707We7Oouc2GJ0OIc5HAT9Jd8lIxLKB9QRXqCuVe90=
 ENV BROADCAST_CONNECTION=log
 ENV CACHE_STORE=array
 ENV SESSION_DRIVER=array
@@ -54,13 +55,15 @@ ENV DB_DATABASE=:memory:
 ENV LOG_CHANNEL=stderr
 
 # ============================================
-# Install PHP dependencies (scripts run with safe env)
+# Install PHP dependencies
+# --no-scripts first to avoid artisan triggering during install
+# Then run post-autoload-dump with the safe env above
 # ============================================
 RUN composer install \
-    --no-dev \
-    --optimize-autoloader \
-    --no-interaction \
-    --no-scripts \
+        --no-dev \
+        --optimize-autoloader \
+        --no-interaction \
+        --no-scripts \
     && composer run-script post-autoload-dump --no-interaction || true
 
 # ============================================
@@ -85,13 +88,13 @@ RUN mkdir -p \
     && chmod -R 777 /var/www/html/public
 
 # ============================================
-# Nginx + supervisor configs
+# Nginx template + supervisor config
 # ============================================
 COPY nginx.conf.template /etc/nginx/http.d/default.conf.template
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
 # ============================================
-# Entrypoint (substitutes $PORT, runs migrations, starts supervisor)
+# Entrypoint
 # ============================================
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
