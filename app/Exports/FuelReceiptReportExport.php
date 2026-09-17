@@ -37,16 +37,13 @@ class FuelReceiptReportExport implements
     /**
      * Return the data for the export
      */
-    public function array(): array
+      public function array(): array
     {
         $rows = [];
         $receipts = $this->data['receipts'] ?? [];
         $filters = $this->data['filters'] ?? [];
         $summary = $this->data['summary'] ?? [];
 
-        // ============================================
-        // HEADER SECTION
-        // ============================================
         $title = $this->reportType === 'mo' 
             ? 'MAYOR\'S OFFICE - FUEL RECEIPT REPORT'
             : 'GSO - FUEL RECEIPT REPORT';
@@ -54,40 +51,22 @@ class FuelReceiptReportExport implements
         $rows[] = [$title];
         $rows[] = ['Laguindingan Municipality - Fuel Consumption Monitoring System'];
         $rows[] = ['Generated: ' . now()->format('F d, Y h:i A')];
-        $rows[] = [];
+        $rows[] = array_fill(0, 14, '');   // ✅ Spacer
 
-        // Filters
         $rows[] = ['Period: ' . ($filters['start_date'] ?? 'N/A') . ' to ' . ($filters['end_date'] ?? 'N/A')];
-        $rows[] = [];
+        $rows[] = array_fill(0, 14, '');   // ✅ Spacer
 
-        // ============================================
-        // SUMMARY SECTION
-        // ============================================
         $rows[] = ['SUMMARY'];
         $rows[] = ['Total Receipts', $summary['total_receipts'] ?? 0];
         $rows[] = ['Total Fuel (Liters)', $summary['total_liters'] ?? 0];
         $rows[] = ['Total Cost (PHP)', $summary['total_cost'] ?? 0];
-        $rows[] = [];
+        $rows[] = array_fill(0, 14, '');   // ✅ Spacer
 
-        // ============================================
-        // RECEIPT DETAILS TABLE
-        // ============================================
         $rows[] = ['FUEL RECEIPT DETAILS'];
         $rows[] = [
-            'Date',
-            'Invoice #',
-            'Ticket #',
-            'Driver',
-            'Vehicle',
-            'Plate No.',
-            'Destination',
-            'Time Departure',
-            'Time Arrival',
-            'Fuel Type',
-            'Unit Price',
-            'Amount',
-            'Qty (L)',
-            'Status'
+            'Date', 'Invoice #', 'Ticket #', 'Driver', 'Vehicle',
+            'Plate No.', 'Destination', 'Time Departure', 'Time Arrival',
+            'Fuel Type', 'Unit Price', 'Amount', 'Qty (L)', 'Status'
         ];
 
         foreach ($receipts as $receipt) {

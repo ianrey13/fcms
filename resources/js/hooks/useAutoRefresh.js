@@ -9,34 +9,42 @@ export const useAutoRefresh = (eventNames, refreshFn, debounceMs = 500) => {
     const isRefreshingRef = useRef(false);
     const isMountedRef = useRef(false);
     const safetyIntervalRef = useRef(null);
-    const lastRefreshTimeRef = useRef(0);   // ✅ Track last refresh for cooldown
+    const lastRefreshTimeRef = useRef(0);
 
-    // Debounced refresh
+    // ✅ Debounced refresh (event-triggered)
+    // Cooldown reduced to 3s for real-time updates
     const debouncedRefresh = useCallback(() => {
         if (timeoutRef.current) clearTimeout(timeoutRef.current);
         timeoutRef.current = setTimeout(() => {
-            if (!isRefreshingRef.current && refreshFn) {
-                isRefreshingRef.current = true;
-                lastRefreshTimeRef.current = Date.now();   // ✅ Record time
-                refreshFn();
-                setTimeout(() => { isRefreshingRef.current = false; }, 1000);
+            if (isRefreshingRef.current || !refreshFn) return;
+
+            const now = Date.now();
+            // ✅ 3s cooldown for event-triggered refreshes
+            if (now - lastRefreshTimeRef.current < 3 * 1000) {
+                return;
             }
+
+            isRefreshingRef.current = true;
+            lastRefreshTimeRef.current = now;
+            refreshFn();
+            setTimeout(() => { isRefreshingRef.current = false; }, 1000);
+            setLastUpdated(new Date());
         }, debounceMs);
     }, [refreshFn, debounceMs]);
 
-    // Shared refresh function with cooldown
+    // ✅ Safe refresh (safety net / tab visible)
+    // Cooldown reduced to 5s
     const safeRefresh = useCallback((reason) => {
-        if (isRefreshingRef.current) return;
+        if (isRefreshingRef.current || !refreshFn) return;
 
-        // ✅ Cooldown: Don't refresh if less than 60 seconds since last refresh
         const now = Date.now();
         const timeSinceLastRefresh = now - lastRefreshTimeRef.current;
-        if (timeSinceLastRefresh < 60 * 1000) {
-            console.log(`⏸️ Skipping refresh (${reason}) — refreshed ${Math.round(timeSinceLastRefresh / 1000)}s ago`);
+
+        // ✅ 5s cooldown
+        if (timeSinceLastRefresh < 5 * 1000) {
             return;
         }
 
-        console.log(`🔄 Refreshing (${reason})`);
         isRefreshingRef.current = true;
         lastRefreshTimeRef.current = now;
         refreshFn();
@@ -50,14 +58,14 @@ export const useAutoRefresh = (eventNames, refreshFn, debounceMs = 500) => {
         const events = Array.isArray(eventNames) ? eventNames : [eventNames];
         isMountedRef.current = true;
 
-        // ✅ SAFETY NET: Refresh every 5 minutes (only when tab is visible)
+        // Safety net: refresh every 5 minutes
         safetyIntervalRef.current = setInterval(() => {
             if (document.visibilityState === 'visible') {
                 safeRefresh('safety net');
             }
         }, 5 * 60 * 1000);
 
-        // ✅ REFRESH when tab becomes visible again (with cooldown)
+        // Refresh when tab becomes visible again
         const handleVisibilityChange = () => {
             if (document.visibilityState === 'visible') {
                 safeRefresh('tab visible');
@@ -69,15 +77,12 @@ export const useAutoRefresh = (eventNames, refreshFn, debounceMs = 500) => {
         const unsubscribers = events.map(eventName => {
             return on(eventName, (data) => {
                 if (!isMountedRef.current) return;
-                console.log(`📡 Event received: ${eventName}`);
-                setLastUpdated(new Date());
                 debouncedRefresh();
             });
         });
 
         return () => {
             isMountedRef.current = false;
-            // ✅ REMOVED: clearTimeout(initialTimeout) — variable no longer exists
             if (timeoutRef.current) clearTimeout(timeoutRef.current);
             if (safetyIntervalRef.current) clearInterval(safetyIntervalRef.current);
             document.removeEventListener('visibilitychange', handleVisibilityChange);

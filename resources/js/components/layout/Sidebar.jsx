@@ -45,6 +45,7 @@ import {
     PieChart,
     MapPin,
     Navigation,
+    PhilippinePeso,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -331,15 +332,11 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
                     icon: Banknote,
                     submenu: [
                         {
-                            name: "Pending Fund Release",
+                            name: "Disbursement Approval",
                             href: "/mo/pending",
                             icon: Clock,
                         },
-                        {
-                            name: "Funds Released",
-                            href: "/mo/approved",
-                            icon: CheckCircle,
-                        },
+                       
                         {
                             name: "Receipt Verification",
                             href: "/mo/receipt-verification",
@@ -354,7 +351,7 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
                         {
                             name: "Budget Allocation",
                             href: "/mo/budget-allocation",
-                            icon: DollarSign,
+                            icon: PhilippinePeso,
                         },
                         {
                             name: "Budget History",

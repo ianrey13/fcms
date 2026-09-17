@@ -78,6 +78,7 @@ import {
   FileCheck,
   Search,
   Filter,
+  PhilippinePeso,
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, endOfYear } from 'date-fns';
@@ -507,7 +508,7 @@ const MayorReports = () => {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
               <StatsCard title="Total Receipts" value={receipts.length} icon={Receipt} color="from-blue-500 to-blue-600" />
               <StatsCard title="Total Fuel" value={`${formatNumber(totals.quantity || summary.total_liters || 0)} L`} icon={Fuel} color="from-emerald-500 to-emerald-600" />
-              <StatsCard title="Total Cost" value={formatCurrency(totals.amount || summary.total_cost || 0)} icon={DollarSign} color="from-purple-500 to-purple-600" />
+              <StatsCard title="Total Cost" value={formatCurrency(totals.amount || summary.total_cost || 0)} icon={PhilippinePeso} color="from-purple-500 to-purple-600" />
               <StatsCard title="Avg Unit Price" value={formatCurrency(summary.avg_unit_price || 0)} icon={TrendingUp} color="from-orange-500 to-orange-600" />
             </div>
 
@@ -753,7 +754,7 @@ const MayorReports = () => {
               <StatsCard title="Total Trips" value={summary.total_reconciliations || 0} icon={FileCheck} color="from-blue-500 to-blue-600" />
               <StatsCard title="Verified" value={summary.total_verified || 0} icon={CheckCircle} color="from-emerald-500 to-emerald-600" />
               <StatsCard title="Discrepancy" value={summary.total_discrepancy || 0} icon={AlertCircle} color="from-red-500 to-red-600" />
-              <StatsCard title="Total Released" value={formatCurrency(summary.total_amount_released || 0)} icon={DollarSign} color="from-purple-500 to-purple-600" />
+              <StatsCard title="Total Released" value={formatCurrency(summary.total_amount_released || 0)} icon={PhilippinePeso} color="from-purple-500 to-purple-600" />
             </div>
 
             <div className="overflow-x-auto max-h-[400px] overflow-y-auto border rounded-lg">

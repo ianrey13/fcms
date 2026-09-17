@@ -29,14 +29,14 @@ class ReconciliationExport implements
         $this->data = $data;
     }
 
-    public function array(): array
+      public function array(): array
     {
         $rows = [];
 
         $rows[] = ['TRIP AND FUEL RECONCILIATION REPORT'];
         $rows[] = ['Laguindingan Municipality - FCMS'];
         $rows[] = ['Generated: ' . now()->format('F d, Y h:i A')];
-        $rows[] = [];
+        $rows[] = array_fill(0, 9, '');   // ✅ Empty spacer (9 columns)
         $rows[] = [
             'Trip Ticket No.', 'Vehicle', 'Driver', 'Expected Distance', 
             'Actual Distance', 'Distance Variance', 'Amount Released', 
@@ -60,7 +60,6 @@ class ReconciliationExport implements
 
         return $rows;
     }
-
     public function headings(): array
     {
         return [];

@@ -37,7 +37,6 @@ class GsoController extends Controller
             'pending_mayors_office' => TripTicket::where('status', TripTicket::STATUS_PENDING_MAYORS_OFFICE)->count(),
             'funds_issued' => TripTicket::where('status', TripTicket::STATUS_FUNDS_ISSUED)->count(),
             'in_transit' => TripTicket::where('status', TripTicket::STATUS_IN_TRANSIT)->count(),
-            // 'pending_reconciliation' => TripTicket::where('status', TripTicket::STATUS_PENDING_RECONCILIATION)->count(),
             'returned' => TripTicket::where('status', TripTicket::STATUS_RETURNED_FOR_REVISION)->count(),
             'closed' => TripTicket::where('status', TripTicket::STATUS_CLOSED)->count(),
             'total_trips_this_month' => TripTicket::whereMonth('submitted_at', now()->month)->count(),
@@ -69,7 +68,7 @@ class GsoController extends Controller
     }
 
     /**
-     * ✅ Get available vehicles (not in active trips)
+     * Get available vehicles (not in active trips)
      */
     public function getAvailableVehicles(Request $request)
     {
@@ -82,24 +81,22 @@ class GsoController extends Controller
 
             $departmentId = $request->get('department_id');
             $includeAll = $request->get('include_all', false);
-            
-            // ✅ Get vehicle IDs that are currently in active trips
+
             $activeTripVehicleIds = TripTicket::whereIn('status', Vehicle::getActiveTripStatuses())
                 ->pluck('vehicle_id')
                 ->toArray();
-            
-            // ✅ Query vehicles that are NOT in active trips
+
             $query = Vehicle::where('status', 'active')
                 ->where('maintenance_flag', false);
-            
+
             if ($departmentId && !$includeAll) {
                 $query->where('department_id', $departmentId);
             }
-            
+
             if (!empty($activeTripVehicleIds)) {
                 $query->whereNotIn('vehicle_id', $activeTripVehicleIds);
             }
-            
+
             $vehicles = $query->orderBy('vehicle_model')
                 ->get()
                 ->map(function ($vehicle) {
@@ -162,7 +159,7 @@ class GsoController extends Controller
                         'status' => $ticket->status,
                         'has_insufficient_budget' => $ticket->has_insufficient_budget ?? false,
                         'budget_shortage' => $ticket->budget_shortage ?? 0,
-                        'estimated_cost' => $ticket->estimated_fuel_liters ? 
+                        'estimated_cost' => $ticket->estimated_fuel_liters ?
                             ($ticket->estimated_fuel_liters * 88) : null,
                         'vehicle' => $ticket->vehicle ? [
                             'plate_number' => $ticket->vehicle->plate_number,
@@ -339,7 +336,7 @@ class GsoController extends Controller
     }
 
     /**
-     * Get single ticket details - FIXED (No Odometer)
+     * Get single ticket details
      */
     public function show($id)
     {
@@ -361,7 +358,6 @@ class GsoController extends Controller
                 ], 404);
             }
 
-            // ✅ Check if vehicle is available (for reference)
             $vehicleAvailability = null;
             if ($ticket->vehicle) {
                 $vehicleAvailability = $ticket->vehicle->getAvailabilityStatus();
@@ -380,6 +376,9 @@ class GsoController extends Controller
                 'submitted_by_staff' => $ticket->submitted_by_staff ?? false,
                 'estimated_distance_km' => $ticket->estimated_distance_km,
                 'estimated_fuel_liters' => $ticket->estimated_fuel_liters,
+                'actual_distance_km' => $ticket->actual_distance_km,
+                'actual_fuel_used' => $ticket->actual_fuel_used,
+                'trip_count' => $ticket->trip_count ?? 0,
                 'is_mo_funded' => $ticket->created_by_mo_user_id !== null,
                 'has_insufficient_budget' => $ticket->has_insufficient_budget ?? false,
                 'budget_shortage' => $ticket->budget_shortage ?? 0,
@@ -410,8 +409,6 @@ class GsoController extends Controller
                     'gas_slip_id' => $ticket->gasSlip->gas_slip_id,
                     'amount_released' => $ticket->gasSlip->amount_released,
                     'reconciliation_status' => $ticket->gasSlip->reconciliation_status,
-                    'budget_before' => $ticket->gasSlip->budget_before,
-                    'budget_after' => $ticket->gasSlip->budget_after,
                     'is_cross_department' => $ticket->gasSlip->is_cross_department ?? false,
                     'cross_department_reason' => $ticket->gasSlip->cross_department_reason ?? null,
                 ] : null,
@@ -435,7 +432,7 @@ class GsoController extends Controller
                 'success' => true,
                 'data' => $response
             ]);
-            
+
         } catch (\Exception $e) {
             Log::error('Show ticket error: ' . $e->getMessage());
             return response()->json([
@@ -510,107 +507,6 @@ class GsoController extends Controller
         }
     }
 
-    // /**
-    //  * Reconcile a trip (close it)
-    //  */
-    // public function reconcileTrip(Request $request, $id)
-    // {
-    //     try {
-    //         $user = $request->user();
-            
-    //         if (!$user->isGsoOffice()) {
-    //             return response()->json(['message' => 'Unauthorized'], 403);
-    //         }
-            
-    //         $validator = Validator::make($request->all(), [
-    //             'reconciliation_note' => 'nullable|string|max:500',
-    //         ]);
-            
-    //         if ($validator->fails()) {
-    //             return response()->json(['errors' => $validator->errors()], 422);
-    //         }
-            
-    //         $ticket = TripTicket::where('trip_ticket_id', $id)
-    //             ->where('status', TripTicket::STATUS_PENDING_RECONCILIATION)
-    //             ->first();
-            
-    //         if (!$ticket) {
-    //             return response()->json(['message' => 'Trip not found or not pending reconciliation'], 404);
-    //         }
-            
-    //         // Update gas slip reconciliation status
-    //         $gasSlip = GasSlip::where('trip_ticket_id', $id)->first();
-    //         if ($gasSlip) {
-    //             $gasSlip->reconciliation_status = 'verified';
-    //             $gasSlip->reconciled_by = $user->user_id;
-    //             $gasSlip->reconciled_at = now();
-    //             $gasSlip->reconciliation_note = $request->reconciliation_note;
-    //             $gasSlip->save();
-    //         }
-            
-    //         // Update ticket status
-    //         $ticket->status = TripTicket::STATUS_CLOSED;
-    //         $ticket->save();
-            
-    //         // Broadcast notifications
-    //         $deptStaff = User::where('department_id', $ticket->department_id)
-    //             ->where('status', 'active')
-    //             ->get();
-            
-    //         foreach ($deptStaff as $staff) {
-    //             NotificationHelper::send(
-    //                 $staff->user_id,
-    //                 'trip_reconciled',
-    //                 'trip_ticket',
-    //                 $ticket->trip_ticket_id,
-    //                 "Trip {$ticket->trip_ticket_number} has been reconciled and closed by GSO"
-    //             );
-    //         }
-    //         Log::info('📡 Broadcasted trip_reconciled to ' . $deptStaff->count() . ' department staff');
-            
-    //         $moStaff = User::where('role', 'mayors_office')->where('status', 'active')->get();
-    //         foreach ($moStaff as $mo) {
-    //             NotificationHelper::send(
-    //                 $mo->user_id,
-    //                 'trip_reconciled',
-    //                 'trip_ticket',
-    //                 $ticket->trip_ticket_id,
-    //                 "Trip {$ticket->trip_ticket_number} has been reconciled and closed by GSO"
-    //             );
-    //         }
-    //         Log::info('📡 Broadcasted trip_reconciled to ' . $moStaff->count() . ' MO staff');
-            
-    //         if ($ticket->driver_id) {
-    //             $driver = Driver::find($ticket->driver_id);
-    //             if ($driver && $driver->user_id) {
-    //                 NotificationHelper::send(
-    //                     $driver->user_id,
-    //                     'trip_reconciled',
-    //                     'trip_ticket',
-    //                     $ticket->trip_ticket_id,
-    //                     "Trip {$ticket->trip_ticket_number} has been reconciled and closed"
-    //                 );
-    //                 Log::info('📡 Broadcasted trip_reconciled to driver: ' . $driver->user_id);
-    //             }
-    //         }
-            
-    //         return response()->json([
-    //             'success' => true,
-    //             'message' => 'Trip reconciled and closed successfully',
-    //             'data' => [
-    //                 'trip_ticket_id' => $ticket->trip_ticket_id,
-    //                 'status' => $ticket->status,
-    //             ]
-    //         ]);
-    //     } catch (\Exception $e) {
-    //         Log::error('Reconcile trip error: ' . $e->getMessage());
-    //         return response()->json([
-    //             'success' => false,
-    //             'message' => 'Failed to reconcile trip: ' . $e->getMessage()
-    //         ], 500);
-    //     }
-    // }
-
     /**
      * Get completed trips for GSO
      */
@@ -659,72 +555,9 @@ class GsoController extends Controller
     }
 
     /**
-     * Get fuel receipts for GSO
+     * ✅ Get a single fuel receipt with details (SINGLE VERSION — duplicate removed)
      */
-    public function getFuelReceipts(Request $request)
-    {
-        try {
-            $user = $request->user();
-            if (!$user->isGsoOffice()) {
-                return response()->json(['message' => 'Unauthorized'], 403);
-            }
-
-            $receipts = DB::table('fuel_receipt as fr')
-                ->join('gas_slip as gs', 'fr.gas_slip_id', '=', 'gs.gas_slip_id')
-                ->join('trip_ticket as tt', 'gs.trip_ticket_id', '=', 'tt.trip_ticket_id')
-                ->join('vehicles as v', 'tt.vehicle_id', '=', 'v.vehicle_id')
-                ->join('drivers as d', 'tt.driver_id', '=', 'd.driver_id')
-                ->join('users as u', 'd.user_id', '=', 'u.user_id')
-                ->select(
-                    'fr.fuel_receipt_id as id',
-                    'tt.trip_ticket_id',
-                    'tt.trip_ticket_number as ticket_number',
-                    'v.plate_number',
-                    'v.vehicle_model',
-                    'fr.liters_availed as liters',
-                    'fr.amount_on_receipt as amount',
-                    'fr.receipt_photo_path as receipt_url',
-                    'fr.receipt_uploaded_at as uploaded_at',
-                    'fr.gps_distance_km',
-                    'fr.invoice_number',
-                    'fr.unit_price',
-                    'gs.reconciliation_status as status',
-                    'tt.trip_date',
-                    DB::raw("CONCAT(u.first_name, ' ', u.last_name) as driver_name")
-                )
-                ->where('fr.liters_availed', '>', 0)
-                ->orWhere('fr.amount_on_receipt', '>', 0)
-                ->orderBy('fr.created_at', 'desc')
-                ->get()
-                ->map(function ($receipt) {
-                    if ($receipt->receipt_url && !str_starts_with($receipt->receipt_url, 'http')) {
-                        $receipt->receipt_url = asset('storage/' . $receipt->receipt_url);
-                    }
-                    $receipt->amount = (float) $receipt->amount;
-                    $receipt->liters = (float) $receipt->liters;
-                    $receipt->gps_distance_km = $receipt->gps_distance_km ? (float) $receipt->gps_distance_km : null;
-                    $receipt->unit_price = (float) $receipt->unit_price;
-                    return $receipt;
-                });
-
-            return response()->json([
-                'success' => true,
-                'data' => $receipts,
-                'total' => $receipts->count()
-            ]);
-        } catch (\Exception $e) {
-            Log::error('Get fuel receipts error: ' . $e->getMessage());
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to fetch fuel receipts: ' . $e->getMessage()
-            ], 500);
-        }
-    }
-
-    /**
-     * Get a single fuel receipt with details
-     */
-    public function getFuelReceipt($request, $id)
+    public function getFuelReceipt(Request $request, $id)
     {
         try {
             $user = $request->user();
@@ -764,6 +597,10 @@ class GsoController extends Controller
                     'tt.trip_date',
                     'tt.destination',
                     'tt.purpose',
+                    'tt.estimated_distance_km',
+                    'tt.actual_distance_km',
+                    'tt.estimated_fuel_liters',
+                    'tt.actual_fuel_used',
                     DB::raw("CONCAT(u_driver.first_name, ' ', u_driver.last_name) as driver_name"),
                     DB::raw("CONCAT(u_submitter.first_name, ' ', u_submitter.last_name) as submitted_by_name")
                 )
@@ -777,8 +614,9 @@ class GsoController extends Controller
                 ], 404);
             }
 
+            // ✅ Receipts live in public/receipts/ — use asset($path)
             if ($receipt->receipt_url && !str_starts_with($receipt->receipt_url, 'http')) {
-                $receipt->receipt_url = asset('storage/' . $receipt->receipt_url);
+                $receipt->receipt_url = asset($receipt->receipt_url);
             }
 
             return response()->json([
@@ -812,7 +650,7 @@ class GsoController extends Controller
                 'receipt_photo' => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
                 'gps_distance_km' => 'nullable|numeric|min:0',
                 'invoice_number' => 'nullable|string|max:50',
-                'unit_price' => 'nullable|numeric|min:0',
+                'unit_price' => 'nullable|numeric|min:0.01',
             ]);
 
             if ($validator->fails()) {
@@ -824,13 +662,26 @@ class GsoController extends Controller
                 return response()->json(['message' => 'Gas slip not found for this trip'], 404);
             }
 
+            // ✅ Cap check: amount ≤ released
+            if ($request->amount_on_receipt > $gasSlip->amount_released) {
+                return response()->json([
+                    'success' => false,
+                    'message' => sprintf(
+                        'Receipt amount ₱%s exceeds released amount ₱%s.',
+                        number_format($request->amount_on_receipt, 2),
+                        number_format($gasSlip->amount_released, 2)
+                    ),
+                ], 422);
+            }
+
             DB::beginTransaction();
 
             $photoPath = null;
             if ($request->hasFile('receipt_photo')) {
                 $file = $request->file('receipt_photo');
                 $filename = 'receipt_' . time() . '_' . $request->trip_ticket_id . '.' . $file->getClientOriginalExtension();
-                $photoPath = $file->storeAs('receipts', $filename, 'public');
+                $file->move(public_path('receipts'), $filename);
+                $photoPath = 'receipts/' . $filename;
             }
 
             $fuelReceipt = FuelReceipt::updateOrCreate(
@@ -841,7 +692,8 @@ class GsoController extends Controller
                     'receipt_photo_path' => $photoPath,
                     'gps_distance_km' => $request->gps_distance_km,
                     'invoice_number' => $request->invoice_number,
-                    'unit_price' => $request->unit_price,
+                    'unit_price' => $request->unit_price
+                        ?: round($request->amount_on_receipt / max($request->liters_availed, 0.01), 2),
                     'receipt_uploaded_at' => now(),
                     'updated_at' => now(),
                 ]
@@ -849,6 +701,10 @@ class GsoController extends Controller
 
             $gasSlip->reconciliation_status = 'pending';
             $gasSlip->save();
+
+            if ($gasSlip->tripTicket) {
+                $gasSlip->tripTicket->syncActuals()->save();
+            }
 
             DB::commit();
 
@@ -862,7 +718,7 @@ class GsoController extends Controller
                     'amount_on_receipt' => $fuelReceipt->amount_on_receipt,
                     'invoice_number' => $fuelReceipt->invoice_number,
                     'unit_price' => $fuelReceipt->unit_price,
-                    'receipt_photo_path' => $photoPath ? asset('storage/' . $photoPath) : null,
+                    'receipt_photo_path' => $photoPath ? asset($photoPath) : null,
                 ]
             ]);
         } catch (\Exception $e) {
@@ -883,44 +739,31 @@ class GsoController extends Controller
             'ticket_id' => $tripTicket->trip_ticket_id,
             'ticket_number' => $tripTicket->trip_ticket_number
         ]);
-        
+
         $moStaff = User::where('role', 'mayors_office')
             ->where('status', 'active')
             ->get();
-        
-        Log::info('🔔 MO Staff found: ' . $moStaff->count());
-        
+
         foreach ($moStaff as $staff) {
-            Log::info('🔔 Sending to MO: ' . $staff->user_id);
-            
-            $result = NotificationHelper::send(
+            NotificationHelper::send(
                 $staff->user_id,
                 'trip_created',
                 'trip_ticket',
                 $tripTicket->trip_ticket_id,
                 "Trip ticket {$tripTicket->trip_ticket_number} is ready for fund release"
             );
-            
-            Log::info('📡 Result for user ' . $staff->user_id . ': ' . ($result ? 'SUCCESS' : 'FAILED'));
         }
     }
 
     private function sendStaffNotification($tripTicket)
     {
-        Log::info('🔔 sendStaffNotification CALLED', [
-            'ticket_id' => $tripTicket->trip_ticket_id,
-            'ticket_number' => $tripTicket->trip_ticket_number
-        ]);
-        
-        $result = NotificationHelper::send(
+        NotificationHelper::send(
             $tripTicket->submitted_by,
             'trip_submitted',
             'trip_ticket',
             $tripTicket->trip_ticket_id,
             "Trip ticket {$tripTicket->trip_ticket_number} has been created and sent to Mayor's Office"
         );
-        
-        Log::info('📡 Staff notification result: ' . ($result ? 'SUCCESS' : 'FAILED'));
     }
 
     private function sendRejectionNotification($tripTicket, $reason)
@@ -928,627 +771,168 @@ class GsoController extends Controller
         $deptOffice = User::find($tripTicket->submitted_by);
 
         if ($deptOffice) {
-            $result = NotificationHelper::send(
+            NotificationHelper::send(
                 $deptOffice->user_id,
                 'gso_rejected',
                 'trip_ticket',
                 $tripTicket->trip_ticket_id,
                 "Trip ticket {$tripTicket->trip_ticket_number} was rejected: {$reason}"
             );
-            
-            Log::info('📡 Rejection notification result: ' . ($result ? 'SUCCESS' : 'FAILED'));
         }
     }
 
-// /**
-//  * GSO validates and CLOSES the trip (final step) v1 
-//  */
-// public function validateTrip(Request $request, $id)
-// {
-//     try {
-//         $user = $request->user();
-        
-//         if (!$user->isGsoOffice()) {
-//             return response()->json(['message' => 'Unauthorized'], 403);
-//         }
-        
-//         $validator = Validator::make($request->all(), [
-//             'validated' => 'required|boolean',
-//             'validation_note' => 'nullable|string|max:500',
-//         ]);
-        
-//         if ($validator->fails()) {
-//             return response()->json(['errors' => $validator->errors()], 422);
-//         }
-        
-//         // ✅ Allow validation from 'completed' status (driver finished all trips)
-//         $ticket = TripTicket::where('trip_ticket_id', $id)
-//             ->whereIn('status', ['completed', 'pending_gso_validation'])
-//             ->first();
-        
-//         if (!$ticket) {
-//             return response()->json([
-//                 'message' => 'Trip not found or not ready for validation'
-//             ], 404);
-//         }
-        
-//         DB::beginTransaction();
-        
-//         if ($request->validated) {
-//             // ✅ GSO APPROVED - Close the trip
-//             $ticket->status = 'closed';
-//             $ticket->closed_by = $user->user_id;
-//             $ticket->closed_at = now();
-            
-//             $gasSlip = GasSlip::where('trip_ticket_id', $id)->first();
-//             if ($gasSlip) {
-//                 $gasSlip->reconciliation_status = 'verified';
-//                 $gasSlip->reconciled_by = $user->user_id;
-//                 $gasSlip->reconciled_at = now();
-//                 $gasSlip->reconciliation_note = $request->validation_note ?? 'Validated by GSO';
-//                 $gasSlip->save();
-//             }
-            
-//             $message = "Trip {$ticket->trip_ticket_number} has been validated and CLOSED by GSO";
-//             $notificationType = 'trip_validated';
-//             $success = true;
-            
-//         } else {
-//             // ❌ GSO REJECTED - Return for revision
-//             $ticket->status = 'returned_for_revision';
-            
-//             TripTicketReturn::create([
-//                 'trip_ticket_id' => $ticket->trip_ticket_id,
-//                 'return_type' => 'rejected_by_gso',
-//                 'return_note' => $request->validation_note ?? 'GSO validation failed. Please revise.',
-//                 'actioned_by' => $user->user_id,
-//                 'actioned_at' => now(),
-//             ]);
-            
-//             $message = "Trip {$ticket->trip_ticket_number} was rejected: " . ($request->validation_note ?? 'Please revise and resubmit');
-//             $notificationType = 'gso_rejected';
-//             $success = false;
-//         }
-        
-//         $ticket->save();
-        
-//         DB::commit();
-        
-//         // ✅ Notify driver
-//         if ($ticket->driver_id) {
-//             $driver = Driver::find($ticket->driver_id);
-//             if ($driver && $driver->user_id) {
-//                 NotificationHelper::send(
-//                     $driver->user_id,
-//                     $notificationType,
-//                     'trip_ticket',
-//                     $ticket->trip_ticket_id,
-//                     $message
-//                 );
-//             }
-//         }
-        
-//         // ✅ Notify Mayor's Office
-//         $moStaff = User::where('role', 'mayors_office')->where('status', 'active')->get();
-//         foreach ($moStaff as $mo) {
-//             NotificationHelper::send(
-//                 $mo->user_id,
-//                 $notificationType,
-//                 'trip_ticket',
-//                 $ticket->trip_ticket_id,
-//                 $message
-//             );
-//         }
-        
-//         return response()->json([
-//             'success' => true,
-//             'message' => $message,
-//             'data' => [
-//                 'trip_ticket_id' => $ticket->trip_ticket_id,
-//                 'status' => $ticket->status,
-//                 'validated' => $success,
-//                 'is_closed' => $success,
-//             ]
-//         ]);
-        
-//     } catch (\Exception $e) {
-//         DB::rollBack();
-//         Log::error('Validate trip error: ' . $e->getMessage());
-//         return response()->json([
-//             'success' => false,
-//             'message' => 'Failed to validate trip: ' . $e->getMessage()
-//         ], 500);
-//     }
-// }
+    /**
+     * GSO validates and CLOSES the trip (final step)
+     * ✅ Only Approve/Close - No Reject option
+     */
+    public function validateTrip(Request $request, $id)
+    {
+        try {
+            $user = $request->user();
 
-// /**
-//  * GSO validates and CLOSES the trip (final step) v1
-//  */
-// public function validateTrip(Request $request, $id)
-// {
-//     try {
-//         $user = $request->user();
-        
-//         if (!$user->isGsoOffice()) {
-//             return response()->json(['message' => 'Unauthorized'], 403);
-//         }
-        
-//         $validator = Validator::make($request->all(), [
-//             'validated' => 'required|boolean',
-//             'validation_note' => 'nullable|string|max:500',
-//         ]);
-        
-//         if ($validator->fails()) {
-//             return response()->json(['errors' => $validator->errors()], 422);
-//         }
-        
-//         // ✅ Allow validation from both 'completed' and 'pending_gso_validation'
-//         $ticket = TripTicket::where('trip_ticket_id', $id)
-//             ->whereIn('status', ['completed', 'pending_gso_validation'])
-//             ->first();
-        
-//         if (!$ticket) {
-//             return response()->json([
-//                 'message' => 'Trip not found or not ready for validation. Current status must be completed or pending_gso_validation.'
-//             ], 404);
-//         }
-        
-//         DB::beginTransaction();
-        
-//         if ($request->validated) {
-//             // ✅ GSO APPROVED - Close the trip permanently
-//             $ticket->status = 'closed';
-//             $ticket->closed_by = $user->user_id;
-//             $ticket->closed_at = now();
-            
-//             $gasSlip = GasSlip::where('trip_ticket_id', $id)->first();
-//             if ($gasSlip) {
-//                 $gasSlip->reconciliation_status = 'verified';
-//                 $gasSlip->reconciled_by = $user->user_id;
-//                 $gasSlip->reconciled_at = now();
-//                 $gasSlip->reconciliation_note = $request->validation_note ?? 'Validated and closed by GSO';
-//                 $gasSlip->save();
-//             }
-            
-//             $message = "Trip {$ticket->trip_ticket_number} has been validated and CLOSED by GSO";
-//             $notificationType = 'trip_validated';
-//             $success = true;
-            
-//         } else {
-//             // ❌ GSO REJECTED - Return for revision
-//             $ticket->status = 'returned_for_revision';
-//             $ticket->save();
-            
-//             // ✅ Create return record
-//             $return = new TripTicketReturn();
-//             $return->trip_ticket_id = $ticket->trip_ticket_id;
-//             $return->return_type = 'rejected_by_gso';
-//             $return->return_note = $request->validation_note ?? 'GSO validation failed. Please revise.';
-//             $return->actioned_by = $user->user_id;
-//             $return->actioned_at = now();
-//             $return->save();
-            
-//             $message = "Trip {$ticket->trip_ticket_number} was rejected: " . ($request->validation_note ?? 'Please revise and resubmit');
-//             $notificationType = 'gso_rejected';
-//             $success = false;
-            
-//             Log::info('Trip rejected by GSO', [
-//                 'trip_id' => $ticket->trip_ticket_id,
-//                 'reason' => $request->validation_note
-//             ]);
-//         }
-        
-//         $ticket->save();
-        
-//         DB::commit();
-        
-//         // ✅ Notify driver
-//         if ($ticket->driver_id) {
-//             $driver = Driver::find($ticket->driver_id);
-//             if ($driver && $driver->user_id) {
-//                 NotificationHelper::send(
-//                     $driver->user_id,
-//                     $notificationType,
-//                     'trip_ticket',
-//                     $ticket->trip_ticket_id,
-//                     $message
-//                 );
-//             }
-//         }
-        
-//         // ✅ Notify Mayor's Office
-//         $moStaff = User::where('role', 'mayors_office')->where('status', 'active')->get();
-//         foreach ($moStaff as $mo) {
-//             NotificationHelper::send(
-//                 $mo->user_id,
-//                 $notificationType,
-//                 'trip_ticket',
-//                 $ticket->trip_ticket_id,
-//                 $message
-//             );
-//         }
-        
-//         // ✅ Notify Department staff
-//         $deptStaff = User::where('department_id', $ticket->department_id)
-//             ->where('status', 'active')
-//             ->where('role', '!=', 'driver') // Don't duplicate driver notifications
-//             ->get();
-//         foreach ($deptStaff as $staff) {
-//             NotificationHelper::send(
-//                 $staff->user_id,
-//                 $notificationType,
-//                 'trip_ticket',
-//                 $ticket->trip_ticket_id,
-//                 $message
-//             );
-//         }
-        
-//         Log::info('Trip validation completed', [
-//             'trip_id' => $ticket->trip_ticket_id,
-//             'validated' => $success,
-//             'new_status' => $ticket->status,
-//             'gso_user' => $user->user_id
-//         ]);
-        
-//         return response()->json([
-//             'success' => true,
-//             'message' => $message,
-//             'data' => [
-//                 'trip_ticket_id' => $ticket->trip_ticket_id,
-//                 'status' => $ticket->status,
-//                 'validated' => $success,
-//                 'is_closed' => $success,
-//                 'closed_at' => $ticket->closed_at,
-//                 'closed_by' => $ticket->closed_by,
-//             ]
-//         ]);
-        
-//     } catch (\Exception $e) {
-//         DB::rollBack();
-//         Log::error('Validate trip error: ' . $e->getMessage());
-//         return response()->json([
-//             'success' => false,
-//             'message' => 'Failed to validate trip: ' . $e->getMessage()
-//         ], 500);
-//     }
-// }
+            if (!$user->isGsoOffice()) {
+                return response()->json(['message' => 'Unauthorized'], 403);
+            }
 
-/**
- * GSO validates and CLOSES the trip (final step)
- * ✅ Only Approve/Close - No Reject option
- */
-public function validateTrip(Request $request, $id)
-{
-    try {
-        $user = $request->user();
-        
-        if (!$user->isGsoOffice()) {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
-        
-        $validator = Validator::make($request->all(), [
-            'validation_note' => 'nullable|string|max:500',
-        ]);
-        
-        if ($validator->fails()) {
-            return response()->json(['errors' => $validator->errors()], 422);
-        }
-        
-        // ✅ Allow validation from both 'completed' and 'pending_gso_validation'
-        $ticket = TripTicket::where('trip_ticket_id', $id)
-            ->whereIn('status', ['completed', 'pending_gso_validation'])
-            ->first();
-        
-        if (!$ticket) {
-            return response()->json([
-                'message' => 'Trip not found or not ready for validation. Current status must be completed or pending_gso_validation.'
-            ], 404);
-        }
-        
-        DB::beginTransaction();
-        
-        // ✅ ONLY APPROVE - Close the trip permanently
-        $ticket->status = 'closed';
-        $ticket->closed_by = $user->user_id;
-        $ticket->closed_at = now();
-        
-        $gasSlip = GasSlip::where('trip_ticket_id', $id)->first();
-        if ($gasSlip) {
-            $gasSlip->reconciliation_status = 'verified';
-            $gasSlip->reconciled_by = $user->user_id;
-            $gasSlip->reconciled_at = now();
-            $gasSlip->reconciliation_note = $request->validation_note ?? 'Validated and closed by GSO';
-            $gasSlip->save();
-        }
-        
-        $ticket->save();
-        
-        DB::commit();
-        
-        $message = "Trip {$ticket->trip_ticket_number} has been validated and CLOSED by GSO";
-        
-        // ✅ Notify driver
-        if ($ticket->driver_id) {
-            $driver = Driver::find($ticket->driver_id);
-            if ($driver && $driver->user_id) {
+            $validator = Validator::make($request->all(), [
+                'validation_note' => 'nullable|string|max:500',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json(['errors' => $validator->errors()], 422);
+            }
+
+            $ticket = TripTicket::where('trip_ticket_id', $id)
+                ->whereIn('status', ['completed', 'pending_gso_validation'])
+                ->first();
+
+            if (!$ticket) {
+                return response()->json([
+                    'message' => 'Trip not found or not ready for validation. Current status must be completed or pending_gso_validation.'
+                ], 404);
+            }
+
+            DB::beginTransaction();
+
+            $ticket->status = 'closed';
+            $ticket->closed_by = $user->user_id;
+            $ticket->closed_at = now();
+
+            $gasSlip = GasSlip::where('trip_ticket_id', $id)->first();
+            if ($gasSlip) {
+                $gasSlip->reconciliation_status = 'verified';
+                $gasSlip->reconciled_by = $user->user_id;
+                $gasSlip->reconciled_at = now();
+                $gasSlip->reconciliation_note = $request->validation_note ?? 'Validated and closed by GSO';
+                $gasSlip->save();
+            }
+
+            $ticket->syncActuals();
+            $ticket->save();
+
+            DB::commit();
+
+            $message = "Trip {$ticket->trip_ticket_number} has been validated and CLOSED by GSO";
+
+            if ($ticket->driver_id) {
+                $driver = Driver::find($ticket->driver_id);
+                if ($driver && $driver->user_id) {
+                    NotificationHelper::send(
+                        $driver->user_id,
+                        'trip_closed',
+                        'trip_ticket',
+                        $ticket->trip_ticket_id,
+                        $message
+                    );
+                }
+            }
+
+            $moStaff = User::where('role', 'mayors_office')->where('status', 'active')->get();
+            foreach ($moStaff as $mo) {
                 NotificationHelper::send(
-                    $driver->user_id,
+                    $mo->user_id,
                     'trip_closed',
                     'trip_ticket',
                     $ticket->trip_ticket_id,
                     $message
                 );
             }
-        }
-        
-        // ✅ Notify Mayor's Office
-        $moStaff = User::where('role', 'mayors_office')->where('status', 'active')->get();
-        foreach ($moStaff as $mo) {
-            NotificationHelper::send(
-                $mo->user_id,
-                'trip_closed',
-                'trip_ticket',
-                $ticket->trip_ticket_id,
-                $message
-            );
-        }
-        
-        // ✅ Notify Department staff
-        $deptStaff = User::where('department_id', $ticket->department_id)
-            ->where('status', 'active')
-            ->where('role', '!=', 'driver')
-            ->get();
-        foreach ($deptStaff as $staff) {
-            NotificationHelper::send(
-                $staff->user_id,
-                'trip_closed',
-                'trip_ticket',
-                $ticket->trip_ticket_id,
-                $message
-            );
-        }
-        
-        Log::info('Trip validated and closed by GSO', [
-            'trip_id' => $ticket->trip_ticket_id,
-            'ticket_number' => $ticket->trip_ticket_number,
-            'closed_by' => $user->user_id,
-            'trip_count' => $ticket->trip_count,
-        ]);
-        
-        return response()->json([
-            'success' => true,
-            'message' => $message,
-            'data' => [
-                'trip_ticket_id' => $ticket->trip_ticket_id,
-                'status' => $ticket->status,
-                'closed_at' => $ticket->closed_at,
-                'closed_by' => $ticket->closed_by,
-            ]
-        ]);
-        
-    } catch (\Exception $e) {
-        DB::rollBack();
-        Log::error('Validate trip error: ' . $e->getMessage());
-        return response()->json([
-            'success' => false,
-            'message' => 'Failed to validate trip: ' . $e->getMessage()
-        ], 500);
-    }
-}
 
-// /**
-//  * Get trips pending GSO validation V1
-//  */
-// public function getPendingValidation(Request $request)
-// {
-//     try {
-//         $user = $request->user();
-        
-//         if (!$user->isGsoOffice()) {
-//             return response()->json(['message' => 'Unauthorized'], 403);
-//         }
-        
-//         $trips = TripTicket::with(['vehicle', 'department', 'driver.user', 'gasSlip', 'gasSlip.fuelReceipt'])
-//             ->where('status', 'pending_gso_validation')
-//             ->orderBy('submitted_at', 'desc')
-//             ->get()
-//             ->map(function ($ticket) {
-//                 $fuelReceipt = $ticket->gasSlip?->fuelReceipt;
-//                 return [
-//                     'id' => $ticket->trip_ticket_id,
-//                     'ticket_number' => $ticket->trip_ticket_number,
-//                     'trip_date' => $ticket->trip_date,
-//                     'destination' => $ticket->destination,
-//                     'purpose' => $ticket->purpose,
-//                     'status' => $ticket->status,
-//                     'submitted_at' => $ticket->submitted_at,
-//                     'driver_name' => $ticket->driver?->user?->full_name,
-//                     'department_name' => $ticket->department?->department_name,
-//                     'amount_released' => $ticket->gasSlip?->amount_released,
-//                     'gps_distance_km' => $fuelReceipt?->gps_distance_km,
-//                     'trip_started_at' => $fuelReceipt?->trip_started_at,
-//                     'trip_ended_at' => $fuelReceipt?->trip_ended_at,
-//                     'start_lat' => $fuelReceipt?->trip_start_gps_lat,
-//                     'start_lng' => $fuelReceipt?->trip_start_gps_lng,
-//                     'end_lat' => $fuelReceipt?->trip_end_gps_lat,
-//                     'end_lng' => $fuelReceipt?->trip_end_gps_lng,
-//                     'has_receipt' => $fuelReceipt && $fuelReceipt->receipt_photo_path ? true : false,
-//                     'receipt_url' => $fuelReceipt && $fuelReceipt->receipt_photo_path ? 
-//                         Storage::url($fuelReceipt->receipt_photo_path) : null,
-//                 ];
-//             });
-        
-//         return response()->json([
-//             'success' => true,
-//             'data' => $trips,
-//             'meta' => [
-//                 'pending_count' => $trips->count()
-//             ]
-//         ]);
-        
-//     } catch (\Exception $e) {
-//         Log::error('Get pending validation error: ' . $e->getMessage());
-//         Log::error('Stack trace: ' . $e->getTraceAsString()); // ✅ Add this to see the error
-//         return response()->json([
-//             'success' => false,
-//             'message' => 'Failed to fetch pending validation: ' . $e->getMessage()
-//         ], 500);
-//     }
-// }
+            $deptStaff = User::where('department_id', $ticket->department_id)
+                ->where('status', 'active')
+                ->where('role', '!=', 'driver')
+                ->get();
+            foreach ($deptStaff as $staff) {
+                NotificationHelper::send(
+                    $staff->user_id,
+                    'trip_closed',
+                    'trip_ticket',
+                    $ticket->trip_ticket_id,
+                    $message
+                );
+            }
 
-/**
- * Get trips pending GSO validation
- * Includes both 'pending_gso_validation' AND 'completed' statuses
- */
-public function getPendingValidation(Request $request)
-{
-    try {
-        $user = $request->user();
-        
-        if (!$user->isGsoOffice()) {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
-        
-        // ✅ SHOW BOTH: 'pending_gso_validation' AND 'completed' (old trips)
-        $trips = TripTicket::with([
-            'vehicle', 
-            'department', 
-            'driver.user', 
-            'gasSlip', 
-            'gasSlip.fuelReceipt'
-        ])
-        ->whereIn('status', ['pending_gso_validation', 'completed'])
-        ->orderBy('submitted_at', 'desc')
-        ->get()
-        ->map(function ($ticket) {
-            $fuelReceipt = $ticket->gasSlip?->fuelReceipt;
-            $isOldCompleted = $ticket->status === 'completed' && 
-                $ticket->updated_at < now()->subHours(24);
-            
-            return [
-                'id' => $ticket->trip_ticket_id,
+            Log::info('Trip validated and closed by GSO', [
+                'trip_id' => $ticket->trip_ticket_id,
                 'ticket_number' => $ticket->trip_ticket_number,
-                'trip_date' => $ticket->trip_date,
-                'destination' => $ticket->destination,
-                'purpose' => $ticket->purpose,
-                'status' => $ticket->status,
-                'trip_count' => $ticket->trip_count ?? 0,
-                'submitted_at' => $ticket->submitted_at,
-                'updated_at' => $ticket->updated_at,
-                'is_old_completed' => $isOldCompleted,  // ✅ Flag for UI
-                'driver_name' => $ticket->driver?->user?->full_name,
-                'department_name' => $ticket->department?->department_name,
-                'amount_released' => $ticket->gasSlip?->amount_released,
-                'gps_distance_km' => $fuelReceipt?->gps_distance_km,
-                'trip_started_at' => $fuelReceipt?->trip_started_at,
-                'trip_ended_at' => $fuelReceipt?->trip_ended_at,
-                'start_lat' => $fuelReceipt?->trip_start_gps_lat,
-                'start_lng' => $fuelReceipt?->trip_start_gps_lng,
-                'end_lat' => $fuelReceipt?->trip_end_gps_lat,
-                'end_lng' => $fuelReceipt?->trip_end_gps_lng,
-                'has_receipt' => $fuelReceipt && $fuelReceipt->receipt_photo_path ? true : false,
-                'receipt_url' => $fuelReceipt && $fuelReceipt->receipt_photo_path ? 
-                    asset($fuelReceipt->receipt_photo_path) : null,
-                'receipt_uploaded_at' => $fuelReceipt?->receipt_uploaded_at,
-                'vehicle' => $ticket->vehicle ? [
-                    'plate_number' => $ticket->vehicle->plate_number,
-                    'vehicle_model' => $ticket->vehicle->vehicle_model,
-                ] : null,
-            ];
-        });
-        
-        return response()->json([
-            'success' => true,
-            'data' => $trips,
-            'meta' => [
-                'pending_count' => $trips->count(),
-                'pending_validation_count' => $trips->filter(fn($t) => $t['status'] === 'pending_gso_validation')->count(),
-                'completed_old_count' => $trips->filter(fn($t) => $t['status'] === 'completed')->count(),
-            ]
-        ]);
-        
-    } catch (\Exception $e) {
-        Log::error('Get pending validation error: ' . $e->getMessage());
-        Log::error('Stack trace: ' . $e->getTraceAsString());
-        return response()->json([
-            'success' => false,
-            'message' => 'Failed to fetch pending validation: ' . $e->getMessage()
-        ], 500);
+                'closed_by' => $user->user_id,
+                'trip_count' => $ticket->trip_count,
+                'actual_distance_km' => $ticket->actual_distance_km,
+                'actual_fuel_used' => $ticket->actual_fuel_used,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => $message,
+                'data' => [
+                    'trip_ticket_id' => $ticket->trip_ticket_id,
+                    'status' => $ticket->status,
+                    'closed_at' => $ticket->closed_at,
+                    'closed_by' => $ticket->closed_by,
+                    'actual_distance_km' => $ticket->actual_distance_km,
+                    'actual_fuel_used' => $ticket->actual_fuel_used,
+                    'trip_count' => $ticket->trip_count,
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Validate trip error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to validate trip: ' . $e->getMessage()
+            ], 500);
+        }
     }
-}
 
+    /**
+     * Get trips pending GSO validation
+     * Includes both 'pending_gso_validation' AND 'completed' statuses
+     */
+    public function getPendingValidation(Request $request)
+    {
+        try {
+            $user = $request->user();
 
+            if (!$user->isGsoOffice()) {
+                return response()->json(['message' => 'Unauthorized'], 403);
+            }
 
-
-/**
- * Get trip history for a specific ticket (GSO view)
- */
-public function getTripHistory(Request $request, $id)
-{
-    try {
-        $user = $request->user();
-        
-        if (!$user->isGsoOffice()) {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
-        
-        $ticket = TripTicket::find($id);
-        if (!$ticket) {
-            return response()->json(['message' => 'Trip not found'], 404);
-        }
-        
-        $history = TripHistory::where('trip_ticket_id', $id)
-            ->orderBy('trip_number', 'asc')
-            ->get();
-        
-        return response()->json([
-            'success' => true,
-            'data' => [
-                'trip_ticket_id' => $ticket->trip_ticket_id,
-                'trip_ticket_number' => $ticket->trip_ticket_number,
-                'total_trips' => $ticket->trip_count ?? 0,
-                'history' => $history->map(function ($trip) {
-                    return [
-                        'history_id' => $trip->history_id,
-                        'trip_number' => $trip->trip_number,
-                        'start_lat' => $trip->start_lat,
-                        'start_lng' => $trip->start_lng,
-                        'started_at' => $trip->started_at,
-                        'end_lat' => $trip->end_lat,
-                        'end_lng' => $trip->end_lng,
-                        'ended_at' => $trip->ended_at,
-                        'distance_km' => $trip->distance_km,
-                        'status' => $trip->status,
-                    ];
-                }),
-            ]
-        ]);
-    } catch (\Exception $e) {
-        Log::error('Get trip history error: ' . $e->getMessage());
-        return response()->json([
-            'success' => false,
-            'message' => 'Failed to fetch trip history: ' . $e->getMessage()
-        ], 500);
-    }
-}
-
-/**
- * ✅ Get cancelled trips for GSO
- */
-public function getCancelledTrips(Request $request)
-{
-    try {
-        $user = $request->user();
-
-        if (!$user->isGsoOffice()) {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
-
-        $trips = TripTicket::with(['vehicle', 'department', 'driver.user', 'gasSlip'])
-            ->where('status', TripTicket::STATUS_CANCELLED)
-            ->orderBy('updated_at', 'desc')
+            $trips = TripTicket::with([
+                'vehicle',
+                'department',
+                'driver.user',
+                'gasSlip',
+                'gasSlip.fuelReceipt'
+            ])
+            ->whereIn('status', ['pending_gso_validation', 'completed'])
+            ->orderBy('submitted_at', 'desc')
             ->get()
             ->map(function ($ticket) {
+                $fuelReceipt = $ticket->gasSlip?->fuelReceipt;
+                $isOldCompleted = $ticket->status === 'completed' &&
+                    $ticket->updated_at < now()->subHours(24);
+
                 return [
                     'id' => $ticket->trip_ticket_id,
                     'ticket_number' => $ticket->trip_ticket_number,
@@ -1556,146 +940,359 @@ public function getCancelledTrips(Request $request)
                     'destination' => $ticket->destination,
                     'purpose' => $ticket->purpose,
                     'status' => $ticket->status,
+                    'trip_count' => $ticket->trip_count ?? 0,
                     'submitted_at' => $ticket->submitted_at,
                     'updated_at' => $ticket->updated_at,
-                    'cancelled_at' => $ticket->cancelled_at,
-                    'cancellation_reason' => $ticket->cancellation_reason,
+                    'is_old_completed' => $isOldCompleted,
+                    'driver_name' => $ticket->driver?->user?->full_name,
+                    'department_name' => $ticket->department?->department_name,
+                    'amount_released' => $ticket->gasSlip?->amount_released,
+                    'estimated_distance_km' => $ticket->estimated_distance_km,
+                    'actual_distance_km' => $ticket->actual_distance_km,
+                    'estimated_fuel_liters' => $ticket->estimated_fuel_liters,
+                    'actual_fuel_used' => $ticket->actual_fuel_used,
+                    'gps_distance_km' => $fuelReceipt?->gps_distance_km,
+                    'trip_started_at' => $fuelReceipt?->trip_started_at,
+                    'trip_ended_at' => $fuelReceipt?->trip_ended_at,
+                    'start_lat' => $fuelReceipt?->trip_start_gps_lat,
+                    'start_lng' => $fuelReceipt?->trip_start_gps_lng,
+                    'end_lat' => $fuelReceipt?->trip_end_gps_lat,
+                    'end_lng' => $fuelReceipt?->trip_end_gps_lng,
+                    'has_receipt' => $fuelReceipt && $fuelReceipt->receipt_photo_path ? true : false,
+                    'receipt_url' => $fuelReceipt && $fuelReceipt->receipt_photo_path ?
+                        asset($fuelReceipt->receipt_photo_path) : null,
+                    'receipt_uploaded_at' => $fuelReceipt?->receipt_uploaded_at,
                     'vehicle' => $ticket->vehicle ? [
                         'plate_number' => $ticket->vehicle->plate_number,
                         'vehicle_model' => $ticket->vehicle->vehicle_model,
                     ] : null,
-                    'driver' => $ticket->driver && $ticket->driver->user ? [
-                        'full_name' => $ticket->driver->user->full_name,
-                    ] : null,
-                    'department_name' => $ticket->department?->department_name,
                 ];
             });
 
-        return response()->json([
-            'success' => true,
-            'data' => $trips,
-            'meta' => [
-                'total' => $trips->count(),
-            ]
-        ]);
-    } catch (\Exception $e) {
-        Log::error('Get cancelled trips error: ' . $e->getMessage());
-        return response()->json([
-            'success' => false,
-            'message' => 'Failed to fetch cancelled trips: ' . $e->getMessage()
-        ], 500);
-    }
-}
+            return response()->json([
+                'success' => true,
+                'data' => $trips,
+                'meta' => [
+                    'pending_count' => $trips->count(),
+                    'pending_validation_count' => $trips->filter(fn($t) => $t['status'] === 'pending_gso_validation')->count(),
+                    'completed_old_count' => $trips->filter(fn($t) => $t['status'] === 'completed')->count(),
+                ]
+            ]);
 
-/**
- * ✅ Cancel a trip ticket (only before funds released)
+        } catch (\Exception $e) {
+            Log::error('Get pending validation error: ' . $e->getMessage());
+            Log::error('Stack trace: ' . $e->getTraceAsString());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch pending validation: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get trip history for a specific ticket (GSO view)
+     */
+    public function getTripHistory(Request $request, $id)
+    {
+        try {
+            $user = $request->user();
+
+            if (!$user->isGsoOffice()) {
+                return response()->json(['message' => 'Unauthorized'], 403);
+            }
+
+            $ticket = TripTicket::find($id);
+            if (!$ticket) {
+                return response()->json(['message' => 'Trip not found'], 404);
+            }
+
+            $history = TripHistory::where('trip_ticket_id', $id)
+                ->orderBy('trip_number', 'asc')
+                ->get();
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'trip_ticket_id' => $ticket->trip_ticket_id,
+                    'trip_ticket_number' => $ticket->trip_ticket_number,
+                    'total_trips' => $ticket->trip_count ?? 0,
+                    'history' => $history->map(function ($trip) {
+                        return [
+                            'history_id' => $trip->history_id,
+                            'trip_number' => $trip->trip_number,
+                            'start_lat' => $trip->start_lat,
+                            'start_lng' => $trip->start_lng,
+                            'started_at' => $trip->started_at,
+                            'end_lat' => $trip->end_lat,
+                            'end_lng' => $trip->end_lng,
+                            'ended_at' => $trip->ended_at,
+                            'distance_km' => $trip->distance_km,
+                            'status' => $trip->status,
+                        ];
+                    }),
+                ]
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Get trip history error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch trip history: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * ✅ Get cancelled trips for GSO
+     */
+    public function getCancelledTrips(Request $request)
+    {
+        try {
+            $user = $request->user();
+
+            if (!$user->isGsoOffice()) {
+                return response()->json(['message' => 'Unauthorized'], 403);
+            }
+
+            $trips = TripTicket::with(['vehicle', 'department', 'driver.user', 'gasSlip'])
+                ->where('status', TripTicket::STATUS_CANCELLED)
+                ->orderBy('updated_at', 'desc')
+                ->get()
+                ->map(function ($ticket) {
+                    return [
+                        'id' => $ticket->trip_ticket_id,
+                        'ticket_number' => $ticket->trip_ticket_number,
+                        'trip_date' => $ticket->trip_date,
+                        'destination' => $ticket->destination,
+                        'purpose' => $ticket->purpose,
+                        'status' => $ticket->status,
+                        'submitted_at' => $ticket->submitted_at,
+                        'updated_at' => $ticket->updated_at,
+                        'cancelled_at' => $ticket->cancelled_at,
+                        'cancellation_reason' => $ticket->cancellation_reason,
+                        'vehicle' => $ticket->vehicle ? [
+                            'plate_number' => $ticket->vehicle->plate_number,
+                            'vehicle_model' => $ticket->vehicle->vehicle_model,
+                        ] : null,
+                        'driver' => $ticket->driver && $ticket->driver->user ? [
+                            'full_name' => $ticket->driver->user->full_name,
+                        ] : null,
+                        'department_name' => $ticket->department?->department_name,
+                    ];
+                });
+
+            return response()->json([
+                'success' => true,
+                'data' => $trips,
+                'meta' => [
+                    'total' => $trips->count(),
+                ]
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Get cancelled trips error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch cancelled trips: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * ✅ Cancel a trip ticket (only before funds released)
+     */
+    public function cancelTrip(Request $request, $id)
+    {
+        try {
+            $user = $request->user();
+
+            if (!$user->isGsoOffice()) {
+                return response()->json(['message' => 'Unauthorized'], 403);
+            }
+
+            $validator = Validator::make($request->all(), [
+                'reason' => 'required|string|min:5|max:500',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json(['errors' => $validator->errors()], 422);
+            }
+
+            $cancellableStatuses = [
+                TripTicket::STATUS_PENDING_MAYORS_OFFICE,
+                TripTicket::STATUS_RETURNED_FOR_REVISION,
+            ];
+
+            $ticket = TripTicket::where('trip_ticket_id', $id)
+                ->whereIn('status', $cancellableStatuses)
+                ->first();
+
+            if (!$ticket) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Ticket cannot be cancelled. Only tickets pending approval or returned for revision can be cancelled.'
+                ], 422);
+            }
+
+            $existingGasSlip = GasSlip::where('trip_ticket_id', $id)->first();
+            if ($existingGasSlip) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Cannot cancel ticket. Funds have already been released for this trip.'
+                ], 422);
+            }
+
+            DB::beginTransaction();
+
+            $ticket->status = TripTicket::STATUS_CANCELLED;
+            $ticket->cancellation_reason = $request->reason;
+            $ticket->cancelled_at = now();
+            $ticket->cancelled_by = $user->user_id;
+            $ticket->save();
+
+            DB::commit();
+
+            try {
+                broadcast(new \App\Events\TripTicketCancelled($ticket, $request->reason, $user));
+                Log::info('📡 Broadcasted TripTicketCancelled for trip: ' . $ticket->trip_ticket_number);
+            } catch (\Exception $e) {
+                Log::error('Failed to broadcast cancellation: ' . $e->getMessage());
+            }
+
+            if ($ticket->submitted_by) {
+                NotificationHelper::send(
+                    $ticket->submitted_by,
+                    'trip_cancelled',
+                    'trip_ticket',
+                    $ticket->trip_ticket_id,
+                    "Trip {$ticket->trip_ticket_number} has been cancelled: {$request->reason}"
+                );
+            }
+
+            $moStaff = User::where('role', 'mayors_office')->where('status', 'active')->get();
+            foreach ($moStaff as $mo) {
+                NotificationHelper::send(
+                    $mo->user_id,
+                    'trip_cancelled',
+                    'trip_ticket',
+                    $ticket->trip_ticket_id,
+                    "Trip {$ticket->trip_ticket_number} has been cancelled by GSO"
+                );
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Trip ticket cancelled successfully. You can now create a new ticket.',
+                'data' => [
+                    'trip_ticket_id' => $ticket->trip_ticket_id,
+                    'trip_ticket_number' => $ticket->trip_ticket_number,
+                    'status' => $ticket->status,
+                    'cancelled_at' => $ticket->cancelled_at,
+                    'cancellation_reason' => $ticket->cancellation_reason,
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Cancel trip error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to cancel trip: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+ * ✅ Get all fuel receipts (list for GSO admin view)
+ * GET /api/admin/fuel-receipts
  */
-public function cancelTrip(Request $request, $id)
+public function getFuelReceipts(Request $request)
 {
     try {
         $user = $request->user();
-
         if (!$user->isGsoOffice()) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        $validator = Validator::make($request->all(), [
-            'reason' => 'required|string|min:5|max:500',
-        ]);
+        // Optional filters
+        $status       = $request->get('status');        // pending | verified | discrepancy
+        $departmentId = $request->get('department_id');
+        $search       = $request->get('search');
 
-        if ($validator->fails()) {
-            return response()->json(['errors' => $validator->errors()], 422);
-        }
-
-        // ✅ Only allow cancellation for cancellable statuses
-        $cancellableStatuses = [
-            TripTicket::STATUS_PENDING_MAYORS_OFFICE,
-            TripTicket::STATUS_RETURNED_FOR_REVISION,
-        ];
-
-        $ticket = TripTicket::where('trip_ticket_id', $id)
-            ->whereIn('status', $cancellableStatuses)
-            ->first();
-
-        if (!$ticket) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Ticket cannot be cancelled. Only tickets pending approval or returned for revision can be cancelled.'
-            ], 422);
-        }
-
-        // ✅ Extra safety: block if gas slip already exists (funds already released)
-        $existingGasSlip = GasSlip::where('trip_ticket_id', $id)->first();
-        if ($existingGasSlip) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Cannot cancel ticket. Funds have already been released for this trip.'
-            ], 422);
-        }
-
-        DB::beginTransaction();
-
-        // ✅ Update ticket status
-        $ticket->status = TripTicket::STATUS_CANCELLED;
-        $ticket->cancellation_reason = $request->reason;
-        $ticket->cancelled_at = now();
-        $ticket->cancelled_by = $user->user_id;
-        $ticket->save();
-
-        DB::commit();
-
-        // ✅ Broadcast the cancellation event
-        try {
-            broadcast(new \App\Events\TripTicketCancelled($ticket, $request->reason, $user));
-            Log::info('📡 Broadcasted TripTicketCancelled for trip: ' . $ticket->trip_ticket_number);
-        } catch (\Exception $e) {
-            Log::error('Failed to broadcast cancellation: ' . $e->getMessage());
-        }
-
-        // ✅ Notify the driver/requester
-        if ($ticket->submitted_by) {
-            NotificationHelper::send(
-                $ticket->submitted_by,
-                'trip_cancelled',
-                'trip_ticket',
-                $ticket->trip_ticket_id,
-                "Trip {$ticket->trip_ticket_number} has been cancelled: {$request->reason}"
+        $query = DB::table('fuel_receipt as fr')
+            ->join('gas_slip as gs', 'fr.gas_slip_id', '=', 'gs.gas_slip_id')
+            ->join('trip_ticket as tt', 'gs.trip_ticket_id', '=', 'tt.trip_ticket_id')
+            ->join('vehicles as v', 'tt.vehicle_id', '=', 'v.vehicle_id')
+            ->leftJoin('drivers as d', 'tt.driver_id', '=', 'd.driver_id')
+            ->leftJoin('users as u_driver', 'd.user_id', '=', 'u_driver.user_id')
+            ->leftJoin('departments as dept', 'tt.department_id', '=', 'dept.department_id')
+            ->select(
+                'fr.fuel_receipt_id as id',
+                'fr.fuel_receipt_id',
+                'tt.trip_ticket_id',
+                'tt.trip_ticket_number as ticket_number',
+                'tt.trip_date',
+                'tt.destination',
+                'tt.purpose',
+                'tt.estimated_distance_km',
+                'tt.actual_distance_km',
+                'tt.estimated_fuel_liters',
+                'tt.actual_fuel_used',
+                'v.plate_number',
+                'v.vehicle_model',
+                'v.fuel_type',
+                'dept.department_name',
+                'fr.liters_availed as liters',
+                'fr.amount_on_receipt as amount',
+                'fr.receipt_photo_path as receipt_url',
+                'fr.receipt_uploaded_at as uploaded_at',
+                'fr.gps_distance_km',
+                'fr.invoice_number',
+                'fr.unit_price',
+                'gs.amount_released',
+                'gs.reconciliation_status as status',
+                'gs.reconciliation_note',
+                DB::raw("CONCAT(u_driver.first_name, ' ', u_driver.last_name) as driver_name")
             );
+
+        // Filters
+        if ($status) {
+            $query->where('gs.reconciliation_status', $status);
+        }
+        if ($departmentId) {
+            $query->where('tt.department_id', $departmentId);
+        }
+        if ($search) {
+            $query->where(function ($q) use ($search) {
+                $q->where('tt.trip_ticket_number', 'like', "%{$search}%")
+                  ->orWhere('v.plate_number', 'like', "%{$search}%")
+                  ->orWhere('v.vehicle_model', 'like', "%{$search}%")
+                  ->orWhere(DB::raw("CONCAT(u_driver.first_name, ' ', u_driver.last_name)"), 'like', "%{$search}%");
+            });
         }
 
-        // ✅ Notify Mayor's Office (in case they had it pending)
-        $moStaff = User::where('role', 'mayors_office')->where('status', 'active')->get();
-        foreach ($moStaff as $mo) {
-            NotificationHelper::send(
-                $mo->user_id,
-                'trip_cancelled',
-                'trip_ticket',
-                $ticket->trip_ticket_id,
-                "Trip {$ticket->trip_ticket_number} has been cancelled by GSO"
-            );
-        }
+        $receipts = $query->orderBy('fr.receipt_uploaded_at', 'desc')->get();
+
+        // ✅ Fix receipt URL path (public/receipts/, not storage/)
+        $receipts = $receipts->map(function ($r) {
+            if ($r->receipt_url && !str_starts_with($r->receipt_url, 'http')) {
+                $r->receipt_url = asset($r->receipt_url);
+            }
+            return $r;
+        });
 
         return response()->json([
             'success' => true,
-            'message' => 'Trip ticket cancelled successfully. You can now create a new ticket.',
-            'data' => [
-                'trip_ticket_id' => $ticket->trip_ticket_id,
-                'trip_ticket_number' => $ticket->trip_ticket_number,
-                'status' => $ticket->status,
-                'cancelled_at' => $ticket->cancelled_at,
-                'cancellation_reason' => $ticket->cancellation_reason,
-            ]
+            'data'    => $receipts,
+            'meta'    => [
+                'total' => $receipts->count(),
+            ],
         ]);
-
     } catch (\Exception $e) {
-        DB::rollBack();
-        Log::error('Cancel trip error: ' . $e->getMessage());
+        Log::error('Get fuel receipts error: ' . $e->getMessage());
+        Log::error('Stack trace: ' . $e->getTraceAsString());
         return response()->json([
             'success' => false,
-            'message' => 'Failed to cancel trip: ' . $e->getMessage()
+            'message' => 'Failed to fetch fuel receipts: ' . $e->getMessage(),
         ], 500);
     }
 }
-
-
 }

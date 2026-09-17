@@ -1,10 +1,14 @@
 // src/pages/gso/LiveTracking.jsx
 // ============================================
-// ✅ FIXED: Removed render loop (hasActiveTrips dependency)
-// ✅ FIXED: No setState inside queryFn
-// ✅ FIXED: WebSocket only sets up once
-// ✅ ADDED: Plate number label above vehicle
-// ✅ ADDED: Car icon from lucide
+// ✅ FIXED: pendingPingsRef — marker appears on first ping
+// ✅ FIXED: immediate removal on .trip.completed
+// ✅ FIXED: no duplicate toasts (delegated to RealtimeContext)
+// ✅ FIXED: Merge server trips + live locations
+// ✅ FIXED: WS setup race (hasSetupRef set before subscribe)
+// ✅ FIXED: isMounted guard for WS handler
+// ✅ FIXED: GPS jitter filter (accuracy > 30m, movement < 15m @ < 2km/h)
+// ✅ FIXED: staleTime 0
+// ✅ FIXED: Removed `Map` lucide import
 // ============================================
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
@@ -52,7 +56,6 @@ import {
     Wifi,
     WifiOff,
     Focus,
-    Map,
     Eye,
     Fuel,
     Zap,
@@ -62,11 +65,27 @@ import {
     Minimize2,
     Plus,
     Minus,
-    Car,   // ✅ Import Car icon
+    Car,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'react-hot-toast';
+
+// ============================================
+// ✅ Haversine distance helper (meters)
+// ============================================
+const haversineMeters = (lat1, lon1, lat2, lon2) => {
+    const R = 6371000;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos(lat1 * Math.PI / 180) *
+        Math.cos(lat2 * Math.PI / 180) *
+        Math.sin(dLon / 2) ** 2;
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+};
 
 // Fix for default markers
 delete L.Icon.Default.prototype._getIconUrl;
@@ -77,7 +96,7 @@ L.Icon.Default.mergeOptions({
 });
 
 // ============================================
-// ✅ VEHICLE ICON WITH PLATE LABEL
+// VEHICLE ICON WITH PLATE LABEL
 // ============================================
 
 const createVehicleIcon = (status, isSelected, isOnline = true, isFocused = false, plateNumber = '') => {
@@ -106,7 +125,6 @@ const createVehicleIcon = (status, isSelected, isOnline = true, isFocused = fals
                 cursor: pointer;
                 transition: all 0.3s ease;
             ">
-                <!-- ✅ Plate number label above the car -->
                 ${plateNumber ? `
                     <div style="
                         position: absolute;
@@ -128,7 +146,6 @@ const createVehicleIcon = (status, isSelected, isOnline = true, isFocused = fals
                         ${isFocused ? 'animation: label-glow 1.5s ease-in-out infinite;' : ''}
                     ">
                         ${plateNumber}
-                        <!-- Small arrow pointing down to vehicle -->
                         <div style="
                             position: absolute;
                             bottom: -4px;
@@ -143,7 +160,6 @@ const createVehicleIcon = (status, isSelected, isOnline = true, isFocused = fals
                     </div>
                 ` : ''}
                 
-                <!-- Focus rings -->
                 ${isFocused ? `
                     <div style="
                         position: absolute;
@@ -187,7 +203,6 @@ const createVehicleIcon = (status, isSelected, isOnline = true, isFocused = fals
                     "></div>
                 ` : ''}
                 
-                <!-- Vehicle icon -->
                 <div style="
                     position: absolute;
                     top: 22px;
@@ -217,7 +232,6 @@ const createVehicleIcon = (status, isSelected, isOnline = true, isFocused = fals
                     </svg>
                 </div>
                 
-                <!-- Focus target icon -->
                 ${isFocused ? `
                     <div style="
                         position: absolute;
@@ -242,7 +256,7 @@ const createVehicleIcon = (status, isSelected, isOnline = true, isFocused = fals
             </div>
         `,
         iconSize: [size + 12, size + 12 + 22],
-        iconAnchor: [(size + 12) / 2, size + 12 + 22 - 6],   // Anchor at bottom-center of vehicle
+        iconAnchor: [(size + 12) / 2, size + 12 + 22 - 6],
         popupAnchor: [0, -(size + 12 + 22) / 2 + 10],
     });
 };
@@ -560,11 +574,32 @@ const LiveTracking = () => {
     const pingCounterRef = useRef(0);
     const markerRefs = useRef({});
     const [followedTripId, setFollowedTripId] = useState(null);
-    const hasSetupRef = useRef(false);   // ✅ Prevent double WebSocket setup
+    const hasSetupRef = useRef(false);
 
-    // ✅ Derive hasActiveTrips from data (no setState loop)
+    // ✅ Mirrors tripsData for use inside WebSocket handler
+    const tripsDataRef = useRef([]);
+
+    // ✅ Caches pings for trips not yet in tripsData
+    const pendingPingsRef = useRef({});
+
+    // ✅ Mounted guard
+    const isMountedRef = useRef(true);
+
+    useEffect(() => {
+        isMountedRef.current = true;
+        return () => {
+            isMountedRef.current = false;
+        };
+    }, []);
+
+    // ✅ hasActiveTrips (no setState loop)
     const hasActiveTrips = useMemo(() => {
         return Array.isArray(tripsData) && tripsData.some(trip => trip && trip.current_location);
+    }, [tripsData]);
+
+    // ✅ Keep tripsDataRef in sync
+    useEffect(() => {
+        tripsDataRef.current = tripsData;
     }, [tripsData]);
 
     // Close dropdown when clicking outside
@@ -579,7 +614,7 @@ const LiveTracking = () => {
     }, []);
 
     // ============================================
-    // ✅ AUTO-REFRESH
+    // AUTO-REFRESH
     // ============================================
 
     const fetchAllData = useCallback(() => {
@@ -599,7 +634,7 @@ const LiveTracking = () => {
     );
 
     // ============================================
-    // ✅ OPTIMIZED QUERY (no setState inside queryFn)
+    // OPTIMIZED QUERY
     // ============================================
 
     const {
@@ -623,7 +658,6 @@ const LiveTracking = () => {
                 }
 
                 const safeData = Array.isArray(data) ? data : [];
-                // ✅ Don't call setState here — just return the data
                 setRefreshAttempts(0);
                 return safeData;
             } catch (error) {
@@ -639,38 +673,90 @@ const LiveTracking = () => {
                     return newAttempts;
                 });
 
-                // ✅ Always return array on error
                 return [];
             }
         },
-        // ✅ Poll only when there are active trips
         refetchInterval: (query) => {
             const data = query?.state?.data;
             return Array.isArray(data) && data.length > 0 ? 15000 : false;
         },
-        staleTime: 5000,
+        staleTime: 0,
         keepPreviousData: true,
         retry: 2,
         retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 10000),
         enabled: true,
     });
 
-    const activeTrips = Array.isArray(activeTripsRaw) ? activeTripsRaw : [];
+    const activeTrips = useMemo(
+        () => (Array.isArray(activeTripsRaw) ? activeTripsRaw : []),
+        [activeTripsRaw]
+    );
 
-    // ✅ Sync activeTrips to tripsData via effect
+    // ============================================
+    // MERGE server trips with existing live locations + pending pings
+    // ============================================
     useEffect(() => {
-        if (Array.isArray(activeTrips)) {
-            setTripsData(activeTrips);
-            setLastUpdate(new Date());
-        }
+        if (!Array.isArray(activeTrips)) return;
+
+        setTripsData(prev => {
+            const prevArr = Array.isArray(prev) ? prev : [];
+            const prevById = {};
+            for (const t of prevArr) {
+                if (t && t.trip_id != null) {
+                    prevById[t.trip_id] = t;
+                }
+            }
+
+            return activeTrips.map(serverTrip => {
+                const existing = prevById[serverTrip.trip_id];
+
+                // ✅ Apply any pending ping for this trip (arrived before trip was in data)
+                const pending = pendingPingsRef.current[serverTrip.trip_id];
+                if (pending && !serverTrip.current_location) {
+                    delete pendingPingsRef.current[serverTrip.trip_id];
+                    console.log('✅ Applying pending ping for trip', serverTrip.trip_id);
+                    return {
+                        ...serverTrip,
+                        current_location: {
+                            latitude: pending.latitude,
+                            longitude: pending.longitude,
+                            speed_kmh: pending.speed_kmh || 0,
+                            accuracy_meters: pending.accuracy_meters || 0,
+                            heading_degrees: pending.heading_degrees || 0,
+                            recorded_at: pending.timestamp || new Date().toISOString(),
+                        },
+                    };
+                }
+
+                // Preserve existing location if server doesn't have one
+                if (existing?.current_location && !serverTrip.current_location) {
+                    return {
+                        ...serverTrip,
+                        current_location: existing.current_location,
+                    };
+                }
+
+                if (serverTrip.current_location) {
+                    return serverTrip;
+                }
+
+                return serverTrip;
+            });
+        });
+
+        setLastUpdate(new Date());
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activeTrips]);
 
     // ============================================
-    // ✅ WEBSOCKET (setup only once)
+    // WEBSOCKET (setup only once)
     // ============================================
 
     useEffect(() => {
-        if (hasSetupRef.current) return;
+        if (hasSetupRef.current) {
+            console.log('⏭️ WS already set up — skipping');
+            return;
+        }
         if (!echo.connector || !echo.connector.pusher) {
             console.warn('⚠️ Echo not ready, will retry...');
             return;
@@ -682,12 +768,48 @@ const LiveTracking = () => {
         const channel = echo.channel('gso-live-tracking');
         setIsWsConnected(true);
 
+        // ✅ .location.updated with jitter filter + pending ping cache
         channel.listen('.location.updated', (data) => {
+            if (!isMountedRef.current) return;
+
             console.log('📍 Real-time location update:', data);
+
+            // GPS jitter filter — accuracy
+            const accuracy = data.accuracy_meters || 0;
+            if (accuracy > 30) {
+                console.log(`⚠️ Skipping ping (accuracy ${accuracy}m > 30m)`);
+                return;
+            }
+
+            // Jitter filter — movement
+            const existingTrip = tripsDataRef.current.find(t => t.trip_id === data.trip_id);
+            if (existingTrip?.current_location) {
+                const distMeters = haversineMeters(
+                    existingTrip.current_location.latitude,
+                    existingTrip.current_location.longitude,
+                    data.latitude,
+                    data.longitude
+                );
+                const speed = data.speed_kmh || 0;
+                if (distMeters < 15 && speed < 2) {
+                    console.log(`⚠️ Skipping jitter (moved ${distMeters.toFixed(1)}m @ ${speed}km/h)`);
+                    return;
+                }
+            }
 
             pingCounterRef.current += 1;
             setPingCount(pingCounterRef.current);
 
+            // ✅ If trip not in data yet, cache ping + refetch
+            const tripExists = tripsDataRef.current.some(t => t.trip_id === data.trip_id);
+            if (!tripExists) {
+                console.log('🆕 New trip detected:', data.trip_id, '— caching ping + refetching...');
+                pendingPingsRef.current[data.trip_id] = data;
+                queryClient.invalidateQueries({ queryKey: ['gps-active-trips-live'] });
+                return;
+            }
+
+            // Update existing trip
             setTripsData(prev => {
                 if (!Array.isArray(prev)) return [];
                 return prev.map(trip => {
@@ -749,24 +871,41 @@ const LiveTracking = () => {
             setLastUpdate(new Date());
         });
 
+        // ✅ .trip.completed — NO toast here (RealtimeContext handles it)
+        // ✅ Immediately remove from local state — don't wait for refetch
         channel.listen('.trip.completed', (data) => {
-            console.log('🏁 Trip completed:', data);
-            toast.success(`Trip ${data.trip_id || 'unknown'} has been completed`);
+            if (!isMountedRef.current) return;
+            console.log('🏁 Trip completed (LiveTracking local removal):', data);
+
+            setTripsData(prev => {
+                if (!Array.isArray(prev)) return [];
+                return prev.filter(t => t.trip_id !== data.trip_id);
+            });
+            setSelectedTrip(prev => (prev?.trip_id === data.trip_id ? null : prev));
+            setFocusedTrip(prev => (prev?.trip_id === data.trip_id ? null : prev));
+            setFollowedTripId(prev => (prev === data.trip_id ? null : prev));
+
+            // Clean up any stale pending ping for this trip
+            delete pendingPingsRef.current[data.trip_id];
+
             queryClient.invalidateQueries({ queryKey: ['gps-active-trips-live'] });
         });
 
+        // ✅ .trip.started — NO toast here (RealtimeContext handles it)
         channel.listen('.trip.started', (data) => {
-            console.log('🚗 Trip started:', data);
-            toast.info(`Trip ${data.trip_id || 'unknown'} has started`);
+            if (!isMountedRef.current) return;
+            console.log('🚗 Trip started (LiveTracking):', data);
             queryClient.invalidateQueries({ queryKey: ['gps-active-trips-live'] });
         });
 
         channel.subscribed(() => {
+            if (!isMountedRef.current) return;
             console.log('✅ Subscribed to gso-live-tracking');
             setIsWsConnected(true);
         });
 
         channel.error((error) => {
+            if (!isMountedRef.current) return;
             console.error('❌ gso-live-tracking subscription error:', error);
             setIsWsConnected(false);
         });
@@ -774,10 +913,12 @@ const LiveTracking = () => {
         if (echo.connector && echo.connector.pusher) {
             const connection = echo.connector.pusher.connection;
             connection.bind('connected', () => {
+                if (!isMountedRef.current) return;
                 console.log('✅ WebSocket connected');
                 setIsWsConnected(true);
             });
             connection.bind('disconnected', () => {
+                if (!isMountedRef.current) return;
                 console.log('🔌 WebSocket disconnected');
                 setIsWsConnected(false);
             });
@@ -795,7 +936,7 @@ const LiveTracking = () => {
             }
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);   // ✅ Empty deps — only run once
+    }, []);
 
     // ============================================
     // DERIVED DATA
@@ -820,7 +961,7 @@ const LiveTracking = () => {
         {
             title: 'Active Vehicles',
             value: activeCount,
-            icon: Car,   // ✅ Use Car icon here too
+            icon: Car,
             color: 'from-green-500 to-emerald-600',
             subtitle: `${activeCount} on the road`,
         },
@@ -1147,7 +1288,6 @@ const LiveTracking = () => {
                                     if (!trip || !trip.current_location) return null;
                                     const isSelected = selectedTrip?.trip_id === trip.trip_id;
                                     const isFocused = focusedTrip?.trip_id === trip.trip_id;
-                                    // ✅ Get plate number for label
                                     const plateNumber = trip?.vehicle?.plate_number || trip?.plate_number || '';
 
                                     return (
@@ -1169,7 +1309,7 @@ const LiveTracking = () => {
                                                     isSelected,
                                                     true,
                                                     isFocused,
-                                                    plateNumber   // ✅ Pass plate number
+                                                    plateNumber
                                                 )}
                                                 eventHandlers={{
                                                     click: () => handleTripSelect(trip),

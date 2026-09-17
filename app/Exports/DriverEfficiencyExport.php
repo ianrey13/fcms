@@ -30,14 +30,14 @@ class DriverEfficiencyExport implements
         $this->data = $data;
     }
 
-    public function array(): array
+      public function array(): array
     {
         $rows = [];
 
         $rows[] = ['DRIVER FUEL EFFICIENCY REPORT'];
         $rows[] = ['Laguindingan Municipality - FCMS'];
         $rows[] = ['Generated: ' . now()->format('F d, Y h:i A')];
-        $rows[] = [];
+        $rows[] = array_fill(0, 7, '');   // ✅ Empty spacer (7 columns)
         $rows[] = ['Rank', 'Driver', 'Assigned Vehicle', 'Total Trips', 'Total Distance (km)', 'Total Fuel Used (L)', 'Fuel Efficiency (km/L)'];
 
         $drivers = $this->data['drivers'] ?? [];
@@ -102,7 +102,7 @@ class DriverEfficiencyExport implements
                     
                     for ($row = 6; $row <= $highestRow; $row++) {
                         // Color coding for efficiency
-                        $efficiency = (float) $sheet->getCell('G' . $row)->getValue();
+                       $efficiency = (float) $sheet->getCell('G' . $row)->getValue();
                         $color = 'FFFFFF';
                         if ($efficiency >= 10) {
                             $color = 'DCFCE7'; // Excellent

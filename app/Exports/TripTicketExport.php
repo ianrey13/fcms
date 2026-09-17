@@ -29,14 +29,14 @@ class TripTicketExport implements
         $this->data = $data;
     }
 
-    public function array(): array
+        public function array(): array
     {
         $rows = [];
 
         $rows[] = ['TRIP TICKET REPORT'];
         $rows[] = ['Laguindingan Municipality - FCMS'];
         $rows[] = ['Generated: ' . now()->format('F d, Y h:i A')];
-        $rows[] = [];
+        $rows[] = array_fill(0, 10, '');   // ✅ Empty spacer (10 columns)
         $rows[] = [
             'TT Number', 'Date', 'Department', 'Vehicle', 'Plate Number', 
             'Driver', 'Destination', 'Purpose', 'Distance (km)', 'Status'
@@ -60,7 +60,6 @@ class TripTicketExport implements
 
         return $rows;
     }
-
     public function headings(): array
     {
         return [];

@@ -63,6 +63,7 @@ import {
     ChevronUp,
     Wallet,
     Gauge,
+    PhilippinePeso,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { useNavigate } from "react-router-dom";
@@ -942,7 +943,7 @@ const BudgetAllocation = () => {
                         <div>
                             <div className="flex items-center gap-3">
                                 <div className="p-2.5 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 shadow-lg shadow-blue-500/20">
-                                    <DollarSign className="h-5 w-5 text-white" />
+                                    <PhilippinePeso className="h-5 w-5 text-white" />
                                 </div>
                                 <div>
                                     <h1 className="text-2xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 bg-clip-text text-transparent">
@@ -1051,7 +1052,7 @@ const BudgetAllocation = () => {
                     <StatsCard
                         title="Total Annual Budget"
                         value={formatCurrency(summary.total_allocated)}
-                        icon={DollarSign}
+                        icon={PhilippinePeso}
                         color="from-blue-500 to-blue-600"
                         subtitle="Total allocation"
                         trend={summary.total_allocated > 0 ? 5 : 0}
@@ -1097,7 +1098,7 @@ const BudgetAllocation = () => {
                         <div className="flex items-center justify-between">
                             <div>
                                 <h3 className="flex items-center gap-2 text-slate-800 dark:text-white font-semibold">
-                                    <DollarSign className="h-5 w-5 text-green-500" />
+                                    <PhilippinePeso className="h-5 w-5 text-green-500" />
                                     Budget Details for {selectedYear}
                                 </h3>
                                 <p className="text-sm text-slate-500 dark:text-slate-400">
@@ -1586,7 +1587,7 @@ const BudgetAllocation = () => {
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2 text-slate-900 dark:text-white">
                             <div className="p-2 rounded-xl bg-green-500/10">
-                                <DollarSign className="h-5 w-5 text-green-600 dark:text-green-400" />
+                                <PhilippinePeso className="h-5 w-5 text-green-600 dark:text-green-400" />
                             </div>
                             Edit Annual Budget
                         </DialogTitle>
@@ -1627,7 +1628,7 @@ const BudgetAllocation = () => {
 
                         <FormField
                             label="Annual Budget (₱)"
-                            icon={DollarSign}
+                            icon={PhilippinePeso}
                             required
                             error={editErrors.annual_amount}
                             touched={editTouched.annual_amount}
@@ -1974,7 +1975,7 @@ const BudgetAllocation = () => {
 
                         <FormField
                             label="Additional Amount (₱)"
-                            icon={DollarSign}
+                            icon={PhilippinePeso}
                             required
                             error={addErrors.additional_amount}
                             touched={addTouched.additional_amount}

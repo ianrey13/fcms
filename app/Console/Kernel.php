@@ -50,7 +50,7 @@ class Kernel extends ConsoleKernel
         // ✅ EVERY 5 MINUTES - Emergency check (if reset not done)
         $schedule->call(function () {
             $this->emergencyBudgetReset();
-        })->everyFiveMinutes();
+        })->hourly();
 
         // ✅ EVERY HOUR - Log scheduler status
         $schedule->call(function () {
@@ -61,6 +61,16 @@ class Kernel extends ConsoleKernel
         $schedule->command('logs:clean')
             ->daily()
             ->at('23:00');
+
+        // ✅ NEW: DAILY - Auto-cancel stale trips (> 7 days without progress)
+        $schedule->call(function () {
+            $this->autoCancelStaleTrips();
+        })->daily()->at('03:00');
+
+        // ✅ NEW: HOURLY - Sync actual_distance_km for active trips
+        $schedule->call(function () {
+            $this->syncActiveTripActuals();
+        })->hourly();
     }
 
     /**
@@ -86,7 +96,6 @@ class Kernel extends ConsoleKernel
             } else {
                 Log::warning('⚠️ Weekly budget reset verification failed - running emergency reset');
                 
-                // ✅ Run emergency reset
                 DB::statement('CALL proc_weekly_budget_reset();');
                 
                 DB::table('budget_history')->insert([
@@ -163,12 +172,10 @@ class Kernel extends ConsoleKernel
     private function sendWeeklyBudgetAlert()
     {
         try {
-            // Get current week info
             $weekNumber = Carbon::now()->weekOfYear;
             $weekStart = Carbon::now()->startOfWeek()->toDateString();
             $weekEnd = Carbon::now()->endOfWeek()->toDateString();
             
-            // Get departments with active budgets
             $departments = DB::table('departments')
                 ->where('is_active', 1)
                 ->get();
@@ -186,12 +193,10 @@ class Kernel extends ConsoleKernel
                 $deptList .= "  • {$dept->department_name}: ₱" . number_format($allocation, 2) . "\n";
             }
 
-            // Get active periods
             $activePeriods = DB::table('dept_budget_period')
                 ->where('status', 'active')
                 ->count();
 
-            // Get Mayor's Office users
             $users = DB::table('users')
                 ->where('role', 'mayors_office')
                 ->where('status', 'active')
@@ -224,6 +229,94 @@ class Kernel extends ConsoleKernel
 
         } catch (\Exception $e) {
             Log::error('❌ Failed to send weekly budget alert: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * ✅ NEW: Auto-cancel stale trips (stuck > 7 days without progress)
+     * 
+     * Trips in active statuses that haven't been updated in 7 days
+     * are auto-cancelled to free up vehicles.
+     */
+    private function autoCancelStaleTrips()
+    {
+        try {
+            $staleDate = Carbon::now()->subDays(7);
+
+            $activeStatuses = [
+                \App\Models\TripTicket::STATUS_PENDING_MAYORS_OFFICE,
+                \App\Models\TripTicket::STATUS_RETURNED_FOR_REVISION,
+                \App\Models\TripTicket::STATUS_FUNDS_ISSUED,
+                \App\Models\TripTicket::STATUS_ACKNOWLEDGED,
+                \App\Models\TripTicket::STATUS_IN_TRANSIT,
+                \App\Models\TripTicket::STATUS_COMPLETED,
+                \App\Models\TripTicket::STATUS_PENDING_GSO_VALIDATION,
+            ];
+
+            $staleTrips = \App\Models\TripTicket::whereIn('status', $activeStatuses)
+                ->where('updated_at', '<', $staleDate)
+                ->whereNull('closed_at')
+                ->whereNull('cancelled_at')
+                ->get();
+
+            if ($staleTrips->isEmpty()) {
+                Log::info('✅ Auto-cancel check: No stale trips found');
+                return;
+            }
+
+            $cancelledCount = 0;
+
+            foreach ($staleTrips as $trip) {
+                $trip->status = \App\Models\TripTicket::STATUS_CANCELLED;
+                $trip->cancellation_reason = 'Auto-cancelled: No progress for 7+ days';
+                $trip->cancelled_at = now();
+                $trip->cancelled_by = null; // System
+                $trip->save();
+
+                $cancelledCount++;
+
+                Log::warning('⚠️ Auto-cancelled stale trip', [
+                    'trip_ticket_id' => $trip->trip_ticket_id,
+                    'trip_ticket_number' => $trip->trip_ticket_number,
+                    'last_status' => $trip->status,
+                    'last_updated' => $trip->updated_at,
+                ]);
+            }
+
+            Log::info("✅ Auto-cancelled {$cancelledCount} stale trips (>7 days)");
+
+        } catch (\Exception $e) {
+            Log::error('❌ Auto-cancel stale trips failed: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * ✅ NEW: Sync actual_distance_km for active trips hourly
+     * 
+     * Keeps the summary column fresh while the trip is in progress.
+     * Runs hourly to avoid heavy load.
+     */
+    private function syncActiveTripActuals()
+    {
+        try {
+            $activeTrips = \App\Models\TripTicket::whereIn('status', [
+                \App\Models\TripTicket::STATUS_IN_TRANSIT,
+                \App\Models\TripTicket::STATUS_COMPLETED,
+            ])->get();
+
+            $syncedCount = 0;
+
+            foreach ($activeTrips as $trip) {
+                $trip->syncActuals()->save();
+                $syncedCount++;
+            }
+
+            if ($syncedCount > 0) {
+                Log::info("✅ Synced actuals for {$syncedCount} active trips");
+            }
+
+        } catch (\Exception $e) {
+            Log::error('❌ Sync active trip actuals failed: ' . $e->getMessage());
         }
     }
 

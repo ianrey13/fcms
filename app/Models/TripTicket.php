@@ -17,9 +17,9 @@ class TripTicket extends Model
         'department_id',
         'driver_id',
         'vehicle_id',
-        'submitted_by',        // GSO user who creates the trip
+        'submitted_by',       
         'created_by_mo_user_id',
-        'submitted_by_staff',  // ✅ Replaced submitted_by_head
+     
         'submitted_at',
         'trip_date',
         'purpose',
@@ -34,19 +34,13 @@ class TripTicket extends Model
         'charge_to_modified_by',
         'charge_to_modified_at',
         'charge_to_modification_reason',
-        'odometer_exception',
-        'odometer_exception_note',
-        'odometer_exception_approved_by',
-        'odometer_exception_approved_at',
+        
         'has_insufficient_budget',
         'budget_shortage',
         'original_department_id',
          'actual_distance_km',
         'actual_fuel_used',
-        'fuel_balance_before',
-        'fuel_balance_after',
-        'odometer_start',
-        'odometer_end',
+       
         'is_fuel_issued_without_trip',
         'trip_count',
          'cancellation_reason',
@@ -58,18 +52,14 @@ class TripTicket extends Model
         'submitted_at' => 'datetime',
         'updated_at' => 'datetime',
         'trip_date' => 'date',
-        'submitted_by_staff' => 'boolean',  // ✅ Changed from submitted_by_head
-        'odometer_exception' => 'boolean',
+      
         'has_insufficient_budget' => 'boolean',
         'estimated_distance_km' => 'decimal:2',
         'estimated_fuel_liters' => 'decimal:2',
         'budget_shortage' => 'decimal:2',
          'actual_distance_km' => 'decimal:2',
         'actual_fuel_used' => 'decimal:2',
-        'fuel_balance_before' => 'decimal:2',
-        'fuel_balance_after' => 'decimal:2',
-        'odometer_start' => 'decimal:2',
-        'odometer_end' => 'decimal:2',
+        
         'is_fuel_issued_without_trip' => 'boolean',
          'cancelled_at' => 'datetime',
     ];
@@ -91,8 +81,7 @@ class TripTicket extends Model
 public const STATUS_PENDING_GSO_VALIDATION = 'pending_gso_validation';
 
 
-    // ❌ REMOVED: STATUS_PENDING_HEAD_APPROVAL, STATUS_PENDING_GSO_REVIEW, STATUS_WITH_MAYORS_OFFICE
-
+ 
     // ============ RELATIONSHIPS ============
     public function department()
     {
@@ -119,10 +108,7 @@ public const STATUS_PENDING_GSO_VALIDATION = 'pending_gso_validation';
         return $this->belongsTo(User::class, 'created_by_mo_user_id', 'user_id');
     }
 
-    // ❌ REMOVED: headApprovals(), latestHeadApproval() - Head approval removed
-    // ❌ REMOVED: gsoVerifications(), latestGsoVerification() - GSO verification removed
-    // ❌ REMOVED: moReviews(), latestMoReview() - MO Review merged into gas_slip
-
+   
     public function gasSlip()
     {
         return $this->hasOne(GasSlip::class, 'trip_ticket_id', 'trip_ticket_id');
@@ -148,10 +134,7 @@ public const STATUS_PENDING_GSO_VALIDATION = 'pending_gso_validation';
         return $this->belongsTo(User::class, 'charge_to_modified_by', 'user_id');
     }
 
-    public function odometerExceptionApprovedBy()
-    {
-        return $this->belongsTo(User::class, 'odometer_exception_approved_by', 'user_id');
-    }
+    
 
     // ============ SCOPES ============
     public function scopePendingMO($query)
@@ -249,22 +232,11 @@ public function getFuelEfficiencyAttribute(): ?float
 }
 
 /**
- * Check if trip has odometer readings
- */
-public function hasOdometerReadings(): bool
-{
-    return !is_null($this->odometer_start) && !is_null($this->odometer_end);
-}
-
-/**
  * Check if trip has movement (distance > 0)
  */
 public function hasMovement(): bool
 {
-    if ($this->hasOdometerReadings()) {
-        return $this->odometer_end > $this->odometer_start;
-    }
-    return $this->actual_distance_km > 0;
+    return ($this->actual_distance_km ?? 0) > 0;
 }
 
 /**
@@ -276,27 +248,7 @@ public function isFuelWithoutTrip(): bool
            (!$this->hasMovement() && $this->gasSlip?->amount_released > 0);
 }
 
-/**
- * Get movement status label
- */
-public function getMovementStatusAttribute(): string
-{
-    if (!$this->hasOdometerReadings()) {
-        return 'No Odometer Reading';
-    }
-    
-    $distance = $this->odometer_end - $this->odometer_start;
-    
-    if ($distance == 0) {
-        return 'No Movement';
-    }
-    
-    if ($distance < 1) {
-        return 'Minimal Movement (<1km)';
-    }
-    
-    return 'Normal Trip';
-}
+
 
 public function tripHistory()
 {
@@ -326,5 +278,34 @@ public function canBeCancelled(): bool
     ]) && !$this->gasSlip()->exists();
 }
 
+
+/**
+ * Compute total GPS distance from trip_history
+ */
+public function computeActualDistance(): float
+{
+    return (float) TripHistory::where('trip_ticket_id', $this->trip_ticket_id)
+        ->where('status', 'completed')
+        ->sum('distance_km');
+}
+
+/**
+ * Sync actual_distance_km and actual_fuel_used from related records
+ */
+public function syncActuals(): self
+{
+    $this->actual_distance_km = $this->computeActualDistance();
+
+    $receipt = $this->gasSlip?->fuelReceipt;
+    if ($receipt && $receipt->liters_availed > 0) {
+        $this->actual_fuel_used = $receipt->liters_availed;
+    }
+
+    if ($this->gasSlip && $this->gasSlip->amount_released > 0) {
+        $this->is_fuel_issued_without_trip = ($this->actual_distance_km == 0);
+    }
+
+    return $this;
+}
 
 }

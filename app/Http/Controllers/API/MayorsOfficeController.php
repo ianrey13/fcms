@@ -330,7 +330,6 @@ public function approveTicket(Request $request, $id)
         $crossDepartmentReason = $request->cross_department_reason ?? null;
         $isMoFundedTicket = $ticket->created_by_mo_user_id !== null;
 
-        
         if ($isCrossDepartment && $chargeDepartmentId == $ticket->department_id) {
             return response()->json([
                 'success' => false,
@@ -338,7 +337,6 @@ public function approveTicket(Request $request, $id)
             ], 422);
         }
 
-      
         if ($isCrossDepartment && empty($crossDepartmentReason)) {
             return response()->json([
                 'success' => false,
@@ -352,7 +350,7 @@ public function approveTicket(Request $request, $id)
         $weeklyRemaining = 0;
         $annualRemaining = 0;
 
-        //  CHECK AND DEDUCT BUDGET
+        // CHECK AND DEDUCT BUDGET
         if (!$isMoFundedTicket) {
             $weeklyRemaining = $this->getWeeklyRemainingBudget($chargeDepartmentId);
             $annualRemaining = $this->budgetService->getRemainingBudget($chargeDepartmentId);
@@ -389,10 +387,11 @@ public function approveTicket(Request $request, $id)
                 ], 422);
             }
 
+            // ✅ FIXED: Capture USED_AMOUNT (not annual_amount) for audit trail
             $annualBudget = AnnualBudget::where('department_id', $chargeDepartmentId)
                 ->where('fiscal_year', Carbon::now()->year)
                 ->first();
-            $budgetBefore = $annualBudget ? (float) $annualBudget->annual_amount : 0;
+            $budgetBefore = $annualBudget ? (float) $annualBudget->used_amount : 0;
 
             $this->budgetService->deductBudget(
                 $chargeDepartmentId,
@@ -402,17 +401,18 @@ public function approveTicket(Request $request, $id)
                 $crossDepartmentReason
             );
 
+            // ✅ FIXED: Capture USED_AMOUNT after deduction
             $annualBudget = AnnualBudget::where('department_id', $chargeDepartmentId)
                 ->where('fiscal_year', Carbon::now()->year)
                 ->first();
-            $budgetAfter = $annualBudget ? (float) $annualBudget->annual_amount : 0;
+            $budgetAfter = $annualBudget ? (float) $annualBudget->used_amount : 0;
 
             $periodId = $this->getOrCreatePeriodId($chargeDepartmentId);
         }
 
         DB::beginTransaction();
 
-        //  Create GasSlip 
+        // Create GasSlip
         $gasSlipData = [
             'trip_ticket_id' => $id,
             'created_by' => $user->user_id,
@@ -430,24 +430,21 @@ public function approveTicket(Request $request, $id)
 
         $gasSlipId = DB::table('gas_slip')->insertGetId($gasSlipData);
 
-        // 
         if ($gasSlipId == 0) {
             $gasSlipId = DB::getPdo()->lastInsertId();
         }
 
-        //
         if ($gasSlipId == 0) {
             $record = DB::table('gas_slip')
                 ->where('trip_ticket_id', $id)
                 ->orderBy('gas_slip_id', 'desc')
                 ->first();
-            
+
             if ($record) {
                 $gasSlipId = $record->gas_slip_id;
             }
         }
 
-        
         if ($gasSlipId == 0) {
             Log::error('❌ GasSlip creation failed - ID is: ' . $gasSlipId);
             Log::error('❌ GasSlip Data:', $gasSlipData);
@@ -456,7 +453,6 @@ public function approveTicket(Request $request, $id)
 
         Log::info('✅ GasSlip created - ID: ' . $gasSlipId . ' for trip: ' . $id);
 
-       
         if ($isCrossDepartment) {
             $crossData = [
                 'from_department_id' => $ticket->department_id,
@@ -467,18 +463,16 @@ public function approveTicket(Request $request, $id)
                 'created_at' => now(),
                 'updated_at' => now(),
             ];
-            
-            Log::info('✅ CrossDepartmentUsage Data:', $crossData);
-            
+
             DB::table('cross_department_usage')->insert($crossData);
-            
+
             Log::info('✅ CrossDepartmentUsage created successfully');
         }
 
-        // ✅ STEP 3: Update ticket
+        // Update ticket
         $ticket->has_insufficient_budget = false;
         $ticket->status = TripTicket::STATUS_FUNDS_ISSUED;
-        
+
         if ($isCrossDepartment && $chargeDepartment) {
             $ticket->charge_to = $chargeDepartment->department_code ?? $ticket->charge_to;
         }
@@ -490,15 +484,15 @@ public function approveTicket(Request $request, $id)
         $newAnnualRemaining = $this->budgetService->getRemainingBudget($chargeDepartmentId);
         $usedAmount = $this->budgetService->getUsedAmount($chargeDepartmentId);
 
-        $fundingSource = $isMoFundedTicket ? 'MO Funded' : 
-                        ($isCrossDepartment ? "Cross-Department: {$chargeDepartment->department_name}" : 
+        $fundingSource = $isMoFundedTicket ? 'MO Funded' :
+                        ($isCrossDepartment ? "Cross-Department: {$chargeDepartment->department_name}" :
                         "Charged to: {$chargeDepartment->department_name}");
 
         $this->sendFundIssuedNotification($ticket, $amountToRelease, $fundingSource, $isCrossDepartment);
 
-        $responseMessage = $isMoFundedTicket 
+        $responseMessage = $isMoFundedTicket
             ? "✅ Funds released successfully (MO Funded - No department budget deduction)"
-            : ($isCrossDepartment 
+            : ($isCrossDepartment
                 ? "✅ Funds released successfully (Cross-Department Usage - For recording only)"
                 : "✅ Funds released successfully from {$chargeDepartment->department_name} budget\n" .
                   "Weekly Remaining: ₱" . number_format($newWeeklyRemaining, 2) . "\n" .
@@ -727,7 +721,9 @@ private function deductWeeklyBudget($departmentId, $amount)
                 'has_insufficient_budget' => $ticket->has_insufficient_budget ?? false,
                 'budget_shortage' => $ticket->budget_shortage ?? 0,
                 'estimated_distance_km' => $ticket->estimated_distance_km,
-                'estimated_fuel_liters' => $ticket->estimated_fuel_liters,
+'estimated_fuel_liters' => $ticket->estimated_fuel_liters,
+'actual_distance_km' => $ticket->actual_distance_km,
+'actual_fuel_used' => $ticket->actual_fuel_used,
                 'budget_info' => $budgetInfo,
                 'has_receipt' => $fuelReceipt && ($fuelReceipt->liters_availed > 0 || $fuelReceipt->amount_on_receipt > 0),
                 'receipt' => $fuelReceipt ? [
@@ -736,7 +732,7 @@ private function deductWeeklyBudget($departmentId, $amount)
                     'liters_availed' => $fuelReceipt->liters_availed,
                     'amount_on_receipt' => $fuelReceipt->amount_on_receipt,
                     'receipt_photo_path' => $fuelReceipt->receipt_photo_path,
-                    'receipt_url' => $fuelReceipt->receipt_photo_path ? asset('storage/' . $fuelReceipt->receipt_photo_path) : null,
+                    'receipt_url' => $fuelReceipt->receipt_photo_path ? asset($fuelReceipt->receipt_photo_path) : null,
                     'gps_distance_km' => $fuelReceipt->gps_distance_km,
                     'reconciliation_status' => $ticket->gasSlip?->reconciliation_status,
                 ] : null,
@@ -759,14 +755,12 @@ private function deductWeeklyBudget($departmentId, $amount)
                     'is_active' => $ticket->department->is_active,
                 ] : null,
                 'gas_slip' => $ticket->gasSlip ? [
-                    'gas_slip_id' => $ticket->gasSlip->gas_slip_id,
-                    'amount_released' => $ticket->gasSlip->amount_released,
-                    'reconciliation_status' => $ticket->gasSlip->reconciliation_status,
-                    'budget_before' => $ticket->gasSlip->budget_before,
-                    'budget_after' => $ticket->gasSlip->budget_after,
-                    'is_cross_department' => $ticket->gasSlip->is_cross_department ?? false,
-                    'cross_department_reason' => $ticket->gasSlip->cross_department_reason ?? null,
-                ] : null,
+    'gas_slip_id' => $ticket->gasSlip->gas_slip_id,
+    'amount_released' => $ticket->gasSlip->amount_released,
+    'reconciliation_status' => $ticket->gasSlip->reconciliation_status,
+    'is_cross_department' => $ticket->gasSlip->is_cross_department ?? false,
+    'cross_department_reason' => $ticket->gasSlip->cross_department_reason ?? null,
+] : null,
                 'all_departments' => Department::select('department_id', 'department_name', 'department_code', 'head_of_office')->get(),
             ]
         ]);
@@ -943,102 +937,139 @@ public function getReceiptsForVerification(Request $request)
      * Verify a receipt with editable fields
      */
     public function verifyReceipt(Request $request, $id)
-    {
-        try {
-            $user = $request->user();
-            if (!$user->isMayorsOffice()) {
-                return response()->json(['message' => 'Unauthorized'], 403);
-            }
+{
+    try {
+        $user = $request->user();
+        if (!$user->isMayorsOffice()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
 
-            // ✅ Log incoming data for debugging
-            Log::info('Verifying receipt', [
+        Log::info('Verifying receipt', [
+            'receipt_id' => $id,
+            'data' => $request->all(),
+        ]);
+
+        $validator = Validator::make($request->all(), [
+            'invoice_number' => 'nullable|string|max:50',
+            'liters_availed' => 'required|numeric|min:0.01',
+            'unit_price' => 'required|numeric|min:0.01',
+            'amount_on_receipt' => 'required|numeric|min:0.01',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $fuelReceipt = FuelReceipt::findOrFail($id);
+        $gasSlip = GasSlip::findOrFail($fuelReceipt->gas_slip_id);
+
+        if ($gasSlip->reconciliation_status === 'verified') {
+            return response()->json([
+                'success' => false,
+                'message' => 'This receipt has already been verified'
+            ], 400);
+        }
+
+        // ✅ NEW: Cap amount to gas slip's released amount
+        if ($request->amount_on_receipt > $gasSlip->amount_released) {
+            return response()->json([
+                'success' => false,
+                'message' => sprintf(
+                    'Receipt amount ₱%s exceeds released amount ₱%s.',
+                    number_format($request->amount_on_receipt, 2),
+                    number_format($gasSlip->amount_released, 2)
+                ),
+            ], 422);
+        }
+
+        // ✅ NEW: Cross-check amount = liters × unit_price
+        $expectedAmount = round($request->liters_availed * $request->unit_price, 2);
+        $amountVariance = abs($request->amount_on_receipt - $expectedAmount);
+
+        if ($amountVariance > 1.00) {
+            Log::warning('MO verify: Amount vs liters×price mismatch', [
                 'receipt_id' => $id,
-                'data' => $request->all(),
+                'amount_on_receipt' => $request->amount_on_receipt,
+                'liters_x_price' => $expectedAmount,
+                'variance' => $amountVariance,
             ]);
 
-            // ✅ Validate the incoming data
-            $validator = Validator::make($request->all(), [
-                'invoice_number' => 'nullable|string|max:50',
-                'liters_availed' => 'required|numeric|min:0.01',
-                'unit_price' => 'required|numeric|min:0.01',
-                'amount_on_receipt' => 'required|numeric|min:0.01',
-            ]);
-
-            if ($validator->fails()) {
+            // Reject if variance > 5% of the receipt amount
+            if ($amountVariance > ($request->amount_on_receipt * 0.05)) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Validation failed',
-                    'errors' => $validator->errors()
+                    'message' => sprintf(
+                        'Amount mismatch: %s L × ₱%s = ₱%s, but you entered ₱%s.',
+                        $request->liters_availed,
+                        number_format($request->unit_price, 2),
+                        number_format($expectedAmount, 2),
+                        number_format($request->amount_on_receipt, 2)
+                    ),
                 ], 422);
             }
-
-            // ✅ Find the fuel receipt
-            $fuelReceipt = FuelReceipt::findOrFail($id);
-            $gasSlip = GasSlip::findOrFail($fuelReceipt->gas_slip_id);
-
-            if ($gasSlip->reconciliation_status === 'verified') {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'This receipt has already been verified'
-                ], 400);
-            }
-
-            DB::beginTransaction();
-
-            // ✅ Update fuel receipt with editable fields
-            if ($request->has('invoice_number')) {
-                $fuelReceipt->invoice_number = $request->invoice_number;
-            }
-            $fuelReceipt->liters_availed = $request->liters_availed;
-            $fuelReceipt->unit_price = $request->unit_price;
-            $fuelReceipt->amount_on_receipt = $request->amount_on_receipt;
-            $fuelReceipt->save();
-
-            // ✅ Update gas slip reconciliation status
-            $gasSlip->reconciliation_status = 'verified';
-            $gasSlip->reconciled_by = $user->user_id;
-            $gasSlip->reconciled_at = now();
-            $gasSlip->save();
-
-            DB::commit();
-
-            Log::info('Receipt verified with edits', [
-                'receipt_id' => $id,
-                'verified_by' => $user->user_id,
-                'invoice_number' => $request->invoice_number,
-                'liters_availed' => $request->liters_availed,
-                'unit_price' => $request->unit_price,
-                'amount_on_receipt' => $request->amount_on_receipt,
-            ]);
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Receipt verified successfully',
-                'data' => [
-                    'receipt_id' => $id,
-                    'gas_slip_id' => $gasSlip->gas_slip_id,
-                    'status' => $gasSlip->reconciliation_status,
-                    'invoice_number' => $fuelReceipt->invoice_number,
-                    'liters_availed' => $fuelReceipt->liters_availed,
-                    'unit_price' => $fuelReceipt->unit_price,
-                    'amount_on_receipt' => $fuelReceipt->amount_on_receipt,
-                ]
-            ]);
-        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Receipt not found'
-            ], 404);
-        } catch (\Exception $e) {
-            DB::rollBack();
-            Log::error('Verify receipt error: ' . $e->getMessage());
-            Log::error($e->getTraceAsString());
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to verify receipt: ' . $e->getMessage()
-            ], 500);
         }
+
+        DB::beginTransaction();
+
+        // Update fuel receipt
+        if ($request->has('invoice_number')) {
+            $fuelReceipt->invoice_number = $request->invoice_number;
+        }
+        $fuelReceipt->liters_availed = $request->liters_availed;
+        $fuelReceipt->unit_price = $request->unit_price;
+        $fuelReceipt->amount_on_receipt = $request->amount_on_receipt;
+        $fuelReceipt->save();
+
+        // Update gas slip
+        $gasSlip->reconciliation_status = 'verified';
+        $gasSlip->reconciled_by = $user->user_id;
+        $gasSlip->reconciled_at = now();
+        $gasSlip->save();
+
+        // ✅ NEW: Sync parent trip ticket's actuals
+        if ($gasSlip->tripTicket) {
+            $gasSlip->tripTicket->syncActuals()->save();
+        }
+
+        DB::commit();
+
+        Log::info('Receipt verified with edits', [
+            'receipt_id' => $id,
+            'verified_by' => $user->user_id,
+            'liters_availed' => $request->liters_availed,
+            'unit_price' => $request->unit_price,
+            'amount_on_receipt' => $request->amount_on_receipt,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Receipt verified successfully',
+            'data' => [
+                'receipt_id' => $id,
+                'gas_slip_id' => $gasSlip->gas_slip_id,
+                'status' => $gasSlip->reconciliation_status,
+                'invoice_number' => $fuelReceipt->invoice_number,
+                'liters_availed' => $fuelReceipt->liters_availed,
+                'unit_price' => $fuelReceipt->unit_price,
+                'amount_on_receipt' => $fuelReceipt->amount_on_receipt,
+            ]
+        ]);
+    } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+        return response()->json(['success' => false, 'message' => 'Receipt not found'], 404);
+    } catch (\Exception $e) {
+        DB::rollBack();
+        Log::error('Verify receipt error: ' . $e->getMessage());
+        Log::error($e->getTraceAsString());
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to verify receipt: ' . $e->getMessage()
+        ], 500);
     }
+}
 
     // ============ HELPER METHODS ============
 

@@ -30,7 +30,7 @@ class VehicleSummaryExport implements
         $this->data = $data;
     }
 
-    public function array(): array
+       public function array(): array
     {
         $rows = [];
 
@@ -38,7 +38,7 @@ class VehicleSummaryExport implements
         $rows[] = ['VEHICLE FUEL CONSUMPTION SUMMARY'];
         $rows[] = ['Laguindingan Municipality - FCMS'];
         $rows[] = ['Generated: ' . now()->format('F d, Y h:i A')];
-        $rows[] = [];
+        $rows[] = array_fill(0, 6, '');   // ✅ Empty spacer (6 columns)
         $rows[] = ['Vehicle', 'Plate No.', 'Total Trips', 'Total Fuel (L)', 'Total Amount (₱)', 'Average Fuel/Trip (L)'];
 
         foreach ($this->data as $vehicle) {

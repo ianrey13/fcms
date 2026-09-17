@@ -1,12 +1,16 @@
 // src/pages/mayor/MayorPending.jsx
 // ============================================
+// ✅ MERGED: Pending Fund Release + Funds Released (Approved)
 // ✅ SHOWS: Requesting department's balance (from trip ticket)
 // ✅ CROSS-DEPARTMENT: Auto-selects Mayor's Office when enabled
 // ✅ LIVE BALANCE PREVIEW after amount entry
 // ✅ ADDED: MO Cancel feature (before funds released)
+// ✅ ADDED: Tab-based view (Pending / Released)
+// ✅ ADDED: Released tickets show View + Gas Slip instead of Release
+// ✅ FIXED: formatCurrency/formatDate/safeAmount moved outside component
 // ============================================
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAutoRefresh } from "../../hooks/useAutoRefresh";
@@ -61,6 +65,9 @@ import {
   Printer,
   Wallet,
   Ban,
+  FileText,
+  Users,
+  PhilippinePeso,
 } from "lucide-react";
 import {
   Dialog,
@@ -78,6 +85,35 @@ import { cn } from "@/lib/utils";
 import GasSlipView from "../../pages/mayor/reports/GasSlipView";
 
 // ============================================
+// ✅ MODULE-LEVEL HELPERS (pure, safe to use anywhere)
+// ============================================
+
+const formatDate = (dateString) => {
+  if (!dateString) return "N/A";
+  return new Date(dateString).toLocaleDateString("en-PH", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+};
+
+const formatCurrency = (amount) => {
+  const numAmount = parseFloat(amount);
+  if (isNaN(numAmount) || numAmount === 0) return "₱0.00";
+  return new Intl.NumberFormat("en-PH", {
+    style: "currency",
+    currency: "PHP",
+    minimumFractionDigits: 2,
+  }).format(numAmount);
+};
+
+const safeAmount = (amount) => {
+  if (typeof amount === "number") return amount;
+  if (typeof amount === "string") return parseFloat(amount) || 0;
+  return 0;
+};
+
+// ============================================
 // Form Field Component
 // ============================================
 
@@ -92,7 +128,7 @@ const FormField = ({
   className,
 }) => {
   const hasError = touched && error;
-  
+
   return (
     <div className={cn("space-y-1.5", className)}>
       <Label className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300">
@@ -105,7 +141,7 @@ const FormField = ({
           className: cn(
             children.props.className,
             hasError && "border-red-500 ring-red-500 focus:ring-red-500 bg-red-50/50 dark:bg-red-950/10"
-          )
+          ),
         })}
         {hasError && (
           <div className="absolute right-3 top-1/2 -translate-y-1/2">
@@ -136,7 +172,7 @@ const FormField = ({
 const NumberInput = ({ value, onChange, placeholder, className, ...props }) => {
   const handleChange = (e) => {
     const val = e.target.value;
-    if (val === '' || /^[0-9]*\.?[0-9]*$/.test(val)) {
+    if (val === "" || /^[0-9]*\.?[0-9]*$/.test(val)) {
       onChange(e);
     }
   };
@@ -178,8 +214,8 @@ const StatsCard = ({ title, value, icon: Icon, color, subtitle, trend }) => (
               ) : (
                 <Minus className="h-3 w-3 text-slate-400" />
               )}
-              <span className={trend > 0 ? 'text-emerald-600 dark:text-emerald-400' : trend < 0 ? 'text-red-600 dark:text-red-400' : 'text-slate-400'}>
-                {trend > 0 ? '+' : ''}{trend}%
+              <span className={trend > 0 ? "text-emerald-600 dark:text-emerald-400" : trend < 0 ? "text-red-600 dark:text-red-400" : "text-slate-400"}>
+                {trend > 0 ? "+" : ""}{trend}%
               </span>
             </div>
           )}
@@ -198,53 +234,53 @@ const StatsCard = ({ title, value, icon: Icon, color, subtitle, trend }) => (
 
 const TripDateBadge = ({ ticket }) => {
   if (!ticket?.trip_date) return null;
-  
+
   const tripDate = new Date(ticket.trip_date);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   tripDate.setHours(0, 0, 0, 0);
-  
+
   const isToday = tripDate.getTime() === today.getTime();
   const isPast = tripDate.getTime() < today.getTime();
   const isFuture = tripDate.getTime() > today.getTime();
   const isTripFriday = tripDate.getDay() === 5;
-  
+
   const daysUntil = Math.ceil((tripDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-  
-  let label = '';
-  let color = '';
+
+  let label = "";
+  let color = "";
   let icon = Calendar;
-  
+
   if (isToday) {
-    label = 'Today';
-    color = 'bg-green-100 text-green-700 border-green-300 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800';
+    label = "Today";
+    color = "bg-green-100 text-green-700 border-green-300 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800";
     icon = CalendarCheck;
   } else if (isPast) {
-    label = 'Past Trip';
-    color = 'bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800';
+    label = "Past Trip";
+    color = "bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800";
     icon = CalendarDays;
   } else if (isFuture && isTripFriday) {
     label = `Friday (${daysUntil}d)`;
-    color = 'bg-purple-100 text-purple-700 border-purple-300 dark:bg-purple-900/30 dark:text-purple-400 dark:border-purple-800';
+    color = "bg-purple-100 text-purple-700 border-purple-300 dark:bg-purple-900/30 dark:text-purple-400 dark:border-purple-800";
     icon = Calendar;
   } else if (isFuture && daysUntil === 1) {
-    label = '⚠️ Tomorrow';
-    color = 'bg-orange-100 text-orange-700 border-orange-300 dark:bg-orange-900/30 dark:text-orange-400 dark:border-orange-800';
+    label = "⚠️ Tomorrow";
+    color = "bg-orange-100 text-orange-700 border-orange-300 dark:bg-orange-900/30 dark:text-orange-400 dark:border-orange-800";
     icon = AlertTriangle;
   } else if (isFuture && daysUntil <= 7) {
     label = `📅 ${daysUntil}d`;
-    color = 'bg-yellow-100 text-yellow-700 border-yellow-300 dark:bg-yellow-900/30 dark:text-yellow-400 dark:border-yellow-800';
+    color = "bg-yellow-100 text-yellow-700 border-yellow-300 dark:bg-yellow-900/30 dark:text-yellow-400 dark:border-yellow-800";
     icon = AlertCircle;
   } else if (isFuture) {
     label = `📅 ${daysUntil}d`;
-    color = 'bg-red-100 text-red-700 border-red-300 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800';
+    color = "bg-red-100 text-red-700 border-red-300 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800";
     icon = AlertTriangle;
   } else {
-    label = 'N/A';
-    color = 'bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700';
+    label = "N/A";
+    color = "bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700";
     icon = Clock;
   }
-  
+
   const Icon = icon;
   return (
     <Badge variant="outline" className={`${color} text-xs font-medium flex items-center gap-1`}>
@@ -255,16 +291,37 @@ const TripDateBadge = ({ ticket }) => {
 };
 
 // ============================================
+// STATUS BADGE COMPONENT (for released tickets)
+// ============================================
+
+const ReleasedStatusBadge = ({ status }) => {
+  const configs = {
+    funds_issued: { color: "bg-emerald-500", label: "Funds Issued", icon: CheckCircle },
+    acknowledged: { color: "bg-blue-500", label: "Acknowledged", icon: CheckCircle },
+    in_transit: { color: "bg-indigo-500", label: "In Transit", icon: Truck },
+    closed: { color: "bg-slate-500", label: "Closed", icon: CheckCircle },
+    pending_reconciliation: { color: "bg-amber-500", label: "Pending Recon", icon: Clock },
+    completed: { color: "bg-green-600", label: "Completed", icon: CheckCircle },
+  };
+  const config = configs[status] || {
+    color: "bg-slate-500",
+    label: status?.replace(/_/g, " ") || "Unknown",
+    icon: CheckCircle,
+  };
+  const Icon = config.icon;
+  return (
+    <Badge className={`${config.color} text-white flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-medium`}>
+      <Icon className="h-3 w-3" />
+      {config.label}
+    </Badge>
+  );
+};
+
+// ============================================
 // RECEIPT VERIFICATION MODAL
 // ============================================
 
-const ReceiptVerificationModal = ({
-  isOpen,
-  onClose,
-  receipt,
-  onVerify,
-  onRefresh,
-}) => {
+const ReceiptVerificationModal = ({ isOpen, onClose, receipt, onVerify, onRefresh }) => {
   const [verifying, setVerifying] = useState(false);
 
   if (!isOpen || !receipt) return null;
@@ -281,25 +338,6 @@ const ReceiptVerificationModal = ({
     } finally {
       setVerifying(false);
     }
-  };
-
-  const formatDate = (date) => {
-    if (!date) return "N/A";
-    return new Date(date).toLocaleDateString("en-PH", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    });
-  };
-
-  const formatCurrency = (amount) => {
-    const numAmount = parseFloat(amount);
-    if (isNaN(numAmount) || numAmount === 0) return "₱0.00";
-    return new Intl.NumberFormat("en-PH", {
-      style: "currency",
-      currency: "PHP",
-      minimumFractionDigits: 2,
-    }).format(numAmount);
   };
 
   const isVerified = receipt.status === "verified";
@@ -416,7 +454,13 @@ const MayorPending = () => {
   const { isConnected } = useRealtime();
   const queryClient = useQueryClient();
   const toastIdRef = useRef(null);
-  
+
+  // ============================================
+  // ✅ TAB STATE
+  // ============================================
+  const [activeTab, setActiveTab] = useState("pending"); // 'pending' | 'released'
+
+  // Pending state
   const [tickets, setTickets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedTicket, setSelectedTicket] = useState(null);
@@ -431,7 +475,7 @@ const MayorPending = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [departmentFilter, setDepartmentFilter] = useState("all");
 
-  // ✅ Cancel state
+  // Cancel state
   const [showCancelDialog, setShowCancelDialog] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
   const [cancelling, setCancelling] = useState(false);
@@ -444,7 +488,7 @@ const MayorPending = () => {
   const [isCrossDepartment, setIsCrossDepartment] = useState(false);
   const [crossDepartmentReason, setCrossDepartmentReason] = useState("");
 
-  // ✅ Requesting Department's balance state
+  // Requesting department balance state
   const [requestingDeptBalance, setRequestingDeptBalance] = useState(null);
   const [loadingBalance, setLoadingBalance] = useState(false);
 
@@ -459,29 +503,25 @@ const MayorPending = () => {
   const [approveErrors, setApproveErrors] = useState({});
   const [approveTouched, setApproveTouched] = useState({});
 
-  // ============================================
-  // ✅ STATUSES THAT CAN BE CANCELLED BY MAYOR'S OFFICE
-  // ============================================
-  const CANCELLABLE_STATUSES = [
-    "pending_mayors_office",
-    "returned_for_revision",
-  ];
-
-  const canCancelTicket = (status) => {
-    return CANCELLABLE_STATUSES.includes(status);
-  };
+  // Released tickets state
+  const [releasedTickets, setReleasedTickets] = useState([]);
+  const [loadingReleased, setLoadingReleased] = useState(false);
 
   // ============================================
-  // REFRESH FUNCTION
+  // STATUSES THAT CAN BE CANCELLED BY MAYOR'S OFFICE
   // ============================================
+  const CANCELLABLE_STATUSES = ["pending_mayors_office", "returned_for_revision"];
 
-  const fetchAllData = useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: ["mayor-pending-tickets"] });
-  }, [queryClient]);
+  const canCancelTicket = (status) => CANCELLABLE_STATUSES.includes(status);
 
   // ============================================
   // AUTO-REFRESH
   // ============================================
+
+  const fetchAllData = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ["mayor-pending-tickets"] });
+    queryClient.invalidateQueries({ queryKey: ["mayor-approved-tickets"] });
+  }, [queryClient]);
 
   useAutoRefresh(
     [
@@ -491,13 +531,14 @@ const MayorPending = () => {
       "mayor-trip-cancelled",
       "gso-funds-released",
       "trip-completed",
+      "trip-started",
       "new-notification",
     ],
     fetchAllData
   );
 
   // ============================================
-  // FETCH TICKETS
+  // FETCH PENDING TICKETS
   // ============================================
 
   const fetchTickets = useCallback(async () => {
@@ -507,16 +548,43 @@ const MayorPending = () => {
       const ticketsData = response.data?.data || response.data || [];
       setTickets(Array.isArray(ticketsData) ? ticketsData : []);
     } catch (error) {
-      console.error("Failed to fetch tickets:", error);
+      console.error("Failed to fetch pending tickets:", error);
       toast.error("Failed to load tickets");
     } finally {
       setLoading(false);
     }
   }, []);
 
+  // ============================================
+  // FETCH RELEASED TICKETS
+  // ============================================
+
+  const fetchReleasedTickets = useCallback(async () => {
+    setLoadingReleased(true);
+    try {
+      const response = await mayorsOfficeAPI.getApprovedTickets();
+      const ticketsData = response.data?.data || response.data || [];
+      setReleasedTickets(Array.isArray(ticketsData) ? ticketsData : []);
+    } catch (error) {
+      console.error("Failed to fetch released tickets:", error);
+    } finally {
+      setLoadingReleased(false);
+    }
+  }, []);
+
+  // ============================================
+  // INITIAL LOAD
+  // ============================================
+
   useEffect(() => {
     fetchTickets();
   }, [fetchTickets]);
+
+  useEffect(() => {
+    if (activeTab === "released") {
+      fetchReleasedTickets();
+    }
+  }, [activeTab, fetchReleasedTickets]);
 
   // ============================================
   // FILTERS
@@ -549,7 +617,7 @@ const MayorPending = () => {
   });
 
   // ============================================
-  // STATS
+  // STATS (Pending)
   // ============================================
 
   const stats = [
@@ -563,7 +631,7 @@ const MayorPending = () => {
     },
     {
       title: "Today's Trips",
-      value: tickets.filter(t => {
+      value: tickets.filter((t) => {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         const tripDate = new Date(t.trip_date);
@@ -576,7 +644,7 @@ const MayorPending = () => {
     },
     {
       title: "Past Trips",
-      value: tickets.filter(t => {
+      value: tickets.filter((t) => {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         const tripDate = new Date(t.trip_date);
@@ -589,7 +657,7 @@ const MayorPending = () => {
     },
     {
       title: "Future Trips",
-      value: tickets.filter(t => {
+      value: tickets.filter((t) => {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         const tripDate = new Date(t.trip_date);
@@ -603,47 +671,91 @@ const MayorPending = () => {
   ];
 
   // ============================================
+  // STATS (Released)
+  // ============================================
+
+  const releasedStats = useMemo(() => {
+    const totalAmount = releasedTickets.reduce(
+      (sum, t) => sum + safeAmount(t.amount_released),
+      0
+    );
+    const avgAmount = releasedTickets.length > 0 ? totalAmount / releasedTickets.length : 0;
+    const inTransitCount = releasedTickets.filter((t) => t.status === "in_transit").length;
+    const crossDepartmentCount = releasedTickets.filter((t) => t.is_cross_department).length;
+
+    return [
+      {
+        title: "Total Released",
+        value: releasedTickets.length,
+        icon: CheckCircle,
+        color: "from-emerald-500 to-emerald-600",
+        subtitle: "Completed transactions",
+        trend: releasedTickets.length > 0 ? 8 : 0,
+      },
+      {
+        title: "Total Amount",
+        value: formatCurrency(totalAmount),
+        icon: DollarSign,
+        color: "from-blue-500 to-blue-600",
+        subtitle: "Total funds released",
+        trend: totalAmount > 0 ? 5 : 0,
+      },
+      {
+        title: "Avg. Amount",
+        value: formatCurrency(avgAmount),
+        icon: Wallet,
+        color: "from-purple-500 to-purple-600",
+        subtitle: "Per trip average",
+      },
+      {
+        title: "In Transit",
+        value: inTransitCount,
+        icon: Truck,
+        color: "from-indigo-500 to-indigo-600",
+        subtitle: `${crossDepartmentCount} cross-dept`,
+      },
+    ];
+  }, [releasedTickets]);
+
+  // ============================================
   // HELPERS
   // ============================================
 
   const checkTripDateValidation = (ticket) => {
     if (!ticket?.trip_date) return null;
-    
+
     const tripDate = new Date(ticket.trip_date);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     tripDate.setHours(0, 0, 0, 0);
-    
+
     const isToday = tripDate.getTime() === today.getTime();
     const isPast = tripDate.getTime() < today.getTime();
     const isFuture = tripDate.getTime() > today.getTime();
     const isTripFriday = tripDate.getDay() === 5;
-    
+
     const daysUntil = Math.ceil((tripDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-    
-    let category = 'today';
+
+    let category = "today";
     let canApprove = true;
-    
+
     if (isToday) {
-      category = 'today';
-      canApprove = true;
+      category = "today";
     } else if (isPast) {
-      category = 'past';
-      canApprove = true;
+      category = "past";
     } else if (isFuture && isTripFriday) {
-      category = 'future_friday';
-      canApprove = true;
+      category = "future_friday";
     } else if (isFuture && daysUntil === 1) {
-      category = 'tomorrow';
+      category = "tomorrow";
       canApprove = false;
     } else if (isFuture && daysUntil <= 7) {
-      category = 'this_week';
+      category = "this_week";
       canApprove = false;
     } else if (isFuture) {
-      category = 'future_long';
+      category = "future_long";
       canApprove = false;
     }
-    
+
     return {
       category,
       canApprove,
@@ -653,24 +765,30 @@ const MayorPending = () => {
       isTripFriday,
       tripDate,
       daysUntil,
-      dayName: tripDate.toLocaleDateString('en-US', { weekday: 'long' }),
-      formattedDate: tripDate.toLocaleDateString('en-US', { 
-        month: 'short', 
-        day: 'numeric', 
-        year: 'numeric' 
+      dayName: tripDate.toLocaleDateString("en-US", { weekday: "long" }),
+      formattedDate: tripDate.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
       }),
     };
   };
 
   const getEstimatedCost = (ticket) => {
     if (!ticket) return 0;
-    return ticket.estimated_cost || 
-           (ticket.estimated_fuel_liters ? ticket.estimated_fuel_liters * 88 : 0);
+    return ticket.estimated_cost || (ticket.estimated_fuel_liters ? ticket.estimated_fuel_liters * 88 : 0);
   };
 
-  // ============================================
-  // ✅ FETCH REQUESTING DEPARTMENT'S BALANCE
-  // ============================================
+  const getDriverName = (ticket) => {
+    if (!ticket) return "N/A";
+    return (
+      ticket.driver_name ||
+      ticket.driver?.full_name ||
+      ticket.driver?.name ||
+      ticket.driver?.user?.full_name ||
+      "N/A"
+    );
+  };
 
   const fetchDepartmentBalance = useCallback(async (departmentId) => {
     if (!departmentId) {
@@ -681,14 +799,14 @@ const MayorPending = () => {
     setLoadingBalance(true);
     try {
       let dept = null;
-      
+
       try {
-        const budgetResponse = await mayorsOfficeAPI.getAnnualBudgets({ 
-          department_id: departmentId 
+        const budgetResponse = await mayorsOfficeAPI.getAnnualBudgets({
+          department_id: departmentId,
         });
         const budgets = budgetResponse.data?.data || budgetResponse.data || [];
-        dept = Array.isArray(budgets) 
-          ? budgets.find(d => String(d.department_id) === String(departmentId))
+        dept = Array.isArray(budgets)
+          ? budgets.find((d) => String(d.department_id) === String(departmentId))
           : null;
       } catch (e) {
         console.warn("getAnnualBudgets failed, trying getAllDepartmentsWithBudget");
@@ -697,29 +815,28 @@ const MayorPending = () => {
       if (!dept) {
         const response = await mayorsOfficeAPI.getAllDepartmentsWithBudget();
         const depts = response.data?.data || response.data || [];
-        dept = depts.find(d => String(d.department_id) === String(departmentId));
+        dept = depts.find((d) => String(d.department_id) === String(departmentId));
       }
 
       if (dept) {
         const weeklyCeiling = parseFloat(
-          dept.weekly_ceiling || 
-          dept.weekly_allocation || 
-          dept.weekly_budget || 
-          dept.current_weekly_allocation || 
-          0
+          dept.weekly_ceiling ||
+            dept.weekly_allocation ||
+            dept.weekly_budget ||
+            dept.current_weekly_allocation ||
+            0
         );
 
         const weeklyUsed = parseFloat(
-          dept.weekly_used || 
-          dept.weekly_spent || 
-          dept.current_weekly_used || 
-          0
+          dept.weekly_used || dept.weekly_spent || dept.current_weekly_used || 0
         );
 
         const weeklyRemaining = parseFloat(
-          dept.weekly_remaining !== undefined ? dept.weekly_remaining :
-          dept.current_weekly_remaining !== undefined ? dept.current_weekly_remaining :
-          (weeklyCeiling - weeklyUsed)
+          dept.weekly_remaining !== undefined
+            ? dept.weekly_remaining
+            : dept.current_weekly_remaining !== undefined
+            ? dept.current_weekly_remaining
+            : weeklyCeiling - weeklyUsed
         );
 
         setRequestingDeptBalance({
@@ -738,40 +855,32 @@ const MayorPending = () => {
         setRequestingDeptBalance(null);
       }
     } catch (error) {
-      console.error('Failed to fetch department balance:', error);
+      console.error("Failed to fetch department balance:", error);
       setRequestingDeptBalance(null);
     } finally {
       setLoadingBalance(false);
     }
   }, []);
 
-  // ============================================
-  // ✅ FETCH ALL DEPARTMENTS
-  // ============================================
-
   const fetchAllDepartments = useCallback(async () => {
     try {
       const response = await mayorsOfficeAPI.getAllDepartmentsForSelector();
       const depts = response.data?.data || [];
-      
+
       if (depts.length > 0) {
         setAvailableDepartments(depts);
       } else {
         const uniqueDepts = [
           ...new Map(
-            tickets.map((ticket) => [ticket.department_id, ticket.department_name]),
+            tickets.map((ticket) => [ticket.department_id, ticket.department_name])
           ).entries(),
         ].map(([id, name]) => ({ department_id: id, department_name: name }));
         setAvailableDepartments(uniqueDepts);
       }
     } catch (error) {
-      console.error('Failed to fetch departments:', error);
+      console.error("Failed to fetch departments:", error);
     }
   }, [tickets]);
-
-  // ============================================
-  // VALIDATION FOR APPROVE DIALOG
-  // ============================================
 
   const validateApprove = () => {
     const newErrors = {};
@@ -792,33 +901,37 @@ const MayorPending = () => {
       newTouched.crossReason = true;
     }
 
-    // ✅ Ensure cross-department is selecting a DIFFERENT department
     if (isCrossDepartment && selectedTicket) {
       const requestingDeptId = String(selectedTicket.department_id);
       if (String(chargeToDepartmentId) === requestingDeptId) {
-        newErrors.crossReason = "Cross-department requires a different charge-to department. Please select another or uncheck.";
+        newErrors.crossReason =
+          "Cross-department requires a different charge-to department. Please select another or uncheck.";
         newTouched.crossReason = true;
       }
     }
 
     setApproveErrors(newErrors);
-    setApproveTouched(prev => ({ ...prev, ...newTouched }));
+    setApproveTouched((prev) => ({ ...prev, ...newTouched }));
 
     if (Object.keys(newErrors).length > 0) {
       const errorMessages = Object.entries(newErrors).map(([field, msg]) => {
         const labels = {
-          amount: 'Amount',
-          forceReason: 'Force Approve Reason',
-          crossReason: 'Cross-Department Reason',
+          amount: "Amount",
+          forceReason: "Force Approve Reason",
+          crossReason: "Cross-Department Reason",
         };
-        const label = labels[field] || field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+        const label =
+          labels[field] ||
+          field.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase());
         return `• ${label}: ${msg}`;
       });
 
       if (toastIdRef.current) toast.dismiss(toastIdRef.current);
       toastIdRef.current = toast.error(
         <div className="space-y-1">
-          <div className="font-semibold text-red-600 dark:text-red-400">Please fix the following errors:</div>
+          <div className="font-semibold text-red-600 dark:text-red-400">
+            Please fix the following errors:
+          </div>
           <div className="text-sm text-red-500 dark:text-red-300 space-y-0.5">
             {errorMessages.map((msg, i) => (
               <div key={i}>{msg}</div>
@@ -832,16 +945,12 @@ const MayorPending = () => {
     return true;
   };
 
-  // ============================================
-  // OPEN APPROVE DIALOG
-  // ============================================
-
   const openApproveDialog = async (ticket) => {
     setSelectedTicket(ticket);
     setAmountReleased("");
     setApproveErrors({});
     setApproveTouched({});
-    
+
     setIsCrossDepartment(false);
     setCrossDepartmentReason("");
     setIsForceApprove(false);
@@ -849,37 +958,27 @@ const MayorPending = () => {
 
     const validation = checkTripDateValidation(ticket);
     setTripDateValidation(validation);
-    
+
     if (validation && !validation.canApprove) {
       toast.error(`This trip is scheduled for ${validation.formattedDate}.`, { duration: 6000 });
     }
 
-    const requestingDeptId = ticket.department_id?.toString() ||
+    const requestingDeptId =
+      ticket.department_id?.toString() ||
       ticket.department?.id?.toString() ||
       ticket.department?.department_id?.toString();
     setChargeToDepartmentId(requestingDeptId || "");
 
-    await Promise.all([
-      fetchDepartmentBalance(ticket.department_id),
-      fetchAllDepartments(),
-    ]);
+    await Promise.all([fetchDepartmentBalance(ticket.department_id), fetchAllDepartments()]);
 
     setShowApproveDialog(true);
   };
-
-  // ============================================
-  // ✅ OPEN CANCEL DIALOG
-  // ============================================
 
   const openCancelDialog = (ticket) => {
     setSelectedTicket(ticket);
     setCancelReason("");
     setShowCancelDialog(true);
   };
-
-  // ============================================
-  // ✅ HANDLE CANCEL
-  // ============================================
 
   const handleCancel = async () => {
     if (!selectedTicket) return;
@@ -894,16 +993,11 @@ const MayorPending = () => {
     try {
       const ticketId = selectedTicket.id || selectedTicket.trip_ticket_id;
 
-      // Try MO cancel endpoint first, fallback to gsoAPI
       let response;
       if (mayorsOfficeAPI.cancelTicket) {
-        response = await mayorsOfficeAPI.cancelTicket(ticketId, {
-          reason: cancelReason,
-        });
+        response = await mayorsOfficeAPI.cancelTicket(ticketId, { reason: cancelReason });
       } else if (mayorsOfficeAPI.cancelTrip) {
-        response = await mayorsOfficeAPI.cancelTrip(ticketId, {
-          reason: cancelReason,
-        });
+        response = await mayorsOfficeAPI.cancelTrip(ticketId, { reason: cancelReason });
       } else {
         throw new Error("Cancel endpoint not available");
       }
@@ -939,7 +1033,7 @@ const MayorPending = () => {
     const receipt = {
       id: fuelLog.fuel_log_id || fuelLog.id,
       ticket_number: ticket.ticket_number || ticket.trip_ticket_number,
-      driver_name: ticket.driver?.full_name || ticket.driver_name || "N/A",
+      driver_name: getDriverName(ticket),
       plate_number: ticket.vehicle?.plate_number || "N/A",
       liters: fuelLog.liters_availed || 0,
       amount: fuelLog.amount_on_receipt || 0,
@@ -964,19 +1058,13 @@ const MayorPending = () => {
     }
   };
 
-  // ============================================
-  // HANDLE APPROVE
-  // ============================================
-
   const handleApprove = async () => {
     if (!selectedTicket) {
       toast.error("No ticket selected");
       return;
     }
 
-    if (!validateApprove()) {
-      return;
-    }
+    if (!validateApprove()) return;
 
     let finalChargeDeptId = chargeToDepartmentId;
     if (!finalChargeDeptId && selectedTicket?.department_id) {
@@ -1000,20 +1088,25 @@ const MayorPending = () => {
           cross_department_reason: crossDepartmentReason || null,
           force_approve: isForceApprove,
           force_approve_reason: forceApproveReason || null,
-        },
+        }
       );
 
       if (response.data.success) {
         let successMessage = response.data.message || "Funds released successfully!";
         if (isForceApprove) {
-          successMessage = "⚠️ Funds released EARLY!\n\n" +
-            "Trip Date: " + selectedTicket.trip_date + "\n" +
-            "Reason: " + forceApproveReason + "\n\n" +
+          successMessage =
+            "⚠️ Funds released EARLY!\n\n" +
+            "Trip Date: " +
+            selectedTicket.trip_date +
+            "\n" +
+            "Reason: " +
+            forceApproveReason +
+            "\n\n" +
             "✅ This action has been recorded in the audit log.";
         }
         if (toastIdRef.current) toast.dismiss(toastIdRef.current);
         toastIdRef.current = toast.success(successMessage);
-        
+
         setShowApproveDialog(false);
         setSelectedTicket(null);
         setAmountReleased("");
@@ -1026,17 +1119,19 @@ const MayorPending = () => {
         setApproveTouched({});
         setRequestingDeptBalance(null);
         fetchTickets();
+
+        if (activeTab === "released") fetchReleasedTickets();
       }
     } catch (error) {
       console.error("API Error:", error);
       const errorMessage = error.response?.data?.message || "Failed to release funds";
       if (toastIdRef.current) toast.dismiss(toastIdRef.current);
       toastIdRef.current = toast.error(errorMessage);
-      
+
       if (error.response?.data?.budget_info) {
         const budgetInfo = error.response.data.budget_info;
         toast.error(
-          `Budget insufficient: ₱${budgetInfo.remaining?.toLocaleString()} remaining, ₱${budgetInfo.requested?.toLocaleString()} requested`,
+          `Budget insufficient: ₱${budgetInfo.remaining?.toLocaleString()} remaining, ₱${budgetInfo.requested?.toLocaleString()} requested`
         );
       }
     } finally {
@@ -1046,12 +1141,12 @@ const MayorPending = () => {
 
   const handleReject = async () => {
     if (!selectedTicket) return;
-    
+
     if (!rejectionNote.trim()) {
       if (toastIdRef.current) toast.dismiss(toastIdRef.current);
       toastIdRef.current = toast.error("Please provide a reason for rejection");
-      setApproveErrors(prev => ({ ...prev, rejectNote: "Reason is required" }));
-      setApproveTouched(prev => ({ ...prev, rejectNote: true }));
+      setApproveErrors((prev) => ({ ...prev, rejectNote: "Reason is required" }));
+      setApproveTouched((prev) => ({ ...prev, rejectNote: true }));
       return;
     }
 
@@ -1059,7 +1154,7 @@ const MayorPending = () => {
     try {
       await mayorsOfficeAPI.rejectTicket(
         selectedTicket.id || selectedTicket.trip_ticket_id,
-        rejectionNote,
+        rejectionNote
       );
       setShowRejectDialog(false);
       setSelectedTicket(null);
@@ -1072,7 +1167,9 @@ const MayorPending = () => {
     } catch (error) {
       console.error("Failed to reject ticket:", error);
       if (toastIdRef.current) toast.dismiss(toastIdRef.current);
-      toastIdRef.current = toast.error(error.response?.data?.message || "Failed to reject ticket");
+      toastIdRef.current = toast.error(
+        error.response?.data?.message || "Failed to reject ticket"
+      );
     } finally {
       setSubmitting(false);
     }
@@ -1081,7 +1178,7 @@ const MayorPending = () => {
   const handleViewGasSlip = (ticket) => {
     const ticketWithDriver = {
       ...ticket,
-      driver_name: ticket.driver?.full_name || ticket.driver_name || "N/A",
+      driver_name: getDriverName(ticket),
     };
     setSelectedGasSlipTicket(ticketWithDriver);
     setShowGasSlip(true);
@@ -1102,30 +1199,9 @@ const MayorPending = () => {
     );
   };
 
-  const formatDate = (dateString) => {
-    if (!dateString) return "N/A";
-    return new Date(dateString).toLocaleDateString("en-PH", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    });
-  };
-
-  const formatCurrency = (amount) => {
-    const numAmount = parseFloat(amount);
-    if (isNaN(numAmount) || numAmount === 0) return "₱0.00";
-    return new Intl.NumberFormat("en-PH", {
-      style: "currency",
-      currency: "PHP",
-      minimumFractionDigits: 2,
-    }).format(numAmount);
-  };
-
   const hasFuelReceipt = (ticket) => {
     const fuelLog = ticket.fuel_log || ticket.fuelLog;
-    return (
-      fuelLog && (fuelLog.liters_availed > 0 || fuelLog.amount_on_receipt > 0)
-    );
+    return fuelLog && (fuelLog.liters_availed > 0 || fuelLog.amount_on_receipt > 0);
   };
 
   const hasActiveFilters = searchTerm !== "" || departmentFilter !== "all";
@@ -1133,8 +1209,7 @@ const MayorPending = () => {
   const connectionStatus = isConnected ? "🟢 Live" : "🔴 Offline";
   const isRealTime = isConnected;
 
-  // ✅ Computed: Balance after release
-  const balanceAfterRelease = React.useMemo(() => {
+  const balanceAfterRelease = useMemo(() => {
     if (!requestingDeptBalance || !amountReleased) return null;
     const amount = parseFloat(amountReleased) || 0;
     return {
@@ -1146,22 +1221,30 @@ const MayorPending = () => {
   }, [requestingDeptBalance, amountReleased]);
 
   // ============================================
-  // RENDER
+  // LOADING STATE
   // ============================================
 
-  if (loading) {
+  if (loading && activeTab === "pending") {
     return (
       <div className="flex justify-center items-center h-96">
         <div className="text-center">
           <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-yellow-500 to-yellow-600 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-yellow-500/20">
             <Loader2 className="h-8 w-8 text-white animate-spin" />
           </div>
-          <p className="text-slate-600 dark:text-slate-400 font-medium">Loading pending tickets...</p>
-          <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">Please wait while we fetch your data</p>
+          <p className="text-slate-600 dark:text-slate-400 font-medium">
+            Loading pending tickets...
+          </p>
+          <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">
+            Please wait while we fetch your data
+          </p>
         </div>
       </div>
     );
   }
+
+  // ============================================
+  // RENDER
+  // ============================================
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
@@ -1172,7 +1255,7 @@ const MayorPending = () => {
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => navigate('/mo/dashboard')}
+              onClick={() => navigate("/mo/dashboard")}
               className="rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 h-10 w-10"
             >
               <ArrowLeft className="h-5 w-5" />
@@ -1180,14 +1263,14 @@ const MayorPending = () => {
             <div>
               <div className="flex items-center gap-3">
                 <div className="p-2.5 rounded-xl bg-gradient-to-br from-yellow-500 to-yellow-600 shadow-lg shadow-yellow-500/20">
-                  <Clock className="h-5 w-5 text-white" />
+                  <PhilippinePeso className="h-5 w-5 text-white" />
                 </div>
                 <div>
                   <h1 className="text-2xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 bg-clip-text text-transparent">
-                    Pending Fund Release
+                   Disbursement Approval
                   </h1>
                   <p className="text-sm text-slate-500 dark:text-slate-400">
-                    Review and approve trip tickets awaiting fund release
+                    Review pending tickets and manage released funds
                     <span className="ml-2 text-xs opacity-70">{connectionStatus}</span>
                     {isRealTime && (
                       <span className="ml-2 text-xs text-emerald-400 animate-pulse">
@@ -1201,261 +1284,570 @@ const MayorPending = () => {
           </div>
         </div>
 
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {stats.map((stat, index) => (
-            <StatsCard key={index} {...stat} />
-          ))}
+        {/* ============================================ */}
+        {/* ✅ TABS: Pending / Released */}
+        {/* ============================================ */}
+        <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-700 pb-0">
+          <button
+            onClick={() => setActiveTab("pending")}
+            className={cn(
+              "px-4 py-2.5 text-sm font-medium rounded-t-lg transition-all duration-200 flex items-center gap-2 relative",
+              activeTab === "pending"
+                ? "text-yellow-600 dark:text-yellow-400 bg-white dark:bg-slate-800 border-b-2 border-yellow-500 -mb-px"
+                : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/50"
+            )}
+          >
+            <Clock className="h-4 w-4" />
+            Pending Release
+            {tickets.length > 0 && (
+              <Badge
+                className={cn(
+                  "ml-1 text-[10px] px-1.5 py-0 h-5",
+                  activeTab === "pending"
+                    ? "bg-yellow-500 text-white"
+                    : "bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300"
+                )}
+              >
+                {tickets.length}
+              </Badge>
+            )}
+          </button>
+
+          <button
+            onClick={() => setActiveTab("released")}
+            className={cn(
+              "px-4 py-2.5 text-sm font-medium rounded-t-lg transition-all duration-200 flex items-center gap-2 relative",
+              activeTab === "released"
+                ? "text-emerald-600 dark:text-emerald-400 bg-white dark:bg-slate-800 border-b-2 border-emerald-500 -mb-px"
+                : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/50"
+            )}
+          >
+            <CheckCircle className="h-4 w-4" />
+            Funds Released
+            {releasedTickets.length > 0 && (
+              <Badge
+                className={cn(
+                  "ml-1 text-[10px] px-1.5 py-0 h-5",
+                  activeTab === "released"
+                    ? "bg-emerald-500 text-white"
+                    : "bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300"
+                )}
+              >
+                {releasedTickets.length}
+              </Badge>
+            )}
+          </button>
         </div>
 
-        {/* Filters */}
-        <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-          <div
-            className="px-6 py-4 border-b dark:border-slate-700 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors rounded-t-2xl"
-            onClick={() => setShowFilters(!showFilters)}
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Filter className="h-4 w-4 text-slate-500" />
-                <span className="font-medium text-slate-700 dark:text-slate-300">
-                  Filters
-                </span>
-                {hasActiveFilters && (
-                  <Badge className="bg-blue-500/20 text-blue-600 dark:text-blue-400 border-blue-500/30">
-                    Active
-                  </Badge>
-                )}
-              </div>
-              {showFilters ? (
-                <ChevronUp className="h-4 w-4 text-slate-500" />
-              ) : (
-                <ChevronDown className="h-4 w-4 text-slate-500" />
-              )}
+        {/* ============================================ */}
+        {/* ✅ PENDING TAB CONTENT */}
+        {/* ============================================ */}
+        {activeTab === "pending" && (
+          <>
+            {/* Stats Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {stats.map((stat, index) => (
+                <StatsCard key={index} {...stat} />
+              ))}
             </div>
-          </div>
 
-          {showFilters && (
-            <div className="p-6">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                  <Input
-                    placeholder="Search tickets..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-10 dark:bg-slate-900 dark:border-slate-700 dark:text-white"
-                  />
-                </div>
-                <select
-                  value={departmentFilter}
-                  onChange={(e) => setDepartmentFilter(e.target.value)}
-                  className="px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-900 dark:text-white"
-                >
-                  <option value="all">All Departments</option>
-                  {uniqueDepartments.map((dept) => (
-                    <option key={dept.department_id} value={dept.department_id}>
-                      {dept.department_name}
-                    </option>
-                  ))}
-                </select>
-                {hasActiveFilters && (
-                  <Button
-                    variant="outline"
-                    onClick={clearFilters}
-                    className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30"
-                  >
-                    <X className="h-4 w-4 mr-2" />
-                    Clear Filters
-                  </Button>
-                )}
-              </div>
-            </div>
-          )}
-        </Card>
-
-        {/* Tickets Table */}
-        <Card className="dark:bg-slate-800/80 dark:border-slate-700 shadow-xl shadow-black/5">
-          <CardHeader className="border-b border-slate-200/60 dark:border-slate-700/60">
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="flex items-center gap-2 text-slate-800 dark:text-white">
-                  <Clock className="h-5 w-5 text-yellow-500" />
-                  Pending Tickets
-                </CardTitle>
-                <CardDescription className="dark:text-slate-400">
-                  {filteredTickets.length} ticket{filteredTickets.length !== 1 ? 's' : ''} found
-                  {filteredTickets.length !== tickets.length && ` (filtered from ${tickets.length} total)`}
-                  {isRealTime && (
-                    <span className="ml-2 text-xs text-emerald-500 animate-pulse">
-                      ● Live updates
-                    </span>
+            {/* Filters */}
+            <Card className="dark:bg-slate-800/80 dark:border-slate-700">
+              <div
+                className="px-6 py-4 border-b dark:border-slate-700 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors rounded-t-2xl"
+                onClick={() => setShowFilters(!showFilters)}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Filter className="h-4 w-4 text-slate-500" />
+                    <span className="font-medium text-slate-700 dark:text-slate-300">Filters</span>
+                    {hasActiveFilters && (
+                      <Badge className="bg-blue-500/20 text-blue-600 dark:text-blue-400 border-blue-500/30">
+                        Active
+                      </Badge>
+                    )}
+                  </div>
+                  {showFilters ? (
+                    <ChevronUp className="h-4 w-4 text-slate-500" />
+                  ) : (
+                    <ChevronDown className="h-4 w-4 text-slate-500" />
                   )}
-                </CardDescription>
-              </div>
-              {filteredTickets.length > 0 && (
-                <Badge className="bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 border-yellow-500/30">
-                  <Zap className="h-3 w-3 mr-1" />
-                  {filteredTickets.length} records
-                </Badge>
-              )}
-            </div>
-          </CardHeader>
-          <CardContent className="pt-6 p-0">
-            {filteredTickets.length === 0 ? (
-              <div className="text-center py-16">
-                <div className="w-20 h-20 rounded-2xl bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center mx-auto mb-4">
-                  <CheckCircle className="h-10 w-10 text-emerald-500" />
                 </div>
-                <p className="text-slate-600 dark:text-slate-400 font-medium text-lg">No pending tickets</p>
-                <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">
-                  {hasActiveFilters ? 'Try adjusting your filters' : 'All tickets have been processed'}
-                </p>
               </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="bg-slate-50 dark:bg-slate-900/50">
-                      <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Ticket #</TableHead>
-                      <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Date</TableHead>
-                      <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Destination</TableHead>
-                      <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Department</TableHead>
-                      <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Vehicle</TableHead>
-                      <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Driver</TableHead>
-                      <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Trip Date</TableHead>
-                      <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Status</TableHead>
-                      <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredTickets.map((ticket, index) => (
-                      <TableRow
-                        key={ticket.id || ticket.trip_ticket_id}
-                        className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors group"
+
+              {showFilters && (
+                <div className="p-6">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                      <Input
+                        placeholder="Search tickets..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="pl-10 dark:bg-slate-900 dark:border-slate-700 dark:text-white"
+                      />
+                    </div>
+                    <select
+                      value={departmentFilter}
+                      onChange={(e) => setDepartmentFilter(e.target.value)}
+                      className="px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-900 dark:text-white"
+                    >
+                      <option value="all">All Departments</option>
+                      {uniqueDepartments.map((dept) => (
+                        <option key={dept.department_id} value={dept.department_id}>
+                          {dept.department_name}
+                        </option>
+                      ))}
+                    </select>
+                    {hasActiveFilters && (
+                      <Button
+                        variant="outline"
+                        onClick={clearFilters}
+                        className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30"
                       >
-                        <TableCell className="font-mono text-sm font-semibold text-slate-800 dark:text-white">
-                          {ticket.ticket_number || ticket.trip_ticket_number}
-                        </TableCell>
-                        <TableCell className="text-slate-600 dark:text-slate-400">
-                          {formatDate(ticket.trip_date)}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-1">
-                            <MapPin className="h-3 w-3 text-slate-400 flex-shrink-0" />
-                            <span className="text-slate-600 dark:text-slate-400">
-                              {ticket.destination}
-                            </span>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-1">
-                            <Building2 className="h-3 w-3 text-slate-400 flex-shrink-0" />
-                            <span className="text-slate-600 dark:text-slate-400">
-                              {ticket.department_name}
-                            </span>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-1">
-                            <Truck className="h-3 w-3 text-slate-400 flex-shrink-0" />
-                            <span className="text-slate-600 dark:text-slate-400">
-                              {ticket.vehicle?.plate_number || "N/A"}
-                            </span>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-1">
-                            <User className="h-3 w-3 text-slate-400 flex-shrink-0" />
-                            <span className="text-slate-600 dark:text-slate-400">
-                              {ticket.driver?.full_name || "N/A"}
-                            </span>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <TripDateBadge ticket={ticket} />
-                        </TableCell>
-                        <TableCell>
-                          {getStatusBadge(ticket.has_insufficient_budget)}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex items-center justify-end gap-1">
-                            {/* View Details */}
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => {
-                                const ticketId = ticket.id || ticket.trip_ticket_id;
-                                navigate(`/mayor/trip-ticket/${ticketId}`);
-                              }}
-                              className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:text-blue-300 dark:hover:bg-blue-950/30 h-9 w-9 p-0 rounded-lg transition-all duration-200 group-hover:scale-110"
-                              title="View Details"
+                        <X className="h-4 w-4 mr-2" />
+                        Clear Filters
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </Card>
+
+            {/* Pending Tickets Table */}
+            <Card className="dark:bg-slate-800/80 dark:border-slate-700 shadow-xl shadow-black/5">
+              <CardHeader className="border-b border-slate-200/60 dark:border-slate-700/60">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="flex items-center gap-2 text-slate-800 dark:text-white">
+                      <Clock className="h-5 w-5 text-yellow-500" />
+                      Pending Tickets
+                    </CardTitle>
+                    <CardDescription className="dark:text-slate-400">
+                      {filteredTickets.length} ticket{filteredTickets.length !== 1 ? "s" : ""} found
+                      {filteredTickets.length !== tickets.length &&
+                        ` (filtered from ${tickets.length} total)`}
+                      {isRealTime && (
+                        <span className="ml-2 text-xs text-emerald-500 animate-pulse">
+                          ● Live updates
+                        </span>
+                      )}
+                    </CardDescription>
+                  </div>
+                  {filteredTickets.length > 0 && (
+                    <Badge className="bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 border-yellow-500/30">
+                      <Zap className="h-3 w-3 mr-1" />
+                      {filteredTickets.length} records
+                    </Badge>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent className="pt-6 p-0">
+                {filteredTickets.length === 0 ? (
+                  <div className="text-center py-16">
+                    <div className="w-20 h-20 rounded-2xl bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center mx-auto mb-4">
+                      <CheckCircle className="h-10 w-10 text-emerald-500" />
+                    </div>
+                    <p className="text-slate-600 dark:text-slate-400 font-medium text-lg">
+                      No pending tickets
+                    </p>
+                    <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">
+                      {hasActiveFilters
+                        ? "Try adjusting your filters"
+                        : "All tickets have been processed"}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="bg-slate-50 dark:bg-slate-900/50">
+                          <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
+                            Ticket #
+                          </TableHead>
+                          <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
+                            Date
+                          </TableHead>
+                          <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
+                            Destination
+                          </TableHead>
+                          <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
+                            Department
+                          </TableHead>
+                          <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
+                            Vehicle
+                          </TableHead>
+                          <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
+                            Driver
+                          </TableHead>
+                          <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
+                            Trip Date
+                          </TableHead>
+                          <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
+                            Status
+                          </TableHead>
+                          <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
+                            Actions
+                          </TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {filteredTickets.map((ticket) => (
+                          <TableRow
+                            key={ticket.id || ticket.trip_ticket_id}
+                            className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors group"
+                          >
+                            <TableCell className="font-mono text-sm font-semibold text-slate-800 dark:text-white">
+                              {ticket.ticket_number || ticket.trip_ticket_number}
+                            </TableCell>
+                            <TableCell className="text-slate-600 dark:text-slate-400">
+                              {formatDate(ticket.trip_date)}
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-1">
+                                <MapPin className="h-3 w-3 text-slate-400 flex-shrink-0" />
+                                <span className="text-slate-600 dark:text-slate-400 truncate max-w-[150px]">
+                                  {ticket.destination}
+                                </span>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-1">
+                                <Building2 className="h-3 w-3 text-slate-400 flex-shrink-0" />
+                                <span className="text-slate-600 dark:text-slate-400 truncate max-w-[130px]">
+                                  {ticket.department_name}
+                                </span>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-1">
+                                <Truck className="h-3 w-3 text-slate-400 flex-shrink-0" />
+                                <span className="text-slate-600 dark:text-slate-400">
+                                  {ticket.vehicle?.plate_number || "N/A"}
+                                </span>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-1">
+                                <User className="h-3 w-3 text-slate-400 flex-shrink-0" />
+                                <span className="text-slate-600 dark:text-slate-400 truncate max-w-[130px]">
+                                  {getDriverName(ticket)}
+                                </span>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <TripDateBadge ticket={ticket} />
+                            </TableCell>
+                            <TableCell>
+                              {getStatusBadge(ticket.has_insufficient_budget)}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex items-center justify-end gap-1">
+                                {/* View Details */}
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => {
+                                    const ticketId = ticket.id || ticket.trip_ticket_id;
+                                    navigate(`/mayor/trip-ticket/${ticketId}`);
+                                  }}
+                                  className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:text-blue-300 dark:hover:bg-blue-950/30 h-9 w-9 p-0 rounded-lg transition-all duration-200 group-hover:scale-110"
+                                  title="View Details"
+                                >
+                                  <Eye className="h-4 w-4" />
+                                </Button>
+
+                                {/* View Receipt */}
+                                {hasFuelReceipt(ticket) && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => openReceiptModal(ticket)}
+                                    className="text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:text-emerald-300 dark:hover:bg-emerald-950/30 h-9 w-9 p-0 rounded-lg transition-all duration-200 group-hover:scale-110"
+                                    title="View Fuel Receipt"
+                                  >
+                                    <Receipt className="h-4 w-4" />
+                                  </Button>
+                                )}
+
+                                {/* View Gas Slip */}
+                                {ticket.gas_slip && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleViewGasSlip(ticket)}
+                                    className="text-purple-600 hover:text-purple-700 hover:bg-purple-50 dark:text-purple-400 dark:hover:text-purple-300 dark:hover:bg-purple-950/30 h-9 w-9 p-0 rounded-lg transition-all duration-200 group-hover:scale-110"
+                                    title="View Gas Slip"
+                                  >
+                                    <Printer className="h-4 w-4" />
+                                  </Button>
+                                )}
+
+                                {/* Cancel Button */}
+                                {canCancelTicket(ticket.status) && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => openCancelDialog(ticket)}
+                                    className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:text-red-300 dark:hover:bg-red-950/30 h-9 px-3 border-red-200 dark:border-red-800 rounded-lg transition-all duration-200"
+                                    title="Cancel Ticket"
+                                  >
+                                    <Ban className="h-3.5 w-3.5 mr-1" />
+                                    Cancel
+                                  </Button>
+                                )}
+
+                                {/* Release Fund */}
+                                <Button
+                                  size="sm"
+                                  onClick={() => openApproveDialog(ticket)}
+                                  className={`h-9 px-4 rounded-lg shadow-md transition-all duration-200 hover:scale-105 active:scale-95 ${
+                                    checkTripDateValidation(ticket)?.canApprove
+                                      ? "bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 text-white"
+                                      : "bg-gradient-to-r from-orange-600 to-orange-700 hover:from-orange-700 hover:to-orange-800 text-white"
+                                  }`}
+                                >
+                                  <PhilippinePeso className="h-3.5 w-3.5 mr-1.5" />
+                                  Release
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </>
+        )}
+
+        {/* ============================================ */}
+        {/* ✅ RELEASED TAB CONTENT */}
+        {/* ============================================ */}
+        {activeTab === "released" && (
+          <>
+            {/* Released Stats Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {releasedStats.map((stat, index) => (
+                <StatsCard key={index} {...stat} />
+              ))}
+            </div>
+
+            {/* Released Tickets Table */}
+            <Card className="dark:bg-slate-800/80 dark:border-slate-700 shadow-xl shadow-black/5">
+              <CardHeader className="border-b border-slate-200/60 dark:border-slate-700/60">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="flex items-center gap-2 text-slate-800 dark:text-white">
+                      <CheckCircle className="h-5 w-5 text-emerald-500" />
+                      Released Tickets
+                    </CardTitle>
+                    <CardDescription className="dark:text-slate-400">
+                      {releasedTickets.length} ticket
+                      {releasedTickets.length !== 1 ? "s" : ""} found
+                      {isRealTime && (
+                        <span className="ml-2 text-xs text-emerald-500 animate-pulse">
+                          ● Live updates
+                        </span>
+                      )}
+                    </CardDescription>
+                  </div>
+                  {releasedTickets.length > 0 && (
+                    <Badge className="bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border-emerald-500/30">
+                      <Zap className="h-3 w-3 mr-1" />
+                      {releasedTickets.length} records
+                    </Badge>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent className="pt-6 p-0">
+                {loadingReleased ? (
+                  <div className="text-center py-16">
+                    <Loader2 className="h-8 w-8 animate-spin text-emerald-500 mx-auto mb-3" />
+                    <p className="text-slate-500 dark:text-slate-400">
+                      Loading released tickets...
+                    </p>
+                  </div>
+                ) : releasedTickets.length === 0 ? (
+                  <div className="text-center py-16">
+                    <div className="w-20 h-20 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto mb-4">
+                      <DollarSign className="h-10 w-10 text-slate-400 dark:text-slate-500" />
+                    </div>
+                    <p className="text-slate-600 dark:text-slate-400 font-medium text-lg">
+                      No funds released tickets
+                    </p>
+                    <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">
+                      Approved tickets will appear here
+                    </p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="bg-slate-50 dark:bg-slate-900/50">
+                          <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
+                            Ticket #
+                          </TableHead>
+                          <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
+                            Date
+                          </TableHead>
+                          <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
+                            Destination
+                          </TableHead>
+                          <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
+                            Department
+                          </TableHead>
+                          <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
+                            Driver
+                          </TableHead>
+                          <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
+                            Amount
+                          </TableHead>
+                          <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
+                            Status
+                          </TableHead>
+                          <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
+                            Actions
+                          </TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {releasedTickets.map((ticket) => {
+                          const driverName = getDriverName(ticket);
+                          const isCrossDept = ticket.is_cross_department || false;
+
+                          return (
+                            <TableRow
+                              key={ticket.id || ticket.trip_ticket_id}
+                              className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors group"
                             >
-                              <Eye className="h-4 w-4" />
-                            </Button>
+                              <TableCell className="font-medium">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-mono font-semibold text-slate-800 dark:text-white">
+                                    {ticket.ticket_number || ticket.trip_ticket_number}
+                                  </span>
+                                  {isCrossDept && (
+                                    <span
+                                      className="text-red-500 font-bold text-lg cursor-help"
+                                      title={
+                                        ticket.cross_department_reason ||
+                                        "Cross-department fuel usage"
+                                      }
+                                    >
+                                      *
+                                    </span>
+                                  )}
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-400">
+                                  <Calendar className="h-3.5 w-3.5 flex-shrink-0" />
+                                  <span className="text-sm">
+                                    {formatDate(ticket.trip_date)}
+                                  </span>
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-400">
+                                  <MapPin className="h-3.5 w-3.5 flex-shrink-0" />
+                                  <span className="text-sm truncate max-w-[150px]">
+                                    {ticket.destination || "N/A"}
+                                  </span>
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-400">
+                                  <Building2 className="h-3.5 w-3.5 flex-shrink-0" />
+                                  <span className="text-sm truncate max-w-[130px]">
+                                    {ticket.department_name ||
+                                      ticket.department?.name ||
+                                      "N/A"}
+                                  </span>
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-400">
+                                  <Truck className="h-3.5 w-3.5 flex-shrink-0" />
+                                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                                    {driverName}
+                                  </span>
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <span className="font-semibold text-emerald-600 dark:text-emerald-400">
+                                  {formatCurrency(ticket.amount_released)}
+                                </span>
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex items-center gap-1.5">
+                                  <ReleasedStatusBadge status={ticket.status} />
+                                  {isCrossDept && (
+                                    <Badge
+                                      variant="outline"
+                                      className="border-orange-400 text-orange-600 dark:border-orange-500 dark:text-orange-400 text-[10px]"
+                                      title={
+                                        ticket.cross_department_reason ||
+                                        "Cross-department fuel usage"
+                                      }
+                                    >
+                                      <AlertTriangle className="h-2.5 w-2.5 mr-1" />
+                                      Cross-Dept
+                                    </Badge>
+                                  )}
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <div className="flex items-center justify-end gap-2">
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                      const ticketId = ticket.id || ticket.trip_ticket_id;
+                                      navigate(`/mayor/trip-ticket/${ticketId}`);
+                                    }}
+                                    className="border-blue-300 text-blue-700 hover:bg-blue-50 dark:border-blue-700 dark:text-blue-400 dark:hover:bg-blue-950/30 h-8 px-3"
+                                    title="View Trip Ticket"
+                                  >
+                                    <Eye className="h-3.5 w-3.5 mr-1" />
+                                    View
+                                  </Button>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleViewGasSlip(ticket)}
+                                    className="border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-400 dark:hover:bg-emerald-950/30 h-8 px-3"
+                                    title="View & Print Gas Slip"
+                                  >
+                                    <Printer className="h-3.5 w-3.5 mr-1" />
+                                    Gas Slip
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
 
-                            {/* View Receipt */}
-                            {hasFuelReceipt(ticket) && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => openReceiptModal(ticket)}
-                                className="text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:text-emerald-300 dark:hover:bg-emerald-950/30 h-9 w-9 p-0 rounded-lg transition-all duration-200 group-hover:scale-110"
-                                title="View Fuel Receipt"
-                              >
-                                <Receipt className="h-4 w-4" />
-                              </Button>
-                            )}
-
-                            {/* View Gas Slip */}
-                            {ticket.gas_slip && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleViewGasSlip(ticket)}
-                                className="text-purple-600 hover:text-purple-700 hover:bg-purple-50 dark:text-purple-400 dark:hover:text-purple-300 dark:hover:bg-purple-950/30 h-9 w-9 p-0 rounded-lg transition-all duration-200 group-hover:scale-110"
-                                title="View Gas Slip"
-                              >
-                                <Printer className="h-4 w-4" />
-                              </Button>
-                            )}
-
-                            {/* ✅ Cancel Button - Only for cancellable statuses */}
-                            {canCancelTicket(ticket.status) && (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => openCancelDialog(ticket)}
-                                className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:text-red-300 dark:hover:bg-red-950/30 h-9 px-3 border-red-200 dark:border-red-800 rounded-lg transition-all duration-200"
-                                title="Cancel Ticket"
-                              >
-                                <Ban className="h-3.5 w-3.5 mr-1" />
-                                Cancel
-                              </Button>
-                            )}
-
-                            {/* Release Fund */}
-                            <Button
-                              size="sm"
-                              onClick={() => openApproveDialog(ticket)}
-                              className={`h-9 px-4 rounded-lg shadow-md transition-all duration-200 hover:scale-105 active:scale-95 ${
-                                checkTripDateValidation(ticket)?.canApprove
-                                  ? 'bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 text-white'
-                                  : 'bg-gradient-to-r from-orange-600 to-orange-700 hover:from-orange-700 hover:to-orange-800 text-white'
-                              }`}
-                            >
-                              <DollarSign className="h-3.5 w-3.5 mr-1.5" />
-                              Release
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+            {/* Released Footer */}
+            <div className="text-center text-xs text-slate-400 dark:text-slate-500 pt-2 border-t border-slate-200 dark:border-slate-700">
+              <p>FCMS - Mayor's Office • Funds Released Report</p>
+              <p className="mt-0.5">
+                {releasedTickets.length} total releases •{" "}
+                {formatCurrency(
+                  releasedTickets.reduce((sum, t) => sum + safeAmount(t.amount_released), 0)
+                )}{" "}
+                total amount
+              </p>
+            </div>
+          </>
+        )}
 
         {/* ============================================ */}
         {/* APPROVE DIALOG */}
@@ -1477,7 +1869,7 @@ const MayorPending = () => {
             </DialogHeader>
 
             <div className="space-y-4">
-              {/* ✅ REQUESTING DEPARTMENT'S BALANCE DISPLAY */}
+              {/* REQUESTING DEPARTMENT'S BALANCE DISPLAY */}
               <div className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30 rounded-xl p-4 border border-blue-200 dark:border-blue-800">
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
@@ -1489,8 +1881,11 @@ const MayorPending = () => {
                         Requesting Department Balance
                       </p>
                       <p className="text-xs text-blue-700 dark:text-blue-300">
-                        {requestingDeptBalance?.department_name || selectedTicket?.department_name || "Department"}
-                        {requestingDeptBalance?.department_code && ` (${requestingDeptBalance.department_code})`}
+                        {requestingDeptBalance?.department_name ||
+                          selectedTicket?.department_name ||
+                          "Department"}
+                        {requestingDeptBalance?.department_code &&
+                          ` (${requestingDeptBalance.department_code})`}
                       </p>
                     </div>
                   </div>
@@ -1502,13 +1897,17 @@ const MayorPending = () => {
                 {requestingDeptBalance ? (
                   <div className="grid grid-cols-2 gap-3">
                     <div className="bg-white/70 dark:bg-slate-900/50 rounded-lg p-3">
-                      <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">Annual Remaining</p>
-                      <p className={cn(
-                        "text-lg font-bold",
-                        requestingDeptBalance.remaining > 0 
-                          ? "text-emerald-600 dark:text-emerald-400" 
-                          : "text-red-600 dark:text-red-400"
-                      )}>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">
+                        Annual Remaining
+                      </p>
+                      <p
+                        className={cn(
+                          "text-lg font-bold",
+                          requestingDeptBalance.remaining > 0
+                            ? "text-emerald-600 dark:text-emerald-400"
+                            : "text-red-600 dark:text-red-400"
+                        )}
+                      >
                         {formatCurrency(requestingDeptBalance.remaining)}
                       </p>
                       <p className="text-[10px] text-slate-400 mt-0.5">
@@ -1516,13 +1915,17 @@ const MayorPending = () => {
                       </p>
                     </div>
                     <div className="bg-white/70 dark:bg-slate-900/50 rounded-lg p-3">
-                      <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">Weekly Remaining</p>
-                      <p className={cn(
-                        "text-lg font-bold",
-                        requestingDeptBalance.weekly_remaining > 0 
-                          ? "text-emerald-600 dark:text-emerald-400" 
-                          : "text-red-600 dark:text-red-400"
-                      )}>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">
+                        Weekly Remaining
+                      </p>
+                      <p
+                        className={cn(
+                          "text-lg font-bold",
+                          requestingDeptBalance.weekly_remaining > 0
+                            ? "text-emerald-600 dark:text-emerald-400"
+                            : "text-red-600 dark:text-red-400"
+                        )}
+                      >
                         {formatCurrency(requestingDeptBalance.weekly_remaining)}
                       </p>
                       <p className="text-[10px] text-slate-400 mt-0.5">
@@ -1538,47 +1941,61 @@ const MayorPending = () => {
                   </div>
                 )}
 
-                {/* ✅ LIVE BALANCE PREVIEW after amount entered */}
+                {/* LIVE BALANCE PREVIEW */}
                 {balanceAfterRelease && (
-                  <div className={cn(
-                    "mt-3 p-3 rounded-lg border",
-                    balanceAfterRelease.is_insufficient 
-                      ? "bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800" 
-                      : "bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800"
-                  )}>
+                  <div
+                    className={cn(
+                      "mt-3 p-3 rounded-lg border",
+                      balanceAfterRelease.is_insufficient
+                        ? "bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800"
+                        : "bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800"
+                    )}
+                  >
                     <p className="text-xs font-medium mb-1 flex items-center gap-1">
                       {balanceAfterRelease.is_insufficient ? (
                         <>
                           <AlertTriangle className="h-3.5 w-3.5 text-red-600" />
-                          <span className="text-red-700 dark:text-red-300">Insufficient Balance</span>
+                          <span className="text-red-700 dark:text-red-300">
+                            Insufficient Balance
+                          </span>
                         </>
                       ) : (
                         <>
                           <CheckCircle className="h-3.5 w-3.5 text-emerald-600" />
-                          <span className="text-emerald-700 dark:text-emerald-300">Balance After Release</span>
+                          <span className="text-emerald-700 dark:text-emerald-300">
+                            Balance After Release
+                          </span>
                         </>
                       )}
                     </p>
                     <div className="grid grid-cols-2 gap-2 text-xs">
                       <div>
-                        <span className="text-slate-500 dark:text-slate-400">New Annual:</span>
-                        <span className={cn(
-                          "font-bold ml-1",
-                          balanceAfterRelease.remaining < 0 
-                            ? "text-red-600 dark:text-red-400" 
-                            : "text-emerald-600 dark:text-emerald-400"
-                        )}>
+                        <span className="text-slate-500 dark:text-slate-400">
+                          New Annual:
+                        </span>
+                        <span
+                          className={cn(
+                            "font-bold ml-1",
+                            balanceAfterRelease.remaining < 0
+                              ? "text-red-600 dark:text-red-400"
+                              : "text-emerald-600 dark:text-emerald-400"
+                          )}
+                        >
                           {formatCurrency(balanceAfterRelease.remaining)}
                         </span>
                       </div>
                       <div>
-                        <span className="text-slate-500 dark:text-slate-400">New Weekly:</span>
-                        <span className={cn(
-                          "font-bold ml-1",
-                          balanceAfterRelease.weekly_remaining < 0 
-                            ? "text-red-600 dark:text-red-400" 
-                            : "text-emerald-600 dark:text-emerald-400"
-                        )}>
+                        <span className="text-slate-500 dark:text-slate-400">
+                          New Weekly:
+                        </span>
+                        <span
+                          className={cn(
+                            "font-bold ml-1",
+                            balanceAfterRelease.weekly_remaining < 0
+                              ? "text-red-600 dark:text-red-400"
+                              : "text-emerald-600 dark:text-emerald-400"
+                          )}
+                        >
                           {formatCurrency(balanceAfterRelease.weekly_remaining)}
                         </span>
                       </div>
@@ -1590,22 +2007,22 @@ const MayorPending = () => {
               {/* Trip Date Validation */}
               {tripDateValidation && (
                 <div className="flex items-center gap-2">
-                  {tripDateValidation.category === 'today' && (
+                  {tripDateValidation.category === "today" && (
                     <Badge className="bg-green-500 text-white">Today's Trip</Badge>
                   )}
-                  {tripDateValidation.category === 'past' && (
+                  {tripDateValidation.category === "past" && (
                     <Badge className="bg-blue-500 text-white">Past Trip</Badge>
                   )}
-                  {tripDateValidation.category === 'future_friday' && (
+                  {tripDateValidation.category === "future_friday" && (
                     <Badge className="bg-purple-500 text-white">Friday Trip</Badge>
                   )}
-                  {tripDateValidation.category === 'tomorrow' && (
+                  {tripDateValidation.category === "tomorrow" && (
                     <Badge className="bg-orange-500 text-white">⚠️ Tomorrow</Badge>
                   )}
-                  {tripDateValidation.category === 'this_week' && (
+                  {tripDateValidation.category === "this_week" && (
                     <Badge className="bg-yellow-500 text-white">⚠️ This Week</Badge>
                   )}
-                  {tripDateValidation.category === 'future_long' && (
+                  {tripDateValidation.category === "future_long" && (
                     <Badge className="bg-red-500 text-white">⚠️ Future Trip</Badge>
                   )}
                   <span className="text-xs text-slate-500 dark:text-slate-400">
@@ -1630,10 +2047,15 @@ const MayorPending = () => {
                       className="mt-1 h-4 w-4 rounded border-slate-300 text-orange-600 focus:ring-orange-500 dark:border-slate-600 dark:bg-slate-700"
                     />
                     <div className="flex-1">
-                      <Label htmlFor="force-approve" className="text-sm font-medium cursor-pointer flex items-center gap-2 text-slate-700 dark:text-slate-300">
+                      <Label
+                        htmlFor="force-approve"
+                        className="text-sm font-medium cursor-pointer flex items-center gap-2 text-slate-700 dark:text-slate-300"
+                      >
                         <AlertTriangle className="h-4 w-4 text-orange-500" />
                         Force Approve
-                        <span className="text-[10px] px-1.5 py-0.5 border border-orange-500 text-orange-500 rounded-full">Override</span>
+                        <span className="text-[10px] px-1.5 py-0.5 border border-orange-500 text-orange-500 rounded-full">
+                          Override
+                        </span>
                       </Label>
                       {isForceApprove && (
                         <FormField
@@ -1649,7 +2071,12 @@ const MayorPending = () => {
                             placeholder="Reason for early release..."
                             value={forceApproveReason}
                             onChange={(e) => setForceApproveReason(e.target.value)}
-                            onBlur={() => setApproveTouched(prev => ({ ...prev, forceReason: true }))}
+                            onBlur={() =>
+                              setApproveTouched((prev) => ({
+                                ...prev,
+                                forceReason: true,
+                              }))
+                            }
                             rows={2}
                             className="mt-1.5 text-sm resize-none dark:bg-slate-900 dark:border-slate-700 dark:text-white"
                           />
@@ -1666,7 +2093,8 @@ const MayorPending = () => {
                   <div>
                     <p className="text-xs text-slate-400">Ticket #</p>
                     <p className="font-semibold text-slate-900 dark:text-white text-sm truncate">
-                      {selectedTicket?.ticket_number || selectedTicket?.trip_ticket_number}
+                      {selectedTicket?.ticket_number ||
+                        selectedTicket?.trip_ticket_number}
                     </p>
                   </div>
                   <div>
@@ -1684,7 +2112,7 @@ const MayorPending = () => {
                   <div>
                     <p className="text-xs text-slate-400">Driver</p>
                     <p className="text-sm text-slate-700 dark:text-slate-300 truncate">
-                      {selectedTicket?.driver?.full_name || "N/A"}
+                      {getDriverName(selectedTicket)}
                     </p>
                   </div>
                 </div>
@@ -1700,27 +2128,31 @@ const MayorPending = () => {
                     onChange={(e) => {
                       const checked = e.target.checked;
                       setIsCrossDepartment(checked);
-                      
+
                       if (checked) {
-                        // ✅ Auto-select Mayor's Office when cross-department is enabled
-                        const moDept = availableDepartments.find(d => 
-                          d.department_code === 'MO' || 
-                          d.department_name?.toLowerCase().includes("mayor")
+                        const moDept = availableDepartments.find(
+                          (d) =>
+                            d.department_code === "MO" ||
+                            d.department_name?.toLowerCase().includes("mayor")
                         );
                         if (moDept) {
                           setChargeToDepartmentId(String(moDept.department_id));
                         }
                       } else {
-                        // Reset to requesting department
                         setCrossDepartmentReason("");
-                        const requestingDeptId = selectedTicket?.department_id?.toString();
-                        if (requestingDeptId) setChargeToDepartmentId(requestingDeptId);
+                        const requestingDeptId =
+                          selectedTicket?.department_id?.toString();
+                        if (requestingDeptId)
+                          setChargeToDepartmentId(requestingDeptId);
                       }
                     }}
                     className="mt-1 h-4 w-4 rounded border-slate-300 text-orange-600 focus:ring-orange-500 dark:border-slate-600 dark:bg-slate-700"
                   />
                   <div className="flex-1">
-                    <Label htmlFor="cross-department" className="text-sm font-medium cursor-pointer flex items-center gap-2 text-slate-700 dark:text-slate-300">
+                    <Label
+                      htmlFor="cross-department"
+                      className="text-sm font-medium cursor-pointer flex items-center gap-2 text-slate-700 dark:text-slate-300"
+                    >
                       <AlertTriangle className="h-4 w-4 text-orange-500" />
                       Cross-Department Usage
                       <span className="text-[10px] px-1.5 py-0.5 border border-orange-500 text-orange-500 rounded-full">
@@ -1728,7 +2160,11 @@ const MayorPending = () => {
                       </span>
                     </Label>
                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                      When enabled, the cost will be charged to <strong className="text-blue-600 dark:text-blue-400">Mayor's Office budget</strong> instead of the requesting department.
+                      When enabled, the cost will be charged to{" "}
+                      <strong className="text-blue-600 dark:text-blue-400">
+                        Mayor's Office budget
+                      </strong>{" "}
+                      instead of the requesting department.
                     </p>
                     {isCrossDepartment && (
                       <FormField
@@ -1743,8 +2179,15 @@ const MayorPending = () => {
                           name="crossReason"
                           placeholder="Reason for cross-department usage..."
                           value={crossDepartmentReason}
-                          onChange={(e) => setCrossDepartmentReason(e.target.value)}
-                          onBlur={() => setApproveTouched(prev => ({ ...prev, crossReason: true }))}
+                          onChange={(e) =>
+                            setCrossDepartmentReason(e.target.value)
+                          }
+                          onBlur={() =>
+                            setApproveTouched((prev) => ({
+                              ...prev,
+                              crossReason: true,
+                            }))
+                          }
                           rows={2}
                           className="mt-1.5 text-sm resize-none dark:bg-slate-900 dark:border-slate-700 dark:text-white"
                         />
@@ -1770,10 +2213,12 @@ const MayorPending = () => {
                   onChange={(e) => {
                     setAmountReleased(e.target.value);
                     if (approveErrors.amount) {
-                      setApproveErrors(prev => ({ ...prev, amount: "" }));
+                      setApproveErrors((prev) => ({ ...prev, amount: "" }));
                     }
                   }}
-                  onBlur={() => setApproveTouched(prev => ({ ...prev, amount: true }))}
+                  onBlur={() =>
+                    setApproveTouched((prev) => ({ ...prev, amount: true }))
+                  }
                   className="mt-1 dark:bg-slate-900 dark:border-slate-700 dark:text-white font-mono text-lg"
                 />
               </FormField>
@@ -1806,7 +2251,6 @@ const MayorPending = () => {
               )}
             </div>
 
-            {/* Footer */}
             <DialogFooter className="gap-3 pt-4 border-t dark:border-slate-700 mt-4">
               <Button
                 variant="outline"
@@ -1828,30 +2272,34 @@ const MayorPending = () => {
                 className={cn(
                   "text-white",
                   tripDateValidation?.canApprove
-                    ? 'bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800'
+                    ? "bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800"
                     : isForceApprove
-                    ? 'bg-gradient-to-r from-orange-600 to-orange-700 hover:from-orange-700 hover:to-orange-800'
-                    : 'bg-slate-400 cursor-not-allowed',
-                  balanceAfterRelease?.is_insufficient && 'bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800'
+                    ? "bg-gradient-to-r from-orange-600 to-orange-700 hover:from-orange-700 hover:to-orange-800"
+                    : "bg-slate-400 cursor-not-allowed",
+                  balanceAfterRelease?.is_insufficient &&
+                    "bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800"
                 )}
                 onClick={handleApprove}
-                disabled={
-                  submitting || 
-                  (!tripDateValidation?.canApprove && !isForceApprove)
-                }
+                disabled={submitting || (!tripDateValidation?.canApprove && !isForceApprove)}
               >
                 {submitting ? (
                   <Loader2 className="h-4 w-4 animate-spin mr-2" />
                 ) : (
                   <DollarSign className="h-4 w-4 mr-2" />
                 )}
-                {isForceApprove ? "Force Approve" : tripDateValidation?.canApprove ? "Release Funds" : "Restricted"}
+                {isForceApprove
+                  ? "Force Approve"
+                  : tripDateValidation?.canApprove
+                  ? "Release Funds"
+                  : "Restricted"}
               </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
 
-        {/* ✅ CANCEL DIALOG */}
+        {/* ============================================ */}
+        {/* CANCEL DIALOG */}
+        {/* ============================================ */}
         <Dialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
           <DialogContent className="sm:max-w-md dark:bg-slate-800 dark:border-slate-700">
             <DialogHeader>
@@ -1862,7 +2310,8 @@ const MayorPending = () => {
                 Cancel Trip Ticket
               </DialogTitle>
               <DialogDescription className="dark:text-slate-400">
-                This action cannot be undone. The ticket will be cancelled and the department can create a new one.
+                This action cannot be undone. The ticket will be cancelled and the
+                department can create a new one.
               </DialogDescription>
             </DialogHeader>
 
@@ -1883,19 +2332,27 @@ const MayorPending = () => {
 
             <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-4 space-y-1 border border-slate-200 dark:border-slate-700">
               <div className="flex justify-between text-sm">
-                <span className="text-slate-600 dark:text-slate-400">Ticket Number:</span>
+                <span className="text-slate-600 dark:text-slate-400">
+                  Ticket Number:
+                </span>
                 <span className="font-mono font-semibold text-slate-800 dark:text-white">
-                  {selectedTicket?.ticket_number || selectedTicket?.trip_ticket_number || "N/A"}
+                  {selectedTicket?.ticket_number ||
+                    selectedTicket?.trip_ticket_number ||
+                    "N/A"}
                 </span>
               </div>
               <div className="flex justify-between text-sm">
-                <span className="text-slate-600 dark:text-slate-400">Destination:</span>
+                <span className="text-slate-600 dark:text-slate-400">
+                  Destination:
+                </span>
                 <span className="text-slate-800 dark:text-white">
                   {selectedTicket?.destination || "N/A"}
                 </span>
               </div>
               <div className="flex justify-between text-sm">
-                <span className="text-slate-600 dark:text-slate-400">Department:</span>
+                <span className="text-slate-600 dark:text-slate-400">
+                  Department:
+                </span>
                 <span className="text-slate-800 dark:text-white">
                   {selectedTicket?.department_name || "N/A"}
                 </span>
@@ -1948,7 +2405,9 @@ const MayorPending = () => {
           </DialogContent>
         </Dialog>
 
-        {/* Reject Dialog */}
+        {/* ============================================ */}
+        {/* REJECT DIALOG */}
+        {/* ============================================ */}
         <Dialog open={showRejectDialog} onOpenChange={setShowRejectDialog}>
           <DialogContent className="dark:bg-slate-800 dark:border-slate-700">
             <DialogHeader>
@@ -1971,7 +2430,9 @@ const MayorPending = () => {
                   placeholder="Enter rejection reason..."
                   value={rejectionNote}
                   onChange={(e) => setRejectionNote(e.target.value)}
-                  onBlur={() => setApproveTouched(prev => ({ ...prev, rejectNote: true }))}
+                  onBlur={() =>
+                    setApproveTouched((prev) => ({ ...prev, rejectNote: true }))
+                  }
                   rows={4}
                   className="resize-none dark:bg-slate-900 dark:border-slate-700 dark:text-white"
                 />
@@ -1993,14 +2454,20 @@ const MayorPending = () => {
                 onClick={handleReject}
                 disabled={submitting}
               >
-                {submitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <XCircle className="h-4 w-4 mr-2" />}
+                {submitting ? (
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                ) : (
+                  <XCircle className="h-4 w-4 mr-2" />
+                )}
                 Reject Ticket
               </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
 
-        {/* Receipt Verification Modal */}
+        {/* ============================================ */}
+        {/* RECEIPT VERIFICATION MODAL */}
+        {/* ============================================ */}
         <ReceiptVerificationModal
           isOpen={showReceiptModal}
           onClose={() => {
@@ -2012,14 +2479,16 @@ const MayorPending = () => {
           onRefresh={fetchTickets}
         />
 
-        {/* Gas Slip Modal */}
+        {/* ============================================ */}
+        {/* GAS SLIP MODAL */}
+        {/* ============================================ */}
         {showGasSlip && selectedGasSlipTicket && (
-          <GasSlipView 
-            ticket={selectedGasSlipTicket} 
+          <GasSlipView
+            ticket={selectedGasSlipTicket}
             onClose={() => {
               setShowGasSlip(false);
               setSelectedGasSlipTicket(null);
-            }} 
+            }}
           />
         )}
       </div>

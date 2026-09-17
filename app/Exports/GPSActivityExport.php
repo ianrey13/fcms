@@ -30,14 +30,14 @@ class GPSActivityExport implements
         $this->data = $data;
     }
 
-    public function array(): array
+        public function array(): array
     {
         $rows = [];
 
         $rows[] = ['GPS VEHICLE ACTIVITY REPORT'];
         $rows[] = ['Laguindingan Municipality - FCMS'];
         $rows[] = ['Generated: ' . now()->format('F d, Y h:i A')];
-        $rows[] = [];
+        $rows[] = array_fill(0, 10, '');   // ✅ Empty spacer (10 columns)
         $rows[] = [
             'TT Number', 'Vehicle', 'Driver', 'Trip Start', 'Trip End', 
             'Duration (hrs)', 'GPS Distance', 'Logbook Distance', 'Distance Match', 'Trip Status'
@@ -61,7 +61,6 @@ class GPSActivityExport implements
 
         return $rows;
     }
-
     public function headings(): array
     {
         return [];

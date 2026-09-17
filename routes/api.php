@@ -19,6 +19,7 @@ use Illuminate\Support\Facades\Broadcast;
 use App\Http\Controllers\API\AuditLogController;
 use App\Http\Controllers\API\AnnualBudgetController;
 use App\Http\Controllers\API\FiscalYearController;
+use App\Http\Controllers\API\OfflineSyncController;   
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -54,8 +55,7 @@ Route::post('/broadcasting/auth', function (Request $request) {
 })->middleware('auth:sanctum');
 
 // ============ PROTECTED ROUTES ============
-Route::middleware(['auth:sanctum', 'throttle:120,1'])->group(function () {
-
+Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     // Auth
     Route::prefix('auth')->group(function () {
         Route::get('me', [AuthController::class, 'me']);
@@ -127,7 +127,7 @@ Route::prefix('reports')->group(function () {
         Route::apiResource('vehicles', VehicleController::class);
         Route::patch('vehicles/{id}/status', [VehicleController::class, 'updateStatus']);
         Route::patch('vehicles/{id}/maintenance', [VehicleController::class, 'updateMaintenance']);
-        Route::patch('vehicles/{id}/odometer-status', [VehicleController::class, 'updateOdometerStatus']);
+       // Route::patch('vehicles/{id}/odometer-status', [VehicleController::class, 'updateOdometerStatus']);
 
         // Departments
         Route::get('departments', [DepartmentController::class, 'index']);
@@ -160,7 +160,7 @@ Route::prefix('reports')->group(function () {
         Route::get('budget-event-logs', [BudgetPolicyController::class, 'getEventLogs']);
         Route::post('budget-policies/force-activate', [BudgetPolicyController::class, 'forceActivate']);
         Route::post('budget-policies/run-weekly-reset', [BudgetPolicyController::class, 'runWeeklyReset']);
-        Route::get('budget-summary', [BudgetController::class, 'getBudgetSummary']);
+        // Route::get('budget-summary', [BudgetController::class, 'getBudgetSummary']);
 
         // Fuel Receipts
         Route::get('fuel-receipts', [GsoController::class, 'getFuelReceipts']);
@@ -202,7 +202,7 @@ Route::prefix('reports')->group(function () {
         Route::get('reports', [GsoController::class, 'getReports']);
         Route::get('users/{id}/signature', [UserController::class, 'getSignatureForGso']);
         Route::post('create-trip', [TripTicketController::class, 'gsoCreate']);
-        Route::post('tickets/{id}/reconcile', [GsoController::class, 'reconcileTrip']);
+        // Route::post('tickets/{id}/reconcile', [GsoController::class, 'reconcileTrip']);
         Route::get('budget-overview', [GsoController::class, 'getBudgetOverview']);
         Route::get('/vehicles/available', [TripTicketController::class, 'getAvailableVehicles']);
         Route::get('pending-validation', [GsoController::class, 'getPendingValidation']);
@@ -339,7 +339,7 @@ Route::prefix('reports')->group(function () {
         Route::get('sync/pending', [OfflineSyncController::class, 'getPendingCount']);
 
         Route::get('vehicles/available', [VehicleController::class, 'getAvailableVehicles']);
-        Route::get('departments/budget/current', [BudgetController::class, 'getCurrentDepartmentBudget']);
+        // Route::get('departments/budget/current', [BudgetController::class, 'getCurrentDepartmentBudget']);
         Route::get('fuel-prices', [DriverController::class, 'getFuelPrices']);
 
         Route::get('reports/trips', [ReportsController::class, 'getTripReport']);
@@ -347,7 +347,7 @@ Route::prefix('reports')->group(function () {
         Route::get('reports/summary', [ReportsController::class, 'getReportSummary']);
         Route::get('trips/{id}/history', [DriverController::class, 'getTripHistory']);
         Route::get('trips/history/all', [DriverController::class, 'getAllTripHistory']);
-        Route::get('trips/{id}/history', [DriverController::class, 'getTripHistoryByTicket']);
+        
     });
 
     // ============ GPS (General Access - Authenticated Users) ============

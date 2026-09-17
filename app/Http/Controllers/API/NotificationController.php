@@ -273,4 +273,50 @@ class NotificationController extends Controller
             ], 500);
         }
     }
+
+    /**
+ * Get driver-specific notifications (mobile)
+ */
+public function driverNotifications(Request $request)
+{
+    try {
+        $user = $request->user();
+        $unreadOnly = $request->boolean('unread_only', false);
+        $type = $request->get('type');
+
+        $query = Notification::where('recipient_user_id', $user->user_id)
+            ->orderBy('created_at', 'desc');
+
+        if ($unreadOnly) {
+            $query->where('is_read', false);
+        }
+        if ($type) {
+            $query->where('notification_type', $type);
+        }
+
+        $notifications = $query->paginate(20);
+
+        return response()->json([
+            'success' => true,
+            'data' => $notifications->items(),
+            'meta' => [
+                'current_page' => $notifications->currentPage(),
+                'last_page' => $notifications->lastPage(),
+                'total' => $notifications->total(),
+                'unread_count' => Notification::where('recipient_user_id', $user->user_id)
+                    ->where('is_read', false)
+                    ->count(),
+            ],
+        ]);
+    } catch (\Exception $e) {
+        Log::error('Get driver notifications error: ' . $e->getMessage());
+        return response()->json([
+            'success' => false,
+            'data' => [],
+            'message' => 'Failed to fetch driver notifications',
+        ], 500);
+    }
+}
+
+
 }

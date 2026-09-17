@@ -11,7 +11,6 @@ class GasSlip extends Model
     protected $table = 'gas_slip';
     protected $primaryKey = 'gas_slip_id';
     
-    // ✅ Add timestamps
     public $timestamps = true;
     
     protected $fillable = [
@@ -23,26 +22,21 @@ class GasSlip extends Model
         'period_id',
         'acknowledged_by',
         'acknowledged_at',
-        'acknowledgement_gps_lat',
-        'acknowledgement_gps_lng',
         'reconciliation_status',
         'reconciliation_note',
         'reconciled_by',
         'reconciled_at',
-        'receipt_acknowledged_by',
-        'receipt_acknowledged_at',
         'is_cross_department',
         'original_department_id',
         'cross_department_reason',
-        'created_at',      // ✅ ADD THIS
-        'updated_at',      // ✅ ADD THIS
+        'created_at',
+        'updated_at',
     ];
     
     protected $casts = [
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
         'reconciled_at' => 'datetime',
-        'receipt_acknowledged_at' => 'datetime',
         'acknowledged_at' => 'datetime',
         'amount_released' => 'decimal:2',
         'budget_before' => 'decimal:2',
@@ -69,11 +63,6 @@ class GasSlip extends Model
     public function reconciledBy()
     {
         return $this->belongsTo(User::class, 'reconciled_by', 'user_id');
-    }
-    
-    public function receiptAcknowledgedBy()
-    {
-        return $this->belongsTo(User::class, 'receipt_acknowledged_by', 'user_id');
     }
     
     public function acknowledgedBy()

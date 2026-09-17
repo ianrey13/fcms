@@ -9,6 +9,9 @@
         <meta name="api-url" content="{{ url('/api') }}">
         
         <title>{{ config('app.name', 'FCMS') }}</title>
+
+        <!-- ✅ Favicon -->
+        <link rel="icon" type="image/svg+xml" href="{{ asset('fcms.svg') }}">
         
         @viteReactRefresh
         @vite('resources/js/main.jsx')

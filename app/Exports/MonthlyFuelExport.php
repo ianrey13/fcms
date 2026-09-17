@@ -29,7 +29,7 @@ class MonthlyFuelExport implements
         $this->data = $data;
     }
 
-    public function array(): array
+        public function array(): array
     {
         $rows = [];
 
@@ -37,7 +37,7 @@ class MonthlyFuelExport implements
         $rows[] = ['Laguindingan Municipality - FCMS'];
         $rows[] = ['Generated: ' . now()->format('F d, Y h:i A')];
         $rows[] = ['Year: ' . ($this->data['summary']['year'] ?? date('Y'))];
-        $rows[] = [];
+        $rows[] = array_fill(0, 5, '');   // ✅ Empty spacer (5 columns)
         $rows[] = ['Month', 'Total Trips', 'Total Fuel (L)', 'Total Fuel Cost (₱)', 'Average Fuel/Trip (L)'];
 
         $months = $this->data['months'] ?? [];

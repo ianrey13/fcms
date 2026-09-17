@@ -29,14 +29,14 @@ class BudgetUtilizationExport implements
         $this->data = $data;
     }
 
-    public function array(): array
+       public function array(): array
     {
         $rows = [];
 
         $rows[] = ['BUDGET UTILIZATION REPORT'];
         $rows[] = ['Laguindingan Municipality - FCMS'];
         $rows[] = ['Generated: ' . now()->format('F d, Y h:i A')];
-        $rows[] = [];
+        $rows[] = array_fill(0, 5, '');   // ✅ Empty spacer (5 columns)
         $rows[] = ['Department', 'Allocated Budget (₱)', 'Amount Utilized (₱)', 'Remaining Budget (₱)', 'Utilization (%)'];
 
         $periods = $this->data['periods'] ?? [];

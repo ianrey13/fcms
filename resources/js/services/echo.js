@@ -108,7 +108,7 @@ const tryConnect = () => {
                     
                     setTimeout(() => {
                         subscribeToNotifications();
-                        subscribeToGsoLiveTracking();
+                       
                     }, 500);
                     return;
                 } else if (connection.state === 'connecting') {
