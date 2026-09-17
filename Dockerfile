@@ -1,7 +1,7 @@
 FROM php:8.3-fpm-alpine
 
 # Install nginx, supervisor, and dependencies
-RUN apk add --no-cache nginx bash curl supervisor
+RUN apk add --no-cache nginx bash curl supervisor gettext
 
 # Install PHP extensions
 RUN docker-php-ext-install pdo pdo_mysql bcmath pcntl
@@ -18,18 +18,8 @@ COPY . .
 
 ENV COMPOSER_ALLOW_SUPERUSER=1
 
-# ✅ Set BROADCAST_DRIVER to null to bypass broadcaster check during build
-ENV BROADCAST_DRIVER=null
-ENV BROADCAST_CONNECTION=null
-
-# Install PHP dependencies (skip scripts)
-RUN composer install --no-dev --optimize-autoloader --no-scripts
-
-# ✅ Run scripts with BROADCAST_DRIVER=null
-RUN composer run-script post-autoload-dump
-
-# Install Reverb explicitly
-RUN composer require laravel/reverb
+# Install PHP dependencies
+RUN composer install --no-dev --optimize-autoloader --no-interaction
 
 # Install and build frontend
 RUN npm install --legacy-peer-deps
@@ -46,15 +36,14 @@ RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cac
 RUN chmod -R 777 /var/www/html/storage /var/www/html/bootstrap/cache
 RUN chmod -R 777 /var/www/html/public
 
+# nginx template (with $PORT placeholder, substituted at runtime)
+COPY nginx.conf.template /etc/nginx/http.d/default.conf.template
 
-
-# Copy nginx config to the correct location
-COPY nginx.conf /etc/nginx/http.d/default.conf
-
-# Copy supervisor config
+# Supervisor config
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
-EXPOSE 8000 8080
+# Entrypoint script
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
-# Start Supervisor (manages all processes)
-CMD ["/usr/bin/supervisord", "-n", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
