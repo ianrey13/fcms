@@ -1,17 +1,36 @@
-/node_modules
-/vendor
-/public/hot
-/public/build
-/storage/*.key
-/.env
-/.git
-/.github
-/.idea
-/.vscode
-*.log
-*.sql
-.DS_Store
-Thumbs.db
+.git
+.gitignore
+.github
+.vscode
+.idea
+
+# Deps
+node_modules
+vendor
+
+# Build artifacts
+public/build
+public/hot
+storage/logs/*
+storage/framework/cache/*
+storage/framework/sessions/*
+storage/framework/views/*
+!storage/logs/.gitignore
+!storage/framework/**/.gitignore
+
+# Env
+.env
 .env.*
 !.env.example
-composer.lock
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Tests
+tests
+phpunit.xml
+
+# Misc
+*.log
+*.md

@@ -9,6 +9,7 @@ server {
     index index.php;
     charset utf-8;
 
+    # Laravel front controller — try files, fall back to index.php
     location / {
         try_files $uri $uri/ /index.php?$query_string;
     }
@@ -18,6 +19,7 @@ server {
 
     error_page 404 /index.php;
 
+    # PHP-FPM
     location ~ \.php$ {
         fastcgi_pass 127.0.0.1:9000;
         fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
@@ -25,6 +27,7 @@ server {
         include fastcgi_params;
     }
 
+    # Deny access to dotfiles (except .well-known for Let's Encrypt)
     location ~ /\.(?!well-known).* {
         deny all;
     }
