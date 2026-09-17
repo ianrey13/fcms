@@ -804,77 +804,65 @@ class DriverController extends Controller
             return response()->json(['success' => false, 'message' => 'Failed to fetch trips: ' . $e->getMessage()], 500);
         }
     }
+public function getActiveTrip(Request $request)
+{
+    try {
+        $user = $request->user();
+        $driver = Driver::where('user_id', $user->user_id)->first();
 
-    public function getActiveTrip(Request $request)
-    {
-        try {
-            $user = $request->user();
-            $driver = Driver::where('user_id', $user->user_id)->first();
-
-            if (!$driver) {
-                return response()->json(['success' => false, 'message' => 'Driver record not found'], 404);
-            }
-
-            $activeTrip = TripTicket::with(['vehicle', 'department', 'gasSlip', 'driver.user'])
-                ->where('driver_id', $driver->driver_id)
-                ->where('status', 'in_transit')
-                ->orderBy('trip_ticket_id', 'desc')
-                ->first();
-
-            if (!$activeTrip) {
-                $activeTrip = TripTicket::with(['vehicle', 'department', 'gasSlip', 'driver.user'])
-                    ->where('driver_id', $driver->driver_id)
-                    ->where('status', 'acknowledged')
-                    ->orderBy('trip_ticket_id', 'desc')
-                    ->first();
-            }
-
-            if (!$activeTrip) {
-                $activeTrip = TripTicket::with(['vehicle', 'department', 'gasSlip', 'driver.user'])
-                    ->where('driver_id', $driver->driver_id)
-                    ->where('status', 'funds_issued')
-                    ->orderBy('trip_ticket_id', 'desc')
-                    ->first();
-            }
-
-            if (!$activeTrip) {
-                return response()->json(['success' => true, 'data' => null, 'message' => 'No active trip']);
-            }
-
-            return response()->json([
-                'success' => true,
-                'data' => [
-                    'trip_ticket_id' => $activeTrip->trip_ticket_id,
-                    'trip_ticket_number' => $activeTrip->trip_ticket_number,
-                    'destination' => $activeTrip->destination,
-                    'purpose' => $activeTrip->purpose,
-                    'trip_date' => $activeTrip->trip_date,
-                    'status' => $activeTrip->status,
-                    'charge_to' => $activeTrip->charge_to,
-                    'amount_released' => $activeTrip->gasSlip ? $activeTrip->gasSlip->amount_released : 0,
-                    'estimated_fuel_liters' => $activeTrip->estimated_fuel_liters,
-                    'estimated_distance_km' => $activeTrip->estimated_distance_km,
-                    'actual_distance_km' => $activeTrip->actual_distance_km,
-                    'actual_fuel_used' => $activeTrip->actual_fuel_used,
-                    'has_insufficient_budget' => $activeTrip->has_insufficient_budget ?? false,
-                    'budget_shortage' => $activeTrip->budget_shortage ?? 0,
-                    'vehicle' => $activeTrip->vehicle ? [
-                        'vehicle_id' => $activeTrip->vehicle->vehicle_id,
-                        'plate_number' => $activeTrip->vehicle->plate_number,
-                        'vehicle_model' => $activeTrip->vehicle->vehicle_model,
-                        'fuel_type' => $activeTrip->vehicle->fuel_type,
-                    ] : null,
-                    'driver' => $activeTrip->driver && $activeTrip->driver->user ? [
-                        'full_name' => $activeTrip->driver->user->full_name,
-                    ] : null,
-                    'department_name' => $activeTrip->department ? $activeTrip->department->department_name : null,
-                ]
-            ]);
-        } catch (\Exception $e) {
-            Log::error('Get active trip error: ' . $e->getMessage());
-            return response()->json(['success' => false, 'message' => 'Failed to fetch active trip: ' . $e->getMessage()], 500);
+        if (!$driver) {
+            return response()->json(['success' => false, 'message' => 'Driver record not found'], 404);
         }
+
+        // ✅ Priority order: in_transit → acknowledged → funds_issued → completed
+        // Only return trips that have a valid destination and vehicle
+        $activeTrip = TripTicket::with(['vehicle', 'department', 'gasSlip.fuelReceipt', 'driver.user'])
+            ->where('driver_id', $driver->driver_id)
+            ->whereIn('status', ['in_transit', 'acknowledged', 'funds_issued', 'completed'])
+            ->whereNotNull('destination')
+            ->whereNotNull('vehicle_id')
+            ->orderByRaw("FIELD(status, 'in_transit', 'acknowledged', 'funds_issued', 'completed')")
+            ->orderBy('updated_at', 'desc')
+            ->first();
+
+        if (!$activeTrip) {
+            return response()->json(['success' => true, 'data' => null, 'message' => 'No active trip']);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'trip_ticket_id' => $activeTrip->trip_ticket_id,
+                'trip_ticket_number' => $activeTrip->trip_ticket_number,
+                'destination' => $activeTrip->destination,
+                'purpose' => $activeTrip->purpose,
+                'trip_date' => $activeTrip->trip_date,
+                'status' => $activeTrip->status,
+                'charge_to' => $activeTrip->charge_to,
+                'amount_released' => $activeTrip->gasSlip ? (float) $activeTrip->gasSlip->amount_released : 0,
+                'estimated_fuel_liters' => $activeTrip->estimated_fuel_liters,
+                'estimated_distance_km' => $activeTrip->estimated_distance_km,
+                'actual_distance_km' => $activeTrip->actual_distance_km,
+                'actual_fuel_used' => $activeTrip->actual_fuel_used,
+                'has_insufficient_budget' => (bool) ($activeTrip->has_insufficient_budget ?? false),
+                'budget_shortage' => (float) ($activeTrip->budget_shortage ?? 0),
+                'vehicle' => $activeTrip->vehicle ? [
+                    'vehicle_id' => $activeTrip->vehicle->vehicle_id,
+                    'plate_number' => $activeTrip->vehicle->plate_number,
+                    'vehicle_model' => $activeTrip->vehicle->vehicle_model,
+                    'fuel_type' => $activeTrip->vehicle->fuel_type,
+                ] : null,
+                'driver' => $activeTrip->driver && $activeTrip->driver->user ? [
+                    'full_name' => $activeTrip->driver->user->full_name,
+                ] : null,
+                'department_name' => $activeTrip->department ? $activeTrip->department->department_name : null,
+            ]
+        ]);
+    } catch (\Exception $e) {
+        Log::error('Get active trip error: ' . $e->getMessage());
+        return response()->json(['success' => false, 'message' => 'Failed to fetch active trip: ' . $e->getMessage()], 500);
     }
+}
 
     public function acknowledgeFunds(Request $request, $id)
     {
