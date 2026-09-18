@@ -24,11 +24,6 @@ echo "🔧 Fixing storage permissions..."
 chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache 2>/dev/null || true
 chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache 2>/dev/null || true
 
-# ✅ Ensure receipts volume is writable
-echo "🔧 Ensuring receipts volume is writable..."
-chown -R www-data:www-data /var/www/html/public/receipts 2>/dev/null || true
-chmod -R 775 /var/www/html/public/receipts 2>/dev/null || true
-
 # ============================================
 # 3. Laravel production caching
 # ============================================

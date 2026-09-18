@@ -181,9 +181,9 @@ class FuelReceiptController extends Controller
         ];
 
         // ✅ Fix receipt URL path (public/receipts/, not storage/)
-       if ($fuelReceipt->receipt_photo_path && !str_starts_with($fuelReceipt->receipt_photo_path, 'http')) {
-    $fuelReceipt->receipt_photo_url = url('storage/' . $fuelReceipt->receipt_photo_path);
-}
+        if ($fuelReceipt->receipt_photo_path && !str_starts_with($fuelReceipt->receipt_photo_path, 'http')) {
+            $fuelReceipt->receipt_photo_url = asset($fuelReceipt->receipt_photo_path);
+        }
 
         return response()->json($fuelReceipt);
     }

@@ -35,7 +35,7 @@ Route::get('/test-auth', function () {
 // ✅ STORAGE ROUTE (with CORS middleware)
 // ============================================
 Route::get('/storage/receipts/{filename}', function ($filename) {
-   $path = public_path('receipts/' . $filename);
+    $path = storage_path('app/public/receipts/' . $filename);
     
     if (!file_exists($path)) {
         abort(404, 'Image not found');
@@ -47,7 +47,7 @@ Route::get('/storage/receipts/{filename}', function ($filename) {
         'Content-Type' => $mimeType,
         'Cache-Control' => 'public, max-age=86400',
     ]);
-})->where->where('filename', '.*')->middleware(['cors']);  // ✅ ADDED cors middleware
+})->where('filename', '.*\.(jpg|jpeg|png|gif|webp)$')->middleware(['cors']);  // ✅ ADDED cors middleware
 
 // ============================================
 // ✅ STORAGE ROUTE - Fallback (with CORS)
