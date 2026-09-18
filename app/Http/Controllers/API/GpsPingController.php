@@ -19,9 +19,17 @@ use Illuminate\Support\Facades\Validator;
 
 class GpsPingController extends Controller
 {
+    // ============================================================
+    // FILTER CONSTANTS — tune these for your vehicle fleet
+    // ============================================================
+    private const MIN_SEGMENT_KM   = 0.010;   
+    private const MAX_SEGMENT_KM   = 5.0;     
+    private const MAX_SPEED_KMH    = 120;     
+    private const MAX_GAP_SECONDS  = 300;     
+    private const ACCURACY_THRESHOLD = 30;    
+
     /**
      * Store a single GPS ping
-     * ✅ FIXED: compute is_low_accuracy server-side, skip broadcast for low accuracy, server-side jitter filter
      */
     public function store(Request $request)
     {
@@ -66,10 +74,8 @@ class GpsPingController extends Controller
                 ], 404);
             }
 
-            // ✅ Only 'acknowledged' and 'in_transit' can receive pings
             $allowedPingStatuses = ['acknowledged', 'in_transit'];
             if (!in_array($trip->status, $allowedPingStatuses)) {
-                // ✅ Return success (not error) so mobile doesn't retry on completed trip
                 return response()->json([
                     'success' => true,
                     'skipped' => true,
@@ -78,11 +84,10 @@ class GpsPingController extends Controller
                 ]);
             }
 
-            // ✅ Compute is_low_accuracy server-side — don't trust client
             $accuracy = (float) ($request->accuracy_meters ?? 0);
-            $isLowAccuracy = $accuracy > 30;
+            $isLowAccuracy = $accuracy > self::ACCURACY_THRESHOLD;
 
-            // ✅ Server-side jitter filter — mirror frontend logic
+            // Server-side jitter filter — mirror frontend logic
             if (!$isLowAccuracy) {
                 $lastAccuratePing = GpsPing::where('trip_ticket_id', $request->trip_ticket_id)
                     ->where('is_low_accuracy', false)
@@ -128,7 +133,6 @@ class GpsPingController extends Controller
                 'received_at' => now(),
             ]);
 
-            // ✅ Only broadcast accurate pings
             if (!$isLowAccuracy) {
                 try {
                     broadcast(new DriverLocationUpdated(
@@ -178,7 +182,6 @@ class GpsPingController extends Controller
 
     /**
      * Store batch GPS pings (offline sync)
-     * ✅ FIXED: compute is_low_accuracy server-side, only broadcast if last ping is accurate
      */
     public function storeBatch(Request $request)
     {
@@ -239,9 +242,8 @@ class GpsPingController extends Controller
             DB::beginTransaction();
 
             foreach ($request->pings as $pingData) {
-                // ✅ Compute is_low_accuracy server-side
                 $accuracy = (float) ($pingData['accuracy_meters'] ?? 0);
-                $isLowAccuracy = $accuracy > 30;
+                $isLowAccuracy = $accuracy > self::ACCURACY_THRESHOLD;
 
                 $ping = GpsPing::create([
                     'trip_ticket_id' => $request->trip_ticket_id,
@@ -261,11 +263,10 @@ class GpsPingController extends Controller
 
             DB::commit();
 
-            // ✅ Only broadcast the last ping if it's accurate
             if (!empty($request->pings)) {
                 $lastPing = end($request->pings);
                 $lastAccuracy = (float) ($lastPing['accuracy_meters'] ?? 0);
-                if ($lastAccuracy <= 30) {
+                if ($lastAccuracy <= self::ACCURACY_THRESHOLD) {
                     try {
                         broadcast(new DriverLocationUpdated(
                             $request->trip_ticket_id,
@@ -410,14 +411,13 @@ class GpsPingController extends Controller
                 $fuelReceipt->save();
             }
 
-            // Store initial GPS ping
             $accuracy = (float) ($request->accuracy_meters ?? 0);
             GpsPing::create([
                 'trip_ticket_id' => $trip->trip_ticket_id,
                 'latitude' => $request->latitude,
                 'longitude' => $request->longitude,
                 'accuracy_meters' => $request->accuracy_meters ?? null,
-                'is_low_accuracy' => $accuracy > 30,
+                'is_low_accuracy' => $accuracy > self::ACCURACY_THRESHOLD,
                 'is_queued_upload' => false,
                 'recorded_at' => now(),
                 'received_at' => now(),
@@ -425,8 +425,7 @@ class GpsPingController extends Controller
 
             DB::commit();
 
-            // ✅ Only broadcast if accuracy is good
-            if ($accuracy <= 30) {
+            if ($accuracy <= self::ACCURACY_THRESHOLD) {
                 try {
                     broadcast(new DriverLocationUpdated(
                         $trip->trip_ticket_id,
@@ -480,7 +479,6 @@ class GpsPingController extends Controller
 
     /**
      * Stop GPS tracking for a trip
-     * (kept for backward compat — mobile uses DriverController::completeTrip)
      */
     public function stopTracking(Request $request)
     {
@@ -542,26 +540,10 @@ class GpsPingController extends Controller
 
             DB::beginTransaction();
 
-            $pings = GpsPing::where('trip_ticket_id', $trip->trip_ticket_id)
-                ->where('is_low_accuracy', false)
-                ->orderBy('recorded_at', 'asc')
-                ->get(['latitude', 'longitude']);
-
-            $serverDistance = 0.0;
+            // ✅ Use segment-aware filter
+            $pings = $this->getPingsForSegment($trip->trip_ticket_id);
+            $finalDistance = $this->filterAndSumDistance($pings);
             $pingCount = $pings->count();
-
-            if ($pingCount > 1) {
-                for ($i = 1; $i < $pingCount; $i++) {
-                    $serverDistance += $this->haversineKm(
-                        (float) $pings[$i - 1]->latitude,
-                        (float) $pings[$i - 1]->longitude,
-                        (float) $pings[$i]->latitude,
-                        (float) $pings[$i]->longitude
-                    );
-                }
-            }
-
-            $finalDistance = round($serverDistance, 2);
 
             $currentTrip = TripHistory::where('trip_ticket_id', $trip->trip_ticket_id)
                 ->where('status', 'in_progress')
@@ -683,13 +665,15 @@ class GpsPingController extends Controller
                 ], 403);
             }
 
-            $distance = $this->calculateTripDistance($tripId);
+            $pings = $this->getPingsForSegment($tripId);
+            $distance = $this->filterAndSumDistance($pings);
 
             return response()->json([
                 'success' => true,
                 'data' => [
                     'trip_id' => $tripId,
                     'distance_km' => $distance,
+                    'ping_count' => $pings->count(),
                     'calculated_at' => now(),
                 ]
             ]);
@@ -831,10 +815,11 @@ class GpsPingController extends Controller
             }
 
             $pings = GpsPing::where('trip_ticket_id', $tripId)
+                ->where('is_low_accuracy', false)
                 ->orderBy('recorded_at', 'asc')
                 ->get();
 
-            $totalDistance = 0;
+            $totalDistance = $this->filterAndSumDistance($pings);
             $maxSpeed = 0;
             $prevPing = null;
             $duration = 0;
@@ -845,13 +830,6 @@ class GpsPingController extends Controller
                 }
 
                 if ($prevPing) {
-                    $distance = $this->haversineDistance(
-                        $prevPing->latitude, $prevPing->longitude,
-                        $ping->latitude, $ping->longitude
-                    );
-                    if ($distance > 0.01) {
-                        $totalDistance += $distance;
-                    }
                     $duration += $prevPing->recorded_at->diffInSeconds($ping->recorded_at);
                 }
                 $prevPing = $ping;
@@ -927,7 +905,6 @@ class GpsPingController extends Controller
 
     /**
      * Get all active trips with latest GPS location
-     * ✅ FIXED: prefer latest ACCURATE ping (not latest ping)
      */
     public function getActiveTrips(Request $request)
     {
@@ -949,20 +926,17 @@ class GpsPingController extends Controller
             $result = [];
 
             foreach ($activeTrips as $trip) {
-                // ✅ Prefer latest ACCURATE ping — not the latest ping
                 $latestPing = GpsPing::where('trip_ticket_id', $trip->trip_ticket_id)
                     ->where('is_low_accuracy', false)
                     ->orderBy('recorded_at', 'desc')
                     ->first();
 
-                // Fallback: if no accurate ping yet, use the newest (so trip still shows)
                 if (!$latestPing) {
                     $latestPing = GpsPing::where('trip_ticket_id', $trip->trip_ticket_id)
                         ->orderBy('recorded_at', 'desc')
                         ->first();
                 }
 
-                // Still no ping at all? Skip this trip
                 if (!$latestPing) {
                     continue;
                 }
@@ -1161,7 +1135,7 @@ class GpsPingController extends Controller
     }
 
     /**
-     * Get GPS track for a trip (full route) — driver-only
+     * Get GPS track for a trip (full route)
      */
     public function getTrack(Request $request, $tripId)
     {
@@ -1193,9 +1167,7 @@ class GpsPingController extends Controller
                 ->get();
 
             $trackData = [];
-            $totalDistance = 0;
             $maxSpeed = 0;
-            $avgSpeed = 0;
             $totalTime = 0;
             $prevPing = null;
 
@@ -1213,21 +1185,14 @@ class GpsPingController extends Controller
                 }
 
                 if ($prevPing) {
-                    $distance = $this->haversineDistance(
-                        $prevPing->latitude, $prevPing->longitude,
-                        $ping->latitude, $ping->longitude
-                    );
-                    $totalDistance += $distance;
-                    $timeDiff = $prevPing->recorded_at->diffInSeconds($ping->recorded_at);
-                    $totalTime += $timeDiff;
+                    $totalTime += $prevPing->recorded_at->diffInSeconds($ping->recorded_at);
                 }
 
                 $prevPing = $ping;
             }
 
-            if ($totalTime > 0 && $trackData) {
-                $avgSpeed = ($totalDistance / $totalTime) * 3.6;
-            }
+            $totalDistance = $this->filterAndSumDistance($pings);
+            $avgSpeed = ($totalTime > 0 && $totalDistance > 0) ? ($totalDistance / $totalTime) * 3.6 : 0;
 
             return response()->json([
                 'success' => true,
@@ -1324,11 +1289,10 @@ class GpsPingController extends Controller
             $firstPing = $pings->first();
             $lastPing = $pings->last();
 
-            $totalDistance = 0;
-            $prevPing = null;
+            $totalDistance = $this->filterAndSumDistance($pings);
             $maxSpeed = 0;
-            $avgSpeed = 0;
             $totalTime = 0;
+            $prevPing = null;
 
             foreach ($pings as $ping) {
                 if ($ping->speed_kmh && $ping->speed_kmh > $maxSpeed) {
@@ -1336,20 +1300,13 @@ class GpsPingController extends Controller
                 }
 
                 if ($prevPing) {
-                    $distance = $this->haversineDistance(
-                        $prevPing->latitude, $prevPing->longitude,
-                        $ping->latitude, $ping->longitude
-                    );
-                    $totalDistance += $distance;
                     $totalTime += $prevPing->recorded_at->diffInSeconds($ping->recorded_at);
                 }
 
                 $prevPing = $ping;
             }
 
-            if ($totalTime > 0 && $pings->count() > 1) {
-                $avgSpeed = ($totalDistance / $totalTime) * 3.6;
-            }
+            $avgSpeed = ($totalTime > 0 && $pings->count() > 1) ? ($totalDistance / $totalTime) * 3.6 : 0;
 
             return response()->json([
                 'success' => true,
@@ -1424,36 +1381,102 @@ class GpsPingController extends Controller
         }
     }
 
-    // ============ PRIVATE HELPERS ============
+    // ============================================================
+    // PRIVATE HELPERS
+    // ============================================================
 
-    private function calculateTripDistance($tripId)
+    /**
+     * Get pings for the CURRENT trip segment only.
+     *
+     * Trip segments are marked by TripHistory rows. When the driver
+     * completes a trip and starts again, a new TripHistory row is created.
+     * This method:
+     *   1. Finds the latest 'in_progress' TripHistory (current segment)
+     *   2. If none, finds the latest 'completed' one (fallback for review)
+     *   3. Returns pings recorded on/after that segment's start time
+     */
+    private function getPingsForSegment($tripId)
     {
-        $pings = GpsPing::where('trip_ticket_id', $tripId)
-            ->where('is_low_accuracy', false)
-            ->orderBy('recorded_at', 'asc')
-            ->get();
+        $segment = TripHistory::where('trip_ticket_id', $tripId)
+            ->orderBy('trip_number', 'desc')
+            ->first();
 
-        if ($pings->count() < 2) {
-            return 0;
+        $query = GpsPing::where('trip_ticket_id', $tripId)
+            ->where('is_low_accuracy', false)
+            ->orderBy('recorded_at', 'asc');
+
+        if ($segment && $segment->started_at) {
+            $query->where('recorded_at', '>=', $segment->started_at);
         }
 
-        $totalDistance = 0;
-        $prevPing = null;
+        return $query->get();
+    }
+
+    /**
+     * Calculate total distance with full filter set:
+     *   - Skip consecutive pings < 10m apart (GPS jitter)
+     *   - Skip jumps > 5km (teleport / signal loss)
+     *   - Skip segments implying > 120 km/h
+     *   - Skip time gaps > 5 min
+     *   - Skip duplicates (same recorded_at)
+     */
+    private function filterAndSumDistance($pings): float
+    {
+        if (!$pings || $pings->count() < 2) {
+            return 0.0;
+        }
+
+        $total = 0.0;
+        $prev = null;
 
         foreach ($pings as $ping) {
-            if ($prevPing) {
-                $distance = $this->haversineDistance(
-                    $prevPing->latitude, $prevPing->longitude,
-                    $ping->latitude, $ping->longitude
-                );
-                if ($distance > 0.01) {
-                    $totalDistance += $distance;
-                }
+            if ($prev === null) {
+                $prev = $ping;
+                continue;
             }
-            $prevPing = $ping;
+
+            // Duplicate timestamps → skip
+            $gap = $prev->recorded_at->diffInSeconds($ping->recorded_at);
+            if ($gap <= 0) {
+                continue;
+            }
+
+            $segKm = $this->haversineDistance(
+                (float) $prev->latitude,
+                (float) $prev->longitude,
+                (float) $ping->latitude,
+                (float) $ping->longitude
+            );
+
+            // Too small — jitter
+            if ($segKm < self::MIN_SEGMENT_KM) {
+                continue;
+            }
+
+            // Too large — teleport
+            if ($segKm > self::MAX_SEGMENT_KM) {
+                $prev = $ping;
+                continue;
+            }
+
+            // Implausible speed
+            $impliedKmh = ($segKm / $gap) * 3600;
+            if ($impliedKmh > self::MAX_SPEED_KMH) {
+                $prev = $ping;
+                continue;
+            }
+
+            // Time gap too long — assume separate segment
+            if ($gap > self::MAX_GAP_SECONDS) {
+                $prev = $ping;
+                continue;
+            }
+
+            $total += $segKm;
+            $prev = $ping;
         }
 
-        return round($totalDistance, 2);
+        return round($total, 2);
     }
 
     private function haversineDistance($lat1, $lon1, $lat2, $lon2)
@@ -1478,7 +1501,8 @@ class GpsPingController extends Controller
     }
 
     /**
-     * Get real-time trip stats (distance, fuel consumption, speed)
+     * Get real-time trip stats (distance, fuel, speed)
+     * Uses the SAME filter set as calculateTripDistance for consistent numbers.
      */
     public function getRealtimeStats(Request $request, $tripId)
     {
@@ -1500,18 +1524,13 @@ class GpsPingController extends Controller
                 ->orderBy('recorded_at', 'desc')
                 ->first();
 
-            $pings = GpsPing::where('trip_ticket_id', $tripId)
-                ->where('is_low_accuracy', false)
-                ->orderBy('recorded_at', 'asc')
-                ->get();
+            // ✅ Use segment-aware ping list
+            $pings = $this->getPingsForSegment($tripId);
 
-            $totalDistance = 0;
+            $totalDistance = $this->filterAndSumDistance($pings);
             $maxSpeed = 0;
-            $avgSpeed = 0;
             $totalTime = 0;
             $prevPing = null;
-            $estimatedFuelConsumed = 0;
-
             $fuelEfficiency = $trip->vehicle?->fuel_efficiency ?? 10;
 
             foreach ($pings as $ping) {
@@ -1520,25 +1539,18 @@ class GpsPingController extends Controller
                 }
 
                 if ($prevPing) {
-                    $distance = $this->haversineDistance(
-                        $prevPing->latitude, $prevPing->longitude,
-                        $ping->latitude, $ping->longitude
-                    );
-                    if ($distance > 0.01) {
-                        $totalDistance += $distance;
-                    }
                     $totalTime += $prevPing->recorded_at->diffInSeconds($ping->recorded_at);
                 }
                 $prevPing = $ping;
             }
 
-            if ($totalTime > 0 && $pings->count() > 1) {
-                $avgSpeed = ($totalDistance / $totalTime) * 3.6;
-            }
+            $avgSpeed = ($totalTime > 0 && $pings->count() > 1)
+                ? ($totalDistance / $totalTime) * 3.6
+                : 0;
 
-            if ($totalDistance > 0 && $fuelEfficiency > 0) {
-                $estimatedFuelConsumed = $totalDistance / $fuelEfficiency;
-            }
+            $estimatedFuelConsumed = ($totalDistance > 0 && $fuelEfficiency > 0)
+                ? $totalDistance / $fuelEfficiency
+                : 0;
 
             $currentTripNumber = TripHistory::where('trip_ticket_id', $tripId)
                 ->where('status', 'in_progress')
@@ -1552,7 +1564,7 @@ class GpsPingController extends Controller
                     'status' => $trip->status,
                     'trip_number' => $currentTripNumber,
                     'ping_count' => $pings->count(),
-                    'total_distance_km' => round($totalDistance, 2),
+                    'total_distance_km' => $totalDistance,
                     'current_speed_kmh' => $latestPing?->speed_kmh ?? 0,
                     'max_speed_kmh' => round($maxSpeed, 2),
                     'avg_speed_kmh' => round($avgSpeed, 2),

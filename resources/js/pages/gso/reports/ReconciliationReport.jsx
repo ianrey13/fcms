@@ -82,18 +82,27 @@ const ReconciliationReport = ({
                                 {reconciliations.length === 0 ? (
                                     <TableRow><TableCell colSpan="6" className="text-center py-8 text-slate-500">No reconciliation data available</TableCell></TableRow>
                                 ) : (
-                                    reconciliations.map((r, i) => (
-                                        <TableRow key={i} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
-                                            <TableCell className="font-mono font-medium">{r.ticket_number}</TableCell>
-                                            <TableCell>{r.plate_number}</TableCell>
-                                            <TableCell>{r.driver_name}</TableCell>
-                                            <TableCell className="text-right">{r.expected_distance || 'N/A'}</TableCell>
-                                            <TableCell className="text-right">{r.actual_distance || 'N/A'}</TableCell>
-                                            <TableCell className={`text-right font-medium ${r.variance !== 0 ? 'text-red-600' : ''}`}>
-                                                {r.variance || 0}
-                                            </TableCell>
-                                        </TableRow>
-                                    ))
+                                    reconciliations.map((r, i) => {
+                                        const hasVariance = r.variance != null && Math.abs(r.variance) > 0.5;
+                                        return (
+                                            <TableRow key={i} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
+                                                <TableCell className="font-mono font-medium">{r.ticket_number}</TableCell>
+                                                <TableCell>{r.plate_number}</TableCell>
+                                                <TableCell>{r.driver_name}</TableCell>
+                                                <TableCell className="text-right">
+                                                    {r.expected_distance != null ? `${r.expected_distance} km` : 'N/A'}
+                                                </TableCell>
+                                                <TableCell className="text-right">
+                                                    {r.actual_distance != null && r.actual_distance > 0
+                                                        ? `${r.actual_distance} km`
+                                                        : 'N/A'}
+                                                </TableCell>
+                                                <TableCell className={`text-right font-medium ${hasVariance ? 'text-red-600' : ''}`}>
+                                                    {r.variance != null ? `${r.variance} km` : '0.00 km'}
+                                                </TableCell>
+                                            </TableRow>
+                                        );
+                                    })
                                 )}
                             </TableBody>
                         </Table>

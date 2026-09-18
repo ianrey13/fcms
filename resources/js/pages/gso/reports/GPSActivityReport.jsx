@@ -106,9 +106,13 @@ const GPSActivityReport = ({
                                                 <TableCell>{a.driver}</TableCell>
                                                 <TableCell>{a.trip_start}</TableCell>
                                                 <TableCell>{a.trip_end}</TableCell>
-                                                <TableCell className="text-right">{a.duration_hrs || 'N/A'}</TableCell>
-                                                <TableCell className="text-right">{a.gps_distance_km || 'N/A'}</TableCell>
-                                                <TableCell className="text-right">{a.logbook_distance_km || 'N/A'}</TableCell>
+                                                <TableCell className="text-right">{a.duration_hrs != null ? a.duration_hrs : 'N/A'}</TableCell>
+                                                <TableCell className="text-right">
+                                                    {a.gps_distance_km != null ? `${a.gps_distance_km} km` : 'N/A'}
+                                                </TableCell>
+                                                <TableCell className="text-right">
+                                                    {a.logbook_distance_km != null ? `${a.logbook_distance_km} km` : 'N/A'}
+                                                </TableCell>
                                                 <TableCell><Badge className={matchColor}>{a.distance_match}</Badge></TableCell>
                                                 <TableCell><Badge variant="outline">{a.trip_status}</Badge></TableCell>
                                             </TableRow>
