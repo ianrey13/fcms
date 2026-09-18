@@ -382,14 +382,11 @@ class FallbackLocationService
             $lng = $location['lng'] ?? null;
             if ($lat === null || $lng === null) continue;
 
-            // ✅ FIXED: Avoid duplicate "Laguindingan"
             $name = $location['name'];
             $description = $name;
             $nameLower = strtolower($name);
 
             if ($location['type'] === 'barangay') {
-                // If name already contains "Laguindingan" (like "Sinai, Laguindingan"),
-                // only append ", Misamis Oriental"
                 if (strpos($nameLower, 'laguindingan') !== false) {
                     $description = $name . ', Misamis Oriental';
                 } else {
@@ -401,7 +398,6 @@ class FallbackLocationService
                 }
             } elseif ($location['type'] === 'landmark') {
                 if (strpos($nameLower, 'cagayan de oro') !== false || strpos($nameLower, 'misamis oriental') !== false) {
-                    // Already has region context, don't append
                     $description = $name;
                 } else {
                     $description = $name . ', Misamis Oriental';
@@ -411,7 +407,6 @@ class FallbackLocationService
                     $description = $name . ', Philippines';
                 }
             }
-            // 'origin' type — leave name as is
 
             $results[] = [
                 'description' => $description,
@@ -442,73 +437,85 @@ class FallbackLocationService
         ];
     }
 
-   public function calculateDistance($origin, $destination)
-{
-    $originData = $this->findLocation($origin) ?? $this->findLocationByPartialMatch($origin);
-    if (!$originData) return ['success' => false, 'message' => 'Origin not found: ' . $origin];
+    /**
+     * ✅ FIXED: Use hard-coded distances when available, haversine as last resort
+     */
+    public function calculateDistance($origin, $destination)
+    {
+        $originData = $this->findLocation($origin) ?? $this->findLocationByPartialMatch($origin);
+        if (!$originData) return ['success' => false, 'message' => 'Origin not found: ' . $origin];
 
-    $destData = $this->findLocation($destination) ?? $this->findLocationByPartialMatch($destination);
-    if (!$destData) return ['success' => false, 'message' => 'Destination not found: ' . $destination];
+        $destData = $this->findLocation($destination) ?? $this->findLocationByPartialMatch($destination);
+        if (!$destData) return ['success' => false, 'message' => 'Destination not found: ' . $destination];
 
-    $distanceKm = 0.0;
-    $source = '';
+        $distanceKm = 0.0;
+        $source = '';
 
-    // ✅ BEST: If origin is Laguindingan Hall AND dest has a known distance → use it
-    if ($this->isOriginLaguindingan($originData) && ($destData['distance_km'] ?? 0) > 0) {
-        $distanceKm = (float) $destData['distance_km'];
-        $source = 'known_from_laguindingan';
+        // ✅ BEST: origin is Laguindingan AND destination has known distance
+        if ($this->isOriginLaguindingan($originData) && ($destData['distance_km'] ?? 0) > 0) {
+            $distanceKm = (float) $destData['distance_km'];
+            $source = 'known_from_laguindingan';
+        }
+        // ✅ GOOD: both have known distances → difference
+        elseif (($destData['distance_km'] ?? 0) > 0 && ($originData['distance_km'] ?? 0) > 0) {
+            $distanceKm = abs((float) $destData['distance_km'] - (float) $originData['distance_km']);
+            $source = 'known_difference';
+        }
+        // ⚠️ FALLBACK: haversine with road factor
+        else {
+            $straightKm = $this->haversineDistance(
+                $originData['lat'], $originData['lng'],
+                $destData['lat'], $destData['lng']
+            );
+            $distanceKm = $straightKm * 1.25;
+            $source = 'haversine_road_factor';
+        }
+
+        if ($distanceKm < 0.1) {
+            $distanceKm = 0.1;
+        }
+
+        return [
+            'success' => true,
+            'distance_km' => round($distanceKm, 2),
+            'duration_minutes' => $this->estimateDuration($distanceKm, $destData),
+            'origin' => $originData['name'],
+            'destination' => $destData['name'],
+            'source' => $source,
+        ];
     }
-    // ✅ GOOD: Both have known distances → difference
-    elseif (($destData['distance_km'] ?? 0) > 0 && ($originData['distance_km'] ?? 0) > 0) {
-        $distanceKm = abs((float) $destData['distance_km'] - (float) $originData['distance_km']);
-        $source = 'known_difference';
+
+    /**
+     * ✅ NEW: Speed estimation by destination type
+     */
+    private function estimateDuration($distanceKm, $destination)
+    {
+        $type = $destination['type'] ?? 'municipality';
+
+        $avgSpeedKmh = match($type) {
+            'barangay'     => 30,
+            'municipality' => 40,
+            'city'         => 25,
+            'landmark'     => 25,
+            'origin'       => 30,
+            default        => 35,
+        };
+
+        return round($distanceKm / $avgSpeedKmh * 60, 1);
     }
-    // ⚠️ FALLBACK: Haversine with road factor
-    else {
-        $straightKm = $this->haversineDistance(
-            $originData['lat'], $originData['lng'],
-            $destData['lat'], $destData['lng']
-        );
-        $distanceKm = $straightKm * 1.25;
-        $source = 'haversine_road_factor';
+
+    /**
+     * ✅ NEW: Check if the location is Laguindingan (reference origin)
+     */
+    private function isOriginLaguindingan($location)
+    {
+        $name = strtolower($location['name'] ?? '');
+        $type = $location['type'] ?? '';
+
+        return $type === 'origin'
+            || strpos($name, 'laguindingan municipal') !== false
+            || ($type === 'municipality' && strpos($name, 'laguindingan') !== false);
     }
-
-    if ($distanceKm < 0.1) {
-        $distanceKm = 0.1;
-    }
-
-    return [
-        'success' => true,
-        'distance_km' => round($distanceKm, 2),
-        'duration_minutes' => $this->estimateDuration($distanceKm, $destData),
-        'origin' => $originData['name'],
-        'destination' => $destData['name'],
-        'source' => $source,
-    ];
-}
-
-private function isOriginLaguindingan($location)
-{
-    $name = strtolower($location['name'] ?? '');
-    $type = $location['type'] ?? '';
-    return $type === 'origin'
-        || strpos($name, 'laguindingan municipal') !== false
-        || ($type === 'municipality' && strpos($name, 'laguindingan') !== false);
-}
-
-private function estimateDuration($distanceKm, $destination)
-{
-    $type = $destination['type'] ?? 'municipality';
-    $avgSpeedKmh = match($type) {
-        'barangay'     => 30,
-        'municipality' => 40,
-        'city'         => 25,
-        'landmark'     => 25,
-        'origin'       => 30,
-        default        => 35,
-    };
-    return round($distanceKm / $avgSpeedKmh * 60, 1);
-}
 
     private function haversineDistance($lat1, $lon1, $lat2, $lon2)
     {
@@ -550,7 +557,6 @@ private function estimateDuration($distanceKm, $destination)
     {
         $query = strtolower(trim($query));
 
-        // Direct match first
         foreach ($this->locations as $key => $location) {
             $name = strtolower($location['name'] ?? '');
             $aliases = array_map('strtolower', $location['aliases'] ?? []);
@@ -562,8 +568,6 @@ private function estimateDuration($distanceKm, $destination)
             }
         }
 
-        // ✅ NEW: Split query by comma and try each part
-        // Handles "Sinai, Laguindingan" → finds "Sinai" location
         $parts = array_map('trim', explode(',', $query));
         if (count($parts) > 1) {
             foreach ($parts as $part) {
@@ -641,7 +645,7 @@ private function estimateDuration($distanceKm, $destination)
             'one_way_duration_minutes' => $result['duration_minutes'],
             'round_trip_multiplier' => $multiplier,
             'buffer_percentage' => 10,
-            'source' => 'fallback',
+            'source' => $result['source'],
         ];
     }
 
