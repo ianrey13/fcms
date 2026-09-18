@@ -721,8 +721,8 @@ class DriverController extends Controller
                 'data' => [
                     'is_uploaded' => $fuelReceipt && $fuelReceipt->receipt_photo_path ? true : false,
                     'receipt_photo_path' => $fuelReceipt ? $fuelReceipt->receipt_photo_path : null,
-                    'receipt_url' => $fuelReceipt && $fuelReceipt->receipt_photo_path ?
-                        asset($fuelReceipt->receipt_photo_path) : null,
+                   'receipt_url' => $fuelReceipt && $fuelReceipt->receipt_photo_path ?
+    url('storage/' . $fuelReceipt->receipt_photo_path) : null,
                     'liters_availed' => $fuelReceipt ? $fuelReceipt->liters_availed : null,
                     'amount_on_receipt' => $fuelReceipt ? $fuelReceipt->amount_on_receipt : null,
                     'uploaded_at' => $fuelReceipt ? $fuelReceipt->receipt_uploaded_at : null,

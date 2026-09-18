@@ -732,7 +732,7 @@ private function deductWeeklyBudget($departmentId, $amount)
                     'liters_availed' => $fuelReceipt->liters_availed,
                     'amount_on_receipt' => $fuelReceipt->amount_on_receipt,
                     'receipt_photo_path' => $fuelReceipt->receipt_photo_path,
-                    'receipt_url' => $fuelReceipt->receipt_photo_path ? asset($fuelReceipt->receipt_photo_path) : null,
+                    'receipt_url' => $fuelReceipt->receipt_photo_path ? url('storage/' . $fuelReceipt->receipt_photo_path) : null,
                     'gps_distance_km' => $fuelReceipt->gps_distance_km,
                     'reconciliation_status' => $ticket->gasSlip?->reconciliation_status,
                 ] : null,
@@ -904,7 +904,7 @@ public function getReceiptsForVerification(Request $request)
                     $filename = basename($receipt->receipt_photo_path);
                     
                     // ✅ Use public/receipts path directly (no storage)
-                    $receipt->receipt_url = asset('receipts/' . $filename);
+                   $receipt->receipt_url = url('storage/receipts/' . $filename);
                     
                     // // ✅ Log for debugging
                     // \Log::info('Receipt URL (public):', [

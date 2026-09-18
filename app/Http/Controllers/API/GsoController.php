@@ -614,10 +614,10 @@ class GsoController extends Controller
                 ], 404);
             }
 
-            // ✅ Receipts live in public/receipts/ — use asset($path)
-            if ($receipt->receipt_url && !str_starts_with($receipt->receipt_url, 'http')) {
-                $receipt->receipt_url = asset($receipt->receipt_url);
-            }
+           // ✅ Receipts live in public/receipts/ — use /storage/ route
+if ($receipt->receipt_url && !str_starts_with($receipt->receipt_url, 'http')) {
+    $receipt->receipt_url = url('storage/' . $receipt->receipt_url);
+}
 
             return response()->json([
                 'success' => true,
@@ -718,7 +718,7 @@ class GsoController extends Controller
                     'amount_on_receipt' => $fuelReceipt->amount_on_receipt,
                     'invoice_number' => $fuelReceipt->invoice_number,
                     'unit_price' => $fuelReceipt->unit_price,
-                    'receipt_photo_path' => $photoPath ? asset($photoPath) : null,
+                   'receipt_photo_path' => $photoPath ? url('storage/' . $photoPath) : null,
                 ]
             ]);
         } catch (\Exception $e) {
@@ -960,7 +960,7 @@ class GsoController extends Controller
                     'end_lng' => $fuelReceipt?->trip_end_gps_lng,
                     'has_receipt' => $fuelReceipt && $fuelReceipt->receipt_photo_path ? true : false,
                     'receipt_url' => $fuelReceipt && $fuelReceipt->receipt_photo_path ?
-                        asset($fuelReceipt->receipt_photo_path) : null,
+    url('storage/' . $fuelReceipt->receipt_photo_path) : null,
                     'receipt_uploaded_at' => $fuelReceipt?->receipt_uploaded_at,
                     'vehicle' => $ticket->vehicle ? [
                         'plate_number' => $ticket->vehicle->plate_number,
@@ -1271,13 +1271,13 @@ public function getFuelReceipts(Request $request)
 
         $receipts = $query->orderBy('fr.receipt_uploaded_at', 'desc')->get();
 
-        // ✅ Fix receipt URL path (public/receipts/, not storage/)
-        $receipts = $receipts->map(function ($r) {
-            if ($r->receipt_url && !str_starts_with($r->receipt_url, 'http')) {
-                $r->receipt_url = asset($r->receipt_url);
-            }
-            return $r;
-        });
+        // ✅ Fix receipt URL path (serve via /storage/receipts/ route)
+$receipts = $receipts->map(function ($r) {
+    if ($r->receipt_url && !str_starts_with($r->receipt_url, 'http')) {
+        $r->receipt_url = url('storage/' . $r->receipt_url);
+    }
+    return $r;
+});
 
         return response()->json([
             'success' => true,
