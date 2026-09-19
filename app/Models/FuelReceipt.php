@@ -28,6 +28,9 @@ class FuelReceipt extends Model
         'gps_distance_km',
         'created_at',
         'updated_at',
+         'verification_status',
+    'verified_at',
+    'verified_by',
     ];
 
     protected $casts = [
@@ -45,6 +48,8 @@ class FuelReceipt extends Model
         'trip_end_gps_lng' => 'decimal:7',
         'trip_start_gps_accuracy' => 'decimal:2',
         'gps_distance_km' => 'decimal:2',
+        'verified_at' => 'datetime',
+    'receipt_uploaded_at' => 'datetime',
     ];
 
     // ============ RELATIONSHIPS ============
@@ -129,4 +134,9 @@ class FuelReceipt extends Model
     {
         return $this->gasSlip && $this->gasSlip->reconciliation_status === 'verified';
     }
+
+    public function verifiedBy()
+{
+    return $this->belongsTo(\App\Models\User::class, 'verified_by', 'user_id');
+}
 }

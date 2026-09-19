@@ -1,5 +1,5 @@
 // src/pages/mayor/MayorReceiptVerification.jsx
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAutoRefresh } from "../../hooks/useAutoRefresh";
 import { useRealtime } from "../../contexts/RealtimeContext";
@@ -29,7 +29,6 @@ import {
   CheckCircle,
   Loader2,
   AlertTriangle,
-  RefreshCw,
   Eye,
   Image as ImageIcon,
   User,
@@ -44,16 +43,13 @@ import {
   Calculator,
   FileText,
   Calendar,
-  MapPin,
   ArrowLeft,
   Zap,
-  Shield,
   TrendingUp,
   TrendingDown,
   Minus,
-  Wallet,
-  Gauge,
   Info,
+  History,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { format } from "date-fns";
@@ -63,46 +59,35 @@ import { cn } from "@/lib/utils";
 // HELPER FUNCTIONS - PRIORITIZE PUBLIC FOLDER
 // ============================================
 
-/**
- * Get receipt image URLs - Prioritizes public/receipts/ folder
- * Falls back to storage/receipts/ for backward compatibility
- */
 const getReceiptImageUrls = (receipt) => {
     let url = receipt?.receipt_url || receipt?.receipt_photo_path || null;
-    
+
     if (!url) {
         return [];
     }
-    
+
     const baseUrl = window.location.origin;
     const urlsList = [];
-    
-    // ✅ If it's a full URL, use it
+
     if (url.startsWith('http://') || url.startsWith('https://')) {
         urlsList.push(url);
-        // Also try extracting filename for fallback
         const filename = url.split('/').pop();
         if (filename) {
-            urlsList.push(`${baseUrl}/receipts/${filename}`);      // Public folder (priority)
-            urlsList.push(`${baseUrl}/storage/receipts/${filename}`); // Storage (fallback)
+            urlsList.push(`${baseUrl}/receipts/${filename}`);
+            urlsList.push(`${baseUrl}/storage/receipts/${filename}`);
         }
         return [...new Set(urlsList)];
     }
-    
-    // ✅ Extract filename
+
     const filename = url.split('/').pop();
-    
+
     if (!filename) {
         return [];
     }
-    
-    // ✅ PUBLIC FOLDER FIRST (new uploads go here)
+
     urlsList.push(`${baseUrl}/receipts/${filename}`);
-    
-    // ✅ Storage folder (backward compatibility for old uploads)
     urlsList.push(`${baseUrl}/storage/receipts/${filename}`);
-    
-    // ✅ Try the original path if different
+
     if (url.startsWith('/')) {
         urlsList.push(`${baseUrl}${url}`);
     } else if (!url.startsWith('receipts/') && !url.startsWith('storage/')) {
@@ -110,8 +95,7 @@ const getReceiptImageUrls = (receipt) => {
     } else if (url.startsWith('receipts/')) {
         urlsList.push(`${baseUrl}/${url}`);
     }
-    
-    // Remove duplicates
+
     return [...new Set(urlsList)];
 };
 
@@ -123,16 +107,15 @@ const ReceiptImage = ({ receipt }) => {
     const [imageError, setImageError] = useState(false);
     const [currentUrlIndex, setCurrentUrlIndex] = useState(0);
     const [imageLoaded, setImageLoaded] = useState(false);
-    
+
     const urls = React.useMemo(() => getReceiptImageUrls(receipt), [receipt]);
-    
-    // Reset when receipt changes
+
     React.useEffect(() => {
         setImageError(false);
         setCurrentUrlIndex(0);
         setImageLoaded(false);
     }, [receipt]);
-    
+
     if (urls.length === 0) {
         return (
             <div className="border rounded-xl p-8 text-center bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700">
@@ -144,10 +127,10 @@ const ReceiptImage = ({ receipt }) => {
             </div>
         );
     }
-    
+
     const currentUrl = urls[currentUrlIndex];
     const hasMoreUrls = currentUrlIndex < urls.length - 1;
-    
+
     const handleImageError = () => {
         if (hasMoreUrls) {
             setCurrentUrlIndex(prev => prev + 1);
@@ -155,7 +138,7 @@ const ReceiptImage = ({ receipt }) => {
             setImageError(true);
         }
     };
-    
+
     if (imageError) {
         return (
             <div className="border rounded-xl p-8 text-center bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700">
@@ -165,9 +148,6 @@ const ReceiptImage = ({ receipt }) => {
                 <p className="text-red-600 dark:text-red-400 font-medium">Cannot load receipt image</p>
                 <p className="text-xs text-slate-400 dark:text-slate-500 mt-1 break-all">
                     Tried: {urls.join(' → ')}
-                </p>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
-                    DB Path: {receipt.receipt_photo_path || receipt.receipt_url || 'No path'}
                 </p>
                 <button
                     onClick={() => {
@@ -182,7 +162,7 @@ const ReceiptImage = ({ receipt }) => {
             </div>
         );
     }
-    
+
     return (
         <div className="relative border rounded-xl overflow-hidden bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700">
             {!imageLoaded && (
@@ -205,15 +185,12 @@ const ReceiptImage = ({ receipt }) => {
                     Trying {currentUrlIndex + 1}/{urls.length}
                 </div>
             )}
-            <div className="absolute top-2 right-2 bg-black/50 backdrop-blur-sm text-white text-[10px] px-2 py-1 rounded-lg">
-                Click to expand
-            </div>
         </div>
     );
 };
 
 // ============================================
-// STATS CARD COMPONENT
+// STATS CARD
 // ============================================
 
 const StatsCard = ({ title, value, icon: Icon, color, subtitle, trend }) => (
@@ -250,7 +227,7 @@ const StatsCard = ({ title, value, icon: Icon, color, subtitle, trend }) => (
 );
 
 // ============================================
-// STATUS BADGE COMPONENT
+// STATUS BADGE
 // ============================================
 
 const StatusBadge = ({ status }) => {
@@ -276,7 +253,11 @@ const StatusBadge = ({ status }) => {
 
 const formatDate = (date) => {
   if (!date) return "N/A";
-  return format(new Date(date), "MMM dd, yyyy hh:mm a");
+  try {
+    return format(new Date(date), "MMM dd, yyyy hh:mm a");
+  } catch {
+    return "N/A";
+  }
 };
 
 const formatCurrency = (amount) => {
@@ -316,6 +297,7 @@ const MayorReceiptVerification = () => {
   const queryClient = useQueryClient();
   const { isConnected } = useRealtime();
   const [searchTerm, setSearchTerm] = useState("");
+  const [activeTab, setActiveTab] = useState("pending"); // "pending" | "verified"
   const [selectedReceipt, setSelectedReceipt] = useState(null);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -326,33 +308,50 @@ const MayorReceiptVerification = () => {
     liters_availed: "",
   });
 
-  const { 
-    data: receipts = [], 
-    isLoading, 
-    refetch,
-    isFetching,
+  // ============================================
+  // QUERIES
+  // ============================================
+
+  // Pending receipts
+  const {
+    data: pendingReceipts = [],
+    isLoading: isLoadingPending,
+    isFetching: isFetchingPending,
   } = useQuery({
-    queryKey: ["mayor-receipt-verification"],
+    queryKey: ["mayor-receipt-verification", "pending"],
     queryFn: async () => {
       const response = await mayorsOfficeAPI.getReceiptsForVerification();
       return response.data?.data || [];
     },
   });
 
+  // Verified receipts (new endpoint)
+  const {
+    data: verifiedReceipts = [],
+    isLoading: isLoadingVerified,
+    isFetching: isFetchingVerified,
+  } = useQuery({
+    queryKey: ["mayor-receipt-verification", "verified"],
+    queryFn: async () => {
+      const response = await mayorsOfficeAPI.getVerifiedReceipts();
+      return response.data?.data || [];
+    },
+  });
+
   // ============================================
-  // ✅ AUTO-REFRESH - No manual refresh needed
+  // AUTO-REFRESH
   // ============================================
 
   useAutoRefresh(
-    [
-      "mayor-trip-updated",
-      "new-notification",
-      "trip-completed",
-    ],
+    ["mayor-trip-updated", "new-notification", "trip-completed"],
     () => {
       queryClient.invalidateQueries({ queryKey: ["mayor-receipt-verification"] });
     }
   );
+
+  // ============================================
+  // MUTATION
+  // ============================================
 
   const verifyMutation = useMutation({
     mutationFn: async ({ receiptId, data }) => {
@@ -379,6 +378,10 @@ const MayorReceiptVerification = () => {
       toast.error(message);
     },
   });
+
+  // ============================================
+  // HANDLERS
+  // ============================================
 
   const openReceiptModal = (receipt) => {
     setSelectedReceipt(receipt);
@@ -411,17 +414,17 @@ const MayorReceiptVerification = () => {
     }
 
     const updatedData = { ...editData, [field]: value };
-    
+
     if (field === 'amount_on_receipt' || field === 'unit_price') {
       const amount = parseFloat(field === 'amount_on_receipt' ? value : updatedData.amount_on_receipt);
       const unitPrice = parseFloat(field === 'unit_price' ? value : updatedData.unit_price);
-      
+
       if (!isNaN(amount) && !isNaN(unitPrice) && amount > 0 && unitPrice > 0) {
         const calculatedLiters = amount / unitPrice;
         updatedData.liters_availed = calculatedLiters.toFixed(2);
       }
     }
-    
+
     setEditData(updatedData);
   }, [editData]);
 
@@ -456,32 +459,48 @@ const MayorReceiptVerification = () => {
     });
   };
 
-  const filteredReceipts = receipts.filter((receipt) => {
+  // ============================================
+  // DERIVED
+  // ============================================
+
+  // Active list depends on tab
+  const activeList = activeTab === "pending" ? pendingReceipts : verifiedReceipts;
+
+  const filteredReceipts = useMemo(() => {
     const search = searchTerm.toLowerCase();
-    return (
-      receipt.ticket_number?.toLowerCase().includes(search) ||
-      receipt.driver_name?.toLowerCase().includes(search) ||
-      receipt.plate_number?.toLowerCase().includes(search) ||
-      receipt.department_name?.toLowerCase().includes(search)
-    );
-  });
+    return activeList.filter((receipt) => {
+      return (
+        receipt.ticket_number?.toLowerCase().includes(search) ||
+        receipt.driver_name?.toLowerCase().includes(search) ||
+        receipt.plate_number?.toLowerCase().includes(search) ||
+        receipt.department_name?.toLowerCase().includes(search)
+      );
+    });
+  }, [activeList, searchTerm]);
 
-  const pendingCount = receipts.filter(r => r.status !== "verified").length;
-  const verifiedCount = receipts.filter(r => r.status === "verified").length;
-  const totalAmount = receipts.reduce((sum, r) => sum + parseFloat(r.amount || 0), 0);
+  const pendingCount = pendingReceipts.length;
+  const verifiedCount = verifiedReceipts.length;
+  const totalCount = pendingCount + verifiedCount;
+  const totalAmount = useMemo(
+    () =>
+      [...pendingReceipts, ...verifiedReceipts].reduce(
+        (sum, r) => sum + parseFloat(r.amount || 0),
+        0
+      ),
+    [pendingReceipts, verifiedReceipts]
+  );
 
-  // Connection status
   const connectionStatus = isConnected ? "🟢 Live" : "🔴 Offline";
   const isRealTime = isConnected;
 
   const stats = [
     {
       title: "Total Receipts",
-      value: receipts.length,
+      value: totalCount,
       icon: Receipt,
       color: "from-blue-500 to-blue-600",
-      subtitle: "All receipts",
-      trend: receipts.length > 0 ? 5 : 0,
+      subtitle: "Pending + verified",
+      trend: totalCount > 0 ? 5 : 0,
     },
     {
       title: "Pending",
@@ -504,14 +523,20 @@ const MayorReceiptVerification = () => {
       value: formatCurrency(totalAmount),
       icon: DollarSign,
       color: "from-purple-500 to-purple-600",
-      subtitle: "Total fuel cost",
+      subtitle: "All fuel cost",
       trend: totalAmount > 0 ? 3 : 0,
     },
   ];
 
-  if (isLoading) {
+  const isLoading =
+    (activeTab === "pending" && isLoadingPending) ||
+    (activeTab === "verified" && isLoadingVerified);
+
+  if (isLoading && activeList.length === 0) {
     return <LoadingSkeleton />;
   }
+
+  const isVerifiedView = activeTab === "verified";
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
@@ -549,7 +574,6 @@ const MayorReceiptVerification = () => {
               </div>
             </div>
           </div>
-          {/* ❌ REFRESH BUTTON REMOVED - Auto-refresh handles everything */}
         </div>
 
         {/* Stats Cards */}
@@ -557,6 +581,44 @@ const MayorReceiptVerification = () => {
           {stats.map((stat, index) => (
             <StatsCard key={index} {...stat} />
           ))}
+        </div>
+
+        {/* Tabs */}
+        <div className="flex items-center gap-2 p-1 rounded-xl bg-slate-100 dark:bg-slate-800/60 w-fit">
+          <button
+            onClick={() => setActiveTab("pending")}
+            className={cn(
+              "px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2",
+              activeTab === "pending"
+                ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm"
+                : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+            )}
+          >
+            <Clock className="h-4 w-4" />
+            Pending
+            {pendingCount > 0 && (
+              <Badge className="bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 border-0 text-[10px] h-5 px-1.5">
+                {pendingCount}
+              </Badge>
+            )}
+          </button>
+          <button
+            onClick={() => setActiveTab("verified")}
+            className={cn(
+              "px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2",
+              activeTab === "verified"
+                ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm"
+                : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+            )}
+          >
+            <History className="h-4 w-4" />
+            Verified
+            {verifiedCount > 0 && (
+              <Badge className="bg-green-500/20 text-green-600 dark:text-green-400 border-0 text-[10px] h-5 px-1.5">
+                {verifiedCount}
+              </Badge>
+            )}
+          </button>
         </div>
 
         {/* Search */}
@@ -576,12 +638,21 @@ const MayorReceiptVerification = () => {
             <div className="flex items-center justify-between">
               <div>
                 <CardTitle className="flex items-center gap-2 text-slate-800 dark:text-white">
-                  <Receipt className="h-5 w-5 text-green-500" />
-                  Fuel Receipts for Verification
+                  {isVerifiedView ? (
+                    <>
+                      <CheckCircle className="h-5 w-5 text-green-500" />
+                      Verified Receipts History
+                    </>
+                  ) : (
+                    <>
+                      <Receipt className="h-5 w-5 text-green-500" />
+                      Fuel Receipts for Verification
+                    </>
+                  )}
                 </CardTitle>
                 <CardDescription className="dark:text-slate-400">
                   {filteredReceipts.length} receipt{filteredReceipts.length !== 1 ? 's' : ''} found
-                  {filteredReceipts.length !== receipts.length && ` (filtered from ${receipts.length} total)`}
+                  {filteredReceipts.length !== activeList.length && ` (filtered from ${activeList.length} total)`}
                   {isRealTime && (
                     <span className="ml-2 text-xs text-emerald-500 animate-pulse">
                       ● Live updates
@@ -601,11 +672,21 @@ const MayorReceiptVerification = () => {
             {filteredReceipts.length === 0 ? (
               <div className="text-center py-16">
                 <div className="w-20 h-20 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto mb-4">
-                  <Receipt className="h-10 w-10 text-slate-400 dark:text-slate-500" />
+                  {isVerifiedView ? (
+                    <History className="h-10 w-10 text-slate-400 dark:text-slate-500" />
+                  ) : (
+                    <Receipt className="h-10 w-10 text-slate-400 dark:text-slate-500" />
+                  )}
                 </div>
-                <p className="text-slate-600 dark:text-slate-400 font-medium text-lg">No receipts found</p>
+                <p className="text-slate-600 dark:text-slate-400 font-medium text-lg">
+                  {isVerifiedView ? "No verified receipts yet" : "No receipts found"}
+                </p>
                 <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">
-                  {searchTerm ? 'Try adjusting your search' : 'Receipts will appear here when uploaded'}
+                  {searchTerm
+                    ? 'Try adjusting your search'
+                    : isVerifiedView
+                      ? 'Verified receipts will appear here'
+                      : 'Receipts will appear here when uploaded'}
                 </p>
               </div>
             ) : (
@@ -632,7 +713,7 @@ const MayorReceiptVerification = () => {
                         Amount
                       </TableHead>
                       <TableHead className="font-semibold text-slate-600 dark:text-slate-300 text-xs uppercase tracking-wider">
-                        Status
+                        {isVerifiedView ? "Verified On" : "Status"}
                       </TableHead>
                       <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-300 text-xs uppercase tracking-wider">
                         Actions
@@ -640,8 +721,8 @@ const MayorReceiptVerification = () => {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredReceipts.map((receipt, index) => (
-                      <TableRow 
+                    {filteredReceipts.map((receipt) => (
+                      <TableRow
                         key={receipt.id || receipt.fuel_receipt_id}
                         className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors group cursor-pointer"
                         onClick={() => openReceiptModal(receipt)}
@@ -678,30 +759,38 @@ const MayorReceiptVerification = () => {
                           {formatCurrency(receipt.amount)}
                         </TableCell>
                         <TableCell>
-                          <StatusBadge status={receipt.status} />
+                          {isVerifiedView ? (
+                            <div className="flex flex-col gap-0.5">
+                              <span className="text-xs text-slate-600 dark:text-slate-400">
+                                {formatDate(receipt.verified_at)}
+                              </span>
+                              {receipt.verified_by_name && (
+                                <span className="text-[10px] text-slate-400 dark:text-slate-500">
+                                  by {receipt.verified_by_name}
+                                </span>
+                              )}
+                            </div>
+                          ) : (
+                            <StatusBadge status={receipt.status} />
+                          )}
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-2">
                             <Button
                               size="sm"
+                              variant={isVerifiedView ? "outline" : "default"}
                               onClick={(e) => {
                                 e.stopPropagation();
                                 openReceiptModal(receipt);
                               }}
                               className={cn(
                                 "h-8 px-3 rounded-lg shadow-sm transition-all duration-200 hover:scale-105 active:scale-95",
-                                receipt.status !== "verified" 
-                                  ? "bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700 text-white shadow-emerald-500/20"
-                                  : "bg-slate-400 hover:bg-slate-500 text-white cursor-not-allowed"
+                                !isVerifiedView &&
+                                  "bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700 text-white shadow-emerald-500/20"
                               )}
-                              disabled={receipt.status === "verified"}
                             >
-                              {verifyMutation.isPending ? (
-                                <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
-                              ) : (
-                                <CheckCircle className="h-3.5 w-3.5 mr-1" />
-                              )}
-                              {receipt.status === "verified" ? "Verified" : "Verify"}
+                              <Eye className="h-3.5 w-3.5 mr-1" />
+                              {isVerifiedView ? "View" : "Review"}
                             </Button>
                           </div>
                         </TableCell>
@@ -732,7 +821,8 @@ const MayorReceiptVerification = () => {
                     </DialogDescription>
                   </div>
                 </div>
-                {selectedReceipt?.status !== "verified" && (
+                {/* Only show Edit button on pending receipts */}
+                {selectedReceipt?.status !== "verified" && !isVerifiedView && (
                   <Button
                     variant="ghost"
                     size="sm"
@@ -766,17 +856,28 @@ const MayorReceiptVerification = () => {
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className="text-xs text-slate-500 dark:text-slate-400">Uploaded</p>
-                    <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                      {formatDate(selectedReceipt.uploaded_at)}
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      {selectedReceipt.status === "verified" && selectedReceipt.verified_at
+                        ? "Verified On"
+                        : "Uploaded"}
                     </p>
+                    <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                      {selectedReceipt.status === "verified" && selectedReceipt.verified_at
+                        ? formatDate(selectedReceipt.verified_at)
+                        : formatDate(selectedReceipt.uploaded_at)}
+                    </p>
+                    {selectedReceipt.status === "verified" && selectedReceipt.verified_by_name && (
+                      <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">
+                        by {selectedReceipt.verified_by_name}
+                      </p>
+                    )}
                   </div>
                 </div>
 
                 {/* Receipt Image */}
                 <ReceiptImage receipt={selectedReceipt} />
 
-                {/* Receipt Details Grid - Dark mode text visible */}
+                {/* Receipt Details Grid */}
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                   <div className="p-2 rounded-lg bg-slate-50 dark:bg-slate-900/50">
                     <p className="text-xs text-slate-500 dark:text-slate-400">Ticket Number</p>
@@ -822,11 +923,11 @@ const MayorReceiptVerification = () => {
                   </div>
                 </div>
 
-                {/* Editable Fields */}
+                {/* Editable / Read-only Fields */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   <div>
                     <p className="text-xs text-slate-500 dark:text-slate-400">Invoice Number</p>
-                    {isEditing ? (
+                    {isEditing && !isVerifiedView ? (
                       <Input
                         value={editData.invoice_number}
                         onChange={(e) => handleInputChange('invoice_number', e.target.value)}
@@ -835,13 +936,13 @@ const MayorReceiptVerification = () => {
                       />
                     ) : (
                       <p className="font-medium text-slate-800 dark:text-white text-sm">
-                        {editData.invoice_number || selectedReceipt.invoice_number || "N/A"}
+                        {selectedReceipt.invoice_number || "N/A"}
                       </p>
                     )}
                   </div>
                   <div>
                     <p className="text-xs text-slate-500 dark:text-slate-400">Amount (₱)</p>
-                    {isEditing ? (
+                    {isEditing && !isVerifiedView ? (
                       <div className="relative mt-1">
                         <span className="absolute left-2.5 top-1/2 transform -translate-y-1/2 text-slate-400 dark:text-slate-500 text-sm">₱</span>
                         <Input
@@ -856,13 +957,13 @@ const MayorReceiptVerification = () => {
                       </div>
                     ) : (
                       <p className="font-semibold text-emerald-600 dark:text-emerald-400 text-sm">
-                        {formatCurrency(editData.amount_on_receipt || selectedReceipt.amount)}
+                        {formatCurrency(selectedReceipt.amount)}
                       </p>
                     )}
                   </div>
                   <div>
                     <p className="text-xs text-slate-500 dark:text-slate-400">Unit Price (₱/L)</p>
-                    {isEditing ? (
+                    {isEditing && !isVerifiedView ? (
                       <div className="relative mt-1">
                         <span className="absolute left-2.5 top-1/2 transform -translate-y-1/2 text-slate-400 dark:text-slate-500 text-sm">₱</span>
                         <Input
@@ -877,42 +978,42 @@ const MayorReceiptVerification = () => {
                       </div>
                     ) : (
                       <p className="font-medium text-slate-800 dark:text-white text-sm">
-                        {formatCurrency(editData.unit_price || selectedReceipt.unit_price)}
+                        {formatCurrency(selectedReceipt.unit_price)}
                       </p>
                     )}
                   </div>
                   <div>
                     <p className="text-xs text-slate-500 dark:text-slate-400">
                       Liters (L)
-                      {isEditing && (
+                      {isEditing && !isVerifiedView && (
                         <span className="ml-1 text-blue-500" title="Auto-calculated">
                           <Calculator className="h-3 w-3 inline" />
                         </span>
                       )}
                     </p>
-                    {isEditing ? (
+                    {isEditing && !isVerifiedView ? (
                       <Input
                         type="number"
                         step="0.01"
                         min="0"
                         value={editData.liters_availed}
-                        className="mt-1 dark:bg-slate-800 dark:border-slate-600 h-9 text-sm dark:text-slate-400 bg-slate-50 dark:bg-slate-800 cursor-not-allowed"
+                        className="mt-1 h-9 text-sm bg-slate-50 dark:bg-slate-800 cursor-not-allowed text-slate-500 dark:text-slate-400"
                         placeholder="Auto-calc"
                         disabled={true}
                       />
                     ) : (
                       <p className="font-medium text-slate-800 dark:text-white text-sm">
-                        {editData.liters_availed || selectedReceipt.liters} L
+                        {selectedReceipt.liters} L
                       </p>
                     )}
                   </div>
                 </div>
 
                 {/* Edit Help */}
-                {isEditing && (
+                {isEditing && !isVerifiedView && (
                   <div className="text-xs text-slate-600 dark:text-slate-300 bg-blue-50 dark:bg-blue-950/30 p-3 rounded-lg border border-blue-200 dark:border-blue-800">
                     <Info className="h-4 w-4 inline mr-1 text-blue-500 dark:text-blue-400" />
-                    Enter the <strong>Amount (₱)</strong> and <strong>Unit Price (₱/L)</strong>. 
+                    Enter the <strong>Amount (₱)</strong> and <strong>Unit Price (₱/L)</strong>.
                     Liters will be auto-calculated using: <strong>Liters = Amount ÷ Unit Price</strong>
                   </div>
                 )}
@@ -920,7 +1021,7 @@ const MayorReceiptVerification = () => {
                 {/* Actions */}
                 <div className="flex flex-wrap items-center justify-between pt-4 border-t dark:border-slate-700 gap-3">
                   <div className="flex items-center gap-2">
-                    {isEditing && (
+                    {isEditing && !isVerifiedView && (
                       <Badge variant="outline" className="border-blue-500 text-blue-600 dark:text-blue-400">
                         <Edit className="h-3 w-3 mr-1" />
                         Editing
@@ -929,7 +1030,7 @@ const MayorReceiptVerification = () => {
                   </div>
 
                   <div className="flex gap-2">
-                    {isEditing && (
+                    {isEditing && !isVerifiedView && (
                       <Button
                         variant="outline"
                         onClick={handleEditToggle}
@@ -939,8 +1040,8 @@ const MayorReceiptVerification = () => {
                         Cancel
                       </Button>
                     )}
-                    
-                    {selectedReceipt.status !== "verified" && (
+
+                    {!isVerifiedView && selectedReceipt.status !== "verified" && (
                       <Button
                         onClick={handleVerify}
                         className="bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700 shadow-lg shadow-emerald-500/20 transition-all duration-300 hover:scale-[1.02] active:scale-[0.98] text-white"
@@ -959,9 +1060,9 @@ const MayorReceiptVerification = () => {
                         )}
                       </Button>
                     )}
-                    
-                    {selectedReceipt.status === "verified" && (
-                      <Button variant="outline" disabled className="dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800">
+
+                    {isVerifiedView && (
+                      <Button variant="outline" disabled className="dark:border-slate-700 dark:text-slate-400">
                         <CheckCircle className="h-4 w-4 mr-2 text-green-500" />
                         Already Verified
                       </Button>
@@ -976,7 +1077,9 @@ const MayorReceiptVerification = () => {
         {/* Footer */}
         <div className="text-center text-xs text-slate-400 dark:text-slate-500 pt-2 border-t border-slate-200 dark:border-slate-700">
           <p>FCMS - Mayor's Office • Receipt Verification</p>
-          <p className="mt-0.5">{receipts.length} total receipts • {verifiedCount} verified • {pendingCount} pending</p>
+          <p className="mt-0.5">
+            {totalCount} total receipts • {verifiedCount} verified • {pendingCount} pending
+          </p>
         </div>
       </div>
     </div>

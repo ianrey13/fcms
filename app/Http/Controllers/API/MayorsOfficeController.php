@@ -829,31 +829,6 @@ private function deductWeeklyBudget($departmentId, $amount)
         }
     }
 
-    // ============ BUDGET ASSISTANCE METHODS ============
-
-    /**
-     * Get all pending budget assistance requests
-     */
-    public function getBudgetAssistanceRequests(Request $request)
-    {
-        // ... (keep existing code) ...
-    }
-
-    /**
-     * Get single budget assistance request details
-     */
-    public function getBudgetAssistanceRequest($requestId)
-    {
-        // ... (keep existing code) ...
-    }
-
-    /**
-     * Create MO-funded trip ticket from a budget assistance request
-     */
-    public function createMoFundedTicket(Request $request)
-    {
-        // ... (keep existing code) ...
-    }
 
     // ============ RECEIPT VERIFICATION METHODS ============
 
@@ -888,39 +863,32 @@ public function getReceiptsForVerification(Request $request)
                 'fr.receipt_photo_path',
                 'fr.receipt_uploaded_at as uploaded_at',
                 'fr.gps_distance_km',
-                'gs.reconciliation_status as status',
+                'fr.verification_status as status',    // ✅ NEW
+                'fr.verified_at',                       // ✅ NEW
                 'tt.trip_date',
                 'v.fuel_type'
             )
-            // ✅ FIXED: Show receipts with an uploaded photo that need verification
             ->whereNotNull('fr.receipt_photo_path')
-            ->where(function ($query) {
-                $query->where('gs.reconciliation_status', 'pending')
-                      ->orWhereNull('gs.reconciliation_status');
-            })
+            ->where('fr.verification_status', 'pending')  // ✅ NEW
             ->orderBy('fr.created_at', 'desc')
             ->get()
             ->map(function ($receipt) {
-                if ($receipt->receipt_photo_path) {
-                    $filename = basename($receipt->receipt_photo_path);
-                    $receipt->receipt_url = asset('receipts/' . $filename);
-                } else {
-                    $receipt->receipt_url = null;
-                }
+                $receipt->receipt_url = $receipt->receipt_photo_path
+                    ? asset('receipts/' . basename($receipt->receipt_photo_path))
+                    : null;
                 return $receipt;
             });
 
         return response()->json([
             'success' => true,
-            'data' => $receipts,
-            'total' => $receipts->count()
+            'data'    => $receipts,
+            'total'   => $receipts->count(),
         ]);
-
     } catch (\Exception $e) {
         Log::error('Get receipts for verification error: ' . $e->getMessage());
         return response()->json([
             'success' => false,
-            'message' => 'Failed to fetch receipts: ' . $e->getMessage()
+            'message' => 'Failed to fetch receipts: ' . $e->getMessage(),
         ], 500);
     }
 }
@@ -928,7 +896,7 @@ public function getReceiptsForVerification(Request $request)
     /**
      * Verify a receipt with editable fields
      */
-    public function verifyReceipt(Request $request, $id)
+public function verifyReceipt(Request $request, $id)
 {
     try {
         $user = $request->user();
@@ -942,9 +910,9 @@ public function getReceiptsForVerification(Request $request)
         ]);
 
         $validator = Validator::make($request->all(), [
-            'invoice_number' => 'nullable|string|max:50',
-            'liters_availed' => 'required|numeric|min:0.01',
-            'unit_price' => 'required|numeric|min:0.01',
+            'invoice_number'    => 'nullable|string|max:50',
+            'liters_availed'    => 'required|numeric|min:0.01',
+            'unit_price'        => 'required|numeric|min:0.01',
             'amount_on_receipt' => 'required|numeric|min:0.01',
         ]);
 
@@ -952,21 +920,26 @@ public function getReceiptsForVerification(Request $request)
             return response()->json([
                 'success' => false,
                 'message' => 'Validation failed',
-                'errors' => $validator->errors()
+                'errors'  => $validator->errors(),
             ], 422);
         }
 
         $fuelReceipt = FuelReceipt::findOrFail($id);
-        $gasSlip = GasSlip::findOrFail($fuelReceipt->gas_slip_id);
+        $gasSlip     = GasSlip::findOrFail($fuelReceipt->gas_slip_id);
 
-        if ($gasSlip->reconciliation_status === 'verified') {
+        // ✅ Guard: already verified?
+        // Prefer new column, fall back to gas_slip status for legacy rows.
+        $alreadyVerified = $fuelReceipt->verification_status === 'verified'
+            || $gasSlip->reconciliation_status === 'verified';
+
+        if ($alreadyVerified) {
             return response()->json([
                 'success' => false,
-                'message' => 'This receipt has already been verified'
+                'message' => 'This receipt has already been verified',
             ], 400);
         }
 
-        // ✅ NEW: Cap amount to gas slip's released amount
+        // ✅ Guard: amount cap
         if ($request->amount_on_receipt > $gasSlip->amount_released) {
             return response()->json([
                 'success' => false,
@@ -978,19 +951,18 @@ public function getReceiptsForVerification(Request $request)
             ], 422);
         }
 
-        // ✅ NEW: Cross-check amount = liters × unit_price
+        // ✅ Guard: amount = liters × unit_price (5% tolerance)
         $expectedAmount = round($request->liters_availed * $request->unit_price, 2);
         $amountVariance = abs($request->amount_on_receipt - $expectedAmount);
 
         if ($amountVariance > 1.00) {
             Log::warning('MO verify: Amount vs liters×price mismatch', [
-                'receipt_id' => $id,
+                'receipt_id'       => $id,
                 'amount_on_receipt' => $request->amount_on_receipt,
-                'liters_x_price' => $expectedAmount,
-                'variance' => $amountVariance,
+                'liters_x_price'   => $expectedAmount,
+                'variance'         => $amountVariance,
             ]);
 
-            // Reject if variance > 5% of the receipt amount
             if ($amountVariance > ($request->amount_on_receipt * 0.05)) {
                 return response()->json([
                     'success' => false,
@@ -1007,22 +979,25 @@ public function getReceiptsForVerification(Request $request)
 
         DB::beginTransaction();
 
-        // Update fuel receipt
+        // Update fuel_receipt — data + verification
         if ($request->has('invoice_number')) {
             $fuelReceipt->invoice_number = $request->invoice_number;
         }
-        $fuelReceipt->liters_availed = $request->liters_availed;
-        $fuelReceipt->unit_price = $request->unit_price;
-        $fuelReceipt->amount_on_receipt = $request->amount_on_receipt;
+        $fuelReceipt->liters_availed       = $request->liters_availed;
+        $fuelReceipt->unit_price           = $request->unit_price;
+        $fuelReceipt->amount_on_receipt    = $request->amount_on_receipt;
+        $fuelReceipt->verification_status  = 'verified';
+        $fuelReceipt->verified_at          = now();
+        $fuelReceipt->verified_by          = $user->user_id;
         $fuelReceipt->save();
 
-        // Update gas slip
+        // Update gas_slip for reconciliation tracking
         $gasSlip->reconciliation_status = 'verified';
-        $gasSlip->reconciled_by = $user->user_id;
-        $gasSlip->reconciled_at = now();
+        $gasSlip->reconciled_by         = $user->user_id;
+        $gasSlip->reconciled_at         = now();
         $gasSlip->save();
 
-        // ✅ NEW: Sync parent trip ticket's actuals
+        // Sync parent trip ticket's actuals
         if ($gasSlip->tripTicket) {
             $gasSlip->tripTicket->syncActuals()->save();
         }
@@ -1030,10 +1005,10 @@ public function getReceiptsForVerification(Request $request)
         DB::commit();
 
         Log::info('Receipt verified with edits', [
-            'receipt_id' => $id,
-            'verified_by' => $user->user_id,
-            'liters_availed' => $request->liters_availed,
-            'unit_price' => $request->unit_price,
+            'receipt_id'        => $id,
+            'verified_by'       => $user->user_id,
+            'liters_availed'    => $request->liters_availed,
+            'unit_price'        => $request->unit_price,
             'amount_on_receipt' => $request->amount_on_receipt,
         ]);
 
@@ -1041,14 +1016,16 @@ public function getReceiptsForVerification(Request $request)
             'success' => true,
             'message' => 'Receipt verified successfully',
             'data' => [
-                'receipt_id' => $id,
-                'gas_slip_id' => $gasSlip->gas_slip_id,
-                'status' => $gasSlip->reconciliation_status,
-                'invoice_number' => $fuelReceipt->invoice_number,
-                'liters_availed' => $fuelReceipt->liters_availed,
-                'unit_price' => $fuelReceipt->unit_price,
-                'amount_on_receipt' => $fuelReceipt->amount_on_receipt,
-            ]
+                'receipt_id'          => $id,
+                'gas_slip_id'         => $gasSlip->gas_slip_id,
+                'verification_status' => $fuelReceipt->verification_status,
+                'reconciliation_status' => $gasSlip->reconciliation_status,
+                'invoice_number'      => $fuelReceipt->invoice_number,
+                'liters_availed'      => $fuelReceipt->liters_availed,
+                'unit_price'          => $fuelReceipt->unit_price,
+                'amount_on_receipt'   => $fuelReceipt->amount_on_receipt,
+                'verified_at'         => $fuelReceipt->verified_at,
+            ],
         ]);
     } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
         return response()->json(['success' => false, 'message' => 'Receipt not found'], 404);
@@ -1058,7 +1035,7 @@ public function getReceiptsForVerification(Request $request)
         Log::error($e->getTraceAsString());
         return response()->json([
             'success' => false,
-            'message' => 'Failed to verify receipt: ' . $e->getMessage()
+            'message' => 'Failed to verify receipt: ' . $e->getMessage(),
         ], 500);
     }
 }
@@ -1094,15 +1071,7 @@ public function getReceiptsForVerification(Request $request)
         ];
     }
 
-    private function notifyDriverOfMOTrip($tripTicket, $amount, $chargeTo)
-    {
-        // ... (keep existing code) ...
-    }
-
-    private function notifyDepartmentOfMOTrip($tripTicket, $chargeTo, $moNote)
-    {
-        // ... (keep existing code) ...
-    }
+  
 
     private function sendFundIssuedNotification($ticket, $amount, $fundingSource, $isCrossDepartment = false)
     {
@@ -1149,16 +1118,7 @@ public function getReceiptsForVerification(Request $request)
         }
     }
 
-    private function sendRejectionNotification($ticket, $reason)
-    {
-        // ... (keep existing code) ...
-    }
-
-    public function removeMORequest($requestId)
-    {
-        // ... (keep existing code) ...
-    }
-
+  
     public function getDepartmentBudget(Request $request, $departmentId)
     {
         try {
@@ -1540,5 +1500,78 @@ public function cancelTrip(Request $request, $id)
         ], 500);
     }
 }
+
+public function getVerifiedReceipts(Request $request)
+{
+    try {
+        $user = $request->user();
+        if (!$user->isMayorsOffice()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $query = DB::table('fuel_receipt as fr')
+            ->join('gas_slip as gs', 'fr.gas_slip_id', '=', 'gs.gas_slip_id')
+            ->join('trip_ticket as tt', 'gs.trip_ticket_id', '=', 'tt.trip_ticket_id')
+            ->join('vehicles as v', 'tt.vehicle_id', '=', 'v.vehicle_id')
+            ->join('drivers as d', 'tt.driver_id', '=', 'd.driver_id')
+            ->join('users as u_driver', 'd.user_id', '=', 'u_driver.user_id')
+            ->join('departments as dept', 'tt.department_id', '=', 'dept.department_id')
+            ->leftJoin('users as u_verifier', 'fr.verified_by', '=', 'u_verifier.user_id')
+            ->select(
+                'fr.fuel_receipt_id as id',
+                'fr.invoice_number',
+                'fr.unit_price',
+                'tt.trip_ticket_number as ticket_number',
+                DB::raw("CONCAT(u_driver.first_name, ' ', u_driver.last_name) as driver_name"),
+                'v.plate_number',
+                'v.fuel_type',
+                'dept.department_name',
+                'fr.liters_availed as liters',
+                'fr.amount_on_receipt as amount',
+                'fr.receipt_photo_path',
+                'fr.receipt_uploaded_at as uploaded_at',
+                'fr.gps_distance_km',
+                'fr.verification_status as status',
+                'fr.verified_at',
+                DB::raw("CONCAT(u_verifier.first_name, ' ', u_verifier.last_name) as verified_by_name"),
+                'tt.trip_date'
+            )
+            ->whereNotNull('fr.receipt_photo_path')
+            ->where('fr.verification_status', 'verified');
+
+        if ($request->filled('start_date') && $request->filled('end_date')) {
+            $query->whereBetween('fr.verified_at', [
+                Carbon::parse($request->start_date)->startOfDay(),
+                Carbon::parse($request->end_date)->endOfDay(),
+            ]);
+        }
+
+        if ($request->filled('department_id')) {
+            $query->where('tt.department_id', $request->department_id);
+        }
+
+        $receipts = $query->orderBy('fr.verified_at', 'desc')
+            ->get()
+            ->map(function ($receipt) {
+                $receipt->receipt_url = $receipt->receipt_photo_path
+                    ? asset('receipts/' . basename($receipt->receipt_photo_path))
+                    : null;
+                return $receipt;
+            });
+
+        return response()->json([
+            'success' => true,
+            'data'    => $receipts,
+            'total'   => $receipts->count(),
+        ]);
+    } catch (\Exception $e) {
+        Log::error('MO get verified receipts error: ' . $e->getMessage());
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to fetch verified receipts: ' . $e->getMessage(),
+        ], 500);
+    }
+}
+
 
 }

@@ -346,21 +346,23 @@ class ReportsController extends Controller
         }
     }
 
-    // ============================================================
+        // ============================================================
     // 4. FUEL RECEIPT REPORT
     // ============================================================
     public function getFuelReceiptReport(Request $request)
     {
         try {
-            $startDate = $request->get('start_date');
-            $endDate = $request->get('end_date');
+            $startDate    = $request->get('start_date');
+            $endDate      = $request->get('end_date');
             $departmentId = $request->get('department_id');
-            $vehicleId = $request->get('vehicle_id');
+            $vehicleId    = $request->get('vehicle_id');
+            $statusFilter = $request->get('status'); // ✅ NEW: pending | verified (from frontend dropdown)
 
             $query = FuelReceipt::with([
                 'gasSlip.tripTicket.department',
                 'gasSlip.tripTicket.vehicle',
-                'gasSlip.tripTicket.driver.user'
+                'gasSlip.tripTicket.driver.user',
+                'verifiedBy',   // ✅ NEW
             ]);
 
             if ($startDate && $endDate) {
@@ -371,24 +373,30 @@ class ReportsController extends Controller
             }
 
             if ($departmentId) {
-                $query->whereHas('gasSlip.tripTicket', function($q) use ($departmentId) {
+                $query->whereHas('gasSlip.tripTicket', function ($q) use ($departmentId) {
                     $q->where('department_id', $departmentId);
                 });
             }
 
             if ($vehicleId) {
-                $query->whereHas('gasSlip.tripTicket', function($q) use ($vehicleId) {
+                $query->whereHas('gasSlip.tripTicket', function ($q) use ($vehicleId) {
                     $q->where('vehicle_id', $vehicleId);
                 });
             }
 
+            // ✅ NEW: server-side status filter (frontend can also filter, but this keeps
+            // counts in the summary accurate when a filter is applied)
+            if ($statusFilter && $statusFilter !== 'all') {
+                $query->where('verification_status', strtolower($statusFilter));
+            }
+
             $receipts = $query->get();
 
-            $formattedReceipts = $receipts->map(function($receipt) {
-                $trip = $receipt->gasSlip->tripTicket;
-                $vehicle = $trip->vehicle;
-                $department = $trip->department;
-                $driver = $trip->driver;
+            $formattedReceipts = $receipts->map(function ($receipt) {
+                $trip       = $receipt->gasSlip?->tripTicket;
+                $vehicle    = $trip?->vehicle;
+                $department = $trip?->department;
+                $driver     = $trip?->driver;
 
                 $invoiceNumber = $receipt->invoice_number ?? 'N/A';
 
@@ -408,79 +416,104 @@ class ReportsController extends Controller
                 $status = $trip->status ?? 'N/A';
 
                 $statusMap = [
-                    'closed' => 'Closed',
-                    'completed' => 'Completed',
-                    'pending_mayors_office' => 'Pending MO',
-                    'funds_issued' => 'Funds Issued',
-                    'in_transit' => 'In Transit',
-                    'acknowledged' => 'Acknowledged',
+                    'closed'                 => 'Closed',
+                    'completed'              => 'Completed',
+                    'pending_mayors_office'  => 'Pending MO',
+                    'funds_issued'           => 'Funds Issued',
+                    'in_transit'             => 'In Transit',
+                    'acknowledged'           => 'Acknowledged',
                     'pending_gso_validation' => 'Pending Validation',
                 ];
                 $statusLabel = $statusMap[$status] ?? $status;
 
                 return [
-                    'used_for' => $department ? $department->department_name : 'N/A',
-                    'invoice_number' => $invoiceNumber,
-                    'charge_invoice_no' => $invoiceNumber,
-                    'gas_slip_id' => $receipt->gas_slip_id,
-                    'date' => $receipt->created_at ? $receipt->created_at->format('m/d/Y') : 'N/A',
-                    'lubricant' => $vehicle ? strtoupper($vehicle->fuel_type) : 'N/A',
-                    'fuel_type' => $vehicle ? strtoupper($vehicle->fuel_type) : 'N/A',
-                    'quantity' => $receipt->liters_availed ?? 0,
-                    'unit_price' => $unitPrice,
-                    'formatted_unit_price' => '₱' . number_format($unitPrice, 2),
-                    'amount' => $receipt->amount_on_receipt ?? 0,
-                    'formatted_amount' => '₱' . number_format($receipt->amount_on_receipt ?? 0, 2),
-                    'ticket_number' => $trip->trip_ticket_number ?? 'N/A',
-                    'control_no' => $trip->trip_ticket_number ?? 'N/A',
-                    'plate_no' => $vehicle ? $vehicle->plate_number : 'N/A',
-                    'plate_number' => $vehicle ? $vehicle->plate_number : 'N/A',
-                    'vehicle' => $vehicle ? $vehicle->vehicle_model : 'N/A',
-                    'vehicle_model' => $vehicle ? $vehicle->vehicle_model : 'N/A',
-                    'vehicle_id' => $vehicle ? $vehicle->vehicle_id : null,
-                    'department' => $department ? $department->department_name : 'N/A',
-                    'department_name' => $department ? $department->department_name : 'N/A',
-                    'department_id' => $department ? $department->department_id : null,
-                    'driver' => $driver && $driver->user ? $driver->user->full_name : 'N/A',
-                    'driver_name' => $driver && $driver->user ? $driver->user->full_name : 'N/A',
-                    'driver_id' => $driver ? $driver->driver_id : null,
-                    'destination' => $trip->destination ?? 'N/A',
-                    'time_departure' => $timeDeparture,
-                    'time_arrival' => $timeArrival,
-                    'status' => $statusLabel,
-                    'reconciliation_status' => $receipt->gasSlip?->reconciliation_status ?? 'N/A',
-                    'has_receipt' => !is_null($receipt->receipt_photo_path),
+                    // ---- Identity ----
+                    'fuel_receipt_id'    => $receipt->fuel_receipt_id,
+                    'gas_slip_id'        => $receipt->gas_slip_id,
+                    'invoice_number'     => $invoiceNumber,
+                    'charge_invoice_no'  => $invoiceNumber,
+                    'control_no'         => $trip?->trip_ticket_number ?? 'N/A',
+                    'ticket_number'      => $trip?->trip_ticket_number ?? 'N/A',
+
+                    // ---- Dates ----
+                    'date'               => $receipt->created_at
+                        ? $receipt->created_at->format('m/d/Y')
+                        : 'N/A',
+                    'trip_date'          => $trip?->trip_date ?? 'N/A',
                     'receipt_uploaded_at' => $receipt->receipt_uploaded_at
                         ? $receipt->receipt_uploaded_at->format('m/d/Y H:i')
                         : 'N/A',
-                    'fuel_receipt_id' => $receipt->fuel_receipt_id,
-                    'trip_date' => $trip->trip_date ?? 'N/A',
-                    'trip_started_at' => $receipt->trip_started_at,
-                    'trip_ended_at' => $receipt->trip_ended_at,
+                    'time_departure'     => $timeDeparture,
+                    'time_arrival'       => $timeArrival,
+                    'trip_started_at'    => $receipt->trip_started_at,
+                    'trip_ended_at'      => $receipt->trip_ended_at,
+
+                    // ---- Vehicle / Department / Driver ----
+                    'used_for'           => $department?->department_name ?? 'N/A',
+                    'department'         => $department?->department_name ?? 'N/A',
+                    'department_name'    => $department?->department_name ?? 'N/A',
+                    'department_id'      => $department?->department_id,
+                    'lubricant'          => $vehicle ? strtoupper($vehicle->fuel_type) : 'N/A',
+                    'fuel_type'          => $vehicle ? strtoupper($vehicle->fuel_type) : 'N/A',
+                    'plate_no'           => $vehicle?->plate_number ?? 'N/A',
+                    'plate_number'       => $vehicle?->plate_number ?? 'N/A',
+                    'vehicle'            => $vehicle?->vehicle_model ?? 'N/A',
+                    'vehicle_model'      => $vehicle?->vehicle_model ?? 'N/A',
+                    'vehicle_id'         => $vehicle?->vehicle_id,
+                    'driver'             => $driver?->user?->full_name ?? 'N/A',
+                    'driver_name'        => $driver?->user?->full_name ?? 'N/A',
+                    'driver_id'          => $driver?->driver_id,
+                    'destination'        => $trip?->destination ?? 'N/A',
+
+                    // ---- Amounts ----
+                    'quantity'              => $receipt->liters_availed ?? 0,
+                    'unit_price'            => $unitPrice,
+                    'formatted_unit_price'  => '₱' . number_format($unitPrice, 2),
+                    'amount'                => $receipt->amount_on_receipt ?? 0,
+                    'formatted_amount'      => '₱' . number_format($receipt->amount_on_receipt ?? 0, 2),
+
+                    // ---- Trip status (unrelated to receipt verification) ----
+                    'status' => $statusLabel,
+
+                    // ---- ✅ NEW: Receipt verification (the field that matters now) ----
+                    'receipt_status'        => $receipt->verification_status ?? 'pending',
+                    'verified_at'           => $receipt->verified_at,
+                    'verified_by'           => $receipt->verifiedBy?->full_name,
+                    'verified_by_id'        => $receipt->verified_by,
+
+                    // ---- Legacy: gas_slip reconciliation (kept for other views) ----
+                    'reconciliation_status' => $receipt->gasSlip?->reconciliation_status ?? 'N/A',
+
+                    // ---- Flags ----
+                    'has_receipt' => !is_null($receipt->receipt_photo_path),
                 ];
             });
 
             $summary = [
-                'total_receipts' => $receipts->count(),
-                'total_liters' => round($receipts->sum('liters_availed'), 2),
-                'total_cost' => round($receipts->sum('amount_on_receipt'), 2),
-                'total_vehicles' => $receipts->pluck('gasSlip.tripTicket.vehicle_id')->unique()->count(),
-                'total_departments' => $receipts->pluck('gasSlip.tripTicket.department_id')->unique()->count(),
-                'avg_unit_price' => $receipts->count() > 0 && $receipts->sum('liters_availed') > 0
+                'total_receipts'    => $receipts->count(),
+                'total_liters'      => round($receipts->sum('liters_availed'), 2),
+                'total_cost'        => round($receipts->sum('amount_on_receipt'), 2),
+                'total_vehicles'    => $receipts->pluck('gasSlip.tripTicket.vehicle_id')->filter()->unique()->count(),
+                'total_departments' => $receipts->pluck('gasSlip.tripTicket.department_id')->filter()->unique()->count(),
+                'avg_unit_price'    => $receipts->count() > 0 && $receipts->sum('liters_availed') > 0
                     ? round($receipts->sum('amount_on_receipt') / $receipts->sum('liters_availed'), 2)
                     : 0,
+                // ✅ NEW: status breakdown (only meaningful when not filtered)
+                'pending_count'     => $receipts->where('verification_status', 'pending')->count(),
+                'verified_count'    => $receipts->where('verification_status', 'verified')->count(),
             ];
 
             return response()->json([
                 'success' => true,
                 'data' => [
-                    'summary' => $summary,
+                    'summary'  => $summary,
                     'receipts' => $formattedReceipts,
-                    'filters' => [
-                        'start_date' => $startDate,
-                        'end_date' => $endDate,
+                    'filters'  => [
+                        'start_date'    => $startDate,
+                        'end_date'      => $endDate,
                         'department_id' => $departmentId,
-                        'vehicle_id' => $vehicleId,
+                        'vehicle_id'    => $vehicleId,
+                        'status'        => $statusFilter,
                     ],
                 ]
             ]);

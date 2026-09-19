@@ -65,8 +65,8 @@ export const gsoAPI = {
   exportReport: (type, params) =>
     cachedApi.get(`/gso/reports/export/${type}`, { params, responseType: "blob" }),
 
-  // Signature for GSO
-  getSignature: (id) => cachedApi.get(`/gso/users/${id}/signature`),
+ 
+  getVerifiedReceipts: (params) => cachedApi.get("/gso/verified-receipts", { params }),
 
   // Fuel Receipts
   getFuelReceipts: (params) => cachedApi.get("/admin/fuel-receipts", { params }),
@@ -166,6 +166,9 @@ export const mayorsOfficeAPI = {
     cachedApi.get("/mayors-office/receipts/for-verification", { params }),
   verifyReceipt: (receiptId, data) =>
     uncachedApi.post(`/mayors-office/receipts/${receiptId}/verify`, data),
+
+  getVerifiedReceipts: (params) =>
+  cachedApi.get("/mayors-office/receipts/verified", { params }),
 
   // Budget History
   getBudgetHistory: (params) =>

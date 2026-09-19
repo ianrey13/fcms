@@ -209,6 +209,7 @@ Route::prefix('reports')->group(function () {
         Route::post('tickets/{id}/validate', [GsoController::class, 'validateTrip']);
         Route::get('fiscal-years', [FiscalYearController::class, 'index']);
         Route::get('tickets/{id}/history', [GsoController::class, 'getTripHistory']);
+        Route::get('/verified-receipts', [GsoController::class, 'getVerifiedReceipts']);   
         
         // ✅ GSO GPS Live Tracking
         Route::get('live-tracking', [GpsPingController::class, 'getActiveTrips']);
@@ -260,8 +261,9 @@ Route::prefix('reports')->group(function () {
 
         // Receipt Verification
         Route::get('/receipts/for-verification', [MayorsOfficeController::class, 'getReceiptsForVerification']);
-        Route::post('/receipts/{id}/verify', [MayorsOfficeController::class, 'verifyReceipt']);
-
+Route::post('/receipts/{id}/verify',      [MayorsOfficeController::class, 'verifyReceipt']);
+Route::get('/receipts/verified',          [MayorsOfficeController::class, 'getVerifiedReceipts']);  
+        
         // Cross-Department Usage
         Route::get('cross-department-usage', [MayorsOfficeController::class, 'getCrossDepartmentUsage']);
         Route::get('cross-department-usage/{id}', [MayorsOfficeController::class, 'getCrossDepartmentUsageDetails']);
