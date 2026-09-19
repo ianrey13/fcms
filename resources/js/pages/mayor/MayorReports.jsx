@@ -585,258 +585,176 @@ const MONTH_OPTIONS = [
 ];
 
 const renderBudgetUtilization = () => {
-  const periods = Array.isArray(budgetData?.periods) ? budgetData.periods : [];
-  const summary = budgetData?.summary || {};
-  const dept = budgetData?.department || {};
+    const periods = Array.isArray(budgetData?.periods) ? budgetData.periods : [];
+    const summary = budgetData?.summary || {};
+    const dept = budgetData?.department || {};
 
-  const selectedMonthLabel = budgetMonthFilter === 'all'
-    ? 'All Months'
-    : MONTH_OPTIONS.find(m => m.value === budgetMonthFilter)?.label || '';
-
-  return (
-    <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-      <CardHeader
-        className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors rounded-t-2xl"
-        onClick={() => toggleSection('budgetUtilization')}
-      >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Wallet className="h-5 w-5 text-amber-500" />
-            <CardTitle className="text-slate-800 dark:text-white">Budget Utilization Report</CardTitle>
-            <Badge className="bg-amber-500/20 text-amber-600 ml-2">
-              {periods.length} week{periods.length !== 1 ? 's' : ''}
-            </Badge>
-          </div>
-          <div className="flex items-center gap-2">
-            {expandedSections.budgetUtilization && (
-              <>
-                {/* ✅ NEW: Department filter */}
-                <Select
-                  value={budgetDepartmentFilter}
-                  onValueChange={(v) => { setBudgetDepartmentFilter(v); }}
-                >
-                  <SelectTrigger
-                    className="w-[180px] h-8 text-xs"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <SelectValue placeholder="Department" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Default (First with budget)</SelectItem>
-                    {departments.map((d) => (
-                      <SelectItem key={d.department_id} value={String(d.department_id)}>
-                        {d.department_name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
-                {/* ✅ NEW: Month filter */}
-                <Select
-                  value={String(budgetMonthFilter)}
-                  onValueChange={(v) => setBudgetMonthFilter(v === 'all' ? 'all' : parseInt(v))}
-                >
-                  <SelectTrigger
-                    className="w-[130px] h-8 text-xs"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <SelectValue placeholder="Month" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {MONTH_OPTIONS.map(opt => (
-                      <SelectItem key={opt.value} value={String(opt.value)}>{opt.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
-                {/* Year input (kept) */}
-                <Input
-                  type="number"
-                  value={budgetYearFilter}
-                  onChange={(e) => setBudgetYearFilter(parseInt(e.target.value) || new Date().getFullYear())}
-                  onClick={(e) => e.stopPropagation()}
-                  className="w-20 h-8 text-xs"
-                  min={2020}
-                  max={2030}
-                />
-
-                <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); handleExport('excel', 'budget', { year: budgetYearFilter, month: budgetMonthFilter, department_id: budgetDepartmentFilter }); }} disabled={exportLoading} className="h-8 px-2 text-xs">
-                  <FileSpreadsheet className="h-3.5 w-3.5 mr-1" /> Excel
-                </Button>
-                <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); handleExport('pdf', 'budget', { year: budgetYearFilter, month: budgetMonthFilter, department_id: budgetDepartmentFilter }); }} disabled={exportLoading} className="h-8 px-2 text-xs">
-                  <FileText className="h-3.5 w-3.5 mr-1" /> PDF
-                </Button>
-                <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); window.print(); }} className="h-8 px-2 text-xs">
-                  <Printer className="h-3.5 w-3.5 mr-1" /> Print
-                </Button>
-              </>
-            )}
-            <Badge variant="secondary">{expandedSections.budgetUtilization ? 'Hide' : 'Show'}</Badge>
-            {expandedSections.budgetUtilization ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-          </div>
-        </div>
-        <CardDescription>
-          {dept.department_name || 'Select a department'} — {selectedMonthLabel} {budgetYearFilter}
-        </CardDescription>
-      </CardHeader>
-
-      {expandedSections.budgetUtilization && (
-        <CardContent>
-          {/* ✅ STAT CARDS: ANNUAL totals for the selected department */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-            <StatsCard
-              title="Annual Allocated"
-              value={formatCurrency(summary.total_allocated || 0)}
-              icon={Wallet}
-              color="from-blue-500 to-blue-600"
-              subtitle={`FY ${budgetYearFilter}`}
-            />
-            <StatsCard
-              title="Annual Utilized"
-              value={formatCurrency(summary.total_used || 0)}
-              icon={TrendingDown}
-              color="from-yellow-500 to-yellow-600"
-              subtitle={`FY ${budgetYearFilter}`}
-            />
-            <StatsCard
-              title="Annual Remaining"
-              value={formatCurrency(summary.total_remaining || 0)}
-              icon={TrendingUp}
-              color="from-emerald-500 to-emerald-600"
-              subtitle={`FY ${budgetYearFilter}`}
-            />
-            <StatsCard
-              title="Weeks in View"
-              value={summary.total_weeks || 0}
-              icon={CalendarRange}
-              color="from-purple-500 to-purple-600"
-              subtitle={selectedMonthLabel}
-            />
-          </div>
-
-          {/* ✅ TABLE: per-week rows with ACTUAL dates */}
-          <div className="overflow-x-auto max-h-[400px] overflow-y-auto border rounded-lg">
-            <Table>
-              <TableHeader className="sticky top-0 z-10 bg-slate-100 dark:bg-slate-800">
-                <TableRow>
-                  <TableHead className="font-semibold text-xs uppercase">Week (Date Range)</TableHead>
-                  <TableHead className="text-right font-semibold text-xs uppercase">Budget (₱)</TableHead>
-                  <TableHead className="text-right font-semibold text-xs uppercase">Utilized (₱)</TableHead>
-                  <TableHead className="text-right font-semibold text-xs uppercase">Balance (₱)</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {periods.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan="4" className="text-center py-8 text-slate-500">
-                      No weekly budget periods for this department, month, and year
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  <>
-                    {periods.map((p, i) => {
-                      const start = p.week_start
-                        ? format(new Date(p.week_start), 'MMM d, yyyy')
-                        : 'N/A';
-                      const end = p.week_end
-                        ? format(new Date(p.week_end), 'MMM d, yyyy')
-                        : 'N/A';
-                      const isActive = p.status === 'active';
-
-                      return (
-                        <TableRow key={i} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
-                          <TableCell className="font-medium">
-                            <div className="flex items-center gap-2">
-                              <span>{start} – {end}</span>
-                              {isActive && (
-                                <Badge className="bg-emerald-500/20 text-emerald-600 text-[10px]">Active</Badge>
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {formatCurrency(p.allocated)}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {formatCurrency(p.used)}
-                          </TableCell>
-                          <TableCell className={`text-right font-medium ${p.remaining < 0 ? 'text-red-600' : 'text-emerald-600'}`}>
-                            {formatCurrency(p.remaining)}
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-
-                    {/* Totals row for the visible month */}
-                    <TableRow className="bg-slate-100 dark:bg-slate-800 font-bold border-t-2">
-                      <TableCell className="text-right">
-                        TOTAL ({selectedMonthLabel})
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {formatCurrency(summary.month_allocated || 0)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {formatCurrency(summary.month_used || 0)}
-                      </TableCell>
-                      <TableCell className="text-right text-emerald-700">
-                        {formatCurrency(summary.month_remaining || 0)}
-                      </TableCell>
-                    </TableRow>
-                  </>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-
-          {/* Chart (unchanged behavior — uses periods) */}
-          <div className="mt-6">
-            <div
-              className="flex items-center justify-between cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 p-3 rounded-lg transition-colors"
-              onClick={() => setShowBudgetChart(!showBudgetChart)}
+    return (
+        <Card className="dark:bg-slate-800/80 dark:border-slate-700">
+            <CardHeader
+                className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors rounded-t-2xl"
+                onClick={() => toggleSection('budgetUtilization')}
             >
-              <div className="flex items-center gap-2">
-                <BarChart3 className="h-5 w-5 text-emerald-500" />
-                <h4 className="font-semibold text-slate-700 dark:text-slate-300">Budget Visualization</h4>
-                <Badge variant="secondary">{showBudgetChart ? 'Hide' : 'Show'}</Badge>
-              </div>
-              <div className="flex items-center gap-2 text-sm text-slate-500">
-                {showBudgetChart ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                {showBudgetChart ? 'Hide Chart' : 'Show Chart'}
-              </div>
-            </div>
-            {showBudgetChart && (
-              <div className="h-80 mt-4">
-                {periods.length === 0 ? (
-                  <div className="flex items-center justify-center h-full">
-                    <p className="text-slate-500 dark:text-slate-400">No data to visualize</p>
-                  </div>
-                ) : (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart
-                      data={periods.map(p => ({
-                        label: p.week_start ? format(new Date(p.week_start), 'MMM d') : 'N/A',
-                        allocated: p.allocated,
-                        used: p.used,
-                        remaining: p.remaining,
-                      }))}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                      <XAxis dataKey="label" stroke="#94a3b8" />
-                      <YAxis stroke="#94a3b8" />
-                      <Tooltip formatter={(value) => formatCurrency(value)} />
-                      <Legend />
-                      <Bar dataKey="allocated" fill="#3b82f6" name="Budget" radius={[4, 4, 0, 0]} />
-                      <Bar dataKey="used" fill="#f59e0b" name="Utilized" radius={[4, 4, 0, 0]} />
-                      <Bar dataKey="remaining" fill="#10b981" name="Balance" radius={[4, 4, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                )}
-              </div>
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                        <Wallet className="h-5 w-5 text-amber-500" />
+                        <CardTitle className="text-slate-800 dark:text-white">Budget Utilization Report</CardTitle>
+                        <Badge className="bg-amber-500/20 text-amber-600 ml-2">
+                            {periods.length} week{periods.length !== 1 ? 's' : ''}
+                        </Badge>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        {expandedSections.budgetUtilization && (
+                            <>
+                                <Select value={budgetDepartmentFilter} onValueChange={setBudgetDepartmentFilter}>
+                                    <SelectTrigger className="w-[180px] h-8 text-xs" onClick={(e) => e.stopPropagation()}>
+                                        <SelectValue placeholder="Department" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="all">Default (First with budget)</SelectItem>
+                                        {departments.map((d) => (
+                                            <SelectItem key={d.department_id} value={String(d.department_id)}>
+                                                {d.department_name}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+
+                                <Select value={String(budgetMonthFilter)} onValueChange={(v) => setBudgetMonthFilter(v === 'all' ? 'all' : parseInt(v))}>
+                                    <SelectTrigger className="w-[130px] h-8 text-xs" onClick={(e) => e.stopPropagation()}>
+                                        <SelectValue placeholder="Month" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {MONTH_OPTIONS.map(opt => (
+                                            <SelectItem key={opt.value} value={String(opt.value)}>{opt.label}</SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+
+                                <Input
+                                    type="number"
+                                    value={budgetYearFilter}
+                                    onChange={(e) => setBudgetYearFilter(parseInt(e.target.value) || new Date().getFullYear())}
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="w-20 h-8 text-xs"
+                                    min={2020}
+                                    max={2030}
+                                />
+
+                                <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); handleExport('excel', 'budget', { year: budgetYearFilter, month: budgetMonthFilter, department_id: budgetDepartmentFilter }); }} disabled={exportLoading} className="h-8 px-2 text-xs">
+                                    <FileSpreadsheet className="h-3.5 w-3.5 mr-1" /> Excel
+                                </Button>
+                                <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); handleExport('pdf', 'budget', { year: budgetYearFilter, month: budgetMonthFilter, department_id: budgetDepartmentFilter }); }} disabled={exportLoading} className="h-8 px-2 text-xs">
+                                    <FileText className="h-3.5 w-3.5 mr-1" /> PDF
+                                </Button>
+                                <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); window.print(); }} className="h-8 px-2 text-xs">
+                                    <Printer className="h-3.5 w-3.5 mr-1" /> Print
+                                </Button>
+                            </>
+                        )}
+                        <Badge variant="secondary">{expandedSections.budgetUtilization ? 'Hide' : 'Show'}</Badge>
+                        {expandedSections.budgetUtilization ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                    </div>
+                </div>
+                <CardDescription>
+                    {dept.department_name || 'Select a department'} —{' '}
+                    {budgetMonthFilter === 'all' ? 'All Months' : MONTH_OPTIONS.find(m => m.value === budgetMonthFilter)?.label} {budgetYearFilter}
+                </CardDescription>
+            </CardHeader>
+
+            {expandedSections.budgetUtilization && (
+                <CardContent>
+                    {/* ANNUAL stat cards */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                        <StatsCard
+                            title="Annual Allocated"
+                            value={formatCurrency(summary.total_allocated || 0)}
+                            icon={Wallet}
+                            color="from-blue-500 to-blue-600"
+                            subtitle={`FY ${budgetYearFilter}`}
+                        />
+                        <StatsCard
+                            title="Annual Utilized"
+                            value={formatCurrency(summary.total_used || 0)}
+                            icon={TrendingDown}
+                            color="from-yellow-500 to-yellow-600"
+                            subtitle={`FY ${budgetYearFilter}`}
+                        />
+                        <StatsCard
+                            title="Annual Remaining"
+                            value={formatCurrency(summary.total_remaining || 0)}
+                            icon={TrendingUp}
+                            color="from-emerald-500 to-emerald-600"
+                            subtitle={`FY ${budgetYearFilter}`}
+                        />
+                        <StatsCard
+                            title="Weeks in View"
+                            value={summary.total_weeks || 0}
+                            icon={CalendarRange}
+                            color="from-purple-500 to-purple-600"
+                            subtitle={budgetMonthFilter === 'all' ? 'All Months' : MONTH_OPTIONS.find(m => m.value === budgetMonthFilter)?.label}
+                        />
+                    </div>
+
+                    {/* Roll-forward table */}
+                    <div className="overflow-x-auto max-h-[500px] overflow-y-auto border rounded-lg">
+                        <Table>
+                            <TableHeader className="sticky top-0 z-10 bg-slate-100 dark:bg-slate-800">
+                                <TableRow>
+                                    <TableHead className="font-semibold text-xs uppercase">Week (Date Range)</TableHead>
+                                    <TableHead className="text-right font-semibold text-xs uppercase">Budget (₱)</TableHead>
+                                    <TableHead className="text-right font-semibold text-xs uppercase">Utilized (₱)</TableHead>
+                                    <TableHead className="text-right font-semibold text-xs uppercase">Balance (₱)</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {periods.length === 0 ? (
+                                    <TableRow>
+                                        <TableCell colSpan="4" className="text-center py-8 text-slate-500">
+                                            No weekly budget periods for this department, month, and year
+                                        </TableCell>
+                                    </TableRow>
+                                ) : (
+                                    <>
+                                        {periods.map((p, i) => (
+                                            <TableRow key={p.period_id || i} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
+                                                <TableCell className="font-medium">
+                                                    {p.week_start ? format(new Date(p.week_start), 'MMM d, yyyy') : '—'}
+                                                    {' – '}
+                                                    {p.week_end ? format(new Date(p.week_end), 'MMM d, yyyy') : '—'}
+                                                </TableCell>
+                                                <TableCell className="text-right">{formatCurrency(p.allocated || 0)}</TableCell>
+                                                <TableCell className="text-right">{formatCurrency(p.used || 0)}</TableCell>
+                                                <TableCell className={`text-right font-medium ${(p.remaining || 0) < 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                                                    {formatCurrency(p.remaining || 0)}
+                                                </TableCell>
+                                            </TableRow>
+                                        ))}
+
+                                        {/* TOTAL row = last period's remaining, not sum of budgets */}
+                                        <TableRow className="bg-slate-100 dark:bg-slate-800 font-bold border-t-2">
+                                            <TableCell className="text-right">
+                                                TOTAL
+                                            </TableCell>
+                                            <TableCell className="text-right">
+                                                {formatCurrency(periods[0]?.allocated || 0)}
+                                            </TableCell>
+                                            <TableCell className="text-right">
+                                                {formatCurrency(periods.reduce((sum, p) => sum + (p.used || 0), 0))}
+                                            </TableCell>
+                                            <TableCell className="text-right text-emerald-700">
+                                                {formatCurrency(periods[periods.length - 1]?.remaining || 0)}
+                                            </TableCell>
+                                        </TableRow>
+                                    </>
+                                )}
+                            </TableBody>
+                        </Table>
+                    </div>
+                </CardContent>
             )}
-          </div>
-        </CardContent>
-      )}
-    </Card>
-  );
+        </Card>
+    );
 };
 
   // ============================================================

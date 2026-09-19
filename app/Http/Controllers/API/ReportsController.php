@@ -303,24 +303,24 @@ class ReportsController extends Controller
     // ============================================================
     // 3. BUDGET REPORT
     // ============================================================
-   public function getBudgetReport(Request $request)
+  public function getBudgetReport(Request $request)
 {
     try {
         $departmentId = $request->get('department_id');
         $year         = $request->get('year', date('Y'));
-        $month        = $request->get('month'); // 1-12 or null
+        $month        = $request->get('month'); // 1-12 or null/all
 
         // ----- 1. Determine target department -----
-        // If not given or 'all', pick the first active department with a budget for this year
         if (!$departmentId || $departmentId === 'all') {
-            $firstWithBudget = DB::table('annual_budgets')
+            $departmentId = DB::table('annual_budgets')
                 ->where('fiscal_year', $year)
                 ->orderBy('department_id')
                 ->value('department_id');
 
-            // Fallback: any active department
-            $departmentId = $firstWithBudget
-                ?: Department::where('is_active', 1)->orderBy('department_id')->value('department_id');
+            $departmentId = $departmentId
+                ?: Department::where('is_active', 1)
+                    ->orderBy('department_id')
+                    ->value('department_id');
         }
 
         // ----- 2. Annual totals (for stat cards) -----
@@ -338,38 +338,73 @@ class ReportsController extends Controller
             ->whereYear('p.week_start', $year)
             ->sum('gs.amount_released');
 
-        // ----- 3. Weekly periods for the selected month -----
-        $periodQuery = DeptBudgetPeriod::with('department')
-            ->where('department_id', $departmentId)
-            ->whereYear('week_start', $year);
+        // ----- 3. Weekly periods — compute Budget + Balance on the fly -----
+        $periodQuery = DB::table('dept_budget_period as p')
+            ->leftJoin('weekly_budget_usage as u', function ($join) {
+                $join->on('u.department_id', '=', 'p.department_id')
+                     ->on('u.week_start',   '=', 'p.week_start');
+            })
+            ->where('p.department_id', $departmentId)
+            ->whereYear('p.week_start', $year);
 
-        if ($month) {
-            $periodQuery->whereMonth('week_start', $month);
+        if ($month && $month !== 'all') {
+            $periodQuery->whereMonth('p.week_start', $month);
         }
 
-        $periods = $periodQuery->orderBy('week_start')->get();
+        $rows = $periodQuery
+            ->orderBy('p.week_start')
+            ->select([
+                'p.period_id',
+                'p.week_start',
+                'p.week_end',
+                'p.status',
+                'u.amount_used as used',
 
-        $rows = $periods->map(function ($p) {
-            $used = (float) GasSlip::where('period_id', $p->period_id)
-                ->sum('amount_released');
+                // ✅ Budget = annual_remaining at THIS period's week_start
+                //    = annual_amount − sum(gas_slips in EARLIER periods of the same FY)
+                DB::raw("(
+                    SELECT COALESCE(ab.annual_amount, 0)
+                         - COALESCE((
+                             SELECT SUM(gs2.amount_released)
+                             FROM gas_slip gs2
+                             JOIN dept_budget_period p2 ON gs2.period_id = p2.period_id
+                             WHERE p2.department_id = p.department_id
+                               AND YEAR(p2.week_start) = YEAR(p.week_start)
+                               AND p2.week_start < p.week_start
+                         ), 0)
+                    FROM annual_budgets ab
+                    WHERE ab.department_id = p.department_id
+                      AND ab.fiscal_year = YEAR(p.week_start)
+                ) AS allocated"),
 
-            $allocated = (float) $p->allocated_amount;
-
-            return [
-                'period_id'       => $p->period_id,
-                'week_start'      => $p->week_start
-                    ? Carbon::parse($p->week_start)->format('Y-m-d')
-                    : null,
-                'week_end'        => $p->week_end
-                    ? Carbon::parse($p->week_end)->format('Y-m-d')
-                    : null,
-                'allocated'       => $allocated,
-                'used'            => $used,
-                'remaining'       => $allocated - $used,
-                'utilization'     => $allocated > 0 ? round(($used / $allocated) * 100, 2) : 0,
-                'status'          => $p->status,
-            ];
-        })->values();
+                // ✅ Balance = Budget − this week's utilized
+                DB::raw("(
+                    SELECT COALESCE(ab.annual_amount, 0)
+                         - COALESCE((
+                             SELECT SUM(gs3.amount_released)
+                             FROM gas_slip gs3
+                             JOIN dept_budget_period p3 ON gs3.period_id = p3.period_id
+                             WHERE p3.department_id = p.department_id
+                               AND YEAR(p3.week_start) = YEAR(p.week_start)
+                               AND p3.week_start <= p.week_start
+                         ), 0)
+                    FROM annual_budgets ab
+                    WHERE ab.department_id = p.department_id
+                      AND ab.fiscal_year = YEAR(p.week_start)
+                ) AS remaining"),
+            ])
+            ->get()
+            ->map(function ($row) {
+                return [
+                    'period_id'   => $row->period_id,
+                    'week_start'  => $row->week_start,
+                    'week_end'    => $row->week_end,
+                    'allocated'   => (float) $row->allocated,
+                    'used'        => (float) ($row->used ?? 0),
+                    'remaining'   => (float) $row->remaining,
+                    'status'      => $row->status,
+                ];
+            });
 
         // ----- 4. Department info for header -----
         $department = Department::find($departmentId);
@@ -383,22 +418,21 @@ class ReportsController extends Controller
                     'department_code' => $department?->department_code ?? 'N/A',
                 ],
                 'summary' => [
-                    // ✅ ANNUAL totals for the stat cards
                     'total_allocated'   => round($annualAllocated, 2),
                     'total_used'        => round($annualUsed, 2),
                     'total_remaining'   => round($annualAllocated - $annualUsed, 2),
                     'total_departments' => 1,
                     'total_weeks'       => $rows->count(),
 
-                    // Keep month totals too (optional, for reference)
-                    'month_allocated'   => round($rows->sum('allocated'), 2),
+                    // Month totals — balance = LAST row's balance, not a sum
+                    'month_allocated'   => round($rows->first()['allocated'] ?? 0, 2),
                     'month_used'        => round($rows->sum('used'), 2),
-                    'month_remaining'   => round($rows->sum('remaining'), 2),
+                    'month_remaining'   => round($rows->last()['remaining'] ?? 0, 2),
                 ],
-                'periods'   => $rows,          // per-week rows for the table
+                'periods'   => $rows,
                 'filters'   => [
                     'year'          => (int) $year,
-                    'month'         => $month ? (int) $month : null,
+                    'month'         => ($month && $month !== 'all') ? (int) $month : null,
                     'department_id' => $departmentId,
                 ],
             ],
