@@ -906,7 +906,8 @@ public function verifyReceipt(Request $request, $id)
 
         Log::info('Verifying receipt', [
             'receipt_id' => $id,
-            'data' => $request->all(),
+            'user_id'    => $user->user_id,
+            'data'       => $request->all(),
         ]);
 
         $validator = Validator::make($request->all(), [
@@ -927,12 +928,7 @@ public function verifyReceipt(Request $request, $id)
         $fuelReceipt = FuelReceipt::findOrFail($id);
         $gasSlip     = GasSlip::findOrFail($fuelReceipt->gas_slip_id);
 
-        // ✅ Guard: already verified?
-        // Prefer new column, fall back to gas_slip status for legacy rows.
-        $alreadyVerified = $fuelReceipt->verification_status === 'verified'
-            || $gasSlip->reconciliation_status === 'verified';
-
-        if ($alreadyVerified) {
+        if ($fuelReceipt->verification_status === 'verified') {
             return response()->json([
                 'success' => false,
                 'message' => 'This receipt has already been verified',
@@ -957,10 +953,10 @@ public function verifyReceipt(Request $request, $id)
 
         if ($amountVariance > 1.00) {
             Log::warning('MO verify: Amount vs liters×price mismatch', [
-                'receipt_id'       => $id,
+                'receipt_id'        => $id,
                 'amount_on_receipt' => $request->amount_on_receipt,
-                'liters_x_price'   => $expectedAmount,
-                'variance'         => $amountVariance,
+                'liters_x_price'    => $expectedAmount,
+                'variance'          => $amountVariance,
             ]);
 
             if ($amountVariance > ($request->amount_on_receipt * 0.05)) {
@@ -979,32 +975,34 @@ public function verifyReceipt(Request $request, $id)
 
         DB::beginTransaction();
 
-        // Update fuel_receipt — data + verification
+        // ✅ Update fuel_receipt — data + verification (MO-owned)
         if ($request->has('invoice_number')) {
             $fuelReceipt->invoice_number = $request->invoice_number;
         }
-        $fuelReceipt->liters_availed       = $request->liters_availed;
-        $fuelReceipt->unit_price           = $request->unit_price;
-        $fuelReceipt->amount_on_receipt    = $request->amount_on_receipt;
-        $fuelReceipt->verification_status  = 'verified';
-        $fuelReceipt->verified_at          = now();
-        $fuelReceipt->verified_by          = $user->user_id;
+        $fuelReceipt->liters_availed      = $request->liters_availed;
+        $fuelReceipt->unit_price          = $request->unit_price;
+        $fuelReceipt->amount_on_receipt   = $request->amount_on_receipt;
+        $fuelReceipt->verification_status = 'verified';
+        $fuelReceipt->verified_at         = now();
+        $fuelReceipt->verified_by         = $user->user_id;
         $fuelReceipt->save();
 
-        // Update gas_slip for reconciliation tracking
+        // ✅ Update gas_slip — kept here so MO dashboard's pending_receipts
+        // count stays accurate. GSO's validateTrip() also sets this, so
+        // the "last writer wins" race is benign and idempotent.
         $gasSlip->reconciliation_status = 'verified';
         $gasSlip->reconciled_by         = $user->user_id;
         $gasSlip->reconciled_at         = now();
         $gasSlip->save();
 
-        // Sync parent trip ticket's actuals
+        // ✅ Sync parent trip ticket's actuals
         if ($gasSlip->tripTicket) {
             $gasSlip->tripTicket->syncActuals()->save();
         }
 
         DB::commit();
 
-        Log::info('Receipt verified with edits', [
+        Log::info('Receipt verified successfully', [
             'receipt_id'        => $id,
             'verified_by'       => $user->user_id,
             'liters_availed'    => $request->liters_availed,
@@ -1016,15 +1014,16 @@ public function verifyReceipt(Request $request, $id)
             'success' => true,
             'message' => 'Receipt verified successfully',
             'data' => [
-                'receipt_id'          => $id,
-                'gas_slip_id'         => $gasSlip->gas_slip_id,
-                'verification_status' => $fuelReceipt->verification_status,
+                'receipt_id'            => $id,
+                'gas_slip_id'           => $gasSlip->gas_slip_id,
+                'verification_status'   => $fuelReceipt->verification_status,
                 'reconciliation_status' => $gasSlip->reconciliation_status,
-                'invoice_number'      => $fuelReceipt->invoice_number,
-                'liters_availed'      => $fuelReceipt->liters_availed,
-                'unit_price'          => $fuelReceipt->unit_price,
-                'amount_on_receipt'   => $fuelReceipt->amount_on_receipt,
-                'verified_at'         => $fuelReceipt->verified_at,
+                'invoice_number'        => $fuelReceipt->invoice_number,
+                'liters_availed'        => $fuelReceipt->liters_availed,
+                'unit_price'            => $fuelReceipt->unit_price,
+                'amount_on_receipt'     => $fuelReceipt->amount_on_receipt,
+                'verified_at'           => $fuelReceipt->verified_at,
+                'verified_by'           => $fuelReceipt->verified_by,
             ],
         ]);
     } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
