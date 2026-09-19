@@ -106,6 +106,9 @@ const GsoReports = () => {
     const [gpsVehicleFilter, setGpsVehicleFilter] = useState('all');
     const [reconciliationThreshold, setReconciliationThreshold] = useState('all');
     const [receiptStatusFilter, setReceiptStatusFilter] = useState('all');
+    // ✅ NEW: fuel consumption section filters
+const [fuelWeekFilter, setFuelWeekFilter] = useState('all');
+const [fuelDeptFilter, setFuelDeptFilter] = useState('all');
     const [auditResultFilter, setAuditResultFilter] = useState('all');
     const [driverFilter, setDriverFilter] = useState('all');
     const [yearFilter, setYearFilter] = useState(new Date().getFullYear());
@@ -219,22 +222,44 @@ const GsoReports = () => {
     // ============================================
 
     // 1. FUEL CONSUMPTION
-    const { data: fuelData, isLoading: fuelLoading } = useOptimizedQuery({
-        queryKey: ['fuel-consumption', dateRange, globalDepartmentFilter, globalVehicleFilter],
-        queryFn: async () => {
-            const params = {
-                start_date: dateRange.startDate,
-                end_date: dateRange.endDate,
-                department_id: globalDepartmentFilter !== 'all' ? globalDepartmentFilter : undefined,
-                vehicle_id: globalVehicleFilter !== 'all' ? globalVehicleFilter : undefined,
-            };
-            const res = await reportsAPI.getFuelConsumptionReport(params);
-            return res.data?.data || {};
-        },
-        enabled: expandedSections.fuelConsumption,
-        staleTime: CACHE_5MIN,
-        keepPreviousData: true,
-    });
+    // 1. FUEL CONSUMPTION
+const { data: fuelData, isLoading: fuelLoading } = useOptimizedQuery({
+    queryKey: ['fuel-consumption', dateRange, globalDepartmentFilter, globalVehicleFilter, fuelWeekFilter, fuelDeptFilter],
+    queryFn: async () => {
+        // ✅ Compute effective date range from week filter
+        const weekRange = (() => {
+            if (fuelWeekFilter === 'current') {
+                const start = startOfWeek(new Date(), { weekStartsOn: 1 });
+                return { start_date: format(start, 'yyyy-MM-dd'), end_date: format(endOfWeek(new Date(), { weekStartsOn: 1 }), 'yyyy-MM-dd') };
+            }
+            if (fuelWeekFilter === 'last') {
+                const lastWeek = new Date();
+                lastWeek.setDate(lastWeek.getDate() - 7);
+                return { start_date: format(startOfWeek(lastWeek, { weekStartsOn: 1 }), 'yyyy-MM-dd'), end_date: format(endOfWeek(lastWeek, { weekStartsOn: 1 }), 'yyyy-MM-dd') };
+            }
+            if (fuelWeekFilter === 'month') {
+                return { start_date: format(startOfMonth(new Date()), 'yyyy-MM-dd'), end_date: format(endOfMonth(new Date()), 'yyyy-MM-dd') };
+            }
+            return { start_date: dateRange.startDate, end_date: dateRange.endDate };
+        })();
+
+        // ✅ Effective department: section filter wins, fallback to global
+        const effectiveDept = fuelDeptFilter !== 'all' ? fuelDeptFilter
+            : (globalDepartmentFilter !== 'all' ? globalDepartmentFilter : undefined);
+
+        const params = {
+            start_date: weekRange.start_date,
+            end_date: weekRange.end_date,
+            department_id: effectiveDept,
+            vehicle_id: globalVehicleFilter !== 'all' ? globalVehicleFilter : undefined,
+        };
+        const res = await reportsAPI.getFuelConsumptionReport(params);
+        return res.data?.data || {};
+    },
+    enabled: expandedSections.fuelConsumption,
+    staleTime: CACHE_5MIN,
+    keepPreviousData: true,
+});
 
     // 2. VEHICLE SUMMARY
     const { data: vehicleSummaryData, isLoading: vehicleSummaryLoading } = useOptimizedQuery({
@@ -559,13 +584,18 @@ const GsoReports = () => {
                 {/* ✅ All 10 Reports — Lazy loaded */}
                 <div className="space-y-6">
                     <Suspense fallback={<ReportSkeleton />}>
-                        <FuelConsumptionReport
-                            data={fuelData}
-                            expanded={expandedSections.fuelConsumption}
-                            onToggle={() => toggleSection('fuelConsumption')}
-                            onExport={handleExport}
-                            exportLoading={exportLoading}
-                        />
+                       <FuelConsumptionReport
+    data={fuelData}
+    expanded={expandedSections.fuelConsumption}
+    onToggle={() => toggleSection('fuelConsumption')}
+    onExport={handleExport}
+    exportLoading={exportLoading}
+    departments={departments}
+    departmentFilter={fuelDeptFilter}
+    onDepartmentChange={setFuelDeptFilter}
+    weekFilter={fuelWeekFilter}
+    onWeekChange={setFuelWeekFilter}
+/>
                     </Suspense>
 
                     <Suspense fallback={<ReportSkeleton />}>

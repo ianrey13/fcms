@@ -25,200 +25,219 @@ class ReportsController extends Controller
     // ============================================================
     // 1. FUEL CONSUMPTION REPORT
     // ============================================================
-    public function getFuelConsumptionReport(Request $request)
-    {
-        try {
-            $startDate = $request->get('start_date');
-            $endDate = $request->get('end_date');
-            $departmentId = $request->get('department_id');
-            $vehicleId = $request->get('vehicle_id');
+   public function getFuelConsumptionReport(Request $request)
+{
+    try {
+        $startDate = $request->get('start_date');
+        $endDate = $request->get('end_date');
+        $departmentId = $request->get('department_id');
+        $vehicleId = $request->get('vehicle_id');
 
-            $query = FuelReceipt::with([
-                'gasSlip.tripTicket.department',
-                'gasSlip.tripTicket.vehicle',
-                'gasSlip.tripTicket.driver.user'
+        $query = FuelReceipt::with([
+            'gasSlip.tripTicket.department',
+            'gasSlip.tripTicket.vehicle',
+            'gasSlip.tripTicket.driver.user'
+        ]);
+
+        if ($startDate && $endDate) {
+            $query->whereBetween('created_at', [
+                Carbon::parse($startDate)->startOfDay(),
+                Carbon::parse($endDate)->endOfDay()
             ]);
-
-            if ($startDate && $endDate) {
-                $query->whereBetween('created_at', [
-                    Carbon::parse($startDate)->startOfDay(),
-                    Carbon::parse($endDate)->endOfDay()
-                ]);
-            }
-
-            if ($departmentId) {
-                $query->whereHas('gasSlip.tripTicket', function($q) use ($departmentId) {
-                    $q->where('department_id', $departmentId);
-                });
-            }
-
-            if ($vehicleId) {
-                $query->whereHas('gasSlip.tripTicket', function($q) use ($vehicleId) {
-                    $q->where('vehicle_id', $vehicleId);
-                });
-            }
-
-            $fuelReceipts = $query->get();
-
-            $totalTrips = $fuelReceipts->unique('gas_slip.trip_ticket_id')->count();
-            $totalLiters = $fuelReceipts->sum('liters_availed');
-            $totalCost = $fuelReceipts->sum('amount_on_receipt');
-            $totalDistance = $this->calculateTotalDistance($fuelReceipts);
-
-            $summary = [
-                'total_trips' => $totalTrips,
-                'total_fuel_liters' => round($totalLiters, 2),
-                'total_fuel_cost' => round($totalCost, 2),
-                'total_distance_km' => round($totalDistance, 2),
-                'average_km_per_liter' => $totalLiters > 0 ? round($totalDistance / $totalLiters, 2) : 0,
-                'average_liters_per_trip' => $totalTrips > 0 ? round($totalLiters / $totalTrips, 2) : 0,
-                'average_cost_per_trip' => $totalTrips > 0 ? round($totalCost / $totalTrips, 2) : 0,
-                'average_cost_per_km' => $totalDistance > 0 ? round($totalCost / $totalDistance, 2) : 0,
-            ];
-
-            $vehicleBreakdown = $fuelReceipts->groupBy(function($receipt) {
-                return $receipt->gasSlip->tripTicket->vehicle_id ?? 'unknown';
-            })->map(function($group) {
-                $first = $group->first();
-                $vehicle = $first->gasSlip->tripTicket->vehicle;
-                $distance = $this->calculateTotalDistance($group);
-                $liters = $group->sum('liters_availed');
-                $cost = $group->sum('amount_on_receipt');
-                $trips = $group->unique('gas_slip.trip_ticket_id')->count();
-
-                return [
-                    'vehicle_id' => $vehicle ? $vehicle->vehicle_id : null,
-                    'plate_number' => $vehicle ? $vehicle->plate_number : 'Unknown',
-                    'model' => $vehicle ? $vehicle->vehicle_model : 'Unknown',
-                    'fuel_type' => $vehicle ? $vehicle->fuel_type : 'Unknown',
-                    'trips' => $trips,
-                    'liters' => round($liters, 2),
-                    'cost' => round($cost, 2),
-                    'distance_km' => round($distance, 2),
-                    'km_per_liter' => $liters > 0 ? round($distance / $liters, 2) : 0,
-                    'efficiency_rating' => $this->getEfficiencyRating($liters, $distance),
-                    'percentage_of_total_liters' => 0,
-                ];
-            })->values();
-
-            $totalLitersAll = $vehicleBreakdown->sum('liters');
-            $vehicleBreakdown = $vehicleBreakdown->map(function($item) use ($totalLitersAll) {
-                $item['percentage_of_total_liters'] = $totalLitersAll > 0 ? round(($item['liters'] / $totalLitersAll) * 100, 2) : 0;
-                return $item;
-            });
-
-            $departmentBreakdown = $fuelReceipts->groupBy(function($receipt) {
-                $department = $receipt->gasSlip->tripTicket->department;
-                return $department ? $department->department_id : 'unknown';
-            })->map(function($group) {
-                $first = $group->first();
-                $department = $first->gasSlip->tripTicket->department;
-                $distance = $this->calculateTotalDistance($group);
-                $liters = $group->sum('liters_availed');
-                $cost = $group->sum('amount_on_receipt');
-                $trips = $group->unique('gas_slip.trip_ticket_id')->count();
-
-                return [
-                    'department_id' => $department ? $department->department_id : null,
-                    'department_name' => $department ? $department->department_name : 'Unknown',
-                    'department_code' => $department ? $department->department_code : 'Unknown',
-                    'trips' => $trips,
-                    'liters' => round($liters, 2),
-                    'cost' => round($cost, 2),
-                    'distance_km' => round($distance, 2),
-                    'km_per_liter' => $liters > 0 ? round($distance / $liters, 2) : 0,
-                    'percentage_of_total_liters' => 0,
-                ];
-            })->values();
-
-            $totalLitersDept = $departmentBreakdown->sum('liters');
-            $departmentBreakdown = $departmentBreakdown->map(function($item) use ($totalLitersDept) {
-                $item['percentage_of_total_liters'] = $totalLitersDept > 0 ? round(($item['liters'] / $totalLitersDept) * 100, 2) : 0;
-                return $item;
-            });
-
-            $periodTrends = $fuelReceipts->groupBy(function($receipt) {
-                return $receipt->created_at ? Carbon::parse($receipt->created_at)->format('Y-m') : 'Unknown';
-            })->map(function($group) {
-                $distance = $this->calculateTotalDistance($group);
-                $liters = $group->sum('liters_availed');
-                $trips = $group->unique('gas_slip.trip_ticket_id')->count();
-
-                return [
-                    'period' => $group->first()->created_at ? Carbon::parse($group->first()->created_at)->format('M Y') : 'Unknown',
-                    'trips' => $trips,
-                    'liters' => round($liters, 2),
-                    'km_per_liter' => $liters > 0 ? round($distance / $liters, 2) : 0,
-                ];
-            })->values();
-
-            $efficiencyDistribution = [
-                'Excellent' => 0,
-                'Good' => 0,
-                'Average' => 0,
-                'Poor' => 0,
-                'Critical' => 0,
-                'No Data' => 0,
-            ];
-
-            foreach ($fuelReceipts->groupBy('gas_slip.trip_ticket_id') as $receipts) {
-                $distance = $this->calculateTotalDistance($receipts);
-                $liters = $receipts->sum('liters_availed');
-                $rating = $this->getEfficiencyRating($liters, $distance);
-                if (isset($efficiencyDistribution[$rating])) {
-                    $efficiencyDistribution[$rating]++;
-                }
-            }
-
-            $recentReceipts = $fuelReceipts->sortByDesc('created_at')->take(50)->map(function($receipt) {
-                $trip = $receipt->gasSlip->tripTicket;
-                $vehicle = $trip->vehicle;
-                $driver = $trip->driver;
-
-                return [
-                    'fuel_receipt_id' => $receipt->fuel_receipt_id,
-                    'trip_ticket_id' => $trip->trip_ticket_id,
-                    'trip_ticket_number' => $trip->trip_ticket_number ?? 'N/A',
-                    'department' => $trip->department ? $trip->department->department_name : 'Unknown',
-                    'vehicle' => $vehicle ? $vehicle->plate_number . ' (' . $vehicle->vehicle_model . ')' : 'Unknown',
-                    'driver' => $driver && $driver->user ? $driver->user->full_name : 'Unknown',
-                    'destination' => $trip->destination,
-                    'liters_availed' => $receipt->liters_availed,
-                    'amount_on_receipt' => $receipt->amount_on_receipt,
-                    'distance_km' => $this->calculateReceiptDistance($receipt),
-                    'trip_ended_at' => $receipt->trip_ended_at,
-                    'has_receipt' => !is_null($receipt->receipt_photo_path),
-                ];
-            })->values();
-
-            return response()->json([
-                'success' => true,
-                'data' => [
-                    'summary' => $summary,
-                    'vehicle_breakdown' => $vehicleBreakdown,
-                    'department_breakdown' => $departmentBreakdown,
-                    'period_trends' => $periodTrends,
-                    'efficiency_distribution' => $efficiencyDistribution,
-                    'recent_logs' => $recentReceipts,
-                    'filters' => [
-                        'start_date' => $startDate,
-                        'end_date' => $endDate,
-                        'department_id' => $departmentId,
-                        'vehicle_id' => $vehicleId,
-                    ],
-                ]
-            ]);
-
-        } catch (\Exception $e) {
-            Log::error('Report error: ' . $e->getMessage());
-            Log::error($e->getTraceAsString());
-
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to generate report: ' . $e->getMessage()
-            ], 500);
         }
+
+        if ($departmentId) {
+            $query->whereHas('gasSlip.tripTicket', function($q) use ($departmentId) {
+                $q->where('department_id', $departmentId);
+            });
+        }
+
+        if ($vehicleId) {
+            $query->whereHas('gasSlip.tripTicket', function($q) use ($vehicleId) {
+                $q->where('vehicle_id', $vehicleId);
+            });
+        }
+
+        $fuelReceipts = $query->get();
+
+        $totalTrips = $fuelReceipts->unique('gas_slip.trip_ticket_id')->count();
+        $totalLiters = $fuelReceipts->sum('liters_availed');
+        $totalCost = $fuelReceipts->sum('amount_on_receipt');
+        $totalDistance = $this->calculateTotalDistance($fuelReceipts);
+
+        // ✅ NEW: fuel-type breakdown for split Diesel/Gasoline columns
+        $dieselReceipts = $fuelReceipts->filter(fn($r) =>
+            ($r->gasSlip?->tripTicket?->vehicle?->fuel_type) === 'diesel'
+        );
+        $gasolineReceipts = $fuelReceipts->filter(fn($r) =>
+            in_array($r->gasSlip?->tripTicket?->vehicle?->fuel_type, ['regular', 'premium'])
+        );
+
+        $summary = [
+            'total_trips' => $totalTrips,
+            'total_fuel_liters' => round($totalLiters, 2),
+            'total_fuel_cost' => round($totalCost, 2),
+            'total_distance_km' => round($totalDistance, 2),
+            'average_km_per_liter' => $totalLiters > 0 ? round($totalDistance / $totalLiters, 2) : 0,
+            'average_liters_per_trip' => $totalTrips > 0 ? round($totalLiters / $totalTrips, 2) : 0,
+            'average_cost_per_trip' => $totalTrips > 0 ? round($totalCost / $totalTrips, 2) : 0,
+            'average_cost_per_km' => $totalDistance > 0 ? round($totalCost / $totalDistance, 2) : 0,
+            // ✅ NEW
+            'diesel_liters' => round($dieselReceipts->sum('liters_availed'), 2),
+            'diesel_cost' => round($dieselReceipts->sum('amount_on_receipt'), 2),
+            'gasoline_liters' => round($gasolineReceipts->sum('liters_availed'), 2),
+            'gasoline_cost' => round($gasolineReceipts->sum('amount_on_receipt'), 2),
+        ];
+
+        $vehicleBreakdown = $fuelReceipts->groupBy(function($receipt) {
+            return $receipt->gasSlip->tripTicket->vehicle_id ?? 'unknown';
+        })->map(function($group) {
+            $first = $group->first();
+            $vehicle = $first->gasSlip->tripTicket->vehicle;
+            $distance = $this->calculateTotalDistance($group);
+            $liters = $group->sum('liters_availed');
+            $cost = $group->sum('amount_on_receipt');
+            $trips = $group->unique('gas_slip.trip_ticket_id')->count();
+
+            return [
+                'vehicle_id' => $vehicle ? $vehicle->vehicle_id : null,
+                'plate_number' => $vehicle ? $vehicle->plate_number : 'Unknown',
+                'model' => $vehicle ? $vehicle->vehicle_model : 'Unknown',
+                'fuel_type' => $vehicle ? $vehicle->fuel_type : 'Unknown',
+                'trips' => $trips,
+                'liters' => round($liters, 2),
+                'cost' => round($cost, 2),
+                'distance_km' => round($distance, 2),
+                'km_per_liter' => $liters > 0 ? round($distance / $liters, 2) : 0,
+                'efficiency_rating' => $this->getEfficiencyRating($liters, $distance),
+                'percentage_of_total_liters' => 0,
+            ];
+        })->values();
+
+        $totalLitersAll = $vehicleBreakdown->sum('liters');
+        $vehicleBreakdown = $vehicleBreakdown->map(function($item) use ($totalLitersAll) {
+            $item['percentage_of_total_liters'] = $totalLitersAll > 0 ? round(($item['liters'] / $totalLitersAll) * 100, 2) : 0;
+            return $item;
+        });
+
+        $departmentBreakdown = $fuelReceipts->groupBy(function($receipt) {
+            $department = $receipt->gasSlip->tripTicket->department;
+            return $department ? $department->department_id : 'unknown';
+        })->map(function($group) {
+            $first = $group->first();
+            $department = $first->gasSlip->tripTicket->department;
+            $distance = $this->calculateTotalDistance($group);
+            $liters = $group->sum('liters_availed');
+            $cost = $group->sum('amount_on_receipt');
+            $trips = $group->unique('gas_slip.trip_ticket_id')->count();
+
+            return [
+                'department_id' => $department ? $department->department_id : null,
+                'department_name' => $department ? $department->department_name : 'Unknown',
+                'department_code' => $department ? $department->department_code : 'Unknown',
+                'trips' => $trips,
+                'liters' => round($liters, 2),
+                'cost' => round($cost, 2),
+                'distance_km' => round($distance, 2),
+                'km_per_liter' => $liters > 0 ? round($distance / $liters, 2) : 0,
+                'percentage_of_total_liters' => 0,
+            ];
+        })->values();
+
+        $totalLitersDept = $departmentBreakdown->sum('liters');
+        $departmentBreakdown = $departmentBreakdown->map(function($item) use ($totalLitersDept) {
+            $item['percentage_of_total_liters'] = $totalLitersDept > 0 ? round(($item['liters'] / $totalLitersDept) * 100, 2) : 0;
+            return $item;
+        });
+
+        $periodTrends = $fuelReceipts->groupBy(function($receipt) {
+            return $receipt->created_at ? Carbon::parse($receipt->created_at)->format('Y-m') : 'Unknown';
+        })->map(function($group) {
+            $distance = $this->calculateTotalDistance($group);
+            $liters = $group->sum('liters_availed');
+            $trips = $group->unique('gas_slip.trip_ticket_id')->count();
+
+            return [
+                'period' => $group->first()->created_at ? Carbon::parse($group->first()->created_at)->format('M Y') : 'Unknown',
+                'trips' => $trips,
+                'liters' => round($liters, 2),
+                'km_per_liter' => $liters > 0 ? round($distance / $liters, 2) : 0,
+            ];
+        })->values();
+
+        $efficiencyDistribution = [
+            'Excellent' => 0,
+            'Good' => 0,
+            'Average' => 0,
+            'Poor' => 0,
+            'Critical' => 0,
+            'No Data' => 0,
+        ];
+
+        foreach ($fuelReceipts->groupBy('gas_slip.trip_ticket_id') as $receipts) {
+            $distance = $this->calculateTotalDistance($receipts);
+            $liters = $receipts->sum('liters_availed');
+            $rating = $this->getEfficiencyRating($liters, $distance);
+            if (isset($efficiencyDistribution[$rating])) {
+                $efficiencyDistribution[$rating]++;
+            }
+        }
+
+        $recentReceipts = $fuelReceipts->sortByDesc('created_at')->take(50)->map(function($receipt) {
+            $trip = $receipt->gasSlip->tripTicket;
+            $vehicle = $trip->vehicle;
+            $driver = $trip->driver;
+
+            return [
+                'fuel_receipt_id' => $receipt->fuel_receipt_id,
+                'trip_ticket_id' => $trip->trip_ticket_id,
+                'trip_ticket_number' => $trip->trip_ticket_number ?? 'N/A',
+                'department' => $trip->department ? $trip->department->department_name : 'Unknown',
+                'department_id' => $trip->department_id,
+                'vehicle' => $vehicle ? $vehicle->plate_number . ' (' . $vehicle->vehicle_model . ')' : 'Unknown',
+                'plate_number' => $vehicle?->plate_number ?? 'N/A',
+                'vehicle_model' => $vehicle?->vehicle_model ?? 'N/A',
+                'driver' => $driver && $driver->user ? $driver->user->full_name : 'Unknown',
+                'destination' => $trip->destination,
+                'purpose' => $trip->purpose,
+                'fuel_type' => $vehicle?->fuel_type ?? 'unknown',
+                'liters_availed' => $receipt->liters_availed,
+                'amount_on_receipt' => $receipt->amount_on_receipt,
+                'distance_km' => $this->calculateReceiptDistance($receipt),
+                'trip_ended_at' => $receipt->trip_ended_at,
+                'created_at' => $receipt->created_at,
+                'has_receipt' => !is_null($receipt->receipt_photo_path),
+            ];
+        })->values();
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'summary' => $summary,
+                'vehicle_breakdown' => $vehicleBreakdown,
+                'department_breakdown' => $departmentBreakdown,
+                'period_trends' => $periodTrends,
+                'efficiency_distribution' => $efficiencyDistribution,
+                'recent_logs' => $recentReceipts,
+                'filters' => [
+                    'start_date' => $startDate,
+                    'end_date' => $endDate,
+                    'department_id' => $departmentId,
+                    'vehicle_id' => $vehicleId,
+                ],
+            ]
+        ]);
+
+    } catch (\Exception $e) {
+        Log::error('Report error: ' . $e->getMessage());
+        Log::error($e->getTraceAsString());
+
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to generate report: ' . $e->getMessage()
+        ], 500);
     }
+}
 
     // ============================================================
     // 2. VEHICLE REPORT
