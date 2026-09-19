@@ -892,26 +892,18 @@ public function getReceiptsForVerification(Request $request)
                 'tt.trip_date',
                 'v.fuel_type'
             )
+            // ✅ FIXED: Show receipts with an uploaded photo that need verification
+            ->whereNotNull('fr.receipt_photo_path')
             ->where(function ($query) {
-                $query->where('fr.liters_availed', '>', 0)
-                      ->orWhere('fr.amount_on_receipt', '>', 0);
+                $query->where('gs.reconciliation_status', 'pending')
+                      ->orWhereNull('gs.reconciliation_status');
             })
             ->orderBy('fr.created_at', 'desc')
             ->get()
             ->map(function ($receipt) {
                 if ($receipt->receipt_photo_path) {
-                    // ✅ Get just the filename
                     $filename = basename($receipt->receipt_photo_path);
-                    
-                    // ✅ Use public/receipts path directly (no storage)
                     $receipt->receipt_url = asset('receipts/' . $filename);
-                    
-                    // // ✅ Log for debugging
-                    // \Log::info('Receipt URL (public):', [
-                    //     'path' => $receipt->receipt_photo_path,
-                    //     'filename' => $filename,
-                    //     'url' => $receipt->receipt_url,
-                    // ]);
                 } else {
                     $receipt->receipt_url = null;
                 }
