@@ -354,8 +354,8 @@ const GsoReports = () => {
             let data = res.data?.data || {};
             if (receiptStatusFilter !== 'all' && data.receipts) {
                 data.receipts = data.receipts.filter(r =>
-                    r.reconciliation_status === receiptStatusFilter
-                );
+    (r.reconciliation_status || '').toLowerCase() === receiptStatusFilter.toLowerCase()
+);
             }
             return data;
         },
