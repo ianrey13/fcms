@@ -303,67 +303,116 @@ class ReportsController extends Controller
     // ============================================================
     // 3. BUDGET REPORT
     // ============================================================
-    public function getBudgetReport(Request $request)
-    {
-        try {
-            $departmentId = $request->get('department_id');
-            $year = $request->get('year', date('Y'));
+   public function getBudgetReport(Request $request)
+{
+    try {
+        $departmentId = $request->get('department_id');
+        $year         = $request->get('year', date('Y'));
+        $month        = $request->get('month'); // 1-12 or null
 
-            $query = DeptBudgetPeriod::with(['department'])
-                ->whereYear('created_at', $year);
+        // ----- 1. Determine target department -----
+        // If not given or 'all', pick the first active department with a budget for this year
+        if (!$departmentId || $departmentId === 'all') {
+            $firstWithBudget = DB::table('annual_budgets')
+                ->where('fiscal_year', $year)
+                ->orderBy('department_id')
+                ->value('department_id');
 
-            if ($departmentId) {
-                $query->where('department_id', $departmentId);
-            }
-
-            $periods = $query->get();
-
-            $groupedByDepartment = $periods->groupBy('department_id')->map(function($group) {
-                $first = $group->first();
-                $department = $first->department;
-
-                $totalAllocated = $group->sum('allocated_amount');
-                $totalUsed = $group->sum(function($p) {
-                    return GasSlip::where('period_id', $p->period_id)->sum('amount_released');
-                });
-
-                return [
-                    'period_id' => $first->period_id,
-                    'department_id' => $first->department_id,
-                    'department_name' => $department ? $department->department_name : 'Unknown',
-                    'department_code' => $department ? $department->department_code : 'Unknown',
-                    'allocated' => $totalAllocated,
-                    'used' => $totalUsed,
-                    'remaining' => $totalAllocated - $totalUsed,
-                    'utilization' => $totalAllocated > 0
-                        ? round(($totalUsed / $totalAllocated) * 100, 2)
-                        : 0,
-                    'period_count' => $group->count(),
-                ];
-            })->values();
-
-            $summary = [
-                'total_allocated' => $groupedByDepartment->sum('allocated'),
-                'total_used' => $groupedByDepartment->sum('used'),
-                'total_remaining' => $groupedByDepartment->sum('remaining'),
-                'total_departments' => $groupedByDepartment->count(),
-            ];
-
-            return response()->json([
-                'success' => true,
-                'data' => [
-                    'summary' => $summary,
-                    'periods' => $groupedByDepartment,
-                ]
-            ]);
-        } catch (\Exception $e) {
-            Log::error('Budget report error: ' . $e->getMessage());
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to generate budget report: ' . $e->getMessage()
-            ], 500);
+            // Fallback: any active department
+            $departmentId = $firstWithBudget
+                ?: Department::where('is_active', 1)->orderBy('department_id')->value('department_id');
         }
+
+        // ----- 2. Annual totals (for stat cards) -----
+        $annual = DB::table('annual_budgets')
+            ->where('department_id', $departmentId)
+            ->where('fiscal_year', $year)
+            ->first();
+
+        $annualAllocated = $annual ? (float) $annual->annual_amount : 0.0;
+
+        // Utilized = sum of gas_slips tied to this dept's periods for this FY
+        $annualUsed = (float) DB::table('gas_slip as gs')
+            ->join('dept_budget_period as p', 'gs.period_id', '=', 'p.period_id')
+            ->where('p.department_id', $departmentId)
+            ->whereYear('p.week_start', $year)
+            ->sum('gs.amount_released');
+
+        // ----- 3. Weekly periods for the selected month -----
+        $periodQuery = DeptBudgetPeriod::with('department')
+            ->where('department_id', $departmentId)
+            ->whereYear('week_start', $year);
+
+        if ($month) {
+            $periodQuery->whereMonth('week_start', $month);
+        }
+
+        $periods = $periodQuery->orderBy('week_start')->get();
+
+        $rows = $periods->map(function ($p) {
+            $used = (float) GasSlip::where('period_id', $p->period_id)
+                ->sum('amount_released');
+
+            $allocated = (float) $p->allocated_amount;
+
+            return [
+                'period_id'       => $p->period_id,
+                'week_start'      => $p->week_start
+                    ? Carbon::parse($p->week_start)->format('Y-m-d')
+                    : null,
+                'week_end'        => $p->week_end
+                    ? Carbon::parse($p->week_end)->format('Y-m-d')
+                    : null,
+                'allocated'       => $allocated,
+                'used'            => $used,
+                'remaining'       => $allocated - $used,
+                'utilization'     => $allocated > 0 ? round(($used / $allocated) * 100, 2) : 0,
+                'status'          => $p->status,
+            ];
+        })->values();
+
+        // ----- 4. Department info for header -----
+        $department = Department::find($departmentId);
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'department' => [
+                    'department_id'   => $department?->department_id,
+                    'department_name' => $department?->department_name ?? 'Unknown',
+                    'department_code' => $department?->department_code ?? 'N/A',
+                ],
+                'summary' => [
+                    // ✅ ANNUAL totals for the stat cards
+                    'total_allocated'   => round($annualAllocated, 2),
+                    'total_used'        => round($annualUsed, 2),
+                    'total_remaining'   => round($annualAllocated - $annualUsed, 2),
+                    'total_departments' => 1,
+                    'total_weeks'       => $rows->count(),
+
+                    // Keep month totals too (optional, for reference)
+                    'month_allocated'   => round($rows->sum('allocated'), 2),
+                    'month_used'        => round($rows->sum('used'), 2),
+                    'month_remaining'   => round($rows->sum('remaining'), 2),
+                ],
+                'periods'   => $rows,          // per-week rows for the table
+                'filters'   => [
+                    'year'          => (int) $year,
+                    'month'         => $month ? (int) $month : null,
+                    'department_id' => $departmentId,
+                ],
+            ],
+        ]);
+
+    } catch (\Exception $e) {
+        Log::error('Budget report error: ' . $e->getMessage());
+        Log::error($e->getTraceAsString());
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to generate budget report: ' . $e->getMessage(),
+        ], 500);
     }
+}
 
         // ============================================================
     // 4. FUEL RECEIPT REPORT

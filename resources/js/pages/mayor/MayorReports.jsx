@@ -218,11 +218,16 @@ const MayorReports = () => {
   const [exportLoading, setExportLoading] = useState(false);
   const [showBudgetChart, setShowBudgetChart] = useState(false);
   
+//budget utils
+  const [budgetDepartmentFilter, setBudgetDepartmentFilter] = useState('all');
+const [budgetMonthFilter, setBudgetMonthFilter] = useState(new Date().getMonth() + 1);
+
+
   // ✅ Only first section expanded by default (prevents 429 on mount)
   const [expandedSections, setExpandedSections] = useState({
     fuelReceipt: true,
-    budgetUtilization: false,
-    reconciliation: false,
+    budgetUtilization: true,
+    reconciliation: true,
   });
 
   // ============================================
@@ -329,29 +334,29 @@ const MayorReports = () => {
   });
 
   // 2. BUDGET UTILIZATION REPORT
-  const {
-    data: budgetData,
-    isLoading: budgetLoading,
-  } = useQuery({
-    queryKey: ['mayor-budget', dateRange, globalDepartmentFilter, budgetYearFilter],
-    queryFn: async () => {
-      const params = {
-        department_id: globalDepartmentFilter !== 'all' ? globalDepartmentFilter : undefined,
-        year: budgetYearFilter,
-      };
-      const res = await reportsAPI.getBudgetReport(params);
-      
-      const data = res?.data?.data ?? res?.data ?? {};
-      const periods = extractArray(data);
-      
-      return {
-        periods,
-        summary: data?.summary || {},
-      };
-    },
-    enabled: expandedSections.budgetUtilization,
-    staleTime: CACHE_5MIN,
-  });
+ // 2. BUDGET UTILIZATION REPORT
+const {
+  data: budgetData,
+  isLoading: budgetLoading,
+} = useQuery({
+  queryKey: ['mayor-budget', budgetYearFilter, budgetDepartmentFilter, budgetMonthFilter],
+  queryFn: async () => {
+    const params = {
+      year: budgetYearFilter,
+      month: budgetMonthFilter !== 'all' ? budgetMonthFilter : undefined,
+      department_id: budgetDepartmentFilter !== 'all' ? budgetDepartmentFilter : undefined,
+    };
+    const res = await reportsAPI.getBudgetReport(params);
+    const data = res?.data?.data ?? res?.data ?? {};
+    return {
+      periods: data?.periods || [],
+      summary: data?.summary || {},
+      department: data?.department || {},
+    };
+  },
+  enabled: expandedSections.budgetUtilization,
+  staleTime: CACHE_5MIN,
+});
 
   // 3. RECONCILIATION REPORT
   const {
@@ -559,143 +564,280 @@ const MayorReports = () => {
   // RENDER - BUDGET UTILIZATION REPORT
   // ============================================================
 
-  const renderBudgetUtilization = () => {
-    const periods = Array.isArray(budgetData?.periods) ? budgetData.periods : [];
-    const summary = budgetData?.summary || {};
+ // ============================================================
+// RENDER - BUDGET UTILIZATION REPORT
+// ============================================================
 
-    const chartData = periods.map(p => ({
-      department_name: p.department_name || 'Unknown',
-      allocated: parseFloat(p.allocated) || 0,
-      used: parseFloat(p.used) || 0,
-      remaining: parseFloat(p.remaining) || 0,
-    }));
+const MONTH_OPTIONS = [
+  { value: 'all', label: 'All Months' },
+  { value: 1,  label: 'January' },
+  { value: 2,  label: 'February' },
+  { value: 3,  label: 'March' },
+  { value: 4,  label: 'April' },
+  { value: 5,  label: 'May' },
+  { value: 6,  label: 'June' },
+  { value: 7,  label: 'July' },
+  { value: 8,  label: 'August' },
+  { value: 9,  label: 'September' },
+  { value: 10, label: 'October' },
+  { value: 11, label: 'November' },
+  { value: 12, label: 'December' },
+];
 
-    return (
-      <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-        <CardHeader className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors rounded-t-2xl" onClick={() => toggleSection('budgetUtilization')}>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Wallet className="h-5 w-5 text-amber-500" />
-              <CardTitle className="text-slate-800 dark:text-white">Budget Utilization Report</CardTitle>
-              <Badge className="bg-amber-500/20 text-amber-600 ml-2">{periods.length} departments</Badge>
-            </div>
-            <div className="flex items-center gap-2">
-              {expandedSections.budgetUtilization && (
-                <>
-                  <div className="flex items-center gap-1">
-                    <Input
-                      type="number"
-                      value={budgetYearFilter}
-                      onChange={(e) => setBudgetYearFilter(parseInt(e.target.value) || new Date().getFullYear())}
-                      className="w-20 h-8 text-xs"
-                      min={2020}
-                      max={2030}
-                    />
-                    <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); handleExport('excel', 'budget', { year: budgetYearFilter }); }} disabled={exportLoading} className="h-8 px-2 text-xs">
-                      <FileSpreadsheet className="h-3.5 w-3.5 mr-1" /> Excel
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); handleExport('pdf', 'budget', { year: budgetYearFilter }); }} disabled={exportLoading} className="h-8 px-2 text-xs">
-                      <FileText className="h-3.5 w-3.5 mr-1" /> PDF
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); window.print(); }} className="h-8 px-2 text-xs">
-                      <Printer className="h-3.5 w-3.5 mr-1" /> Print
-                    </Button>
-                  </div>
-                </>
-              )}
-              <Badge variant="secondary">{expandedSections.budgetUtilization ? 'Hide' : 'Show'}</Badge>
-              {expandedSections.budgetUtilization ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-            </div>
+const renderBudgetUtilization = () => {
+  const periods = Array.isArray(budgetData?.periods) ? budgetData.periods : [];
+  const summary = budgetData?.summary || {};
+  const dept = budgetData?.department || {};
+
+  const selectedMonthLabel = budgetMonthFilter === 'all'
+    ? 'All Months'
+    : MONTH_OPTIONS.find(m => m.value === budgetMonthFilter)?.label || '';
+
+  return (
+    <Card className="dark:bg-slate-800/80 dark:border-slate-700">
+      <CardHeader
+        className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors rounded-t-2xl"
+        onClick={() => toggleSection('budgetUtilization')}
+      >
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Wallet className="h-5 w-5 text-amber-500" />
+            <CardTitle className="text-slate-800 dark:text-white">Budget Utilization Report</CardTitle>
+            <Badge className="bg-amber-500/20 text-amber-600 ml-2">
+              {periods.length} week{periods.length !== 1 ? 's' : ''}
+            </Badge>
           </div>
-          <CardDescription>Budget tracking across departments</CardDescription>
-        </CardHeader>
-        {expandedSections.budgetUtilization && (
-          <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-              <StatsCard title="Total Allocated" value={formatCurrency(summary.total_allocated || 0)} icon={Wallet} color="from-blue-500 to-blue-600" />
-              <StatsCard title="Total Utilized" value={formatCurrency(summary.total_used || 0)} icon={TrendingDown} color="from-yellow-500 to-yellow-600" />
-              <StatsCard title="Total Remaining" value={formatCurrency(summary.total_remaining || 0)} icon={TrendingUp} color="from-emerald-500 to-emerald-600" />
-              <StatsCard title="Departments" value={summary.total_departments || 0} icon={Building2} color="from-purple-500 to-purple-600" />
-            </div>
+          <div className="flex items-center gap-2">
+            {expandedSections.budgetUtilization && (
+              <>
+                {/* ✅ NEW: Department filter */}
+                <Select
+                  value={budgetDepartmentFilter}
+                  onValueChange={(v) => { setBudgetDepartmentFilter(v); }}
+                >
+                  <SelectTrigger
+                    className="w-[180px] h-8 text-xs"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <SelectValue placeholder="Department" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Default (First with budget)</SelectItem>
+                    {departments.map((d) => (
+                      <SelectItem key={d.department_id} value={String(d.department_id)}>
+                        {d.department_name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
 
-            <div className="overflow-x-auto max-h-[400px] overflow-y-auto border rounded-lg">
-              <Table>
-                <TableHeader className="sticky top-0 z-10 bg-slate-100 dark:bg-slate-800">
+                {/* ✅ NEW: Month filter */}
+                <Select
+                  value={String(budgetMonthFilter)}
+                  onValueChange={(v) => setBudgetMonthFilter(v === 'all' ? 'all' : parseInt(v))}
+                >
+                  <SelectTrigger
+                    className="w-[130px] h-8 text-xs"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <SelectValue placeholder="Month" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {MONTH_OPTIONS.map(opt => (
+                      <SelectItem key={opt.value} value={String(opt.value)}>{opt.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                {/* Year input (kept) */}
+                <Input
+                  type="number"
+                  value={budgetYearFilter}
+                  onChange={(e) => setBudgetYearFilter(parseInt(e.target.value) || new Date().getFullYear())}
+                  onClick={(e) => e.stopPropagation()}
+                  className="w-20 h-8 text-xs"
+                  min={2020}
+                  max={2030}
+                />
+
+                <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); handleExport('excel', 'budget', { year: budgetYearFilter, month: budgetMonthFilter, department_id: budgetDepartmentFilter }); }} disabled={exportLoading} className="h-8 px-2 text-xs">
+                  <FileSpreadsheet className="h-3.5 w-3.5 mr-1" /> Excel
+                </Button>
+                <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); handleExport('pdf', 'budget', { year: budgetYearFilter, month: budgetMonthFilter, department_id: budgetDepartmentFilter }); }} disabled={exportLoading} className="h-8 px-2 text-xs">
+                  <FileText className="h-3.5 w-3.5 mr-1" /> PDF
+                </Button>
+                <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); window.print(); }} className="h-8 px-2 text-xs">
+                  <Printer className="h-3.5 w-3.5 mr-1" /> Print
+                </Button>
+              </>
+            )}
+            <Badge variant="secondary">{expandedSections.budgetUtilization ? 'Hide' : 'Show'}</Badge>
+            {expandedSections.budgetUtilization ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+          </div>
+        </div>
+        <CardDescription>
+          {dept.department_name || 'Select a department'} — {selectedMonthLabel} {budgetYearFilter}
+        </CardDescription>
+      </CardHeader>
+
+      {expandedSections.budgetUtilization && (
+        <CardContent>
+          {/* ✅ STAT CARDS: ANNUAL totals for the selected department */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            <StatsCard
+              title="Annual Allocated"
+              value={formatCurrency(summary.total_allocated || 0)}
+              icon={Wallet}
+              color="from-blue-500 to-blue-600"
+              subtitle={`FY ${budgetYearFilter}`}
+            />
+            <StatsCard
+              title="Annual Utilized"
+              value={formatCurrency(summary.total_used || 0)}
+              icon={TrendingDown}
+              color="from-yellow-500 to-yellow-600"
+              subtitle={`FY ${budgetYearFilter}`}
+            />
+            <StatsCard
+              title="Annual Remaining"
+              value={formatCurrency(summary.total_remaining || 0)}
+              icon={TrendingUp}
+              color="from-emerald-500 to-emerald-600"
+              subtitle={`FY ${budgetYearFilter}`}
+            />
+            <StatsCard
+              title="Weeks in View"
+              value={summary.total_weeks || 0}
+              icon={CalendarRange}
+              color="from-purple-500 to-purple-600"
+              subtitle={selectedMonthLabel}
+            />
+          </div>
+
+          {/* ✅ TABLE: per-week rows with ACTUAL dates */}
+          <div className="overflow-x-auto max-h-[400px] overflow-y-auto border rounded-lg">
+            <Table>
+              <TableHeader className="sticky top-0 z-10 bg-slate-100 dark:bg-slate-800">
+                <TableRow>
+                  <TableHead className="font-semibold text-xs uppercase">Week (Date Range)</TableHead>
+                  <TableHead className="text-right font-semibold text-xs uppercase">Budget (₱)</TableHead>
+                  <TableHead className="text-right font-semibold text-xs uppercase">Utilized (₱)</TableHead>
+                  <TableHead className="text-right font-semibold text-xs uppercase">Balance (₱)</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {periods.length === 0 ? (
                   <TableRow>
-                    <TableHead className="font-semibold text-slate-700 dark:text-slate-300 text-xs uppercase">Department</TableHead>
-                    <TableHead className="text-right font-semibold text-slate-700 dark:text-slate-300 text-xs uppercase">Allocated Budget (₱)</TableHead>
-                    <TableHead className="text-right font-semibold text-slate-700 dark:text-slate-300 text-xs uppercase">Amount Utilized (₱)</TableHead>
-                    <TableHead className="text-right font-semibold text-slate-700 dark:text-slate-300 text-xs uppercase">Remaining Budget (₱)</TableHead>
-                    <TableHead className="text-right font-semibold text-slate-700 dark:text-slate-300 text-xs uppercase">Utilization (%)</TableHead>
+                    <TableCell colSpan="4" className="text-center py-8 text-slate-500">
+                      No weekly budget periods for this department, month, and year
+                    </TableCell>
                   </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {periods.length === 0 ? (
-                    <TableRow><TableCell colSpan="5" className="text-center py-8 text-slate-500">No budget data available</TableCell></TableRow>
-                  ) : (
-                    periods.map((p, i) => {
-                      const util = p.utilization || (p.allocated > 0 ? ((p.used || 0) / p.allocated) * 100 : 0);
+                ) : (
+                  <>
+                    {periods.map((p, i) => {
+                      const start = p.week_start
+                        ? format(new Date(p.week_start), 'MMM d, yyyy')
+                        : 'N/A';
+                      const end = p.week_end
+                        ? format(new Date(p.week_end), 'MMM d, yyyy')
+                        : 'N/A';
+                      const isActive = p.status === 'active';
+
                       return (
                         <TableRow key={i} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
-                          <TableCell className="font-medium">{p.department_name}</TableCell>
-                          <TableCell className="text-right">{formatCurrency(p.allocated)}</TableCell>
-                          <TableCell className="text-right">{formatCurrency(p.used)}</TableCell>
+                          <TableCell className="font-medium">
+                            <div className="flex items-center gap-2">
+                              <span>{start} – {end}</span>
+                              {isActive && (
+                                <Badge className="bg-emerald-500/20 text-emerald-600 text-[10px]">Active</Badge>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {formatCurrency(p.allocated)}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {formatCurrency(p.used)}
+                          </TableCell>
                           <TableCell className={`text-right font-medium ${p.remaining < 0 ? 'text-red-600' : 'text-emerald-600'}`}>
                             {formatCurrency(p.remaining)}
                           </TableCell>
-                          <TableCell className="text-right">
-                            <Badge className={util > 80 ? 'bg-red-500' : util > 60 ? 'bg-yellow-500' : 'bg-emerald-500'}>
-                              {typeof util === 'number' ? util.toFixed(1) : '0'}%
-                            </Badge>
-                          </TableCell>
                         </TableRow>
                       );
-                    })
-                  )}
-                </TableBody>
-              </Table>
-            </div>
+                    })}
 
-            <div className="mt-6">
-              <div className="flex items-center justify-between cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 p-3 rounded-lg transition-colors" onClick={() => setShowBudgetChart(!showBudgetChart)}>
-                <div className="flex items-center gap-2">
-                  <BarChart3 className="h-5 w-5 text-emerald-500" />
-                  <h4 className="font-semibold text-slate-700 dark:text-slate-300">Budget Visualization</h4>
-                  <Badge variant="secondary">{showBudgetChart ? 'Hide' : 'Show'}</Badge>
-                </div>
-                <div className="flex items-center gap-2 text-sm text-slate-500">
-                  {showBudgetChart ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  {showBudgetChart ? 'Hide Chart' : 'Show Chart'}
-                </div>
+                    {/* Totals row for the visible month */}
+                    <TableRow className="bg-slate-100 dark:bg-slate-800 font-bold border-t-2">
+                      <TableCell className="text-right">
+                        TOTAL ({selectedMonthLabel})
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {formatCurrency(summary.month_allocated || 0)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {formatCurrency(summary.month_used || 0)}
+                      </TableCell>
+                      <TableCell className="text-right text-emerald-700">
+                        {formatCurrency(summary.month_remaining || 0)}
+                      </TableCell>
+                    </TableRow>
+                  </>
+                )}
+              </TableBody>
+            </Table>
+          </div>
+
+          {/* Chart (unchanged behavior — uses periods) */}
+          <div className="mt-6">
+            <div
+              className="flex items-center justify-between cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 p-3 rounded-lg transition-colors"
+              onClick={() => setShowBudgetChart(!showBudgetChart)}
+            >
+              <div className="flex items-center gap-2">
+                <BarChart3 className="h-5 w-5 text-emerald-500" />
+                <h4 className="font-semibold text-slate-700 dark:text-slate-300">Budget Visualization</h4>
+                <Badge variant="secondary">{showBudgetChart ? 'Hide' : 'Show'}</Badge>
               </div>
-              {showBudgetChart && (
-                <div className="h-80 mt-4">
-                  {chartData.length === 0 ? (
-                    <div className="flex items-center justify-center h-full">
-                      <p className="text-slate-500 dark:text-slate-400">No data to visualize</p>
-                    </div>
-                  ) : (
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={chartData}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                        <XAxis dataKey="department_name" angle={-45} textAnchor="end" height={80} stroke="#94a3b8" />
-                        <YAxis stroke="#94a3b8" />
-                        <Tooltip formatter={(value) => formatCurrency(value)} />
-                        <Legend />
-                        <Bar dataKey="allocated" fill="#3b82f6" name="Allocated" radius={[4, 4, 0, 0]} />
-                        <Bar dataKey="used" fill="#f59e0b" name="Used" radius={[4, 4, 0, 0]} />
-                        <Bar dataKey="remaining" fill="#10b981" name="Remaining" radius={[4, 4, 0, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  )}
-                </div>
-              )}
+              <div className="flex items-center gap-2 text-sm text-slate-500">
+                {showBudgetChart ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                {showBudgetChart ? 'Hide Chart' : 'Show Chart'}
+              </div>
             </div>
-          </CardContent>
-        )}
-      </Card>
-    );
-  };
+            {showBudgetChart && (
+              <div className="h-80 mt-4">
+                {periods.length === 0 ? (
+                  <div className="flex items-center justify-center h-full">
+                    <p className="text-slate-500 dark:text-slate-400">No data to visualize</p>
+                  </div>
+                ) : (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={periods.map(p => ({
+                        label: p.week_start ? format(new Date(p.week_start), 'MMM d') : 'N/A',
+                        allocated: p.allocated,
+                        used: p.used,
+                        remaining: p.remaining,
+                      }))}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                      <XAxis dataKey="label" stroke="#94a3b8" />
+                      <YAxis stroke="#94a3b8" />
+                      <Tooltip formatter={(value) => formatCurrency(value)} />
+                      <Legend />
+                      <Bar dataKey="allocated" fill="#3b82f6" name="Budget" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="used" fill="#f59e0b" name="Utilized" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="remaining" fill="#10b981" name="Balance" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+              </div>
+            )}
+          </div>
+        </CardContent>
+      )}
+    </Card>
+  );
+};
 
   // ============================================================
   // RENDER - RECONCILIATION REPORT
