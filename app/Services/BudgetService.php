@@ -80,47 +80,38 @@ class BudgetService
         return $remaining >= $amount;
     }
     
-    /**
-     * Deduct from budget (when gas slip is created)
-     */
-    public function deductBudget($departmentId, $amount, $isCrossDepartment = false, $originalDepartmentId = null, $reason = null)
-    {
-        $year = Carbon::now()->year;
-        
-        DB::beginTransaction();
-        
-        try {
-            $budget = AnnualBudget::where('department_id', $departmentId)
-                ->where('fiscal_year', $year)
-                ->first();
-                
-            if (!$budget) {
-                throw new \Exception("No budget found for department ID: {$departmentId}");
-            }
-            
-            // Check if sufficient budget
-            if (!$this->hasSufficientBudget($departmentId, $amount, $year) && !$isCrossDepartment) {
-                throw new \Exception("Insufficient budget for department ID: {$departmentId}");
-            }
-            
-           
-            
-            // ✅ ALWAYS deduct from annual budget
-            $budget->used_amount += $amount;
-            $budget->save();
-            
-            // ✅ ALWAYS record weekly usage
-            $this->recordWeeklyUsage($departmentId, $amount);
-            
-            DB::commit();
-            return true;
-            
-        } catch (\Exception $e) {
-            DB::rollBack();
-            Log::error('Budget deduction error: ' . $e->getMessage());
-            throw $e;
-        }
+   /*
+ * Deduct from budget (when gas slip is created)
+ *
+ * ✅ NO transaction here — caller is responsible for wrapping this in a
+ * DB::transaction() so that the whole fund-release flow is atomic.
+ */
+public function deductBudget($departmentId, $amount, $isCrossDepartment = false, $originalDepartmentId = null, $reason = null)
+{
+    $year = Carbon::now()->year;
+
+    $budget = AnnualBudget::where('department_id', $departmentId)
+        ->where('fiscal_year', $year)
+        ->first();
+
+    if (!$budget) {
+        throw new \Exception("No budget found for department ID: {$departmentId}");
     }
+
+    // Check if sufficient budget
+    if (!$this->hasSufficientBudget($departmentId, $amount, $year) && !$isCrossDepartment) {
+        throw new \Exception("Insufficient budget for department ID: {$departmentId}");
+    }
+
+    // ✅ ALWAYS deduct from annual budget
+    $budget->used_amount += $amount;
+    $budget->save();
+
+    // ✅ ALWAYS record weekly usage
+    $this->recordWeeklyUsage($departmentId, $amount);
+
+    return true;
+}
     
     /**
      * Log cross-department fuel usage
