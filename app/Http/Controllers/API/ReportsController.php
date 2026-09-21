@@ -2396,41 +2396,205 @@ public function getMoActivityLogs(Request $request)
         return 'Critical - Needs Maintenance';
     }
 
-    private function formatAuditDetails($log)
-    {
-        $details = '';
-        if ($log->action === 'login' || $log->action === 'logout') {
-            if ($log->new_values) {
-                $data = json_decode($log->new_values, true);
-                $details = "User: " . ($data['email'] ?? 'N/A');
-            }
-        } elseif ($log->action === 'created') {
-            if ($log->new_values) {
-                $data = json_decode($log->new_values, true);
-                $details = "Created " . ($data['name'] ?? $data['trip_ticket_number'] ?? 'record');
-            }
-        } elseif ($log->action === 'updated' || $log->action === 'edited') {
-            $details = "Updated record ID: " . $log->record_id;
-            if ($log->old_values && $log->new_values) {
-                $old = json_decode($log->old_values, true);
-                $new = json_decode($log->new_values, true);
-                $changed = [];
-                foreach ($new as $key => $value) {
-                    if (isset($old[$key]) && $old[$key] != $value) {
-                        $changed[] = $key;
-                    }
-                }
-                if (!empty($changed)) {
-                    $details .= " (Changed: " . implode(', ', array_slice($changed, 0, 3)) . ")";
-                }
-            }
-        } elseif ($log->action === 'deleted') {
-            $details = "Deleted record ID: " . $log->record_id;
-        } else {
-            $details = "Action on " . $log->table_name . " ID: " . $log->record_id;
-        }
-        return $details;
+  private function formatAuditDetails($log)
+{
+    // Fields that never matter to a user reading the log
+    static $noiseFields = [
+        'created_at', 'updated_at', 'deleted_at',
+        'verified_at', 'reconciled_at', 'acknowledged_at',
+        'cancelled_at', 'closed_at', 'last_login_at',
+        'password_changed_at', 'deactivated_at',
+        'receipt_uploaded_at', 'last_used_at',
+        'email_verified_at', 'remember_token',
+    ];
+
+    // Human-friendly labels for raw DB columns
+    static $labels = [
+        // Departments
+        'department_name' => 'Department Name',
+        'department_code' => 'Department Code',
+        'head_of_office' => 'Head of Office',
+        'is_active' => 'Active',
+
+        // Users
+        'first_name' => 'First Name',
+        'middle_name' => 'Middle Name',
+        'last_name' => 'Last Name',
+        'email' => 'Email',
+        'employee_number' => 'Employee Number',
+        'role' => 'Role',
+        'can_drive' => 'Can Drive',
+        'status' => 'Status',
+        'esignature_path' => 'E-Signature',
+        'deactivation_reason' => 'Deactivation Reason',
+
+        // Vehicles
+        'vehicle_model' => 'Vehicle Model',
+        'plate_number' => 'Plate Number',
+        'fuel_type' => 'Fuel Type',
+        'fuel_efficiency' => 'Fuel Efficiency (km/L)',
+        'fuel_capacity' => 'Fuel Capacity',
+        'current_fuel_balance' => 'Fuel Balance',
+        'maintenance_flag' => 'Maintenance Mode',
+
+        // Budget
+        'annual_amount' => 'Annual Budget',
+        'weekly_ceiling' => 'Weekly Ceiling',
+        'default_weekly_allocation' => 'Default Weekly Allocation',
+        'allocated_amount' => 'Allocated Amount',
+        'used_amount' => 'Used Amount',
+        'remaining_amount' => 'Remaining',
+
+        // Receipts & gas slips
+        'amount_released' => 'Amount Released',
+        'amount_on_receipt' => 'Amount on Receipt',
+        'liters_availed' => 'Liters Availed',
+        'unit_price' => 'Unit Price',
+        'invoice_number' => 'Invoice Number',
+        'verification_status' => 'Verification Status',
+        'reconciliation_status' => 'Reconciliation Status',
+        'is_cross_department' => 'Cross-Department',
+
+        // Trip
+        'destination' => 'Destination',
+        'purpose' => 'Purpose',
+        'trip_date' => 'Trip Date',
+        'trip_count' => 'Trip Count',
+        'cancellation_reason' => 'Cancellation Reason',
+    ];
+
+    // Human-friendly table names
+    static $resources = [
+        'departments' => 'Department',
+        'users' => 'User',
+        'vehicles' => 'Vehicle',
+        'drivers' => 'Driver',
+        'trip_ticket' => 'Trip Ticket',
+        'trip_history' => 'Trip',
+        'gas_slip' => 'Gas Slip',
+        'fuel_receipt' => 'Fuel Receipt',
+        'annual_budgets' => 'Annual Budget',
+        'budget_policies' => 'Budget Policy',
+        'dept_budget_policy' => 'Budget Policy',
+        'dept_budget_period' => 'Budget Period',
+        'weekly_budget_usage' => 'Weekly Budget',
+        'system_setting' => 'System Setting',
+        'fiscal_years' => 'Fiscal Year',
+        'notifications' => 'Notification',
+    ];
+
+    $label = fn($key) => $labels[$key]
+        ?? ucwords(str_replace('_', ' ', $key));
+
+    $resource = $resources[$log->table_name]
+        ?? ucwords(str_replace('_', ' ', $log->table_name ?? 'record'));
+
+    // ── login / logout ──
+    if (in_array($log->action, ['login', 'logout'])) {
+        $data = $log->new_values ? json_decode($log->new_values, true) : [];
+        return ($data['email'] ?? 'User') . ' ' . $log->action;
     }
+
+    // ── created ──
+    if ($log->action === 'created') {
+        $new = $log->new_values ? json_decode($log->new_values, true) : [];
+        // Try to find a good "name" for the record
+        $name = $new['department_name']
+            ?? $new['trip_ticket_number']
+            ?? $new['plate_number']
+            ?? $new['email']
+            ?? $new['invoice_number']
+            ?? null;
+        return $name
+            ? "Created {$resource} \"{$name}\""
+            : "Created {$resource} #{$log->record_id}";
+    }
+
+    // ── deleted ──
+    if ($log->action === 'deleted') {
+        $old = $log->old_values ? json_decode($log->old_values, true) : [];
+        $name = $old['department_name']
+            ?? $old['trip_ticket_number']
+            ?? $old['plate_number']
+            ?? $old['email']
+            ?? null;
+        return $name
+            ? "Deleted {$resource} \"{$name}\""
+            : "Deleted {$resource} #{$log->record_id}";
+    }
+
+    // ── updated / edited ──
+    if (in_array($log->action, ['updated', 'edited'])) {
+        $old = $log->old_values ? json_decode($log->old_values, true) : [];
+        $new = $log->new_values ? json_decode($log->new_values, true) : [];
+
+        // Filter out noise + unchanged fields
+        $changed = [];
+        foreach ($new as $key => $value) {
+            if (in_array($key, $noiseFields, true)) continue;
+            $oldValue = $old[$key] ?? null;
+            if ((string) $oldValue !== (string) $value) {
+                $changed[$key] = ['old' => $oldValue, 'new' => $value];
+            }
+        }
+
+        if (empty($changed)) {
+            return "Updated {$resource} #{$log->record_id}";
+        }
+
+        // Build "Field: before → after" list, cap at 3 fields
+        $pieces = [];
+        $i = 0;
+        foreach ($changed as $key => $pair) {
+            if ($i++ >= 3) {
+                $pieces[] = '…';
+                break;
+            }
+            $fieldLabel = $label($key);
+            $oldStr = $this->prettifyAuditValue($pair['old']);
+            $newStr = $this->prettifyAuditValue($pair['new']);
+
+            if ($pair['old'] === null || $pair['old'] === '') {
+                // Only "after" — new field populated
+                $pieces[] = "{$fieldLabel}: {$newStr}";
+            } else {
+                $pieces[] = "{$fieldLabel}: {$oldStr} → {$newStr}";
+            }
+        }
+
+        return "Updated {$resource} #{$log->record_id} — " . implode(' · ', $pieces);
+    }
+
+    // ── default fallback ──
+    return ucfirst($log->action) . " on {$resource} #{$log->record_id}";
+}
+
+/**
+ * Turn raw DB values into readable strings for audit display.
+ */
+private function prettifyAuditValue($value)
+{
+    if ($value === null || $value === '') return '—';
+    if ($value === true || $value === '1' || $value === 1) return 'Yes';
+    if ($value === false || $value === '0' || $value === 0) return 'No';
+
+    if (is_string($value)) {
+        // ISO datetime → friendly format
+        if (preg_match('/^\d{4}-\d{2}-\d{2}T/', $value)) {
+            try {
+                return Carbon::parse($value)->format('M d, Y');
+            } catch (\Exception $e) {
+                return $value;
+            }
+        }
+        // Long text → truncate
+        if (strlen($value) > 60) {
+            return substr($value, 0, 60) . '…';
+        }
+    }
+
+    return (string) $value;
+}
 
     private function returnAsCSV($content, $filename)
     {
