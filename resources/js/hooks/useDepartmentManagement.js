@@ -11,20 +11,17 @@ const fetchDepartments = async () => {
   const deptData = response.data?.data || response.data || [];
   
   // Process departments to include leadership names
-  return deptData.map((dept) => ({
-    ...dept,
-    head_of_office_id: dept.head_of_office?.id || dept.head_of_office_id || null,
-    head_of_office_name: dept.head_of_office?.name || dept.head_of_office_name || null,
-    oic_user_id: dept.current_oic?.id || dept.oic_user_id || null,
-    oic_name: dept.current_oic?.name || dept.oic_name || null,
-  }));
+ return deptData.map((dept) => ({
+  ...dept,
+  head_of_office_name: dept.head_of_office || null,
+}));
 };
 
 export const useDepartments = () => {
   return useQuery({
     queryKey: ['departments'],
     queryFn: fetchDepartments,
-    staleTime: 3 * 60 * 1000, // 3 minutes
+    staleTime: 0 // 3 minutes
   });
 };
 
@@ -86,11 +83,10 @@ export const useUpdateDepartment = () => {
       departmentAPI.update(departmentId, departmentData),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['departments'] });
-      toast.success('Department updated successfully');
+      // ✅ No toast — component handles it
     },
     onError: (error) => {
-      const message = error.response?.data?.message || 'Failed to update department';
-      toast.error(message);
+      // ✅ No toast — component handles it
     },
   });
 };
@@ -120,11 +116,10 @@ export const useToggleDepartmentStatus = () => {
     mutationFn: ({ id, status }) => departmentAPI.toggleStatus(id, status),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['departments'] });
-      toast.success('Department status updated successfully');
+      // ✅ No toast — component handles it
     },
     onError: (error) => {
-      const message = error.response?.data?.message || 'Failed to update department status';
-      toast.error(message);
+      // ✅ No toast — component handles it
     },
   });
 };
