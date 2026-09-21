@@ -184,7 +184,14 @@ const ActivityLogs = () => {
                                         </div>
                                         <span className="text-xs text-slate-400 dark:text-slate-500 whitespace-nowrap flex-shrink-0">
                                             {log.created_at
-                                                ? format(new Date(log.created_at), 'dd/MM/yyyy, h:mm a')
+                                                ? format(
+    new Date(
+        log.created_at.endsWith('Z') || log.created_at.includes('+')
+            ? log.created_at
+            : log.created_at.replace(' ', 'T') + 'Z'
+    ),
+    'dd/MM/yyyy, h:mm a'
+)
                                                 : 'N/A'}
                                         </span>
                                     </div>
