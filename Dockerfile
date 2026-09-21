@@ -26,6 +26,13 @@ RUN apk add --no-cache \
         gd
 
 # ============================================
+# ✅ PHP upload limits
+# Must be >= Laravel's max:5120 (5MB) and >= Nginx's client_max_body_size
+# ============================================
+RUN printf "upload_max_filesize = 10M\npost_max_size = 12M\nmemory_limit = 256M\nmax_execution_time = 60\n" \
+    > /usr/local/etc/php/conf.d/uploads.ini
+
+# ============================================
 # Composer
 # ============================================
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
@@ -82,6 +89,7 @@ RUN mkdir -p \
         storage/framework/sessions \
         storage/logs \
         storage/app/public \
+        public/receipts \
     && touch storage/logs/laravel.log \
     && chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache \
     && chmod -R 777 /var/www/html/storage /var/www/html/bootstrap/cache \
