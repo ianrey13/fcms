@@ -21,7 +21,9 @@ export const useDepartments = () => {
   return useQuery({
     queryKey: ['departments'],
     queryFn: fetchDepartments,
-    staleTime: 0 // 3 minutes
+    staleTime: 0 ,
+    refetchOnMount: 'always',
+
   });
 };
 

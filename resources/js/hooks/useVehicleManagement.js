@@ -16,7 +16,8 @@ export const useVehicles = () => {
   return useQuery({
     queryKey: ['vehicles'],
     queryFn: fetchVehicles,
-    staleTime: 2 * 60 * 1000, // 2 minutes
+    staleTime: 0, 
+    refetchOnMount: 'always',
   });
 };
 

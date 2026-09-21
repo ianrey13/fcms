@@ -41,8 +41,10 @@ const AuditTrailReport = lazy(() => import('./reports/AuditTrailReport'));
 // ✅ SHARED CONSTANTS
 // ============================================
 
-const CACHE_5MIN = 5 * 60 * 1000;
-const CACHE_10MIN = 10 * 60 * 1000;
+// const CACHE_5MIN = 5 * 60 * 1000;
+// const CACHE_10MIN = 10 * 60 * 1000;
+const CACHE_5MIN = 0;
+const CACHE_10MIN = 0;
 
 // ============================================
 // ✅ REPORT SKELETON (shows while chunk loads)

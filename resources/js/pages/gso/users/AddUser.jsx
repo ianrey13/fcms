@@ -564,11 +564,12 @@ const AddUser = () => {
     };
 
     createUser.mutate(payload, {
-      onSuccess: () => {
-        if (toastIdRef.current) toast.dismiss(toastIdRef.current);
-        toastIdRef.current = toast.success("✅ User created successfully!");
-        navigate("/admin/users");
-      },
+  onSuccess: () => {
+    if (toastIdRef.current) toast.dismiss(toastIdRef.current);
+    toastIdRef.current = toast.success("✅ User created successfully!");
+    navigate("/admin/users");   // ✅ inside onSuccess
+  },
+ 
       onError: (error) => {
         if (toastIdRef.current) toast.dismiss(toastIdRef.current);
         const message = error.response?.data?.message || "Failed to create user";

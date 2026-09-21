@@ -15,7 +15,8 @@ export const useUsers = () => {
   return useQuery({
     queryKey: ['users'],
     queryFn: fetchUsers,
-    staleTime: 2 * 60 * 1000, // 2 minutes
+    staleTime: 0, 
+    refetchOnMount: 'always', 
   });
 };
 
@@ -35,7 +36,7 @@ export const useDepartments = () => {
   return useQuery({
     queryKey: ['departments'],
     queryFn: fetchDepartments,
-    staleTime: 5 * 60 * 1000, // 5 minutes
+    staleTime:0, // 5 minutes
     // ✅ Add error handling
     onError: (error) => {
       console.error('Failed to fetch departments:', error);
