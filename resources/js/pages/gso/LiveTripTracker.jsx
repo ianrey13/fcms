@@ -29,7 +29,7 @@ import {
   Satellite,
   Plus,
   Minus,
-   Car,
+
 } from 'lucide-react';
 
 // Fix Leaflet icons
@@ -40,23 +40,18 @@ L.Icon.Default.mergeOptions({
     shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 });
 
-// Create custom moving marker icon
-const createMovingMarkerIcon = (speed) => {
-    const color = speed > 40 ? '#ef4444' : speed > 20 ? '#f59e0b' : '#22c55e';
-    const svg = `
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="32" height="32">
-            <circle cx="12" cy="12" r="10" fill="${color}" opacity="0.2"/>
-            <circle cx="12" cy="12" r="6" fill="${color}"/>
-            <circle cx="12" cy="12" r="2" fill="white"/>
-        </svg>
-    `;
-    return L.divIcon({
-        html: svg,
-        className: 'custom-marker',
-        iconSize: [32, 32],
-        iconAnchor: [16, 16],
-    });
-};
+const trackerStyleSheet = document.createElement("style");
+trackerStyleSheet.textContent = `
+  @keyframes pulse-ring {
+    0% { transform: scale(1); opacity: 0.8; }
+    100% { transform: scale(1.8); opacity: 0; }
+  }
+  .custom-vehicle-icon:hover {
+    filter: brightness(1.1);
+  }
+`;
+document.head.appendChild(trackerStyleSheet);
+
 
 // Create vehicle icon for focused marker
 const createVehicleIcon = (status, isSelected, isOnline = true, isFocused = false) => {
