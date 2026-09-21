@@ -154,7 +154,7 @@ const UserManagement = () => {
     const inactive = users.filter(u => u.status === "inactive").length;
     const drivers = users.filter(u => u.role === "driver").length;
     const gso = users.filter(u => u.role === "gso_office").length;
-    const mayor = users.filter(u => u.role === "mayors_office").length;
+    const disbursing  = users.filter(u => u.role === "mayors_office").length;
     
     return [
       {
@@ -180,10 +180,10 @@ const UserManagement = () => {
       },
       {
         title: "GSO Staff",
-        value: gso + mayor,
+        value: gso + disbursing ,
         icon: Shield,
         color: "from-purple-500 to-purple-600",
-        subtitle: `${gso} GSO • ${mayor} Mayor's Office`,
+        subtitle: `${gso} GSO • ${disbursing } Disbursing Officer`,
       },
     ];
   }, [users]);
@@ -470,9 +470,7 @@ const UserManagement = () => {
                       <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
                         User
                       </th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
-                        Employee #
-                      </th>
+                     
                       <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
                         Email
                       </th>
@@ -515,14 +513,7 @@ const UserManagement = () => {
                             </div>
                           </div>
                         </td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-1.5">
-                            <IdCard className="h-3.5 w-3.5 text-slate-400" />
-                            <span className="font-mono text-sm text-slate-600 dark:text-slate-400">
-                              {user.employee_number || "N/A"}
-                            </span>
-                          </div>
-                        </td>
+                       
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-1.5">
                             <Mail className="h-3.5 w-3.5 text-slate-400" />

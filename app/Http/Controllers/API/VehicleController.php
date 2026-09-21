@@ -95,7 +95,7 @@ class VehicleController extends Controller
                 'department_id' => 'required|exists:departments,department_id',
                 'vehicle_model' => 'required|string|max:120',
                 'plate_number' => 'required|string|max:20|unique:vehicles,plate_number',
-                'fuel_type' => 'required|in:regular,premium,diesel',
+                'fuel_type' => 'required|in:gasoline,diesel',
                 'status' => 'sometimes|in:active,inactive',
                 'maintenance_flag' => 'sometimes|boolean',
                 'fuel_capacity' => 'nullable|numeric|min:0',
@@ -560,10 +560,9 @@ class VehicleController extends Controller
                     ->count(),
                 'in_use' => count($activeTripVehicleIds),
                 'by_fuel_type' => [
-                    'regular' => Vehicle::where('fuel_type', 'regular')->count(),
-                    'premium' => Vehicle::where('fuel_type', 'premium')->count(),
-                    'diesel' => Vehicle::where('fuel_type', 'diesel')->count(),
-                ],
+    'gasoline' => Vehicle::where('fuel_type', 'gasoline')->count(),
+    'diesel' => Vehicle::where('fuel_type', 'diesel')->count(),
+],
                 'by_department' => Vehicle::select('department_id', DB::raw('count(*) as count'))
                     ->with('department')
                     ->groupBy('department_id')
