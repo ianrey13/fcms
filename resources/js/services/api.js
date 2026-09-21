@@ -596,4 +596,6 @@ export const locationAPI = {
 };
 
 // ============ EXPORT ============
+// ============ EXPORT ============
 export { cachedApi, uncachedApi };
+export default cachedApi;
