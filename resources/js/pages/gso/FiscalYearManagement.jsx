@@ -231,15 +231,15 @@ const FiscalYearManagement = () => {
                   Calendar Year <span className="text-red-500">*</span>
                 </label>
                 <Input
-                  type="number"
-                  min="2000"
-                  max="2100"
-                  placeholder="e.g., 2026"
-                  value={newYear}
-                  onChange={(e) => setNewYear(e.target.value)}
-                  className="mt-1.5 dark:bg-slate-900 dark:border-slate-700 text-lg font-semibold"
-                  required
-                />
+  type="number"
+  min="2000"
+  max="2100"
+  placeholder="e.g., 2026"
+  value={newYear}
+  onChange={(e) => setNewYear(e.target.value)}
+  className="mt-1.5 dark:bg-slate-900 dark:border-slate-600 dark:text-white placeholder:dark:text-slate-500 text-lg font-semibold"
+  required
+/>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                   Enter a year between 2000 and 2100
                 </p>
