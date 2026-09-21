@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { format } from 'date-fns';
 import StatsCard from './StatsCard';
 import { formatCurrency } from './_helpers';
 
@@ -16,13 +17,22 @@ const ReconciliationReport = ({
     const reconciliations = data?.reconciliations || [];
     const summary = data?.summary || {};
 
+    const formatDateTime = (value) => {
+        if (!value) return 'N/A';
+        try {
+            return format(new Date(value), 'yyyy-MM-dd HH:mm');
+        } catch {
+            return 'N/A';
+        }
+    };
+
     return (
         <Card className="dark:bg-slate-800/80 dark:border-slate-700">
             <CardHeader className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded-t-2xl" onClick={onToggle}>
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                         <FileCheck className="h-5 w-5 text-indigo-500" />
-                        <CardTitle className="text-slate-800 dark:text-white">Trip and Fuel Reconciliation Report</CardTitle>
+                        <CardTitle className="text-slate-800 dark:text-white">Trip Reconciliation Report</CardTitle>
                         <Badge className="bg-indigo-500/20 text-indigo-600 ml-2">{reconciliations.length} trips</Badge>
                     </div>
                     <div className="flex items-center gap-2">
@@ -73,6 +83,8 @@ const ReconciliationReport = ({
                                     <TableHead className="text-xs uppercase">Trip Ticket No.</TableHead>
                                     <TableHead className="text-xs uppercase">Vehicle</TableHead>
                                     <TableHead className="text-xs uppercase">Driver</TableHead>
+                                    <TableHead className="text-xs uppercase">Trip Start</TableHead>
+                                    <TableHead className="text-xs uppercase">Trip End</TableHead>
                                     <TableHead className="text-right text-xs uppercase">Expected Distance</TableHead>
                                     <TableHead className="text-right text-xs uppercase">Actual Distance</TableHead>
                                     <TableHead className="text-right text-xs uppercase">Distance Variance</TableHead>
@@ -80,7 +92,7 @@ const ReconciliationReport = ({
                             </TableHeader>
                             <TableBody>
                                 {reconciliations.length === 0 ? (
-                                    <TableRow><TableCell colSpan="6" className="text-center py-8 text-slate-500">No reconciliation data available</TableCell></TableRow>
+                                    <TableRow><TableCell colSpan="8" className="text-center py-8 text-slate-500 dark:text-slate-400">No reconciliation data available</TableCell></TableRow>
                                 ) : (
                                     reconciliations.map((r, i) => {
                                         const hasVariance = r.variance != null && Math.abs(r.variance) > 0.5;
@@ -89,6 +101,8 @@ const ReconciliationReport = ({
                                                 <TableCell className="font-mono font-medium">{r.ticket_number}</TableCell>
                                                 <TableCell>{r.plate_number}</TableCell>
                                                 <TableCell>{r.driver_name}</TableCell>
+                                                <TableCell className="text-xs whitespace-nowrap">{formatDateTime(r.trip_started_at)}</TableCell>
+                                                <TableCell className="text-xs whitespace-nowrap">{formatDateTime(r.trip_ended_at)}</TableCell>
                                                 <TableCell className="text-right">
                                                     {r.expected_distance != null ? `${r.expected_distance} km` : 'N/A'}
                                                 </TableCell>
@@ -97,7 +111,7 @@ const ReconciliationReport = ({
                                                         ? `${r.actual_distance} km`
                                                         : 'N/A'}
                                                 </TableCell>
-                                                <TableCell className={`text-right font-medium ${hasVariance ? 'text-red-600' : ''}`}>
+                                                <TableCell className={`text-right font-medium ${hasVariance ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
                                                     {r.variance != null ? `${r.variance} km` : '0.00 km'}
                                                 </TableCell>
                                             </TableRow>

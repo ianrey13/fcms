@@ -123,7 +123,7 @@ const [fuelDeptFilter, setFuelDeptFilter] = useState('all');
         departmentSummary: true,
         monthlySummary: true,
         tripTicket: true,
-        gpsActivity: true,
+        // gpsActivity: true,
         reconciliation: true,
         fuelReceipt: true,
         driverEfficiency: true,
@@ -620,17 +620,7 @@ const { data: fuelData, isLoading: fuelLoading } = useOptimizedQuery({
                         />
                     </Suspense>
 
-                    <Suspense fallback={<ReportSkeleton />}>
-                        <MonthlySummaryReport
-                            data={monthlyData}
-                            expanded={expandedSections.monthlySummary}
-                            onToggle={() => toggleSection('monthlySummary')}
-                            onExport={handleExport}
-                            exportLoading={exportLoading}
-                            yearFilter={yearFilter}
-                            onYearChange={setYearFilter}
-                        />
-                    </Suspense>
+                 
 
                     <Suspense fallback={<ReportSkeleton />}>
                         <TripTicketReport
@@ -644,20 +634,6 @@ const { data: fuelData, isLoading: fuelLoading } = useOptimizedQuery({
                         />
                     </Suspense>
 
-                    <Suspense fallback={<ReportSkeleton />}>
-                        <GPSActivityReport
-                            data={gpsData}
-                            expanded={expandedSections.gpsActivity}
-                            onToggle={() => toggleSection('gpsActivity')}
-                            onExport={handleExport}
-                            exportLoading={exportLoading}
-                            vehicles={vehicles}
-                            vehicleFilter={gpsVehicleFilter}
-                            onVehicleChange={setGpsVehicleFilter}
-                            matchFilter={matchFilter}
-                            onMatchChange={setMatchFilter}
-                        />
-                    </Suspense>
 
                     <Suspense fallback={<ReportSkeleton />}>
                         <ReconciliationReport
@@ -671,42 +647,11 @@ const { data: fuelData, isLoading: fuelLoading } = useOptimizedQuery({
                         />
                     </Suspense>
 
-                    <Suspense fallback={<ReportSkeleton />}>
-                        <FuelReceiptReport
-                            data={receiptData}
-                            expanded={expandedSections.fuelReceipt}
-                            onToggle={() => toggleSection('fuelReceipt')}
-                            onExport={handleExport}
-                            exportLoading={exportLoading}
-                            statusFilter={receiptStatusFilter}
-                            onStatusChange={setReceiptStatusFilter}
-                        />
-                    </Suspense>
+                  
 
-                    <Suspense fallback={<ReportSkeleton />}>
-                        <DriverEfficiencyReport
-                            data={driverData}
-                            expanded={expandedSections.driverEfficiency}
-                            onToggle={() => toggleSection('driverEfficiency')}
-                            onExport={handleExport}
-                            exportLoading={exportLoading}
-                            drivers={drivers}
-                            driverFilter={driverFilter}
-                            onDriverChange={setDriverFilter}
-                        />
-                    </Suspense>
+                    
 
-                    <Suspense fallback={<ReportSkeleton />}>
-                        <AuditTrailReport
-                            data={auditData}
-                            expanded={expandedSections.auditTrail}
-                            onToggle={() => toggleSection('auditTrail')}
-                            onExport={handleExport}
-                            exportLoading={exportLoading}
-                            resultFilter={auditResultFilter}
-                            onResultChange={setAuditResultFilter}
-                        />
-                    </Suspense>
+                  
                 </div>
 
                 {/* Footer */}

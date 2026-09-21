@@ -294,7 +294,7 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
                     icon: Receipt,
                 },
                 {
-                    name: "Administration",
+                    name: "Record Management",
                     icon: Settings,
                     submenu: [
                         {
