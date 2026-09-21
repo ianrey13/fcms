@@ -300,7 +300,7 @@ const LiveTripTracker = ({ trip, onClose, isOpen, allTrips }) => {
       if (channel) {
         try {
           channel.stopListening('.location.updated');
-          echo.leave('gso-live-tracking');
+          //echo.leave('gso-live-tracking');
         } catch (e) {
           console.warn('⚠️ WebSocket cleanup error:', e);
         }

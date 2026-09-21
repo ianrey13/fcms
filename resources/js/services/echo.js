@@ -107,7 +107,7 @@ const tryConnect = () => {
                     retryCount = 0;
                     
                     setTimeout(() => {
-                        subscribeToNotifications();
+                        // subscribeToNotifications();
                        
                     }, 500);
                     return;
@@ -195,70 +195,6 @@ function subscribeToNotifications() {
     }
 }
 
-// ============================================
-// ✅ SUBSCRIBE TO GSO LIVE TRACKING
-// ============================================
-
-function subscribeToGsoLiveTracking() {
-    try {
-        const token = getToken();
-        if (!token) {
-            console.log('⚠️ No token found, skipping GSO live tracking');
-            return;
-        }
-        
-        const userStr = localStorage.getItem('fcms_user');
-        if (!userStr) {
-            console.log('⚠️ No user found, skipping GSO live tracking');
-            return;
-        }
-        
-        const user = JSON.parse(userStr);
-        const role = user.role;
-        
-        // Only GSO can subscribe to live tracking
-        if (role !== 'gso_office') {
-            console.log('⏭️ User is not GSO, skipping live tracking');
-            return;
-        }
-        
-        console.log('🗺️ Subscribing to GSO live tracking...');
-        
-        const channel = echo.channel('gso-live-tracking');
-        
-        channel.listen('.location.updated', (data) => {
-            console.log('📍 Live location update:', data);
-            window.dispatchEvent(new CustomEvent('gps-location-updated', {
-                detail: data
-            }));
-        });
-        
-        channel.listen('.trip.completed', (data) => {
-            console.log('🏁 Trip completed:', data);
-            window.dispatchEvent(new CustomEvent('gps-trip-completed', {
-                detail: data
-            }));
-        });
-        
-        channel.listen('.trip.started', (data) => {
-            console.log('🚗 Trip started:', data);
-            window.dispatchEvent(new CustomEvent('gps-trip-started', {
-                detail: data
-            }));
-        });
-        
-        channel.subscribed(() => {
-            console.log('✅ Subscribed to gso-live-tracking');
-        });
-        
-        channel.error((error) => {
-            console.error('❌ gso-live-tracking subscription error:', error);
-        });
-        
-    } catch (error) {
-        console.error('❌ Failed to subscribe to GSO live tracking:', error);
-    }
-}
 
 // ============================================
 // ✅ UPDATE NOTIFICATION BADGE

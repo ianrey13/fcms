@@ -576,6 +576,9 @@ const LiveTracking = () => {
     const [followedTripId, setFollowedTripId] = useState(null);
     const hasSetupRef = useRef(false);
 
+    const followedTripIdRef = useRef(null);
+const mapZoomRef = useRef(13);
+
     // ✅ Mirrors tripsData for use inside WebSocket handler
     const tripsDataRef = useRef([]);
 
@@ -601,6 +604,8 @@ const LiveTracking = () => {
     useEffect(() => {
         tripsDataRef.current = tripsData;
     }, [tripsData]);
+    useEffect(() => { followedTripIdRef.current = followedTripId; }, [followedTripId]);
+useEffect(() => { mapZoomRef.current = mapZoom; }, [mapZoom]);
 
     // Close dropdown when clicking outside
     useEffect(() => {
@@ -757,10 +762,7 @@ const LiveTracking = () => {
             console.log('⏭️ WS already set up — skipping');
             return;
         }
-        if (!echo.connector || !echo.connector.pusher) {
-            console.warn('⚠️ Echo not ready, will retry...');
-            return;
-        }
+     
 
         hasSetupRef.current = true;
         console.log('🗺️ Setting up GSO live tracking WebSocket...');
@@ -864,9 +866,9 @@ const LiveTracking = () => {
                 return prev;
             });
 
-            if (followedTripId === data.trip_id && mapRef.current) {
-                mapRef.current.setView([data.latitude, data.longitude], mapZoom);
-            }
+           if (followedTripIdRef.current === data.trip_id && mapRef.current) {
+    mapRef.current.setView([data.latitude, data.longitude], mapZoomRef.current);
+}
 
             setLastUpdate(new Date());
         });
@@ -930,7 +932,7 @@ const LiveTracking = () => {
                 channel.stopListening('.location.updated');
                 channel.stopListening('.trip.completed');
                 channel.stopListening('.trip.started');
-                echo.leave('gso-live-tracking');
+                // echo.leave('gso-live-tracking');
             } catch (e) {
                 // Ignore cleanup errors
             }
