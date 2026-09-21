@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\DB;
 
 class NotificationHelper
 {
-    /**
+       /**
      * Send notification to a single user with real-time broadcast
      */
     public static function send($userId, $type, $entityType, $entityId, $message, $channel = 'in_app', $delay = 0)
@@ -40,11 +40,20 @@ class NotificationHelper
                 'user_id' => $userId
             ]);
 
-            // Broadcast the notification
-            broadcast(new NewNotification($userId, $notification->toArray(), $delay));
+            // ✅ Broadcast in its OWN try/catch — must NEVER break the parent transaction
+            try {
+                broadcast(new NewNotification($userId, $notification->toArray(), $delay));
 
-            $totalTime = microtime(true) - $startTime;
-            Log::info('📡 Broadcast sent in ' . round($totalTime, 4) . 's');
+                $totalTime = microtime(true) - $startTime;
+                Log::info('📡 Broadcast sent in ' . round($totalTime, 4) . 's');
+            } catch (\Exception $broadcastError) {
+                Log::warning('⚠️ Broadcast failed (notification still saved)', [
+                    'error' => $broadcastError->getMessage(),
+                    'notification_id' => $notification->notification_id,
+                    'user_id' => $userId,
+                ]);
+                // Do NOT rethrow — the notification is already persisted
+            }
 
             return $notification;
 

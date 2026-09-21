@@ -1,4 +1,4 @@
-// src/pages/mayor/departments/DepartmentManagement.jsx
+// src/pages/gso/departments/DepartmentManagement.jsx
 import React, { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
