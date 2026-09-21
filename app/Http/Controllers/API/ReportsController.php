@@ -634,118 +634,135 @@ class ReportsController extends Controller
     // ============================================================
     // 5. RECONCILIATION REPORT  ✅ FIXED — distance-based, matches frontend
     // ============================================================
-    public function getReconciliationReport(Request $request)
-    {
-        try {
-            $startDate = $request->get('start_date');
-            $endDate = $request->get('end_date');
-            $departmentId = $request->get('department_id');
+   public function getReconciliationReport(Request $request)
+{
+    try {
+        $startDate = $request->get('start_date');
+        $endDate = $request->get('end_date');
+        $departmentId = $request->get('department_id');
 
-            $query = TripTicket::with([
-                'department',
-                'driver.user',
-                'vehicle',
-                'gasSlip',
-                'gasSlip.fuelReceipt',
-            ])
-            ->whereHas('gasSlip')
-            ->whereHas('gasSlip.fuelReceipt');
+        $query = TripTicket::with([
+            'department',
+            'driver.user',
+            'vehicle',
+            'gasSlip',
+            'gasSlip.fuelReceipt',
+        ])
+        ->whereHas('gasSlip')
+        ->whereHas('gasSlip.fuelReceipt');
 
-            if ($startDate && $endDate) {
-                $query->whereBetween('submitted_at', [
-                    Carbon::parse($startDate)->startOfDay(),
-                    Carbon::parse($endDate)->endOfDay()
-                ]);
-            }
-
-            if ($departmentId) {
-                $query->where('department_id', $departmentId);
-            }
-
-            $trips = $query->get();
-
-            $reconciliations = $trips->map(function ($trip) {
-                // ============================================
-                // DISTANCE (primary metric)
-                // ============================================
-                $expectedDistance = (float) ($trip->estimated_distance_km ?? 0);
-
-                $actualDistance = (float) (
-                    $trip->actual_distance_km
-                    ?? $trip->gasSlip?->fuelReceipt?->gps_distance_km
-                    ?? 0
-                );
-
-                $variance = round($expectedDistance - $actualDistance, 2);
-
-                $varianceStatus = 'normal';
-                if (abs($variance) > 2) {
-                    $varianceStatus = 'high_discrepancy';
-                } elseif (abs($variance) > 0.5) {
-                    $varianceStatus = 'minor_discrepancy';
-                }
-
-                // ============================================
-                // FUEL (secondary, may be NULL until MO verifies)
-                // ============================================
-                $estimatedFuel = (float) ($trip->estimated_fuel_liters ?? 0);
-                $actualFuel = $trip->gasSlip?->fuelReceipt?->liters_availed;
-                $fuelVariance = $actualFuel !== null
-                    ? round($estimatedFuel - (float) $actualFuel, 2)
-                    : null;
-
-                return [
-                    'ticket_number' => $trip->trip_ticket_number,
-                    'department_name' => $trip->department?->department_name ?? 'N/A',
-                    'plate_number' => $trip->vehicle?->plate_number ?? 'N/A',
-                    'driver_name' => $trip->driver?->user?->full_name ?? 'N/A',
-                    'amount_released' => (float) ($trip->gasSlip?->amount_released ?? 0),
-
-                    // ✅ Distance — matches frontend field names
-                    'expected_distance' => round($expectedDistance, 2),
-                    'actual_distance' => round($actualDistance, 2),
-                    'variance' => $variance,
-                    'variance_status' => $varianceStatus,
-
-                    // ✅ Fuel — extra fields
-                    'estimated_fuel' => round($estimatedFuel, 2),
-                    'actual_fuel' => $actualFuel !== null ? round((float) $actualFuel, 2) : null,
-                    'fuel_variance' => $fuelVariance,
-
-                    'status' => $trip->gasSlip?->reconciliation_status ?? 'pending',
-                    'reconciled_by' => $trip->gasSlip?->reconciledBy?->full_name ?? 'N/A',
-                    'reconciled_at' => $trip->gasSlip?->reconciled_at,
-                ];
-            });
-
-            $summary = [
-                'total_reconciliations' => $reconciliations->count(),
-                'total_verified' => $reconciliations->filter(fn($r) => $r['status'] === 'verified')->count(),
-                'total_discrepancy' => $reconciliations->filter(fn($r) => $r['status'] === 'discrepancy')->count(),
-                'total_amount_released' => $reconciliations->sum('amount_released'),
-            ];
-
-            return response()->json([
-                'success' => true,
-                'data' => [
-                    'reconciliations' => $reconciliations,
-                    'summary' => $summary,
-                ],
-                'filters' => [
-                    'start_date' => $startDate,
-                    'end_date' => $endDate,
-                    'department_id' => $departmentId,
-                ]
+        if ($startDate && $endDate) {
+            $query->whereBetween('submitted_at', [
+                Carbon::parse($startDate)->startOfDay(),
+                Carbon::parse($endDate)->endOfDay()
             ]);
-
-        } catch (\Exception $e) {
-            Log::error('Reconciliation report error: ' . $e->getMessage());
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to fetch reconciliation report: ' . $e->getMessage()
-            ], 500);
         }
+
+        if ($departmentId) {
+            $query->where('department_id', $departmentId);
+        }
+
+        $trips = $query->get();
+
+        $reconciliations = $trips->map(function ($trip) {
+            // ============================================
+            // DISTANCE (primary metric)
+            // ============================================
+            $expectedDistance = (float) ($trip->estimated_distance_km ?? 0);
+
+            $actualDistance = (float) (
+                $trip->actual_distance_km
+                ?? $trip->gasSlip?->fuelReceipt?->gps_distance_km
+                ?? 0
+            );
+
+            $variance = round($expectedDistance - $actualDistance, 2);
+
+            $varianceStatus = 'normal';
+            if (abs($variance) > 2) {
+                $varianceStatus = 'high_discrepancy';
+            } elseif (abs($variance) > 0.5) {
+                $varianceStatus = 'minor_discrepancy';
+            }
+
+            // ============================================
+            // ✅ NEW: AMOUNT reconciliation
+            // ============================================
+            $amountReleased = (float) ($trip->gasSlip?->amount_released ?? 0);
+            $actualAmount   = $trip->gasSlip?->fuelReceipt?->amount_on_receipt;
+
+            $amountVariance = $actualAmount !== null
+                ? round($amountReleased - (float) $actualAmount, 2)
+                : null;
+
+            // ============================================
+            // FUEL (secondary, may be NULL until MO verifies)
+            // ============================================
+            $estimatedFuel = (float) ($trip->estimated_fuel_liters ?? 0);
+            $actualFuel = $trip->gasSlip?->fuelReceipt?->liters_availed;
+            $fuelVariance = $actualFuel !== null
+                ? round($estimatedFuel - (float) $actualFuel, 2)
+                : null;
+
+            return [
+                'ticket_number' => $trip->trip_ticket_number,
+                'department_name' => $trip->department?->department_name ?? 'N/A',
+                'plate_number' => $trip->vehicle?->plate_number ?? 'N/A',
+                'driver_name' => $trip->driver?->user?->full_name ?? 'N/A',
+
+                // ✅ Amount fields (NEW)
+                'amount_released' => $amountReleased,
+                'actual_amount' => $actualAmount !== null ? round((float) $actualAmount, 2) : null,
+                'amount_variance' => $amountVariance,
+
+                // Distance fields (existing)
+                'expected_distance' => round($expectedDistance, 2),
+                'actual_distance' => round($actualDistance, 2),
+                'variance' => $variance,
+                'variance_status' => $varianceStatus,
+
+                // Fuel fields (existing)
+                'estimated_fuel' => round($estimatedFuel, 2),
+                'actual_fuel' => $actualFuel !== null ? round((float) $actualFuel, 2) : null,
+                'fuel_variance' => $fuelVariance,
+
+                // Meta
+                'status' => $trip->gasSlip?->reconciliation_status ?? 'pending',
+                'reconciled_by' => $trip->gasSlip?->reconciledBy?->full_name ?? 'N/A',
+                'reconciled_at' => $trip->gasSlip?->reconciled_at,
+            ];
+        });
+
+        $summary = [
+            'total_reconciliations' => $reconciliations->count(),
+            'total_verified' => $reconciliations->filter(fn($r) => $r['status'] === 'verified')->count(),
+            'total_discrepancy' => $reconciliations->filter(fn($r) => $r['status'] === 'discrepancy')->count(),
+            'total_amount_released' => round($reconciliations->sum('amount_released'), 2),
+            'total_actual_amount' => round($reconciliations->sum(fn($r) => $r['actual_amount'] ?? 0), 2),
+            'total_amount_variance' => round($reconciliations->sum(fn($r) => $r['amount_variance'] ?? 0), 2),
+        ];
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'reconciliations' => $reconciliations,
+                'summary' => $summary,
+            ],
+            'filters' => [
+                'start_date' => $startDate,
+                'end_date' => $endDate,
+                'department_id' => $departmentId,
+            ]
+        ]);
+
+    } catch (\Exception $e) {
+        Log::error('Reconciliation report error: ' . $e->getMessage());
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to fetch reconciliation report: ' . $e->getMessage()
+        ], 500);
     }
+}
 
     // ============================================================
     // 6. DEPARTMENT FUEL CONSUMPTION
