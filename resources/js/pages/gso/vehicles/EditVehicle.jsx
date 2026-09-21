@@ -325,7 +325,7 @@ const EditVehicle = () => {
           fuel_type: vehicle.fuel_type || "diesel",
           status: vehicle.status || "active",
           maintenance_flag: vehicle.maintenance_flag || false,
-          odometer_status: vehicle.odometer_status || "functional",
+         
           display_status: displayStatus,
         };
         setFormData(data);
@@ -646,8 +646,7 @@ const EditVehicle = () => {
                   )}
                 >
                   <option value="diesel">Diesel</option>
-                  <option value="premium">Premium</option>
-                  <option value="regular">Regular</option>
+<option value="gasoline">Gasoline</option>
                 </select>
               </FormField>
 
@@ -671,21 +670,7 @@ const EditVehicle = () => {
                 </select>
               </FormField>
 
-              {/* Odometer Status */}
-              <FormField
-                label="Odometer Status"
-                icon={Gauge}
-                helper="Odometer functionality status"
-              >
-                <select
-                  value={formData.odometer_status}
-                  onChange={(e) => handleChange("odometer_status", e.target.value)}
-                  className="w-full mt-1 px-3 py-2.5 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-slate-900 dark:border-slate-700"
-                >
-                  <option value="functional">Functional</option>
-                  <option value="non_functional">Non-Functional</option>
-                </select>
-              </FormField>
+             
 
         
 

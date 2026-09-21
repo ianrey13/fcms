@@ -9,6 +9,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
   Car,
   Plus,
   Edit,
@@ -37,6 +45,7 @@ import {
   Clock,
   MapPin,
   X,
+  AlertCircle,
 } from "lucide-react";
 import { useVehicles, useDeleteVehicle, useToggleVehicleStatus } from "../../../hooks/useVehicleManagement";
 import { useQuery } from "@tanstack/react-query";
@@ -68,11 +77,10 @@ const StatsCard = ({ title, value, icon: Icon, color, subtitle }) => (
 );
 
 // ============================================
-// STATUS BADGE COMPONENT - Frontend Display
+// STATUS BADGE COMPONENT
 // ============================================
 
 const StatusBadge = ({ status, maintenanceFlag }) => {
-  // Map backend to frontend display
   let displayStatus = "Serviceable";
   let color = "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800";
   let icon = CheckCircle;
@@ -123,20 +131,31 @@ const VehicleManagement = () => {
   const [statusFilter, setStatusFilter] = useState("all");
   const [fuelFilter, setFuelFilter] = useState("all");
   const [showFilters, setShowFilters] = useState(false);
-  
+
+  // ✅ Modal state for status change confirmation
+  const [confirmDialog, setConfirmDialog] = useState({
+    open: false,
+    vehicleId: null,
+    vehicleLabel: "",
+    currentStatus: null,
+    maintenanceFlag: false,
+    action: "",
+    newStatus: "active",
+    newMaintenanceFlag: false,
+    actionIcon: null,
+    actionColor: "",
+  });
+
   const { data: vehicles = [], isLoading, refetch } = useVehicles();
   const deleteVehicle = useDeleteVehicle();
   const toggleStatus = useToggleVehicleStatus();
 
   // ============================================
-  // ✅ AUTO-REFRESH - No manual refresh needed
+  // AUTO-REFRESH
   // ============================================
 
   useAutoRefresh(
-    [
-      "gso-trip-updated",
-      "new-notification",
-    ],
+    ["gso-trip-updated", "new-notification"],
     () => {
       queryClient.invalidateQueries({ queryKey: ["vehicles"] });
       queryClient.invalidateQueries({ queryKey: ["departments"] });
@@ -165,9 +184,7 @@ const VehicleManagement = () => {
     const active = vehicles.filter(v => v.status === "active" && !v.maintenance_flag).length;
     const underMaintenance = vehicles.filter(v => v.maintenance_flag).length;
     const inactive = vehicles.filter(v => v.status === "inactive").length;
-    const diesel = vehicles.filter(v => v.fuel_type === "diesel").length;
-    const gasoline = vehicles.filter(v => v.fuel_type === "gasoline" || v.fuel_type === "regular" || v.fuel_type === "premium").length;
-    
+
     return [
       {
         title: "Total Vehicles",
@@ -220,7 +237,7 @@ const VehicleManagement = () => {
   };
 
   const getFuelTypeColor = (fuelType) => {
-    return fuelType === "diesel" 
+    return fuelType === "diesel"
       ? "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300"
       : "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300";
   };
@@ -228,7 +245,7 @@ const VehicleManagement = () => {
   // ============ FILTERS ============
   const filteredVehicles = useMemo(() => {
     let filtered = vehicles;
-    
+
     if (searchTerm) {
       const search = searchTerm.toLowerCase();
       filtered = filtered.filter((v) =>
@@ -238,7 +255,7 @@ const VehicleManagement = () => {
         getDepartmentName(v.department_id).toLowerCase().includes(search)
       );
     }
-    
+
     if (statusFilter !== "all") {
       filtered = filtered.filter((v) => {
         if (statusFilter === "serviceable") return v.status === "active" && !v.maintenance_flag;
@@ -247,54 +264,96 @@ const VehicleManagement = () => {
         return true;
       });
     }
-    
+
     if (fuelFilter !== "all") {
       filtered = filtered.filter((v) => v.fuel_type === fuelFilter);
     }
-    
+
     return filtered;
-  }, [vehicles, searchTerm, statusFilter, fuelFilter]);
+  }, [vehicles, searchTerm, statusFilter, fuelFilter, departments]);
 
   // ============ HANDLERS ============
-  const handleToggleStatus = (id, currentStatus, maintenanceFlag) => {
+  const handleToggleStatus = (id, currentStatus, maintenanceFlag, vehicleLabel) => {
     // Cycle through statuses: Serviceable -> Under Maintenance -> Unserviceable -> Serviceable
     let newStatus = "active";
     let newMaintenanceFlag = false;
     let action = "";
+    let actionIcon = null;
+    let actionColor = "";
 
     if (currentStatus === "active" && !maintenanceFlag) {
       // Serviceable -> Under Maintenance
       newStatus = "active";
       newMaintenanceFlag = true;
       action = "put under maintenance";
+      actionIcon = Wrench;
+      actionColor = "text-yellow-600 bg-yellow-100 dark:bg-yellow-900/30 dark:text-yellow-400";
     } else if (currentStatus === "active" && maintenanceFlag) {
       // Under Maintenance -> Unserviceable
       newStatus = "inactive";
       newMaintenanceFlag = false;
       action = "mark as unserviceable";
+      actionIcon = XCircle;
+      actionColor = "text-red-600 bg-red-100 dark:bg-red-900/30 dark:text-red-400";
     } else if (currentStatus === "inactive") {
       // Unserviceable -> Serviceable
       newStatus = "active";
       newMaintenanceFlag = false;
       action = "reactivate";
+      actionIcon = CheckCircle;
+      actionColor = "text-emerald-600 bg-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-400";
     }
 
-    if (window.confirm(`Are you sure you want to ${action} this vehicle?`)) {
-      toggleStatus.mutate(
-        { 
-          vehicleId: id, 
-          status: newStatus,
-          maintenance_flag: newMaintenanceFlag 
+    // Open confirmation modal instead of window.confirm
+    setConfirmDialog({
+      open: true,
+      vehicleId: id,
+      vehicleLabel,
+      currentStatus,
+      maintenanceFlag,
+      action,
+      newStatus,
+      newMaintenanceFlag,
+      actionIcon,
+      actionColor,
+    });
+  };
+
+  const confirmStatusChange = () => {
+    const { vehicleId, newStatus, newMaintenanceFlag, action } = confirmDialog;
+
+    toggleStatus.mutate(
+      {
+        vehicleId,
+        status: newStatus,
+        maintenance_flag: newMaintenanceFlag,
+      },
+      {
+        onSuccess: () => {
+          const successMessages = {
+            "put under maintenance": "Vehicle placed under maintenance!",
+            "mark as unserviceable": "Vehicle marked as unserviceable!",
+            "reactivate": "Vehicle reactivated!",
+          };
+          toast.success(successMessages[action] || "Vehicle updated successfully!");
+          queryClient.invalidateQueries({ queryKey: ["vehicles"] });
+          setConfirmDialog(prev => ({ ...prev, open: false }));
         },
-        {
-          onSuccess: () => {
-            toast.success(`Vehicle ${action}d successfully!`);
-            queryClient.invalidateQueries({ queryKey: ["vehicles"] });
-          },
-          onError: () => toast.error(`Failed to ${action} vehicle`),
-        }
-      );
-    }
+        onError: (error) => {
+  const backendMessage = error.response?.data?.message;
+  const validationErrors = error.response?.data?.errors;
+
+  if (validationErrors) {
+    const firstError = Object.values(validationErrors)[0];
+    toast.error(Array.isArray(firstError) ? firstError[0] : firstError, { duration: 5000 });
+  } else if (backendMessage) {
+    toast.error(backendMessage, { duration: 5000 });
+  } else {
+    toast.error(`Failed to ${action} vehicle`);
+  }
+},
+      }
+    );
   };
 
   const clearFilters = () => {
@@ -304,8 +363,6 @@ const VehicleManagement = () => {
   };
 
   const hasActiveFilters = searchTerm || statusFilter !== "all" || fuelFilter !== "all";
-
-  // Connection status
   const connectionStatus = isConnected ? "🟢 Live" : "🔴 Offline";
   const isRealTime = isConnected;
 
@@ -320,6 +377,9 @@ const VehicleManagement = () => {
       </div>
     );
   }
+
+  // Modal content config
+  const ActionIcon = confirmDialog.actionIcon;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
@@ -408,7 +468,6 @@ const VehicleManagement = () => {
                       <ChevronDown className="h-4 w-4 ml-2" />
                     )}
                   </Button>
-                  {/* ❌ REFRESH BUTTON REMOVED - Auto-refresh handles everything */}
                 </div>
               </div>
 
@@ -492,13 +551,13 @@ const VehicleManagement = () => {
                 </div>
                 <p className="text-slate-600 dark:text-slate-400 font-medium text-lg">No vehicles found</p>
                 <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">
-                  {vehicles.length === 0 
+                  {vehicles.length === 0
                     ? 'Register your first vehicle to get started'
                     : 'Try adjusting your search or filters'}
                 </p>
                 {vehicles.length === 0 && (
-                  <Button 
-                    onClick={() => navigate("/admin/vehicles/add")} 
+                  <Button
+                    onClick={() => navigate("/admin/vehicles/add")}
                     className="mt-4 bg-gradient-to-r from-blue-600 to-blue-500 shadow-lg shadow-blue-500/20"
                   >
                     <Plus className="h-4 w-4 mr-2" />
@@ -546,8 +605,8 @@ const VehicleManagement = () => {
                       const deptColor = getDepartmentColor(vehicle.department_id);
                       const fuelColor = getFuelTypeColor(vehicle.fuel_type);
                       return (
-                        <tr 
-                          key={vehicle.vehicle_id} 
+                        <tr
+                          key={vehicle.vehicle_id}
                           className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors group"
                         >
                           <td className="px-4 py-3">
@@ -588,7 +647,14 @@ const VehicleManagement = () => {
                           </td>
                           <td className="px-4 py-3">
                             <button
-                              onClick={() => handleToggleStatus(vehicle.vehicle_id, vehicle.status, vehicle.maintenance_flag)}
+                              onClick={() =>
+                                handleToggleStatus(
+                                  vehicle.vehicle_id,
+                                  vehicle.status,
+                                  vehicle.maintenance_flag,
+                                  `${vehicle.vehicle_model} (${vehicle.plate_number})`
+                                )
+                              }
                               className="hover:scale-105 active:scale-95 transition-all duration-200"
                             >
                               <StatusBadge status={vehicle.status} maintenanceFlag={vehicle.maintenance_flag} />
@@ -621,13 +687,91 @@ const VehicleManagement = () => {
         <div className="text-center text-xs text-slate-400 dark:text-slate-500 pt-2 border-t border-slate-200 dark:border-slate-700">
           <p>FCMS - Vehicle Management • Laguindingan Municipality</p>
           <p className="mt-0.5">
-            {vehicles.length} total vehicles • 
-            {vehicles.filter(v => v.status === "active" && !v.maintenance_flag).length} serviceable • 
-            {vehicles.filter(v => v.maintenance_flag).length} maintenance • 
+            {vehicles.length} total vehicles •
+            {vehicles.filter(v => v.status === "active" && !v.maintenance_flag).length} serviceable •
+            {vehicles.filter(v => v.maintenance_flag).length} maintenance •
             {vehicles.filter(v => v.status === "inactive").length} unserviceable
           </p>
         </div>
       </div>
+
+      {/* ✅ Confirmation Modal */}
+      <Dialog open={confirmDialog.open} onOpenChange={(open) => setConfirmDialog(prev => ({ ...prev, open }))}>
+        <DialogContent className="sm:max-w-md dark:bg-slate-800 dark:border-slate-700">
+          <DialogHeader>
+            <div className="flex items-center gap-3 mb-2">
+              {ActionIcon && (
+                <div className={`p-2.5 rounded-xl ${confirmDialog.actionColor}`}>
+                  <ActionIcon className="h-5 w-5" />
+                </div>
+              )}
+              <DialogTitle className="text-lg font-bold text-slate-800 dark:text-white">
+                Confirm Status Change
+              </DialogTitle>
+            </div>
+            <DialogDescription className="text-slate-600 dark:text-slate-400">
+              You are about to <strong>{confirmDialog.action}</strong> this vehicle:
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="my-2 p-4 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center">
+                <Car className="h-5 w-5 text-white" />
+              </div>
+              <div>
+                <p className="font-semibold text-slate-800 dark:text-white">
+                  {confirmDialog.vehicleLabel}
+                </p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Current status: {
+                    confirmDialog.currentStatus === "inactive"
+                      ? "Unserviceable"
+                      : confirmDialog.maintenanceFlag
+                      ? "Under Maintenance"
+                      : "Serviceable"
+                  }
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-start gap-2 p-3 rounded-lg bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800">
+            <AlertCircle className="h-4 w-4 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
+            <p className="text-xs text-blue-700 dark:text-blue-300">
+              This action will change the vehicle's operational status. You can reverse it by clicking the status badge again.
+            </p>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-2 mt-4">
+            <Button
+              variant="outline"
+              onClick={() => setConfirmDialog(prev => ({ ...prev, open: false }))}
+              disabled={toggleStatus.isPending}
+              className="dark:border-slate-700 dark:text-slate-300"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={confirmStatusChange}
+              disabled={toggleStatus.isPending}
+              className="bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600"
+            >
+              {toggleStatus.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  Updating...
+                </>
+              ) : (
+                <>
+                  <Check className="h-4 w-4 mr-2" />
+                  Confirm
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

@@ -280,14 +280,15 @@ class VehicleController extends Controller
         }
     }
 
-        /**
-     * Update vehicle status (activate/deactivate)
+         /**
+     * Update vehicle status (activate/deactivate + maintenance flag)
      */
     public function updateStatus(Request $request, $id)
     {
         try {
             $validator = Validator::make($request->all(), [
-                'status' => 'required|in:active,inactive'
+                'status' => 'required|in:active,inactive',
+                'maintenance_flag' => 'sometimes|boolean',
             ]);
 
             if ($validator->fails()) {
@@ -313,12 +314,20 @@ class VehicleController extends Controller
             }
 
             $vehicle->status = $request->status;
+
+            if ($request->has('maintenance_flag')) {
+                $vehicle->maintenance_flag = $request->maintenance_flag;
+            }
+
             $vehicle->save();
 
             return response()->json([
                 'success' => true,
                 'message' => 'Vehicle status updated successfully',
-                'data' => ['status' => $vehicle->status]
+                'data' => [
+                    'status' => $vehicle->status,
+                    'maintenance_flag' => $vehicle->maintenance_flag,
+                ]
             ]);
 
         } catch (\Exception $e) {

@@ -309,15 +309,19 @@ export const vehicleAPI = {
   create: (data) => uncachedApi.post("/admin/vehicles", data),
   update: (id, data) => uncachedApi.put(`/admin/vehicles/${id}`, data),
   delete: (id) => uncachedApi.delete(`/admin/vehicles/${id}`),
-  updateStatus: (id, status, reason = null) =>
-    uncachedApi.patch(`/admin/vehicles/${id}/status`, { status, deactivation_reason: reason }),
+  updateStatus: (id, status, maintenanceFlag = null) => {
+    const payload = { status };
+    if (typeof maintenanceFlag === 'boolean') {
+      payload.maintenance_flag = maintenanceFlag;
+    }
+    return uncachedApi.patch(`/admin/vehicles/${id}/status`, payload);
+  },
   updateMaintenance: (id, maintenanceFlag) =>
     uncachedApi.patch(`/admin/vehicles/${id}/maintenance`, { maintenance_flag: maintenanceFlag }),
-  updateOdometerStatus: (id, status) =>
-    uncachedApi.patch(`/admin/vehicles/${id}/odometer-status`, { odometer_status: status }),
   getAvailableVehicles: (params = {}) =>
     cachedApi.get("/admin/vehicles/available", { params }),
 };
+
 
 // Driver Management (Admin)
 export const driverManagementAPI = {

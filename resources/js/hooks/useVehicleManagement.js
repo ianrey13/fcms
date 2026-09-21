@@ -99,14 +99,14 @@ export const useToggleVehicleStatus = () => {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: ({ vehicleId, status }) => 
-      vehicleAPI.updateStatus(vehicleId, status),
-    onSuccess: (_, variables) => {
+    mutationFn: ({ vehicleId, status, maintenance_flag }) => 
+      vehicleAPI.updateStatus(vehicleId, status, maintenance_flag),
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['vehicles'] });
-      toast.success(`Vehicle ${variables.status === 'active' ? 'activated' : 'deactivated'} successfully`);
+      // ❌ Remove toast — component handles it with better messages
     },
     onError: () => {
-      toast.error('Failed to update vehicle status');
+      // ❌ Remove toast — component handles it
     },
   });
 };
