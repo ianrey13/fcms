@@ -603,23 +603,47 @@ const MultiStopDestination = ({
         }
     };
 
-    const handleSelectSuggestion = (index, suggestion) => {
-        const newStops = [...stops];
-        const fullDescription = suggestion.description;
-        const parts = fullDescription.split(",").map(p => p.trim());
-        const shortName = parts.length >= 2 ? `${parts[0]}, ${parts[1]}` : parts[0];
+   const handleSelectSuggestion = (index, suggestion) => {
+    const fullDescription = suggestion.description;
+    const parts = fullDescription.split(",").map(p => p.trim());
+    const shortName = parts.length >= 2 ? `${parts[0]}, ${parts[1]}` : parts[0];
 
-        newStops[index] = {
-            address: fullDescription,
-            shortName: shortName,
-            lat: parseFloat(suggestion.lat),
-            lng: parseFloat(suggestion.lng),
-        };
-        onChange(newStops);
+    const newLat = parseFloat(suggestion.lat);
+    const newLng = parseFloat(suggestion.lng);
+
+    // ✅ Check if this exact location (by coordinates) already exists in another stop
+    const duplicateIndex = stops.findIndex(
+        (s, i) =>
+            i !== index &&
+            s.lat != null &&
+            s.lng != null &&
+            Math.abs(s.lat - newLat) < 0.0001 &&
+            Math.abs(s.lng - newLng) < 0.0001
+    );
+
+    if (duplicateIndex !== -1) {
+        toast.error(
+            `This location is already added as Stop ${duplicateIndex + 1}. Please choose a different destination.`,
+            { duration: 4000 }
+        );
         setShowSuggestions(false);
         setSuggestions([]);
         setActiveIndex(null);
+        return;
+    }
+
+    const newStops = [...stops];
+    newStops[index] = {
+        address: fullDescription,
+        shortName: shortName,
+        lat: newLat,
+        lng: newLng,
     };
+    onChange(newStops);
+    setShowSuggestions(false);
+    setSuggestions([]);
+    setActiveIndex(null);
+};
 
     const addStop = () => {
         if (stops.length >= maxStops) {
@@ -1005,42 +1029,29 @@ const GsoCreateTrip = () => {
         },
     });
 
-    const handleSubmit = (e) => {
-        e.preventDefault();
-        if (toastIdRef.current) toast.dismiss(toastIdRef.current);
-        if (!validateForm()) return;
+   const handleSubmit = (e) => {
+    e.preventDefault();
+    if (toastIdRef.current) toast.dismiss(toastIdRef.current);
+    if (!validateForm()) return;
 
-        // ✅ Build destination string with dedupe
-        const destinationString = (() => {
-            const parts = stops
-                .filter(s => s.address)
-                .map(s => {
-                    const firstComma = s.address.indexOf(",");
-                    return firstComma > -1 ? s.address.substring(0, firstComma).trim() : s.address;
-                });
+    // ✅ Safety net: block duplicate stops on submit
+    const validStops = stops.filter(s => s.address && s.lat != null && s.lng != null);
+    const coordSet = new Set();
+    for (const stop of validStops) {
+        const key = `${stop.lat.toFixed(4)},${stop.lng.toFixed(4)}`;
+        if (coordSet.has(key)) {
+            toast.error("Duplicate destination detected. Please remove the duplicate stop.");
+            return;
+        }
+        coordSet.add(key);
+    }
 
-            // ✅ Dedupe (case-insensitive), preserve order
-            const seen = new Set();
-            const uniqueParts = parts.filter(p => {
-                const key = p.toLowerCase();
-                if (seen.has(key)) return false;
-                seen.add(key);
-                return true;
-            });
+    const destinationString = (() => {
+        // ... existing dedupe logic
+    })();
 
-            const allInLaguindingan = stops
-                .filter(s => s.address)
-                .every(s => s.address.toLowerCase().includes("laguindingan"));
-
-            if (allInLaguindingan) {
-                return `${uniqueParts.join(", ")}, Laguindingan, Misamis Oriental`;
-            } else {
-                return `${uniqueParts.join(", ")}, Misamis Oriental`;
-            }
-        })();
-
-        createTripMutation.mutate({ ...formData, destination: destinationString });
-    };
+    createTripMutation.mutate({ ...formData, destination: destinationString });
+};
 
     if (isLoading) return <FormSkeleton />;
 

@@ -126,10 +126,9 @@ const FuelConsumptionReport = ({
                         <Table>
                             <TableHeader className="sticky top-0 z-10 bg-slate-100 dark:bg-slate-800">
                                 {/* ✅ Row 1: main headers */}
-                                <TableRow>
+                                                                <TableRow>
                                     <TableHead rowSpan={2} className="text-xs uppercase align-bottom">Date</TableHead>
                                     <TableHead rowSpan={2} className="text-xs uppercase align-bottom">Vehicle</TableHead>
-                                    <TableHead rowSpan={2} className="text-xs uppercase align-bottom">Plate Number</TableHead>
                                     <TableHead rowSpan={2} className="text-xs uppercase align-bottom">Driver</TableHead>
                                     <TableHead colSpan={2} className="text-center text-xs uppercase border-l border-r border-slate-300 dark:border-slate-600">
                                         Fuel Type
@@ -148,14 +147,20 @@ const FuelConsumptionReport = ({
                             </TableHeader>
                             <TableBody>
                                 {logs.length === 0 ? (
-                                    <TableRow><TableCell colSpan="11" className="text-center py-8 text-slate-500">No fuel consumption data available</TableCell></TableRow>
+                                    <TableRow><TableCell colSpan="10" className="text-center py-8 text-slate-500 dark:text-slate-400">No fuel consumption data available</TableCell></TableRow>
                                 ) : (
                                     <>
                                         {logs.map((log, i) => (
                                             <TableRow key={i} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
-                                                <TableCell>{log.trip_ended_at ? format(new Date(log.trip_ended_at), 'yyyy-MM-dd') : 'N/A'}</TableCell>
-                                                <TableCell>{log.vehicle_model || log.vehicle}</TableCell>
-                                                <TableCell className="font-mono">{log.plate_number || 'N/A'}</TableCell>
+                                                                                               <TableCell>{log.trip_ended_at ? format(new Date(log.trip_ended_at), 'yyyy-MM-dd') : 'N/A'}</TableCell>
+                                                <TableCell>
+                                                    <div className="font-medium text-slate-800 dark:text-slate-200">
+                                                        {log.vehicle_model || log.vehicle || 'N/A'}
+                                                    </div>
+                                                    <div className="font-mono text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                                                        {log.plate_number || 'N/A'}
+                                                    </div>
+                                                </TableCell>
                                                 <TableCell>{log.driver}</TableCell>
                                                 {/* ✅ Diesel column */}
                                                 <TableCell className="text-center border-l border-slate-200 dark:border-slate-700">
@@ -167,13 +172,13 @@ const FuelConsumptionReport = ({
                                                 </TableCell>
                                                 <TableCell className="text-right">{formatNumber(log.liters_availed)}</TableCell>
                                                 <TableCell className="text-right font-medium">{formatCurrency(log.amount_on_receipt)}</TableCell>
-                                                <TableCell>{log.department}</TableCell>
+                                               <TableCell className="text-xs font-medium">{log.department_code || log.department || 'N/A'}</TableCell>
                                                 <TableCell className="max-w-[150px] truncate">{log.destination}</TableCell>
                                                 <TableCell className="max-w-[150px] truncate">{log.purpose || 'N/A'}</TableCell>
                                             </TableRow>
                                         ))}
-                                        <TableRow className="bg-slate-100 dark:bg-slate-800 font-bold border-t-2 sticky bottom-0">
-                                            <TableCell colSpan="4" className="text-right">TOTAL</TableCell>
+                                                                                <TableRow className="bg-slate-100 dark:bg-slate-800 font-bold border-t-2 sticky bottom-0">
+                                            <TableCell colSpan="3" className="text-right">TOTAL</TableCell>
                                             {/* ✅ Diesel total */}
                                             <TableCell className="text-center border-l border-slate-300 dark:border-slate-600">
                                                 {formatNumber(totals.dieselLiters)}

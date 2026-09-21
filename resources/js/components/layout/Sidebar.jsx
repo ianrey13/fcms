@@ -308,11 +308,11 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
                             href: "/admin/vehicles",
                             icon: Car,
                         },
-                        {
-                            name: "System Settings",
-                            href: "/admin/settings",
-                            icon: Settings,
-                        },
+                        // {
+                        //     name: "System Settings",
+                        //     href: "/admin/settings",
+                        //     icon: Settings,
+                        // },
                         {
                             name: "Calendar Year",
                             href: "/gso/annual-budget",
