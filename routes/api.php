@@ -167,6 +167,7 @@ Route::prefix('reports')->group(function () {
         Route::get('fuel-receipts/{id}', [GsoController::class, 'getFuelReceipt']);
         Route::post('fuel-receipts/record', [GsoController::class, 'recordReceipt']);
         Route::get('completed-trips', [GsoController::class, 'getCompletedTrips']);
+         Route::put('fuel-receipts/{id}/liters', [GsoController::class, 'updateFuelReceiptLiters']);
 
         // Audit Logs
         Route::get('audit-logs', [AuditLogController::class, 'index']);
@@ -209,7 +210,10 @@ Route::prefix('reports')->group(function () {
         Route::post('tickets/{id}/validate', [GsoController::class, 'validateTrip']);
         Route::get('fiscal-years', [FiscalYearController::class, 'index']);
         Route::get('tickets/{id}/history', [GsoController::class, 'getTripHistory']);
-        Route::get('/verified-receipts', [GsoController::class, 'getVerifiedReceipts']);   
+        Route::get('/verified-receipts', [GsoController::class, 'getVerifiedReceipts']);  
+        
+        
+       
         
         // ✅ GSO GPS Live Tracking
         Route::get('live-tracking', [GpsPingController::class, 'getActiveTrips']);

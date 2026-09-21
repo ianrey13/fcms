@@ -71,6 +71,8 @@ export const gsoAPI = {
   // Fuel Receipts
   getFuelReceipts: (params) => cachedApi.get("/admin/fuel-receipts", { params }),
   getFuelReceipt: (id) => cachedApi.get(`/admin/fuel-receipts/${id}`),
+  updateFuelReceiptLiters: (id, liters) =>
+  uncachedApi.put(`/admin/fuel-receipts/${id}/liters`, { liters_availed: liters }),
   recordReceipt: (data) => {
     const formData = new FormData();
     Object.keys(data).forEach((key) => {

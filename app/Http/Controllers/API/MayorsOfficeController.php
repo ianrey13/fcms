@@ -860,11 +860,12 @@ public function getReceiptsForVerification(Request $request)
                 'dept.department_name',
                 'fr.liters_availed as liters',
                 'fr.amount_on_receipt as amount',
+                'gs.amount_released',      
                 'fr.receipt_photo_path',
                 'fr.receipt_uploaded_at as uploaded_at',
                 'fr.gps_distance_km',
-                'fr.verification_status as status',    // ✅ NEW
-                'fr.verified_at',                       // ✅ NEW
+                'fr.verification_status as status',   
+                'fr.verified_at',                       
                 'tt.trip_date',
                 'v.fuel_type'
             )
@@ -912,9 +913,11 @@ public function verifyReceipt(Request $request, $id)
 
         $validator = Validator::make($request->all(), [
             'invoice_number'    => 'nullable|string|max:50',
-            'liters_availed'    => 'required|numeric|min:0.01',
-            'unit_price'        => 'required|numeric|min:0.01',
-            'amount_on_receipt' => 'required|numeric|min:0.01',
+            'amount_on_receipt' => 'required|numeric|min:0',
+            // ✅ liters and unit_price are OPTIONAL — GSO can fill them in later via the
+            // "edit liters" flow if needed. MO verification only cares about amount.
+            'liters_availed'    => 'nullable|numeric|min:0',
+            'unit_price'        => 'nullable|numeric|min:0',
         ]);
 
         if ($validator->fails()) {
@@ -935,7 +938,7 @@ public function verifyReceipt(Request $request, $id)
             ], 400);
         }
 
-        // ✅ Guard: amount cap
+        // ✅ Guard: amount must not exceed released amount
         if ($request->amount_on_receipt > $gasSlip->amount_released) {
             return response()->json([
                 'success' => false,
@@ -947,41 +950,35 @@ public function verifyReceipt(Request $request, $id)
             ], 422);
         }
 
-        // ✅ Guard: amount = liters × unit_price (5% tolerance)
-        $expectedAmount = round($request->liters_availed * $request->unit_price, 2);
-        $amountVariance = abs($request->amount_on_receipt - $expectedAmount);
-
-        if ($amountVariance > 1.00) {
-            Log::warning('MO verify: Amount vs liters×price mismatch', [
-                'receipt_id'        => $id,
-                'amount_on_receipt' => $request->amount_on_receipt,
-                'liters_x_price'    => $expectedAmount,
-                'variance'          => $amountVariance,
-            ]);
-
-            if ($amountVariance > ($request->amount_on_receipt * 0.05)) {
-                return response()->json([
-                    'success' => false,
-                    'message' => sprintf(
-                        'Amount mismatch: %s L × ₱%s = ₱%s, but you entered ₱%s.',
-                        $request->liters_availed,
-                        number_format($request->unit_price, 2),
-                        number_format($expectedAmount, 2),
-                        number_format($request->amount_on_receipt, 2)
-                    ),
-                ], 422);
-            }
-        }
-
         DB::beginTransaction();
 
-        // ✅ Update fuel_receipt — data + verification (MO-owned)
+        // ✅ Update fuel_receipt — amount + invoice always; liters/unit_price only if sent
         if ($request->has('invoice_number')) {
             $fuelReceipt->invoice_number = $request->invoice_number;
         }
-        $fuelReceipt->liters_availed      = $request->liters_availed;
-        $fuelReceipt->unit_price          = $request->unit_price;
-        $fuelReceipt->amount_on_receipt   = $request->amount_on_receipt;
+
+        $fuelReceipt->amount_on_receipt = $request->amount_on_receipt;
+
+        // ✅ Only overwrite liters/unit_price if MO actually sent values
+        if ($request->filled('liters_availed')) {
+            $fuelReceipt->liters_availed = $request->liters_availed;
+        }
+        if ($request->filled('unit_price')) {
+            $fuelReceipt->unit_price = $request->unit_price;
+        }
+
+        // ✅ If MO sent liters + amount but no unit_price, derive it
+        if (
+            $request->filled('liters_availed') &&
+            !$request->filled('unit_price') &&
+            (float) $request->liters_availed > 0
+        ) {
+            $fuelReceipt->unit_price = round(
+                $request->amount_on_receipt / (float) $request->liters_availed,
+                2
+            );
+        }
+
         $fuelReceipt->verification_status = 'verified';
         $fuelReceipt->verified_at         = now();
         $fuelReceipt->verified_by         = $user->user_id;
@@ -1005,9 +1002,9 @@ public function verifyReceipt(Request $request, $id)
         Log::info('Receipt verified successfully', [
             'receipt_id'        => $id,
             'verified_by'       => $user->user_id,
-            'liters_availed'    => $request->liters_availed,
-            'unit_price'        => $request->unit_price,
             'amount_on_receipt' => $request->amount_on_receipt,
+            'liters_availed'    => $fuelReceipt->liters_availed,
+            'unit_price'        => $fuelReceipt->unit_price,
         ]);
 
         return response()->json([
@@ -1022,6 +1019,7 @@ public function verifyReceipt(Request $request, $id)
                 'liters_availed'        => $fuelReceipt->liters_availed,
                 'unit_price'            => $fuelReceipt->unit_price,
                 'amount_on_receipt'     => $fuelReceipt->amount_on_receipt,
+                'amount_released'       => $gasSlip->amount_released,
                 'verified_at'           => $fuelReceipt->verified_at,
                 'verified_by'           => $fuelReceipt->verified_by,
             ],
@@ -1520,6 +1518,7 @@ public function getVerifiedReceipts(Request $request)
                 'fr.fuel_receipt_id as id',
                 'fr.invoice_number',
                 'fr.unit_price',
+                'gs.amount_released',                       // ✅ NEW
                 'tt.trip_ticket_number as ticket_number',
                 DB::raw("CONCAT(u_driver.first_name, ' ', u_driver.last_name) as driver_name"),
                 'v.plate_number',

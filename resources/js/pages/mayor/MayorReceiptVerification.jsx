@@ -40,7 +40,6 @@ import {
   Edit,
   X,
   AlertCircle,
-  Calculator,
   FileText,
   Calendar,
   ArrowLeft,
@@ -304,8 +303,6 @@ const MayorReceiptVerification = () => {
   const [editData, setEditData] = useState({
     invoice_number: "",
     amount_on_receipt: "",
-    unit_price: "",
-    liters_availed: "",
   });
 
   // ============================================
@@ -388,8 +385,6 @@ const MayorReceiptVerification = () => {
     setEditData({
       invoice_number: receipt.invoice_number || "",
       amount_on_receipt: receipt.amount || "",
-      unit_price: receipt.unit_price || "",
-      liters_availed: receipt.liters || "",
     });
     setIsEditing(false);
     setShowReceiptModal(true);
@@ -400,57 +395,35 @@ const MayorReceiptVerification = () => {
       setEditData({
         invoice_number: selectedReceipt?.invoice_number || "",
         amount_on_receipt: selectedReceipt?.amount || "",
-        unit_price: selectedReceipt?.unit_price || "",
-        liters_availed: selectedReceipt?.liters || "",
       });
     }
     setIsEditing(!isEditing);
   };
 
   const handleInputChange = useCallback((field, value) => {
-    if (value === '' || value === null || value === undefined) {
-      setEditData(prev => ({ ...prev, [field]: '' }));
-      return;
-    }
-
-    const updatedData = { ...editData, [field]: value };
-
-    if (field === 'amount_on_receipt' || field === 'unit_price') {
-      const amount = parseFloat(field === 'amount_on_receipt' ? value : updatedData.amount_on_receipt);
-      const unitPrice = parseFloat(field === 'unit_price' ? value : updatedData.unit_price);
-
-      if (!isNaN(amount) && !isNaN(unitPrice) && amount > 0 && unitPrice > 0) {
-        const calculatedLiters = amount / unitPrice;
-        updatedData.liters_availed = calculatedLiters.toFixed(2);
-      }
-    }
-
-    setEditData(updatedData);
-  }, [editData]);
+    setEditData(prev => ({ ...prev, [field]: value }));
+  }, []);
 
   const handleVerify = () => {
     const amount = parseFloat(editData.amount_on_receipt) || 0;
-    const unitPrice = parseFloat(editData.unit_price) || 0;
-    const liters = parseFloat(editData.liters_availed) || 0;
 
     if (!editData.amount_on_receipt || amount <= 0) {
       toast.error("Please enter a valid amount");
       return;
     }
-    if (!editData.unit_price || unitPrice <= 0) {
-      toast.error("Please enter a valid unit price");
-      return;
-    }
-    if (!editData.liters_availed || liters <= 0) {
-      toast.error("Liters calculation failed. Please check amount and unit price.");
+
+    // ✅ Cap check: amount must not exceed released
+    const released = parseFloat(selectedReceipt?.amount_released) || 0;
+    if (released > 0 && amount > released) {
+      toast.error(
+        `Amount ₱${amount.toFixed(2)} exceeds released amount ₱${released.toFixed(2)}`
+      );
       return;
     }
 
     const payload = {
       invoice_number: editData.invoice_number || null,
       amount_on_receipt: amount,
-      unit_price: unitPrice,
-      liters_availed: liters,
     };
 
     verifyMutation.mutate({
@@ -463,7 +436,6 @@ const MayorReceiptVerification = () => {
   // DERIVED
   // ============================================
 
-  // Active list depends on tab
   const activeList = activeTab === "pending" ? pendingReceipts : verifiedReceipts;
 
   const filteredReceipts = useMemo(() => {
@@ -562,7 +534,7 @@ const MayorReceiptVerification = () => {
                     Receipt Verification
                   </h1>
                   <p className="text-sm text-slate-500 dark:text-slate-400">
-                    Verify and edit driver uploaded fuel receipts
+                    Verify driver uploaded fuel receipts
                     <span className="ml-2 text-xs opacity-70">{connectionStatus}</span>
                     {isRealTime && (
                       <span className="ml-2 text-xs text-emerald-400 animate-pulse">
@@ -707,7 +679,7 @@ const MayorReceiptVerification = () => {
                         Department
                       </TableHead>
                       <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-300 text-xs uppercase tracking-wider">
-                        Liters
+                        Amount Released
                       </TableHead>
                       <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-300 text-xs uppercase tracking-wider">
                         Amount
@@ -753,7 +725,7 @@ const MayorReceiptVerification = () => {
                           </div>
                         </TableCell>
                         <TableCell className="text-right font-medium text-slate-700 dark:text-slate-300">
-                          {receipt.liters} L
+                          {formatCurrency(receipt.amount_released)}
                         </TableCell>
                         <TableCell className="text-right font-semibold text-emerald-600 dark:text-emerald-400">
                           {formatCurrency(receipt.amount)}
@@ -821,7 +793,6 @@ const MayorReceiptVerification = () => {
                     </DialogDescription>
                   </div>
                 </div>
-                {/* Only show Edit button on pending receipts */}
                 {selectedReceipt?.status !== "verified" && !isVerifiedView && (
                   <Button
                     variant="ghost"
@@ -923,8 +894,9 @@ const MayorReceiptVerification = () => {
                   </div>
                 </div>
 
-                {/* Editable / Read-only Fields */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {/* Amount Section */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  {/* Invoice Number */}
                   <div>
                     <p className="text-xs text-slate-500 dark:text-slate-400">Invoice Number</p>
                     {isEditing && !isVerifiedView ? (
@@ -935,75 +907,54 @@ const MayorReceiptVerification = () => {
                         placeholder="Invoice #"
                       />
                     ) : (
-                      <p className="font-medium text-slate-800 dark:text-white text-sm">
+                      <p className="font-medium text-slate-800 dark:text-white text-sm mt-1">
                         {selectedReceipt.invoice_number || "N/A"}
                       </p>
                     )}
                   </div>
-                  <div>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">Amount (₱)</p>
+
+                  {/* Amount Released (read-only, from gas_slip) */}
+                  <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700">
+                    <p className="text-xs text-slate-500 dark:text-slate-400">Amount Released</p>
+                    <p className="font-semibold text-slate-800 dark:text-white text-base mt-0.5">
+                      {formatCurrency(selectedReceipt.amount_released)}
+                    </p>
+                    <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">
+                      From fund issuance
+                    </p>
+                  </div>
+
+                  {/* Amount on Receipt (editable) */}
+                  <div className={`p-3 rounded-lg border ${
+                    isEditing && !isVerifiedView
+                      ? 'bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800'
+                      : 'bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700'
+                  }`}>
+                    <p className={`text-xs font-semibold ${
+                      isEditing && !isVerifiedView
+                        ? 'text-blue-600 dark:text-blue-400'
+                        : 'text-slate-500 dark:text-slate-400'
+                    }`}>
+                      Amount on Receipt {isEditing && !isVerifiedView && '*'}
+                    </p>
                     {isEditing && !isVerifiedView ? (
                       <div className="relative mt-1">
-                        <span className="absolute left-2.5 top-1/2 transform -translate-y-1/2 text-slate-400 dark:text-slate-500 text-sm">₱</span>
+                        <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-500 dark:text-slate-400 text-sm font-medium">
+                          ₱
+                        </span>
                         <Input
                           type="number"
                           step="0.01"
                           min="0"
                           value={editData.amount_on_receipt}
                           onChange={(e) => handleInputChange('amount_on_receipt', e.target.value)}
-                          className="pl-6 dark:bg-slate-900 dark:border-slate-700 h-9 text-sm dark:text-white"
+                          className="pl-7 h-9 text-sm font-semibold bg-white dark:bg-slate-900 border-blue-300 dark:border-blue-700 text-slate-900 dark:text-white"
                           placeholder="0.00"
                         />
                       </div>
                     ) : (
-                      <p className="font-semibold text-emerald-600 dark:text-emerald-400 text-sm">
+                      <p className="font-semibold text-emerald-600 dark:text-emerald-400 text-base mt-0.5">
                         {formatCurrency(selectedReceipt.amount)}
-                      </p>
-                    )}
-                  </div>
-                  <div>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">Unit Price (₱/L)</p>
-                    {isEditing && !isVerifiedView ? (
-                      <div className="relative mt-1">
-                        <span className="absolute left-2.5 top-1/2 transform -translate-y-1/2 text-slate-400 dark:text-slate-500 text-sm">₱</span>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          value={editData.unit_price}
-                          onChange={(e) => handleInputChange('unit_price', e.target.value)}
-                          className="pl-6 dark:bg-slate-900 dark:border-slate-700 h-9 text-sm dark:text-white"
-                          placeholder="0.00"
-                        />
-                      </div>
-                    ) : (
-                      <p className="font-medium text-slate-800 dark:text-white text-sm">
-                        {formatCurrency(selectedReceipt.unit_price)}
-                      </p>
-                    )}
-                  </div>
-                  <div>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">
-                      Liters (L)
-                      {isEditing && !isVerifiedView && (
-                        <span className="ml-1 text-blue-500" title="Auto-calculated">
-                          <Calculator className="h-3 w-3 inline" />
-                        </span>
-                      )}
-                    </p>
-                    {isEditing && !isVerifiedView ? (
-                      <Input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        value={editData.liters_availed}
-                        className="mt-1 h-9 text-sm bg-slate-50 dark:bg-slate-800 cursor-not-allowed text-slate-500 dark:text-slate-400"
-                        placeholder="Auto-calc"
-                        disabled={true}
-                      />
-                    ) : (
-                      <p className="font-medium text-slate-800 dark:text-white text-sm">
-                        {selectedReceipt.liters} L
                       </p>
                     )}
                   </div>
@@ -1013,8 +964,9 @@ const MayorReceiptVerification = () => {
                 {isEditing && !isVerifiedView && (
                   <div className="text-xs text-slate-600 dark:text-slate-300 bg-blue-50 dark:bg-blue-950/30 p-3 rounded-lg border border-blue-200 dark:border-blue-800">
                     <Info className="h-4 w-4 inline mr-1 text-blue-500 dark:text-blue-400" />
-                    Enter the <strong>Amount (₱)</strong> and <strong>Unit Price (₱/L)</strong>.
-                    Liters will be auto-calculated using: <strong>Liters = Amount ÷ Unit Price</strong>
+                    Enter the <strong>Amount on Receipt</strong> (from the physical receipt).
+                    It must not exceed the <strong>Amount Released</strong> of{' '}
+                    <strong>{formatCurrency(selectedReceipt.amount_released)}</strong>.
                   </div>
                 )}
 

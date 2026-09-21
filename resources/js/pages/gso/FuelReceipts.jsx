@@ -17,7 +17,6 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
     Search,
-    Eye,
     Receipt,
     Loader2,
     Image as ImageIcon,
@@ -25,10 +24,8 @@ import {
     User,
     Truck,
     Fuel,
-    RefreshCw,
     AlertTriangle,
     Clock,
-    DollarSign,
     Gauge,
     Zap,
     CheckCircle,
@@ -36,8 +33,9 @@ import {
     TrendingUp,
     TrendingDown,
     Minus,
-    Download,
     X,
+    Save,
+    Pencil,
 } from "lucide-react";
 import {
     Dialog,
@@ -48,20 +46,15 @@ import {
 } from "@/components/ui/dialog";
 import { format } from "date-fns";
 import { toast } from "react-hot-toast";
-import { cn } from "@/lib/utils";
 
 // ============================================
 // ✅ HELPER: Robust array extraction from any API response shape
 // ============================================
 
 const extractReceiptsArray = (response) => {
-    // Guard against null/undefined
     if (!response) return [];
-
-    // Case 1: Already an array
     if (Array.isArray(response)) return response;
 
-    // Case 2: Object with array in known keys
     const possibleKeys = [
         'receipts',
         'data',
@@ -81,7 +74,6 @@ const extractReceiptsArray = (response) => {
         }
     }
 
-    // Case 3: Nested one level deeper (e.g., { data: { receipts: [...] } })
     if (response.data && typeof response.data === 'object') {
         for (const key of possibleKeys) {
             if (Array.isArray(response.data[key])) {
@@ -90,7 +82,6 @@ const extractReceiptsArray = (response) => {
         }
     }
 
-    // Case 4: Single object → wrap in array (if it looks like a receipt)
     if (typeof response === 'object') {
         if (
             response.id ||
@@ -109,16 +100,29 @@ const extractReceiptsArray = (response) => {
 // HELPER FUNCTIONS
 // ============================================
 
+const sanitizeDecimalInput = (value, maxDecimals = 2) => {
+    if (value === null || value === undefined) return '';
+    let cleaned = String(value).replace(/[^0-9.]/g, '');
+    const firstDot = cleaned.indexOf('.');
+    if (firstDot !== -1) {
+        cleaned =
+            cleaned.slice(0, firstDot + 1) +
+            cleaned.slice(firstDot + 1).replace(/\./g, '');
+    }
+    const parts = cleaned.split('.');
+    if (parts.length === 2 && parts[1].length > maxDecimals) {
+        cleaned = parts[0] + '.' + parts[1].slice(0, maxDecimals);
+    }
+    return cleaned;
+};
+
 const getReceiptImageUrls = (receipt) => {
     let url = receipt?.receipt_url || receipt?.receipt_photo_path || null;
-    
-    if (!url) {
-        return [];
-    }
-    
+    if (!url) return [];
+
     const baseUrl = window.location.origin;
     const urlsList = [];
-    
+
     if (url.startsWith('http://') || url.startsWith('https://')) {
         urlsList.push(url);
         const filename = url.split('/').pop();
@@ -128,16 +132,13 @@ const getReceiptImageUrls = (receipt) => {
         }
         return [...new Set(urlsList)];
     }
-    
+
     const filename = url.split('/').pop();
-    
-    if (!filename) {
-        return [];
-    }
-    
+    if (!filename) return [];
+
     urlsList.push(`${baseUrl}/receipts/${filename}`);
     urlsList.push(`${baseUrl}/storage/receipts/${filename}`);
-    
+
     if (url.startsWith('/')) {
         urlsList.push(`${baseUrl}${url}`);
     } else if (!url.startsWith('receipts/') && !url.startsWith('storage/')) {
@@ -145,62 +146,19 @@ const getReceiptImageUrls = (receipt) => {
     } else if (url.startsWith('receipts/')) {
         urlsList.push(`${baseUrl}/${url}`);
     }
-    
+
     return [...new Set(urlsList)];
 };
 
 const getStatusConfig = (status) => {
     const configs = {
-        pending: {
-            color: 'bg-yellow-500',
-            label: 'Pending Verification',
-            icon: Clock,
-            dotColor: 'bg-yellow-500',
-            bg: 'bg-yellow-50 dark:bg-yellow-950/30',
-            border: 'border-yellow-200 dark:border-yellow-800',
-        },
-        verified: {
-            color: 'bg-green-500',
-            label: 'Verified',
-            icon: CheckCircle,
-            dotColor: 'bg-green-500',
-            bg: 'bg-green-50 dark:bg-green-950/30',
-            border: 'border-green-200 dark:border-green-800',
-        },
-        discrepancy: {
-            color: 'bg-red-500',
-            label: 'Discrepancy Found',
-            icon: AlertTriangle,
-            dotColor: 'bg-red-500',
-            bg: 'bg-red-50 dark:bg-red-950/30',
-            border: 'border-red-200 dark:border-red-800',
-        },
-        approved: {
-            color: 'bg-emerald-500',
-            label: 'Approved',
-            icon: CheckCircle,
-            dotColor: 'bg-emerald-500',
-            bg: 'bg-emerald-50 dark:bg-emerald-950/30',
-            border: 'border-emerald-200 dark:border-emerald-800',
-        },
-        rejected: {
-            color: 'bg-rose-500',
-            label: 'Rejected',
-            icon: XCircle,
-            dotColor: 'bg-rose-500',
-            bg: 'bg-rose-50 dark:bg-rose-950/30',
-            border: 'border-rose-200 dark:border-rose-800',
-        },
+        pending: { color: 'bg-yellow-500', label: 'Pending Verification', icon: Clock },
+        verified: { color: 'bg-green-500', label: 'Verified', icon: CheckCircle },
+        discrepancy: { color: 'bg-red-500', label: 'Discrepancy Found', icon: AlertTriangle },
+        approved: { color: 'bg-emerald-500', label: 'Approved', icon: CheckCircle },
+        rejected: { color: 'bg-rose-500', label: 'Rejected', icon: XCircle },
     };
     return configs[status] || configs.pending;
-};
-
-const formatCurrency = (amount) => {
-    return new Intl.NumberFormat('en-PH', {
-        style: 'currency',
-        currency: 'PHP',
-        minimumFractionDigits: 2,
-    }).format(amount || 0);
 };
 
 const formatDate = (date) => {
@@ -236,15 +194,15 @@ const ReceiptImage = ({ receipt }) => {
     const [imageError, setImageError] = useState(false);
     const [currentUrlIndex, setCurrentUrlIndex] = useState(0);
     const [imageLoaded, setImageLoaded] = useState(false);
-    
+
     const urls = React.useMemo(() => getReceiptImageUrls(receipt), [receipt]);
-    
+
     React.useEffect(() => {
         setImageError(false);
         setCurrentUrlIndex(0);
         setImageLoaded(false);
     }, [receipt]);
-    
+
     if (urls.length === 0) {
         return (
             <div className="border rounded-xl p-8 text-center bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700">
@@ -256,10 +214,10 @@ const ReceiptImage = ({ receipt }) => {
             </div>
         );
     }
-    
+
     const currentUrl = urls[currentUrlIndex];
     const hasMoreUrls = currentUrlIndex < urls.length - 1;
-    
+
     const handleImageError = () => {
         if (hasMoreUrls) {
             setCurrentUrlIndex(prev => prev + 1);
@@ -267,7 +225,7 @@ const ReceiptImage = ({ receipt }) => {
             setImageError(true);
         }
     };
-    
+
     if (imageError) {
         return (
             <div className="border rounded-xl p-8 text-center bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700">
@@ -294,7 +252,7 @@ const ReceiptImage = ({ receipt }) => {
             </div>
         );
     }
-    
+
     return (
         <div className="relative border rounded-xl overflow-hidden bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700">
             {!imageLoaded && (
@@ -389,7 +347,7 @@ const LoadingSkeleton = () => (
         <div className="relative">
             <SkeletonCard className="h-12" />
         </div>
-        <SkeletonTable rows={5} cols={7} />
+        <SkeletonTable rows={5} cols={6} />
     </div>
 );
 
@@ -404,8 +362,14 @@ const FuelReceipts = () => {
     const [selectedReceipt, setSelectedReceipt] = useState(null);
     const [showReceiptDialog, setShowReceiptDialog] = useState(false);
 
+    // ✅ modal-only liters editing
+    const [modalLiters, setModalLiters] = useState('');
+    const [isSavingModal, setIsSavingModal] = useState(false);
+    // ✅ NEW: track whether the input is in edit mode
+    const [isEditingLiters, setIsEditingLiters] = useState(false);
+
     // ============================================
-    // ✅ AUTO-REFRESH - No manual refresh needed
+    // ✅ AUTO-REFRESH
     // ============================================
 
     useAutoRefresh(
@@ -425,38 +389,24 @@ const FuelReceipts = () => {
     // ✅ OPTIMIZED QUERY
     // ============================================
 
-   const { data: receiptsResponse, isLoading, refetch, isFetching } = useOptimizedQuery({
-    queryKey: ["gso-fuel-receipts"],
-    queryFn: async () => {
-        try {
-            const response = await gsoAPI.getFuelReceipts();
-            // ✅ Extract the actual array from response.data.data
-            const receipts = response?.data?.data;
-            console.log(`📦 Extracted ${receipts?.length || 0} receipts`);
-            return Array.isArray(receipts) ? receipts : [];
-        } catch (error) {
-            console.error('Error fetching fuel receipts:', error);
-            toast.error('Failed to load fuel receipts');
-            return [];
-        }
-    },
-    staleTime: 5 * 60 * 1000,
-    keepPreviousData: true,
-});
+    const { data: receiptsResponse, isLoading } = useOptimizedQuery({
+        queryKey: ["gso-fuel-receipts"],
+        queryFn: async () => {
+            try {
+                const response = await gsoAPI.getFuelReceipts();
+                const receipts = response?.data?.data;
+                return Array.isArray(receipts) ? receipts : [];
+            } catch (error) {
+                console.error('Error fetching fuel receipts:', error);
+                toast.error('Failed to load fuel receipts');
+                return [];
+            }
+        },
+        staleTime: 5 * 60 * 1000,
+        keepPreviousData: true,
+    });
 
-    // ============================================
-    // ✅ ROBUST RECEIPTS EXTRACTION — always array
-    // ============================================
-
-    const receipts = useMemo(() => {
-        const result = extractReceiptsArray(receiptsResponse);
-        console.log(`📦 Extracted ${result.length} receipts from response`);
-        return result;
-    }, [receiptsResponse]);
-
-    // ============================================
-    // ✅ SAFE FILTER — always array
-    // ============================================
+    const receipts = useMemo(() => extractReceiptsArray(receiptsResponse), [receiptsResponse]);
 
     const filteredReceipts = useMemo(() => {
         const safeReceipts = Array.isArray(receipts) ? receipts : [];
@@ -470,13 +420,8 @@ const FuelReceipts = () => {
         );
     }, [receipts, searchTerm]);
 
-    // Connection status
     const connectionStatus = isConnected ? "🟢 Live" : "🔴 Offline";
     const isRealTime = isConnected;
-
-    // ============================================
-    // ✅ SAFE STATS
-    // ============================================
 
     const stats = useMemo(() => {
         const safeReceipts = Array.isArray(receipts) ? receipts : [];
@@ -515,6 +460,95 @@ const FuelReceipts = () => {
             },
         ];
     }, [receipts, filteredReceipts]);
+
+    // ============================================
+    // ✅ OPEN MODAL
+    // - If receipt already has liters (> 0): show as read-only with Edit button
+    // - If no liters yet: enter edit mode immediately
+    // ============================================
+
+    const handleOpenModal = useCallback((receipt) => {
+        setSelectedReceipt(receipt);
+        const existing = parseFloat(receipt.liters || receipt.liters_availed || 0);
+        const hasLiters = existing > 0;
+
+        setModalLiters(hasLiters ? String(existing) : '');
+        setIsEditingLiters(!hasLiters); // ✅ auto-edit if no value yet
+        setShowReceiptDialog(true);
+    }, []);
+
+    // ============================================
+    // ✅ TOGGLE EDIT MODE
+    // ============================================
+
+    const handleStartEdit = useCallback(() => {
+        if (!selectedReceipt) return;
+        const existing = parseFloat(selectedReceipt.liters || selectedReceipt.liters_availed || 0);
+        setModalLiters(existing > 0 ? String(existing) : '');
+        setIsEditingLiters(true);
+    }, [selectedReceipt]);
+
+    const handleCancelEdit = useCallback(() => {
+        if (!selectedReceipt) return;
+        const existing = parseFloat(selectedReceipt.liters || selectedReceipt.liters_availed || 0);
+        setModalLiters(existing > 0 ? String(existing) : '');
+        setIsEditingLiters(false);
+    }, [selectedReceipt]);
+
+    // ============================================
+    // ✅ SAVE LITERS — updates cache, no refetch
+    // ============================================
+
+    const handleSaveModalLiters = useCallback(async () => {
+        if (!selectedReceipt) return;
+
+        const id = selectedReceipt.id || selectedReceipt.fuel_receipt_id;
+        const parsed = parseFloat(modalLiters);
+
+        if (modalLiters === '' || isNaN(parsed) || parsed <= 0) {
+            toast.error('Please enter a valid liters value (positive number)');
+            return;
+        }
+
+        setIsSavingModal(true);
+        try {
+            const res = await gsoAPI.updateFuelReceiptLiters(id, parsed);
+            const updated = res?.data?.data || {};
+
+            // ✅ Update cache in place — no refetch
+            queryClient.setQueryData(['gso-fuel-receipts'], (old) => {
+                if (!Array.isArray(old)) return old;
+                return old.map(r => {
+                    const rid = r.id || r.fuel_receipt_id;
+                    if (rid === id) {
+                        return {
+                            ...r,
+                            liters: updated.liters_availed ?? parsed,
+                            unit_price: updated.unit_price ?? r.unit_price,
+                        };
+                    }
+                    return r;
+                });
+            });
+
+            // ✅ Update selected receipt
+            setSelectedReceipt(prev => prev ? {
+                ...prev,
+                liters: updated.liters_availed ?? parsed,
+                unit_price: updated.unit_price ?? prev.unit_price,
+            } : prev);
+
+            // ✅ Lock the field back down — no longer editable until Edit clicked
+            setModalLiters(String(updated.liters_availed ?? parsed));
+            setIsEditingLiters(false);
+            toast.success('Liters saved');
+        } catch (err) {
+            console.error('Save liters error:', err);
+            toast.error(err?.response?.data?.message || 'Failed to save liters');
+        } finally {
+            setIsSavingModal(false);
+        }
+    }, [selectedReceipt, modalLiters, queryClient]);
 
     // ============================================
     // LOADING STATE
@@ -632,10 +666,7 @@ const FuelReceipts = () => {
                                             Driver
                                         </th>
                                         <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                                            Fuel
-                                        </th>
-                                        <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                                            Amount
+                                            Trip Date
                                         </th>
                                         <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
                                             Status
@@ -649,7 +680,7 @@ const FuelReceipts = () => {
                                     {filteredReceipts.map((receipt) => (
                                         <tr
                                             key={receipt.id || receipt.fuel_receipt_id}
-                                            className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors group"
+                                            className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors"
                                         >
                                             <td className="px-4 py-3">
                                                 <span className="font-mono font-semibold text-slate-800 dark:text-white">
@@ -675,18 +706,8 @@ const FuelReceipts = () => {
                                                 </div>
                                             </td>
                                             <td className="px-4 py-3">
-                                                <div className="flex flex-col">
-                                                    <span className="font-medium text-slate-700 dark:text-slate-300">
-                                                        {receipt.liters || receipt.liters_availed || 0} L
-                                                    </span>
-                                                    <span className="text-xs text-slate-500 dark:text-slate-400">
-                                                        {formatDateShort(receipt.trip_date)}
-                                                    </span>
-                                                </div>
-                                            </td>
-                                            <td className="px-4 py-3">
-                                                <span className="font-semibold text-emerald-600 dark:text-emerald-400">
-                                                    {formatCurrency(receipt.amount || receipt.amount_on_receipt || 0)}
+                                                <span className="text-xs text-slate-500 dark:text-slate-400">
+                                                    {formatDateShort(receipt.trip_date)}
                                                 </span>
                                             </td>
                                             <td className="px-4 py-3">
@@ -694,15 +715,12 @@ const FuelReceipts = () => {
                                             </td>
                                             <td className="px-4 py-3 text-center">
                                                 <Button
-                                                    variant="ghost"
+                                                    variant="outline"
                                                     size="sm"
-                                                    onClick={() => {
-                                                        setSelectedReceipt(receipt);
-                                                        setShowReceiptDialog(true);
-                                                    }}
-                                                    className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:text-blue-300 dark:hover:bg-blue-950/30 h-9 w-9 p-0 rounded-lg transition-all duration-200 group-hover:scale-110"
+                                                    onClick={() => handleOpenModal(receipt)}
+                                                    className="h-8 px-3 text-xs dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
                                                 >
-                                                    <Eye className="h-4 w-4" />
+                                                    View
                                                 </Button>
                                             </td>
                                         </tr>
@@ -779,20 +797,85 @@ const FuelReceipts = () => {
                                         {selectedReceipt.driver_name || 'N/A'}
                                     </p>
                                 </div>
-                                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700">
-                                    <p className="text-xs text-slate-500 dark:text-slate-400">Fuel Loaded</p>
-                                    <p className="font-semibold text-slate-800 dark:text-white mt-0.5 flex items-center gap-1.5">
-                                        <Fuel className="h-3.5 w-3.5 text-slate-400" />
-                                        {selectedReceipt.liters || selectedReceipt.liters_availed || 0} L
+
+                                {/* ✅ LITERS — read-only by default, Edit button reveals input */}
+                                <div className="p-3 rounded-xl bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 md:col-span-2">
+                                    <div className="flex items-center justify-between">
+                                        <p className="text-xs text-blue-600 dark:text-blue-400 font-semibold">
+                                            Fuel Loaded (Liters) *
+                                        </p>
+                                        {!isEditingLiters && (
+                                            <Button
+                                                size="sm"
+                                                variant="ghost"
+                                                onClick={handleStartEdit}
+                                                className="h-6 px-2 text-[10px] text-blue-600 hover:text-blue-700 hover:bg-blue-100 dark:text-blue-400 dark:hover:bg-blue-900/40"
+                                            >
+                                                <Pencil className="h-3 w-3 mr-1" />
+                                                Edit
+                                            </Button>
+                                        )}
+                                    </div>
+
+                                    <div className="flex items-center gap-2 mt-1.5">
+                                        <Fuel className="h-3.5 w-3.5 text-blue-500" />
+
+                                        {isEditingLiters ? (
+                                            <>
+                                                <input
+                                                    type="text"
+                                                    inputMode="decimal"
+                                                    autoComplete="off"
+                                                    autoFocus
+                                                    value={modalLiters}
+                                                    disabled={isSavingModal}
+                                                    onChange={(e) => {
+                                                        const cleaned = sanitizeDecimalInput(e.target.value, 2);
+                                                        setModalLiters(cleaned);
+                                                    }}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === 'Enter') {
+                                                            e.preventDefault();
+                                                            handleSaveModalLiters();
+                                                        }
+                                                        if (e.key === 'Escape') {
+                                                            e.preventDefault();
+                                                            handleCancelEdit();
+                                                        }
+                                                    }}
+                                                    placeholder="0.00"
+                                                    className="h-9 w-28 px-3 text-sm font-semibold rounded-lg border border-blue-300 dark:border-blue-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                />
+                                                <span className="text-xs text-slate-600 dark:text-slate-300 font-medium">L</span>
+
+                                                <Button
+                                                    size="sm"
+                                                    variant="outline"
+                                                    onClick={handleCancelEdit}
+                                                    disabled={isSavingModal}
+                                                    className="h-8 px-2 text-xs dark:border-slate-600 dark:text-slate-300"
+                                                >
+                                                    Cancel
+                                                </Button>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <span className="text-base font-semibold text-slate-900 dark:text-white">
+                                                    {modalLiters ? `${modalLiters} L` : '— not set —'}
+                                                </span>
+                                            </>
+                                        )}
+                                    </div>
+
+                                    <p className="text-[10px] text-blue-500 dark:text-blue-400 mt-1">
+                                        {isEditingLiters
+                                            ? 'Numbers only • Press Enter to save or Esc to cancel'
+                                            : modalLiters
+                                                ? 'Click Edit to change'
+                                                : 'Click Edit to enter liters'}
                                     </p>
                                 </div>
-                                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700">
-                                    <p className="text-xs text-slate-500 dark:text-slate-400">Amount</p>
-                                    <p className="font-bold text-emerald-600 dark:text-emerald-400 mt-0.5 flex items-center gap-1.5">
-                                        <DollarSign className="h-3.5 w-3.5" />
-                                        {formatCurrency(selectedReceipt.amount || selectedReceipt.amount_on_receipt || 0)}
-                                    </p>
-                                </div>
+
                                 <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700">
                                     <p className="text-xs text-slate-500 dark:text-slate-400">Trip Date</p>
                                     <p className="font-semibold text-slate-800 dark:text-white mt-0.5 flex items-center gap-1.5">
@@ -803,45 +886,19 @@ const FuelReceipts = () => {
                             </div>
 
                             {/* Distance Details */}
-                            {(selectedReceipt.odometer_start || selectedReceipt.odometer_end || selectedReceipt.gps_distance_km) && (
+                            {selectedReceipt.gps_distance_km && (
                                 <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700">
                                     <h4 className="font-semibold text-slate-700 dark:text-slate-300 mb-3 flex items-center gap-2">
                                         <Gauge className="h-4 w-4 text-blue-500" />
                                         Distance Details
                                     </h4>
                                     <div className="grid grid-cols-3 gap-3">
-                                        {selectedReceipt.distance_calculation_method && (
-                                            <div>
-                                                <p className="text-xs text-slate-500 dark:text-slate-400">Method</p>
-                                                <p className="font-medium text-slate-700 dark:text-slate-300 mt-0.5">
-                                                    {selectedReceipt.distance_calculation_method}
-                                                </p>
-                                            </div>
-                                        )}
-                                        {selectedReceipt.odometer_start && (
-                                            <div>
-                                                <p className="text-xs text-slate-500 dark:text-slate-400">Odometer Start</p>
-                                                <p className="font-medium text-slate-700 dark:text-slate-300 mt-0.5">
-                                                    {selectedReceipt.odometer_start} km
-                                                </p>
-                                            </div>
-                                        )}
-                                        {selectedReceipt.odometer_end && (
-                                            <div>
-                                                <p className="text-xs text-slate-500 dark:text-slate-400">Odometer End</p>
-                                                <p className="font-medium text-slate-700 dark:text-slate-300 mt-0.5">
-                                                    {selectedReceipt.odometer_end} km
-                                                </p>
-                                            </div>
-                                        )}
-                                        {selectedReceipt.gps_distance_km && (
-                                            <div>
-                                                <p className="text-xs text-slate-500 dark:text-slate-400">GPS Distance</p>
-                                                <p className="font-medium text-slate-700 dark:text-slate-300 mt-0.5">
-                                                    {selectedReceipt.gps_distance_km} km
-                                                </p>
-                                            </div>
-                                        )}
+                                        <div>
+                                            <p className="text-xs text-slate-500 dark:text-slate-400">GPS Distance</p>
+                                            <p className="font-medium text-slate-700 dark:text-slate-300 mt-0.5">
+                                                {selectedReceipt.gps_distance_km} km
+                                            </p>
+                                        </div>
                                     </div>
                                 </div>
                             )}
@@ -855,15 +912,25 @@ const FuelReceipts = () => {
                                 >
                                     Close
                                 </Button>
-                                <Button
-                                    className="bg-blue-600 hover:bg-blue-700 text-white"
-                                    onClick={() => {
-                                        toast.success('Receipt details downloaded');
-                                    }}
-                                >
-                                    <Download className="h-4 w-4 mr-2" />
-                                    Download Receipt
-                                </Button>
+                                {isEditingLiters && (
+                                    <Button
+                                        onClick={handleSaveModalLiters}
+                                        disabled={isSavingModal || modalLiters === ''}
+                                        className="bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-50"
+                                    >
+                                        {isSavingModal ? (
+                                            <>
+                                                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                                Saving...
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Save className="h-4 w-4 mr-2" />
+                                                Save Liters
+                                            </>
+                                        )}
+                                    </Button>
+                                )}
                             </div>
                         </div>
                     )}

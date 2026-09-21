@@ -1295,4 +1295,86 @@ public function getFuelReceipts(Request $request)
         ], 500);
     }
 }
+
+/**
+ * ✅ GSO edits liters on an existing fuel receipt
+ * PUT /api/admin/fuel-receipts/{id}/liters
+ */
+public function updateFuelReceiptLiters(Request $request, $id)
+{
+    try {
+        $user = $request->user();
+        if (!$user->isGsoOffice()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'liters_availed' => 'required|numeric|min:0.01|max:9999.99',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        $receipt = FuelReceipt::findOrFail($id);
+
+        // ✅ Cap check: cannot exceed gas_slip.amount_released? (optional)
+        // Not capping on liters — GSO can enter actual pump reading.
+
+        DB::beginTransaction();
+
+        $oldLiters = (float) $receipt->liters_availed;
+        $receipt->liters_availed = $request->liters_availed;
+
+        // ✅ Recompute unit_price if amount is present
+        if ($receipt->amount_on_receipt && $request->liters_availed > 0) {
+            $receipt->unit_price = round(
+                $receipt->amount_on_receipt / $request->liters_availed,
+                2
+            );
+        }
+
+        $receipt->updated_at = now();
+        $receipt->save();
+
+        // ✅ Sync trip actuals (this recalculates actual_fuel_used on the parent trip)
+        $trip = $receipt->gasSlip?->tripTicket;
+        if ($trip) {
+            $trip->syncActuals()->save();
+        }
+
+        DB::commit();
+
+        Log::info('GSO updated fuel receipt liters', [
+            'fuel_receipt_id' => $id,
+            'old_liters'      => $oldLiters,
+            'new_liters'      => $request->liters_availed,
+            'updated_by'      => $user->user_id,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Liters updated successfully',
+            'data'    => [
+                'fuel_receipt_id' => $receipt->fuel_receipt_id,
+                'liters_availed'  => (float) $receipt->liters_availed,
+                'unit_price'      => (float) $receipt->unit_price,
+                'updated_at'      => $receipt->updated_at,
+            ],
+        ]);
+
+    } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Fuel receipt not found',
+        ], 404);
+    } catch (\Exception $e) {
+        DB::rollBack();
+        Log::error('Update fuel receipt liters error: ' . $e->getMessage());
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to update liters: ' . $e->getMessage(),
+        ], 500);
+    }
+}
 }
