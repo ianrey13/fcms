@@ -120,10 +120,9 @@ const [fuelDeptFilter, setFuelDeptFilter] = useState('all');
         departmentSummary: true,
         monthlySummary: true,
         tripTicket: true,
-        // gpsActivity: true,
+       
         reconciliation: true,
-        fuelReceipt: true,
-        driverEfficiency: true,
+        
         auditTrail: false,
     });
 
@@ -184,23 +183,23 @@ const [fuelDeptFilter, setFuelDeptFilter] = useState('all');
         keepPreviousData: true,
     });
 
-    const { data: drivers = [] } = useOptimizedQuery({
-        queryKey: ['drivers-list'],
-        queryFn: async () => {
-            try {
-                const res = await fetch('/api/admin/drivers');
-                if (!res.ok || res.status === 204) return [];
-                const text = await res.text();
-                if (!text) return [];
-                const data = JSON.parse(text);
-                return data.data || [];
-            } catch {
-                return [];
-            }
-        },
-        staleTime: CACHE_10MIN,
-        keepPreviousData: true,
-    });
+    // const { data: drivers = [] } = useOptimizedQuery({
+    //     queryKey: ['drivers-list'],
+    //     queryFn: async () => {
+    //         try {
+    //             const res = await fetch('/api/admin/drivers');
+    //             if (!res.ok || res.status === 204) return [];
+    //             const text = await res.text();
+    //             if (!text) return [];
+    //             const data = JSON.parse(text);
+    //             return data.data || [];
+    //         } catch {
+    //             return [];
+    //         }
+    //     },
+    //     staleTime: CACHE_10MIN,
+    //     keepPreviousData: true,
+    // });
 
     // ============================================
     // ✅ DATE RANGE
@@ -524,7 +523,7 @@ const { data: fuelData, isLoading: fuelLoading } = useOptimizedQuery({
                     </div>
                 </div>
 
-                {/* Global Filters */}
+                {/* Global Filters
                 <Card className="dark:bg-slate-800/80 dark:border-slate-700 print:hidden">
                     <CardContent className="pt-6">
                         <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
@@ -578,7 +577,7 @@ const { data: fuelData, isLoading: fuelLoading } = useOptimizedQuery({
                             <Button variant="outline" size="sm" onClick={() => { setGlobalStartDate(''); setGlobalEndDate(''); }} className="text-xs">Clear Dates</Button>
                         </div>
                     </CardContent>
-                </Card>
+                </Card> */}
 
                 {/* ✅ All 10 Reports — Lazy loaded */}
                 <div className="space-y-6">
