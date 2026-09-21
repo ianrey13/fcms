@@ -46,7 +46,7 @@ import {
     MapPin,
     Navigation,
     PhilippinePeso,
-   Activity
+    Activity,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -321,12 +321,11 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
                         },
                     ],
                 },
-              {
-    name: "Activity Logs",
-    href: "/gso/activity-logs",
-    icon: Activity,
-},
-                
+                {
+                    name: "Activity Logs",
+                    href: "/gso/activity-logs",
+                    icon: Activity,
+                },
             ],
             mayors_office: [
                 {
@@ -343,7 +342,7 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
                             href: "/mo/pending",
                             icon: Clock,
                         },
-                       
+
                         {
                             name: "Receipt Verification",
                             href: "/mo/receipt-verification",
@@ -377,13 +376,11 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
                     href: "/mo/reports",
                     icon: Receipt,
                 },
-
                 {
-    name: "Fuel Reports",
-    href: "/mo/reports",
-    icon: Receipt,
-},
-
+                    name: "Activity Logs",
+                    href: "/mo/activity-logs",
+                    icon: Activity,
+                },
             ],
             driver: [
                 {
