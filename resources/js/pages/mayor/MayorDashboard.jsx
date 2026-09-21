@@ -1,11 +1,5 @@
 // src/pages/mayor/MayorDashboard.jsx
-// ============================================
-// ✅ BULLETPROOF: extractArray + useSafeArray
-// ✅ FIXED: Removed redundant useState/useEffect
-// ✅ FIXED: Throttled fetchAllData (no 429)
-// ✅ FIXED: Removed initial fetch on mount
-// ✅ CACHED: All queries with staleTime
-// ============================================
+
 
 import React, { useMemo, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -245,19 +239,11 @@ const MayorDashboard = () => {
     // ============================================
     // ✅ THROTTLED REFRESH FUNCTION
     // ============================================
-
-    const fetchAllData = useCallback(() => {
-        if (window._isRefreshing) return;
-        window._isRefreshing = true;
-
-        Promise.allSettled([
-            queryClient.invalidateQueries({ queryKey: ["mayor-pending-tickets"] }),
-            queryClient.invalidateQueries({ queryKey: ["mayor-approved-tickets"] }),
-            queryClient.invalidateQueries({ queryKey: ["mayor-department-budgets"] }),
-        ]).finally(() => {
-            setTimeout(() => { window._isRefreshing = false; }, 2000);
-        });
-    }, [queryClient]);
+const fetchAllData = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ["mayor-pending-tickets"] });
+    queryClient.invalidateQueries({ queryKey: ["mayor-approved-tickets"] });
+    queryClient.invalidateQueries({ queryKey: ["mayor-department-budgets"] });
+}, [queryClient]);
 
     // ============================================
     // ✅ AUTO-REFRESH (event-driven only)
@@ -292,9 +278,7 @@ const MayorDashboard = () => {
                 return [];
             }
         },
-        staleTime: 60000,
-        keepPreviousData: true,
-        refetchOnMount: 'always',
+                refetchOnMount: 'always',
     });
     const pendingTickets = useSafeArray(pendingRaw);
 
@@ -309,9 +293,7 @@ const MayorDashboard = () => {
                 return [];
             }
         },
-        staleTime: 60000,
-        keepPreviousData: true,
-        refetchOnMount: 'always',
+               refetchOnMount: 'always',
     });
     const approvedTickets = useSafeArray(approvedRaw);
 
@@ -326,8 +308,7 @@ const MayorDashboard = () => {
                 return [];
             }
         },
-        staleTime: 120000,
-        keepPreviousData: true,
+       
         refetchOnMount: 'always',
     });
     const budgetData = useSafeArray(budgetRaw);

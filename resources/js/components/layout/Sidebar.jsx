@@ -279,22 +279,7 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
                     href: "/gso/dashboard",
                     icon: LayoutDashboard,
                 },
-                {
-                    name: "Live Tracking",
-                    href: "/gso/live-tracking",
-                    icon: Satellite,
-                },
-                {
-                    name: "Fuel Receipts",
-                    href: "/gso/fuel-receipts",
-                    icon: Receipt,
-                },
-                {
-                    name: "Fuel Consumption Report",
-                    href: "/gso/reports",
-                    icon: Receipt,
-                },
-                {
+                 {
                     name: "Record Management",
                     icon: Settings,
                     submenu: [
@@ -309,11 +294,7 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
                             href: "/admin/vehicles",
                             icon: Car,
                         },
-                        // {
-                        //     name: "System Settings",
-                        //     href: "/admin/settings",
-                        //     icon: Settings,
-                        // },
+                       
                         {
                             name: "Calendar Year",
                             href: "/gso/annual-budget",
@@ -321,6 +302,22 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
                         },
                     ],
                 },
+                {
+                    name: "Live Tracking",
+                    href: "/gso/live-tracking",
+                    icon: Satellite,
+                },
+                {
+                    name: "Fuel Receipts",
+                    href: "/gso/fuel-receipts",
+                    icon: Receipt,
+                },
+                {
+                    name: "Reports",
+                    href: "/gso/reports",
+                    icon: Receipt,
+                },
+               
                 {
                     name: "Activity Logs",
                     href: "/gso/activity-logs",
@@ -333,11 +330,12 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
                     href: "/mo/dashboard",
                     icon: LayoutDashboard,
                 },
-                {
-                    name: "Fund Management",
-                    icon: Banknote,
-                    submenu: [
-                        {
+                  {
+                            name: "Budget Allocation",
+                            href: "/mo/budget-allocation",
+                            icon: PhilippinePeso,
+                        },
+                          {
                             name: "Disbursement Approval",
                             href: "/mo/pending",
                             icon: Clock,
@@ -348,31 +346,10 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
                             href: "/mo/receipt-verification",
                             icon: Receipt,
                         },
-                    ],
-                },
+              
+            
                 {
-                    name: "Budget Management",
-                    icon: Wallet,
-                    submenu: [
-                        {
-                            name: "Budget Allocation",
-                            href: "/mo/budget-allocation",
-                            icon: PhilippinePeso,
-                        },
-                        {
-                            name: "Budget History",
-                            href: "/mo/budget-history",
-                            icon: History,
-                        },
-                        {
-                            name: "Weekly Tracking",
-                            href: "/mo/weekly-tracking",
-                            icon: CalendarRange,
-                        },
-                    ],
-                },
-                {
-                    name: "Fuel Reports",
+                    name: "Reports",
                     href: "/mo/reports",
                     icon: Receipt,
                 },
@@ -382,26 +359,7 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
                     icon: Activity,
                 },
             ],
-            driver: [
-                {
-                    name: "Dashboard",
-                    href: "/driver/dashboard",
-                    icon: LayoutDashboard,
-                },
-                { name: "My Trips", href: "/driver/trips", icon: Truck },
-                { name: "Active Trip", href: "/driver/active", icon: Fuel },
-                {
-                    name: "Trip History",
-                    href: "/driver/history",
-                    icon: Calendar,
-                },
-                { name: "Fuel Logs", href: "/driver/fuel-logs", icon: Receipt },
-                {
-                    name: "Reports",
-                    href: "/driver/reports",
-                    icon: FileBarChart,
-                },
-            ],
+          
         };
         return roleSpecificItems[user?.role] || [];
     };
