@@ -309,38 +309,34 @@ class ReportsController extends Controller
     try {
         $departmentId = $request->get('department_id');
         $year         = (int) $request->get('year', date('Y'));
-        $month        = $request->get('month'); // 1-12, 'all', or null
+        $month        = $request->get('month');
 
-        // ----- 1. Determine target department -----
+        // 1. Target department
         if (!$departmentId || $departmentId === 'all') {
             $departmentId = DB::table('annual_budgets')
                 ->where('fiscal_year', $year)
                 ->orderBy('department_id')
-                ->value('department_id');
-
-            $departmentId = $departmentId
-                ?: Department::where('is_active', 1)
-                    ->orderBy('department_id')
-                    ->value('department_id');
+                ->value('department_id')
+                ?: Department::where('is_active', 1)->orderBy('department_id')->value('department_id');
         }
 
-        // ----- 2. Annual totals -----
+        // 2. Annual budget — the ONLY source of truth
         $annual = DB::table('annual_budgets')
             ->where('department_id', $departmentId)
             ->where('fiscal_year', $year)
             ->first();
 
         $annualAllocated = $annual ? (float) $annual->annual_amount : 0.0;
+        $weeklySuggested = $annualAllocated > 0 ? round($annualAllocated / 52, 2) : 0;
 
+        // 3. Annual used — gas slips tied to this dept's periods
         $annualUsed = (float) DB::table('gas_slip as gs')
             ->join('dept_budget_period as p', 'gs.period_id', '=', 'p.period_id')
             ->where('p.department_id', $departmentId)
             ->whereYear('p.week_start', $year)
             ->sum('gs.amount_released');
 
-        $weeklySuggested = $annualAllocated > 0 ? round($annualAllocated / 52, 2) : 0;
-
-        // ----- 3. Fetch all periods for the department/year -----
+        // 4. Weekly periods with their utilization
         $periodQuery = DB::table('dept_budget_period as p')
             ->leftJoin('weekly_budget_usage as u', function ($join) {
                 $join->on('u.department_id', '=', 'p.department_id')
@@ -364,77 +360,29 @@ class ReportsController extends Controller
             ])
             ->get();
 
-        // ----- 4. Fetch ALL budget_history top-ups for the year, ordered by date -----
-        $topups = DB::table('budget_history')
-            ->where('department_id', $departmentId)
-            ->whereYear('created_at', $year)
-            ->whereIn('action', ['annual_added', 'annual_updated', 'annual_created'])
-            ->orderBy('created_at')
-            ->get(['action', 'previous_amount', 'added_amount', 'new_amount', 'created_at']);
-
-        // ----- 5. Compute starting opening balance = FIRST recorded amount for the FY -----
-        // If there's an 'annual_created' entry, that's the true starting point.
-        // Otherwise, fall back to: (current annual) − (sum of all later top-ups).
-        $startingBalance = null;
-        $annualCreatedEntry = $topups->firstWhere('action', 'annual_created');
-        if ($annualCreatedEntry) {
-            $startingBalance = (float) $annualCreatedEntry->new_amount;
-        } else {
-            $totalTopups = (float) $topups->sum('added_amount');
-            $startingBalance = max(0, $annualAllocated - $totalTopups);
-        }
-
-        // ----- 6. Carry-forward loop with top-up injection -----
-        $openingBalance = $startingBalance;
-        $topupIndex = 0;
-
-        // Pre-filter out the 'annual_created' entry from the injectable list —
-        // it's already baked into $startingBalance.
-        $injectableTopups = $topups->whereIn('action', ['annual_added', 'annual_updated'])
-            ->values();
-
+        // 5. Carry-forward loop
+        // ✅ NO budget_history replay. opening = current annual_amount.
+        $openingBalance = $annualAllocated;
         $rows = collect();
-        $prevWeekEnd = null;
 
         foreach ($periods as $p) {
-            // Apply any top-ups that landed AFTER the previous period's end
-            // and BEFORE (or on) this period's start.
-            while ($topupIndex < $injectableTopups->count()) {
-                $topup = $injectableTopups[$topupIndex];
-                $topupDate = Carbon::parse($topup->created_at)->toDateString();
-                $thisWeekStart = $p->week_start;
-
-                if ($topupDate <= $thisWeekStart) {
-                    $openingBalance += (float) $topup->added_amount;
-                    $topupIndex++;
-                } else {
-                    break;
-                }
-            }
-
             $used = (float) ($p->used ?? 0);
-            $allocated = $openingBalance;      // BUDGET column
-            $remaining = $allocated - $used;   // BALANCE column
+            $remaining = $openingBalance - $used;
 
             $rows->push([
                 'period_id'  => $p->period_id,
                 'week_start' => $p->week_start,
                 'week_end'   => $p->week_end,
-                'allocated'  => round($allocated, 2),
+                'allocated'  => round($openingBalance, 2),
                 'used'       => round($used, 2),
                 'remaining'  => round($remaining, 2),
                 'status'     => $p->status,
             ]);
 
-            $openingBalance = $remaining;  // carry forward
+            $openingBalance = $remaining;
         }
 
-        // ----- 7. Summary -----
         $department = Department::find($departmentId);
-
-        $monthAllocated = $rows->first()['allocated'] ?? 0;
-        $monthUsed      = $rows->sum('used');
-        $monthRemaining = $rows->last()['remaining'] ?? 0;
 
         return response()->json([
             'success' => true,
@@ -450,21 +398,12 @@ class ReportsController extends Controller
                     'total_remaining'   => round($annualAllocated - $annualUsed, 2),
                     'total_departments' => 1,
                     'total_weeks'       => $rows->count(),
-
                     'weekly_suggested'  => $weeklySuggested,
-                    'starting_balance'  => round($startingBalance, 2),
-                    'total_topups'      => round($injectableTopups->sum('added_amount'), 2),
-
-                    'month_allocated'   => round($monthAllocated, 2),
-                    'month_used'        => round($monthUsed, 2),
-                    'month_remaining'   => round($monthRemaining, 2),
+                    'month_allocated'   => round($rows->first()['allocated'] ?? 0, 2),
+                    'month_used'        => round($rows->sum('used'), 2),
+                    'month_remaining'   => round($rows->last()['remaining'] ?? 0, 2),
                 ],
                 'periods'   => $rows,
-                'topups'    => $injectableTopups->map(fn($t) => [
-                    'date'   => Carbon::parse($t->created_at)->toIso8601String(),
-                    'amount' => (float) $t->added_amount,
-                    'reason' => null, // optional — add if budget_history has it in select
-                ]),
                 'filters'   => [
                     'year'          => $year,
                     'month'         => ($month && $month !== 'all') ? (int) $month : null,
@@ -482,7 +421,6 @@ class ReportsController extends Controller
         ], 500);
     }
 }
-
         // ============================================================
     // 4. FUEL RECEIPT REPORT
     // ============================================================
