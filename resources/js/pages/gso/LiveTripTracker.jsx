@@ -442,14 +442,14 @@ const LiveTripTracker = ({ trip, onClose, isOpen, allTrips }) => {
             {tripStats?.current_speed_kmh?.toFixed(0) || '0'} km/h
           </p>
         </div>
-        <div className="bg-white dark:bg-slate-800 rounded-xl p-2 shadow-sm border border-slate-200/60 dark:border-slate-700/60">
+        {/* <div className="bg-white dark:bg-slate-800 rounded-xl p-2 shadow-sm border border-slate-200/60 dark:border-slate-700/60">
           <p className="text-[9px] text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1">
             <Fuel className="h-3 w-3" /> Fuel Used
           </p>
           <p className="text-lg font-bold text-amber-600 dark:text-amber-400">
             {tripStats?.estimated_fuel_liters?.toFixed(2) || '0.00'} L
           </p>
-        </div>
+        </div> */}
         <div className="bg-white dark:bg-slate-800 rounded-xl p-2 shadow-sm border border-slate-200/60 dark:border-slate-700/60">
           <p className="text-[9px] text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1">
             <Clock className="h-3 w-3" /> Duration

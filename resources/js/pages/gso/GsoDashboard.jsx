@@ -579,135 +579,7 @@ const TicketTable = ({
 // AUDIT LOG TABLE
 // ============================================
 
-const AuditLogTable = ({ logs, loading }) => {
-    const [searchTerm, setSearchTerm] = useState("");
 
-    if (loading) {
-        return (
-            <div className="flex justify-center py-8">
-                <Loader2 className="h-6 w-6 animate-spin text-blue-600 dark:text-blue-400" />
-            </div>
-        );
-    }
-
-    const safeLogs = Array.isArray(logs) ? logs : [];
-    const filteredLogs = safeLogs.filter((log) => {
-        const search = searchTerm.toLowerCase();
-        return (
-            log?.action?.toLowerCase().includes(search) ||
-            log?.table_name?.toLowerCase().includes(search) ||
-            log?.user?.email?.toLowerCase().includes(search) ||
-            log?.user?.full_name?.toLowerCase().includes(search)
-        );
-    });
-
-    if (filteredLogs.length === 0) {
-        return (
-            <div className="text-center py-8">
-                <History className="h-8 w-8 text-slate-400 dark:text-slate-500 mx-auto mb-2" />
-                <p className="text-slate-500 dark:text-slate-400 text-sm">
-                    No audit logs found
-                </p>
-            </div>
-        );
-    }
-
-    return (
-        <div>
-            <div className="relative mb-3 max-w-sm">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-                <Input
-                    placeholder="Search logs..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-8 py-1.5 h-9 text-sm dark:bg-slate-900 dark:border-slate-700"
-                />
-            </div>
-            <div className="overflow-x-auto">
-                <Table>
-                    <TableHeader>
-                        <TableRow className="bg-slate-50 dark:bg-slate-900/50 border-b dark:border-slate-700">
-                            <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs">
-                                Action
-                            </TableHead>
-                            <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs">
-                                User
-                            </TableHead>
-                            <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs">
-                                Table
-                            </TableHead>
-                            <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs">
-                                Date & Time
-                            </TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        {filteredLogs.slice(0, 50).map((log, index) => {
-                            const ActionIcon = getAuditActionIcon(log.action);
-                            const colorClass = getAuditActionColor(log.action);
-                            const user = log.user || {};
-                            return (
-                                <TableRow
-                                    key={log.log_id || index}
-                                    className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors"
-                                >
-                                    <TableCell>
-                                        <Badge
-                                            className={`${colorClass} text-white flex items-center gap-1 px-2 py-1 rounded-lg text-[10px]`}
-                                        >
-                                            <ActionIcon className="h-2.5 w-2.5" />
-                                            {log.action
-                                                ?.replace(/_/g, " ")
-                                                .toUpperCase()}
-                                        </Badge>
-                                    </TableCell>
-                                    <TableCell>
-                                        <div className="flex items-center gap-2">
-                                            <div className="w-6 h-6 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-[10px] font-semibold text-slate-700 dark:text-slate-300">
-                                                {user?.full_name?.charAt(0) ||
-                                                    user?.first_name?.charAt(
-                                                        0,
-                                                    ) ||
-                                                    "?"}
-                                            </div>
-                                            <div>
-                                                <p className="text-sm font-medium text-slate-800 dark:text-white">
-                                                    {user?.full_name ||
-                                                        user?.first_name ||
-                                                        "System"}
-                                                </p>
-                                            </div>
-                                        </div>
-                                    </TableCell>
-                                    <TableCell>
-                                        <span className="font-mono text-xs text-slate-600 dark:text-slate-400">
-                                            {log.table_name
-                                                ?.replace(/_/g, " ")
-                                                .toUpperCase()}
-                                        </span>
-                                    </TableCell>
-                                    <TableCell>
-                                        <div className="flex items-center gap-1.5">
-                                            <ClockIcon className="h-3 w-3 text-slate-400" />
-                                            <span className="text-xs text-slate-600 dark:text-slate-400">
-                                                {formatTime(log.created_at)}
-                                            </span>
-                                        </div>
-                                    </TableCell>
-                                </TableRow>
-                            );
-                        })}
-                    </TableBody>
-                </Table>
-            </div>
-            {filteredLogs.length > 50 && (
-                <p className="text-xs text-slate-400 dark:text-slate-500 mt-2 text-center">
-                    Showing last 50 entries
-                </p>
-            )}
-        </div>
-    );
-};
 
 // ============================================
 // ✅ CHART SKELETON FALLBACK (looks like a chart)
@@ -799,26 +671,7 @@ const GsoDashboard = () => {
     // ✅ QUERIES
     // ============================================
 
-    // 1. AUDIT LOGS (only when expanded)
-    const { data: auditLogsRaw, isLoading: auditLoading } = useOptimizedQuery({
-        queryKey: ["audit-logs"],
-        queryFn: async () => {
-            try {
-                const response = await auditAPI.getLogs();
-                return extractArray(response);
-            } catch (error) {
-                console.error("Error fetching audit logs:", error);
-                return [];
-            }
-        },
-        enabled: showAuditLog,
-        staleTime: 0,
-        refetchOnMount: true,
-        refetchOnReconnect: true,
-        refetchOnWindowFocus: false,
-        placeholderData: (prev) => prev,
-    });
-    const auditLogs = useSafeArray(auditLogsRaw);
+   
 
     // 2. PENDING MO
     const { data: pendingTicketsRaw, isLoading: pendingLoading } =
@@ -1536,62 +1389,7 @@ const GsoDashboard = () => {
                 </TabsContent>
             </Tabs>
 
-            {/* Audit Log Section */}
-            <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-                <CardHeader
-                    className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors rounded-t-2xl"
-                    onClick={() => setShowAuditLog(!showAuditLog)}
-                >
-                    <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                            <div className="p-2 rounded-xl bg-indigo-500/10">
-                                <History className="h-5 w-5 text-indigo-500" />
-                            </div>
-                            <div>
-                                <CardTitle className="text-slate-800 dark:text-white">
-                                    Audit Log
-                                    {showAuditLog ? (
-                                        <span className="ml-2 text-sm font-normal text-slate-500 dark:text-slate-400">
-                                            (Showing)
-                                        </span>
-                                    ) : (
-                                        <span className="ml-2 text-sm font-normal text-slate-500 dark:text-slate-400">
-                                            (Hidden)
-                                        </span>
-                                    )}
-                                </CardTitle>
-                                <CardDescription className="dark:text-slate-400">
-                                    {showAuditLog
-                                        ? "System activities and user actions"
-                                        : "Click to expand"}
-                                </CardDescription>
-                            </div>
-                            <Badge className="bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 border-indigo-500/30 ml-2">
-                                <Database className="h-3 w-3 mr-1" />
-                                {auditLogs?.length || 0} entries
-                            </Badge>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            {showAuditLog && auditLoading && (
-                                <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
-                            )}
-                            {showAuditLog ? (
-                                <ChevronUp className="h-5 w-5 text-slate-400" />
-                            ) : (
-                                <ChevronDown className="h-5 w-5 text-slate-400" />
-                            )}
-                        </div>
-                    </div>
-                </CardHeader>
-                {showAuditLog && (
-                    <CardContent className="pt-6">
-                        <AuditLogTable
-                            logs={auditLogs}
-                            loading={auditLoading}
-                        />
-                    </CardContent>
-                )}
-            </Card>
+           
 
             {/* Cancel Dialog */}
             <Dialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
