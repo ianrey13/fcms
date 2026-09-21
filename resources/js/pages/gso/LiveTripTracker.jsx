@@ -29,6 +29,7 @@ import {
   Satellite,
   Plus,
   Minus,
+   Car,
 } from 'lucide-react';
 
 // Fix Leaflet icons
@@ -72,7 +73,7 @@ const createVehicleIcon = (status, isSelected, isOnline = true, isFocused = fals
   };
   const color = colors[status] || '#6b7280';
   const size = isFocused ? 44 : (isSelected ? 38 : 32);
-  
+
   return L.divIcon({
     className: 'custom-vehicle-icon',
     html: `
@@ -110,32 +111,37 @@ const createVehicleIcon = (status, isSelected, isOnline = true, isFocused = fals
             animation: pulse-ring 2s ease-out infinite;
           "></div>
         ` : ''}
-        
-        <!-- 🚗 Car Icon -->
+
+       
         <div style="
+          position: absolute;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%) ${isFocused ? 'scale(1.15)' : isSelected ? 'scale(1.08)' : 'scale(1)'};
           width: ${size}px;
           height: ${size}px;
           background: ${color};
           border-radius: 12px;
           border: ${isFocused ? '3px solid #3b82f6' : '2px solid white'};
-          box-shadow: ${isFocused 
-            ? '0 4px 24px rgba(59,130,246,0.6), 0 0 60px rgba(59,130,246,0.15)' 
+          box-shadow: ${isFocused
+            ? '0 4px 24px rgba(59,130,246,0.6), 0 0 60px rgba(59,130,246,0.15)'
             : '0 4px 12px rgba(0,0,0,0.25)'};
           display: flex;
           align-items: center;
           justify-content: center;
-          font-size: ${size * 0.5}px;
           color: white;
-          position: relative;
           z-index: 1;
           transition: all 0.3s ease;
-          ${isFocused ? 'transform: scale(1.15);' : ''}
-          ${isSelected ? 'transform: scale(1.08);' : ''}
           ${!isOnline ? 'opacity: 0.5;' : ''}
         ">
-          🚗
+          <svg xmlns="http://www.w3.org/2000/svg" width="${size * 0.55}" height="${size * 0.55}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/>
+            <circle cx="7" cy="17" r="2"/>
+            <path d="M9 17h6"/>
+            <circle cx="17" cy="17" r="2"/>
+          </svg>
         </div>
-        
+
         ${isFocused ? `
           <div style="
             position: absolute;
