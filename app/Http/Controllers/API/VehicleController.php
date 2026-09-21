@@ -178,7 +178,8 @@ class VehicleController extends Controller
         }
     }
 
-    /**
+       
+       /**
      * Update the specified vehicle.
      */
     public function update(Request $request, $id)
@@ -190,7 +191,7 @@ class VehicleController extends Controller
                 'department_id' => 'sometimes|required|exists:departments,department_id',
                 'vehicle_model' => 'sometimes|required|string|max:120',
                 'plate_number' => 'sometimes|required|string|max:20|unique:vehicles,plate_number,' . $id . ',vehicle_id',
-                'fuel_type' => 'sometimes|required|in:regular,premium,diesel',
+                'fuel_type' => 'sometimes|required|in:gasoline,diesel',
                 'status' => 'sometimes|in:active,inactive',
                 'maintenance_flag' => 'sometimes|boolean',
                 'fuel_capacity' => 'nullable|numeric|min:0',
@@ -204,7 +205,6 @@ class VehicleController extends Controller
                 ], 422);
             }
 
-            // Update fields
             if ($request->has('department_id')) {
                 $vehicle->department_id = $request->department_id;
             }
@@ -244,16 +244,14 @@ class VehicleController extends Controller
             ], 500);
         }
     }
-
-    /**
-     * Remove the specified vehicle (soft delete).
+       /**
+     * Deactivate the specified vehicle.
      */
     public function destroy($id)
     {
         try {
             $vehicle = Vehicle::findOrFail($id);
 
-            // Check if vehicle has active trip tickets
             $hasActiveTrips = $vehicle->tripTickets()
                 ->whereIn('status', Vehicle::getActiveTripStatuses())
                 ->exists();
@@ -261,13 +259,10 @@ class VehicleController extends Controller
             if ($hasActiveTrips) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Cannot delete vehicle with active trip tickets'
+                    'message' => 'Cannot deactivate vehicle with active trip tickets'
                 ], 400);
             }
 
-            // Soft delete
-            $vehicle->deleted_at = now();
-            $vehicle->deleted_by = auth()->id();
             $vehicle->status = 'inactive';
             $vehicle->save();
 
@@ -285,7 +280,7 @@ class VehicleController extends Controller
         }
     }
 
-    /**
+        /**
      * Update vehicle status (activate/deactivate)
      */
     public function updateStatus(Request $request, $id)
@@ -304,8 +299,7 @@ class VehicleController extends Controller
             }
 
             $vehicle = Vehicle::findOrFail($id);
-            
-            // ✅ Check if trying to deactivate a vehicle with active trip
+
             if ($request->status === 'inactive' && $vehicle->hasActiveTrip()) {
                 $activeTrip = $vehicle->getActiveTrip();
                 return response()->json([
@@ -317,17 +311,8 @@ class VehicleController extends Controller
                     ]
                 ], 400);
             }
-            
+
             $vehicle->status = $request->status;
-            
-            if ($request->status === 'inactive') {
-                $vehicle->deactivated_at = now();
-                $vehicle->deactivated_by = auth()->id();
-            } else {
-                $vehicle->deactivated_at = null;
-                $vehicle->deactivated_by = null;
-            }
-            
             $vehicle->save();
 
             return response()->json([
@@ -590,18 +575,18 @@ class VehicleController extends Controller
         }
     }
 
-    /**
-     * ✅ DEPRECATED: Update odometer status
-     */
-    public function updateOdometerStatus(Request $request, $id)
-    {
-        return response()->json([
-            'success' => false,
-            'message' => 'Odometer tracking has been deprecated. This feature is no longer available.',
-            'data' => [
-                'vehicle_id' => $id,
-                'recommendation' => 'Use GPS tracking for distance measurement instead.',
-            ]
-        ], 410);
-    }
+    // /**
+    //  * ✅ DEPRECATED: Update odometer status
+    //  */
+    // public function updateOdometerStatus(Request $request, $id)
+    // {
+    //     return response()->json([
+    //         'success' => false,
+    //         'message' => 'Odometer tracking has been deprecated. This feature is no longer available.',
+    //         'data' => [
+    //             'vehicle_id' => $id,
+    //             'recommendation' => 'Use GPS tracking for distance measurement instead.',
+    //         ]
+    //     ], 410);
+    // }
 }
