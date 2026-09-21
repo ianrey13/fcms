@@ -8,6 +8,8 @@
 // ✅ ADDED: Tab-based view (Pending / Released)
 // ✅ ADDED: Released tickets show View + Gas Slip instead of Release
 // ✅ FIXED: formatCurrency/formatDate/safeAmount moved outside component
+// ✅ UPDATED: Weekly suggested is auto-computed (annual / 52)
+// ✅ ADDED: "Amount Exceeded to Weekly Suggested" confirmation dialog
 // ============================================
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
@@ -458,7 +460,7 @@ const MayorPending = () => {
   // ============================================
   // ✅ TAB STATE
   // ============================================
-  const [activeTab, setActiveTab] = useState("pending"); // 'pending' | 'released'
+  const [activeTab, setActiveTab] = useState("pending");
 
   // Pending state
   const [tickets, setTickets] = useState([]);
@@ -506,6 +508,10 @@ const MayorPending = () => {
   // Released tickets state
   const [releasedTickets, setReleasedTickets] = useState([]);
   const [loadingReleased, setLoadingReleased] = useState(false);
+
+  // ✅ Weekly override warning state
+  const [showWeeklyWarning, setShowWeeklyWarning] = useState(false);
+  const [pendingApprovePayload, setPendingApprovePayload] = useState(null);
 
   // ============================================
   // STATUSES THAT CAN BE CANCELLED BY MAYOR'S OFFICE
@@ -617,7 +623,7 @@ const MayorPending = () => {
   });
 
   // ============================================
-  // STATS (Pending)
+  // STATS
   // ============================================
 
   const stats = [
@@ -669,10 +675,6 @@ const MayorPending = () => {
       subtitle: "Scheduled ahead",
     },
   ];
-
-  // ============================================
-  // STATS (Released)
-  // ============================================
 
   const releasedStats = useMemo(() => {
     const totalAmount = releasedTickets.reduce(
@@ -819,34 +821,20 @@ const MayorPending = () => {
       }
 
       if (dept) {
-        const weeklyCeiling = parseFloat(
-          dept.weekly_ceiling ||
-            dept.weekly_allocation ||
-            dept.weekly_budget ||
-            dept.current_weekly_allocation ||
-            0
-        );
-
-        const weeklyUsed = parseFloat(
-          dept.weekly_used || dept.weekly_spent || dept.current_weekly_used || 0
-        );
-
-        const weeklyRemaining = parseFloat(
-          dept.weekly_remaining !== undefined
-            ? dept.weekly_remaining
-            : dept.current_weekly_remaining !== undefined
-            ? dept.current_weekly_remaining
-            : weeklyCeiling - weeklyUsed
-        );
+        const annualAmount = parseFloat(dept.annual_amount || dept.allocated_amount || 0);
+        // ✅ Weekly suggested is always annual / 52
+        const weeklySuggested = annualAmount > 0 ? annualAmount / 52 : 0;
+        const weeklyUsed = parseFloat(dept.weekly_used || 0);
+        const weeklyRemaining = weeklySuggested - weeklyUsed;
 
         setRequestingDeptBalance({
           department_id: dept.department_id,
           department_name: dept.department_name,
           department_code: dept.department_code,
-          allocated: parseFloat(dept.allocated_amount || dept.annual_amount || 0),
+          allocated: annualAmount,
           spent: parseFloat(dept.used_amount || dept.spent_amount || 0),
           remaining: parseFloat(dept.remaining_amount || 0),
-          weekly_ceiling: weeklyCeiling,
+          weekly_suggested: weeklySuggested,
           weekly_used: weeklyUsed,
           weekly_remaining: weeklyRemaining,
           utilization: parseFloat(dept.utilization_percentage || dept.utilization || 0),
@@ -1058,7 +1046,8 @@ const MayorPending = () => {
     }
   };
 
-  const handleApprove = async () => {
+  // ✅ Split into "prepare" (validate + check weekly) and "submit" (actual API call)
+  const handleApprove = () => {
     if (!selectedTicket) {
       toast.error("No ticket selected");
       return;
@@ -1066,29 +1055,60 @@ const MayorPending = () => {
 
     if (!validateApprove()) return;
 
-    let finalChargeDeptId = chargeToDepartmentId;
-    if (!finalChargeDeptId && selectedTicket?.department_id) {
-      finalChargeDeptId = selectedTicket.department_id;
-    }
+    const finalChargeDeptId =
+      chargeToDepartmentId || selectedTicket.department_id;
 
     if (!finalChargeDeptId) {
       toast.error("Please select which department to charge");
       return;
     }
 
+    const amount = parseFloat(amountReleased) || 0;
+
+    // ✅ Compute whether this exceeds the weekly suggested for the charged dept
+    // Only warn for the charged department, cross-dept releases use MO's own weekly.
+    const annualAmount = requestingDeptBalance?.allocated || 0;
+    const weeklySuggested = annualAmount > 0 ? annualAmount / 52 : 0;
+    const weeklyUsed = requestingDeptBalance?.weekly_used || 0;
+    const weeklyRemaining = Math.max(0, weeklySuggested - weeklyUsed);
+
+    const exceedsWeekly =
+      !isCrossDepartment &&
+      weeklySuggested > 0 &&
+      amount > weeklyRemaining;
+
+    const payload = {
+      amount_released: amount,
+      charge_to_department_id: finalChargeDeptId,
+      review_note: null,
+      is_cross_department: isCrossDepartment,
+      cross_department_reason: crossDepartmentReason || null,
+      force_approve: isForceApprove,
+      force_approve_reason: forceApproveReason || null,
+      // ✅ Backend logs this; does not gate
+      is_weekly_override: exceedsWeekly,
+      weekly_override_reason: exceedsWeekly
+        ? `Released ₱${amount.toFixed(2)} against suggested ₱${weeklySuggested.toFixed(2)} (weekly remaining: ₱${weeklyRemaining.toFixed(2)})`
+        : null,
+    };
+
+    if (exceedsWeekly) {
+      // Show the confirmation dialog, don't call API yet
+      setPendingApprovePayload(payload);
+      setShowWeeklyWarning(true);
+      return;
+    }
+
+    // Not exceeding — proceed directly
+    submitApprove(payload);
+  };
+
+  const submitApprove = async (payload) => {
     setSubmitting(true);
     try {
       const response = await mayorsOfficeAPI.approveTicket(
         selectedTicket.id || selectedTicket.trip_ticket_id,
-        {
-          amount_released: parseFloat(amountReleased),
-          charge_to_department_id: finalChargeDeptId,
-          review_note: null,
-          is_cross_department: isCrossDepartment,
-          cross_department_reason: crossDepartmentReason || null,
-          force_approve: isForceApprove,
-          force_approve_reason: forceApproveReason || null,
-        }
+        payload
       );
 
       if (response.data.success) {
@@ -1107,6 +1127,9 @@ const MayorPending = () => {
         if (toastIdRef.current) toast.dismiss(toastIdRef.current);
         toastIdRef.current = toast.success(successMessage);
 
+        // Reset everything
+        setShowWeeklyWarning(false);
+        setPendingApprovePayload(null);
         setShowApproveDialog(false);
         setSelectedTicket(null);
         setAmountReleased("");
@@ -1137,6 +1160,16 @@ const MayorPending = () => {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleWeeklyWarningConfirm = () => {
+    if (!pendingApprovePayload) return;
+    submitApprove(pendingApprovePayload);
+  };
+
+  const handleWeeklyWarningCancel = () => {
+    setShowWeeklyWarning(false);
+    setPendingApprovePayload(null);
   };
 
   const handleReject = async () => {
@@ -1209,14 +1242,13 @@ const MayorPending = () => {
   const connectionStatus = isConnected ? "🟢 Live" : "🔴 Offline";
   const isRealTime = isConnected;
 
+  // ✅ Annual-only balance preview (weekly removed from display)
   const balanceAfterRelease = useMemo(() => {
     if (!requestingDeptBalance || !amountReleased) return null;
     const amount = parseFloat(amountReleased) || 0;
     return {
       remaining: requestingDeptBalance.remaining - amount,
-      weekly_remaining: requestingDeptBalance.weekly_remaining - amount,
       is_insufficient: amount > requestingDeptBalance.remaining,
-      is_weekly_insufficient: amount > requestingDeptBalance.weekly_remaining,
     };
   }, [requestingDeptBalance, amountReleased]);
 
@@ -1267,7 +1299,7 @@ const MayorPending = () => {
                 </div>
                 <div>
                   <h1 className="text-2xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 bg-clip-text text-transparent">
-                   Disbursement Approval
+                    Disbursement Approval
                   </h1>
                   <p className="text-sm text-slate-500 dark:text-slate-400">
                     Review pending tickets and manage released funds
@@ -1284,9 +1316,7 @@ const MayorPending = () => {
           </div>
         </div>
 
-        {/* ============================================ */}
-        {/* ✅ TABS: Pending / Released */}
-        {/* ============================================ */}
+        {/* TABS */}
         <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-700 pb-0">
           <button
             onClick={() => setActiveTab("pending")}
@@ -1339,19 +1369,15 @@ const MayorPending = () => {
           </button>
         </div>
 
-        {/* ============================================ */}
-        {/* ✅ PENDING TAB CONTENT */}
-        {/* ============================================ */}
+        {/* PENDING TAB */}
         {activeTab === "pending" && (
           <>
-            {/* Stats Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               {stats.map((stat, index) => (
                 <StatsCard key={index} {...stat} />
               ))}
             </div>
 
-            {/* Filters */}
             <Card className="dark:bg-slate-800/80 dark:border-slate-700">
               <div
                 className="px-6 py-4 border-b dark:border-slate-700 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors rounded-t-2xl"
@@ -1414,7 +1440,6 @@ const MayorPending = () => {
               )}
             </Card>
 
-            {/* Pending Tickets Table */}
             <Card className="dark:bg-slate-800/80 dark:border-slate-700 shadow-xl shadow-black/5">
               <CardHeader className="border-b border-slate-200/60 dark:border-slate-700/60">
                 <div className="flex items-center justify-between">
@@ -1462,33 +1487,15 @@ const MayorPending = () => {
                     <Table>
                       <TableHeader>
                         <TableRow className="bg-slate-50 dark:bg-slate-900/50">
-                          <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
-                            Ticket #
-                          </TableHead>
-                          <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
-                            Date
-                          </TableHead>
-                          <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
-                            Destination
-                          </TableHead>
-                          <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
-                            Department
-                          </TableHead>
-                          <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
-                            Vehicle
-                          </TableHead>
-                          <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
-                            Driver
-                          </TableHead>
-                          <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
-                            Trip Date
-                          </TableHead>
-                          <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
-                            Status
-                          </TableHead>
-                          <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
-                            Actions
-                          </TableHead>
+                          <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Ticket #</TableHead>
+                          <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Date</TableHead>
+                          <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Destination</TableHead>
+                          <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Department</TableHead>
+                          <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Vehicle</TableHead>
+                          <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Driver</TableHead>
+                          <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Trip Date</TableHead>
+                          <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Status</TableHead>
+                          <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Actions</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -1543,7 +1550,6 @@ const MayorPending = () => {
                             </TableCell>
                             <TableCell className="text-right">
                               <div className="flex items-center justify-end gap-1">
-                                {/* View Details */}
                                 <Button
                                   variant="ghost"
                                   size="sm"
@@ -1557,7 +1563,6 @@ const MayorPending = () => {
                                   <Eye className="h-4 w-4" />
                                 </Button>
 
-                                {/* View Receipt */}
                                 {hasFuelReceipt(ticket) && (
                                   <Button
                                     variant="ghost"
@@ -1570,7 +1575,6 @@ const MayorPending = () => {
                                   </Button>
                                 )}
 
-                                {/* View Gas Slip */}
                                 {ticket.gas_slip && (
                                   <Button
                                     variant="ghost"
@@ -1583,7 +1587,6 @@ const MayorPending = () => {
                                   </Button>
                                 )}
 
-                                {/* Cancel Button */}
                                 {canCancelTicket(ticket.status) && (
                                   <Button
                                     variant="outline"
@@ -1597,7 +1600,6 @@ const MayorPending = () => {
                                   </Button>
                                 )}
 
-                                {/* Release Fund */}
                                 <Button
                                   size="sm"
                                   onClick={() => openApproveDialog(ticket)}
@@ -1623,19 +1625,15 @@ const MayorPending = () => {
           </>
         )}
 
-        {/* ============================================ */}
-        {/* ✅ RELEASED TAB CONTENT */}
-        {/* ============================================ */}
+        {/* RELEASED TAB */}
         {activeTab === "released" && (
           <>
-            {/* Released Stats Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               {releasedStats.map((stat, index) => (
                 <StatsCard key={index} {...stat} />
               ))}
             </div>
 
-            {/* Released Tickets Table */}
             <Card className="dark:bg-slate-800/80 dark:border-slate-700 shadow-xl shadow-black/5">
               <CardHeader className="border-b border-slate-200/60 dark:border-slate-700/60">
                 <div className="flex items-center justify-between">
@@ -1687,30 +1685,14 @@ const MayorPending = () => {
                     <Table>
                       <TableHeader>
                         <TableRow className="bg-slate-50 dark:bg-slate-900/50">
-                          <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
-                            Ticket #
-                          </TableHead>
-                          <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
-                            Date
-                          </TableHead>
-                          <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
-                            Destination
-                          </TableHead>
-                          <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
-                            Department
-                          </TableHead>
-                          <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
-                            Driver
-                          </TableHead>
-                          <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
-                            Amount
-                          </TableHead>
-                          <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
-                            Status
-                          </TableHead>
-                          <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
-                            Actions
-                          </TableHead>
+                          <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Ticket #</TableHead>
+                          <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Date</TableHead>
+                          <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Destination</TableHead>
+                          <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Department</TableHead>
+                          <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Driver</TableHead>
+                          <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Amount</TableHead>
+                          <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Status</TableHead>
+                          <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Actions</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -1731,10 +1713,7 @@ const MayorPending = () => {
                                   {isCrossDept && (
                                     <span
                                       className="text-red-500 font-bold text-lg cursor-help"
-                                      title={
-                                        ticket.cross_department_reason ||
-                                        "Cross-department fuel usage"
-                                      }
+                                      title={ticket.cross_department_reason || "Cross-department fuel usage"}
                                     >
                                       *
                                     </span>
@@ -1744,9 +1723,7 @@ const MayorPending = () => {
                               <TableCell>
                                 <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-400">
                                   <Calendar className="h-3.5 w-3.5 flex-shrink-0" />
-                                  <span className="text-sm">
-                                    {formatDate(ticket.trip_date)}
-                                  </span>
+                                  <span className="text-sm">{formatDate(ticket.trip_date)}</span>
                                 </div>
                               </TableCell>
                               <TableCell>
@@ -1761,9 +1738,7 @@ const MayorPending = () => {
                                 <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-400">
                                   <Building2 className="h-3.5 w-3.5 flex-shrink-0" />
                                   <span className="text-sm truncate max-w-[130px]">
-                                    {ticket.department_name ||
-                                      ticket.department?.name ||
-                                      "N/A"}
+                                    {ticket.department_name || ticket.department?.name || "N/A"}
                                   </span>
                                 </div>
                               </TableCell>
@@ -1787,10 +1762,7 @@ const MayorPending = () => {
                                     <Badge
                                       variant="outline"
                                       className="border-orange-400 text-orange-600 dark:border-orange-500 dark:text-orange-400 text-[10px]"
-                                      title={
-                                        ticket.cross_department_reason ||
-                                        "Cross-department fuel usage"
-                                      }
+                                      title={ticket.cross_department_reason || "Cross-department fuel usage"}
                                     >
                                       <AlertTriangle className="h-2.5 w-2.5 mr-1" />
                                       Cross-Dept
@@ -1835,7 +1807,6 @@ const MayorPending = () => {
               </CardContent>
             </Card>
 
-            {/* Released Footer */}
             <div className="text-center text-xs text-slate-400 dark:text-slate-500 pt-2 border-t border-slate-200 dark:border-slate-700">
               <p>FCMS - Mayor's Office • Funds Released Report</p>
               <p className="mt-0.5">
@@ -1849,9 +1820,7 @@ const MayorPending = () => {
           </>
         )}
 
-        {/* ============================================ */}
         {/* APPROVE DIALOG */}
-        {/* ============================================ */}
         <Dialog open={showApproveDialog} onOpenChange={setShowApproveDialog}>
           <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto dark:bg-slate-800 dark:border-slate-700 p-6">
             <DialogHeader className="pb-3">
@@ -1869,7 +1838,7 @@ const MayorPending = () => {
             </DialogHeader>
 
             <div className="space-y-4">
-              {/* REQUESTING DEPARTMENT'S BALANCE DISPLAY */}
+              {/* REQUESTING DEPARTMENT'S BALANCE — annual only */}
               <div className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30 rounded-xl p-4 border border-blue-200 dark:border-blue-800">
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
@@ -1895,7 +1864,8 @@ const MayorPending = () => {
                 </div>
 
                 {requestingDeptBalance ? (
-                  <div className="grid grid-cols-2 gap-3">
+                  <>
+                    {/* Annual remaining — the only gate */}
                     <div className="bg-white/70 dark:bg-slate-900/50 rounded-lg p-3">
                       <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">
                         Annual Remaining
@@ -1914,25 +1884,27 @@ const MayorPending = () => {
                         Allocated: {formatCurrency(requestingDeptBalance.allocated)}
                       </p>
                     </div>
-                    <div className="bg-white/70 dark:bg-slate-900/50 rounded-lg p-3">
-                      <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">
-                        Weekly Remaining
-                      </p>
-                      <p
-                        className={cn(
-                          "text-lg font-bold",
-                          requestingDeptBalance.weekly_remaining > 0
-                            ? "text-emerald-600 dark:text-emerald-400"
-                            : "text-red-600 dark:text-red-400"
-                        )}
-                      >
-                        {formatCurrency(requestingDeptBalance.weekly_remaining)}
-                      </p>
-                      <p className="text-[10px] text-slate-400 mt-0.5">
-                        Ceiling: {formatCurrency(requestingDeptBalance.weekly_ceiling)}
+
+                    {/* Weekly suggested info (read-only, non-gating) */}
+                    <div className="mt-2 bg-purple-50/60 dark:bg-purple-950/20 rounded-lg p-3 border border-purple-200/60 dark:border-purple-800/60">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="flex items-center gap-1 text-purple-700 dark:text-purple-300 font-medium">
+                          <Clock className="h-3 w-3" />
+                          Weekly Suggested
+                        </span>
+                        <span className="font-bold text-purple-700 dark:text-purple-300">
+                          {formatCurrency(requestingDeptBalance.weekly_suggested)}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-[10px] text-purple-600 dark:text-purple-400 mt-1">
+                        <span>Used this week:</span>
+                        <span>{formatCurrency(requestingDeptBalance.weekly_used)}</span>
+                      </div>
+                      <p className="text-[10px] text-purple-500 dark:text-purple-400 mt-1 italic">
+                        Annual Budget ÷ 52 (soft guideline — not a gate)
                       </p>
                     </div>
-                  </div>
+                  </>
                 ) : (
                   <div className="text-center py-3">
                     <p className="text-xs text-slate-500 dark:text-slate-400">
@@ -1941,7 +1913,7 @@ const MayorPending = () => {
                   </div>
                 )}
 
-                {/* LIVE BALANCE PREVIEW */}
+                {/* LIVE BALANCE PREVIEW — annual only */}
                 {balanceAfterRelease && (
                   <div
                     className={cn(
@@ -1956,49 +1928,32 @@ const MayorPending = () => {
                         <>
                           <AlertTriangle className="h-3.5 w-3.5 text-red-600" />
                           <span className="text-red-700 dark:text-red-300">
-                            Insufficient Balance
+                            Insufficient Annual Balance
                           </span>
                         </>
                       ) : (
                         <>
                           <CheckCircle className="h-3.5 w-3.5 text-emerald-600" />
                           <span className="text-emerald-700 dark:text-emerald-300">
-                            Balance After Release
+                            Annual Balance After Release
                           </span>
                         </>
                       )}
                     </p>
-                    <div className="grid grid-cols-2 gap-2 text-xs">
-                      <div>
-                        <span className="text-slate-500 dark:text-slate-400">
-                          New Annual:
-                        </span>
-                        <span
-                          className={cn(
-                            "font-bold ml-1",
-                            balanceAfterRelease.remaining < 0
-                              ? "text-red-600 dark:text-red-400"
-                              : "text-emerald-600 dark:text-emerald-400"
-                          )}
-                        >
-                          {formatCurrency(balanceAfterRelease.remaining)}
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-slate-500 dark:text-slate-400">
-                          New Weekly:
-                        </span>
-                        <span
-                          className={cn(
-                            "font-bold ml-1",
-                            balanceAfterRelease.weekly_remaining < 0
-                              ? "text-red-600 dark:text-red-400"
-                              : "text-emerald-600 dark:text-emerald-400"
-                          )}
-                        >
-                          {formatCurrency(balanceAfterRelease.weekly_remaining)}
-                        </span>
-                      </div>
+                    <div className="text-xs">
+                      <span className="text-slate-500 dark:text-slate-400">
+                        New Annual:
+                      </span>
+                      <span
+                        className={cn(
+                          "font-bold ml-2",
+                          balanceAfterRelease.remaining < 0
+                            ? "text-red-600 dark:text-red-400"
+                            : "text-emerald-600 dark:text-emerald-400"
+                        )}
+                      >
+                        {formatCurrency(balanceAfterRelease.remaining)}
+                      </span>
                     </div>
                   </div>
                 )}
@@ -2093,8 +2048,7 @@ const MayorPending = () => {
                   <div>
                     <p className="text-xs text-slate-400">Ticket #</p>
                     <p className="font-semibold text-slate-900 dark:text-white text-sm truncate">
-                      {selectedTicket?.ticket_number ||
-                        selectedTicket?.trip_ticket_number}
+                      {selectedTicket?.ticket_number || selectedTicket?.trip_ticket_number}
                     </p>
                   </div>
                   <div>
@@ -2140,10 +2094,8 @@ const MayorPending = () => {
                         }
                       } else {
                         setCrossDepartmentReason("");
-                        const requestingDeptId =
-                          selectedTicket?.department_id?.toString();
-                        if (requestingDeptId)
-                          setChargeToDepartmentId(requestingDeptId);
+                        const requestingDeptId = selectedTicket?.department_id?.toString();
+                        if (requestingDeptId) setChargeToDepartmentId(requestingDeptId);
                       }
                     }}
                     className="mt-1 h-4 w-4 rounded border-slate-300 text-orange-600 focus:ring-orange-500 dark:border-slate-600 dark:bg-slate-700"
@@ -2179,9 +2131,7 @@ const MayorPending = () => {
                           name="crossReason"
                           placeholder="Reason for cross-department usage..."
                           value={crossDepartmentReason}
-                          onChange={(e) =>
-                            setCrossDepartmentReason(e.target.value)
-                          }
+                          onChange={(e) => setCrossDepartmentReason(e.target.value)}
                           onBlur={() =>
                             setApproveTouched((prev) => ({
                               ...prev,
@@ -2297,9 +2247,83 @@ const MayorPending = () => {
           </DialogContent>
         </Dialog>
 
-        {/* ============================================ */}
+        {/* ✅ WEEKLY OVERRIDE WARNING DIALOG */}
+        <Dialog open={showWeeklyWarning} onOpenChange={setShowWeeklyWarning}>
+          <DialogContent className="max-w-md dark:bg-slate-800 dark:border-slate-700">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
+                <div className="p-2 rounded-xl bg-amber-500/10">
+                  <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+                </div>
+                Amount Exceeded to Weekly Suggested
+              </DialogTitle>
+              <DialogDescription className="dark:text-slate-400">
+                The amount you're releasing is higher than the weekly suggested budget for this department.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="bg-amber-50 dark:bg-amber-950/30 rounded-xl p-4 border border-amber-200 dark:border-amber-800 space-y-2">
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-600 dark:text-slate-400">Weekly Suggested:</span>
+                <span className="font-semibold text-slate-800 dark:text-white">
+                  {formatCurrency(requestingDeptBalance?.weekly_suggested || 0)}
+                </span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-600 dark:text-slate-400">Already Used This Week:</span>
+                <span className="font-semibold text-slate-800 dark:text-white">
+                  {formatCurrency(requestingDeptBalance?.weekly_used || 0)}
+                </span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-600 dark:text-slate-400">Weekly Remaining:</span>
+                <span className="font-semibold text-slate-800 dark:text-white">
+                  {formatCurrency(Math.max(0, requestingDeptBalance?.weekly_remaining || 0))}
+                </span>
+              </div>
+              <div className="flex justify-between text-sm pt-2 border-t border-amber-200 dark:border-amber-800">
+                <span className="font-medium text-amber-700 dark:text-amber-300">Releasing Now:</span>
+                <span className="font-bold text-amber-700 dark:text-amber-300">
+                  {formatCurrency(parseFloat(amountReleased) || 0)}
+                </span>
+              </div>
+            </div>
+
+            <div className="bg-red-50 dark:bg-red-950/30 rounded-xl p-3 border border-red-200 dark:border-red-800">
+              <p className="text-xs text-red-700 dark:text-red-300 flex items-start gap-2">
+                <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                <span>
+                  Releasing above the weekly suggested will reduce the annual budget faster than
+                  planned. The remaining weekly suggested will go negative. Continue?
+                </span>
+              </p>
+            </div>
+
+            <DialogFooter className="gap-2">
+              <Button
+                variant="outline"
+                onClick={handleWeeklyWarningCancel}
+                className="dark:border-slate-700 dark:text-slate-300"
+              >
+                No, Go Back
+              </Button>
+              <Button
+                onClick={handleWeeklyWarningConfirm}
+                disabled={submitting}
+                className="bg-amber-600 hover:bg-amber-700 text-white"
+              >
+                {submitting ? (
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                ) : (
+                  <CheckCircle className="h-4 w-4 mr-2" />
+                )}
+                Yes, Continue
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
         {/* CANCEL DIALOG */}
-        {/* ============================================ */}
         <Dialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
           <DialogContent className="sm:max-w-md dark:bg-slate-800 dark:border-slate-700">
             <DialogHeader>
@@ -2332,27 +2356,19 @@ const MayorPending = () => {
 
             <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-4 space-y-1 border border-slate-200 dark:border-slate-700">
               <div className="flex justify-between text-sm">
-                <span className="text-slate-600 dark:text-slate-400">
-                  Ticket Number:
-                </span>
+                <span className="text-slate-600 dark:text-slate-400">Ticket Number:</span>
                 <span className="font-mono font-semibold text-slate-800 dark:text-white">
-                  {selectedTicket?.ticket_number ||
-                    selectedTicket?.trip_ticket_number ||
-                    "N/A"}
+                  {selectedTicket?.ticket_number || selectedTicket?.trip_ticket_number || "N/A"}
                 </span>
               </div>
               <div className="flex justify-between text-sm">
-                <span className="text-slate-600 dark:text-slate-400">
-                  Destination:
-                </span>
+                <span className="text-slate-600 dark:text-slate-400">Destination:</span>
                 <span className="text-slate-800 dark:text-white">
                   {selectedTicket?.destination || "N/A"}
                 </span>
               </div>
               <div className="flex justify-between text-sm">
-                <span className="text-slate-600 dark:text-slate-400">
-                  Department:
-                </span>
+                <span className="text-slate-600 dark:text-slate-400">Department:</span>
                 <span className="text-slate-800 dark:text-white">
                   {selectedTicket?.department_name || "N/A"}
                 </span>
@@ -2405,9 +2421,7 @@ const MayorPending = () => {
           </DialogContent>
         </Dialog>
 
-        {/* ============================================ */}
         {/* REJECT DIALOG */}
-        {/* ============================================ */}
         <Dialog open={showRejectDialog} onOpenChange={setShowRejectDialog}>
           <DialogContent className="dark:bg-slate-800 dark:border-slate-700">
             <DialogHeader>
@@ -2465,9 +2479,7 @@ const MayorPending = () => {
           </DialogContent>
         </Dialog>
 
-        {/* ============================================ */}
         {/* RECEIPT VERIFICATION MODAL */}
-        {/* ============================================ */}
         <ReceiptVerificationModal
           isOpen={showReceiptModal}
           onClose={() => {
@@ -2479,9 +2491,7 @@ const MayorPending = () => {
           onRefresh={fetchTickets}
         />
 
-        {/* ============================================ */}
         {/* GAS SLIP MODAL */}
-        {/* ============================================ */}
         {showGasSlip && selectedGasSlipTicket && (
           <GasSlipView
             ticket={selectedGasSlipTicket}

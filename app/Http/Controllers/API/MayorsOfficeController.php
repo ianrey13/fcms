@@ -145,11 +145,19 @@ class MayorsOfficeController extends Controller
             ->map(function ($ticket) {
                 $fuelReceipt = $ticket->gasSlip?->fuelReceipt;
 
-                // ✅ Get remaining budget for the department
+                // ✅ Annual remaining
                 $remainingBudget = $this->budgetService->getRemainingBudget($ticket->department_id);
-                
-                // ✅ Get weekly remaining budget
-                $weeklyRemaining = $this->getWeeklyRemainingBudget($ticket->department_id);
+
+                // ✅ Compute weekly suggested from annual (auto)
+                $annualAmount = (float) $this->budgetService->getAnnualAmount($ticket->department_id);
+                $weeklySuggested = $annualAmount > 0 ? round($annualAmount / 52, 2) : 0;
+
+                // ✅ Weekly used (tracked only)
+                $weeklyUsed = $this->getWeeklyUsedAmount($ticket->department_id);
+
+                // ✅ Weekly remaining + exceeded flag
+                $weeklyRemaining = max(0, $weeklySuggested - $weeklyUsed);
+                $weeklyExceeded = $weeklySuggested > 0 && $weeklyUsed > $weeklySuggested;
 
                 return [
                     'id' => $ticket->trip_ticket_id,
@@ -163,11 +171,23 @@ class MayorsOfficeController extends Controller
                     'submitted_at' => $ticket->submitted_at,
                     'has_insufficient_budget' => $remainingBudget < ($ticket->estimated_cost ?? 0),
                     'budget_shortage' => max(0, ($ticket->estimated_cost ?? 0) - $remainingBudget),
-                    'estimated_cost' => $ticket->estimated_fuel_liters ?
-                        ($ticket->estimated_fuel_liters * 88) : null,
+                    'estimated_cost' => $ticket->estimated_fuel_liters
+                        ? ($ticket->estimated_fuel_liters * 88)
+                        : null,
                     'department_id' => $ticket->department_id,
+
+                    // ✅ ANNUAL
                     'remaining_budget' => $remainingBudget,
-                    'weekly_remaining' => $weeklyRemaining,  // ✅ NEW: Weekly remaining
+
+                    // ✅ WEEKLY (all derived / tracked)
+                    'weekly_suggested' => $weeklySuggested,
+                    'weekly_used' => $weeklyUsed,
+                    'weekly_remaining' => $weeklyRemaining,
+                    'weekly_exceeded' => $weeklyExceeded,
+
+                    // Legacy alias
+                    'weekly_ceiling' => $weeklySuggested,
+
                     'has_receipt' => $fuelReceipt && ($fuelReceipt->liters_availed > 0 || $fuelReceipt->amount_on_receipt > 0),
                     'receipt_status' => $ticket->gasSlip?->reconciliation_status ?? 'none',
                     'vehicle' => $ticket->vehicle ? [
@@ -197,31 +217,41 @@ class MayorsOfficeController extends Controller
         ], 500);
     }
 }
+
 /**
- * ✅ Get weekly remaining budget for a department
+ * ✅ Get weekly suggested — always annual / 52
  */
-private function getWeeklyRemainingBudget($departmentId)
+private function getWeeklySuggested($departmentId): float
+{
+    $annual = (float) $this->budgetService->getAnnualAmount($departmentId);
+    return $annual > 0 ? round($annual / 52, 2) : 0.0;
+}
+
+/**
+ * ✅ Get weekly used amount (tracked only)
+ */
+private function getWeeklyUsedAmount($departmentId): float
 {
     $currentWeek = date('W');
     $year = date('Y');
-    
+
     $weeklyUsage = DB::table('weekly_budget_usage')
         ->where('department_id', $departmentId)
         ->where('week_number', $currentWeek)
         ->where('year', $year)
         ->first();
-    
-    if (!$weeklyUsage) {
-        // If no weekly usage, get from policy
-        $policy = DeptBudgetPolicy::where('department_id', $departmentId)->first();
-        return $policy ? (float) $policy->default_weekly_allocation : 0;
-    }
-    
-    $weeklyCeiling = (float) $weeklyUsage->weekly_allocation;
-    $weeklyUsed = (float) $weeklyUsage->amount_used;
-    
-    return $weeklyCeiling - $weeklyUsed;
+
+    return $weeklyUsage ? (float) $weeklyUsage->amount_used : 0.0;
 }
+
+/**
+ * ✅ Get weekly remaining budget for a department (informational)
+ */
+private function getWeeklyRemainingBudget($departmentId): float
+{
+    return max(0, $this->getWeeklySuggested($departmentId) - $this->getWeeklyUsedAmount($departmentId));
+}
+
 
     /**
      * Get approved/funds issued tickets
@@ -301,6 +331,9 @@ public function approveTicket(Request $request, $id)
         'charge_to_department_id' => 'nullable|exists:departments,department_id',
         'is_cross_department' => 'nullable|boolean',
         'cross_department_reason' => 'nullable|string|max:255',
+        // ✅ NEW — user confirms override on the frontend
+        'is_weekly_override' => 'nullable|boolean',
+        'weekly_override_reason' => 'nullable|string|max:255',
     ]);
 
     if ($validator->fails()) {
@@ -356,7 +389,21 @@ public function approveTicket(Request $request, $id)
     $weeklyRemaining = 0;
     $annualRemaining = 0;
 
-    // ✅ Pre-flight annual check (outside txn — no writes yet, safe)
+    // ✅ Compute weekly suggested + current usage (informational)
+    $annualAmountForWeekly = (float) $this->budgetService->getAnnualAmount($chargeDepartmentId);
+    $weeklySuggested = $annualAmountForWeekly > 0 ? round($annualAmountForWeekly / 52, 2) : 0;
+    $weeklyUsedBefore = $this->getWeeklyUsedAmount($chargeDepartmentId);
+    $weeklyRemaining = max(0, $weeklySuggested - $weeklyUsedBefore);
+
+    $isWeeklyOverride = (bool) ($request->is_weekly_override ?? false)
+        && $weeklySuggested > 0
+        && $amountToRelease > $weeklyRemaining;
+
+    $weeklyOverrideReason = $isWeeklyOverride
+        ? ($request->weekly_override_reason ?: 'User confirmed weekly override on release dialog')
+        : null;
+
+    // ✅ Pre-flight annual check — annual is the only hard gate
     if (!$isMoFundedTicket) {
         $annualRemaining = (float) $this->budgetService->getRemainingBudget($chargeDepartmentId);
 
@@ -375,8 +422,6 @@ public function approveTicket(Request $request, $id)
                 ]
             ], 422);
         }
-
-        $weeklyRemaining = (float) $this->getWeeklyRemainingBudget($chargeDepartmentId);
     }
 
     // ============================================================
@@ -475,6 +520,36 @@ public function approveTicket(Request $request, $id)
         }
         $ticket->save();
 
+        // ✅ Log weekly override — non-blocking, informational
+        if ($isWeeklyOverride) {
+            DB::table('audit_log')->insert([
+                'user_id' => $user->user_id,
+                'action' => 'weekly_override',
+                'table_name' => 'gas_slip',
+                'record_id' => $gasSlipId,
+                'old_values' => json_encode([
+                    'weekly_suggested' => $weeklySuggested,
+                    'weekly_remaining' => $weeklyRemaining,
+                    'weekly_used_before' => $weeklyUsedBefore,
+                ]),
+                'new_values' => json_encode([
+                    'amount_released' => $amountToRelease,
+                    'weekly_used_after' => $weeklyUsedBefore + $amountToRelease,
+                    'over_by' => round($amountToRelease - $weeklyRemaining, 2),
+                    'reason' => $weeklyOverrideReason,
+                ]),
+                'ip_address' => $request->ip(),
+                'created_at' => now(),
+            ]);
+
+            Log::warning('⚠️ Weekly suggested exceeded — user confirmed override', [
+                'trip_ticket_id' => $id,
+                'amount' => $amountToRelease,
+                'weekly_suggested' => $weeklySuggested,
+                'weekly_remaining' => $weeklyRemaining,
+            ]);
+        }
+
         DB::commit();
     } catch (\Exception $e) {
         DB::rollBack();
@@ -487,9 +562,10 @@ public function approveTicket(Request $request, $id)
     }
 
     // ============================================================
-    // POST-COMMIT — notifications + response (no DB writes here)
+    // POST-COMMIT — notifications + response
     // ============================================================
-    $newWeeklyRemaining = (float) $this->getWeeklyRemainingBudget($chargeDepartmentId);
+    $weeklyUsedAfter = $this->getWeeklyUsedAmount($chargeDepartmentId);
+    $newWeeklyRemaining = max(0, $weeklySuggested - $weeklyUsedAfter);
     $newAnnualRemaining = (float) $this->budgetService->getRemainingBudget($chargeDepartmentId);
     $usedAmount = (float) $this->budgetService->getUsedAmount($chargeDepartmentId);
 
@@ -502,7 +578,6 @@ public function approveTicket(Request $request, $id)
     try {
         $this->sendFundIssuedNotification($ticket, $amountToRelease, $fundingSource, $isCrossDepartment);
     } catch (\Exception $e) {
-        // Notification failure should not fail the release — it's already committed
         Log::error('⚠️ Fund issued notification failed: ' . $e->getMessage());
     }
 
@@ -533,9 +608,15 @@ public function approveTicket(Request $request, $id)
             'annual_remaining_before' => $annualRemaining,
             'annual_remaining_after' => $newAnnualRemaining,
             'total_used' => $usedAmount,
-            // Weekly kept informational
+
+            // ✅ Weekly (informational)
+            'weekly_suggested' => $weeklySuggested,
+            'weekly_used_before' => $weeklyUsedBefore,
+            'weekly_used_after' => $weeklyUsedAfter,
             'weekly_remaining_before' => $weeklyRemaining,
             'weekly_remaining_after' => $newWeeklyRemaining,
+            'weekly_override' => $isWeeklyOverride,
+            'weekly_override_reason' => $weeklyOverrideReason,
         ]
     ]);
 }
@@ -1190,88 +1271,98 @@ public function getAllDepartmentsWithBudget(Request $request)
 
         $year = Carbon::now()->year;
 
-        // ✅ Get ALL departments (active and inactive)
         $departments = Department::select('department_id', 'department_name', 'department_code')
             ->orderBy('department_name')
             ->get();
 
         $departmentsWithBudget = $departments->map(function ($department) use ($year) {
-            // ✅ Get annual budget
+            // ✅ Annual budget
             $budget = AnnualBudget::where('department_id', $department->department_id)
                 ->where('fiscal_year', $year)
                 ->first();
 
-            // ✅ Get current week usage
+            // ✅ Weekly usage — tracked
             $currentWeek = WeeklyBudgetUsage::where('department_id', $department->department_id)
                 ->where('week_number', date('W'))
                 ->where('year', $year)
                 ->first();
 
-            // ✅ Get policy (fallback)
-            $policy = DB::table('dept_budget_policy')
-                ->where('department_id', $department->department_id)
-                ->first();
+            $annualAmount = $budget ? (float) $budget->annual_amount : 0;
+
+            // ✅ Weekly suggested — ALWAYS annual / 52
+            $weeklySuggested = $annualAmount > 0 ? round($annualAmount / 52, 2) : 0;
+
+            // ✅ Weekly used — tracked
+            $weeklyUsed = $currentWeek ? (float) $currentWeek->amount_used : 0;
+
+            // ✅ Weekly remaining + exceeded flag
+            $weeklyRemaining = $weeklySuggested - $weeklyUsed;
+            $weeklyExceeded = $weeklySuggested > 0 && $weeklyUsed > $weeklySuggested;
 
             if ($budget) {
-                // ✅ Weekly allocation from current week or policy
-                $weeklyAllocation = 0;
-                $weeklyUsed = 0;
-
-                if ($currentWeek) {
-                    $weeklyAllocation = (float) $currentWeek->weekly_allocation;
-                    $weeklyUsed = (float) $currentWeek->amount_used;
-                } elseif ($policy) {
-                    $weeklyAllocation = (float) $policy->default_weekly_allocation;
-                }
-
                 return [
                     'department_id' => $department->department_id,
                     'department_name' => $department->department_name,
                     'department_code' => $department->department_code,
-                    // ✅ ANNUAL BUDGET (Primary)
-                    'annual_amount' => (float) $budget->annual_amount,
-                    'allocated_amount' => (float) $budget->annual_amount,  // ✅ Alias for frontend
+
+                    // ✅ ANNUAL BUDGET
+                    'annual_amount' => $annualAmount,
+                    'allocated_amount' => $annualAmount,               // legacy alias
                     'used_amount' => (float) $budget->used_amount,
-                    'spent_amount' => (float) $budget->used_amount,       // ✅ Alias for frontend
+                    'spent_amount' => (float) $budget->used_amount,    // legacy alias
                     'remaining_amount' => (float) $budget->remaining_amount,
-                    // ✅ WEEKLY ALLOCATION
-                    'weekly_allocation' => $weeklyAllocation,
+
+                    // ✅ WEEKLY — all auto-derived / tracked
+                    'weekly_suggested' => $weeklySuggested,
                     'weekly_used' => $weeklyUsed,
-                    // ✅ Other fields
+                    'weekly_remaining' => $weeklyRemaining,
+                    'weekly_exceeded' => $weeklyExceeded,
+                    // Legacy aliases
+                    'weekly_allocation' => $weeklySuggested,
+                    'weekly_ceiling' => $weeklySuggested,
+
+                    // ✅ Meta
                     'has_budget' => true,
                     'budget_type' => 'annual',
                     'fiscal_year' => $budget->fiscal_year,
                     'utilization_percentage' => $budget->utilization_percentage,
-                    'utilization' => $budget->utilization_percentage,     // ✅ Alias for frontend
+                    'utilization' => $budget->utilization_percentage,  // legacy alias
                     'status' => $budget->status,
-                    'allocated' => (float) $budget->annual_amount,        // ✅ Alias for frontend
-                    'spent' => (float) $budget->used_amount,              // ✅ Alias for frontend
-                ];
-            } else {
-                return [
-                    'department_id' => $department->department_id,
-                    'department_name' => $department->department_name,
-                    'department_code' => $department->department_code,
-                    'annual_amount' => 0,
-                    'allocated_amount' => 0,   // ✅ Alias
-                    'used_amount' => 0,
-                    'spent_amount' => 0,       // ✅ Alias
-                    'remaining_amount' => 0,
-                    'weekly_allocation' => 0,
-                    'weekly_used' => 0,
-                    'has_budget' => false,
-                    'budget_type' => 'annual',
-                    'fiscal_year' => $year,
-                    'utilization_percentage' => 0,
-                    'utilization' => 0,        // ✅ Alias
-                    'status' => 'inactive',
-                    'allocated' => 0,          // ✅ Alias
-                    'spent' => 0,              // ✅ Alias
+                    'allocated' => $annualAmount,                      // legacy alias
+                    'spent' => (float) $budget->used_amount,           // legacy alias
                 ];
             }
+
+            // No budget set yet
+            return [
+                'department_id' => $department->department_id,
+                'department_name' => $department->department_name,
+                'department_code' => $department->department_code,
+
+                'annual_amount' => 0,
+                'allocated_amount' => 0,
+                'used_amount' => 0,
+                'spent_amount' => 0,
+                'remaining_amount' => 0,
+
+                'weekly_suggested' => 0,
+                'weekly_used' => 0,
+                'weekly_remaining' => 0,
+                'weekly_exceeded' => false,
+                'weekly_allocation' => 0,
+                'weekly_ceiling' => 0,
+
+                'has_budget' => false,
+                'budget_type' => 'annual',
+                'fiscal_year' => $year,
+                'utilization_percentage' => 0,
+                'utilization' => 0,
+                'status' => 'inactive',
+                'allocated' => 0,
+                'spent' => 0,
+            ];
         });
 
-        // ✅ Calculate summary
         $totalAllocated = $departmentsWithBudget->sum('allocated_amount');
         $totalUsed = $departmentsWithBudget->sum('used_amount');
 
@@ -1286,7 +1377,7 @@ public function getAllDepartmentsWithBudget(Request $request)
                 'departments_with_budget' => $departmentsWithBudget->filter(fn($d) => $d['has_budget'])->count(),
             ]
         ]);
-        
+
     } catch (\Exception $e) {
         Log::error('Get all departments with budget error: ' . $e->getMessage());
         return response()->json([

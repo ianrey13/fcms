@@ -17,6 +17,16 @@ use Illuminate\Support\Carbon;
 class AnnualBudgetController extends Controller
 {
     /**
+     * ✅ Compute the auto weekly suggested amount for a given annual budget.
+     * Formula: annual_amount / 52, rounded to 2 decimals.
+     */
+    private function computeWeeklySuggested($annualAmount): float
+    {
+        $amount = (float) $annualAmount;
+        return $amount > 0 ? round($amount / 52, 2) : 0.0;
+    }
+
+    /**
      * Get all annual budgets with departments for a specific year
      */
     public function index(Request $request)
@@ -26,7 +36,7 @@ class AnnualBudgetController extends Controller
             $departmentId = $request->get('department_id');
 
             $fiscalYear = FiscalYear::where('year', $year)->first();
-            
+
             if (!$fiscalYear) {
                 return response()->json([
                     'success' => false,
@@ -46,8 +56,8 @@ class AnnualBudgetController extends Controller
 
             $result = $allDepartments->map(function ($dept) use ($budgets, $year) {
                 $budget = $budgets->get($dept->department_id);
-                
-                // ✅ Get total weekly allocations for this department and year
+
+                // ✅ Get total weekly allocations for this department and year (tracked usage)
                 $totalWeeklyAllocated = 0;
                 if ($budget) {
                     $totalWeeklyAllocated = DB::table('weekly_budget_usage')
@@ -55,7 +65,11 @@ class AnnualBudgetController extends Controller
                         ->where('year', $year)
                         ->sum('weekly_allocation') ?? 0;
                 }
-                
+
+                // ✅ Weekly suggested is ALWAYS computed from annual
+                $annualAmount = $budget ? (float) $budget->annual_amount : 0;
+                $weeklySuggested = $this->computeWeeklySuggested($annualAmount);
+
                 return [
                     'department_id' => $dept->department_id,
                     'department_name' => $dept->department_name,
@@ -63,16 +77,18 @@ class AnnualBudgetController extends Controller
                     'fiscal_year' => $year,
                     'has_budget' => $budget ? true : false,
                     'budget_id' => $budget ? $budget->budget_id : null,
-                    'annual_amount' => $budget ? (float) $budget->annual_amount : 0,
-                    'weekly_ceiling' => $budget ? (float) $budget->weekly_ceiling : 0,
-                    'suggested_ceiling' => $budget ? round($budget->annual_amount / 52, 2) : 0,
+                    'annual_amount' => $annualAmount,
+                    // ✅ Weekly suggested — auto-computed, never manual
+                    'weekly_ceiling' => $weeklySuggested,       // legacy alias
+                    'weekly_suggested' => $weeklySuggested,     // ✅ NEW canonical
+                    'suggested_ceiling' => $weeklySuggested,    // legacy alias
                     'used_amount' => $budget ? (float) $budget->used_amount : 0,
                     'remaining_amount' => $budget ? (float) $budget->remaining_amount : 0,
                     'total_weekly_allocated' => $totalWeeklyAllocated,
                     'available_amount' => $budget ? (float) ($budget->remaining_amount - $totalWeeklyAllocated) : 0,
                     'status' => $budget ? $budget->status : 'not_set',
-                    'utilization_percentage' => $budget && $budget->annual_amount > 0 
-                        ? round(($budget->used_amount / $budget->annual_amount) * 100, 2) 
+                    'utilization_percentage' => $budget && $budget->annual_amount > 0
+                        ? round(($budget->used_amount / $budget->annual_amount) * 100, 2)
                         : 0,
                 ];
             });
@@ -110,281 +126,275 @@ class AnnualBudgetController extends Controller
     /**
      * Get annual budgets by fiscal year (for MO)
      */
+    public function getByFiscalYear($year)
+    {
+        try {
+            Log::info('🔍 Fetching budgets for year: ' . $year);
 
-public function getByFiscalYear($year)
-{
-    try {
-        Log::info('🔍 Fetching budgets for year: ' . $year);
+            $fiscalYear = FiscalYear::where('year', $year)->first();
 
-        $fiscalYear = FiscalYear::where('year', $year)->first();
-        
-        if (!$fiscalYear) {
+            if (!$fiscalYear) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Fiscal year {$year} not found.",
+                ], 404);
+            }
+
+            $allDepartments = Department::where('is_active', true)
+                ->orderBy('department_name')
+                ->get();
+
+            $budgets = AnnualBudget::where('fiscal_year', $year)
+                ->get()
+                ->keyBy('department_id');
+
+            $result = $allDepartments->map(function ($department) use ($budgets, $year) {
+                $budget = $budgets->get($department->department_id);
+
+                // ✅ Get weekly usage for this department (current week)
+                $currentWeek = date('W');
+                $weeklyUsage = DB::table('weekly_budget_usage')
+                    ->where('department_id', $department->department_id)
+                    ->where('year', $year)
+                    ->where('week_number', $currentWeek)
+                    ->first();
+
+                // ✅ Get total used this year (all weeks)
+                $totalUsedThisYear = DB::table('weekly_budget_usage')
+                    ->where('department_id', $department->department_id)
+                    ->where('year', $year)
+                    ->sum('amount_used') ?? 0;
+
+                // ✅ Weekly suggested = annual / 52 — ALWAYS computed, no manual input
+                $annualAmount = $budget ? (float) $budget->annual_amount : 0;
+                $weeklySuggested = $this->computeWeeklySuggested($annualAmount);
+
+                // ✅ Weekly used — tracked but not a gate
+                $weeklyUsed = $weeklyUsage ? (float) $weeklyUsage->amount_used : 0;
+
+                // ✅ Weekly remaining vs suggested (can be negative = exceeded)
+                $weeklyRemaining = $weeklySuggested - $weeklyUsed;
+
+                // ✅ Flag for reports / UI badges
+                $weeklyExceeded = $weeklySuggested > 0 && $weeklyUsed > $weeklySuggested;
+
+                return [
+                    'department_id' => $department->department_id,
+                    'department_name' => $department->department_name,
+                    'department_code' => $department->department_code,
+                    'fiscal_year' => $year,
+                    'has_budget' => $budget ? true : false,
+                    'budget_id' => $budget ? $budget->budget_id : null,
+
+                    // ✅ ANNUAL BUDGET
+                    'annual_amount' => $annualAmount,
+                    'used_amount' => $budget ? (float) $budget->used_amount : 0,
+                    'remaining_amount' => $budget ? (float) $budget->remaining_amount : 0,
+
+                    // ✅ WEEKLY — all auto-derived from annual
+                    'weekly_ceiling' => $weeklySuggested,       // legacy alias
+                    'weekly_suggested' => $weeklySuggested,     // ✅ NEW canonical
+                    'suggested_ceiling' => $weeklySuggested,    // legacy alias
+                    'weekly_used' => $weeklyUsed,
+                    'weekly_remaining' => $weeklyRemaining,
+                    'weekly_exceeded' => $weeklyExceeded,       // ✅ NEW flag
+                    'weekly_used_percentage' => $weeklySuggested > 0
+                        ? round(($weeklyUsed / $weeklySuggested) * 100, 2)
+                        : 0,
+
+                    // ✅ TOTAL USED THIS YEAR
+                    'total_used_this_year' => $totalUsedThisYear,
+                    'status' => $budget ? $budget->status : 'not_set',
+                    'utilization_percentage' => $annualAmount > 0
+                        ? round(($totalUsedThisYear / $annualAmount) * 100, 2)
+                        : 0,
+                ];
+            });
+
+            $summary = [
+                'total_allocated' => $result->sum('annual_amount'),
+                'total_used' => $result->sum('total_used_this_year'),
+                'total_remaining' => $result->sum('remaining_amount'),
+                'total_weekly_used' => $result->sum('weekly_used'),
+                'total_weekly_remaining' => $result->sum('weekly_remaining'),
+                'total_weekly_suggested' => $result->sum('weekly_suggested'),  // ✅ NEW
+                'total_departments' => $result->count(),
+                'departments_with_budget' => $result->filter(fn($item) => $item['has_budget'])->count(),
+                'departments_without_budget' => $result->filter(fn($item) => !$item['has_budget'])->count(),
+            ];
+
+            return response()->json([
+                'success' => true,
+                'data' => $result,
+                'summary' => $summary,
+                'fiscal_year' => [
+                    'year' => $fiscalYear->year,
+                    'is_active' => $fiscalYear->is_active,
+                ],
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('❌ Error fetching annual budgets: ' . $e->getMessage());
             return response()->json([
                 'success' => false,
-                'message' => "Fiscal year {$year} not found.",
-            ], 404);
+                'message' => 'Failed to fetch annual budgets: ' . $e->getMessage()
+            ], 500);
         }
-
-        $allDepartments = Department::where('is_active', true)
-            ->orderBy('department_name')
-            ->get();
-
-        $budgets = AnnualBudget::where('fiscal_year', $year)
-            ->get()
-            ->keyBy('department_id');
-
-        $result = $allDepartments->map(function ($department) use ($budgets, $year) {
-            $budget = $budgets->get($department->department_id);
-            
-            // ✅ Get weekly usage for this department
-            $currentWeek = date('W');
-            $weeklyUsage = DB::table('weekly_budget_usage')
-                ->where('department_id', $department->department_id)
-                ->where('year', $year)
-                ->where('week_number', $currentWeek)
-                ->first();
-            
-            // ✅ Get total used this year
-            $totalUsedThisYear = DB::table('weekly_budget_usage')
-                ->where('department_id', $department->department_id)
-                ->where('year', $year)
-                ->sum('amount_used') ?? 0;
-            
-            // ✅ Get remaining from annual budget
-            $remainingAnnual = $budget ? (float) $budget->remaining_amount : 0;
-            
-            // ✅ Get weekly ceiling (from budget or policy)
-            $weeklyCeiling = 0;
-            if ($budget && $budget->weekly_ceiling) {
-                $weeklyCeiling = (float) $budget->weekly_ceiling;
-            } elseif ($budget) {
-                // Auto-calculate if not set
-                $weeklyCeiling = round($budget->annual_amount / 52, 2);
-            }
-            
-            // ✅ If there's weekly usage, use that instead
-            if ($weeklyUsage) {
-                $weeklyCeiling = (float) $weeklyUsage->weekly_allocation;
-            }
-            
-            // ✅ Get amount used this week
-            $weeklyUsed = $weeklyUsage ? (float) $weeklyUsage->amount_used : 0;
-            
-            // ✅ NEW: Calculate weekly remaining balance
-            $weeklyRemaining = $weeklyCeiling - $weeklyUsed;
-            
-            // ✅ Calculate remaining after weekly deduction
-            $remainingAfterWeekly = $budget ? (float) ($budget->annual_amount - $totalUsedThisYear - $weeklyCeiling) : 0;
-            
-            return [
-                'department_id' => $department->department_id,
-                'department_name' => $department->department_name,
-                'department_code' => $department->department_code,
-                'fiscal_year' => $year,
-                'has_budget' => $budget ? true : false,
-                'budget_id' => $budget ? $budget->budget_id : null,
-                // ✅ ANNUAL BUDGET
-                'annual_amount' => $budget ? (float) $budget->annual_amount : 0,
-                'used_amount' => $budget ? (float) $budget->used_amount : 0,
-                'remaining_amount' => $budget ? (float) $budget->remaining_amount : 0,
-                // ✅ WEEKLY CEILING
-                'weekly_ceiling' => $weeklyCeiling,
-                'suggested_ceiling' => $budget ? round($budget->annual_amount / 52, 2) : 0,
-                // ✅ WEEKLY USAGE
-                'weekly_used' => $weeklyUsed,
-                'weekly_remaining' => $weeklyRemaining,  // ✅ NEW: Weekly remaining balance
-                'weekly_used_percentage' => $weeklyCeiling > 0 ? round(($weeklyUsed / $weeklyCeiling) * 100, 2) : 0,
-                'remaining_after_weekly' => $remainingAfterWeekly,
-                // ✅ TOTAL USED THIS YEAR
-                'total_used_this_year' => $totalUsedThisYear,
-                'status' => $budget ? $budget->status : 'not_set',
-                'utilization_percentage' => $budget && $budget->annual_amount > 0 
-                    ? round(($totalUsedThisYear / $budget->annual_amount) * 100, 2) 
-                    : 0,
-            ];
-        });
-
-        $summary = [
-            'total_allocated' => $result->sum('annual_amount'),
-            'total_used' => $result->sum('total_used_this_year'),
-            'total_remaining' => $result->sum('remaining_amount'),
-            'total_weekly_used' => $result->sum('weekly_used'),
-            'total_weekly_remaining' => $result->sum('weekly_remaining'),  // ✅ NEW
-            'total_departments' => $result->count(),
-            'departments_with_budget' => $result->filter(fn($item) => $item['has_budget'])->count(),
-            'departments_without_budget' => $result->filter(fn($item) => !$item['has_budget'])->count(),
-        ];
-
-        return response()->json([
-            'success' => true,
-            'data' => $result,
-            'summary' => $summary,
-            'fiscal_year' => [
-                'year' => $fiscalYear->year,
-                'is_active' => $fiscalYear->is_active,
-            ],
-        ]);
-
-    } catch (\Exception $e) {
-        Log::error('❌ Error fetching annual budgets: ' . $e->getMessage());
-        return response()->json([
-            'success' => false,
-            'message' => 'Failed to fetch annual budgets: ' . $e->getMessage()
-        ], 500);
     }
-}
 
     /**
      * ✅ CREATE or UPDATE annual budget (MO only)
+     * ✅ weekly_ceiling is no longer accepted from the client — always auto-derived.
      */
-
-public function store(Request $request)
-{
-    try {
-        $validator = Validator::make($request->all(), [
-            'department_id' => 'required|exists:departments,department_id',
-            'fiscal_year' => 'required|integer|exists:fiscal_years,year',
-            'annual_amount' => 'required|numeric|min:0',
-            'weekly_ceiling' => 'nullable|numeric|min:0',
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'errors' => $validator->errors()
-            ], 422);
-        }
-
-        DB::beginTransaction();
-
-        $annualAmount = $request->annual_amount;
-        $weeklyCeiling = $request->weekly_ceiling ?? round($annualAmount / 52, 2);
-        $departmentId = $request->department_id;
-        $fiscalYear = $request->fiscal_year;
-
-        $budget = AnnualBudget::where('department_id', $departmentId)
-            ->where('fiscal_year', $fiscalYear)
-            ->first();
-
-        $oldAmount = $budget ? $budget->annual_amount : 0;
-
-        if ($budget) {
-            $budget->annual_amount = $annualAmount;
-            $budget->weekly_ceiling = $weeklyCeiling;
-            $budget->used_amount = $budget->used_amount ?? 0;
-            $budget->status = 'active';
-            $budget->save();
-            $action = 'annual_updated';
-            $message = 'Annual budget updated successfully';
-        } else {
-            $budget = AnnualBudget::create([
-                'department_id' => $departmentId,
-                'fiscal_year' => $fiscalYear,
-                'annual_amount' => $annualAmount,
-                'weekly_ceiling' => $weeklyCeiling,
-                'used_amount' => 0,
-                'status' => 'active',
+    public function store(Request $request)
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'department_id' => 'required|exists:departments,department_id',
+                'fiscal_year' => 'required|integer|exists:fiscal_years,year',
+                'annual_amount' => 'required|numeric|min:0',
+                // ✅ weekly_ceiling removed from validation — not accepted
             ]);
-            $action = 'annual_created';
-            $message = 'Annual budget created successfully';
-        }
 
-        // ✅ Update policy with fiscal_year
-        DeptBudgetPolicy::updateOrCreate(
-            [
-                'department_id' => $departmentId,
-                'fiscal_year' => $fiscalYear,  // ✅ ADD THIS
-            ],
-            [
-                'default_weekly_allocation' => $weeklyCeiling
-            ]
-        );
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'errors' => $validator->errors()
+                ], 422);
+            }
 
-        // ✅ Also update the main policy (for backward compatibility)
-        DeptBudgetPolicy::updateOrCreate(
-            [
-                'department_id' => $departmentId,
-            ],
-            [
-                'default_weekly_allocation' => $weeklyCeiling,
-                'fiscal_year' => $fiscalYear,
-            ]
-        );
+            DB::beginTransaction();
 
-        // ✅ Update weekly_budget_usage table
-        $currentWeek = date('W');
-        $currentYear = date('Y');
-        $weekStart = Carbon::now()->startOfWeek()->toDateString();
-        $weekEnd = Carbon::now()->endOfWeek()->toDateString();
+            $annualAmount = (float) $request->annual_amount;
+            // ✅ Auto-compute weekly suggested — never trust client input
+            $weeklyCeiling = $this->computeWeeklySuggested($annualAmount);
+            $departmentId = $request->department_id;
+            $fiscalYear = $request->fiscal_year;
 
-        $weeklyUsage = DB::table('weekly_budget_usage')
-            ->where('department_id', $departmentId)
-            ->where('week_number', $currentWeek)
-            ->where('year', $currentYear)
-            ->first();
+            $budget = AnnualBudget::where('department_id', $departmentId)
+                ->where('fiscal_year', $fiscalYear)
+                ->first();
 
-        if ($weeklyUsage) {
-            DB::table('weekly_budget_usage')
-                ->where('usage_id', $weeklyUsage->usage_id)
-                ->update([
+            $oldAmount = $budget ? $budget->annual_amount : 0;
+
+            if ($budget) {
+                $budget->annual_amount = $annualAmount;
+                $budget->weekly_ceiling = $weeklyCeiling;   // ✅ always overwritten with computed
+                $budget->used_amount = $budget->used_amount ?? 0;
+                $budget->status = 'active';
+                $budget->save();
+                $action = 'annual_updated';
+                $message = 'Annual budget updated successfully';
+            } else {
+                $budget = AnnualBudget::create([
+                    'department_id' => $departmentId,
+                    'fiscal_year' => $fiscalYear,
+                    'annual_amount' => $annualAmount,
+                    'weekly_ceiling' => $weeklyCeiling,
+                    'used_amount' => 0,
+                    'status' => 'active',
+                ]);
+                $action = 'annual_created';
+                $message = 'Annual budget created successfully';
+            }
+
+            // ✅ Update policy with fiscal_year
+            DeptBudgetPolicy::updateOrCreate(
+                [
+                    'department_id' => $departmentId,
+                    'fiscal_year' => $fiscalYear,
+                ],
+                [
+                    'default_weekly_allocation' => $weeklyCeiling
+                ]
+            );
+
+            // ✅ Also update the main policy (for backward compatibility)
+            DeptBudgetPolicy::updateOrCreate(
+                [
+                    'department_id' => $departmentId,
+                ],
+                [
+                    'default_weekly_allocation' => $weeklyCeiling,
+                    'fiscal_year' => $fiscalYear,
+                ]
+            );
+
+            // ✅ Update weekly_budget_usage table (tracking only)
+            $currentWeek = date('W');
+            $currentYear = date('Y');
+            $weekStart = Carbon::now()->startOfWeek()->toDateString();
+            $weekEnd = Carbon::now()->endOfWeek()->toDateString();
+
+            $weeklyUsage = DB::table('weekly_budget_usage')
+                ->where('department_id', $departmentId)
+                ->where('week_number', $currentWeek)
+                ->where('year', $currentYear)
+                ->first();
+
+            if ($weeklyUsage) {
+                DB::table('weekly_budget_usage')
+                    ->where('usage_id', $weeklyUsage->usage_id)
+                    ->update([
+                        'weekly_allocation' => $weeklyCeiling,
+                        'updated_at' => now()
+                    ]);
+            } else {
+                DB::table('weekly_budget_usage')->insert([
+                    'department_id' => $departmentId,
+                    'week_number' => $currentWeek,
+                    'year' => $currentYear,
+                    'week_start' => $weekStart,
+                    'week_end' => $weekEnd,
                     'weekly_allocation' => $weeklyCeiling,
+                    'amount_used' => 0,
+                    'created_at' => now(),
                     'updated_at' => now()
                 ]);
-        } else {
-            DB::table('weekly_budget_usage')->insert([
+            }
+
+            // Log history
+            $department = Department::find($departmentId);
+            BudgetHistory::create([
                 'department_id' => $departmentId,
-                'week_number' => $currentWeek,
-                'year' => $currentYear,
-                'week_start' => $weekStart,
-                'week_end' => $weekEnd,
-                'weekly_allocation' => $weeklyCeiling,
-                'amount_used' => 0,
-                'created_at' => now(),
-                'updated_at' => now()
+                'department_name' => $department->department_name ?? 'Unknown',
+                'action' => $action,
+                'previous_amount' => $oldAmount,
+                'added_amount' => $annualAmount - $oldAmount,
+                'new_amount' => $annualAmount,
+                'reason' => "Annual budget for FY {$fiscalYear}: ₱" . number_format($annualAmount, 2) . " (Weekly suggested: ₱" . number_format($weeklyCeiling, 2) . ")",
+                'user_id' => auth()->id(),
+                'user_name' => auth()->user()->full_name ?? 'System',
             ]);
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => $message,
+                'data' => [
+                    'budget_id' => $budget->budget_id,
+                    'department_id' => $budget->department_id,
+                    'fiscal_year' => $budget->fiscal_year,
+                    'annual_amount' => (float) $budget->annual_amount,
+                    'weekly_ceiling' => (float) $budget->weekly_ceiling,
+                    'weekly_suggested' => $this->computeWeeklySuggested($budget->annual_amount),  // ✅ NEW
+                    'suggested_ceiling' => $this->computeWeeklySuggested($budget->annual_amount),
+                    'used_amount' => (float) $budget->used_amount,
+                    'remaining_amount' => (float) $budget->remaining_amount,
+                    'status' => $budget->status,
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Error saving annual budget: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to save annual budget: ' . $e->getMessage()
+            ], 500);
         }
-
-        // Log history
-        $department = Department::find($departmentId);
-        BudgetHistory::create([
-            'department_id' => $departmentId,
-            'department_name' => $department->department_name ?? 'Unknown',
-            'action' => $action,
-            'previous_amount' => $oldAmount,
-            'added_amount' => $annualAmount - $oldAmount,
-            'new_amount' => $annualAmount,
-            'reason' => "Annual budget for FY {$fiscalYear}: ₱" . number_format($annualAmount, 2) . " (Weekly: ₱" . number_format($weeklyCeiling, 2) . ")",
-            'user_id' => auth()->id(),
-            'user_name' => auth()->user()->full_name ?? 'System',
-        ]);
-
-        DB::commit();
-
-        return response()->json([
-            'success' => true,
-            'message' => $message,
-            'data' => [
-                'budget_id' => $budget->budget_id,
-                'department_id' => $budget->department_id,
-                'fiscal_year' => $budget->fiscal_year,
-                'annual_amount' => (float) $budget->annual_amount,
-                'weekly_ceiling' => (float) $budget->weekly_ceiling,
-                'suggested_ceiling' => round($budget->annual_amount / 52, 2),
-                'used_amount' => (float) $budget->used_amount,
-                'remaining_amount' => (float) $budget->remaining_amount,
-                'status' => $budget->status,
-            ]
-        ]);
-
-    } catch (\Exception $e) {
-        DB::rollBack();
-        Log::error('Error saving annual budget: ' . $e->getMessage());
-        return response()->json([
-            'success' => false,
-            'message' => 'Failed to save annual budget: ' . $e->getMessage()
-        ], 500);
     }
-}
 
     /**
      * ✅ ADD additional budget to an existing annual budget (MO only)
@@ -419,11 +429,12 @@ public function store(Request $request)
                 ], 404);
             }
 
-            $oldAmount = $budget->annual_amount;
-            $newAmount = $oldAmount + $request->additional_amount;
-            
+            $oldAmount = (float) $budget->annual_amount;
+            $newAmount = $oldAmount + (float) $request->additional_amount;
+
             $budget->annual_amount = $newAmount;
-            $budget->weekly_ceiling = round($newAmount / 52, 2);
+            // ✅ Recompute weekly suggested from new annual
+            $budget->weekly_ceiling = $this->computeWeeklySuggested($newAmount);
             $budget->save();
 
             // Update policy
@@ -457,7 +468,8 @@ public function store(Request $request)
                     'previous_amount' => $oldAmount,
                     'added_amount' => $request->additional_amount,
                     'new_amount' => $newAmount,
-                    'weekly_ceiling' => $budget->weekly_ceiling,
+                    'weekly_ceiling' => (float) $budget->weekly_ceiling,
+                    'weekly_suggested' => $this->computeWeeklySuggested($newAmount),  // ✅ NEW
                 ]
             ]);
 
@@ -473,16 +485,17 @@ public function store(Request $request)
 
     /**
      * ✅ UPDATE annual budget (MO only)
+     * ✅ weekly_ceiling is auto-derived from annual_amount, ignores any client input.
      */
     public function update(Request $request, $id)
     {
         try {
             $budget = AnnualBudget::findOrFail($id);
-            
+
             $validator = Validator::make($request->all(), [
                 'annual_amount' => 'required|numeric|min:0',
-                'weekly_ceiling' => 'nullable|numeric|min:0',
                 'status' => 'nullable|in:active,closed',
+                // ✅ weekly_ceiling removed from validation
             ]);
 
             if ($validator->fails()) {
@@ -494,14 +507,15 @@ public function store(Request $request)
 
             DB::beginTransaction();
 
-            $oldAmount = $budget->annual_amount;
-            $budget->annual_amount = $request->annual_amount;
-            $budget->weekly_ceiling = $request->weekly_ceiling ?? round($request->annual_amount / 52, 2);
-            
+            $oldAmount = (float) $budget->annual_amount;
+            $budget->annual_amount = (float) $request->annual_amount;
+            // ✅ Always recompute — never trust client input
+            $budget->weekly_ceiling = $this->computeWeeklySuggested($request->annual_amount);
+
             if ($request->has('status')) {
                 $budget->status = $request->status;
             }
-            
+
             $budget->save();
 
             DeptBudgetPolicy::updateOrCreate(
@@ -520,6 +534,7 @@ public function store(Request $request)
                     'fiscal_year' => $budget->fiscal_year,
                     'annual_amount' => (float) $budget->annual_amount,
                     'weekly_ceiling' => (float) $budget->weekly_ceiling,
+                    'weekly_suggested' => $this->computeWeeklySuggested($budget->annual_amount),  // ✅ NEW
                     'used_amount' => (float) $budget->used_amount,
                     'remaining_amount' => (float) $budget->remaining_amount,
                     'status' => $budget->status,
@@ -538,6 +553,7 @@ public function store(Request $request)
 
     /**
      * ✅ BULK UPDATE annual budgets (MO only)
+     * ✅ weekly_ceiling is auto-derived per row.
      */
     public function bulkUpdate(Request $request)
     {
@@ -547,7 +563,7 @@ public function store(Request $request)
                 'budgets' => 'required|array',
                 'budgets.*.department_id' => 'required|exists:departments,department_id',
                 'budgets.*.annual_amount' => 'required|numeric|min:0',
-                'budgets.*.weekly_ceiling' => 'nullable|numeric|min:0',
+                // ✅ weekly_ceiling removed from validation
             ]);
 
             if ($validator->fails()) {
@@ -564,8 +580,9 @@ public function store(Request $request)
             DB::beginTransaction();
 
             foreach ($request->budgets as $budgetData) {
-                $annualAmount = $budgetData['annual_amount'];
-                $weeklyCeiling = $budgetData['weekly_ceiling'] ?? round($annualAmount / 52, 2);
+                $annualAmount = (float) $budgetData['annual_amount'];
+                // ✅ Always compute — ignore any client-sent weekly_ceiling
+                $weeklyCeiling = $this->computeWeeklySuggested($annualAmount);
                 $departmentId = $budgetData['department_id'];
 
                 $budget = AnnualBudget::updateOrCreate(
@@ -591,7 +608,8 @@ public function store(Request $request)
                     'department_id' => $budget->department_id,
                     'annual_amount' => (float) $budget->annual_amount,
                     'weekly_ceiling' => (float) $budget->weekly_ceiling,
-                    'suggested_ceiling' => round($budget->annual_amount / 52, 2),
+                    'weekly_suggested' => $this->computeWeeklySuggested($budget->annual_amount),  // ✅ NEW
+                    'suggested_ceiling' => $this->computeWeeklySuggested($budget->annual_amount),
                 ];
             }
 
@@ -668,17 +686,21 @@ public function store(Request $request)
                 'total_used' => $budgets->sum('used_amount'),
                 'total_remaining' => $budgets->sum('remaining_amount'),
                 'total_departments' => $budgets->count(),
-                'avg_weekly_ceiling' => $budgets->avg('weekly_ceiling'),
+                // ✅ Weekly is now always annual / 52
+                'avg_weekly_suggested' => $budgets->count() > 0
+                    ? round($budgets->sum('annual_amount') / 52, 2)
+                    : 0,
                 'departments' => $budgets->map(function ($budget) {
                     return [
                         'department_id' => $budget->department_id,
                         'department_name' => $budget->department->department_name,
                         'annual_amount' => (float) $budget->annual_amount,
-                        'weekly_ceiling' => (float) $budget->weekly_ceiling,
+                        'weekly_suggested' => $this->computeWeeklySuggested($budget->annual_amount),  // ✅ NEW
+                        'weekly_ceiling' => $this->computeWeeklySuggested($budget->annual_amount),   // legacy alias
                         'used_amount' => (float) $budget->used_amount,
                         'remaining_amount' => (float) $budget->remaining_amount,
-                        'utilization' => $budget->annual_amount > 0 
-                            ? round(($budget->used_amount / $budget->annual_amount) * 100, 2) 
+                        'utilization' => $budget->annual_amount > 0
+                            ? round(($budget->used_amount / $budget->annual_amount) * 100, 2)
                             : 0,
                     ];
                 }),
@@ -726,11 +748,11 @@ public function store(Request $request)
     {
         try {
             $year = $request->get('fiscal_year', date('Y'));
-            
+
             $departmentsWithBudget = AnnualBudget::where('fiscal_year', $year)
                 ->pluck('department_id')
                 ->toArray();
-                
+
             $departmentsWithoutBudget = Department::where('is_active', true)
                 ->whereNotIn('department_id', $departmentsWithBudget)
                 ->select('department_id', 'department_name', 'department_code')
@@ -756,7 +778,7 @@ public function store(Request $request)
     {
         try {
             $year = $request->get('fiscal_year', date('Y'));
-            
+
             $budget = AnnualBudget::with(['department'])
                 ->where('department_id', $departmentId)
                 ->where('fiscal_year', $year)
@@ -769,6 +791,8 @@ public function store(Request $request)
                 ], 404);
             }
 
+            $annualAmount = (float) $budget->annual_amount;
+
             return response()->json([
                 'success' => true,
                 'data' => [
@@ -776,14 +800,15 @@ public function store(Request $request)
                     'department_id' => $budget->department_id,
                     'department_name' => $budget->department->department_name,
                     'fiscal_year' => $budget->fiscal_year,
-                    'annual_amount' => (float) $budget->annual_amount,
-                    'weekly_ceiling' => (float) $budget->weekly_ceiling,
-                    'suggested_ceiling' => round($budget->annual_amount / 52, 2),
+                    'annual_amount' => $annualAmount,
+                    'weekly_ceiling' => $this->computeWeeklySuggested($annualAmount),       // legacy alias
+                    'weekly_suggested' => $this->computeWeeklySuggested($annualAmount),     // ✅ NEW canonical
+                    'suggested_ceiling' => $this->computeWeeklySuggested($annualAmount),
                     'used_amount' => (float) $budget->used_amount,
                     'remaining_amount' => (float) $budget->remaining_amount,
                     'status' => $budget->status,
-                    'utilization_percentage' => $budget->annual_amount > 0 
-                        ? round(($budget->used_amount / $budget->annual_amount) * 100, 2) 
+                    'utilization_percentage' => $annualAmount > 0
+                        ? round(($budget->used_amount / $annualAmount) * 100, 2)
                         : 0,
                 ]
             ]);

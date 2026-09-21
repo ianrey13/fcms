@@ -4,6 +4,8 @@
 // REMOVED: Manual refresh button
 // REMOVED: Add Budget button (kept inside dialog)
 // KEPT: Bulk Edit functionality
+// ✅ UPDATED: Weekly ceiling is now auto-computed (annual / 52)
+// ✅ REMOVED: Weekly Ceiling dialog + Clock action button
 // ============================================
 
 import React, { useState, useEffect, useMemo, useRef } from "react";
@@ -148,7 +150,7 @@ const FormField = ({
     className,
 }) => {
     const hasError = touched && error;
-    
+
     return (
         <div className={cn("space-y-1.5", className)}>
             <label className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300">
@@ -305,7 +307,7 @@ const BudgetAllocation = () => {
     const queryClient = useQueryClient();
     const { isConnected } = useRealtime();
     const toastIdRef = useRef(null);
-    
+
     const [selectedYear, setSelectedYear] = useState(2026);
     const [editingBudget, setEditingBudget] = useState(null);
     const [showEditDialog, setShowEditDialog] = useState(false);
@@ -319,27 +321,16 @@ const BudgetAllocation = () => {
     });
     const [formData, setFormData] = useState({
         annual_amount: "",
-        weekly_ceiling: "",
     });
     const [isBulkMode, setIsBulkMode] = useState(false);
     const [bulkData, setBulkData] = useState({});
     const [isFilterOpen, setIsFilterOpen] = useState(false);
-
-    const [showWeeklyDialog, setShowWeeklyDialog] = useState(false);
-    const [weeklyData, setWeeklyData] = useState({
-        department_id: "",
-        weekly_ceiling: "",
-        reason: "",
-    });
-    const [weeklyDepartment, setWeeklyDepartment] = useState(null);
 
     // Form validation states
     const [editErrors, setEditErrors] = useState({});
     const [editTouched, setEditTouched] = useState({});
     const [addErrors, setAddErrors] = useState({});
     const [addTouched, setAddTouched] = useState({});
-    const [weeklyErrors, setWeeklyErrors] = useState({});
-    const [weeklyTouched, setWeeklyTouched] = useState({});
 
     const [filters, setFilters] = useState({
         searchTerm: '',
@@ -349,7 +340,7 @@ const BudgetAllocation = () => {
     });
 
     // ============================================
-    // ✅ AUTO-REFRESH - No manual refresh needed
+    // ✅ AUTO-REFRESH
     // ============================================
 
     useAutoRefresh(
@@ -445,34 +436,6 @@ const BudgetAllocation = () => {
         },
     });
 
-    const updateWeeklyMutation = useMutation({
-        mutationFn: async ({ departmentId, data }) => {
-            const response = await api.put(`/mayors-office/budget/weekly/${departmentId}`, {
-                weekly_allocation: data.weekly_ceiling,
-                reason: data.reason || "Weekly ceiling update",
-            });
-            return response.data;
-        },
-        onSuccess: () => {
-            if (toastIdRef.current) toast.dismiss(toastIdRef.current);
-            toastIdRef.current = toast.success("Weekly ceiling updated successfully");
-            setShowWeeklyDialog(false);
-            setWeeklyData({
-                department_id: "",
-                weekly_ceiling: "",
-                reason: "",
-            });
-            setWeeklyDepartment(null);
-            setWeeklyErrors({});
-            setWeeklyTouched({});
-            queryClient.invalidateQueries(["annual-budgets"]);
-        },
-        onError: (error) => {
-            if (toastIdRef.current) toast.dismiss(toastIdRef.current);
-            toastIdRef.current = toast.error(error.response?.data?.message || "Failed to update weekly ceiling");
-        },
-    });
-
     const addBudgetMutation = useMutation({
         mutationFn: async (data) => {
             const response = await api.post("/mayors-office/annual-budgets/add", {
@@ -505,7 +468,6 @@ const BudgetAllocation = () => {
             const budgets = Object.entries(bulkData).map(([departmentId, data]) => ({
                 department_id: parseInt(departmentId),
                 annual_amount: parseFloat(data.annual_amount) || 0,
-                weekly_ceiling: parseFloat(data.weekly_ceiling) || 0,
             }));
 
             const response = await api.post("/mayors-office/annual-budgets/bulk", {
@@ -532,18 +494,18 @@ const BudgetAllocation = () => {
     // ============================================
 
     const budgets = (() => {
-    const raw = budgetData?.data;
-    if (Array.isArray(raw)) return raw;
-    if (raw && Array.isArray(raw.data)) return raw.data;
-    if (budgetData && Array.isArray(budgetData)) return budgetData;
-    // Fallback: check for common keys
-    const keys = ['budgets', 'items', 'results', 'records'];
-    for (const k of keys) {
-        if (Array.isArray(budgetData?.[k])) return budgetData[k];
-        if (Array.isArray(raw?.[k])) return raw[k];
-    }
-    return [];
-})();
+        const raw = budgetData?.data;
+        if (Array.isArray(raw)) return raw;
+        if (raw && Array.isArray(raw.data)) return raw.data;
+        if (budgetData && Array.isArray(budgetData)) return budgetData;
+        const keys = ['budgets', 'items', 'results', 'records'];
+        for (const k of keys) {
+            if (Array.isArray(budgetData?.[k])) return budgetData[k];
+            if (Array.isArray(raw?.[k])) return raw[k];
+        }
+        return [];
+    })();
+
     const summary = budgetData?.summary || {};
     const fiscalYear = budgetData?.fiscal_year || {};
 
@@ -554,6 +516,12 @@ const BudgetAllocation = () => {
             currency: "PHP",
             minimumFractionDigits: 2,
         }).format(amount);
+    };
+
+    // ✅ Helper: compute weekly suggested on the fly
+    const weeklySuggested = (annualAmount) => {
+        const amount = parseFloat(annualAmount) || 0;
+        return amount > 0 ? amount / 52 : 0;
     };
 
     const getStatusBadge = (status) => {
@@ -582,60 +550,6 @@ const BudgetAllocation = () => {
         if (Object.keys(newErrors).length > 0) {
             const errorMessages = Object.entries(newErrors).map(([field, msg]) => {
                 const labels = { annual_amount: 'Annual Budget' };
-                const label = labels[field] || field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-                return `• ${label}: ${msg}`;
-            });
-
-            if (toastIdRef.current) toast.dismiss(toastIdRef.current);
-            toastIdRef.current = toast.error(
-                <div className="space-y-1">
-                    <div className="font-semibold text-red-600 dark:text-red-400">Please fix the following errors:</div>
-                    <div className="text-sm text-red-500 dark:text-red-300 space-y-0.5">
-                        {errorMessages.map((msg, i) => (
-                            <div key={i}>{msg}</div>
-                        ))}
-                    </div>
-                </div>,
-                { duration: 5000 }
-            );
-
-            const firstField = Object.keys(newErrors)[0];
-            if (firstField) {
-                const element = document.querySelector(`[name="${firstField}"]`) || document.getElementById(firstField);
-                if (element) setTimeout(() => element.focus(), 100);
-            }
-            return false;
-        }
-        return true;
-    };
-
-    const validateWeeklyBudget = () => {
-        const newErrors = {};
-        const newTouched = {};
-
-        if (!weeklyData.department_id) {
-            newErrors.department_id = "Department is required";
-            newTouched.department_id = true;
-        }
-        if (!weeklyData.weekly_ceiling || parseFloat(weeklyData.weekly_ceiling) <= 0) {
-            newErrors.weekly_ceiling = "Weekly ceiling must be greater than 0";
-            newTouched.weekly_ceiling = true;
-        }
-        if (!weeklyData.reason || weeklyData.reason.trim().length < 3) {
-            newErrors.reason = "Reason must be at least 3 characters";
-            newTouched.reason = true;
-        }
-
-        setWeeklyErrors(newErrors);
-        setWeeklyTouched(prev => ({ ...prev, ...newTouched }));
-
-        if (Object.keys(newErrors).length > 0) {
-            const errorMessages = Object.entries(newErrors).map(([field, msg]) => {
-                const labels = {
-                    department_id: 'Department',
-                    weekly_ceiling: 'Weekly Ceiling',
-                    reason: 'Reason'
-                };
                 const label = labels[field] || field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
                 return `• ${label}: ${msg}`;
             });
@@ -721,36 +635,10 @@ const BudgetAllocation = () => {
     // HANDLERS
     // ============================================
 
-    const openWeeklyDialog = (budget) => {
-        setWeeklyDepartment(budget);
-        setWeeklyData({
-            department_id: budget.department_id.toString(),
-            weekly_ceiling: budget.weekly_ceiling?.toString() || "",
-            reason: "",
-        });
-        setWeeklyErrors({});
-        setWeeklyTouched({});
-        setShowWeeklyDialog(true);
-    };
-
-    const handleWeeklyUpdate = () => {
-        if (toastIdRef.current) toast.dismiss(toastIdRef.current);
-        if (!validateWeeklyBudget()) return;
-
-        updateWeeklyMutation.mutate({
-            departmentId: parseInt(weeklyData.department_id),
-            data: {
-                weekly_ceiling: parseFloat(weeklyData.weekly_ceiling),
-                reason: weeklyData.reason || "Weekly ceiling update",
-            },
-        });
-    };
-
     const handleEdit = (budget) => {
         setEditingBudget(budget);
         setFormData({
             annual_amount: budget.annual_amount?.toString() || "",
-            weekly_ceiling: budget.weekly_ceiling?.toString() || "",
         });
         setEditErrors({});
         setEditTouched({});
@@ -788,7 +676,6 @@ const BudgetAllocation = () => {
         setBulkData((prev) => {
             const current = prev[departmentId] || {
                 annual_amount: "",
-                weekly_ceiling: "",
             };
             return {
                 ...prev,
@@ -819,7 +706,7 @@ const BudgetAllocation = () => {
 
         if (filters.searchTerm) {
             const search = filters.searchTerm.toLowerCase();
-            filtered = filtered.filter(b => 
+            filtered = filtered.filter(b =>
                 b.department_name?.toLowerCase().includes(search) ||
                 b.department_code?.toLowerCase().includes(search)
             );
@@ -881,7 +768,6 @@ const BudgetAllocation = () => {
             budgets.forEach((budget) => {
                 initialBulk[budget.department_id] = {
                     annual_amount: budget.annual_amount?.toString() || "",
-                    weekly_ceiling: budget.weekly_ceiling?.toString() || "",
                 };
             });
             setBulkData(initialBulk);
@@ -950,7 +836,7 @@ const BudgetAllocation = () => {
                                         Annual Budget Allocation
                                     </h1>
                                     <p className="text-sm text-slate-500 dark:text-slate-400">
-                                        Set annual fuel budget and weekly ceiling per department
+                                        Set annual fuel budget per department — weekly is auto-computed
                                         <span className="ml-2 text-xs opacity-70">{connectionStatus}</span>
                                         {isRealTime && (
                                             <span className="ml-2 text-xs text-emerald-400 animate-pulse">
@@ -963,8 +849,6 @@ const BudgetAllocation = () => {
                         </div>
                     </div>
                     <div className="flex flex-wrap gap-3">
-                        {/* ❌ REFRESH BUTTON REMOVED - Auto-refresh handles everything */}
-                        {/* ❌ ADD BUDGET BUTTON REMOVED - Use the Plus icon in table or dialog */}
                         {budgets.length > 0 && (
                             <Button
                                 variant={isBulkMode ? "default" : "outline"}
@@ -1122,9 +1006,9 @@ const BudgetAllocation = () => {
                     </div>
 
                     {/* TABLE HEADER */}
-                    <div 
+                    <div
                         className="sticky top-0 z-40 bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700"
-                        style={{ 
+                        style={{
                             position: 'sticky',
                             top: 0,
                             zIndex: 40
@@ -1169,7 +1053,7 @@ const BudgetAllocation = () => {
                                             min-w-[120px]
                                         "
                                     >
-                                        Weekly Ceiling
+                                        Weekly Suggested
                                     </TableHead>
                                     <TableHead
                                         className="
@@ -1195,28 +1079,6 @@ const BudgetAllocation = () => {
                                     </TableHead>
                                     <TableHead
                                         className="
-                                            text-right
-                                            font-semibold
-                                            text-slate-600 dark:text-slate-400
-                                            text-xs uppercase tracking-wider
-                                            min-w-[100px]
-                                        "
-                                    >
-                                        Weekly Used
-                                    </TableHead>
-                                    <TableHead
-                                        className="
-                                            text-right
-                                            font-semibold
-                                            text-slate-600 dark:text-slate-400
-                                            text-xs uppercase tracking-wider
-                                            min-w-[120px]
-                                        "
-                                    >
-                                        Weekly Remaining
-                                    </TableHead>
-                                    <TableHead
-                                        className="
                                             text-center
                                             font-semibold
                                             text-slate-600 dark:text-slate-400
@@ -1234,7 +1096,7 @@ const BudgetAllocation = () => {
                                             font-semibold
                                             text-slate-600 dark:text-slate-400
                                             text-xs uppercase tracking-wider
-                                            min-w-[200px]
+                                            min-w-[160px]
                                             border-l border-slate-200 dark:border-slate-700
                                         "
                                     >
@@ -1282,14 +1144,8 @@ const BudgetAllocation = () => {
 
                                         const isNew = !budget.has_budget;
 
-                                        const weeklyUsedPercent =
-                                            budget.weekly_ceiling > 0
-                                                ? Math.round(
-                                                    ((budget.weekly_used || 0) /
-                                                        budget.weekly_ceiling) *
-                                                    100
-                                                )
-                                                : 0;
+                                        // ✅ Compute weekly suggested on the fly
+                                        const suggested = weeklySuggested(budget.annual_amount);
 
                                         return (
                                             <TableRow
@@ -1348,54 +1204,14 @@ const BudgetAllocation = () => {
                                                     )}
                                                 </TableCell>
 
+                                                {/* ✅ NEW: Weekly Suggested column */}
                                                 <TableCell className="text-right">
-                                                    {isBulkMode ? (
-                                                        <Input
-                                                            type="number"
-                                                            step="0.01"
-                                                            min="0"
-                                                            value={
-                                                                isEditing
-                                                                    ? bulkData[
-                                                                        budget.department_id
-                                                                    ]?.weekly_ceiling
-                                                                    : ""
-                                                            }
-                                                            onChange={(e) =>
-                                                                handleBulkChange(
-                                                                    budget.department_id,
-                                                                    "weekly_ceiling",
-                                                                    e.target.value
-                                                                )
-                                                            }
-                                                            className="w-32 ml-auto text-right dark:bg-slate-900 dark:border-slate-700 dark:text-white"
-                                                            placeholder="Auto"
-                                                        />
-                                                    ) : (
-                                                        <div>
-                                                            <span
-                                                                className={cn(
-                                                                    "font-medium",
-                                                                    (budget.weekly_used || 0) > 0
-                                                                        ? "text-orange-600 dark:text-orange-400"
-                                                                        : "text-slate-700 dark:text-slate-300"
-                                                                )}
-                                                            >
-                                                                {formatCurrency(
-                                                                    budget.weekly_ceiling || 0
-                                                                )}
-                                                            </span>
-
-                                                            {budget.suggested_ceiling > 0 && (
-                                                                <div className="text-xs text-slate-400 dark:text-slate-500">
-                                                                    Suggested:{" "}
-                                                                    {formatCurrency(
-                                                                        budget.suggested_ceiling
-                                                                    )}
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    )}
+                                                    <span className="font-medium text-purple-600 dark:text-purple-400">
+                                                        {formatCurrency(suggested)}
+                                                    </span>
+                                                    <div className="text-[10px] text-slate-400 dark:text-slate-500">
+                                                        Annual ÷ 52
+                                                    </div>
                                                 </TableCell>
 
                                                 <TableCell className="text-right">
@@ -1404,86 +1220,19 @@ const BudgetAllocation = () => {
                                                             budget.used_amount || 0
                                                         )}
                                                     </span>
-
-                                                    {(budget.total_used_this_year || 0) > 0 && (
-                                                        <div className="text-xs text-slate-400 dark:text-slate-500">
-                                                            Total:{" "}
-                                                            {formatCurrency(
-                                                                budget.total_used_this_year
-                                                            )}
-                                                        </div>
-                                                    )}
                                                 </TableCell>
 
                                                 <TableCell className="text-right">
-                                                    <span className="font-medium text-emerald-600 dark:text-emerald-400">
+                                                    <span className={cn(
+                                                        "font-medium",
+                                                        (budget.remaining_amount || 0) < 0
+                                                            ? "text-red-600 dark:text-red-400"
+                                                            : "text-emerald-600 dark:text-emerald-400"
+                                                    )}>
                                                         {formatCurrency(
                                                             budget.remaining_amount || 0
                                                         )}
                                                     </span>
-
-                                                    {budget.remaining_after_weekly !==
-                                                        undefined && (
-                                                        <div className="text-xs text-slate-400 dark:text-slate-500">
-                                                            After weekly:{" "}
-                                                            {formatCurrency(
-                                                                budget.remaining_after_weekly
-                                                            )}
-                                                        </div>
-                                                    )}
-                                                </TableCell>
-
-                                                <TableCell className="text-right">
-                                                    <span
-                                                        className={cn(
-                                                            "font-medium",
-                                                            (budget.weekly_used || 0) > 0
-                                                                ? "text-red-600 dark:text-red-400"
-                                                                : "text-slate-400"
-                                                        )}
-                                                    >
-                                                        {formatCurrency(
-                                                            budget.weekly_used || 0
-                                                        )}
-                                                    </span>
-
-                                                    {(budget.weekly_used || 0) > 0 &&
-                                                        budget.weekly_ceiling > 0 && (
-                                                            <div className="text-xs text-slate-400 dark:text-slate-500">
-                                                                {weeklyUsedPercent}% used
-                                                            </div>
-                                                        )}
-                                                </TableCell>
-
-                                                <TableCell className="text-right">
-                                                    <span
-                                                        className={cn(
-                                                            "font-medium",
-                                                            (budget.weekly_remaining || 0) <= 0
-                                                                ? "text-red-600 dark:text-red-400"
-                                                                : (budget.weekly_remaining ||
-                                                                    0) <
-                                                                    (budget.weekly_ceiling || 0) *
-                                                                        0.2
-                                                                    ? "text-yellow-600 dark:text-yellow-400"
-                                                                    : "text-emerald-600 dark:text-emerald-400"
-                                                        )}
-                                                    >
-                                                        {formatCurrency(
-                                                            budget.weekly_remaining || 0
-                                                        )}
-                                                    </span>
-
-                                                    {(budget.weekly_remaining || 0) > 0 &&
-                                                        budget.weekly_ceiling > 0 && (
-                                                            <div className="text-xs text-slate-400 dark:text-slate-500">
-                                                                {formatCurrency(
-                                                                    budget.weekly_ceiling -
-                                                                        budget.weekly_remaining
-                                                                )}{" "}
-                                                                used
-                                                            </div>
-                                                        )}
                                                 </TableCell>
 
                                                 <TableCell className="text-center">
@@ -1513,18 +1262,6 @@ const BudgetAllocation = () => {
 
                                                         {!isBulkMode && (
                                                             <>
-                                                                <Button
-                                                                    variant="ghost"
-                                                                    size="sm"
-                                                                    onClick={() =>
-                                                                        openWeeklyDialog(budget)
-                                                                    }
-                                                                    className="text-purple-600 hover:text-purple-700 hover:bg-purple-50 dark:text-purple-400 dark:hover:text-purple-300 dark:hover:bg-purple-950/30 h-9 w-9 p-0 rounded-lg transition-all duration-200"
-                                                                    title="Set Weekly Ceiling"
-                                                                >
-                                                                    <Clock className="h-4 w-4" />
-                                                                </Button>
-
                                                                 <Button
                                                                     variant="ghost"
                                                                     size="sm"
@@ -1655,16 +1392,21 @@ const BudgetAllocation = () => {
                             />
                         </FormField>
 
+                        {/* ✅ Auto-computed weekly suggested — read-only info */}
                         <div className="bg-purple-50 dark:bg-purple-950/30 rounded-xl p-3 border border-purple-200 dark:border-purple-800">
-                            <p className="text-xs text-purple-700 dark:text-purple-300 flex items-center gap-1">
-                                <Info className="h-3 w-3 text-purple-500 dark:text-purple-400" />
-                                Current Weekly Ceiling:{" "}
-                                <span className="font-semibold text-purple-800 dark:text-purple-200">
-                                    {formatCurrency(editingBudget?.weekly_ceiling || 0)}
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                    <Clock className="h-4 w-4 text-purple-500 dark:text-purple-400" />
+                                    <span className="text-xs font-medium text-purple-700 dark:text-purple-300">
+                                        Weekly Suggested
+                                    </span>
+                                </div>
+                                <span className="text-sm font-bold text-purple-700 dark:text-purple-300">
+                                    {formatCurrency(weeklySuggested(formData.annual_amount))}
                                 </span>
-                            </p>
-                            <p className="text-xs text-purple-600 dark:text-purple-400 mt-1">
-                                💡 To change weekly ceiling, use the <span className="font-medium">Clock icon</span> in the actions column
+                            </div>
+                            <p className="text-[10px] text-purple-600 dark:text-purple-400 mt-1">
+                                Auto-computed: Annual Budget ÷ 52 weeks
                             </p>
                         </div>
                     </div>
@@ -1698,215 +1440,6 @@ const BudgetAllocation = () => {
                 </DialogContent>
             </Dialog>
 
-            {/* ========== WEEKLY CEILING DIALOG ========== */}
-            <Dialog open={showWeeklyDialog} onOpenChange={setShowWeeklyDialog}>
-                <DialogContent className="dark:bg-slate-800 dark:border-slate-700 max-w-md">
-                    <DialogHeader>
-                        <DialogTitle className="flex items-center gap-2 text-slate-900 dark:text-white">
-                            <div className="p-2 rounded-xl bg-purple-500/10">
-                                <Clock className="h-5 w-5 text-purple-600 dark:text-purple-400" />
-                            </div>
-                            Set Weekly Ceiling
-                        </DialogTitle>
-                        <DialogDescription className="dark:text-slate-400">
-                            Set weekly fuel ceiling for {weeklyDepartment?.department_name}
-                        </DialogDescription>
-                    </DialogHeader>
-
-                    <div className="space-y-4">
-                        <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-4 border border-slate-200 dark:border-slate-700">
-                            <div className="grid grid-cols-2 gap-2 text-sm">
-                                <div>
-                                    <p className="text-xs text-slate-500 dark:text-slate-400">Department</p>
-                                    <p className="font-semibold text-slate-900 dark:text-white">
-                                        {weeklyDepartment?.department_name}
-                                    </p>
-                                </div>
-                                <div>
-                                    <p className="text-xs text-slate-500 dark:text-slate-400">Code</p>
-                                    <p className="font-semibold text-slate-900 dark:text-white">
-                                        {weeklyDepartment?.department_code}
-                                    </p>
-                                </div>
-                                <div>
-                                    <p className="text-xs text-slate-500 dark:text-slate-400">Annual Budget</p>
-                                    <p className="font-semibold text-blue-600 dark:text-blue-400">
-                                        {formatCurrency(weeklyDepartment?.annual_amount)}
-                                    </p>
-                                </div>
-                                <div>
-                                    <p className="text-xs text-slate-500 dark:text-slate-400">Suggested Ceiling</p>
-                                    <p className="font-semibold text-purple-600 dark:text-purple-400">
-                                        {formatCurrency(weeklyDepartment?.suggested_ceiling || 0)}
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-
-                        <FormField
-                            label="Weekly Fueling Ceiling (₱)"
-                            icon={Clock}
-                            required
-                            error={weeklyErrors.weekly_ceiling}
-                            touched={weeklyTouched.weekly_ceiling}
-                        >
-                            <Input
-                                id="weekly_ceiling"
-                                name="weekly_ceiling"
-                                type="number"
-                                step="0.01"
-                                min="0"
-                                value={weeklyData.weekly_ceiling}
-                                onChange={(e) => {
-                                    setWeeklyData({
-                                        ...weeklyData,
-                                        weekly_ceiling: e.target.value,
-                                    });
-                                    if (weeklyErrors.weekly_ceiling) {
-                                        setWeeklyErrors(prev => ({ ...prev, weekly_ceiling: "" }));
-                                    }
-                                }}
-                                onBlur={() => setWeeklyTouched(prev => ({ ...prev, weekly_ceiling: true }))}
-                                className="mt-1.5 dark:bg-slate-900 dark:border-slate-700 dark:text-white"
-                                placeholder="Enter weekly ceiling"
-                            />
-                        </FormField>
-
-                        <div className="flex items-center gap-2 mt-1">
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    if (weeklyDepartment?.suggested_ceiling) {
-                                        setWeeklyData({
-                                            ...weeklyData,
-                                            weekly_ceiling: weeklyDepartment.suggested_ceiling.toString(),
-                                        });
-                                        if (weeklyErrors.weekly_ceiling) {
-                                            setWeeklyErrors(prev => ({ ...prev, weekly_ceiling: "" }));
-                                        }
-                                    }
-                                }}
-                                className="text-xs text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 underline"
-                            >
-                                Use suggested ({formatCurrency(weeklyDepartment?.suggested_ceiling || 0)})
-                            </button>
-                            <span className="text-xs text-slate-400 dark:text-slate-500">|</span>
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    if (weeklyDepartment?.weekly_ceiling) {
-                                        setWeeklyData({
-                                            ...weeklyData,
-                                            weekly_ceiling: weeklyDepartment.weekly_ceiling.toString(),
-                                        });
-                                        if (weeklyErrors.weekly_ceiling) {
-                                            setWeeklyErrors(prev => ({ ...prev, weekly_ceiling: "" }));
-                                        }
-                                    }
-                                }}
-                                className="text-xs text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 underline"
-                            >
-                                Reset to current
-                            </button>
-                        </div>
-
-                        <FormField
-                            label="Reason"
-                            icon={Info}
-                            required
-                            error={weeklyErrors.reason}
-                            touched={weeklyTouched.reason}
-                        >
-                            <Input
-                                id="reason"
-                                name="reason"
-                                type="text"
-                                value={weeklyData.reason}
-                                onChange={(e) => {
-                                    setWeeklyData({
-                                        ...weeklyData,
-                                        reason: e.target.value,
-                                    });
-                                    if (weeklyErrors.reason) {
-                                        setWeeklyErrors(prev => ({ ...prev, reason: "" }));
-                                    }
-                                }}
-                                onBlur={() => setWeeklyTouched(prev => ({ ...prev, reason: true }))}
-                                className="mt-1.5 dark:bg-slate-900 dark:border-slate-700 dark:text-white"
-                                placeholder="e.g., Adjust weekly fuel allocation"
-                            />
-                        </FormField>
-
-                        {weeklyData.weekly_ceiling && weeklyDepartment && (
-                            <div className="bg-blue-50 dark:bg-blue-950/30 rounded-xl p-3 border border-blue-200 dark:border-blue-800">
-                                <p className="text-xs font-medium text-blue-700 dark:text-blue-300 mb-1">📊 Impact:</p>
-                                <div className="grid grid-cols-2 gap-2 text-xs">
-                                    <div>
-                                        <span className="text-slate-500 dark:text-slate-400">New Ceiling:</span>
-                                        <span className="font-semibold text-purple-600 dark:text-purple-400 ml-1">
-                                            {formatCurrency(parseFloat(weeklyData.weekly_ceiling) || 0)}
-                                        </span>
-                                    </div>
-                                    <div>
-                                        <span className="text-slate-500 dark:text-slate-400">Previous:</span>
-                                        <span className="font-semibold text-slate-600 dark:text-slate-400 ml-1">
-                                            {formatCurrency(weeklyDepartment?.weekly_ceiling || 0)}
-                                        </span>
-                                    </div>
-                                    <div className="col-span-2">
-                                        <span className="text-slate-500 dark:text-slate-400">Change:</span>
-                                        <span className={cn(
-                                            "font-semibold ml-1",
-                                            parseFloat(weeklyData.weekly_ceiling) > (weeklyDepartment?.weekly_ceiling || 0)
-                                                ? 'text-emerald-600 dark:text-emerald-400'
-                                                : parseFloat(weeklyData.weekly_ceiling) < (weeklyDepartment?.weekly_ceiling || 0)
-                                                    ? 'text-red-600 dark:text-red-400'
-                                                    : 'text-slate-600 dark:text-slate-400'
-                                        )}>
-                                            {formatCurrency(
-                                                (parseFloat(weeklyData.weekly_ceiling) || 0) - (weeklyDepartment?.weekly_ceiling || 0)
-                                            )}
-                                        </span>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-
-                    <DialogFooter className="mt-6">
-                        <Button
-                            variant="outline"
-                            onClick={() => {
-                                setShowWeeklyDialog(false);
-                                setWeeklyData({
-                                    department_id: "",
-                                    weekly_ceiling: "",
-                                    reason: "",
-                                });
-                                setWeeklyDepartment(null);
-                                setWeeklyErrors({});
-                                setWeeklyTouched({});
-                            }}
-                            className="dark:border-slate-700 dark:text-slate-300"
-                        >
-                            Cancel
-                        </Button>
-                        <Button
-                            onClick={handleWeeklyUpdate}
-                            disabled={updateWeeklyMutation.isPending}
-                            className="bg-purple-600 hover:bg-purple-700 text-white"
-                        >
-                            {updateWeeklyMutation.isPending ? (
-                                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                            ) : (
-                                <Clock className="h-4 w-4 mr-2" />
-                            )}
-                            Update Weekly Ceiling
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
-
             {/* ========== ADD BUDGET DIALOG ========== */}
             <Dialog open={showAddBudgetDialog} onOpenChange={setShowAddBudgetDialog}>
                 <DialogContent className="dark:bg-slate-800 dark:border-slate-700 max-w-md">
@@ -1930,7 +1463,7 @@ const BudgetAllocation = () => {
                                     <p>Adding budget will:</p>
                                     <ul className="list-disc list-inside mt-1 space-y-1">
                                         <li>Increase the annual budget of the department</li>
-                                        <li>Automatically update the weekly ceiling suggestion</li>
+                                        <li>Automatically update the weekly suggested amount</li>
                                         <li>Be recorded in the budget history</li>
                                     </ul>
                                 </div>
@@ -2038,7 +1571,7 @@ const BudgetAllocation = () => {
                                     {formatCurrency(parseFloat(addBudgetData.additional_amount) || 0)}
                                 </p>
                                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                                    New suggested weekly ceiling: {formatCurrency((parseFloat(addBudgetData.additional_amount) || 0) / 52)}
+                                    Weekly suggested increases by: {formatCurrency((parseFloat(addBudgetData.additional_amount) || 0) / 52)}
                                 </p>
                             </div>
                         )}
@@ -2121,159 +1654,79 @@ const BudgetAllocation = () => {
                                 </div>
                             </div>
 
-                            <div className="grid grid-cols-3 gap-3">
+                            {/* ✅ Annual + Weekly Suggested */}
+                            <div className="grid grid-cols-2 gap-3">
                                 <div className="bg-blue-50 dark:bg-blue-950/30 rounded-xl p-3 text-center border border-blue-200 dark:border-blue-800">
                                     <p className="text-xs text-blue-600 dark:text-blue-400 font-medium">Annual Budget</p>
                                     <p className="text-lg font-bold text-blue-600 dark:text-blue-400">
                                         {formatCurrency(viewingBudget.annual_amount)}
                                     </p>
                                 </div>
+                                <div className="bg-purple-50 dark:bg-purple-950/30 rounded-xl p-3 text-center border border-purple-200 dark:border-purple-800">
+                                    <p className="text-xs text-purple-600 dark:text-purple-400 font-medium">Weekly Suggested</p>
+                                    <p className="text-lg font-bold text-purple-600 dark:text-purple-400">
+                                        {formatCurrency(weeklySuggested(viewingBudget.annual_amount))}
+                                    </p>
+                                    <p className="text-[10px] text-purple-500 dark:text-purple-400">
+                                        Annual ÷ 52
+                                    </p>
+                                </div>
+                            </div>
+
+                            {/* ✅ Used + Remaining */}
+                            <div className="grid grid-cols-2 gap-3">
                                 <div className="bg-yellow-50 dark:bg-yellow-950/30 rounded-xl p-3 text-center border border-yellow-200 dark:border-yellow-800">
                                     <p className="text-xs text-yellow-600 dark:text-yellow-400 font-medium">Total Used</p>
                                     <p className="text-lg font-bold text-yellow-600 dark:text-yellow-400">
                                         {formatCurrency(viewingBudget.used_amount || 0)}
                                     </p>
-                                    {(viewingBudget.total_used_this_year || 0) > 0 && (
-                                        <p className="text-xs text-yellow-500 dark:text-yellow-400">
-                                            Total: {formatCurrency(viewingBudget.total_used_this_year)}
-                                        </p>
-                                    )}
-                                </div>
-                                <div className="bg-emerald-50 dark:bg-emerald-950/30 rounded-xl p-3 text-center border border-emerald-200 dark:border-emerald-800">
-                                    <p className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">Annual Remaining</p>
-                                    <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400">
-                                        {formatCurrency(viewingBudget.remaining_amount || 0)}
-                                    </p>
-                                    {viewingBudget.remaining_after_weekly !== undefined && (
-                                        <p className="text-xs text-emerald-500 dark:text-emerald-400">
-                                            After weekly: {formatCurrency(viewingBudget.remaining_after_weekly)}
-                                        </p>
-                                    )}
-                                </div>
-                            </div>
-
-                            <div className="grid grid-cols-3 gap-3">
-                                <div className="bg-purple-50 dark:bg-purple-950/30 rounded-xl p-3 text-center border border-purple-200 dark:border-purple-800">
-                                    <p className="text-xs text-purple-600 dark:text-purple-400 font-medium">Weekly Ceiling</p>
-                                    <p className="text-lg font-bold text-purple-600 dark:text-purple-400">
-                                        {formatCurrency(viewingBudget.weekly_ceiling || 0)}
-                                    </p>
-                                    {viewingBudget.suggested_ceiling > 0 && (
-                                        <p className="text-xs text-purple-500 dark:text-purple-400">
-                                            Suggested: {formatCurrency(viewingBudget.suggested_ceiling)}
-                                        </p>
-                                    )}
-                                </div>
-                                <div className="bg-orange-50 dark:bg-orange-950/30 rounded-xl p-3 text-center border border-orange-200 dark:border-orange-800">
-                                    <p className="text-xs text-orange-600 dark:text-orange-400 font-medium">Weekly Used</p>
-                                    <p className="text-lg font-bold text-orange-600 dark:text-orange-400">
-                                        {formatCurrency(viewingBudget.weekly_used || 0)}
-                                    </p>
-                                    {viewingBudget.weekly_ceiling > 0 && (
-                                        <p className="text-xs text-orange-500 dark:text-orange-400">
-                                            {Math.round(((viewingBudget.weekly_used || 0) / viewingBudget.weekly_ceiling) * 100)}% used
-                                        </p>
-                                    )}
                                 </div>
                                 <div className={cn(
                                     "rounded-xl p-3 text-center border",
-                                    (viewingBudget.weekly_remaining || 0) <= 0
+                                    (viewingBudget.remaining_amount || 0) < 0
                                         ? "bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800"
-                                        : (viewingBudget.weekly_remaining || 0) < (viewingBudget.weekly_ceiling || 0) * 0.2
-                                            ? "bg-yellow-50 dark:bg-yellow-950/30 border-yellow-200 dark:border-yellow-800"
-                                            : "bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800"
+                                        : "bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800"
                                 )}>
                                     <p className={cn(
                                         "text-xs font-medium",
-                                        (viewingBudget.weekly_remaining || 0) <= 0
+                                        (viewingBudget.remaining_amount || 0) < 0
                                             ? "text-red-600 dark:text-red-400"
-                                            : (viewingBudget.weekly_remaining || 0) < (viewingBudget.weekly_ceiling || 0) * 0.2
-                                                ? "text-yellow-600 dark:text-yellow-400"
-                                                : "text-emerald-600 dark:text-emerald-400"
+                                            : "text-emerald-600 dark:text-emerald-400"
                                     )}>
-                                        Weekly Remaining
+                                        Annual Remaining
                                     </p>
                                     <p className={cn(
                                         "text-lg font-bold",
-                                        (viewingBudget.weekly_remaining || 0) <= 0
+                                        (viewingBudget.remaining_amount || 0) < 0
                                             ? "text-red-600 dark:text-red-400"
-                                            : (viewingBudget.weekly_remaining || 0) < (viewingBudget.weekly_ceiling || 0) * 0.2
-                                                ? "text-yellow-600 dark:text-yellow-400"
-                                                : "text-emerald-600 dark:text-emerald-400"
+                                            : "text-emerald-600 dark:text-emerald-400"
                                     )}>
-                                        {formatCurrency(viewingBudget.weekly_remaining || 0)}
+                                        {formatCurrency(viewingBudget.remaining_amount || 0)}
                                     </p>
-                                    {(viewingBudget.weekly_remaining || 0) > 0 && (
-                                        <p className="text-xs text-slate-500 dark:text-slate-400">
-                                            {formatCurrency((viewingBudget.weekly_ceiling || 0) - (viewingBudget.weekly_remaining || 0))} used
-                                        </p>
-                                    )}
-                                    {(viewingBudget.weekly_remaining || 0) <= 0 && (
-                                        <p className="text-xs text-red-500 dark:text-red-400">⚠️ Exceeded!</p>
-                                    )}
                                 </div>
                             </div>
 
-                            <div className="space-y-3">
-                                <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-3 border border-slate-200 dark:border-slate-700">
-                                    <div className="flex justify-between items-center">
-                                        <span className="text-xs text-slate-500 dark:text-slate-400">Annual Utilization</span>
-                                        <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                                            {viewingBudget.utilization_percentage || 0}%
-                                        </span>
-                                    </div>
-                                    <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2 mt-1">
-                                        <div
-                                            className={cn(
-                                                "h-2 rounded-full transition-all",
-                                                (viewingBudget.utilization_percentage || 0) > 80
-                                                    ? "bg-red-500"
-                                                    : (viewingBudget.utilization_percentage || 0) > 50
-                                                        ? "bg-yellow-500"
-                                                        : "bg-emerald-500"
-                                            )}
-                                            style={{ width: `${Math.min(viewingBudget.utilization_percentage || 0, 100)}%` }}
-                                        />
-                                    </div>
+                            {/* ✅ Annual Utilization bar */}
+                            <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-3 border border-slate-200 dark:border-slate-700">
+                                <div className="flex justify-between items-center">
+                                    <span className="text-xs text-slate-500 dark:text-slate-400">Annual Utilization</span>
+                                    <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                                        {viewingBudget.utilization_percentage || 0}%
+                                    </span>
                                 </div>
-
-                                {viewingBudget.weekly_ceiling > 0 && (
-                                    <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-3 border border-slate-200 dark:border-slate-700">
-                                        <div className="flex justify-between items-center">
-                                            <span className="text-xs text-slate-500 dark:text-slate-400">Weekly Utilization</span>
-                                            <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                                                {viewingBudget.weekly_ceiling > 0
-                                                    ? `${Math.round(((viewingBudget.weekly_used || 0) / viewingBudget.weekly_ceiling) * 100)}%`
-                                                    : "0%"}
-                                            </span>
-                                        </div>
-                                        <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2 mt-1">
-                                            <div
-                                                className={cn(
-                                                    "h-2 rounded-full transition-all",
-                                                    (viewingBudget.weekly_used || 0) / viewingBudget.weekly_ceiling > 0.8
-                                                        ? "bg-red-500"
-                                                        : (viewingBudget.weekly_used || 0) / viewingBudget.weekly_ceiling > 0.5
-                                                            ? "bg-yellow-500"
-                                                            : "bg-emerald-500"
-                                                )}
-                                                style={{
-                                                    width: `${Math.min(((viewingBudget.weekly_used || 0) / viewingBudget.weekly_ceiling) * 100, 100)}%`,
-                                                }}
-                                            />
-                                        </div>
-                                        {(viewingBudget.weekly_remaining || 0) > 0 && (
-                                            <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-1">
-                                                ✅ {formatCurrency(viewingBudget.weekly_remaining)} remaining this week
-                                            </p>
+                                <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2 mt-1">
+                                    <div
+                                        className={cn(
+                                            "h-2 rounded-full transition-all",
+                                            (viewingBudget.utilization_percentage || 0) > 80
+                                                ? "bg-red-500"
+                                                : (viewingBudget.utilization_percentage || 0) > 50
+                                                    ? "bg-yellow-500"
+                                                    : "bg-emerald-500"
                                         )}
-                                        {(viewingBudget.weekly_remaining || 0) <= 0 && (
-                                            <p className="text-xs text-red-600 dark:text-red-400 mt-1">
-                                                ⚠️ Weekly budget exceeded!
-                                            </p>
-                                        )}
-                                    </div>
-                                )}
+                                        style={{ width: `${Math.min(viewingBudget.utilization_percentage || 0, 100)}%` }}
+                                    />
+                                </div>
                             </div>
                         </div>
                     )}

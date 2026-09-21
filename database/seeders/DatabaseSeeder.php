@@ -40,7 +40,7 @@ class DatabaseSeeder extends Seeder
         // ============================================================
         // 2. Create (or update) the GSO admin user
         // ============================================================
-        $adminEmail = 'gso@fmcs.com';   // ⚠️ Note: you wrote "fmcs" — double-check!
+        $adminEmail = 'gso@cms.com';  
         $adminPassword = 'password123';
 
         $existing = DB::table('users')->where('email', $adminEmail)->first();
@@ -64,7 +64,7 @@ class DatabaseSeeder extends Seeder
 
             $this->command->info("✓ Updated existing GSO admin (user_id: {$existing->user_id})");
         } else {
-            // Generate a unique employee number (EMP-0001, EMP-0002, ...)
+           
             $lastEmployeeNumber = DB::table('users')
                 ->where('employee_number', 'like', 'EMP-%')
                 ->orderByDesc('employee_number')

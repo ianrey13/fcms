@@ -395,4 +395,18 @@ class BudgetService
 
         return $usage->weekly_allocation - $usage->amount_used;
     }
+
+/**
+ * ✅ Get the raw annual amount for a department (current fiscal year)
+ */
+public function getAnnualAmount($departmentId, $year = null)
+{
+    $year = $year ?? Carbon::now()->year;
+
+    $budget = AnnualBudget::where('department_id', $departmentId)
+        ->where('fiscal_year', $year)
+        ->first();
+
+    return $budget ? (float) $budget->annual_amount : 0.0;
+}
 }
