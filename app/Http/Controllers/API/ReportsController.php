@@ -205,8 +205,8 @@ class ReportsController extends Controller
                 'liters_availed' => $receipt->liters_availed,
                 'amount_on_receipt' => $receipt->amount_on_receipt,
                 'distance_km' => $this->calculateReceiptDistance($receipt),
-                'trip_ended_at' => $receipt->trip_ended_at,
-                'created_at' => $receipt->created_at,
+                 'trip_ended_at' => $receipt->trip_ended_at?->toIso8601String(),
+                'created_at' => $receipt->created_at?->toIso8601String(),
                 'has_receipt' => !is_null($receipt->receipt_photo_path),
             ];
         })->values();
@@ -546,11 +546,10 @@ class ReportsController extends Controller
                     'receipt_uploaded_at' => $receipt->receipt_uploaded_at
                         ? $receipt->receipt_uploaded_at->format('m/d/Y H:i')
                         : 'N/A',
-                    'time_departure'     => $timeDeparture,
+                                      'time_departure'     => $timeDeparture,
                     'time_arrival'       => $timeArrival,
-                    'trip_started_at'    => $receipt->trip_started_at,
-                    'trip_ended_at'      => $receipt->trip_ended_at,
-
+                    'trip_started_at'    => $receipt->trip_started_at?->toIso8601String(),
+                    'trip_ended_at'      => $receipt->trip_ended_at?->toIso8601String(),
                     // ---- Vehicle / Department / Driver ----
                     'used_for'           => $department?->department_name ?? 'N/A',
                     'department'         => $department?->department_name ?? 'N/A',
@@ -711,9 +710,8 @@ class ReportsController extends Controller
                 'plate_number' => $trip->vehicle?->plate_number ?? 'N/A',
                 'driver_name' => $trip->driver?->user?->full_name ?? 'N/A',
 
-                'trip_started_at' => $trip->gasSlip?->fuelReceipt?->trip_started_at,
-    'trip_ended_at'   => $trip->gasSlip?->fuelReceipt?->trip_ended_at,
-
+                 'trip_started_at' => $trip->gasSlip?->fuelReceipt?->trip_started_at?->toIso8601String(),
+                'trip_ended_at'   => $trip->gasSlip?->fuelReceipt?->trip_ended_at?->toIso8601String(),
                 // ✅ Amount fields (NEW)
                 'amount_released' => $amountReleased,
                 'actual_amount' => $actualAmount !== null ? round((float) $actualAmount, 2) : null,
@@ -733,7 +731,7 @@ class ReportsController extends Controller
                 // Meta
                 'status' => $trip->gasSlip?->reconciliation_status ?? 'pending',
                 'reconciled_by' => $trip->gasSlip?->reconciledBy?->full_name ?? 'N/A',
-                'reconciled_at' => $trip->gasSlip?->reconciled_at,
+                 'reconciled_at' => $trip->gasSlip?->reconciled_at?->toIso8601String(),
             ];
         });
 
@@ -986,7 +984,7 @@ class ReportsController extends Controller
                     'amount_released' => $gasSlip?->amount_released ?? 0,
                     'status' => $trip->status,
                     'has_receipt' => $fuelReceipt && !is_null($fuelReceipt->receipt_photo_path),
-                    'submitted_at' => $trip->submitted_at,
+                     'submitted_at' => $trip->submitted_at?->toIso8601String(),
                 ];
             });
 
@@ -1430,7 +1428,7 @@ public function getMoActivityLogs(Request $request)
                     'previous_amount' => $entry->previous_amount,
                     'added_amount' => $entry->added_amount,
                     'new_amount' => $entry->new_amount,
-                    'created_at' => $entry->created_at,
+                    'created_at' => $entry->created_at?->toIso8601String(),
                 ];
             });
 
@@ -1547,7 +1545,7 @@ public function getMoActivityLogs(Request $request)
                         'vehicle_plate'      => $vehicle,
                         'destination'        => $dest,
                         'distance_km'        => null,
-                        'created_at'         => $th->started_at, 
+                       'created_at'         => $th->started_at?->toIso8601String(),
                     ]);
                 }
 
@@ -1566,7 +1564,7 @@ public function getMoActivityLogs(Request $request)
                         'vehicle_plate'      => $vehicle,
                         'destination'        => $dest,
                         'distance_km'        => $th->distance_km,
-                        'created_at'         => $th->ended_at, // right-side timestamp
+                        'created_at'         => $th->ended_at?->toIso8601String(),
                     ]);
                 }
             }
