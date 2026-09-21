@@ -283,7 +283,7 @@ class TripTicketController extends Controller
             TripTicketVehicleSnapshot::create([
                 'trip_ticket_id' => $tripTicket->trip_ticket_id,
                 'vehicle_status' => $vehicle->status,
-                'fuel_type' => is_string($vehicle->fuel_type) ? $vehicle->fuel_type : 'regular',
+                'fuel_type' => is_string($vehicle->fuel_type) ? $vehicle->fuel_type : 'gasoline',
                 'snapshot_taken_at' => now(),
             ]);
 
@@ -508,17 +508,16 @@ class TripTicketController extends Controller
     /**
      * Calculate estimated fuel from config
      */
-    private function calculateEstimatedFuelFromConfig($vehicle, $distanceKm)
+          private function calculateEstimatedFuelFromConfig($vehicle, $distanceKm)
     {
-        $fuelType = 'regular';
+        $fuelType = 'gasoline';
         if ($vehicle && isset($vehicle->fuel_type)) {
             if (is_string($vehicle->fuel_type)) {
                 $fuelType = strtolower($vehicle->fuel_type);
             }
         }
         $rates = [
-            'regular' => 0.10,
-            'premium' => 0.09,
+            'gasoline' => 0.10,
             'diesel' => 0.08,
         ];
         $rate = $rates[$fuelType] ?? 0.10;
@@ -528,14 +527,13 @@ class TripTicketController extends Controller
     /**
      * Get fuel price from config
      */
-    private function getFuelPriceFromConfig($fuelType)
+        private function getFuelPriceFromConfig($fuelType)
     {
         if (is_string($fuelType)) {
             $fuelType = strtolower($fuelType);
         }
         $prices = [
-            'regular' => 88.98,
-            'premium' => 85.00,
+            'gasoline' => 88.98,
             'diesel' => 88.00,
         ];
         return isset($prices[$fuelType]) ? (float) $prices[$fuelType] : 55.00;

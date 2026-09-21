@@ -8,6 +8,8 @@
 // FIXED: Map restored with multi-stop route display
 // FIXED: Themed Trip Estimate card (dark mode ready)
 // FIXED: Plain object cache (no Map naming collision)
+// FIXED: Dark mode visibility + date picker icon
+// FIXED: Dedupe suggestions + destination string
 // ============================================
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
@@ -26,7 +28,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import {
     Truck, User, MapPin, Calendar, Building2, Loader2, CheckCircle,
-    AlertTriangle, Fuel, DollarSign, FileText, Clock, X, ArrowLeft,
+    AlertTriangle, FileText, Clock, X, ArrowLeft,
     Navigation, Gauge, Shield, Plus, Trash2, Map as MapIcon, Maximize2,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
@@ -87,7 +89,7 @@ const FormSkeleton = () => (
 const FieldError = ({ error }) => {
     if (!error) return null;
     return (
-        <p className="text-red-500 text-xs mt-1.5 flex items-center gap-1">
+        <p className="text-red-500 dark:text-red-400 text-xs mt-1.5 flex items-center gap-1">
             <AlertTriangle className="h-3 w-3 flex-shrink-0" />
             {error}
         </p>
@@ -100,7 +102,7 @@ const FormFieldWrapper = ({ children, error, touched, label, required, icon: Ico
         <div className="space-y-1.5">
             {label && (
                 <Label className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300">
-                    {Icon && <Icon className="h-4 w-4 text-slate-400" />}
+                    {Icon && <Icon className="h-4 w-4 text-slate-400 dark:text-slate-500" />}
                     {label}
                     {required && <span className="text-red-500">*</span>}
                 </Label>
@@ -230,7 +232,7 @@ const DriverDatalist = ({
     return (
         <div className="relative w-full" ref={wrapperRef}>
             <div className="relative">
-                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><User className="h-4 w-4" /></div>
+                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500"><User className="h-4 w-4" /></div>
                 <Input
                     ref={inputRef}
                     type="text"
@@ -240,13 +242,13 @@ const DriverDatalist = ({
                     onFocus={handleFocus}
                     onBlur={() => { setTimeout(() => setIsOpen(false), 250); if (onBlur) onBlur(); }}
                     className={cn(
-                        "pl-10 pr-10 bg-white dark:bg-slate-900 dark:border-slate-700",
-                        hasError && "border-red-500 ring-red-500 bg-red-50/50",
-                        selectedDriver && !hasError && "border-emerald-500 ring-emerald-500/30 bg-emerald-50/30"
+                        "pl-10 pr-10 bg-white dark:bg-slate-900 dark:border-slate-700 dark:text-white",
+                        hasError && "border-red-500 ring-red-500 bg-red-50/50 dark:bg-red-950/10",
+                        selectedDriver && !hasError && "border-emerald-500 ring-emerald-500/30 bg-emerald-50/30 dark:bg-emerald-950/20"
                     )}
                 />
                 {searchTerm && (
-                    <button type="button" onClick={handleClear} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                    <button type="button" onClick={handleClear} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">
                         <X className="h-4 w-4" />
                     </button>
                 )}
@@ -258,19 +260,19 @@ const DriverDatalist = ({
                 )}
             </div>
             {selectedDriver && !searchTerm && !hasError && (
-                <div className="mt-2 flex items-center gap-2 p-2 bg-emerald-50 border border-emerald-200 rounded-lg">
-                    <User className="h-4 w-4 text-emerald-600" />
-                    <span className="font-medium text-slate-800">{getDriverDisplayName(selectedDriver)}</span>
-                    <Badge variant="outline" className="border-emerald-300 text-emerald-700 text-[10px]">{getDriverDepartment(selectedDriver)}</Badge>
-                    <button type="button" onClick={handleClear} className="ml-auto text-xs text-red-500 hover:text-red-700 px-2 py-1 rounded-lg">Change</button>
+                <div className="mt-2 flex items-center gap-2 p-2 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-lg">
+                    <User className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                    <span className="font-medium text-slate-800 dark:text-slate-200">{getDriverDisplayName(selectedDriver)}</span>
+                    <Badge variant="outline" className="border-emerald-300 dark:border-emerald-700 text-emerald-700 dark:text-emerald-400 text-[10px]">{getDriverDepartment(selectedDriver)}</Badge>
+                    <button type="button" onClick={handleClear} className="ml-auto text-xs text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 px-2 py-1 rounded-lg">Change</button>
                 </div>
             )}
             {hasError && !selectedDriver && <FieldError error={error} />}
             {isOpen && filteredDrivers.length > 0 && (
-                <div className="absolute z-50 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 rounded-xl shadow-lg max-h-60 overflow-auto">
-                    <div className="sticky top-0 bg-slate-50 px-4 py-2 text-xs text-slate-500 border-b flex justify-between">
+                <div className="absolute z-50 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-lg max-h-60 overflow-auto">
+                    <div className="sticky top-0 bg-slate-50 dark:bg-slate-900 px-4 py-2 text-xs text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700 flex justify-between">
                         <span>{filteredDrivers.length} driver{filteredDrivers.length !== 1 ? "s" : ""} found</span>
-                        <span className="text-slate-400 text-[10px]">● All drivers</span>
+                        <span className="text-slate-400 dark:text-slate-500 text-[10px]">● All drivers</span>
                     </div>
                     {filteredDrivers.map((driver) => {
                         const driverId = getDriverId(driver);
@@ -278,11 +280,11 @@ const DriverDatalist = ({
                             <div
                                 key={driverId}
                                 onMouseDown={(e) => { e.preventDefault(); handleSelect(driver); }}
-                                className="px-4 py-2.5 cursor-pointer hover:bg-slate-100 flex items-center justify-between"
+                                className="px-4 py-2.5 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center justify-between"
                             >
                                 <div className="flex-1 min-w-0">
-                                    <span className="font-medium text-slate-800 block truncate">{getDriverDisplayName(driver)}</span>
-                                    <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
+                                    <span className="font-medium text-slate-800 dark:text-slate-200 block truncate">{getDriverDisplayName(driver)}</span>
+                                    <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                                         <Building2 className="h-3 w-3" />
                                         <span className="truncate">{getDriverDepartment(driver)}</span>
                                     </div>
@@ -293,9 +295,9 @@ const DriverDatalist = ({
                 </div>
             )}
             {isOpen && searchTerm && filteredDrivers.length === 0 && !loading && (
-                <div className="absolute z-50 w-full mt-1 bg-white border rounded-xl shadow-lg p-4 text-center">
-                    <User className="h-8 w-8 text-slate-300 mx-auto mb-2" />
-                    <p className="text-sm text-slate-500">No drivers found</p>
+                <div className="absolute z-50 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-lg p-4 text-center">
+                    <User className="h-8 w-8 text-slate-300 dark:text-slate-600 mx-auto mb-2" />
+                    <p className="text-sm text-slate-500 dark:text-slate-400">No drivers found</p>
                 </div>
             )}
         </div>
@@ -311,10 +313,10 @@ const DepartmentDisplay = ({ department, error, driver, touched }) => {
     if (department) {
         return (
             <div className="relative">
-                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-500"><Building2 className="h-4 w-4" /></div>
-                <Input value={department.department_name} disabled className={cn("pl-10 bg-blue-50 border-blue-200 text-blue-700 font-medium", hasError && "border-red-500")} />
+                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-500 dark:text-blue-400"><Building2 className="h-4 w-4" /></div>
+                <Input value={department.department_name} disabled className={cn("pl-10 bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 font-medium", hasError && "border-red-500")} />
                 <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                    <Badge variant="outline" className="border-blue-300 text-xs">{department.department_code || "Auto"}</Badge>
+                    <Badge variant="outline" className="border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-400 text-xs">{department.department_code || "Auto"}</Badge>
                 </div>
                 {hasError && <FieldError error={error} />}
             </div>
@@ -326,10 +328,10 @@ const DepartmentDisplay = ({ department, error, driver, touched }) => {
         if (deptName) {
             return (
                 <div className="relative">
-                    <div className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-500"><Building2 className="h-4 w-4" /></div>
-                    <Input value={deptName} disabled className={cn("pl-10 bg-blue-50 border-blue-200 text-blue-700 font-medium", hasError && "border-red-500")} />
+                    <div className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-500 dark:text-blue-400"><Building2 className="h-4 w-4" /></div>
+                    <Input value={deptName} disabled className={cn("pl-10 bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 font-medium", hasError && "border-red-500")} />
                     <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                        <Badge variant="outline" className="border-blue-300 text-xs">{deptCode || "Auto"}</Badge>
+                        <Badge variant="outline" className="border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-400 text-xs">{deptCode || "Auto"}</Badge>
                     </div>
                 </div>
             );
@@ -337,8 +339,8 @@ const DepartmentDisplay = ({ department, error, driver, touched }) => {
     }
     return (
         <div className="relative">
-            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><Building2 className="h-4 w-4" /></div>
-            <Input value="Select a driver first" disabled className="pl-10 bg-slate-100 text-slate-400" />
+            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500"><Building2 className="h-4 w-4" /></div>
+            <Input value="Select a driver first" disabled className="pl-10 bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500" />
         </div>
     );
 };
@@ -386,7 +388,17 @@ const MultiStopDestination = ({
                         const lng = parseFloat(item.lng);
                         return !isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0;
                     });
-                    setSuggestions(filtered.length > 0 ? filtered : predictions);
+
+                    // ✅ Dedupe by description (case-insensitive)
+                    const seen = new Set();
+                    const deduped = (filtered.length > 0 ? filtered : predictions).filter(item => {
+                        const key = (item.description || "").toLowerCase().trim();
+                        if (!key || seen.has(key)) return false;
+                        seen.add(key);
+                        return true;
+                    });
+
+                    setSuggestions(deduped);
                     setShowSuggestions(true);
                 }
             } catch (error) {
@@ -414,10 +426,9 @@ const MultiStopDestination = ({
         try {
             let totalDistance = 0;
             let totalDuration = 0;
-            // ✅ Defaults matching DB (fallback if backend doesn't return fuel info)
             let efficiency = 10;
-            let fuelPrice = 78;        // regular_price_per_liter
-            let fuelType = "regular";
+            let fuelPrice = 78;
+            let fuelType = "gasoline";
             let vehicleInfoCaptured = false;
 
             for (let i = 0; i < validStops.length; i++) {
@@ -428,17 +439,15 @@ const MultiStopDestination = ({
 
                 const cacheKey = `${legOrigin}→${stop.address}|${currentVehicleId || 'none'}`;
 
-                // ✅ Cache hit — plain object
                 if (calcCacheRef.current[cacheKey]) {
                     const cached = calcCacheRef.current[cacheKey];
                     console.log(`[Leg ${i + 1}] (cached) ${legOrigin} → ${stop.address}`);
                     totalDistance += parseFloat(cached.distance_km) || 0;
                     totalDuration += parseFloat(cached.duration_minutes) || 0;
-                    // ✅ Always capture fuel info (backend returns it either way)
                     if (!vehicleInfoCaptured && cached.fuel_price_per_liter) {
                         efficiency = parseFloat(cached.fuel_efficiency_km_per_liter) || 10;
                         fuelPrice = parseFloat(cached.fuel_price_per_liter) || 78;
-                        fuelType = cached.fuel_type || "regular";
+                        fuelType = cached.fuel_type || "gasoline";
                         vehicleInfoCaptured = true;
                     }
                     continue;
@@ -467,11 +476,10 @@ const MultiStopDestination = ({
                         totalDistance += parseFloat(response.data.distance_km) || 0;
                         totalDuration += parseFloat(response.data.duration_minutes) || 0;
 
-                        // ✅ Always use backend fuel info (diesel/regular/premium)
                         if (!vehicleInfoCaptured && response.data.fuel_price_per_liter) {
                             efficiency = parseFloat(response.data.fuel_efficiency_km_per_liter) || 10;
                             fuelPrice = parseFloat(response.data.fuel_price_per_liter) || 78;
-                            fuelType = response.data.fuel_type || "regular";
+                            fuelType = response.data.fuel_type || "gasoline";
                             vehicleInfoCaptured = true;
                             console.log(`[Fuel] Captured from backend:`, { fuelType, fuelPrice, efficiency });
                         }
@@ -492,7 +500,7 @@ const MultiStopDestination = ({
                                 if (!vehicleInfoCaptured && retry.data.fuel_price_per_liter) {
                                     efficiency = parseFloat(retry.data.fuel_efficiency_km_per_liter) || 10;
                                     fuelPrice = parseFloat(retry.data.fuel_price_per_liter) || 78;
-                                    fuelType = retry.data.fuel_type || "regular";
+                                    fuelType = retry.data.fuel_type || "gasoline";
                                     vehicleInfoCaptured = true;
                                 }
                             }
@@ -555,7 +563,6 @@ const MultiStopDestination = ({
         if (currentKey === lastCalcKeyRef.current) return;
         lastCalcKeyRef.current = currentKey;
 
-        // ✅ ALWAYS clear cache when stops/vehicle change (forces fresh fuel fetch)
         calcCacheRef.current = {};
 
         debouncedCalc(stops, vehicleId);
@@ -640,12 +647,12 @@ const MultiStopDestination = ({
                     <div key={index} className="relative" ref={el => wrapperRefs.current[index] = el}>
                         <div className="flex gap-2 items-start">
                             <div className="flex-shrink-0 mt-2.5">
-                                <Badge variant="outline" className="text-[10px] h-6 w-6 rounded-full flex items-center justify-center p-0 border-blue-300 text-blue-600">
+                                <Badge variant="outline" className="text-[10px] h-6 w-6 rounded-full flex items-center justify-center p-0 border-blue-300 dark:border-blue-700 text-blue-600 dark:text-blue-400">
                                     {index + 1}
                                 </Badge>
                             </div>
                             <div className="relative flex-1">
-                                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><MapPin className="h-4 w-4" /></div>
+                                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500"><MapPin className="h-4 w-4" /></div>
                                 <Input
                                     placeholder={index === 0 ? "First stop (e.g., Sinai, Laguindingan)" : `Stop ${index + 1}`}
                                     value={stop.address}
@@ -654,7 +661,7 @@ const MultiStopDestination = ({
                                         setActiveIndex(index);
                                         if (suggestions.length > 0) setShowSuggestions(true);
                                     }}
-                                    className="pl-10 pr-10"
+                                    className="pl-10 pr-10 dark:bg-slate-900 dark:border-slate-700 dark:text-white"
                                 />
                                 {stop.address && stop.lat && (
                                     <div className="absolute right-3 top-1/2 -translate-y-1/2"><CheckCircle className="h-4 w-4 text-emerald-500" /></div>
@@ -664,21 +671,21 @@ const MultiStopDestination = ({
                                 )}
 
                                 {activeIndex === index && showSuggestions && suggestions.length > 0 && (
-                                    <div className="absolute z-30 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 rounded-xl shadow-lg max-h-60 overflow-auto">
-                                        <div className="sticky top-0 bg-gray-100 px-4 py-2 text-xs text-gray-500 flex justify-between items-center border-b">
+                                    <div className="absolute z-30 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-lg max-h-60 overflow-auto">
+                                        <div className="sticky top-0 bg-slate-100 dark:bg-slate-900 px-4 py-2 text-xs text-slate-500 dark:text-slate-400 flex justify-between items-center border-b border-slate-200 dark:border-slate-700">
                                             <span>Suggestions</span>
-                                            <span className="text-blue-500">{suggestions.length} results</span>
+                                            <span className="text-blue-500 dark:text-blue-400">{suggestions.length} results</span>
                                         </div>
                                         {suggestions.map((suggestion, sIndex) => (
                                             <div
                                                 key={sIndex}
                                                 onClick={() => handleSelectSuggestion(index, suggestion)}
-                                                className="px-4 py-3 hover:bg-blue-50 cursor-pointer flex items-start gap-3 border-b last:border-0"
+                                                className="px-4 py-3 hover:bg-blue-50 dark:hover:bg-blue-950/30 cursor-pointer flex items-start gap-3 border-b border-slate-100 dark:border-slate-700 last:border-0"
                                             >
-                                                <MapPin className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                                                <MapPin className="h-4 w-4 text-slate-400 dark:text-slate-500 mt-0.5 flex-shrink-0" />
                                                 <div>
-                                                    <p className="text-sm text-gray-900">{suggestion.description}</p>
-                                                    <p className="text-xs text-gray-500">
+                                                    <p className="text-sm text-slate-900 dark:text-slate-100">{suggestion.description}</p>
+                                                    <p className="text-xs text-slate-500 dark:text-slate-400">
                                                         {suggestion.lat && suggestion.lng
                                                             ? `${parseFloat(suggestion.lat).toFixed(4)}, ${parseFloat(suggestion.lng).toFixed(4)}`
                                                             : "Click to calculate"}
@@ -695,7 +702,7 @@ const MultiStopDestination = ({
                                     variant="ghost"
                                     size="icon"
                                     onClick={() => removeStop(index)}
-                                    className="shrink-0 h-10 w-10 text-red-500 hover:text-red-700 hover:bg-red-50"
+                                    className="shrink-0 h-10 w-10 text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-950/30"
                                 >
                                     <Trash2 className="h-4 w-4" />
                                 </Button>
@@ -711,7 +718,7 @@ const MultiStopDestination = ({
                     variant="outline"
                     size="sm"
                     onClick={addStop}
-                    className="w-full border-dashed border-2 border-slate-300 hover:border-blue-400 hover:bg-blue-50/50"
+                    className="w-full border-dashed border-2 border-slate-300 dark:border-slate-600 hover:border-blue-400 dark:hover:border-blue-500 hover:bg-blue-50/50 dark:hover:bg-blue-950/20 dark:text-slate-300"
                 >
                     <Plus className="h-4 w-4 mr-2" />
                     Add Another Stop ({stops.length}/{maxStops})
@@ -719,28 +726,28 @@ const MultiStopDestination = ({
             )}
 
             {!canAddMore && (
-                <p className="text-xs text-slate-500 text-center py-2">Maximum {maxStops} stops reached</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 text-center py-2">Maximum {maxStops} stops reached</p>
             )}
 
             {routePreview.length > 0 && (
-                <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
+                <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-3 border border-slate-200 dark:border-slate-700">
                     <div className="flex items-start gap-2">
-                        <Navigation className="h-4 w-4 text-blue-500 mt-0.5 flex-shrink-0" />
+                        <Navigation className="h-4 w-4 text-blue-500 dark:text-blue-400 mt-0.5 flex-shrink-0" />
                         <div className="flex-1 min-w-0">
-                            <p className="text-xs text-slate-500 mb-1">Route preview (round trip):</p>
-                            <p className="text-sm font-medium text-slate-700 break-words">
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">Route preview (round trip):</p>
+                            <p className="text-sm font-medium text-slate-700 dark:text-slate-300 break-words">
                                 {ORIGIN_ADDRESS}
                                 {routePreview.map((addr, i) => (
                                     <React.Fragment key={i}>
                                         {" → "}
-                                        <span className="text-blue-600">{addr}</span>
+                                        <span className="text-blue-600 dark:text-blue-400">{addr}</span>
                                     </React.Fragment>
                                 ))}
                                 {" → "}
                                 {ORIGIN_ADDRESS}
                             </p>
                             {calculating && (
-                                <p className="text-xs text-blue-600 mt-1 flex items-center gap-1">
+                                <p className="text-xs text-blue-600 dark:text-blue-400 mt-1 flex items-center gap-1">
                                     <Loader2 className="h-3 w-3 animate-spin" />
                                     Calculating total distance...
                                 </p>
@@ -958,8 +965,8 @@ const GsoCreateTrip = () => {
             if (toastIdRef.current) toast.dismiss(toastIdRef.current);
             toastIdRef.current = toast.error(
                 <div className="space-y-1">
-                    <div className="font-semibold text-red-600">Please fix:</div>
-                    <div className="text-sm text-red-500 space-y-0.5">
+                    <div className="font-semibold text-red-600 dark:text-red-400">Please fix:</div>
+                    <div className="text-sm text-red-500 dark:text-red-400 space-y-0.5">
                         {msgs.map((m, i) => <div key={i}>{m}</div>)}
                     </div>
                 </div>, { duration: 5000 }
@@ -1003,28 +1010,34 @@ const GsoCreateTrip = () => {
         if (toastIdRef.current) toast.dismiss(toastIdRef.current);
         if (!validateForm()) return;
 
-       const destinationString = (() => {
-    const parts = stops
-        .filter(s => s.address)
-        .map(s => {
-            // Extract location name (first comma-separated chunk)
-            const firstComma = s.address.indexOf(",");
-            return firstComma > -1 ? s.address.substring(0, firstComma).trim() : s.address;
-        });
+        // ✅ Build destination string with dedupe
+        const destinationString = (() => {
+            const parts = stops
+                .filter(s => s.address)
+                .map(s => {
+                    const firstComma = s.address.indexOf(",");
+                    return firstComma > -1 ? s.address.substring(0, firstComma).trim() : s.address;
+                });
 
-    // Check if all stops are within Laguindingan (region contains "Laguindingan")
-    const allInLaguindingan = stops
-        .filter(s => s.address)
-        .every(s => s.address.toLowerCase().includes("laguindingan"));
+            // ✅ Dedupe (case-insensitive), preserve order
+            const seen = new Set();
+            const uniqueParts = parts.filter(p => {
+                const key = p.toLowerCase();
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            });
 
-    // Build the final string
-    if (allInLaguindingan) {
-        return `${parts.join(", ")}, Laguindingan, Misamis Oriental`;
-    } else {
-        // Mixed regions — just append Misamis Oriental
-        return `${parts.join(", ")}, Misamis Oriental`;
-    }
-})();
+            const allInLaguindingan = stops
+                .filter(s => s.address)
+                .every(s => s.address.toLowerCase().includes("laguindingan"));
+
+            if (allInLaguindingan) {
+                return `${uniqueParts.join(", ")}, Laguindingan, Misamis Oriental`;
+            } else {
+                return `${uniqueParts.join(", ")}, Misamis Oriental`;
+            }
+        })();
 
         createTripMutation.mutate({ ...formData, destination: destinationString });
     };
@@ -1062,7 +1075,7 @@ const GsoCreateTrip = () => {
                 <CardContent className="pt-6">
                     <form onSubmit={handleSubmit} className="space-y-6">
                         <FormSection title="Driver Selection" icon={User}>
-                            <Label htmlFor="driver_id">Search Driver <span className="text-red-500">*</span></Label>
+                            <Label htmlFor="driver_id" className="dark:text-slate-300">Search Driver <span className="text-red-500">*</span></Label>
                             <p className="text-xs text-slate-400 dark:text-slate-500 mb-2">Type driver name to search across all departments</p>
                             <DriverDatalist
                                 id="driver_id"
@@ -1091,150 +1104,104 @@ const GsoCreateTrip = () => {
 
                                 {errors.destination && <FieldError error={errors.destination} />}
 
-                               {tripEstimate && (
-    <div className="rounded-xl border border-blue-200/70 dark:border-blue-800/50 bg-gradient-to-br from-blue-50 via-blue-50/60 to-card dark:from-blue-950/40 dark:via-slate-900/40 dark:to-slate-900/60 overflow-hidden shadow-sm">
-        {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-blue-200/60 dark:border-blue-800/40 bg-card/50">
-            <div className="flex items-center gap-2">
-                <div className="p-1.5 rounded-lg bg-blue-500/15 dark:bg-blue-500/20">
-                    <Navigation className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                </div>
-                <h4 className="font-semibold text-foreground text-sm">Trip Estimate</h4>
-                {tripEstimate.is_multi_stop && (
-                    <Badge className="bg-purple-500/15 dark:bg-purple-500/20 text-purple-700 dark:text-purple-300 border border-purple-300/50 dark:border-purple-700/50 text-[10px] font-medium">
-                        {tripEstimate.stops_count} stops
-                    </Badge>
-                )}
-            </div>
-            {hasMapCoordinates && (
-                <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setIsMapModalOpen(true)}
-                    className="h-7 px-2.5 text-blue-600 dark:text-blue-400 border-blue-300/70 dark:border-blue-700/60 hover:bg-blue-50 dark:hover:bg-blue-950/30 text-xs"
-                >
-                    <MapIcon className="h-3 w-3 mr-1" /> View Map
-                </Button>
-            )}
-        </div>
+                                {tripEstimate && (
+                                    <div className="rounded-xl border border-blue-200/70 dark:border-blue-800/50 bg-gradient-to-br from-blue-50 via-blue-50/60 to-white dark:from-blue-950/40 dark:via-slate-900/40 dark:to-slate-900/60 overflow-hidden shadow-sm">
+                                        <div className="flex items-center justify-between px-4 py-3 border-b border-blue-200/60 dark:border-blue-800/40 bg-white/50 dark:bg-slate-900/50">
+                                            <div className="flex items-center gap-2">
+                                                <div className="p-1.5 rounded-lg bg-blue-500/15 dark:bg-blue-500/20">
+                                                    <Navigation className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                                                </div>
+                                                <h4 className="font-semibold text-slate-900 dark:text-white text-sm">Route</h4>
+                                                {tripEstimate.is_multi_stop && (
+                                                    <Badge className="bg-purple-500/15 dark:bg-purple-500/20 text-purple-700 dark:text-purple-300 border border-purple-300/50 dark:border-purple-700/50 text-[10px] font-medium">
+                                                        {tripEstimate.stops_count} stops
+                                                    </Badge>
+                                                )}
+                                            </div>
+                                            {hasMapCoordinates && (
+                                                <Button
+                                                    type="button"
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={() => setIsMapModalOpen(true)}
+                                                    className="h-7 px-2.5 text-blue-600 dark:text-blue-400 border-blue-300/70 dark:border-blue-700/60 hover:bg-blue-50 dark:hover:bg-blue-950/30 text-xs"
+                                                >
+                                                    <MapIcon className="h-3 w-3 mr-1" /> View Map
+                                                </Button>
+                                            )}
+                                        </div>
 
-        {/* Metrics grid */}
-        <div className="p-4">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                {/* Distance */}
-                <div className="rounded-lg border border-border bg-card/70 p-3">
-                    <div className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground mb-1">
-                        <MapPin className="h-3 w-3" />
-                        Distance
-                    </div>
-                    <p className="text-lg font-bold text-foreground leading-tight">
-                        {tripEstimate.distance_km}
-                        <span className="text-xs font-medium text-muted-foreground ml-1">km</span>
-                    </p>
-                    <p className="text-[10px] text-muted-foreground/70 mt-0.5">round trip</p>
-                </div>
+                                        {/* <div className="grid grid-cols-2 gap-3 p-4">
+                                            <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/60 p-3">
+                                                <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-500 dark:text-slate-400 mb-1">
+                                                    <MapPin className="h-3 w-3" />
+                                                    Distance
+                                                </div>
+                                                <p className="text-lg font-bold text-slate-900 dark:text-white leading-tight">
+                                                    {tripEstimate.distance_km}
+                                                    <span className="text-xs font-medium text-slate-500 dark:text-slate-400 ml-1">km</span>
+                                                </p>
+                                                <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">round trip</p>
+                                            </div>
 
-                {/* Duration */}
-                <div className="rounded-lg border border-border bg-card/70 p-3">
-                    <div className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground mb-1">
-                        <Clock className="h-3 w-3" />
-                        Duration
-                    </div>
-                    <p className="text-lg font-bold text-foreground leading-tight">
-                        {tripEstimate.duration_minutes}
-                        <span className="text-xs font-medium text-muted-foreground ml-1">min</span>
-                    </p>
-                </div>
+                                            <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/60 p-3">
+                                                <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-500 dark:text-slate-400 mb-1">
+                                                    <Clock className="h-3 w-3" />
+                                                    Duration
+                                                </div>
+                                                <p className="text-lg font-bold text-slate-900 dark:text-white leading-tight">
+                                                    {tripEstimate.duration_minutes}
+                                                    <span className="text-xs font-medium text-slate-500 dark:text-slate-400 ml-1">min</span>
+                                                </p>
+                                            </div>
+                                        </div> */}
 
-                {/* Fuel */}
-                <div className="rounded-lg border border-border bg-card/70 p-3">
-                    <div className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground mb-1">
-                        <Fuel className="h-3 w-3" />
-                        Fuel
-                        {tripEstimate.fuel_type && (
-                            <span className="ml-auto text-[9px] uppercase tracking-wide text-blue-600 dark:text-blue-400 font-semibold">
-                                {tripEstimate.fuel_type}
-                            </span>
-                        )}
-                    </div>
-                    <p className="text-lg font-bold text-foreground leading-tight">
-                        {tripEstimate.estimated_liters}
-                        <span className="text-xs font-medium text-muted-foreground ml-1">L</span>
-                    </p>
-                </div>
-
-                {/* Cost */}
-                <div className="rounded-lg border border-emerald-200/60 dark:border-emerald-800/50 bg-emerald-50/60 dark:bg-emerald-950/20 p-3">
-                    <div className="flex items-center gap-1.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-400 mb-1">
-                        <DollarSign className="h-3 w-3" />
-                        Estimated Cost
-                    </div>
-                    <p className="text-lg font-bold text-emerald-700 dark:text-emerald-400 leading-tight">
-                        ₱{tripEstimate.estimated_cost}
-                    </p>
-                </div>
-            </div>
-
-            {/* Footer info */}
-            <div className="mt-3 flex items-center gap-2 text-[11px] text-muted-foreground">
-                <Gauge className="h-3 w-3 flex-shrink-0" />
-                <span>
-                    {tripEstimate.fuel_efficiency_km_per_liter} km/L @
-                    <span className="font-medium text-foreground"> ₱{tripEstimate.fuel_price_per_liter}/L</span>
-                    <span className="mx-1.5 text-muted-foreground/50">•</span>
-                    <span>+10% buffer included</span>
-                </span>
-            </div>
-        </div>
-
-        {/* Inline map preview */}
-        {hasMapCoordinates && (
-            <div className="border-t border-blue-200/60 dark:border-blue-800/40 p-4 bg-card/30">
-                <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-1.5 text-xs font-medium text-foreground">
-                        <MapIcon className="h-3.5 w-3.5" /> Route Preview
-                    </div>
-                    <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setIsMapModalOpen(true)}
-                        className="h-6 px-2 text-blue-600 dark:text-blue-400 text-xs hover:bg-blue-50 dark:hover:bg-blue-950/30"
-                    >
-                        <Maximize2 className="h-3 w-3 mr-1" /> Expand
-                    </Button>
-                </div>
-                <div className="rounded-lg overflow-hidden border border-border">
-                    <RouteMap
-                        destination={stops[stops.length - 1]?.address || ""}
-                        coordinates={{ lat: stops[0].lat, lng: stops[0].lng }}
-                        waypoints={stops.filter(s => s.lat && s.lng).map(s => ({
-                            lat: s.lat,
-                            lng: s.lng,
-                            address: s.address,
-                        }))}
-                        height="250px"
-                        showRoute={true}
-                        interactive={false}
-                        className="w-full"
-                        showMarker={true}
-                        draggableMarker={false}
-                        vehicleId={formData.vehicle_id}
-                        roundTrip={true}
-                    />
-                </div>
-            </div>
-        )}
-    </div>
-)}
+                                        {hasMapCoordinates && (
+                                            <div className="border-t border-blue-200/60 dark:border-blue-800/40 p-4 bg-white/30 dark:bg-slate-900/30">
+                                                <div className="flex items-center justify-between mb-3">
+                                                    <div className="flex items-center gap-1.5 text-xs font-medium text-slate-900 dark:text-slate-200">
+                                                        <MapIcon className="h-3.5 w-3.5" /> Route Preview
+                                                    </div>
+                                                    <Button
+                                                        type="button"
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        onClick={() => setIsMapModalOpen(true)}
+                                                        className="h-6 px-2 text-blue-600 dark:text-blue-400 text-xs hover:bg-blue-50 dark:hover:bg-blue-950/30"
+                                                    >
+                                                        <Maximize2 className="h-3 w-3 mr-1" /> Expand
+                                                    </Button>
+                                                </div>
+                                                <div className="rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700">
+                                                    <RouteMap
+                                                        destination={stops[stops.length - 1]?.address || ""}
+                                                        coordinates={{ lat: stops[0].lat, lng: stops[0].lng }}
+                                                        waypoints={stops.filter(s => s.lat && s.lng).map(s => ({
+                                                            lat: s.lat,
+                                                            lng: s.lng,
+                                                            address: s.address,
+                                                        }))}
+                                                        height="250px"
+                                                        showRoute={true}
+                                                        interactive={false}
+                                                        className="w-full"
+                                                        showMarker={true}
+                                                        draggableMarker={false}
+                                                        vehicleId={formData.vehicle_id}
+                                                        roundTrip={true}
+                                                    />
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                         </FormSection>
 
                         <FormSection title="Assignment" icon={Building2}>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div>
-                                    <Label>Department <span className="text-red-500">*</span></Label>
+                                    <Label className="dark:text-slate-300">Department <span className="text-red-500">*</span></Label>
                                     <p className="text-xs text-slate-400 dark:text-slate-500 mb-2">Auto-filled from driver</p>
                                     <DepartmentDisplay
                                         department={selectedDepartment}
@@ -1259,28 +1226,28 @@ const GsoCreateTrip = () => {
                                             onValueChange={(v) => handleChange("vehicle_id", v)}
                                             onOpenChange={() => handleFieldBlur("vehicle_id")}
                                         >
-                                            <SelectTrigger className={cn(hasError("vehicle_id") && "border-red-500 ring-red-500")}>
+                                            <SelectTrigger className={cn("dark:bg-slate-900 dark:border-slate-700 dark:text-white", hasError("vehicle_id") && "border-red-500 ring-red-500")}>
                                                 <SelectValue placeholder={
                                                     !formData.department_id ? "Select a driver first"
                                                     : availableVehicles.length === 0 ? "No vehicles available"
                                                     : "Select vehicle"
                                                 } />
                                             </SelectTrigger>
-                                            <SelectContent>
+                                            <SelectContent className="dark:bg-slate-800 dark:border-slate-700">
                                                 {availableVehicles.length === 0 ? (
-                                                    <SelectItem value="no-vehicle" disabled>
+                                                    <SelectItem value="no-vehicle" disabled className="dark:text-slate-400">
                                                         {!formData.department_id ? "Select a driver first" : "No vehicles available"}
                                                     </SelectItem>
                                                 ) : (
                                                     availableVehicles.map((v) => {
                                                         const isShared = sharedVehicleDeptId && v.department_id === sharedVehicleDeptId;
                                                         return (
-                                                            <SelectItem key={v.vehicle_id} value={v.vehicle_id.toString()}>
+                                                            <SelectItem key={v.vehicle_id} value={v.vehicle_id.toString()} className="dark:text-slate-200">
                                                                 <div className="flex items-center gap-2">
                                                                     <Truck className="h-4 w-4" />
                                                                     <span>{v.plate_number} - {v.vehicle_model}</span>
                                                                     {isShared && (
-                                                                        <Badge variant="outline" className="text-[10px] ml-1 border-purple-300 text-purple-600">
+                                                                        <Badge variant="outline" className="text-[10px] ml-1 border-purple-300 dark:border-purple-700 text-purple-600 dark:text-purple-400">
                                                                             Shared
                                                                         </Badge>
                                                                     )}
@@ -1302,7 +1269,12 @@ const GsoCreateTrip = () => {
                                             value={formData.trip_date}
                                             onChange={(e) => handleChange("trip_date", e.target.value)}
                                             onBlur={() => handleFieldBlur("trip_date")}
-                                            className={cn(hasError("trip_date") && "border-red-500 ring-red-500")}
+                                            className={cn(
+                                                "dark:bg-slate-900 dark:border-slate-700 dark:text-white",
+                                                "[&::-webkit-calendar-picker-indicator]:dark:invert",
+                                                "[&::-webkit-calendar-picker-indicator]:cursor-pointer",
+                                                hasError("trip_date") && "border-red-500 ring-red-500"
+                                            )}
                                         />
                                     </FormFieldWrapper>
                                 </div>
@@ -1317,7 +1289,7 @@ const GsoCreateTrip = () => {
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                                     <div><p className="text-xs text-slate-500 dark:text-slate-400">Plate</p><p className="font-medium text-blue-700 dark:text-blue-300">{selectedVehicle.plate_number}</p></div>
                                     <div><p className="text-xs text-slate-500 dark:text-slate-400">Model</p><p className="font-medium text-blue-700 dark:text-blue-300">{selectedVehicle.vehicle_model}</p></div>
-                                    <div><p className="text-xs text-slate-500 dark:text-slate-400">Fuel</p><Badge variant="outline" className="border-blue-300 dark:border-blue-700 uppercase">{selectedVehicle.fuel_type}</Badge></div>
+                                    <div><p className="text-xs text-slate-500 dark:text-slate-400">Fuel</p><Badge variant="outline" className="border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-300 uppercase">{selectedVehicle.fuel_type}</Badge></div>
                                     <div><p className="text-xs text-slate-500 dark:text-slate-400">Status</p><Badge className={selectedVehicle.status === "active" ? "bg-emerald-500" : "bg-yellow-500"}>{selectedVehicle.status}</Badge></div>
                                 </div>
                             </div>
@@ -1334,27 +1306,31 @@ const GsoCreateTrip = () => {
                                         onChange={(e) => handleChange("purpose", e.target.value)}
                                         onBlur={() => handleFieldBlur("purpose")}
                                         rows={3}
-                                        className={cn(hasError("purpose") && "border-red-500 ring-red-500")}
+                                        className={cn("dark:bg-slate-900 dark:border-slate-700 dark:text-white", hasError("purpose") && "border-red-500 ring-red-500")}
                                     />
                                 </FormFieldWrapper>
 
                                 <div>
-                                    <Label htmlFor="passenger_name">Passenger Name (Optional)</Label>
+                                    <Label htmlFor="passenger_name" className="dark:text-slate-300">Passenger Name (Optional)</Label>
                                     <Input
                                         id="passenger_name"
                                         placeholder="Name of passenger"
                                         value={formData.passenger_name}
                                         onChange={(e) => handleChange("passenger_name", e.target.value)}
+                                        className="dark:bg-slate-900 dark:border-slate-700 dark:text-white"
                                     />
                                 </div>
 
                                 <div>
-                                    <Label htmlFor="charge_to">Charge To</Label>
+                                    <Label htmlFor="charge_to" className="dark:text-slate-300">Charge To</Label>
                                     <Input
                                         id="charge_to"
                                         value={formData.charge_to || ''}
                                         disabled
-                                        className={cn("bg-gray-100 dark:bg-slate-700 font-mono", formData.charge_to && "bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300")}
+                                        className={cn(
+                                            "bg-gray-100 dark:bg-slate-800 font-mono",
+                                            formData.charge_to && "bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300"
+                                        )}
                                     />
                                 </div>
                             </div>
