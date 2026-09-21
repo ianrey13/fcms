@@ -349,7 +349,7 @@ const AddDepartment = () => {
                 />
               </FormField>
 
-            \
+            
 
               {/* Action Buttons */}
               <div className="flex gap-3 pt-4 border-t border-slate-200/60 dark:border-slate-700/60">

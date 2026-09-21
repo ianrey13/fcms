@@ -453,46 +453,59 @@ const EditUser = () => {
   // ✅ ENHANCED VALIDATION - Single toast with all errors
   // ============================================
 
-  const validate = () => {
+   const validate = () => {
     const newErrors = {};
     const newTouched = {};
+    const NAME_REGEX = /^[A-Za-z\s\.\-\'\,]+$/;
 
     // Email validation
-    if (!formData.email) {
+    if (!formData.email?.trim()) {
       newErrors.email = "Email is required";
       newTouched.email = true;
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email.trim())) {
       newErrors.email = "Please enter a valid email address";
       newTouched.email = true;
     }
 
     // First Name validation
-    if (!formData.first_name) {
+    const firstName = formData.first_name?.trim() || "";
+    if (!firstName) {
       newErrors.first_name = "First name is required";
       newTouched.first_name = true;
-    } else if (formData.first_name.length < 2) {
+    } else if (firstName.length < 2) {
       newErrors.first_name = "First name must be at least 2 characters";
       newTouched.first_name = true;
-    } else if (formData.first_name.length > 50) {
+    } else if (firstName.length > 50) {
       newErrors.first_name = "First name must be 50 characters or less";
+      newTouched.first_name = true;
+    } else if (!NAME_REGEX.test(firstName)) {
+      newErrors.first_name = "First name may only contain letters, spaces, and basic punctuation";
       newTouched.first_name = true;
     }
 
     // Last Name validation
-    if (!formData.last_name) {
+    const lastName = formData.last_name?.trim() || "";
+    if (!lastName) {
       newErrors.last_name = "Last name is required";
       newTouched.last_name = true;
-    } else if (formData.last_name.length < 2) {
+    } else if (lastName.length < 2) {
       newErrors.last_name = "Last name must be at least 2 characters";
       newTouched.last_name = true;
-    } else if (formData.last_name.length > 50) {
+    } else if (lastName.length > 50) {
       newErrors.last_name = "Last name must be 50 characters or less";
+      newTouched.last_name = true;
+    } else if (!NAME_REGEX.test(lastName)) {
+      newErrors.last_name = "Last name may only contain letters, spaces, and basic punctuation";
       newTouched.last_name = true;
     }
 
     // Middle Name validation (optional)
-    if (formData.middle_name && formData.middle_name.length > 50) {
+    const middleName = formData.middle_name?.trim() || "";
+    if (middleName && middleName.length > 50) {
       newErrors.middle_name = "Middle name must be 50 characters or less";
+      newTouched.middle_name = true;
+    } else if (middleName && !NAME_REGEX.test(middleName)) {
+      newErrors.middle_name = "Middle name may only contain letters, spaces, and basic punctuation";
       newTouched.middle_name = true;
     }
 
@@ -515,11 +528,16 @@ const EditUser = () => {
       }
     }
 
-    // Password validation (optional - only if provided)
-    if (formData.password && formData.password.length < 8) {
+    // Password validation
+    if (!formData.password) {
+      newErrors.password = "Password is required";
+      newTouched.password = true;
+    } else if (formData.password.length < 8) {
       newErrors.password = "Password must be at least 8 characters";
       newTouched.password = true;
     }
+
+    // Password confirmation validation
     if (formData.password !== formData.password_confirmation) {
       newErrors.password_confirmation = "Passwords do not match";
       newTouched.password_confirmation = true;
@@ -528,7 +546,6 @@ const EditUser = () => {
     setErrors(newErrors);
     setTouched(prev => ({ ...prev, ...newTouched }));
 
-    // ✅ Show single toast with all errors
     if (Object.keys(newErrors).length > 0) {
       const errorMessages = Object.entries(newErrors).map(([field, msg]) => {
         const labels = {
@@ -587,7 +604,7 @@ const EditUser = () => {
     }
   };
 
-  const handleSubmit = (e) => {
+   const handleSubmit = (e) => {
     e.preventDefault();
     
     if (toastIdRef.current) toast.dismiss(toastIdRef.current);
@@ -596,14 +613,21 @@ const EditUser = () => {
       return;
     }
 
-    const updateData = { ...formData };
-    if (!updateData.password) {
-      delete updateData.password;
-      delete updateData.password_confirmation;
+    const payload = {
+      ...formData,
+      email: formData.email.trim().toLowerCase(),
+      first_name: formData.first_name.trim(),
+      last_name: formData.last_name.trim(),
+      middle_name: formData.middle_name?.trim() || null,
+    };
+
+    if (!payload.password) {
+      delete payload.password;
+      delete payload.password_confirmation;
     }
 
     updateUser.mutate(
-      { userId: parseInt(id), userData: updateData },
+      { userId: parseInt(id), userData: payload },
       {
         onSuccess: () => {
           if (toastIdRef.current) toast.dismiss(toastIdRef.current);
