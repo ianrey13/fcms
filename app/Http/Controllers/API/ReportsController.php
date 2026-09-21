@@ -1399,7 +1399,7 @@ public function getMoActivityLogs(Request $request)
                     'action' => $log->action,
                     'module' => $log->table_name,
                     'details' => $this->formatAuditDetails($log),
-                    'created_at' => $log->created_at,
+                    'created_at' => $log->created_at?->toIso8601String(),
                 ];
             });
 
@@ -1498,7 +1498,7 @@ public function getMoActivityLogs(Request $request)
                         'action'      => $log->action,
                         'module'      => $log->table_name,
                         'details'     => $this->formatAuditDetails($log),
-                        'created_at'  => $log->created_at,
+                        'created_at' => $log->created_at?->toIso8601String(),
                     ];
                 });
 
@@ -1547,7 +1547,7 @@ public function getMoActivityLogs(Request $request)
                         'vehicle_plate'      => $vehicle,
                         'destination'        => $dest,
                         'distance_km'        => null,
-                        'created_at'         => $th->started_at, // right-side timestamp
+                        'created_at'         => $th->started_at, 
                     ]);
                 }
 
