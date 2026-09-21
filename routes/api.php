@@ -264,6 +264,8 @@ Route::prefix('reports')->group(function () {
         Route::get('budget-history', [BudgetPolicyController::class, 'getBudgetHistory']);
         Route::get('budget-summary', [BudgetPolicyController::class, 'getBudgetSummary']);
 
+         Route::get('activity-logs', [ReportsController::class, 'getMoActivityLogs']);
+
 
         // Receipt Verification
         Route::get('/receipts/for-verification', [MayorsOfficeController::class, 'getReceiptsForVerification']);
