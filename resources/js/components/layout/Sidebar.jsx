@@ -46,6 +46,7 @@ import {
     MapPin,
     Navigation,
     PhilippinePeso,
+   Activity
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -320,6 +321,11 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
                         },
                     ],
                 },
+                {
+                    name:"Activity Logs",
+                    icon: Activity
+                },
+                
             ],
             mayors_office: [
                 {

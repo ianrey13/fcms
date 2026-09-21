@@ -711,6 +711,9 @@ class ReportsController extends Controller
                 'plate_number' => $trip->vehicle?->plate_number ?? 'N/A',
                 'driver_name' => $trip->driver?->user?->full_name ?? 'N/A',
 
+                'trip_started_at' => $trip->gasSlip?->fuelReceipt?->trip_started_at,
+    'trip_ended_at'   => $trip->gasSlip?->fuelReceipt?->trip_ended_at,
+
                 // ✅ Amount fields (NEW)
                 'amount_released' => $amountReleased,
                 'actual_amount' => $actualAmount !== null ? round((float) $actualAmount, 2) : null,
