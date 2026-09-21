@@ -1,4 +1,4 @@
-// src/pages/gso/ActivityLogs.jsx
+// src/pages/mo/ActivityLogs.jsx
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
