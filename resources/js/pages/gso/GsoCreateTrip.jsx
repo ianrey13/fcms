@@ -1029,29 +1029,62 @@ const GsoCreateTrip = () => {
         },
     });
 
-   const handleSubmit = (e) => {
-    e.preventDefault();
-    if (toastIdRef.current) toast.dismiss(toastIdRef.current);
-    if (!validateForm()) return;
+    const handleSubmit = (e) => {
+        e.preventDefault();
+        if (toastIdRef.current) toast.dismiss(toastIdRef.current);
+        if (!validateForm()) return;
 
-    // ✅ Safety net: block duplicate stops on submit
-    const validStops = stops.filter(s => s.address && s.lat != null && s.lng != null);
-    const coordSet = new Set();
-    for (const stop of validStops) {
-        const key = `${stop.lat.toFixed(4)},${stop.lng.toFixed(4)}`;
-        if (coordSet.has(key)) {
-            toast.error("Duplicate destination detected. Please remove the duplicate stop.");
+        // ✅ Safety net: block duplicate stops on submit
+        const validStops = stops.filter(s => s.address && s.lat != null && s.lng != null);
+        const coordSet = new Set();
+        for (const stop of validStops) {
+            const key = `${stop.lat.toFixed(4)},${stop.lng.toFixed(4)}`;
+            if (coordSet.has(key)) {
+                toast.error("Duplicate destination detected. Please remove the duplicate stop.");
+                return;
+            }
+            coordSet.add(key);
+        }
+
+        // ✅ Build destination string from stops
+        const destinationString = (() => {
+            const parts = stops
+                .filter(s => s.address)
+                .map(s => {
+                    // Extract location name (first comma-separated chunk)
+                    const firstComma = s.address.indexOf(",");
+                    return firstComma > -1 ? s.address.substring(0, firstComma).trim() : s.address;
+                });
+
+            // ✅ Dedupe while preserving order
+            const seen = new Set();
+            const uniqueParts = parts.filter(p => {
+                const key = p.toLowerCase().trim();
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            });
+
+            // Check if all stops are within Laguindingan
+            const allInLaguindingan = stops
+                .filter(s => s.address)
+                .every(s => s.address.toLowerCase().includes("laguindingan"));
+
+            if (allInLaguindingan) {
+                return `${uniqueParts.join(", ")}, Laguindingan, Misamis Oriental`;
+            } else {
+                return `${uniqueParts.join(", ")}, Misamis Oriental`;
+            }
+        })();
+
+        // ✅ Guard: ensure destination is non-empty
+        if (!destinationString || destinationString.trim() === "" || destinationString === ", Misamis Oriental" || destinationString === ", Laguindingan, Misamis Oriental") {
+            toast.error("Please enter at least one valid destination before submitting.");
             return;
         }
-        coordSet.add(key);
-    }
 
-    const destinationString = (() => {
-        // ... existing dedupe logic
-    })();
-
-    createTripMutation.mutate({ ...formData, destination: destinationString });
-};
+        createTripMutation.mutate({ ...formData, destination: destinationString });
+    };
 
     if (isLoading) return <FormSkeleton />;
 
