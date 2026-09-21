@@ -212,7 +212,8 @@ Route::prefix('reports')->group(function () {
         Route::get('tickets/{id}/history', [GsoController::class, 'getTripHistory']);
         Route::get('/verified-receipts', [GsoController::class, 'getVerifiedReceipts']);  
         
-        
+           // Activity Logs (audit + trip history)
+    Route::get('activity-logs', [ReportsController::class, 'getGsoActivityLogs']);
        
         
         // ✅ GSO GPS Live Tracking
@@ -262,6 +263,7 @@ Route::prefix('reports')->group(function () {
         // Budget History
         Route::get('budget-history', [BudgetPolicyController::class, 'getBudgetHistory']);
         Route::get('budget-summary', [BudgetPolicyController::class, 'getBudgetSummary']);
+
 
         // Receipt Verification
         Route::get('/receipts/for-verification', [MayorsOfficeController::class, 'getReceiptsForVerification']);
@@ -383,6 +385,9 @@ Route::get('/receipts/verified',          [MayorsOfficeController::class, 'getVe
             ->middleware(['role:gso_office']);
            // Real-time stats for active trip
     Route::get('trips/{id}/stats', [GpsPingController::class, 'getRealtimeStats']);
+
+
+   
     });
 
     // ============ NOTIFICATIONS ============

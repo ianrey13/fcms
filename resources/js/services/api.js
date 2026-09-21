@@ -86,7 +86,7 @@ export const gsoAPI = {
 
     
   },
-
+getActivityLogs: (params) => cachedApi.get('/gso/activity-logs', { params }),
   // Completed Trips
   getCompletedTrips: (params) => cachedApi.get("/admin/completed-trips", { params }),
 
@@ -596,4 +596,4 @@ export const locationAPI = {
 };
 
 // ============ EXPORT ============
-export default cachedApi;
+export { cachedApi, uncachedApi };

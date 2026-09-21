@@ -1364,6 +1364,244 @@ class ReportsController extends Controller
         }
     }
 
+
+    // ============================================================
+// 11b. MAYOR'S OFFICE ACTIVITY LOGS (audit_log + budget_history)
+// ============================================================
+public function getMoActivityLogs(Request $request)
+{
+    try {
+        $startDate = $request->get('start_date');
+        $endDate   = $request->get('end_date');
+
+        // --------------------------------------------
+        // 1. AUDIT LOG entries (role = mayors_office)
+        // --------------------------------------------
+        $auditQuery = AuditLog::with(['user'])
+            ->whereHas('user', function ($q) {
+                $q->where('role', 'mayors_office');
+            });
+
+        if ($startDate && $endDate) {
+            $auditQuery->whereBetween('created_at', [
+                Carbon::parse($startDate)->startOfDay(),
+                Carbon::parse($endDate)->endOfDay(),
+            ]);
+        }
+
+        $auditLogs = $auditQuery->orderBy('created_at', 'desc')->get()
+            ->map(function ($log) {
+                return [
+                    'id' => 'audit-' . $log->log_id,
+                    'source' => 'audit',
+                    'user_name' => $log->user?->full_name ?? 'Unknown User',
+                    'user_id' => $log->user_id,
+                    'action' => $log->action,
+                    'module' => $log->table_name,
+                    'details' => $this->formatAuditDetails($log),
+                    'created_at' => $log->created_at,
+                ];
+            });
+
+        // --------------------------------------------
+        // 2. BUDGET HISTORY entries
+        // --------------------------------------------
+        $budgetQuery = \App\Models\BudgetHistory::query();
+
+        if ($startDate && $endDate) {
+            $budgetQuery->whereBetween('created_at', [
+                Carbon::parse($startDate)->startOfDay(),
+                Carbon::parse($endDate)->endOfDay(),
+            ]);
+        }
+
+        $budgetLogs = $budgetQuery->orderBy('created_at', 'desc')->get()
+            ->map(function ($entry) {
+                return [
+                    'id' => 'budget-' . $entry->id,
+                    'source' => 'budget',
+                    'user_name' => $entry->user_name ?? 'System',
+                    'user_id' => $entry->user_id,
+                    'action' => $entry->action,
+                    'module' => 'budget',
+                    'details' => null, // formatted on frontend
+                    'department_name' => $entry->department_name,
+                    'reason' => $entry->reason,
+                    'previous_amount' => $entry->previous_amount,
+                    'added_amount' => $entry->added_amount,
+                    'new_amount' => $entry->new_amount,
+                    'created_at' => $entry->created_at,
+                ];
+            });
+
+        // --------------------------------------------
+        // 3. MERGE and sort desc by created_at
+        // --------------------------------------------
+        $merged = $auditLogs->concat($budgetLogs)
+            ->sortByDesc(fn($item) => $item['created_at'] instanceof \Carbon\Carbon
+                ? $item['created_at']->timestamp
+                : strtotime($item['created_at']))
+            ->values();
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'logs' => $merged,
+                'summary' => [
+                    'total_logs'     => $merged->count(),
+                    'audit_count'    => $auditLogs->count(),
+                    'budget_count'   => $budgetLogs->count(),
+                ],
+            ],
+        ]);
+
+    } catch (\Exception $e) {
+        Log::error('MO Activity Logs error: ' . $e->getMessage());
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to fetch activity logs: ' . $e->getMessage(),
+        ], 500);
+    }
+}
+
+    // ============================================================
+    // GSO ACTIVITY LOGS (audit_log + trip_history)
+    // ============================================================
+    public function getGsoActivityLogs(Request $request)
+    {
+        try {
+            $startDate = $request->get('start_date');
+            $endDate   = $request->get('end_date');
+
+            // --------------------------------------------
+            // 1. AUDIT LOG entries (role = gso_office)
+            // --------------------------------------------
+            $auditQuery = AuditLog::with(['user'])
+                ->whereHas('user', function ($q) {
+                    $q->where('role', 'gso_office');
+                });
+
+            if ($startDate && $endDate) {
+                $auditQuery->whereBetween('created_at', [
+                    Carbon::parse($startDate)->startOfDay(),
+                    Carbon::parse($endDate)->endOfDay(),
+                ]);
+            }
+
+            $auditLogs = $auditQuery->orderBy('created_at', 'desc')->get()
+                ->map(function ($log) {
+                    return [
+                        'id'          => 'audit-' . $log->log_id,
+                        'source'      => 'audit',
+                        'user_name'   => $log->user?->full_name ?? 'Unknown User',
+                        'user_id'     => $log->user_id,
+                        'action'      => $log->action,
+                        'module'      => $log->table_name,
+                        'details'     => $this->formatAuditDetails($log),
+                        'created_at'  => $log->created_at,
+                    ];
+                });
+
+            // --------------------------------------------
+            // 2. TRIP HISTORY entries (per leg)
+            // --------------------------------------------
+            $thQuery = \App\Models\TripHistory::with([
+                'tripTicket.driver.user',
+                'tripTicket.vehicle',
+            ]);
+
+            if ($startDate && $endDate) {
+                $thQuery->where(function ($q) use ($startDate, $endDate) {
+                    $q->whereBetween('started_at', [
+                        Carbon::parse($startDate)->startOfDay(),
+                        Carbon::parse($endDate)->endOfDay(),
+                    ])->orWhereBetween('ended_at', [
+                        Carbon::parse($startDate)->startOfDay(),
+                        Carbon::parse($endDate)->endOfDay(),
+                    ]);
+                });
+            }
+
+            $tripHistoryLogs = collect();
+
+            foreach ($thQuery->orderBy('started_at', 'desc')->limit(100)->get() as $th) {
+                $ticket    = $th->tripTicket;
+                $driver    = $ticket?->driver?->user?->full_name ?? 'Unknown Driver';
+                $vehicle   = $ticket?->vehicle?->plate_number ?? 'N/A';
+                $ticketNo  = $ticket?->trip_ticket_number ?? 'N/A';
+                $dest      = $ticket?->destination ?? 'N/A';
+                $tripNo    = $th->trip_number ?? '?';
+
+                // Start event
+                if ($th->started_at) {
+                    $tripHistoryLogs->push([
+                        'id'                 => 'trip-' . $th->history_id . '-start',
+                        'source'             => 'trip_history',
+                        'event'              => 'started',
+                        'user_name'          => $driver,
+                        'user_id'            => null,
+                        'action'             => 'started',
+                        'module'             => 'trip',
+                        'trip_number'        => $tripNo,
+                        'trip_ticket_number' => $ticketNo,
+                        'vehicle_plate'      => $vehicle,
+                        'destination'        => $dest,
+                        'distance_km'        => null,
+                        'created_at'         => $th->started_at, // right-side timestamp
+                    ]);
+                }
+
+                // End event
+                if ($th->ended_at && $th->status === 'completed') {
+                    $tripHistoryLogs->push([
+                        'id'                 => 'trip-' . $th->history_id . '-end',
+                        'source'             => 'trip_history',
+                        'event'              => 'completed',
+                        'user_name'          => $driver,
+                        'user_id'            => null,
+                        'action'             => 'completed',
+                        'module'             => 'trip',
+                        'trip_number'        => $tripNo,
+                        'trip_ticket_number' => $ticketNo,
+                        'vehicle_plate'      => $vehicle,
+                        'destination'        => $dest,
+                        'distance_km'        => $th->distance_km,
+                        'created_at'         => $th->ended_at, // right-side timestamp
+                    ]);
+                }
+            }
+
+            // --------------------------------------------
+            // 3. MERGE and sort desc by timestamp
+            // --------------------------------------------
+            $merged = $auditLogs->concat($tripHistoryLogs)
+                ->sortByDesc(fn($i) => $i['created_at'] instanceof \Carbon\Carbon
+                    ? $i['created_at']->timestamp
+                    : strtotime($i['created_at']))
+                ->values();
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'logs' => $merged,
+                    'summary' => [
+                        'total_logs'         => $merged->count(),
+                        'audit_count'        => $auditLogs->count(),
+                        'trip_history_count' => $tripHistoryLogs->count(),
+                    ],
+                ],
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('GSO Activity Logs error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch activity logs: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+
     // ============================================================
     // EXPORT METHODS
     // ============================================================

@@ -8,6 +8,7 @@ import { useAuth } from "../../contexts/AuthContext";
 import { useOptimizedQuery } from "../../hooks/useOptimizedQuery";
 import { useAutoRefresh } from "../../hooks/useAutoRefresh";
 import { useRealtime } from "../../contexts/RealtimeContext";
+import WeeklyTrackingCard from "../../pages/mayor/WeeklyTrackingCard";
 import {
     SkeletonPage,
     SkeletonStats,
@@ -619,6 +620,9 @@ const fetchAllData = useCallback(() => {
                         )}
                     </CardContent>
                 </Card>
+
+                 {/* Weekly Budget Tracking */}
+                <WeeklyTrackingCard />
 
                 {/* Two Column Layout */}
                 <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">

@@ -61,8 +61,7 @@ const MoActivityLogs = lazy(() => import("./pages/mayor/ActivityLogs"));
 
 // ============ MAYOR BUDGET PAGES ============
 const BudgetAllocation = lazy(() => import("./pages/mayor/budget/BudgetAllocation"));
-const BudgetHistory = lazy(() => import("./pages/mayor/budget/BudgetHistory"));
-const WeeklyTracking = lazy(() => import("./pages/mayor/budget/WeeklyTracking"));
+
 
 // ============ MAYOR REPORT PAGES ============
 const MayorWeeklyMonitoring = lazy(() => import("./pages/mayor/reports/WeeklyMonitoring"));
@@ -498,26 +497,8 @@ function App() {
                             </ProtectedRoute>
                         }
                     />
-                    <Route
-                        path="/mo/budget-history"
-                        element={
-                            <ProtectedRoute allowedRoles={["mayors_office"]}>
-                                <Layout>
-                                    <BudgetHistory />
-                                </Layout>
-                            </ProtectedRoute>
-                        }
-                    />
-                    <Route
-                        path="/mo/weekly-tracking"
-                        element={
-                            <ProtectedRoute allowedRoles={["mayors_office"]}>
-                                <Layout>
-                                    <WeeklyTracking />
-                                </Layout>
-                            </ProtectedRoute>
-                        }
-                    />
+                  
+                   
                     <Route
                         path="/mo/reports"
                         element={
