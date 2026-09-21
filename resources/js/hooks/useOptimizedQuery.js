@@ -7,7 +7,7 @@ export const useOptimizedQuery = ({
   queryFn,
   enabled = true,
   staleTime = 0,                            // ✅ default to always-fresh
-  gcTime = 10 * 60 * 1000,                  // ✅ v5 name (was cacheTime)
+  gcTime = 30 * 60 * 1000,                  // ✅ v5 name (was cacheTime)
   refetchOnWindowFocus = false,
   refetchOnMount = true,                    // ✅ refetch on mount by default
   retry,
@@ -41,11 +41,10 @@ export const useOptimizedQuery = ({
     gcTime,
     refetchOnWindowFocus,
     refetchOnMount,
-    retry: (failureCount, error) => {
-      if (error?.response?.status === 429) {
-        return failureCount < 3;
-      }
-      return failureCount < 1;
+       retry: (failureCount, error) => {
+      if (error?.response?.status === 401) return false;   
+      if (error?.response?.status === 429) return failureCount < 3;
+      return failureCount < 3;                              
     },
     retryDelay: (attemptIndex, error) => {
       if (error?.response?.status === 429) {

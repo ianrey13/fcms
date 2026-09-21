@@ -105,7 +105,7 @@ export const RealtimeProvider = ({ children }) => {
     // CONNECTION MANAGEMENT
     // ============================================
 
-    useEffect(() => {
+       useEffect(() => {
         if (!echo?.connector?.pusher) return;
 
         const connection = echo.connector.pusher.connection;
@@ -115,8 +115,9 @@ export const RealtimeProvider = ({ children }) => {
             setIsConnected(true);
 
             // ✅ Only subscribe if we haven't already subscribed for this user
+            // Pusher reconnects automatically without needing re-subscription
             const user = getUser();
-            if (user && subscribedUserIdRef.current !== user.user_id) {
+            if (user && !hasSubscribedRef.current) {
                 subscribeAllRef.current(user);
             }
         };
@@ -124,9 +125,8 @@ export const RealtimeProvider = ({ children }) => {
         const handleDisconnected = () => {
             console.log('❌ Real-time disconnected');
             setIsConnected(false);
-            // ✅ Reset flags so we can resubscribe on reconnect
-            hasSubscribedRef.current = false;
-            subscribedUserIdRef.current = null;
+            // ✅ DO NOT reset guards — Pusher auto-reconnects to the same channels.
+            // Only reset on explicit login/logout via `auth-change` event.
         };
 
         const handleError = (error) => {
@@ -140,7 +140,6 @@ export const RealtimeProvider = ({ children }) => {
         // ✅ Initial subscription with guard
         const user = getUser();
         if (user && !hasSubscribedRef.current) {
-            // Small delay to allow other initialization to complete
             setTimeout(() => {
                 if (!hasSubscribedRef.current) {
                     subscribeAllRef.current(user);
@@ -152,8 +151,18 @@ export const RealtimeProvider = ({ children }) => {
         const handleAuthChange = () => {
             const newUser = getUser();
             if (newUser && subscribedUserIdRef.current !== newUser.user_id) {
+                // ✅ New user — reset guards and subscribe
                 hasSubscribedRef.current = false;
+                subscribedUserIdRef.current = null;
                 subscribeAllRef.current(newUser);
+            } else if (!newUser) {
+                // ✅ Logout — reset everything
+                Object.values(subscriptionsRef.current).forEach(unsub => {
+                    if (typeof unsub === 'function') unsub();
+                });
+                subscriptionsRef.current = {};
+                hasSubscribedRef.current = false;
+                subscribedUserIdRef.current = null;
             }
         };
         window.addEventListener('auth-change', handleAuthChange);
@@ -164,7 +173,6 @@ export const RealtimeProvider = ({ children }) => {
             connection.unbind('error', handleError);
             window.removeEventListener('auth-change', handleAuthChange);
 
-            // Cleanup subscriptions
             Object.values(subscriptionsRef.current).forEach(unsub => {
                 if (typeof unsub === 'function') unsub();
             });

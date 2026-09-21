@@ -321,10 +321,11 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
                         },
                     ],
                 },
-                {
-                    name:"Activity Logs",
-                    icon: Activity
-                },
+              {
+    name: "Activity Logs",
+    href: "/gso/activity-logs",
+    icon: Activity,
+},
                 
             ],
             mayors_office: [
@@ -376,6 +377,13 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
                     href: "/mo/reports",
                     icon: Receipt,
                 },
+
+                {
+    name: "Fuel Reports",
+    href: "/mo/reports",
+    icon: Receipt,
+},
+
             ],
             driver: [
                 {

@@ -23,7 +23,8 @@ const CompletedTrips = lazy(() => import("./pages/gso/CompletedTrips"));
 const LiveTracking = lazy(() => import("./pages/gso/LiveTracking"));
 const SystemSettings = lazy(() => import("./pages/gso/SystemSettings"));
 const AnnualBudget = lazy(() => import("./pages/gso/FiscalYearManagement"));
-const TripHistory = lazy(() => import("./pages/gso/TripHistory"));
+
+const GsoActivityLogs = lazy(() => import("./pages/gso/ActivityLogs"));
 
 // ============ GSO REPORT PAGES ============
 const WeeklyMonitoring = lazy(() => import("./pages/gso/reports/WeeklyMonitoring"));
@@ -56,7 +57,7 @@ const MayorTripTicketDetail = lazy(() => import("./pages/mayor/MayorTripTicketDe
 const BudgetPolicies = lazy(() => import("./pages/mayor/BudgetPolicies"));
 const MayorReceiptVerification = lazy(() => import("./pages/mayor/MayorReceiptVerification"));
 const MayorTripTicket = lazy(() => import("./pages/mayor/MayorTripTicket"));
-const FundReleaseHistory = lazy(() => import("./pages/mayor/FundReleaseHistory"));
+const MoActivityLogs = lazy(() => import("./pages/mayor/ActivityLogs"));
 
 // ============ MAYOR BUDGET PAGES ============
 const BudgetAllocation = lazy(() => import("./pages/mayor/budget/BudgetAllocation"));
@@ -251,17 +252,17 @@ function App() {
                         }
                     />
 
-                    {/* ============ GSO TRIP HISTORY ============ */}
-                    <Route
-                        path="/gso/trip-history"
-                        element={
-                            <ProtectedRoute allowedRoles={["gso_office"]}>
-                                <Layout>
-                                    <TripHistory />
-                                </Layout>
-                            </ProtectedRoute>
-                        }
-                    />
+                    {/* ============ GSO Activity Log ============ */}
+                   <Route
+    path="/gso/activity-logs"
+    element={
+        <ProtectedRoute allowedRoles={["gso_office"]}>
+            <Layout>
+                <GsoActivityLogs />
+            </Layout>
+        </ProtectedRoute>
+    }
+/>
 
                     {/* ============================================================ */}
                     {/* ============ GSO ADMIN ROUTES ============ */}
@@ -568,17 +569,17 @@ function App() {
                         }
                     />
 
-                    {/* ============ MAYOR FUND RELEASE HISTORY ============ */}
-                    <Route
-                        path="/mo/fund-release-history"
-                        element={
-                            <ProtectedRoute allowedRoles={["mayors_office"]}>
-                                <Layout>
-                                    <FundReleaseHistory />
-                                </Layout>
-                            </ProtectedRoute>
-                        }
-                    />
+                    {/* ============ MAYOR Activity Log ============ */}
+           <Route
+    path="/mo/activity-logs"
+    element={
+        <ProtectedRoute allowedRoles={["mayors_office"]}>
+            <Layout>
+                <MoActivityLogs />
+            </Layout>
+        </ProtectedRoute>
+    }
+/>
 
                     {/* ============================================================ */}
                     {/* ============ MAYOR REPORT ROUTES ============ */}

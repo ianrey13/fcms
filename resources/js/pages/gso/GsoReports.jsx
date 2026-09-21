@@ -31,11 +31,8 @@ const VehicleSummaryReport = lazy(() => import('./reports/VehicleSummaryReport')
 const DepartmentSummaryReport = lazy(() => import('./reports/DepartmentSummaryReport'));
 const MonthlySummaryReport = lazy(() => import('./reports/MonthlySummaryReport'));
 const TripTicketReport = lazy(() => import('./reports/TripTicketReport'));
-const GPSActivityReport = lazy(() => import('./reports/GPSActivityReport'));
+
 const ReconciliationReport = lazy(() => import('./reports/ReconciliationReport'));
-const FuelReceiptReport = lazy(() => import('./reports/FuelReceiptReport'));
-const DriverEfficiencyReport = lazy(() => import('./reports/DriverEfficiencyReport'));
-const AuditTrailReport = lazy(() => import('./reports/AuditTrailReport'));
 
 // ============================================
 // ✅ SHARED CONSTANTS
