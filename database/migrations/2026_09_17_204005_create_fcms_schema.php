@@ -7,19 +7,27 @@ use Illuminate\Support\Facades\DB;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     * Creates the full FCMS schema in dependency-safe order.
-     */
     public function up(): void
     {
-        // Disable FK checks during creation
+        // ============================================================
+        // 0. IDEMPOTENT CLEANUP
+        // MySQL DROP TABLES doesn't remove procedures/views/triggers,
+        // so we explicitly drop them here. This makes `migrate:fresh`
+        // safe to run repeatedly.
+        // ============================================================
+        DB::unprepared("DROP PROCEDURE IF EXISTS `proc_weekly_budget_reset`");
+        DB::unprepared("DROP VIEW IF EXISTS `v_remaining_budget`");
+        DB::unprepared("DROP VIEW IF EXISTS `v_fuel_efficiency`");
+        DB::unprepared("DROP VIEW IF EXISTS `v_department_budget_summary`");
+        DB::unprepared("DROP VIEW IF EXISTS `v_active_trips`");
+        DB::unprepared("DROP TRIGGER IF EXISTS `trg_log_charge_to_change`");
+        DB::unprepared("DROP TRIGGER IF EXISTS `trg_gas_slip_budget_immutable`");
+
         Schema::disableForeignKeyConstraints();
 
         // ============================================================
         // 1. CORE: departments, users, drivers
         // ============================================================
-
         Schema::create('departments', function (Blueprint $table) {
             $table->bigIncrements('department_id');
             $table->string('department_name', 150)->unique();
@@ -40,7 +48,8 @@ return new class extends Migration
             $table->string('email', 150)->unique();
             $table->string('employee_number', 50)->nullable()->unique();
             $table->string('password_hash', 255)->nullable();
-            $table->enum('role', ['gso_office', 'mayors_office', 'driver']);
+            // ✅ Merged enum — includes budget_office
+            $table->enum('role', ['gso_office', 'mayors_office', 'driver', 'budget_office']);
             $table->boolean('can_drive')->default(false);
             $table->string('esignature_path', 500)->nullable();
             $table->string('esignature_hash', 64)->nullable();
@@ -72,9 +81,8 @@ return new class extends Migration
         });
 
         // ============================================================
-        // 2. FISCAL YEARS & BUDGET POLICIES
+        // 2. FISCAL YEARS & BUDGET
         // ============================================================
-
         Schema::create('fiscal_years', function (Blueprint $table) {
             $table->bigIncrements('fiscal_year_id');
             $table->year('year')->unique();
@@ -169,15 +177,14 @@ return new class extends Migration
         });
 
         // ============================================================
-        // 3. VEHICLES
+        // 3. VEHICLES — ✅ merged fuel_type enum (gasoline, diesel)
         // ============================================================
-
         Schema::create('vehicles', function (Blueprint $table) {
             $table->bigIncrements('vehicle_id');
             $table->unsignedBigInteger('department_id');
             $table->string('vehicle_model', 120);
             $table->string('plate_number', 20)->unique();
-            $table->enum('fuel_type', ['regular', 'premium', 'diesel']);
+            $table->enum('fuel_type', ['gasoline', 'diesel']);
             $table->decimal('fuel_efficiency', 5, 2)->default(10.00);
             $table->decimal('current_fuel_balance', 10, 2)->default(0.00);
             $table->decimal('last_odometer_reading', 10, 2)->nullable();
@@ -194,7 +201,6 @@ return new class extends Migration
         // ============================================================
         // 4. TRIP TICKETS
         // ============================================================
-
         Schema::create('trip_ticket', function (Blueprint $table) {
             $table->bigIncrements('trip_ticket_id');
             $table->string('trip_ticket_number', 20)->nullable()->unique();
@@ -254,7 +260,8 @@ return new class extends Migration
         Schema::create('trip_vehicle_snapshot', function (Blueprint $table) {
             $table->unsignedBigInteger('trip_ticket_id')->primary();
             $table->enum('vehicle_status', ['active', 'inactive']);
-            $table->enum('fuel_type', ['regular', 'premium', 'diesel']);
+            // ✅ merged fuel_type enum
+            $table->enum('fuel_type', ['gasoline', 'diesel']);
             $table->timestamp('snapshot_taken_at')->useCurrent();
 
             $table->foreign('trip_ticket_id')->references('trip_ticket_id')->on('trip_ticket');
@@ -282,7 +289,6 @@ return new class extends Migration
         // ============================================================
         // 5. GAS SLIPS, FUEL RECEIPTS, GPS, CROSS-DEPT
         // ============================================================
-
         Schema::create('gas_slip', function (Blueprint $table) {
             $table->bigIncrements('gas_slip_id');
             $table->unsignedBigInteger('trip_ticket_id')->unique();
@@ -316,6 +322,7 @@ return new class extends Migration
             $table->foreign('original_department_id')->references('department_id')->on('departments');
         });
 
+        // ✅ Merged: includes verification_status/verified_at/verified_by from the start
         Schema::create('fuel_receipt', function (Blueprint $table) {
             $table->bigIncrements('fuel_receipt_id');
             $table->unsignedBigInteger('gas_slip_id')->unique();
@@ -325,6 +332,12 @@ return new class extends Migration
             $table->decimal('unit_price', 10, 2)->nullable();
             $table->string('receipt_photo_path', 500)->nullable();
             $table->timestamp('receipt_uploaded_at')->nullable();
+
+            // ✅ From merged migration
+            $table->enum('verification_status', ['pending', 'verified'])->default('pending');
+            $table->timestamp('verified_at')->nullable();
+            $table->unsignedBigInteger('verified_by')->nullable();
+
             $table->decimal('trip_start_gps_lat', 10, 7)->nullable();
             $table->decimal('trip_start_gps_lng', 10, 7)->nullable();
             $table->decimal('trip_end_gps_lat', 10, 7)->nullable();
@@ -338,6 +351,8 @@ return new class extends Migration
             $table->decimal('gps_distance_km', 8, 2)->nullable();
 
             $table->foreign('gas_slip_id')->references('gas_slip_id')->on('gas_slip');
+            $table->foreign('verified_by')->references('user_id')->on('users')->onDelete('set null');
+            $table->index('verification_status', 'idx_fuel_receipt_verification_status');
         });
 
         Schema::create('gps_ping', function (Blueprint $table) {
@@ -378,7 +393,6 @@ return new class extends Migration
         // ============================================================
         // 6. AUDIT, NOTIFICATIONS, CACHE, JOBS, SESSIONS, SETTINGS
         // ============================================================
-
         Schema::create('audit_log', function (Blueprint $table) {
             $table->bigIncrements('log_id');
             $table->unsignedBigInteger('user_id')->nullable();
@@ -394,6 +408,7 @@ return new class extends Migration
             $table->foreign('user_id')->references('user_id')->on('users')->onDelete('set null');
         });
 
+        // ✅ Merged: includes department_added + department entity_type
         Schema::create('notifications', function (Blueprint $table) {
             $table->bigIncrements('notification_id');
             $table->unsignedBigInteger('recipient_user_id');
@@ -406,11 +421,11 @@ return new class extends Migration
                 'trip_assigned', 'receipt_uploaded', 'test', 'trip_reconciled',
                 'driver_acknowledged', 'gso_rejected', 'mo_rejected',
                 'cross_department_usage', 'trip_cancelled', 'trip_closed',
-                'trip_pending_validation',
+                'trip_pending_validation', 'department_added',
             ])->nullable();
             $table->enum('entity_type', [
                 'trip_ticket', 'gas_slip', 'fund_issuance',
-                'trip_ticket_esignature', 'mo_request', 'test',
+                'trip_ticket_esignature', 'mo_request', 'test', 'department',
             ]);
             $table->integer('entity_id');
             $table->string('message', 500);
@@ -435,7 +450,7 @@ return new class extends Migration
             $table->foreign('updated_by')->references('user_id')->on('users')->onDelete('set null');
         });
 
-        // Laravel-standard tables
+        // Laravel-standard
         Schema::create('cache', function (Blueprint $table) {
             $table->string('key')->primary();
             $table->mediumText('value');
@@ -483,8 +498,6 @@ return new class extends Migration
             $table->index(['connection', 'queue', 'failed_at']);
         });
 
-      
-
         Schema::create('personal_access_tokens', function (Blueprint $table) {
             $table->bigIncrements('id');
             $table->string('tokenable_type');
@@ -513,7 +526,6 @@ return new class extends Migration
         // ============================================================
         // 7. TRIGGERS
         // ============================================================
-
         DB::unprepared("
             CREATE TRIGGER `trg_gas_slip_budget_immutable`
             BEFORE UPDATE ON `gas_slip`
@@ -542,7 +554,6 @@ return new class extends Migration
         // ============================================================
         // 8. STORED PROCEDURE
         // ============================================================
-
         DB::unprepared("
             CREATE PROCEDURE `proc_weekly_budget_reset` ()
             BEGIN
@@ -586,7 +597,6 @@ return new class extends Migration
         // ============================================================
         // 9. VIEWS
         // ============================================================
-
         DB::unprepared("
             CREATE VIEW `v_active_trips` AS
             SELECT
@@ -676,30 +686,22 @@ return new class extends Migration
         ");
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
         Schema::disableForeignKeyConstraints();
 
-        // Drop views first
         DB::unprepared("DROP VIEW IF EXISTS `v_remaining_budget`");
         DB::unprepared("DROP VIEW IF EXISTS `v_fuel_efficiency`");
         DB::unprepared("DROP VIEW IF EXISTS `v_department_budget_summary`");
         DB::unprepared("DROP VIEW IF EXISTS `v_active_trips`");
 
-        // Drop triggers
         DB::unprepared("DROP TRIGGER IF EXISTS `trg_log_charge_to_change`");
         DB::unprepared("DROP TRIGGER IF EXISTS `trg_gas_slip_budget_immutable`");
 
-        // Drop procedure
         DB::unprepared("DROP PROCEDURE IF EXISTS `proc_weekly_budget_reset`");
 
-        // Drop tables in reverse dependency order
         Schema::dropIfExists('sessions');
         Schema::dropIfExists('personal_access_tokens');
-
         Schema::dropIfExists('failed_jobs');
         Schema::dropIfExists('job_batches');
         Schema::dropIfExists('jobs');
