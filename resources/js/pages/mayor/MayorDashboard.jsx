@@ -1,6 +1,5 @@
 // src/pages/mayor/MayorDashboard.jsx
 
-
 import React, { useMemo, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
@@ -14,7 +13,7 @@ import {
     SkeletonStats,
     SkeletonCard,
 } from "../../components/ui/SkeletonCard";
-import { mayorsOfficeAPI } from "../../services/api";
+import { mayorsOfficeAPI, reportsAPI } from "../../services/api";
 
 import {
     Clock,
@@ -49,7 +48,7 @@ import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 
 // ============================================
-// ✅ SAFE ARRAY EXTRACTION HELPER
+// SAFE ARRAY EXTRACTION HELPER
 // ============================================
 
 const extractArray = (response) => {
@@ -238,16 +237,18 @@ const MayorDashboard = () => {
     const queryClient = useQueryClient();
 
     // ============================================
-    // ✅ THROTTLED REFRESH FUNCTION
+    // THROTTLED REFRESH FUNCTION
     // ============================================
-const fetchAllData = useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: ["mayor-pending-tickets"] });
-    queryClient.invalidateQueries({ queryKey: ["mayor-approved-tickets"] });
-    queryClient.invalidateQueries({ queryKey: ["mayor-department-budgets"] });
-}, [queryClient]);
+
+    const fetchAllData = useCallback(() => {
+        queryClient.invalidateQueries({ queryKey: ["mayor-pending-tickets"] });
+        queryClient.invalidateQueries({ queryKey: ["mayor-approved-tickets"] });
+        queryClient.invalidateQueries({ queryKey: ["mayor-department-budgets"] });
+        queryClient.invalidateQueries({ queryKey: ["mayor-active-fiscal-year"] });
+    }, [queryClient]);
 
     // ============================================
-    // ✅ AUTO-REFRESH (event-driven only)
+    // AUTO-REFRESH (event-driven only)
     // ============================================
 
     useAutoRefresh(
@@ -264,7 +265,33 @@ const fetchAllData = useCallback(() => {
     );
 
     // ============================================
-    // ✅ OPTIMIZED QUERIES (with extractArray)
+    // ACTIVE FISCAL YEAR
+    // ============================================
+
+    const { data: activeFiscalYearData, isLoading: fiscalYearLoading } = useOptimizedQuery({
+        queryKey: ["mayor-active-fiscal-year"],
+        queryFn: async () => {
+            try {
+                const response = await mayorsOfficeAPI.getActiveFiscalYears();
+                // Backend returns { success, data: { year, is_active, ... } }
+                const payload = response?.data?.data ?? response?.data ?? null;
+                return payload;
+            } catch (error) {
+                console.error("Error fetching active fiscal year:", error);
+                return null;
+            }
+        },
+        staleTime: 5 * 60 * 1000,
+        refetchOnMount: 'always',
+    });
+
+    // ✅ Active fiscal year — falls back to current calendar year if none is set
+    const activeFiscalYear =
+        activeFiscalYearData?.year ?? new Date().getFullYear();
+    const hasActiveFiscalYear = !!activeFiscalYearData?.year;
+
+    // ============================================
+    // OPTIMIZED QUERIES (with extractArray)
     // ============================================
 
     const { data: pendingRaw, isLoading: pendingLoading } = useOptimizedQuery({
@@ -279,7 +306,7 @@ const fetchAllData = useCallback(() => {
                 return [];
             }
         },
-                refetchOnMount: 'always',
+        refetchOnMount: 'always',
     });
     const pendingTickets = useSafeArray(pendingRaw);
 
@@ -294,7 +321,7 @@ const fetchAllData = useCallback(() => {
                 return [];
             }
         },
-               refetchOnMount: 'always',
+        refetchOnMount: 'always',
     });
     const approvedTickets = useSafeArray(approvedRaw);
 
@@ -309,13 +336,12 @@ const fetchAllData = useCallback(() => {
                 return [];
             }
         },
-       
         refetchOnMount: 'always',
     });
     const budgetData = useSafeArray(budgetRaw);
 
     // ============================================
-    // ✅ COMPUTED DATA (useMemo — no useState/useEffect)
+    // COMPUTED DATA
     // ============================================
 
     const departmentBudgets = useMemo(() => {
@@ -327,7 +353,7 @@ const fetchAllData = useCallback(() => {
             remaining: parseFloat(dept.remaining_amount || 0),
             has_budget: dept.has_budget || false,
             utilization: dept.utilization_percentage || dept.utilization || 0,
-            fiscal_year: dept.fiscal_year || new Date().getFullYear(),
+            fiscal_year: dept.fiscal_year || activeFiscalYear,
             budget_type: dept.budget_type || 'annual',
             allocated_amount: parseFloat(dept.allocated_amount || dept.annual_amount || 0),
             used_amount: parseFloat(dept.used_amount || 0),
@@ -335,7 +361,7 @@ const fetchAllData = useCallback(() => {
         }));
         formatted.sort((a, b) => parseFloat(b.utilization) - parseFloat(a.utilization));
         return formatted;
-    }, [budgetData]);
+    }, [budgetData, activeFiscalYear]);
 
     const stats = useMemo(() => {
         const total = approvedTickets.reduce((sum, t) => {
@@ -410,7 +436,7 @@ const fetchAllData = useCallback(() => {
     // LOADING STATE
     // ============================================
 
-    const isLoading = pendingLoading || approvedLoading || budgetLoading;
+    const isLoading = pendingLoading || approvedLoading || budgetLoading || fiscalYearLoading;
 
     if (isLoading && pendingTickets.length === 0 && approvedTickets.length === 0 && departmentBudgets.length === 0) {
         return <LoadingSkeleton />;
@@ -441,10 +467,21 @@ const fetchAllData = useCallback(() => {
                                         weekday: "long", month: "long", day: "numeric",
                                     })}
                                 </Badge>
-                                <Badge className="border-amber-500/30 bg-amber-500/20 text-amber-300">
-                                    <Fuel className="mr-1 h-3 w-3" />
-                                    FY {new Date().getFullYear()}
-                                </Badge>
+
+                                {/* ✅ ACTIVE FISCAL YEAR BADGE */}
+                                {hasActiveFiscalYear ? (
+                                    <Badge className="border-amber-500/30 bg-amber-500/20 text-amber-300">
+                                        <Fuel className="mr-1 h-3 w-3" />
+                                        Active FY {activeFiscalYear}
+                                        <span className="ml-1.5 h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />
+                                    </Badge>
+                                ) : (
+                                    <Badge className="border-rose-500/30 bg-rose-500/20 text-rose-300">
+                                        <AlertCircle className="mr-1 h-3 w-3" />
+                                        No Active FY — showing FY {activeFiscalYear}
+                                    </Badge>
+                                )}
+
                                 {isRealTime && (
                                     <Badge className="border-emerald-500/30 bg-emerald-500/20 text-emerald-300 animate-pulse">
                                         <span className="mr-1.5 h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
@@ -456,7 +493,12 @@ const fetchAllData = useCallback(() => {
                                 {getGreeting()}, {user?.first_name || "Mayor"}
                             </h1>
                             <p className="mt-1 text-sm text-slate-300">
-                                Monitor fund releases and department budget utilization for FY {new Date().getFullYear()}
+                                Monitor fund releases and department budget utilization for <strong>FY {activeFiscalYear}</strong>
+                                {hasActiveFiscalYear && (
+                                    <span className="ml-2 text-xs text-amber-300">
+                                        ● Active fiscal year
+                                    </span>
+                                )}
                                 <span className="ml-2 text-xs opacity-70">{connectionStatus}</span>
                                 {isRealTime && (
                                     <span className="ml-2 text-xs text-emerald-400 animate-pulse">● Auto-refresh</span>
@@ -475,7 +517,7 @@ const fetchAllData = useCallback(() => {
                             </div>
                             <div>
                                 <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
-                                    Annual Budget Overview FY {new Date().getFullYear()}
+                                    Annual Budget Overview FY {activeFiscalYear}
                                     {isRealTime && (
                                         <span className="ml-2 text-xs font-normal text-emerald-500 animate-pulse">● Live</span>
                                     )}
@@ -572,7 +614,7 @@ const fetchAllData = useCallback(() => {
                                         Annual Budget Utilization
                                     </CardTitle>
                                     <CardDescription className="text-sm text-slate-500 dark:text-slate-400">
-                                        Real-time budget consumption across departments for FY {new Date().getFullYear()}
+                                        Real-time budget consumption across departments for FY {activeFiscalYear}
                                         {isRealTime && (
                                             <span className="ml-2 text-xs text-emerald-500 animate-pulse">● Live updates</span>
                                         )}
@@ -806,7 +848,7 @@ const fetchAllData = useCallback(() => {
                                     </div>
                                 </div>
                                 <div className="mt-3 flex items-center justify-between text-xs text-slate-400 dark:text-slate-500">
-                                    <span>Annual Budgets FY {new Date().getFullYear()}</span>
+                                    <span>Annual Budgets FY {activeFiscalYear}</span>
                                     <span>{stats.departmentsWithBudget} departments active</span>
                                 </div>
                             </div>
@@ -817,7 +859,11 @@ const fetchAllData = useCallback(() => {
                 {/* Footer */}
                 <div className="text-center text-xs text-slate-400 dark:text-slate-500 pt-2 border-t border-slate-200 dark:border-slate-700">
                     <p>FCMS - Mayor's Office Dashboard • Laguindingan Municipality</p>
-                    <p className="mt-0.5">FY {new Date().getFullYear()} • {stats.departmentsWithBudget} departments with active budgets</p>
+                    <p className="mt-0.5">
+                        FY {activeFiscalYear}
+                        {hasActiveFiscalYear ? ' (Active)' : ' (No active fiscal year — using current year)'}
+                        {' • '}{stats.departmentsWithBudget} departments with active budgets
+                    </p>
                 </div>
             </div>
         </div>
