@@ -28,6 +28,7 @@ return new class extends Migration
         // ============================================================
         // 1. CORE: departments, users, drivers
         // ============================================================
+
         Schema::create('departments', function (Blueprint $table) {
             $table->bigIncrements('department_id');
             $table->string('department_name', 150)->unique();
@@ -83,6 +84,7 @@ return new class extends Migration
         // ============================================================
         // 2. FISCAL YEARS & BUDGET
         // ============================================================
+
         Schema::create('fiscal_years', function (Blueprint $table) {
             $table->bigIncrements('fiscal_year_id');
             $table->year('year')->unique();
@@ -112,20 +114,24 @@ return new class extends Migration
             $table->foreign('department_id')->references('department_id')->on('departments');
         });
 
+        // ✅ MERGED: dept_budget_policy now has dept_policy_id PK + composite unique on (department_id, fiscal_year)
         Schema::create('dept_budget_policy', function (Blueprint $table) {
-            $table->unsignedBigInteger('department_id')->primary();
+            $table->bigIncrements('dept_policy_id');
+            $table->unsignedBigInteger('department_id');
             $table->year('fiscal_year');
             $table->decimal('default_weekly_allocation', 12, 2)->default(0.00);
             $table->timestamp('created_at')->useCurrent();
             $table->timestamp('updated_at')->nullable();
 
-            $table->unique(['department_id', 'fiscal_year']);
+            $table->unique(['department_id', 'fiscal_year'], 'dept_budget_policy_dept_year_unique');
             $table->foreign('department_id')->references('department_id')->on('departments');
         });
 
+        // ✅ MERGED: dept_budget_period now has fiscal_year + composite unique on (department_id, fiscal_year, week_start)
         Schema::create('dept_budget_period', function (Blueprint $table) {
             $table->bigIncrements('period_id');
             $table->unsignedBigInteger('department_id');
+            $table->year('fiscal_year')->nullable();
             $table->date('week_start');
             $table->date('week_end')->virtualAs('DATE_ADD(week_start, INTERVAL 4 DAY)');
             $table->decimal('allocated_amount', 12, 2)->default(0.00);
@@ -135,8 +141,9 @@ return new class extends Migration
             $table->timestamp('closed_at')->nullable();
             $table->decimal('remaining_balance', 12, 2)->nullable();
 
-            $table->unique(['department_id', 'week_start']);
+            $table->unique(['department_id', 'fiscal_year', 'week_start'], 'dept_budget_period_dept_year_week_unique');
             $table->index(['department_id', 'status', 'week_start'], 'idx_budget_period_dept_status');
+            $table->index(['department_id', 'fiscal_year'], 'idx_budget_period_dept_year');
             $table->foreign('department_id')->references('department_id')->on('departments');
         });
 
@@ -177,17 +184,17 @@ return new class extends Migration
         });
 
         // ============================================================
-        // 3. VEHICLES — ✅ merged fuel_type enum (gasoline, diesel)
+        // 3. VEHICLES — ✅ fuel_type includes diesel, regular, premium
+        //    (regular replaces the old 'gasoline' nomenclature)
         // ============================================================
         Schema::create('vehicles', function (Blueprint $table) {
             $table->bigIncrements('vehicle_id');
             $table->unsignedBigInteger('department_id');
             $table->string('vehicle_model', 120);
             $table->string('plate_number', 20)->unique();
-            $table->enum('fuel_type', ['gasoline', 'diesel']);
+            $table->enum('fuel_type', ['diesel', 'regular', 'premium']);
             $table->decimal('fuel_efficiency', 5, 2)->default(10.00);
             $table->decimal('current_fuel_balance', 10, 2)->default(0.00);
-            $table->decimal('last_odometer_reading', 10, 2)->nullable();
             $table->decimal('fuel_capacity', 10, 2)->default(60.00);
             $table->enum('status', ['active', 'inactive'])->default('active');
             $table->boolean('maintenance_flag')->default(false);
@@ -257,11 +264,11 @@ return new class extends Migration
             $table->foreign('charge_to')->references('department_code')->on('departments');
         });
 
+        // ✅ fuel_type enum updated to match vehicles
         Schema::create('trip_vehicle_snapshot', function (Blueprint $table) {
             $table->unsignedBigInteger('trip_ticket_id')->primary();
             $table->enum('vehicle_status', ['active', 'inactive']);
-            // ✅ merged fuel_type enum
-            $table->enum('fuel_type', ['gasoline', 'diesel']);
+            $table->enum('fuel_type', ['diesel', 'regular', 'premium']);
             $table->timestamp('snapshot_taken_at')->useCurrent();
 
             $table->foreign('trip_ticket_id')->references('trip_ticket_id')->on('trip_ticket');
@@ -322,7 +329,6 @@ return new class extends Migration
             $table->foreign('original_department_id')->references('department_id')->on('departments');
         });
 
-        // ✅ Merged: includes verification_status/verified_at/verified_by from the start
         Schema::create('fuel_receipt', function (Blueprint $table) {
             $table->bigIncrements('fuel_receipt_id');
             $table->unsignedBigInteger('gas_slip_id')->unique();
@@ -333,7 +339,7 @@ return new class extends Migration
             $table->string('receipt_photo_path', 500)->nullable();
             $table->timestamp('receipt_uploaded_at')->nullable();
 
-            // ✅ From merged migration
+            // ✅ Merged: verification fields
             $table->enum('verification_status', ['pending', 'verified'])->default('pending');
             $table->timestamp('verified_at')->nullable();
             $table->unsignedBigInteger('verified_by')->nullable();
@@ -408,7 +414,6 @@ return new class extends Migration
             $table->foreign('user_id')->references('user_id')->on('users')->onDelete('set null');
         });
 
-        // ✅ Merged: includes department_added + department entity_type
         Schema::create('notifications', function (Blueprint $table) {
             $table->bigIncrements('notification_id');
             $table->unsignedBigInteger('recipient_user_id');

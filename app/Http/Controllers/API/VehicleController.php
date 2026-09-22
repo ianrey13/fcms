@@ -95,7 +95,7 @@ class VehicleController extends Controller
                 'department_id' => 'required|exists:departments,department_id',
                 'vehicle_model' => 'required|string|max:120',
                 'plate_number' => 'required|string|max:20|unique:vehicles,plate_number',
-                'fuel_type' => 'required|in:gasoline,diesel',
+'fuel_type' => 'required|in:diesel,regular,premium',
                 'status' => 'sometimes|in:active,inactive',
                 'maintenance_flag' => 'sometimes|boolean',
                 'fuel_capacity' => 'nullable|numeric|min:0',
@@ -191,7 +191,7 @@ class VehicleController extends Controller
                 'department_id' => 'sometimes|required|exists:departments,department_id',
                 'vehicle_model' => 'sometimes|required|string|max:120',
                 'plate_number' => 'sometimes|required|string|max:20|unique:vehicles,plate_number,' . $id . ',vehicle_id',
-                'fuel_type' => 'sometimes|required|in:gasoline,diesel',
+              'fuel_type' => 'sometimes|required|in:diesel,regular,premium',
                 'status' => 'sometimes|in:active,inactive',
                 'maintenance_flag' => 'sometimes|boolean',
                 'fuel_capacity' => 'nullable|numeric|min:0',
@@ -553,9 +553,10 @@ class VehicleController extends Controller
                     ->whereNotIn('vehicle_id', $activeTripVehicleIds)
                     ->count(),
                 'in_use' => count($activeTripVehicleIds),
-                'by_fuel_type' => [
-    'gasoline' => Vehicle::where('fuel_type', 'gasoline')->count(),
-    'diesel' => Vehicle::where('fuel_type', 'diesel')->count(),
+               'by_fuel_type' => [
+    'diesel'  => Vehicle::where('fuel_type', 'diesel')->count(),
+    'regular' => Vehicle::where('fuel_type', 'regular')->count(),
+    'premium' => Vehicle::where('fuel_type', 'premium')->count(),
 ],
                 'by_department' => Vehicle::select('department_id', DB::raw('count(*) as count'))
                     ->with('department')

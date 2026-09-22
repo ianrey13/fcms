@@ -645,8 +645,9 @@ const EditVehicle = () => {
                     hasError("fuel_type") && "border-red-500 ring-red-500 bg-red-50/50 dark:bg-red-950/10"
                   )}
                 >
-                  <option value="diesel">Diesel</option>
-<option value="gasoline">Gasoline</option>
+                 <option value="diesel">Diesel</option>
+<option value="regular">Regular</option>
+<option value="premium">Premium</option>
                 </select>
               </FormField>
 

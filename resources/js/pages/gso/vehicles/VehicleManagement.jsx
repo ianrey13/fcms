@@ -237,10 +237,10 @@ const VehicleManagement = () => {
   };
 
   const getFuelTypeColor = (fuelType) => {
-    return fuelType === "diesel"
-      ? "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300"
-      : "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300";
-  };
+  if (fuelType === "diesel") return "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300";
+  if (fuelType === "premium") return "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300";
+  return "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300"; // regular
+};
 
   // ============ FILTERS ============
   const filteredVehicles = useMemo(() => {
@@ -493,9 +493,10 @@ const VehicleManagement = () => {
                       onChange={(e) => setFuelFilter(e.target.value)}
                       className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm dark:text-white"
                     >
-                      <option value="all">All Fuel Types</option>
-                      <option value="diesel">Diesel</option>
-                      <option value="gasoline">Gasoline</option>
+                     <option value="all">All Fuel Types</option>
+<option value="diesel">Diesel</option>
+<option value="regular">Regular</option>
+<option value="premium">Premium</option>
                     </select>
                   </div>
                   <div className="flex items-end">
