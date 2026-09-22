@@ -40,7 +40,7 @@ class DatabaseSeeder extends Seeder
         // ============================================================
         // 2. Create (or update) the GSO admin user
         // ============================================================
-        $adminEmail = 'gso@cms.com';  
+        $adminEmail = 'gso@fcms.com';  
         $adminPassword = 'password123';
 
         $existing = DB::table('users')->where('email', $adminEmail)->first();
