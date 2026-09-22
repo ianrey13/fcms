@@ -213,6 +213,10 @@ export const mayorsOfficeAPI = {
   
   getCancelledTrips: (params) => 
     cachedApi.get("/mayors-office/cancelled-trips", { params }),
+
+// weekly tracking dashboard
+  getWeeklyTracking: (params) =>
+    cachedApi.get("/mayors-office/weekly-tracking", { params }),
 };
 
 // ============ DRIVER API ============

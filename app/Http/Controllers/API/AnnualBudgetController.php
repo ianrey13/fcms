@@ -57,7 +57,6 @@ class AnnualBudgetController extends Controller
             $result = $allDepartments->map(function ($dept) use ($budgets, $year) {
                 $budget = $budgets->get($dept->department_id);
 
-                // ✅ Get total weekly allocations for this department and year (tracked usage)
                 $totalWeeklyAllocated = 0;
                 if ($budget) {
                     $totalWeeklyAllocated = DB::table('weekly_budget_usage')
@@ -66,7 +65,6 @@ class AnnualBudgetController extends Controller
                         ->sum('weekly_allocation') ?? 0;
                 }
 
-                // ✅ Weekly suggested is ALWAYS computed from annual
                 $annualAmount = $budget ? (float) $budget->annual_amount : 0;
                 $weeklySuggested = $this->computeWeeklySuggested($annualAmount);
 
@@ -78,10 +76,9 @@ class AnnualBudgetController extends Controller
                     'has_budget' => $budget ? true : false,
                     'budget_id' => $budget ? $budget->budget_id : null,
                     'annual_amount' => $annualAmount,
-                    // ✅ Weekly suggested — auto-computed, never manual
-                    'weekly_ceiling' => $weeklySuggested,       // legacy alias
-                    'weekly_suggested' => $weeklySuggested,     // ✅ NEW canonical
-                    'suggested_ceiling' => $weeklySuggested,    // legacy alias
+                    'weekly_ceiling' => $weeklySuggested,
+                    'weekly_suggested' => $weeklySuggested,
+                    'suggested_ceiling' => $weeklySuggested,
                     'used_amount' => $budget ? (float) $budget->used_amount : 0,
                     'remaining_amount' => $budget ? (float) $budget->remaining_amount : 0,
                     'total_weekly_allocated' => $totalWeeklyAllocated,
@@ -151,7 +148,6 @@ class AnnualBudgetController extends Controller
             $result = $allDepartments->map(function ($department) use ($budgets, $year) {
                 $budget = $budgets->get($department->department_id);
 
-                // ✅ Get weekly usage for this department (current week)
                 $currentWeek = date('W');
                 $weeklyUsage = DB::table('weekly_budget_usage')
                     ->where('department_id', $department->department_id)
@@ -159,23 +155,16 @@ class AnnualBudgetController extends Controller
                     ->where('week_number', $currentWeek)
                     ->first();
 
-                // ✅ Get total used this year (all weeks)
                 $totalUsedThisYear = DB::table('weekly_budget_usage')
                     ->where('department_id', $department->department_id)
                     ->where('year', $year)
                     ->sum('amount_used') ?? 0;
 
-                // ✅ Weekly suggested = annual / 52 — ALWAYS computed, no manual input
                 $annualAmount = $budget ? (float) $budget->annual_amount : 0;
                 $weeklySuggested = $this->computeWeeklySuggested($annualAmount);
 
-                // ✅ Weekly used — tracked but not a gate
                 $weeklyUsed = $weeklyUsage ? (float) $weeklyUsage->amount_used : 0;
-
-                // ✅ Weekly remaining vs suggested (can be negative = exceeded)
                 $weeklyRemaining = $weeklySuggested - $weeklyUsed;
-
-                // ✅ Flag for reports / UI badges
                 $weeklyExceeded = $weeklySuggested > 0 && $weeklyUsed > $weeklySuggested;
 
                 return [
@@ -186,23 +175,20 @@ class AnnualBudgetController extends Controller
                     'has_budget' => $budget ? true : false,
                     'budget_id' => $budget ? $budget->budget_id : null,
 
-                    // ✅ ANNUAL BUDGET
                     'annual_amount' => $annualAmount,
                     'used_amount' => $budget ? (float) $budget->used_amount : 0,
                     'remaining_amount' => $budget ? (float) $budget->remaining_amount : 0,
 
-                    // ✅ WEEKLY — all auto-derived from annual
-                    'weekly_ceiling' => $weeklySuggested,       // legacy alias
-                    'weekly_suggested' => $weeklySuggested,     // ✅ NEW canonical
-                    'suggested_ceiling' => $weeklySuggested,    // legacy alias
+                    'weekly_ceiling' => $weeklySuggested,
+                    'weekly_suggested' => $weeklySuggested,
+                    'suggested_ceiling' => $weeklySuggested,
                     'weekly_used' => $weeklyUsed,
                     'weekly_remaining' => $weeklyRemaining,
-                    'weekly_exceeded' => $weeklyExceeded,       // ✅ NEW flag
+                    'weekly_exceeded' => $weeklyExceeded,
                     'weekly_used_percentage' => $weeklySuggested > 0
                         ? round(($weeklyUsed / $weeklySuggested) * 100, 2)
                         : 0,
 
-                    // ✅ TOTAL USED THIS YEAR
                     'total_used_this_year' => $totalUsedThisYear,
                     'status' => $budget ? $budget->status : 'not_set',
                     'utilization_percentage' => $annualAmount > 0
@@ -217,7 +203,7 @@ class AnnualBudgetController extends Controller
                 'total_remaining' => $result->sum('remaining_amount'),
                 'total_weekly_used' => $result->sum('weekly_used'),
                 'total_weekly_remaining' => $result->sum('weekly_remaining'),
-                'total_weekly_suggested' => $result->sum('weekly_suggested'),  // ✅ NEW
+                'total_weekly_suggested' => $result->sum('weekly_suggested'),
                 'total_departments' => $result->count(),
                 'departments_with_budget' => $result->filter(fn($item) => $item['has_budget'])->count(),
                 'departments_without_budget' => $result->filter(fn($item) => !$item['has_budget'])->count(),
@@ -253,7 +239,6 @@ class AnnualBudgetController extends Controller
                 'department_id' => 'required|exists:departments,department_id',
                 'fiscal_year' => 'required|integer|exists:fiscal_years,year',
                 'annual_amount' => 'required|numeric|min:0',
-                // ✅ weekly_ceiling removed from validation — not accepted
             ]);
 
             if ($validator->fails()) {
@@ -266,7 +251,6 @@ class AnnualBudgetController extends Controller
             DB::beginTransaction();
 
             $annualAmount = (float) $request->annual_amount;
-            // ✅ Auto-compute weekly suggested — never trust client input
             $weeklyCeiling = $this->computeWeeklySuggested($annualAmount);
             $departmentId = $request->department_id;
             $fiscalYear = $request->fiscal_year;
@@ -279,7 +263,7 @@ class AnnualBudgetController extends Controller
 
             if ($budget) {
                 $budget->annual_amount = $annualAmount;
-                $budget->weekly_ceiling = $weeklyCeiling;   // ✅ always overwritten with computed
+                $budget->weekly_ceiling = $weeklyCeiling;
                 $budget->used_amount = $budget->used_amount ?? 0;
                 $budget->status = 'active';
                 $budget->save();
@@ -298,25 +282,14 @@ class AnnualBudgetController extends Controller
                 $message = 'Annual budget created successfully';
             }
 
-            // ✅ Update policy with fiscal_year
+            // ✅ Single upsert — scoped by (department_id, fiscal_year)
             DeptBudgetPolicy::updateOrCreate(
                 [
                     'department_id' => $departmentId,
                     'fiscal_year' => $fiscalYear,
-                ],
-                [
-                    'default_weekly_allocation' => $weeklyCeiling
-                ]
-            );
-
-            // ✅ Also update the main policy (for backward compatibility)
-            DeptBudgetPolicy::updateOrCreate(
-                [
-                    'department_id' => $departmentId,
                 ],
                 [
                     'default_weekly_allocation' => $weeklyCeiling,
-                    'fiscal_year' => $fiscalYear,
                 ]
             );
 
@@ -378,7 +351,7 @@ class AnnualBudgetController extends Controller
                     'fiscal_year' => $budget->fiscal_year,
                     'annual_amount' => (float) $budget->annual_amount,
                     'weekly_ceiling' => (float) $budget->weekly_ceiling,
-                    'weekly_suggested' => $this->computeWeeklySuggested($budget->annual_amount),  // ✅ NEW
+                    'weekly_suggested' => $this->computeWeeklySuggested($budget->annual_amount),
                     'suggested_ceiling' => $this->computeWeeklySuggested($budget->annual_amount),
                     'used_amount' => (float) $budget->used_amount,
                     'remaining_amount' => (float) $budget->remaining_amount,
@@ -433,13 +406,15 @@ class AnnualBudgetController extends Controller
             $newAmount = $oldAmount + (float) $request->additional_amount;
 
             $budget->annual_amount = $newAmount;
-            // ✅ Recompute weekly suggested from new annual
             $budget->weekly_ceiling = $this->computeWeeklySuggested($newAmount);
             $budget->save();
 
-            // Update policy
+            // ✅ Upsert scoped by (department_id, fiscal_year)
             DeptBudgetPolicy::updateOrCreate(
-                ['department_id' => $request->department_id],
+                [
+                    'department_id' => $request->department_id,
+                    'fiscal_year' => $request->fiscal_year,
+                ],
                 ['default_weekly_allocation' => $budget->weekly_ceiling]
             );
 
@@ -469,7 +444,7 @@ class AnnualBudgetController extends Controller
                     'added_amount' => $request->additional_amount,
                     'new_amount' => $newAmount,
                     'weekly_ceiling' => (float) $budget->weekly_ceiling,
-                    'weekly_suggested' => $this->computeWeeklySuggested($newAmount),  // ✅ NEW
+                    'weekly_suggested' => $this->computeWeeklySuggested($newAmount),
                 ]
             ]);
 
@@ -485,7 +460,6 @@ class AnnualBudgetController extends Controller
 
     /**
      * ✅ UPDATE annual budget (MO only)
-     * ✅ weekly_ceiling is auto-derived from annual_amount, ignores any client input.
      */
     public function update(Request $request, $id)
     {
@@ -495,7 +469,6 @@ class AnnualBudgetController extends Controller
             $validator = Validator::make($request->all(), [
                 'annual_amount' => 'required|numeric|min:0',
                 'status' => 'nullable|in:active,closed',
-                // ✅ weekly_ceiling removed from validation
             ]);
 
             if ($validator->fails()) {
@@ -509,7 +482,6 @@ class AnnualBudgetController extends Controller
 
             $oldAmount = (float) $budget->annual_amount;
             $budget->annual_amount = (float) $request->annual_amount;
-            // ✅ Always recompute — never trust client input
             $budget->weekly_ceiling = $this->computeWeeklySuggested($request->annual_amount);
 
             if ($request->has('status')) {
@@ -518,8 +490,12 @@ class AnnualBudgetController extends Controller
 
             $budget->save();
 
+            // ✅ Upsert scoped by (department_id, fiscal_year)
             DeptBudgetPolicy::updateOrCreate(
-                ['department_id' => $budget->department_id],
+                [
+                    'department_id' => $budget->department_id,
+                    'fiscal_year' => $budget->fiscal_year,
+                ],
                 ['default_weekly_allocation' => $budget->weekly_ceiling]
             );
 
@@ -534,7 +510,7 @@ class AnnualBudgetController extends Controller
                     'fiscal_year' => $budget->fiscal_year,
                     'annual_amount' => (float) $budget->annual_amount,
                     'weekly_ceiling' => (float) $budget->weekly_ceiling,
-                    'weekly_suggested' => $this->computeWeeklySuggested($budget->annual_amount),  // ✅ NEW
+                    'weekly_suggested' => $this->computeWeeklySuggested($budget->annual_amount),
                     'used_amount' => (float) $budget->used_amount,
                     'remaining_amount' => (float) $budget->remaining_amount,
                     'status' => $budget->status,
@@ -553,7 +529,6 @@ class AnnualBudgetController extends Controller
 
     /**
      * ✅ BULK UPDATE annual budgets (MO only)
-     * ✅ weekly_ceiling is auto-derived per row.
      */
     public function bulkUpdate(Request $request)
     {
@@ -563,7 +538,6 @@ class AnnualBudgetController extends Controller
                 'budgets' => 'required|array',
                 'budgets.*.department_id' => 'required|exists:departments,department_id',
                 'budgets.*.annual_amount' => 'required|numeric|min:0',
-                // ✅ weekly_ceiling removed from validation
             ]);
 
             if ($validator->fails()) {
@@ -581,7 +555,6 @@ class AnnualBudgetController extends Controller
 
             foreach ($request->budgets as $budgetData) {
                 $annualAmount = (float) $budgetData['annual_amount'];
-                // ✅ Always compute — ignore any client-sent weekly_ceiling
                 $weeklyCeiling = $this->computeWeeklySuggested($annualAmount);
                 $departmentId = $budgetData['department_id'];
 
@@ -597,8 +570,12 @@ class AnnualBudgetController extends Controller
                     ]
                 );
 
+                // ✅ Upsert scoped by (department_id, fiscal_year)
                 DeptBudgetPolicy::updateOrCreate(
-                    ['department_id' => $departmentId],
+                    [
+                        'department_id' => $departmentId,
+                        'fiscal_year' => $year,
+                    ],
                     ['default_weekly_allocation' => $weeklyCeiling]
                 );
 
@@ -608,7 +585,7 @@ class AnnualBudgetController extends Controller
                     'department_id' => $budget->department_id,
                     'annual_amount' => (float) $budget->annual_amount,
                     'weekly_ceiling' => (float) $budget->weekly_ceiling,
-                    'weekly_suggested' => $this->computeWeeklySuggested($budget->annual_amount),  // ✅ NEW
+                    'weekly_suggested' => $this->computeWeeklySuggested($budget->annual_amount),
                     'suggested_ceiling' => $this->computeWeeklySuggested($budget->annual_amount),
                 ];
             }
@@ -686,7 +663,6 @@ class AnnualBudgetController extends Controller
                 'total_used' => $budgets->sum('used_amount'),
                 'total_remaining' => $budgets->sum('remaining_amount'),
                 'total_departments' => $budgets->count(),
-                // ✅ Weekly is now always annual / 52
                 'avg_weekly_suggested' => $budgets->count() > 0
                     ? round($budgets->sum('annual_amount') / 52, 2)
                     : 0,
@@ -695,8 +671,8 @@ class AnnualBudgetController extends Controller
                         'department_id' => $budget->department_id,
                         'department_name' => $budget->department->department_name,
                         'annual_amount' => (float) $budget->annual_amount,
-                        'weekly_suggested' => $this->computeWeeklySuggested($budget->annual_amount),  // ✅ NEW
-                        'weekly_ceiling' => $this->computeWeeklySuggested($budget->annual_amount),   // legacy alias
+                        'weekly_suggested' => $this->computeWeeklySuggested($budget->annual_amount),
+                        'weekly_ceiling' => $this->computeWeeklySuggested($budget->annual_amount),
                         'used_amount' => (float) $budget->used_amount,
                         'remaining_amount' => (float) $budget->remaining_amount,
                         'utilization' => $budget->annual_amount > 0
@@ -801,8 +777,8 @@ class AnnualBudgetController extends Controller
                     'department_name' => $budget->department->department_name,
                     'fiscal_year' => $budget->fiscal_year,
                     'annual_amount' => $annualAmount,
-                    'weekly_ceiling' => $this->computeWeeklySuggested($annualAmount),       // legacy alias
-                    'weekly_suggested' => $this->computeWeeklySuggested($annualAmount),     // ✅ NEW canonical
+                    'weekly_ceiling' => $this->computeWeeklySuggested($annualAmount),
+                    'weekly_suggested' => $this->computeWeeklySuggested($annualAmount),
                     'suggested_ceiling' => $this->computeWeeklySuggested($annualAmount),
                     'used_amount' => (float) $budget->used_amount,
                     'remaining_amount' => (float) $budget->remaining_amount,

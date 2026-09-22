@@ -18,8 +18,7 @@ class BudgetService
      */
     public function getOrCreateAnnualBudget($departmentId, $year = null)
     {
-        $year = $year ?? Carbon::now()->year;
-
+$year = $year ?? $this->getActiveFiscalYear();
         $budget = AnnualBudget::where('department_id', $departmentId)
             ->where('fiscal_year', $year)
             ->first();
@@ -58,8 +57,7 @@ class BudgetService
      */
     public function getRemainingBudget($departmentId, $year = null)
     {
-        $year = $year ?? Carbon::now()->year;
-
+$year = $year ?? $this->getActiveFiscalYear();
         $budget = AnnualBudget::where('department_id', $departmentId)
             ->where('fiscal_year', $year)
             ->first();
@@ -88,8 +86,7 @@ class BudgetService
      */
     public function deductBudget($departmentId, $amount, $isCrossDepartment = false, $originalDepartmentId = null, $reason = null)
     {
-        $year = Carbon::now()->year;
-
+$year = $this->getActiveFiscalYear();
         $budget = AnnualBudget::where('department_id', $departmentId)
             ->where('fiscal_year', $year)
             ->first();
@@ -169,6 +166,7 @@ class BudgetService
      */
     private function recordWeeklyUsage($departmentId, $amount)
     {
+        $year = $this->getActiveFiscalYear();
         $now = Carbon::now();
         $weekNumber = $now->weekOfYear;
         $year = $now->year;
@@ -329,8 +327,7 @@ class BudgetService
      */
     public function getUsedAmount($departmentId, $year = null)
     {
-        $year = $year ?? Carbon::now()->year;
-
+$year = $year ?? $this->getActiveFiscalYear();
         $budget = AnnualBudget::where('department_id', $departmentId)
             ->where('fiscal_year', $year)
             ->first();
@@ -347,8 +344,7 @@ class BudgetService
      */
     public function getWeeklyAllocation($departmentId, $fiscalYear = null)
     {
-        $fiscalYear = $fiscalYear ?? date('Y');
-
+$fiscalYear = $fiscalYear ?? $this->getActiveFiscalYear();
         // ✅ Get policy for specific fiscal year
         $policy = DeptBudgetPolicy::where('department_id', $departmentId)
             ->where('fiscal_year', $fiscalYear)
@@ -370,6 +366,7 @@ class BudgetService
      */
     public function getCurrentWeekUsage($departmentId)
     {
+        $year = $this->getActiveFiscalYear();
         $now = Carbon::now();
         $weekNumber = $now->weekOfYear;
         $year = $now->year;
@@ -401,12 +398,22 @@ class BudgetService
  */
 public function getAnnualAmount($departmentId, $year = null)
 {
-    $year = $year ?? Carbon::now()->year;
-
+$year = $year ?? $this->getActiveFiscalYear();
     $budget = AnnualBudget::where('department_id', $departmentId)
         ->where('fiscal_year', $year)
         ->first();
 
     return $budget ? (float) $budget->annual_amount : 0.0;
 }
+
+    /**
+     * ✅ Resolve the currently active fiscal year.
+     *    Prefers fiscal_years.is_active=1, falls back to calendar year.
+     */
+    public function getActiveFiscalYear(): int
+    {
+        $active = \App\Models\FiscalYear::where('is_active', true)->first();
+        return (int) ($active?->year ?? Carbon::now()->year);
+    }
+
 }

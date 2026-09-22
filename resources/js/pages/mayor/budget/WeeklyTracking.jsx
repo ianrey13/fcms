@@ -158,9 +158,8 @@ const WeeklyTracking = () => {
             "new-notification",
         ],
         () => {
-            queryClient.invalidateQueries({ queryKey: ['departments-selector'] });
-            queryClient.invalidateQueries({ queryKey: ['departments-with-budget'] });
-            queryClient.invalidateQueries({ queryKey: ['budget-periods', currentWeek] });
+                 queryClient.invalidateQueries({ queryKey: ['weekly-tracking'] });
+
         }
     );
 
@@ -183,106 +182,77 @@ const WeeklyTracking = () => {
         keepPreviousData: true,
     });
 
-    const { data: budgetData = [], isLoading: budgetLoading } = useOptimizedQuery({
-        queryKey: ['departments-with-budget'],
-        queryFn: async () => {
-            try {
-                const response = await mayorsOfficeAPI.getAllDepartmentsWithBudget();
-                let data = response.data?.data || response.data || [];
-                return Array.isArray(data) ? data : [];
-            } catch (error) {
-                console.error("Failed to fetch budget data:", error);
-                return [];
-            }
-        },
-        staleTime: 2 * 60 * 1000,
-        keepPreviousData: true,
-    });
+  const weekStartStr = useMemo(
+    () => format(startOfWeek(currentWeek, { weekStartsOn: 1 }), 'yyyy-MM-dd'),
+    [currentWeek]
+);
 
-    const { data: periodsData = [], isLoading: periodsLoading, refetch, isFetching } = useOptimizedQuery({
-        queryKey: ['budget-periods', currentWeek],
-        queryFn: async () => {
-            try {
-                const weekStartStr = format(startOfWeek(currentWeek, { weekStartsOn: 1 }), 'yyyy-MM-dd');
-                const response = await mayorsOfficeAPI.getBudgetPeriods();
-                let data = response?.data?.data || response?.data || [];
-                return data.filter(item => item.week_start === weekStartStr);
-            } catch (error) {
-                console.error("❌ Failed to fetch tracking data:", error);
-                toast.error("Failed to load tracking data");
-                return [];
-            }
-        },
-        staleTime: 60 * 1000,
-        keepPreviousData: true,
-    });
+const { data: weeklyData, isLoading: weeklyLoading, isFetching } = useOptimizedQuery({
+    queryKey: ['weekly-tracking', weekStartStr],
+    queryFn: async () => {
+        try {
+            const response = await mayorsOfficeAPI.getWeeklyTracking({
+                week_start: weekStartStr,
+            });
+            return response?.data?.data || response?.data || [];
+        } catch (error) {
+            console.error("❌ Failed to fetch weekly tracking:", error);
+            toast.error("Failed to load tracking data");
+            return [];
+        }
+    },
+    staleTime: 60 * 1000,
+    keepPreviousData: true,
+});
 
     // ============================================
     // DERIVED DATA
     // ============================================
 
-    const weekData = useMemo(() => {
-        if (!periodsData || periodsData.length === 0) return null;
+   const weekData = useMemo(() => {
+    const rows = Array.isArray(weeklyData) ? weeklyData : [];
+    if (rows.length === 0) return null;
 
-        const departmentUsage = periodsData.map((item) => {
-            const deptInfo = budgetData.find(d => d.department_id === item.department_id);
-            const allocated = parseFloat(item.allocated_amount || 0);
-            const used = parseFloat(item.actual_used || 0);
-            const remaining = allocated - used;
-            const utilization = allocated > 0 ? (used / allocated) * 100 : 0;
+    const departments = rows.map((item) => ({
+        department_id: item.department_id,
+        department_name: item.department_name,
+        department_code: item.department_code,
+        allocated: parseFloat(item.allocated_amount || 0),
+        used: parseFloat(item.actual_used || 0),
+        remaining: parseFloat(item.remaining_balance || 0),
+        utilization: Math.round(item.utilization || 0),
+        status: item.status,
+        status_label: {
+            on_track: 'On Track',
+            moderate: 'Moderate',
+            near_limit: 'Near Limit',
+            exhausted: 'Exhausted',
+            no_budget: 'No Budget',
+        }[item.status] || 'On Track',
+        week_start: item.week_start,
+        week_end: item.week_end,
+    }));
 
-            let status = 'on_track';
-            let statusLabel = 'On Track';
+    const totalAllocated = departments.reduce((s, d) => s + d.allocated, 0);
+    const totalUsed = departments.reduce((s, d) => s + d.used, 0);
+    const totalRemaining = totalAllocated - totalUsed;
 
-            if (allocated === 0) {
-                status = 'no_budget';
-                statusLabel = 'No Budget';
-            } else if (used >= allocated) {
-                status = 'exhausted';
-                statusLabel = 'Exhausted';
-            } else if (utilization >= 80) {
-                status = 'near_limit';
-                statusLabel = 'Near Limit';
-            } else if (utilization >= 50) {
-                status = 'moderate';
-                statusLabel = 'Moderate';
-            }
+    const ws = startOfWeek(currentWeek, { weekStartsOn: 1 });
 
-            return {
-                department_id: item.department_id,
-                department_name: deptInfo?.department_name || item.department_name || `Department ${item.department_id}`,
-                department_code: deptInfo?.department_code || 'N/A',
-                allocated: allocated,
-                used: used,
-                remaining: remaining,
-                utilization: Math.round(utilization),
-                status: status,
-                status_label: statusLabel,
-                week_start: item.week_start,
-                week_end: item.week_end,
-            };
-        });
-
-        const totalAllocated = departmentUsage.reduce((sum, d) => sum + d.allocated, 0);
-        const totalUsed = departmentUsage.reduce((sum, d) => sum + d.used, 0);
-        const totalRemaining = totalAllocated - totalUsed;
-
-        const weekStart = startOfWeek(currentWeek, { weekStartsOn: 1 });
-
-        return {
-            week_start: format(weekStart, 'yyyy-MM-dd'),
-            week_end: format(endOfWeek(weekStart, { weekStartsOn: 1 }), 'yyyy-MM-dd'),
-            week_number: getWeek(weekStart),
-            year: format(weekStart, 'yyyy'),
-            departments: departmentUsage,
-            total_allocated: totalAllocated,
-            total_used: totalUsed,
-            total_remaining: totalRemaining,
-            is_active: departmentUsage.some(d => d.status === 'on_track' || d.status === 'moderate'),
-            department_count: departmentUsage.length,
-            departments_with_budget: departmentUsage.filter(d => d.allocated > 0).length,
-        };
-    }, [periodsData, budgetData, currentWeek]);
+    return {
+        week_start: format(ws, 'yyyy-MM-dd'),
+        week_end: format(endOfWeek(ws, { weekStartsOn: 1 }), 'yyyy-MM-dd'),
+        week_number: getWeek(ws),
+        year: format(ws, 'yyyy'),
+        departments,
+        total_allocated: totalAllocated,
+        total_used: totalUsed,
+        total_remaining: totalRemaining,
+        is_active: departments.some(d => d.status === 'on_track' || d.status === 'moderate'),
+        department_count: departments.length,
+        departments_with_budget: departments.filter(d => d.allocated > 0).length,
+    };
+}, [weeklyData, currentWeek]);
 
     // ============================================
     // HANDLERS
@@ -366,7 +336,7 @@ const WeeklyTracking = () => {
     // LOADING STATE
     // ============================================
 
-    const isLoading = deptsLoading || budgetLoading || periodsLoading;
+const isLoading = deptsLoading || weeklyLoading;
 
     if (isLoading) {
         return <LoadingSkeleton />;

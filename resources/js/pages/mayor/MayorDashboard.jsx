@@ -13,7 +13,7 @@ import {
     SkeletonStats,
     SkeletonCard,
 } from "../../components/ui/SkeletonCard";
-import { mayorsOfficeAPI, reportsAPI } from "../../services/api";
+import api, { mayorsOfficeAPI, reportsAPI } from "../../services/api";
 
 import {
     Clock,
@@ -79,7 +79,7 @@ const useSafeArray = (value) => useMemo(() => Array.isArray(value) ? value : [],
 // STAT CARD
 // ============================================
 
-const StatCard = ({ title, value, icon: Icon, color, subtitle, trend, trendValue }) => (
+const StatCard = ({ title, value, icon: Icon, color, subtitle, trend, trendValue, secondaryValue }) => (
     <Card className="overflow-hidden border-0 shadow-sm hover:shadow-md transition-all duration-300 dark:bg-slate-800/80">
         <CardContent className="p-6">
             <div className="flex items-start justify-between">
@@ -87,6 +87,11 @@ const StatCard = ({ title, value, icon: Icon, color, subtitle, trend, trendValue
                     <p className="text-sm font-medium text-slate-500 dark:text-slate-400">{title}</p>
                     <p className="mt-2 text-3xl font-bold text-slate-900 dark:text-white">{value}</p>
                     {subtitle && <p className="mt-1 text-xs text-slate-400">{subtitle}</p>}
+                    {secondaryValue && (
+                        <p className="mt-1.5 text-[11px] text-slate-400 dark:text-slate-500 border-t border-dashed border-slate-200 dark:border-slate-700 pt-1.5">
+                            {secondaryValue}
+                        </p>
+                    )}
                     {trend && (
                         <div className="mt-2 flex items-center gap-1">
                             {trendValue > 0 ? (
@@ -268,63 +273,71 @@ const MayorDashboard = () => {
     // ACTIVE FISCAL YEAR
     // ============================================
 
-    const { data: activeFiscalYearData, isLoading: fiscalYearLoading } = useOptimizedQuery({
-        queryKey: ["mayor-active-fiscal-year"],
-        queryFn: async () => {
-            try {
-                const response = await mayorsOfficeAPI.getActiveFiscalYears();
-                // Backend returns { success, data: { year, is_active, ... } }
-                const payload = response?.data?.data ?? response?.data ?? null;
-                return payload;
-            } catch (error) {
-                console.error("Error fetching active fiscal year:", error);
-                return null;
-            }
-        },
-        staleTime: 5 * 60 * 1000,
-        refetchOnMount: 'always',
-    });
+    // ✅ Fetch active fiscal years (same endpoint BudgetAllocation uses)
+const { data: activeFiscalYearsRaw, isLoading: fiscalYearLoading } = useOptimizedQuery({
+    queryKey: ["mayor-active-fiscal-year"],
+    queryFn: async () => {
+        try {
+            const response = await api.get("/mayors-office/fiscal-years?is_active=1");
+            // Backend returns { success, data: [ { year, is_active, ... } ] }
+            const arr = response.data?.data || [];
+            return Array.isArray(arr) ? arr : [];
+        } catch (error) {
+            console.error("Error fetching active fiscal year:", error);
+            return [];
+        }
+    },
+    staleTime: 5 * 60 * 1000,
+    refetchOnMount: 'always',
+});
 
-    // ✅ Active fiscal year — falls back to current calendar year if none is set
-    const activeFiscalYear =
-        activeFiscalYearData?.year ?? new Date().getFullYear();
-    const hasActiveFiscalYear = !!activeFiscalYearData?.year;
+const activeFiscalYears = useSafeArray(activeFiscalYearsRaw);
+const activeFiscalYear =
+    activeFiscalYears[0]?.year ?? new Date().getFullYear();
+const hasActiveFiscalYear = activeFiscalYears.length > 0;
 
     // ============================================
     // OPTIMIZED QUERIES (with extractArray)
     // ============================================
 
-    const { data: pendingRaw, isLoading: pendingLoading } = useOptimizedQuery({
-        queryKey: ["mayor-pending-tickets"],
-        queryFn: async () => {
-            try {
-                const response = await mayorsOfficeAPI.getPendingTickets();
-                return extractArray(response);
-            } catch (error) {
-                if (error.response?.status === 429) return [];
-                console.error("Error fetching pending tickets:", error);
-                return [];
-            }
-        },
-        refetchOnMount: 'always',
-    });
-    const pendingTickets = useSafeArray(pendingRaw);
+   const { data: pendingResponse, isLoading: pendingLoading } = useOptimizedQuery({
+    queryKey: ["mayor-pending-tickets"],
+    queryFn: async () => {
+        try {
+            const response = await mayorsOfficeAPI.getPendingTickets();
+            return {
+                data: extractArray(response),
+                meta: response?.data?.meta ?? {},
+            };
+        } catch (error) {
+            if (error.response?.status === 429) return { data: [], meta: {} };
+            console.error("Error fetching pending tickets:", error);
+            return { data: [], meta: {} };
+        }
+    },
+    refetchOnMount: 'always',
+});
+const pendingTickets = useSafeArray(pendingResponse?.data);
+const pendingMeta = pendingResponse?.meta ?? {};
 
-    const { data: approvedRaw, isLoading: approvedLoading } = useOptimizedQuery({
-        queryKey: ["mayor-approved-tickets"],
-        queryFn: async () => {
-            try {
-                const response = await mayorsOfficeAPI.getApprovedTickets();
-                return extractArray(response);
-            } catch (error) {
-                console.error("Error fetching approved tickets:", error);
-                return [];
-            }
-        },
-        refetchOnMount: 'always',
-    });
-    const approvedTickets = useSafeArray(approvedRaw);
-
+   const { data: approvedResponse, isLoading: approvedLoading } = useOptimizedQuery({
+    queryKey: ["mayor-approved-tickets"],
+    queryFn: async () => {
+        try {
+            const response = await mayorsOfficeAPI.getApprovedTickets();
+            return {
+                data: extractArray(response),
+                meta: response?.data?.meta ?? {},
+            };
+        } catch (error) {
+            console.error("Error fetching approved tickets:", error);
+            return { data: [], meta: {} };
+        }
+    },
+    refetchOnMount: 'always',
+});
+const approvedTickets = useSafeArray(approvedResponse?.data);
+const approvedMeta = approvedResponse?.meta ?? {};
     const { data: budgetRaw, isLoading: budgetLoading } = useOptimizedQuery({
         queryKey: ["mayor-department-budgets"],
         queryFn: async () => {
@@ -385,6 +398,9 @@ const MayorDashboard = () => {
             pendingCount: pendingTickets.length,
             releasedCount: approvedTickets.length,
             totalAmount: total,
+             pendingAllTime:   pendingMeta.all_time_count  ?? pendingTickets.length,
+        releasedAllTime:  approvedMeta.all_time_count ?? approvedTickets.length,
+        totalAmountAllTime: approvedMeta.all_time_amount ?? total,
             avgUtilization: avgUtil.toFixed(1),
             criticalDepartments: budgetedDepts.filter(d => parseFloat(d.utilization) >= 80).length,
             totalAnnualBudget: totalAllocated,
@@ -664,8 +680,7 @@ const MayorDashboard = () => {
                 </Card>
 
                  {/* Weekly Budget Tracking */}
-                <WeeklyTrackingCard />
-
+               <WeeklyTrackingCard activeFiscalYear={activeFiscalYear} />
                 {/* Two Column Layout */}
                 <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
                     {/* Recent Releases */}

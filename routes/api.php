@@ -269,7 +269,7 @@ Route::get('billing-statement/export/{format}', [ReportsController::class, 'expo
         Route::get('budget-summary', [BudgetPolicyController::class, 'getBudgetSummary']);
 
          Route::get('activity-logs', [ReportsController::class, 'getMoActivityLogs']);
-
+Route::get('weekly-tracking', [MayorsOfficeController::class, 'getWeeklyTracking']);
 
         // Receipt Verification
         Route::get('/receipts/for-verification', [MayorsOfficeController::class, 'getReceiptsForVerification']);
