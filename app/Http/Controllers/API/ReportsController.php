@@ -2001,7 +2001,7 @@ public function getMoActivityLogs(Request $request)
     $html .= '</tr>';
     $html .= '<tr>';
     $html .= '<th>Diesel</th>';
-    $html .= '<th>Regular</th>';
+    $html .= '<th>Gasoline</th>';
     $html .= '<th>Premium</th>';
     $html .= '</tr>';
     $html .= '</thead><tbody>';
