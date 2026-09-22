@@ -2173,7 +2173,7 @@ const MayorPending = () => {
                 />
               </FormField>
 
-              {selectedTicket && getEstimatedCost(selectedTicket) > 0 && (
+              {/* {selectedTicket && getEstimatedCost(selectedTicket) > 0 && (
                 <div className="flex items-center gap-2 mt-1.5">
                   <div className="flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
                     <Calculator className="h-3.5 w-3.5 text-blue-400" />
@@ -2198,7 +2198,7 @@ const MayorPending = () => {
                     Apply
                   </Button>
                 </div>
-              )}
+              )} */}
             </div>
 
             <DialogFooter className="gap-3 pt-4 border-t dark:border-slate-700 mt-4">
