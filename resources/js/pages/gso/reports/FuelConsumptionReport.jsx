@@ -16,7 +16,7 @@ const FuelConsumptionReport = ({
     onToggle,
     onExport,
     exportLoading,
-    // ✅ NEW: filter props from parent
+    // ✅ Filter props from parent
     departments = [],
     departmentFilter = 'all',
     onDepartmentChange,
@@ -26,6 +26,7 @@ const FuelConsumptionReport = ({
     const logs = data?.recent_logs || [];
     const summary = data?.summary || {};
 
+    // ✅ Totals now track three fuel categories separately
     const totals = logs.reduce((acc, log) => {
         const liters = parseFloat(log.liters_availed) || 0;
         const amount = parseFloat(log.amount_on_receipt) || 0;
@@ -35,19 +36,25 @@ const FuelConsumptionReport = ({
         if (type === 'diesel') {
             acc.dieselLiters += liters;
             acc.dieselAmount += amount;
-        } else if (type === 'regular' || type === 'premium' || type === 'gasoline') {
+        } else if (type === 'regular' || type === 'gasoline') {
             acc.gasolineLiters += liters;
             acc.gasolineAmount += amount;
+        } else if (type === 'premium') {
+            acc.premiumLiters += liters;
+            acc.premiumAmount += amount;
         }
         return acc;
     }, {
         liters: 0, amount: 0,
         dieselLiters: 0, dieselAmount: 0,
         gasolineLiters: 0, gasolineAmount: 0,
+        premiumLiters: 0, premiumAmount: 0,
     });
 
-    const isDiesel = (type) => (type || '').toLowerCase() === 'diesel';
-    const isGasoline = (type) => ['regular', 'premium', 'gasoline'].includes((type || '').toLowerCase());
+    // ✅ Per-row classification helpers
+    const isDiesel   = (type) => (type || '').toLowerCase() === 'diesel';
+    const isGasoline = (type) => ['regular', 'gasoline'].includes((type || '').toLowerCase());
+    const isPremium  = (type) => (type || '').toLowerCase() === 'premium';
 
     return (
         <Card className="dark:bg-slate-800/80 dark:border-slate-700">
@@ -83,7 +90,7 @@ const FuelConsumptionReport = ({
             </CardHeader>
             {expanded && (
                 <CardContent>
-                    {/* ✅ NEW: Filter bar */}
+                    {/* Filter bar */}
                     <div className="flex flex-wrap gap-3 mb-5 p-3 rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700">
                         <div className="flex items-center gap-2">
                             <Filter className="h-4 w-4 text-slate-500" />
@@ -125,13 +132,14 @@ const FuelConsumptionReport = ({
                     <div className="overflow-x-auto max-h-[400px] overflow-y-auto border rounded-lg">
                         <Table>
                             <TableHeader className="sticky top-0 z-10 bg-slate-100 dark:bg-slate-800">
-                                {/* ✅ Row 1: main headers */}
-                                                                <TableRow>
+                                {/* Row 1: main headers */}
+                                <TableRow>
                                     <TableHead rowSpan={2} className="text-xs uppercase align-bottom">Date</TableHead>
                                     <TableHead rowSpan={2} className="text-xs uppercase align-bottom">Vehicle</TableHead>
                                     <TableHead rowSpan={2} className="text-xs uppercase align-bottom">Driver</TableHead>
-                                    <TableHead colSpan={2} className="text-center text-xs uppercase border-l border-r border-slate-300 dark:border-slate-600">
-                                        Fuel Type
+                                    {/* ✅ spans 3 columns */}
+                                    <TableHead colSpan={3} className="text-center text-xs uppercase border-l border-r border-slate-300 dark:border-slate-600">
+                                        Fuel Type (L)
                                     </TableHead>
                                     <TableHead rowSpan={2} className="text-right text-xs uppercase align-bottom">Qty (L)</TableHead>
                                     <TableHead rowSpan={2} className="text-right text-xs uppercase align-bottom">Amount (₱)</TableHead>
@@ -139,20 +147,21 @@ const FuelConsumptionReport = ({
                                     <TableHead rowSpan={2} className="text-xs uppercase align-bottom">Destination</TableHead>
                                     <TableHead rowSpan={2} className="text-xs uppercase align-bottom">Purpose</TableHead>
                                 </TableRow>
-                                {/* ✅ Row 2: sub-headers for Diesel / Gasoline */}
+                                {/* Row 2: sub-headers for Diesel / Gasoline / Premium */}
                                 <TableRow>
                                     <TableHead className="text-center text-xs uppercase border-l border-slate-300 dark:border-slate-600">Diesel</TableHead>
-                                    <TableHead className="text-center text-xs uppercase border-r border-slate-300 dark:border-slate-600">Gasoline</TableHead>
+                                    <TableHead className="text-center text-xs uppercase">Gasoline</TableHead>
+                                    <TableHead className="text-center text-xs uppercase border-r border-slate-300 dark:border-slate-600">Premium</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
                                 {logs.length === 0 ? (
-                                    <TableRow><TableCell colSpan="10" className="text-center py-8 text-slate-500 dark:text-slate-400">No fuel consumption data available</TableCell></TableRow>
+                                    <TableRow><TableCell colSpan="11" className="text-center py-8 text-slate-500 dark:text-slate-400">No fuel consumption data available</TableCell></TableRow>
                                 ) : (
                                     <>
                                         {logs.map((log, i) => (
                                             <TableRow key={i} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
-                                                                                               <TableCell>{log.trip_ended_at ? format(new Date(log.trip_ended_at), 'yyyy-MM-dd') : 'N/A'}</TableCell>
+                                                <TableCell>{log.trip_ended_at ? format(new Date(log.trip_ended_at), 'yyyy-MM-dd') : 'N/A'}</TableCell>
                                                 <TableCell>
                                                     <div className="font-medium text-slate-800 dark:text-slate-200">
                                                         {log.vehicle_model || log.vehicle || 'N/A'}
@@ -162,30 +171,38 @@ const FuelConsumptionReport = ({
                                                     </div>
                                                 </TableCell>
                                                 <TableCell>{log.driver}</TableCell>
-                                                {/* ✅ Diesel column */}
+                                                {/* Diesel */}
                                                 <TableCell className="text-center border-l border-slate-200 dark:border-slate-700">
                                                     {isDiesel(log.fuel_type) ? formatNumber(log.liters_availed) : '0'}
                                                 </TableCell>
-                                                {/* ✅ Gasoline column */}
-                                                <TableCell className="text-center border-r border-slate-200 dark:border-slate-700">
+                                                {/* Gasoline */}
+                                                <TableCell className="text-center">
                                                     {isGasoline(log.fuel_type) ? formatNumber(log.liters_availed) : '0'}
+                                                </TableCell>
+                                                {/* Premium */}
+                                                <TableCell className="text-center border-r border-slate-200 dark:border-slate-700">
+                                                    {isPremium(log.fuel_type) ? formatNumber(log.liters_availed) : '0'}
                                                 </TableCell>
                                                 <TableCell className="text-right">{formatNumber(log.liters_availed)}</TableCell>
                                                 <TableCell className="text-right font-medium">{formatCurrency(log.amount_on_receipt)}</TableCell>
-                                               <TableCell className="text-xs font-medium">{log.department_code || log.department || 'N/A'}</TableCell>
+                                                <TableCell className="text-xs font-medium">{log.department_code || log.department || 'N/A'}</TableCell>
                                                 <TableCell className="max-w-[150px] truncate">{log.destination}</TableCell>
                                                 <TableCell className="max-w-[150px] truncate">{log.purpose || 'N/A'}</TableCell>
                                             </TableRow>
                                         ))}
-                                                                                <TableRow className="bg-slate-100 dark:bg-slate-800 font-bold border-t-2 sticky bottom-0">
+                                        <TableRow className="bg-slate-100 dark:bg-slate-800 font-bold border-t-2 sticky bottom-0">
                                             <TableCell colSpan="3" className="text-right">TOTAL</TableCell>
-                                            {/* ✅ Diesel total */}
+                                            {/* Diesel total */}
                                             <TableCell className="text-center border-l border-slate-300 dark:border-slate-600">
                                                 {formatNumber(totals.dieselLiters)}
                                             </TableCell>
-                                            {/* ✅ Gasoline total */}
-                                            <TableCell className="text-center border-r border-slate-300 dark:border-slate-600">
+                                            {/* Gasoline total */}
+                                            <TableCell className="text-center">
                                                 {formatNumber(totals.gasolineLiters)}
+                                            </TableCell>
+                                            {/* Premium total */}
+                                            <TableCell className="text-center border-r border-slate-300 dark:border-slate-600">
+                                                {formatNumber(totals.premiumLiters)}
                                             </TableCell>
                                             <TableCell className="text-right">{formatNumber(totals.liters)}</TableCell>
                                             <TableCell className="text-right text-emerald-700">{formatCurrency(totals.amount)}</TableCell>

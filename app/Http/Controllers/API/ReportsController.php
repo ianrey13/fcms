@@ -1906,16 +1906,18 @@ public function getMoActivityLogs(Request $request)
         }
     }
 
-    private function buildFuelConsumptionPDFHTML($reportData)
+ private function buildFuelConsumptionPDFHTML($reportData)
 {
     $logs    = $reportData['recent_logs'] ?? [];
     $filters = $reportData['filters'] ?? [];
 
+    // ✅ Totals now track three fuel categories separately
     $totals = [
-        'diesel_liters'   => 0,
-        'gasoline_liters' => 0,
-        'liters'          => 0,
-        'amount'          => 0,
+        'diesel_liters'  => 0,
+        'regular_liters' => 0,
+        'premium_liters' => 0,
+        'liters'         => 0,
+        'amount'         => 0,
     ];
 
     $periodText = 'Period: ' . ($filters['start_date'] ?? 'All')
@@ -1983,13 +1985,14 @@ public function getMoActivityLogs(Request $request)
     $html .= '<p class="meta">Generated: ' . now()->format('F d, Y h:i A') . '</p>';
     $html .= '</div>';
 
-    // ---- Table ----
+    // ---- Table ---- 
     $html .= '<table><thead>';
     $html .= '<tr>';
     $html .= '<th rowspan="2" style="vertical-align: bottom;">Date</th>';
     $html .= '<th rowspan="2" style="vertical-align: bottom;">Vehicle</th>';
     $html .= '<th rowspan="2" style="vertical-align: bottom;">Driver</th>';
-    $html .= '<th colspan="2">Fuel Type</th>';
+    // ✅ Now spans 3 columns
+    $html .= '<th colspan="3">Fuel Type (L)</th>';
     $html .= '<th rowspan="2" style="vertical-align: bottom;">Qty (L)</th>';
     $html .= '<th rowspan="2" style="vertical-align: bottom;">Amount (₱)</th>';
     $html .= '<th rowspan="2" style="vertical-align: bottom;">Department</th>';
@@ -1998,24 +2001,30 @@ public function getMoActivityLogs(Request $request)
     $html .= '</tr>';
     $html .= '<tr>';
     $html .= '<th>Diesel</th>';
-    $html .= '<th>Gasoline</th>';
+    $html .= '<th>Regular</th>';
+    $html .= '<th>Premium</th>';
     $html .= '</tr>';
     $html .= '</thead><tbody>';
 
     if (empty($logs)) {
-        $html .= '<tr><td colspan="10" class="text-center" style="padding: 20px; color: #94a3b8;">No fuel consumption data available</td></tr>';
+        // ✅ colSpan 10 → 11
+        $html .= '<tr><td colspan="11" class="text-center" style="padding: 20px; color: #94a3b8;">No fuel consumption data available</td></tr>';
     } else {
         foreach ($logs as $log) {
             $liters = (float) ($log['liters_availed'] ?? 0);
             $amount = (float) ($log['amount_on_receipt'] ?? 0);
             $type   = strtolower($log['fuel_type'] ?? '');
-            $isDiesel = $type === 'diesel';
-            $isGas    = in_array($type, ['regular', 'premium', 'gasoline']);
+
+            // ✅ Three-way classification
+            $isDiesel  = $type === 'diesel';
+            $isRegular = in_array($type, ['regular', 'gasoline']); // legacy 'gasoline' → Regular
+            $isPremium = $type === 'premium';
 
             $totals['liters'] += $liters;
             $totals['amount'] += $amount;
-            if ($isDiesel) $totals['diesel_liters'] += $liters;
-            if ($isGas)    $totals['gasoline_liters'] += $liters;
+            if ($isDiesel)  $totals['diesel_liters']  += $liters;
+            if ($isRegular) $totals['regular_liters'] += $liters;
+            if ($isPremium) $totals['premium_liters'] += $liters;
 
             $date = 'N/A';
             if (!empty($log['trip_ended_at'])) {
@@ -2038,8 +2047,10 @@ public function getMoActivityLogs(Request $request)
             $html .= '<td class="text-center">' . e($date) . '</td>';
             $html .= '<td class="text-left">' . $vehicleCell . '</td>';
             $html .= '<td class="text-left">' . e($log['driver'] ?? 'N/A') . '</td>';
-            $html .= '<td class="text-center">' . ($isDiesel ? number_format($liters, 2) : '0') . '</td>';
-            $html .= '<td class="text-center">' . ($isGas    ? number_format($liters, 2) : '0') . '</td>';
+            // ✅ Three fuel cells
+            $html .= '<td class="text-center">' . ($isDiesel  ? number_format($liters, 2) : '0') . '</td>';
+            $html .= '<td class="text-center">' . ($isRegular ? number_format($liters, 2) : '0') . '</td>';
+            $html .= '<td class="text-center">' . ($isPremium ? number_format($liters, 2) : '0') . '</td>';
             $html .= '<td class="text-right">'  . number_format($liters, 2) . '</td>';
             $html .= '<td class="text-right amount">₱' . number_format($amount, 2) . '</td>';
             $html .= '<td class="text-center">' . e($log['department_code'] ?? $log['department'] ?? 'N/A') . '</td>';
@@ -2051,8 +2062,10 @@ public function getMoActivityLogs(Request $request)
         // ---- TOTAL row ----
         $html .= '<tr class="total-row">';
         $html .= '<td colspan="3" class="text-right">TOTAL</td>';
+        // ✅ Three fuel totals
         $html .= '<td class="text-center">' . number_format($totals['diesel_liters'], 2) . '</td>';
-        $html .= '<td class="text-center">' . number_format($totals['gasoline_liters'], 2) . '</td>';
+        $html .= '<td class="text-center">' . number_format($totals['regular_liters'], 2) . '</td>';
+        $html .= '<td class="text-center">' . number_format($totals['premium_liters'], 2) . '</td>';
         $html .= '<td class="text-right">'  . number_format($totals['liters'], 2) . '</td>';
         $html .= '<td class="text-right amount">₱' . number_format($totals['amount'], 2) . '</td>';
         $html .= '<td colspan="3"></td>';
@@ -2727,10 +2740,15 @@ public function getBillingStatementReport(Request $request)
         });
 
         $departments = collect();
+
+        // Grand totals track liters + amounts per fuel type
         $grandTotals = [
             'premium_liters'  => 0.0,
+            'premium_amount'  => 0.0,
             'diesel_liters'   => 0.0,
+            'diesel_amount'   => 0.0,
             'regular_liters'  => 0.0,
+            'regular_amount'  => 0.0,
             'total_liters'    => 0.0,
             'total_amount'    => 0.0,
         ];
@@ -2746,10 +2764,14 @@ public function getBillingStatementReport(Request $request)
                     : 0;
             })->values();
 
+            // Full subtotals — liters + amounts per fuel type
             $subtotals = [
                 'premium_liters' => 0.0,
+                'premium_amount' => 0.0,
                 'diesel_liters'  => 0.0,
+                'diesel_amount'  => 0.0,
                 'regular_liters' => 0.0,
+                'regular_amount' => 0.0,
                 'total_liters'   => 0.0,
                 'total_amount'   => 0.0,
             ];
@@ -2769,13 +2791,29 @@ public function getBillingStatementReport(Request $request)
                     $unitPrice = round($amount / $liters, 2);
                 }
 
-                // Accumulate subtotals
-                if ($fuelType === 'premium')                    $subtotals['premium_liters']  += $liters;
-                elseif ($fuelType === 'diesel')                 $subtotals['diesel_liters']   += $liters;
-                elseif (in_array($fuelType, ['regular', 'gasoline'])) $subtotals['regular_liters'] += $liters;
+                // Accumulate subtotals — liters AND amounts
+                if ($fuelType === 'premium') {
+                    $subtotals['premium_liters'] += $liters;
+                    $subtotals['premium_amount'] += $amount;
+                } elseif ($fuelType === 'diesel') {
+                    $subtotals['diesel_liters'] += $liters;
+                    $subtotals['diesel_amount'] += $amount;
+                } elseif (in_array($fuelType, ['regular', 'gasoline'])) {
+                    $subtotals['regular_liters'] += $liters;
+                    $subtotals['regular_amount'] += $amount;
+                }
+                // Rows with no fuel_type fall only into the totals, not a fuel bucket.
 
                 $subtotals['total_liters'] += $liters;
                 $subtotals['total_amount'] += $amount;
+
+                // ✅ Display label — DB 'regular' renders as 'GASOLINE' in the UI
+                $fuelDisplay = match ($fuelType) {
+                    'regular', 'gasoline' => 'GASOLINE',
+                    'diesel'              => 'DIESEL',
+                    'premium'             => 'PREMIUM',
+                    default               => 'N/A',
+                };
 
                 $rows[] = [
                     'no'                => $i++,
@@ -2786,7 +2824,7 @@ public function getBillingStatementReport(Request $request)
                         : 'N/A',
                     'date_raw'          => $trip?->trip_date,
                     'control_no'        => $trip?->trip_ticket_number ?? 'N/A',
-                    'lubricant'         => strtoupper($fuelType ?: 'N/A'),
+                    'lubricant'         => $fuelDisplay,
                     'quantity'          => round($liters, 2),
                     'unit_price'        => round($unitPrice, 2),
                     'amount'            => round($amount, 2),
@@ -2796,10 +2834,13 @@ public function getBillingStatementReport(Request $request)
             // Round subtotals
             $subtotals = array_map(fn($v) => round($v, 2), $subtotals);
 
-            // Accumulate grand totals
+            // Accumulate grand totals — liters AND amounts
             $grandTotals['premium_liters'] += $subtotals['premium_liters'];
+            $grandTotals['premium_amount'] += $subtotals['premium_amount'];
             $grandTotals['diesel_liters']  += $subtotals['diesel_liters'];
+            $grandTotals['diesel_amount']  += $subtotals['diesel_amount'];
             $grandTotals['regular_liters'] += $subtotals['regular_liters'];
+            $grandTotals['regular_amount'] += $subtotals['regular_amount'];
             $grandTotals['total_liters']   += $subtotals['total_liters'];
             $grandTotals['total_amount']   += $subtotals['total_amount'];
 
@@ -2936,7 +2977,7 @@ private function buildBillingStatementPDFHTML($reportData)
         $html .= '<td colspan="6" class="text-right">'
               . 'Premium: ' . number_format($st['premium_liters'], 2) . ' L | '
               . 'Diesel: ' . number_format($st['diesel_liters'], 2) . ' L | '
-              . 'Regular: ' . number_format($st['regular_liters'], 2) . ' L'
+              . 'Gasoline: ' . number_format($st['regular_liters'], 2) . ' L'
               . '</td>';
         $html .= '<td class="text-right">' . number_format($st['total_liters'], 2) . '</td>';
         $html .= '<td></td>';
@@ -2951,7 +2992,8 @@ private function buildBillingStatementPDFHTML($reportData)
     $html .= '<div class="grand-total"><table><tr>';
     $html .= '<td class="text-center">Premium: ' . number_format($gt['premium_liters'], 2) . ' L</td>';
     $html .= '<td class="text-center">Diesel: ' . number_format($gt['diesel_liters'], 2) . ' L</td>';
-    $html .= '<td class="text-center">Regular: ' . number_format($gt['regular_liters'], 2) . ' L</td>';
+    // ✅ Was 'Regular:' — renamed for consistency with matrix + subtotal row
+    $html .= '<td class="text-center">Gasoline: ' . number_format($gt['regular_liters'], 2) . ' L</td>';
     $html .= '<td class="text-center">Total Quantity: ' . number_format($gt['total_liters'], 2) . ' L</td>';
     $html .= '<td class="text-center">Total Amount: ₱' . number_format($gt['total_amount'], 2) . '</td>';
     $html .= '</tr></table></div>';

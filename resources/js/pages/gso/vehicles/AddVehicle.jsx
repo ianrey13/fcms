@@ -576,7 +576,7 @@ const AddVehicle = () => {
                   )}
                 >
                <option value="diesel">Diesel</option>
-<option value="regular">Regular</option>
+<option value="gasoline">Gasoline</option>
 <option value="premium">Premium</option>
                 </select>
               </FormField>

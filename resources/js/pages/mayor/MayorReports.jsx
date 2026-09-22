@@ -1483,523 +1483,457 @@ const MayorReports = () => {
     // BILLING STATEMENT
     // ============================================================
 
-    const renderBillingStatement = () => {
-        const deptList = Array.isArray(billingData?.departments)
-            ? billingData.departments
-            : [];
-        const grandTotals = billingData?.grand_totals || {};
-        const periodLabel = billingData?.period_label || "";
+ const renderBillingStatement = () => {
+    const deptList = Array.isArray(billingData?.departments)
+        ? billingData.departments
+        : [];
+    const grandTotals = billingData?.grand_totals || {};
+    const periodLabel = billingData?.period_label || "";
 
-        const computeFuelAmounts = (rows) => {
-            const out = { premium: 0, diesel: 0, regular: 0 };
-            (rows || []).forEach((r) => {
-                const type = (r.lubricant || "").toLowerCase();
-                const amt = parseFloat(r.amount) || 0;
-                if (type === "premium") out.premium += amt;
-                else if (type === "diesel") out.diesel += amt;
-                else if (type === "regular" || type === "gasoline")
-                    out.regular += amt;
-            });
-            return out;
-        };
+    const bothDatesPicked = !!bsStartDate && !!bsEndDate;
 
-        const bothDatesPicked = !!bsStartDate && !!bsEndDate;
-
-        return (
-            <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-                <CardHeader
-                    className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors rounded-t-2xl"
-                    onClick={() => toggleSection("billingStatement")}
-                >
-                    <div className="flex items-center justify-between flex-wrap gap-2">
-                        <div className="flex items-center gap-2">
-                            <FileText className="h-5 w-5 text-amber-500" />
-                            <CardTitle className="text-slate-800 dark:text-white">
-                                Billing Statement of Fuel
-                            </CardTitle>
-                            <Badge className="bg-amber-500/20 text-amber-600 ml-2">
-                                {deptList.length} department
-                                {deptList.length !== 1 ? "s" : ""}
-                            </Badge>
-                        </div>
-                        <div className="flex items-center gap-2 flex-wrap">
-                            {expandedSections.billingStatement && (
-                                <>
-                                    {/* Department */}
-                                    <Select
-                                        value={bsDepartment}
-                                        onValueChange={setBsDepartment}
-                                    >
-                                        <SelectTrigger
-                                            className="w-[180px] h-8 text-xs"
-                                            onClick={(e) =>
-                                                e.stopPropagation()
-                                            }
-                                        >
-                                            <SelectValue placeholder="All Departments" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="all">
-                                                All Departments
-                                            </SelectItem>
-                                            {departments.map((d) => (
-                                                <SelectItem
-                                                    key={d.department_id}
-                                                    value={String(
-                                                        d.department_id,
-                                                    )}
-                                                >
-                                                    {d.department_name}
-                                                </SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-
-                                    {/* Start Date */}
-                                    <DatePickerButton
-                                        date={bsStartDate}
-                                        setDate={setBsStartDate}
-                                        placeholder="Start date"
-                                        disabled={(d) =>
-                                            bsEndDate && d > bsEndDate
-                                        }
-                                        onInteract={(e) =>
-                                            e.stopPropagation()
-                                        }
-                                    />
-
-                                    <ArrowRight className="h-3.5 w-3.5 text-slate-400" />
-
-                                    {/* End Date */}
-                                    <DatePickerButton
-                                        date={bsEndDate}
-                                        setDate={setBsEndDate}
-                                        placeholder="End date"
-                                        disabled={(d) =>
-                                            bsStartDate && d < bsStartDate
-                                        }
-                                        onInteract={(e) =>
-                                            e.stopPropagation()
-                                        }
-                                    />
-
-                                    <Button
-                                        size="sm"
-                                        variant="outline"
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            if (!bothDatesPicked) {
-                                                toast.error(
-                                                    "Pick both start and end dates first",
-                                                );
-                                                return;
-                                            }
-                                            handleExport(
-                                                "excel",
-                                                "billing_statement",
-                                                {
-                                                    start_date:
-                                                        bsRange.startDate,
-                                                    end_date: bsRange.endDate,
-                                                    department_id:
-                                                        bsDepartment !== "all"
-                                                            ? bsDepartment
-                                                            : undefined,
-                                                },
-                                                bsRange,
-                                            );
-                                        }}
-                                        disabled={exportLoading}
-                                        className="h-8 px-2 text-xs"
-                                    >
-                                        <FileSpreadsheet className="h-3.5 w-3.5 mr-1" />
-                                        Excel
-                                    </Button>
-                                    <Button
-                                        size="sm"
-                                        variant="outline"
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            if (!bothDatesPicked) {
-                                                toast.error(
-                                                    "Pick both start and end dates first",
-                                                );
-                                                return;
-                                            }
-                                            handleExport(
-                                                "pdf",
-                                                "billing_statement",
-                                                {
-                                                    start_date:
-                                                        bsRange.startDate,
-                                                    end_date: bsRange.endDate,
-                                                    department_id:
-                                                        bsDepartment !== "all"
-                                                            ? bsDepartment
-                                                            : undefined,
-                                                },
-                                                bsRange,
-                                            );
-                                        }}
-                                        disabled={exportLoading}
-                                        className="h-8 px-2 text-xs"
-                                    >
-                                        <FileText className="h-3.5 w-3.5 mr-1" />
-                                        PDF
-                                    </Button>
-                                    <Button
-                                        size="sm"
-                                        variant="outline"
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            window.print();
-                                        }}
-                                        className="h-8 px-2 text-xs"
-                                    >
-                                        <Printer className="h-3.5 w-3.5 mr-1" />
-                                        Print
-                                    </Button>
-                                </>
-                            )}
-                            <Badge variant="secondary">
-                                {expandedSections.billingStatement
-                                    ? "Hide"
-                                    : "Show"}
-                            </Badge>
-                            {expandedSections.billingStatement ? (
-                                <ChevronUp className="h-4 w-4" />
-                            ) : (
-                                <ChevronDown className="h-4 w-4" />
-                            )}
-                        </div>
+    return (
+        <Card className="dark:bg-slate-800/80 dark:border-slate-700">
+            <CardHeader
+                className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors rounded-t-2xl"
+                onClick={() => toggleSection("billingStatement")}
+            >
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-2">
+                        <FileText className="h-5 w-5 text-amber-500" />
+                        <CardTitle className="text-slate-800 dark:text-white">
+                            Billing Statement of Fuel
+                        </CardTitle>
+                        <Badge className="bg-amber-500/20 text-amber-600 ml-2">
+                            {deptList.length} department
+                            {deptList.length !== 1 ? "s" : ""}
+                        </Badge>
                     </div>
-                    <CardDescription>
-                        {bothDatesPicked
-                            ? periodLabel
-                            : "Pick a start and end date to generate the statement"}
-                    </CardDescription>
-                </CardHeader>
+                    <div className="flex items-center gap-2 flex-wrap">
+                        {expandedSections.billingStatement && (
+                            <>
+                                {/* Department */}
+                                <Select
+                                    value={bsDepartment}
+                                    onValueChange={setBsDepartment}
+                                >
+                                    <SelectTrigger
+                                        className="w-[180px] h-8 text-xs"
+                                        onClick={(e) => e.stopPropagation()}
+                                    >
+                                        <SelectValue placeholder="All Departments" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="all">
+                                            All Departments
+                                        </SelectItem>
+                                        {departments.map((d) => (
+                                            <SelectItem
+                                                key={d.department_id}
+                                                value={String(d.department_id)}
+                                            >
+                                                {d.department_name}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
 
-                {expandedSections.billingStatement && (
-                    <CardContent>
-                        {!bothDatesPicked ? (
-                            <div className="text-center py-12">
-                                <CalendarIcon className="h-12 w-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
-                                <p className="text-slate-500 dark:text-slate-400">
-                                    Select a start date and end date to
-                                    generate the billing statement
-                                </p>
-                            </div>
-                        ) : billingLoading ? (
-                            <div className="text-center py-12">
-                                <Loader2 className="h-6 w-6 animate-spin text-slate-400 mx-auto mb-3" />
-                                <p className="text-slate-500 dark:text-slate-400">
-                                    Loading billing statement...
-                                </p>
-                            </div>
-                        ) : deptList.length === 0 ? (
-                            <div className="text-center py-12">
-                                <FileText className="h-12 w-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
-                                <p className="text-slate-500 dark:text-slate-400">
-                                    No fuel receipts for the selected period
-                                </p>
-                            </div>
+                                {/* Start Date */}
+                                <DatePickerButton
+                                    date={bsStartDate}
+                                    setDate={setBsStartDate}
+                                    placeholder="Start date"
+                                    disabled={(d) => bsEndDate && d > bsEndDate}
+                                    onInteract={(e) => e.stopPropagation()}
+                                />
+
+                                <ArrowRight className="h-3.5 w-3.5 text-slate-400" />
+
+                                {/* End Date */}
+                                <DatePickerButton
+                                    date={bsEndDate}
+                                    setDate={setBsEndDate}
+                                    placeholder="End date"
+                                    disabled={(d) => bsStartDate && d < bsStartDate}
+                                    onInteract={(e) => e.stopPropagation()}
+                                />
+
+                                <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (!bothDatesPicked) {
+                                            toast.error(
+                                                "Pick both start and end dates first",
+                                            );
+                                            return;
+                                        }
+                                        handleExport(
+                                            "excel",
+                                            "billing_statement",
+                                            {
+                                                start_date: bsRange.startDate,
+                                                end_date: bsRange.endDate,
+                                                department_id:
+                                                    bsDepartment !== "all"
+                                                        ? bsDepartment
+                                                        : undefined,
+                                            },
+                                            bsRange,
+                                        );
+                                    }}
+                                    disabled={exportLoading}
+                                    className="h-8 px-2 text-xs"
+                                >
+                                    <FileSpreadsheet className="h-3.5 w-3.5 mr-1" />
+                                    Excel
+                                </Button>
+                                <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (!bothDatesPicked) {
+                                            toast.error(
+                                                "Pick both start and end dates first",
+                                            );
+                                            return;
+                                        }
+                                        handleExport(
+                                            "pdf",
+                                            "billing_statement",
+                                            {
+                                                start_date: bsRange.startDate,
+                                                end_date: bsRange.endDate,
+                                                department_id:
+                                                    bsDepartment !== "all"
+                                                        ? bsDepartment
+                                                        : undefined,
+                                            },
+                                            bsRange,
+                                        );
+                                    }}
+                                    disabled={exportLoading}
+                                    className="h-8 px-2 text-xs"
+                                >
+                                    <FileText className="h-3.5 w-3.5 mr-1" />
+                                    PDF
+                                </Button>
+                                <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        window.print();
+                                    }}
+                                    className="h-8 px-2 text-xs"
+                                >
+                                    <Printer className="h-3.5 w-3.5 mr-1" />
+                                    Print
+                                </Button>
+                            </>
+                        )}
+                        <Badge variant="secondary">
+                            {expandedSections.billingStatement ? "Hide" : "Show"}
+                        </Badge>
+                        {expandedSections.billingStatement ? (
+                            <ChevronUp className="h-4 w-4" />
                         ) : (
-                            <div className="space-y-10">
-                                {deptList.map((dept) => {
-                                    const fuelAmounts = computeFuelAmounts(
-                                        dept.rows,
-                                    );
-                                    return (
-                                        <div
-                                            key={dept.department_id}
-                                            className="space-y-4"
-                                        >
-                                            <div className="text-center border-y-2 border-slate-800 dark:border-slate-200 py-2">
-                                                <h3 className="font-bold text-base tracking-wide text-slate-900 dark:text-white">
-                                                    FOR {dept.department_code}
-                                                </h3>
-                                                {dept.department_name &&
-                                                    dept.department_name !==
-                                                        dept.department_code && (
-                                                        <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                                                            {
-                                                                dept.department_name
-                                                            }
-                                                        </p>
-                                                    )}
+                            <ChevronDown className="h-4 w-4" />
+                        )}
+                    </div>
+                </div>
+                <CardDescription>
+                    {bothDatesPicked
+                        ? periodLabel
+                        : "Pick a start and end date to generate the statement"}
+                </CardDescription>
+            </CardHeader>
+
+            {expandedSections.billingStatement && (
+                <CardContent>
+                    {!bothDatesPicked ? (
+                        <div className="text-center py-12">
+                            <CalendarIcon className="h-12 w-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
+                            <p className="text-slate-500 dark:text-slate-400">
+                                Select a start date and end date to generate the billing statement
+                            </p>
+                        </div>
+                    ) : billingLoading ? (
+                        <div className="text-center py-12">
+                            <Loader2 className="h-6 w-6 animate-spin text-slate-400 mx-auto mb-3" />
+                            <p className="text-slate-500 dark:text-slate-400">
+                                Loading billing statement...
+                            </p>
+                        </div>
+                    ) : deptList.length === 0 ? (
+                        <div className="text-center py-12">
+                            <FileText className="h-12 w-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
+                            <p className="text-slate-500 dark:text-slate-400">
+                                No fuel receipts for the selected period
+                            </p>
+                        </div>
+                    ) : (
+                        <div className="space-y-10">
+                            {deptList.map((dept, deptIdx) => {
+                                // ✅ Amounts come from backend subtotals
+                                const sub = dept.subtotals || {};
+                                const knownAmount =
+                                    (sub.premium_amount || 0) +
+                                    (sub.diesel_amount || 0) +
+                                    (sub.regular_amount || 0);
+                                const unclassifiedAmount = Math.max(
+                                    0,
+                                    (sub.total_amount || 0) - knownAmount,
+                                );
+                                const hasUnclassified =
+                                    unclassifiedAmount > 0.005;
+
+                                return (
+                                    <div
+                                        key={dept.department_id ?? `unknown-${deptIdx}`}
+                                        className="space-y-4"
+                                    >
+                                        <div className="text-center border-y-2 border-slate-800 dark:border-slate-200 py-2">
+                                            <h3 className="font-bold text-base tracking-wide text-slate-900 dark:text-white">
+                                                FOR {dept.department_code}
+                                            </h3>
+                                            {dept.department_name &&
+                                                dept.department_name !==
+                                                    dept.department_code && (
+                                                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                                                        {dept.department_name}
+                                                    </p>
+                                                )}
+                                        </div>
+
+                                        {/* ✅ Unclassified warning */}
+                                        {hasUnclassified && (
+                                            <div className="flex items-start gap-2 p-2 rounded-md bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800">
+                                                <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+                                                <p className="text-xs text-amber-700 dark:text-amber-300">
+                                                    {formatCurrency(unclassifiedAmount)} in receipts
+                                                    have no vehicle fuel type set. Fix the vehicle
+                                                    records to see them broken out.
+                                                </p>
                                             </div>
+                                        )}
 
-                                            {/* Fuel-type matrix */}
-                                            <div className="flex justify-end">
-                                                <div className="inline-grid grid-cols-4 border-2 border-slate-800 dark:border-slate-200 text-xs">
-                                                    <div className="px-3 py-1.5 font-bold bg-slate-100 dark:bg-slate-800 border-r border-slate-800 dark:border-slate-200 text-center">
-                                                        PREMIUM
-                                                    </div>
-                                                    <div className="px-3 py-1.5 font-bold bg-slate-100 dark:bg-slate-800 border-r border-slate-800 dark:border-slate-200 text-center">
-                                                        DIESEL
-                                                    </div>
-                                                    <div className="px-3 py-1.5 font-bold bg-slate-100 dark:bg-slate-800 border-r border-slate-800 dark:border-slate-200 text-center">
-                                                        REGULAR
-                                                    </div>
-                                                    <div className="px-3 py-1.5 font-bold bg-slate-100 dark:bg-slate-800 text-center">
-                                                        QUANTITY
-                                                    </div>
+                                        {/* Fuel-type matrix */}
+                                        <div className="flex justify-end">
+                                            <div className="inline-grid grid-cols-4 border-2 border-slate-800 dark:border-slate-200 text-xs">
+                                                <div className="px-3 py-1.5 font-bold bg-slate-100 dark:bg-slate-800 border-r border-slate-800 dark:border-slate-200 text-center">
+                                                    PREMIUM
+                                                </div>
+                                                <div className="px-3 py-1.5 font-bold bg-slate-100 dark:bg-slate-800 border-r border-slate-800 dark:border-slate-200 text-center">
+                                                    DIESEL
+                                                </div>
+                                                <div className="px-3 py-1.5 font-bold bg-slate-100 dark:bg-slate-800 border-r border-slate-800 dark:border-slate-200 text-center">
+                                                    GASOLINE
+                                                </div>
+                                                <div className="px-3 py-1.5 font-bold bg-slate-100 dark:bg-slate-800 text-center">
+                                                    QUANTITY
+                                                </div>
 
-                                                    <div className="px-3 py-1.5 text-right border-t border-r border-slate-800 dark:border-slate-200">
-                                                        {formatNumber(
-                                                            dept.subtotals
-                                                                ?.premium_liters ||
-                                                                0,
-                                                        )}
-                                                    </div>
-                                                    <div className="px-3 py-1.5 text-right border-t border-r border-slate-800 dark:border-slate-200">
-                                                        {formatNumber(
-                                                            dept.subtotals
-                                                                ?.diesel_liters ||
-                                                                0,
-                                                        )}
-                                                    </div>
-                                                    <div className="px-3 py-1.5 text-right border-t border-r border-slate-800 dark:border-slate-200">
-                                                        {formatNumber(
-                                                            dept.subtotals
-                                                                ?.regular_liters ||
-                                                                0,
-                                                        )}
-                                                    </div>
-                                                    <div className="px-3 py-1.5 text-right border-t border-slate-800 dark:border-slate-200 font-bold">
-                                                        {formatNumber(
-                                                            dept.subtotals
-                                                                ?.total_liters ||
-                                                                0,
-                                                        )}
-                                                    </div>
+                                                <div className="px-3 py-1.5 text-right border-t border-r border-slate-800 dark:border-slate-200">
+                                                    {formatNumber(sub.premium_liters || 0)}
+                                                </div>
+                                                <div className="px-3 py-1.5 text-right border-t border-r border-slate-800 dark:border-slate-200">
+                                                    {formatNumber(sub.diesel_liters || 0)}
+                                                </div>
+                                                <div className="px-3 py-1.5 text-right border-t border-r border-slate-800 dark:border-slate-200">
+                                                    {formatNumber(sub.regular_liters || 0)}
+                                                </div>
+                                                <div className="px-3 py-1.5 text-right border-t border-slate-800 dark:border-slate-200 font-bold">
+                                                    {formatNumber(sub.total_liters || 0)}
+                                                </div>
 
-                                                    <div className="px-3 py-1.5 font-bold bg-slate-100 dark:bg-slate-800 border-t border-r border-slate-800 dark:border-slate-200 text-center">
-                                                        PREMIUM
-                                                    </div>
-                                                    <div className="px-3 py-1.5 font-bold bg-slate-100 dark:bg-slate-800 border-t border-r border-slate-800 dark:border-slate-200 text-center">
-                                                        DIESEL
-                                                    </div>
-                                                    <div className="px-3 py-1.5 font-bold bg-slate-100 dark:bg-slate-800 border-t border-r border-slate-800 dark:border-slate-200 text-center">
-                                                        REGULAR
-                                                    </div>
-                                                    <div className="px-3 py-1.5 font-bold bg-slate-100 dark:bg-slate-800 border-t text-center">
-                                                        AMOUNT
-                                                    </div>
+                                                <div className="px-3 py-1.5 font-bold bg-slate-100 dark:bg-slate-800 border-t border-r border-slate-800 dark:border-slate-200 text-center">
+                                                    PREMIUM
+                                                </div>
+                                                <div className="px-3 py-1.5 font-bold bg-slate-100 dark:bg-slate-800 border-t border-r border-slate-800 dark:border-slate-200 text-center">
+                                                    DIESEL
+                                                </div>
+                                                <div className="px-3 py-1.5 font-bold bg-slate-100 dark:bg-slate-800 border-t border-r border-slate-800 dark:border-slate-200 text-center">
+                                                    GASOLINE
+                                                </div>
+                                                <div className="px-3 py-1.5 font-bold bg-slate-100 dark:bg-slate-800 border-t text-center">
+                                                    AMOUNT
+                                                </div>
 
-                                                    <div className="px-3 py-1.5 text-right border-t border-r border-slate-800 dark:border-slate-200">
-                                                        {formatCurrency(
-                                                            fuelAmounts.premium,
-                                                        )}
-                                                    </div>
-                                                    <div className="px-3 py-1.5 text-right border-t border-r border-slate-800 dark:border-slate-200">
-                                                        {formatCurrency(
-                                                            fuelAmounts.diesel,
-                                                        )}
-                                                    </div>
-                                                    <div className="px-3 py-1.5 text-right border-t border-r border-slate-800 dark:border-slate-200">
-                                                        {formatCurrency(
-                                                            fuelAmounts.regular,
-                                                        )}
-                                                    </div>
-                                                    <div className="px-3 py-1.5 text-right border-t border-slate-800 dark:border-slate-200 font-bold text-emerald-600 dark:text-emerald-400">
-                                                        {formatCurrency(
-                                                            dept.subtotals
-                                                                ?.total_amount ||
-                                                                0,
-                                                        )}
-                                                    </div>
+                                                {/* ✅ Amounts from backend */}
+                                                <div className="px-3 py-1.5 text-right border-t border-r border-slate-800 dark:border-slate-200">
+                                                    {formatCurrency(sub.premium_amount || 0)}
+                                                </div>
+                                                <div className="px-3 py-1.5 text-right border-t border-r border-slate-800 dark:border-slate-200">
+                                                    {formatCurrency(sub.diesel_amount || 0)}
+                                                </div>
+                                                <div className="px-3 py-1.5 text-right border-t border-r border-slate-800 dark:border-slate-200">
+                                                    {formatCurrency(sub.regular_amount || 0)}
+                                                </div>
+                                                <div className="px-3 py-1.5 text-right border-t border-slate-800 dark:border-slate-200 font-bold text-emerald-600 dark:text-emerald-400">
+                                                    {formatCurrency(sub.total_amount || 0)}
                                                 </div>
                                             </div>
-
-                                            {/* Rows table */}
-                                            <div className="overflow-x-auto border-2 border-slate-800 dark:border-slate-200">
-                                                <Table>
-                                                    <TableHeader className="bg-slate-100 dark:bg-slate-800">
-                                                        <TableRow className="border-b-2 border-slate-800 dark:border-slate-200">
-                                                            <TableHead className="text-xs font-bold text-slate-900 dark:text-white">
-                                                                NO.
-                                                            </TableHead>
-                                                            <TableHead className="text-xs font-bold text-slate-900 dark:text-white">
-                                                                CHARGE INVOICE
-                                                                NO.
-                                                            </TableHead>
-                                                            <TableHead className="text-xs font-bold text-slate-900 dark:text-white">
-                                                                PLATE NO.
-                                                            </TableHead>
-                                                            <TableHead className="text-xs font-bold text-slate-900 dark:text-white">
-                                                                DATE
-                                                            </TableHead>
-                                                            <TableHead className="text-xs font-bold text-slate-900 dark:text-white">
-                                                                CONTROL NO.
-                                                            </TableHead>
-                                                            <TableHead className="text-xs font-bold text-slate-900 dark:text-white">
-                                                                LUBRICANT
-                                                            </TableHead>
-                                                            <TableHead className="text-xs font-bold text-slate-900 dark:text-white text-right">
-                                                                QUANTITY
-                                                            </TableHead>
-                                                            <TableHead className="text-xs font-bold text-slate-900 dark:text-white text-right">
-                                                                UNIT PRICE
-                                                            </TableHead>
-                                                            <TableHead className="text-xs font-bold text-slate-900 dark:text-white text-right">
-                                                                AMOUNT
-                                                            </TableHead>
-                                                        </TableRow>
-                                                    </TableHeader>
-                                                    <TableBody>
-                                                        {dept.rows.map(
-                                                            (r, i) => (
-                                                                <TableRow
-                                                                    key={i}
-                                                                    className="border-b border-slate-200 dark:border-slate-700"
-                                                                >
-                                                                    <TableCell className="text-xs">
-                                                                        {r.no}
-                                                                    </TableCell>
-                                                                    <TableCell className="text-xs font-mono">
-                                                                        {
-                                                                            r.charge_invoice_no
-                                                                        }
-                                                                    </TableCell>
-                                                                    <TableCell className="text-xs font-mono">
-                                                                        {r.plate_no}
-                                                                    </TableCell>
-                                                                    <TableCell className="text-xs">
-                                                                        {r.date}
-                                                                    </TableCell>
-                                                                    <TableCell className="text-xs font-mono">
-                                                                        {
-                                                                            r.control_no
-                                                                        }
-                                                                    </TableCell>
-                                                                    <TableCell className="text-xs">
-                                                                        {
-                                                                            r.lubricant
-                                                                        }
-                                                                    </TableCell>
-                                                                    <TableCell className="text-xs text-right">
-                                                                        {formatNumber(
-                                                                            r.quantity,
-                                                                        )}
-                                                                    </TableCell>
-                                                                    <TableCell className="text-xs text-right">
-                                                                        {formatCurrency(
-                                                                            r.unit_price,
-                                                                        )}
-                                                                    </TableCell>
-                                                                    <TableCell className="text-xs text-right font-medium">
-                                                                        {formatCurrency(
-                                                                            r.amount,
-                                                                        )}
-                                                                    </TableCell>
-                                                                </TableRow>
-                                                            ),
-                                                        )}
-
-                                                        <TableRow className="bg-slate-100 dark:bg-slate-800 font-bold border-t-2 border-slate-800 dark:border-slate-200">
-                                                            <TableCell
-                                                                colSpan="6"
-                                                                className="text-right text-xs"
-                                                            >
-                                                                TOTAL
-                                                            </TableCell>
-                                                            <TableCell className="text-right text-xs">
-                                                                {formatNumber(
-                                                                    dept
-                                                                        .subtotals
-                                                                        ?.total_liters ||
-                                                                        0,
-                                                                )}
-                                                            </TableCell>
-                                                            <TableCell></TableCell>
-                                                            <TableCell className="text-right text-xs text-emerald-600 dark:text-emerald-400">
-                                                                {formatCurrency(
-                                                                    dept
-                                                                        .subtotals
-                                                                        ?.total_amount ||
-                                                                        0,
-                                                                )}
-                                                            </TableCell>
-                                                        </TableRow>
-                                                    </TableBody>
-                                                </Table>
-                                            </div>
                                         </div>
-                                    );
-                                })}
 
-                                {/* Grand total */}
-                                <div className="border-2 border-slate-800 dark:border-slate-200 rounded-lg overflow-hidden">
-                                    <div className="bg-slate-900 dark:bg-slate-950 text-white px-4 py-2 text-center font-bold text-sm tracking-wide">
-                                        GRAND TOTAL
+                                        {/* Rows table */}
+                                        <div className="overflow-x-auto border-2 border-slate-800 dark:border-slate-200">
+                                            <Table>
+                                                <TableHeader className="bg-slate-100 dark:bg-slate-800">
+                                                    <TableRow className="border-b-2 border-slate-800 dark:border-slate-200">
+                                                        <TableHead className="text-xs font-bold text-slate-900 dark:text-white">
+                                                            NO.
+                                                        </TableHead>
+                                                        <TableHead className="text-xs font-bold text-slate-900 dark:text-white">
+                                                            CHARGE INVOICE NO.
+                                                        </TableHead>
+                                                        <TableHead className="text-xs font-bold text-slate-900 dark:text-white">
+                                                            PLATE NO.
+                                                        </TableHead>
+                                                        <TableHead className="text-xs font-bold text-slate-900 dark:text-white">
+                                                            DATE
+                                                        </TableHead>
+                                                        <TableHead className="text-xs font-bold text-slate-900 dark:text-white">
+                                                            CONTROL NO.
+                                                        </TableHead>
+                                                        <TableHead className="text-xs font-bold text-slate-900 dark:text-white">
+                                                            LUBRICANT
+                                                        </TableHead>
+                                                        <TableHead className="text-xs font-bold text-slate-900 dark:text-white text-right">
+                                                            QUANTITY
+                                                        </TableHead>
+                                                        <TableHead className="text-xs font-bold text-slate-900 dark:text-white text-right">
+                                                            UNIT PRICE
+                                                        </TableHead>
+                                                        <TableHead className="text-xs font-bold text-slate-900 dark:text-white text-right">
+                                                            AMOUNT
+                                                        </TableHead>
+                                                    </TableRow>
+                                                </TableHeader>
+                                                <TableBody>
+                                                    {dept.rows.map((r, i) => (
+                                                        <TableRow
+                                                            key={i}
+                                                            className="border-b border-slate-200 dark:border-slate-700"
+                                                        >
+                                                            <TableCell className="text-xs">
+                                                                {r.no}
+                                                            </TableCell>
+                                                            <TableCell className="text-xs font-mono">
+                                                                {r.charge_invoice_no}
+                                                            </TableCell>
+                                                            <TableCell className="text-xs font-mono">
+                                                                {r.plate_no}
+                                                            </TableCell>
+                                                            <TableCell className="text-xs">
+                                                                {r.date}
+                                                            </TableCell>
+                                                            <TableCell className="text-xs font-mono">
+                                                                {r.control_no}
+                                                            </TableCell>
+                                                            <TableCell className="text-xs">
+                                                                {r.lubricant}
+                                                            </TableCell>
+                                                            <TableCell className="text-xs text-right">
+                                                                {formatNumber(r.quantity)}
+                                                            </TableCell>
+                                                            <TableCell className="text-xs text-right">
+                                                                {formatCurrency(r.unit_price)}
+                                                            </TableCell>
+                                                            <TableCell className="text-xs text-right font-medium">
+                                                                {formatCurrency(r.amount)}
+                                                            </TableCell>
+                                                        </TableRow>
+                                                    ))}
+
+                                                    <TableRow className="bg-slate-100 dark:bg-slate-800 font-bold border-t-2 border-slate-800 dark:border-slate-200">
+                                                        <TableCell
+                                                            colSpan="6"
+                                                            className="text-right text-xs"
+                                                        >
+                                                            TOTAL
+                                                        </TableCell>
+                                                        <TableCell className="text-right text-xs">
+                                                            {formatNumber(sub.total_liters || 0)}
+                                                        </TableCell>
+                                                        <TableCell></TableCell>
+                                                        <TableCell className="text-right text-xs text-emerald-600 dark:text-emerald-400">
+                                                            {formatCurrency(sub.total_amount || 0)}
+                                                        </TableCell>
+                                                    </TableRow>
+                                                </TableBody>
+                                            </Table>
+                                        </div>
                                     </div>
-                                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4 p-4 text-center bg-slate-50 dark:bg-slate-800">
-                                        <div>
-                                            <p className="text-[10px] uppercase text-slate-500 dark:text-slate-400">
-                                                Premium
-                                            </p>
-                                            <p className="text-sm font-bold">
-                                                {formatNumber(
-                                                    grandTotals.premium_liters,
-                                                )}{" "}
-                                                L
-                                            </p>
-                                        </div>
-                                        <div>
-                                            <p className="text-[10px] uppercase text-slate-500 dark:text-slate-400">
-                                                Diesel
-                                            </p>
-                                            <p className="text-sm font-bold">
-                                                {formatNumber(
-                                                    grandTotals.diesel_liters,
-                                                )}{" "}
-                                                L
-                                            </p>
-                                        </div>
-                                        <div>
-                                            <p className="text-[10px] uppercase text-slate-500 dark:text-slate-400">
-                                                Regular
-                                            </p>
-                                            <p className="text-sm font-bold">
-                                                {formatNumber(
-                                                    grandTotals.regular_liters,
-                                                )}{" "}
-                                                L
-                                            </p>
-                                        </div>
-                                        <div>
-                                            <p className="text-[10px] uppercase text-slate-500 dark:text-slate-400">
-                                                Total Quantity
-                                            </p>
-                                            <p className="text-sm font-bold">
-                                                {formatNumber(
-                                                    grandTotals.total_liters,
-                                                )}{" "}
-                                                L
-                                            </p>
-                                        </div>
-                                        <div>
-                                            <p className="text-[10px] uppercase text-slate-500 dark:text-slate-400">
-                                                Total Amount
-                                            </p>
-                                            <p className="text-sm font-bold text-emerald-600 dark:text-emerald-400">
-                                                {formatCurrency(
-                                                    grandTotals.total_amount,
-                                                )}
-                                            </p>
-                                        </div>
+                                );
+                            })}
+
+                            {/* Grand total */}
+                            <div className="border-2 border-slate-800 dark:border-slate-200 rounded-lg overflow-hidden">
+                                <div className="bg-slate-900 dark:bg-slate-950 text-white px-4 py-2 text-center font-bold text-sm tracking-wide">
+                                    GRAND TOTAL
+                                </div>
+                                <div className="grid grid-cols-2 md:grid-cols-5 gap-4 p-4 text-center bg-slate-50 dark:bg-slate-800">
+                                    <div>
+                                        <p className="text-[10px] uppercase text-slate-500 dark:text-slate-400">
+                                            Premium
+                                        </p>
+                                        <p className="text-sm font-bold">
+                                            {formatNumber(grandTotals.premium_liters)} L
+                                        </p>
+                                        <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold">
+                                            {formatCurrency(grandTotals.premium_amount || 0)}
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <p className="text-[10px] uppercase text-slate-500 dark:text-slate-400">
+                                            Diesel
+                                        </p>
+                                        <p className="text-sm font-bold">
+                                            {formatNumber(grandTotals.diesel_liters)} L
+                                        </p>
+                                        <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold">
+                                            {formatCurrency(grandTotals.diesel_amount || 0)}
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <p className="text-[10px] uppercase text-slate-500 dark:text-slate-400">
+                                            Gasoline
+                                        </p>
+                                        <p className="text-sm font-bold">
+                                            {formatNumber(grandTotals.regular_liters)} L
+                                        </p>
+                                        <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold">
+                                            {formatCurrency(grandTotals.regular_amount || 0)}
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <p className="text-[10px] uppercase text-slate-500 dark:text-slate-400">
+                                            Total Quantity
+                                        </p>
+                                        <p className="text-sm font-bold">
+                                            {formatNumber(grandTotals.total_liters)} L
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <p className="text-[10px] uppercase text-slate-500 dark:text-slate-400">
+                                            Total Amount
+                                        </p>
+                                        <p className="text-sm font-bold text-emerald-600 dark:text-emerald-400">
+                                            {formatCurrency(grandTotals.total_amount)}
+                                        </p>
                                     </div>
                                 </div>
                             </div>
-                        )}
-                    </CardContent>
-                )}
-            </Card>
-        );
-    };
-
+                        </div>
+                    )}
+                </CardContent>
+            )}
+        </Card>
+    );
+};
     // ============================================================
     // LOADING
     // ============================================================
