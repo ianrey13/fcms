@@ -1,13 +1,15 @@
 // src/pages/mayor/MayorReports.jsx
 // ============================================
 // DISBURSING OFFICER (MAYOR'S OFFICE) REPORTS
-// 3 Reports:
+// 4 Reports:
 // 1. Fuel Receipt Report
 // 2. Budget Utilization Report
-// 3. Reconciliation Report (Viewable by Disbursing Officer)
-// ✅ FIXED: Uses Mayor's Office endpoints (no /admin 403s)
-// ✅ FIXED: Safe array extraction from all API responses
-// ✅ FIXED: Lazy loaded sections (only fetch when expanded)
+// 3. Reconciliation Report
+// 4. Billing Statement of Fuel
+//
+// ✅ Each card has INDEPENDENT Department + Month filters
+// ✅ Month = single dropdown with "All Months" (no range toggle)
+// ✅ Year fixed to current year internally
 // ============================================
 
 import React, { useState, useMemo, useCallback } from "react";
@@ -24,7 +26,6 @@ import {
     CardDescription,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { saveAs } from "file-saver";
 import {
@@ -43,57 +44,30 @@ import {
     TableRow,
 } from "@/components/ui/table";
 import {
-    BarChart,
-    Bar,
-    XAxis,
-    YAxis,
-    CartesianGrid,
-    Tooltip,
-    Legend,
-    ResponsiveContainer,
-} from "recharts";
-import {
     Loader2,
-    RefreshCw,
     FileText,
-    Calendar,
+    CalendarRange,
     TrendingUp,
     TrendingDown,
     CheckCircle,
     Fuel,
-    DollarSign,
-    Building2,
     Printer,
     FileSpreadsheet,
     ChevronDown,
     ChevronUp,
     AlertCircle,
-    CalendarRange,
     Receipt,
-    Eye,
-    EyeOff,
-    BarChart3,
     ArrowLeft,
     Wallet,
     FileCheck,
-    Search,
-    Filter,
     PhilippinePeso,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
-import {
-    format,
-    startOfWeek,
-    endOfWeek,
-    startOfMonth,
-    endOfMonth,
-    startOfYear,
-    endOfYear,
-} from "date-fns";
+import { format, endOfMonth } from "date-fns";
 import { useNavigate } from "react-router-dom";
 
 // ============================================
-// ✅ SAFE ARRAY EXTRACTION HELPER
+// SAFE ARRAY EXTRACTION HELPER
 // ============================================
 
 const extractArray = (response) => {
@@ -124,7 +98,7 @@ const extractArray = (response) => {
         return response.data.data.data;
     }
 
-    console.warn("⚠️ extractArray: unexpected response shape:", response);
+    console.warn("extractArray: unexpected response shape:", response);
     return [];
 };
 
@@ -141,10 +115,9 @@ const CACHE_10MIN = 10 * 60 * 1000;
 
 const RECEIPT_STATUS_OPTIONS = [
     { value: "all", label: "All Status" },
-    { value: "Verified", label: "Verified" },
-    { value: "For Review", label: "For Review" },
-    { value: "Pending", label: "Pending" },
-    { value: "Rejected", label: "Rejected" },
+    { value: "verified", label: "Verified" },
+    { value: "pending", label: "Pending" },
+    { value: "rejected", label: "Rejected" },
 ];
 
 const RECONCILIATION_THRESHOLD_OPTIONS = [
@@ -153,6 +126,21 @@ const RECONCILIATION_THRESHOLD_OPTIONS = [
     { value: "2", label: "> 2 km" },
     { value: "5", label: "> 5 km" },
     { value: "10", label: "> 10 km" },
+];
+
+const MONTH_OPTIONS = [
+    { value: 1, label: "January" },
+    { value: 2, label: "February" },
+    { value: 3, label: "March" },
+    { value: 4, label: "April" },
+    { value: 5, label: "May" },
+    { value: 6, label: "June" },
+    { value: 7, label: "July" },
+    { value: 8, label: "August" },
+    { value: 9, label: "September" },
+    { value: 10, label: "October" },
+    { value: 11, label: "November" },
+    { value: 12, label: "December" },
 ];
 
 const formatCurrency = (amount) => {
@@ -167,42 +155,31 @@ const formatCurrency = (amount) => {
 
 const formatNumber = (num) => {
     if (num === undefined || num === null || isNaN(num)) return "0";
-    return new Intl.NumberFormat("en-PH").format(num);
+    return new Intl.NumberFormat("en-PH", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+    }).format(num);
 };
 
-const getDateRange = (periodType, customStart, customEnd) => {
-    const today = new Date();
-    if (customStart && customEnd)
-        return { startDate: customStart, endDate: customEnd };
-    switch (periodType) {
-        case "weekly":
-            return {
-                startDate: format(
-                    startOfWeek(today, { weekStartsOn: 1 }),
-                    "yyyy-MM-dd",
-                ),
-                endDate: format(
-                    endOfWeek(today, { weekStartsOn: 1 }),
-                    "yyyy-MM-dd",
-                ),
-            };
-        case "monthly":
-            return {
-                startDate: format(startOfMonth(today), "yyyy-MM-dd"),
-                endDate: format(endOfMonth(today), "yyyy-MM-dd"),
-            };
-        case "yearly":
-            return {
-                startDate: format(startOfYear(today), "yyyy-MM-dd"),
-                endDate: format(endOfYear(today), "yyyy-MM-dd"),
-            };
-        default:
-            return {
-                startDate: format(startOfMonth(today), "yyyy-MM-dd"),
-                endDate: format(today, "yyyy-MM-dd"),
-            };
+// Derive date range from a single month (or "all") + current year
+const deriveDateRange = (month, year) => {
+    if (month === "all") {
+        return {
+            startDate: format(new Date(year, 0, 1), "yyyy-MM-dd"),
+            endDate: format(new Date(year, 11, 31), "yyyy-MM-dd"),
+        };
     }
+    const m = parseInt(month) - 1;
+    return {
+        startDate: format(new Date(year, m, 1), "yyyy-MM-dd"),
+        endDate: format(endOfMonth(new Date(year, m, 1)), "yyyy-MM-dd"),
+    };
 };
+
+const monthLabel = (month, year) =>
+    month === "all"
+        ? `All Months ${year}`
+        : `${MONTH_OPTIONS.find((m) => m.value === month)?.label} ${year}`;
 
 // ============================================
 // STATS CARD COMPONENT
@@ -234,6 +211,73 @@ const StatsCard = ({ title, value, icon: Icon, color, subtitle }) => (
 );
 
 // ============================================
+// INLINE FILTER CONTROLS (for card headers)
+// ============================================
+
+const InlineFilters = ({
+    departmentFilter,
+    setDepartmentFilter,
+    monthFilter,
+    setMonthFilter,
+    departments,
+    onInteract,
+}) => {
+    return (
+        <>
+            {/* Department */}
+            <Select
+                value={departmentFilter}
+                onValueChange={setDepartmentFilter}
+            >
+                <SelectTrigger
+                    className="w-[180px] h-8 text-xs"
+                    onClick={onInteract}
+                >
+                    <SelectValue placeholder="All Departments" />
+                </SelectTrigger>
+                <SelectContent>
+                    <SelectItem value="all">All Departments</SelectItem>
+                    {departments.map((d) => (
+                        <SelectItem
+                            key={d.department_id}
+                            value={String(d.department_id)}
+                        >
+                            {d.department_name}
+                        </SelectItem>
+                    ))}
+                </SelectContent>
+            </Select>
+
+            {/* Month */}
+            <Select
+                value={String(monthFilter)}
+                onValueChange={(v) =>
+                    setMonthFilter(v === "all" ? "all" : parseInt(v))
+                }
+            >
+                <SelectTrigger
+                    className="w-[140px] h-8 text-xs"
+                    onClick={onInteract}
+                >
+                    <SelectValue placeholder="Month" />
+                </SelectTrigger>
+                <SelectContent>
+                    <SelectItem value="all">All Months</SelectItem>
+                    {MONTH_OPTIONS.map((opt) => (
+                        <SelectItem
+                            key={opt.value}
+                            value={String(opt.value)}
+                        >
+                            {opt.label}
+                        </SelectItem>
+                    ))}
+                </SelectContent>
+            </Select>
+        </>
+    );
+};
+
+// ============================================
 // MAIN COMPONENT
 // ============================================
 
@@ -242,44 +286,49 @@ const MayorReports = () => {
     const queryClient = useQueryClient();
     const { isConnected } = useRealtime();
 
-    // ============ GLOBAL FILTERS ============
-    const [globalStartDate, setGlobalStartDate] = useState("");
-    const [globalEndDate, setGlobalEndDate] = useState("");
-    const [globalDepartmentFilter, setGlobalDepartmentFilter] = useState("all");
-    const [globalVehicleFilter, setGlobalVehicleFilter] = useState("all");
+    // Fixed internally — not exposed as a filter
+    const yearFilter = new Date().getFullYear();
+    const currentMonth = new Date().getMonth() + 1;
 
-    // ============ SECTION-SPECIFIC FILTERS ============
+    // ============ PER-CARD FILTERS (independent) ============
+
+    // 1. Fuel Receipt card
+    const [frDepartment, setFrDepartment] = useState("all");
+    const [frMonth, setFrMonth] = useState(currentMonth);
     const [receiptStatusFilter, setReceiptStatusFilter] = useState("all");
+
+    // 2. Budget Utilization card
+    const [buDepartment, setBuDepartment] = useState("all");
+    const [buMonth, setBuMonth] = useState(currentMonth);
+
+    // 3. Reconciliation card
+    const [rcDepartment, setRcDepartment] = useState("all");
+    const [rcMonth, setRcMonth] = useState(currentMonth);
     const [reconciliationThreshold, setReconciliationThreshold] =
         useState("all");
-    const [budgetYearFilter, setBudgetYearFilter] = useState(
-        new Date().getFullYear(),
-    );
+
+    // 4. Billing Statement card
+    const [bsDepartment, setBsDepartment] = useState("all");
+    const [bsMonth, setBsMonth] = useState(currentMonth);
 
     const [exportLoading, setExportLoading] = useState(false);
-    const [showBudgetChart, setShowBudgetChart] = useState(false);
 
-    //budget utils
-    const [budgetDepartmentFilter, setBudgetDepartmentFilter] = useState("all");
-    const [budgetMonthFilter, setBudgetMonthFilter] = useState(
-        new Date().getMonth() + 1,
-    );
-
-    // ✅ Only first section expanded by default (prevents 429 on mount)
     const [expandedSections, setExpandedSections] = useState({
         fuelReceipt: true,
         budgetUtilization: true,
         reconciliation: true,
+        billingStatement: true,
     });
 
     // ============================================
-    // ✅ AUTO-REFRESH
+    // AUTO-REFRESH
     // ============================================
 
     const fetchAllData = useCallback(() => {
         queryClient.invalidateQueries({ queryKey: ["mayor-fuel-receipt"] });
         queryClient.invalidateQueries({ queryKey: ["mayor-budget"] });
         queryClient.invalidateQueries({ queryKey: ["mayor-reconciliation"] });
+        queryClient.invalidateQueries({ queryKey: ["mayor-billing-statement"] });
     }, [queryClient]);
 
     useAutoRefresh(
@@ -292,19 +341,27 @@ const MayorReports = () => {
         fetchAllData,
     );
 
-    // ============ DATE RANGE ============
-    const dateRange = useMemo(() => {
-        if (globalStartDate && globalEndDate) {
-            return { startDate: globalStartDate, endDate: globalEndDate };
-        }
-        return getDateRange("monthly");
-    }, [globalStartDate, globalEndDate]);
-
     // ============================================
-    // ✅ FIXED: Use Mayor's Office endpoints (no /admin 403s)
+    // DATE RANGES (per card)
     // ============================================
 
-    // Departments — Mayor's Office endpoint
+    const frDateRange = useMemo(
+        () => deriveDateRange(frMonth, yearFilter),
+        [frMonth, yearFilter],
+    );
+    const rcDateRange = useMemo(
+        () => deriveDateRange(rcMonth, yearFilter),
+        [rcMonth, yearFilter],
+    );
+    const bsDateRange = useMemo(
+        () => deriveDateRange(bsMonth, yearFilter),
+        [bsMonth, yearFilter],
+    );
+
+    // ============================================
+    // DEPARTMENTS (shared source list)
+    // ============================================
+
     const { data: departmentsRaw = [] } = useOptimizedQuery({
         queryKey: ["mayor-departments-selector"],
         queryFn: async () => {
@@ -322,95 +379,55 @@ const MayorReports = () => {
     });
     const departments = departmentsRaw || [];
 
-    // Vehicles — use reports endpoint (which Mayor CAN access)
-    const { data: vehiclesRaw = [] } = useOptimizedQuery({
-        queryKey: ["mayor-vehicles-list", globalDepartmentFilter],
-        queryFn: async () => {
-            try {
-                const response = await reportsAPI.getVehicleReport({
-                    department_id:
-                        globalDepartmentFilter !== "all"
-                            ? globalDepartmentFilter
-                            : undefined,
-                });
-                return extractArray(response);
-            } catch (error) {
-                console.error("Failed to load vehicles:", error);
-                return [];
-            }
-        },
-        staleTime: CACHE_10MIN,
-        keepPreviousData: true,
-    });
-    const vehicles = vehiclesRaw || [];
-
     // ============================================
-    // QUERIES — Lazy loaded + safe extraction
+    // QUERIES
     // ============================================
 
     // 1. FUEL RECEIPT REPORT
     const { data: receiptData, isLoading: receiptLoading } = useQuery({
         queryKey: [
             "mayor-fuel-receipt",
-            dateRange,
-            globalDepartmentFilter,
-            globalVehicleFilter,
+            frDateRange,
+            frDepartment,
             receiptStatusFilter,
         ],
         queryFn: async () => {
             const params = {
-                start_date: dateRange.startDate,
-                end_date: dateRange.endDate,
+                start_date: frDateRange.startDate,
+                end_date: frDateRange.endDate,
                 department_id:
-                    globalDepartmentFilter !== "all"
-                        ? globalDepartmentFilter
-                        : undefined,
-                vehicle_id:
-                    globalVehicleFilter !== "all"
-                        ? globalVehicleFilter
+                    frDepartment !== "all" ? frDepartment : undefined,
+                status:
+                    receiptStatusFilter !== "all"
+                        ? receiptStatusFilter
                         : undefined,
             };
             const res = await reportsAPI.getFuelReceiptReport(params);
-
             const data = res?.data?.data ?? res?.data ?? {};
             const receipts = extractArray(data);
-
-            const filteredReceipts =
-                receiptStatusFilter !== "all"
-                    ? receipts.filter(
-                          (r) =>
-                              r.reconciliation_status === receiptStatusFilter,
-                      )
-                    : receipts;
-
-            return {
-                receipts: filteredReceipts,
-                summary: data?.summary || {},
-            };
+            return { receipts, summary: data?.summary || {} };
         },
         enabled: expandedSections.fuelReceipt,
         staleTime: CACHE_5MIN,
     });
 
     // 2. BUDGET UTILIZATION REPORT
-    // 2. BUDGET UTILIZATION REPORT
     const { data: budgetData, isLoading: budgetLoading } = useQuery({
         queryKey: [
             "mayor-budget",
-            budgetYearFilter,
-            budgetDepartmentFilter,
-            budgetMonthFilter,
+            yearFilter,
+            buDepartment,
+            buMonth,
         ],
         queryFn: async () => {
             const params = {
-                year: budgetYearFilter,
-                month:
-                    budgetMonthFilter !== "all" ? budgetMonthFilter : undefined,
+                year: yearFilter,
                 department_id:
-                    budgetDepartmentFilter !== "all"
-                        ? budgetDepartmentFilter
-                        : undefined,
+                    buDepartment !== "all" ? buDepartment : undefined,
             };
+            if (buMonth !== "all") {
+                params.month = buMonth;
+            }
             const res = await reportsAPI.getBudgetReport(params);
             const data = res?.data?.data ?? res?.data ?? {};
             return {
@@ -428,24 +445,20 @@ const MayorReports = () => {
         useQuery({
             queryKey: [
                 "mayor-reconciliation",
-                dateRange,
-                globalDepartmentFilter,
+                rcDateRange,
+                rcDepartment,
                 reconciliationThreshold,
             ],
             queryFn: async () => {
                 const params = {
-                    start_date: dateRange.startDate,
-                    end_date: dateRange.endDate,
+                    start_date: rcDateRange.startDate,
+                    end_date: rcDateRange.endDate,
                     department_id:
-                        globalDepartmentFilter !== "all"
-                            ? globalDepartmentFilter
-                            : undefined,
+                        rcDepartment !== "all" ? rcDepartment : undefined,
                 };
                 const res = await reportsAPI.getReconciliation(params);
-
                 const data = res?.data?.data ?? res?.data ?? {};
                 const reconciliations = extractArray(data);
-
                 const filteredReconciliations =
                     reconciliationThreshold !== "all"
                         ? reconciliations.filter(
@@ -454,7 +467,6 @@ const MayorReports = () => {
                                   parseFloat(reconciliationThreshold),
                           )
                         : reconciliations;
-
                 return {
                     reconciliations: filteredReconciliations,
                     summary: data?.summary || {},
@@ -464,57 +476,77 @@ const MayorReports = () => {
             staleTime: CACHE_5MIN,
         });
 
+    // 4. BILLING STATEMENT OF FUEL
+    const { data: billingData, isLoading: billingLoading } = useQuery({
+        queryKey: [
+            "mayor-billing-statement",
+            bsDateRange,
+            bsDepartment,
+        ],
+        queryFn: async () => {
+            const params = {
+                start_date: bsDateRange.startDate,
+                end_date: bsDateRange.endDate,
+                department_id:
+                    bsDepartment !== "all" ? bsDepartment : undefined,
+            };
+            const res = await reportsAPI.getBillingStatement(params);
+            return res?.data?.data ?? res?.data ?? {};
+        },
+        enabled: expandedSections.billingStatement,
+        staleTime: CACHE_5MIN,
+    });
+
     // ============ HANDLERS ============
 
     const toggleSection = (section) => {
         setExpandedSections((prev) => ({ ...prev, [section]: !prev[section] }));
     };
 
-    const handleExport = async (format, reportType, customParams = {}) => {
+    // Pass each card's own filter values explicitly
+    const handleExport = async (
+        format,
+        reportType,
+        params,
+        rangeOverride,
+    ) => {
         try {
             setExportLoading(true);
             toast.loading(`Exporting ${format.toUpperCase()} report...`);
 
-            const baseParams = {
-                start_date: dateRange.startDate,
-                end_date: dateRange.endDate,
-                department_id:
-                    globalDepartmentFilter !== "all"
-                        ? globalDepartmentFilter
-                        : undefined,
-                vehicle_id:
-                    globalVehicleFilter !== "all"
-                        ? globalVehicleFilter
-                        : undefined,
-                ...customParams,
-            };
-
             let response;
-            let fileName = `${reportType}_${dateRange.startDate}_to_${dateRange.endDate}`;
+            const range = rangeOverride || frDateRange;
+            let fileName = `${reportType}_${range.startDate}_to_${range.endDate}`;
 
             switch (reportType) {
                 case "fuel_receipt":
                     response = await reportsAPI.exportFuelReceiptReport(
                         format,
-                        baseParams,
+                        params,
                     );
                     break;
                 case "reconciliation":
                     response = await reportsAPI.exportReconciliation(
                         format,
-                        baseParams,
+                        params,
                     );
                     break;
                 case "budget":
-                    response = await reportsAPI.exportBudgetReport(format, {
-                        ...baseParams,
-                        year: budgetYearFilter,
-                    });
+                    response = await reportsAPI.exportBudgetReport(
+                        format,
+                        params,
+                    );
+                    break;
+                case "billing_statement":
+                    response = await reportsAPI.exportBillingStatement(
+                        format,
+                        params,
+                    );
                     break;
                 default:
                     response = await reportsAPI.exportFuelReceiptReport(
                         format,
-                        baseParams,
+                        params,
                     );
             }
 
@@ -533,8 +565,6 @@ const MayorReports = () => {
             setExportLoading(false);
         }
     };
-
-    const handlePrint = () => window.print();
 
     const connectionStatus = isConnected ? "🟢 Live" : "🔴 Offline";
     const isRealTime = isConnected;
@@ -559,11 +589,12 @@ const MayorReports = () => {
         );
 
         const statusColors = {
-            Verified: "bg-emerald-500",
-            "For Review": "bg-yellow-500",
-            Pending: "bg-orange-500",
-            Rejected: "bg-red-500",
+            verified: "bg-emerald-500",
+            pending: "bg-orange-500",
+            rejected: "bg-red-500",
         };
+
+        const periodText = monthLabel(frMonth, yearFilter);
 
         return (
             <Card className="dark:bg-slate-800/80 dark:border-slate-700">
@@ -571,7 +602,7 @@ const MayorReports = () => {
                     className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors rounded-t-2xl"
                     onClick={() => toggleSection("fuelReceipt")}
                 >
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
                         <div className="flex items-center gap-2">
                             <Receipt className="h-5 w-5 text-blue-500" />
                             <CardTitle className="text-slate-800 dark:text-white">
@@ -581,33 +612,44 @@ const MayorReports = () => {
                                 {receipts.length} receipts
                             </Badge>
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                             {expandedSections.fuelReceipt && (
                                 <>
-                                    <div className="flex items-center gap-1">
-                                        <Select
-                                            value={receiptStatusFilter}
-                                            onValueChange={
-                                                setReceiptStatusFilter
+                                    <InlineFilters
+                                        departmentFilter={frDepartment}
+                                        setDepartmentFilter={setFrDepartment}
+                                        monthFilter={frMonth}
+                                        setMonthFilter={setFrMonth}
+                                        departments={departments}
+                                        onInteract={(e) =>
+                                            e.stopPropagation()
+                                        }
+                                    />
+                                    <Select
+                                        value={receiptStatusFilter}
+                                        onValueChange={setReceiptStatusFilter}
+                                    >
+                                        <SelectTrigger
+                                            className="w-[130px] h-8 text-xs"
+                                            onClick={(e) =>
+                                                e.stopPropagation()
                                             }
                                         >
-                                            <SelectTrigger className="w-[130px] h-8 text-xs">
-                                                <SelectValue placeholder="Status" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                {RECEIPT_STATUS_OPTIONS.map(
-                                                    (opt) => (
-                                                        <SelectItem
-                                                            key={opt.value}
-                                                            value={opt.value}
-                                                        >
-                                                            {opt.label}
-                                                        </SelectItem>
-                                                    ),
-                                                )}
-                                            </SelectContent>
-                                        </Select>
-                                    </div>
+                                            <SelectValue placeholder="Status" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {RECEIPT_STATUS_OPTIONS.map(
+                                                (opt) => (
+                                                    <SelectItem
+                                                        key={opt.value}
+                                                        value={opt.value}
+                                                    >
+                                                        {opt.label}
+                                                    </SelectItem>
+                                                ),
+                                            )}
+                                        </SelectContent>
+                                    </Select>
                                     <Button
                                         size="sm"
                                         variant="outline"
@@ -616,12 +658,28 @@ const MayorReports = () => {
                                             handleExport(
                                                 "excel",
                                                 "fuel_receipt",
+                                                {
+                                                    start_date:
+                                                        frDateRange.startDate,
+                                                    end_date:
+                                                        frDateRange.endDate,
+                                                    department_id:
+                                                        frDepartment !== "all"
+                                                            ? frDepartment
+                                                            : undefined,
+                                                    status:
+                                                        receiptStatusFilter !==
+                                                        "all"
+                                                            ? receiptStatusFilter
+                                                            : undefined,
+                                                },
+                                                frDateRange,
                                             );
                                         }}
                                         disabled={exportLoading}
                                         className="h-8 px-2 text-xs"
                                     >
-                                        <FileSpreadsheet className="h-3.5 w-3.5 mr-1" />{" "}
+                                        <FileSpreadsheet className="h-3.5 w-3.5 mr-1" />
                                         Excel
                                     </Button>
                                     <Button
@@ -629,12 +687,31 @@ const MayorReports = () => {
                                         variant="outline"
                                         onClick={(e) => {
                                             e.stopPropagation();
-                                            handleExport("pdf", "fuel_receipt");
+                                            handleExport(
+                                                "pdf",
+                                                "fuel_receipt",
+                                                {
+                                                    start_date:
+                                                        frDateRange.startDate,
+                                                    end_date:
+                                                        frDateRange.endDate,
+                                                    department_id:
+                                                        frDepartment !== "all"
+                                                            ? frDepartment
+                                                            : undefined,
+                                                    status:
+                                                        receiptStatusFilter !==
+                                                        "all"
+                                                            ? receiptStatusFilter
+                                                            : undefined,
+                                                },
+                                                frDateRange,
+                                            );
                                         }}
                                         disabled={exportLoading}
                                         className="h-8 px-2 text-xs"
                                     >
-                                        <FileText className="h-3.5 w-3.5 mr-1" />{" "}
+                                        <FileText className="h-3.5 w-3.5 mr-1" />
                                         PDF
                                     </Button>
                                     <Button
@@ -646,7 +723,7 @@ const MayorReports = () => {
                                         }}
                                         className="h-8 px-2 text-xs"
                                     >
-                                        <Printer className="h-3.5 w-3.5 mr-1" />{" "}
+                                        <Printer className="h-3.5 w-3.5 mr-1" />
                                         Print
                                     </Button>
                                 </>
@@ -662,7 +739,7 @@ const MayorReports = () => {
                         </div>
                     </div>
                     <CardDescription>
-                        For expenditure verification
+                        For expenditure verification — {periodText}
                     </CardDescription>
                 </CardHeader>
                 {expandedSections.fuelReceipt && (
@@ -702,28 +779,28 @@ const MayorReports = () => {
                             <Table>
                                 <TableHeader className="sticky top-0 z-10 bg-slate-100 dark:bg-slate-800">
                                     <TableRow>
-                                        <TableHead className="font-semibold text-slate-700 dark:text-slate-300 text-xs uppercase">
+                                        <TableHead className="text-xs uppercase">
                                             Receipt No.
                                         </TableHead>
-                                        <TableHead className="font-semibold text-slate-700 dark:text-slate-300 text-xs uppercase">
+                                        <TableHead className="text-xs uppercase">
                                             Date Submitted
                                         </TableHead>
-                                        <TableHead className="font-semibold text-slate-700 dark:text-slate-300 text-xs uppercase">
+                                        <TableHead className="text-xs uppercase">
                                             Trip Ticket No.
                                         </TableHead>
-                                        <TableHead className="font-semibold text-slate-700 dark:text-slate-300 text-xs uppercase">
+                                        <TableHead className="text-xs uppercase">
                                             Driver
                                         </TableHead>
-                                        <TableHead className="font-semibold text-slate-700 dark:text-slate-300 text-xs uppercase">
+                                        <TableHead className="text-xs uppercase">
                                             Vehicle
                                         </TableHead>
-                                        <TableHead className="text-right font-semibold text-slate-700 dark:text-slate-300 text-xs uppercase">
+                                        <TableHead className="text-xs uppercase text-right">
                                             Amount (₱)
                                         </TableHead>
-                                        <TableHead className="font-semibold text-slate-700 dark:text-slate-300 text-xs uppercase">
+                                        <TableHead className="text-xs uppercase">
                                             Receipt Status
                                         </TableHead>
-                                        <TableHead className="font-semibold text-slate-700 dark:text-slate-300 text-xs uppercase">
+                                        <TableHead className="text-xs uppercase">
                                             Verification Date
                                         </TableHead>
                                     </TableRow>
@@ -742,13 +819,10 @@ const MayorReports = () => {
                                         receipts.map((r, i) => {
                                             const statusColor =
                                                 statusColors[
-                                                    r.reconciliation_status
+                                                    r.receipt_status
                                                 ] || "bg-slate-400";
                                             return (
-                                                <TableRow
-                                                    key={i}
-                                                    className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors"
-                                                >
+                                                <TableRow key={i}>
                                                     <TableCell className="font-mono font-medium">
                                                         {r.invoice_number ||
                                                             r.charge_invoice_no ||
@@ -787,19 +861,31 @@ const MayorReports = () => {
                                                                 statusColor
                                                             }
                                                         >
-                                                            {r.reconciliation_status ||
+                                                            {r.receipt_status ||
                                                                 "Pending"}
                                                         </Badge>
                                                     </TableCell>
-                                                   <TableCell>
-    {(() => {
-        const dateValue = r.verified_at || r.reconciled_at;
-        if (!dateValue) {
-            return <span className="text-slate-400 text-xs">Not verified</span>;
-        }
-        return format(new Date(dateValue), "yyyy-MM-dd");
-    })()}
-</TableCell>
+                                                    <TableCell>
+                                                        {(() => {
+                                                            const dateValue =
+                                                                r.verified_at ||
+                                                                r.reconciled_at;
+                                                            if (!dateValue) {
+                                                                return (
+                                                                    <span className="text-slate-400 text-xs">
+                                                                        Not
+                                                                        verified
+                                                                    </span>
+                                                                );
+                                                            }
+                                                            return format(
+                                                                new Date(
+                                                                    dateValue,
+                                                                ),
+                                                                "yyyy-MM-dd",
+                                                            );
+                                                        })()}
+                                                    </TableCell>
                                                 </TableRow>
                                             );
                                         })
@@ -813,26 +899,9 @@ const MayorReports = () => {
         );
     };
 
-   
     // ============================================================
     // RENDER - BUDGET UTILIZATION REPORT
     // ============================================================
-
-    const MONTH_OPTIONS = [
-        { value: "all", label: "All Months" },
-        { value: 1, label: "January" },
-        { value: 2, label: "February" },
-        { value: 3, label: "March" },
-        { value: 4, label: "April" },
-        { value: 5, label: "May" },
-        { value: 6, label: "June" },
-        { value: 7, label: "July" },
-        { value: 8, label: "August" },
-        { value: 9, label: "September" },
-        { value: 10, label: "October" },
-        { value: 11, label: "November" },
-        { value: 12, label: "December" },
-    ];
 
     const renderBudgetUtilization = () => {
         const periods = Array.isArray(budgetData?.periods)
@@ -841,13 +910,15 @@ const MayorReports = () => {
         const summary = budgetData?.summary || {};
         const dept = budgetData?.department || {};
 
+        const periodText = monthLabel(buMonth, yearFilter);
+
         return (
             <Card className="dark:bg-slate-800/80 dark:border-slate-700">
                 <CardHeader
                     className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors rounded-t-2xl"
                     onClick={() => toggleSection("budgetUtilization")}
                 >
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
                         <div className="flex items-center gap-2">
                             <Wallet className="h-5 w-5 text-amber-500" />
                             <CardTitle className="text-slate-800 dark:text-white">
@@ -858,97 +929,43 @@ const MayorReports = () => {
                                 {periods.length !== 1 ? "s" : ""}
                             </Badge>
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                             {expandedSections.budgetUtilization && (
                                 <>
-                                    <Select
-                                        value={budgetDepartmentFilter}
-                                        onValueChange={
-                                            setBudgetDepartmentFilter
+                                    <InlineFilters
+                                        departmentFilter={buDepartment}
+                                        setDepartmentFilter={setBuDepartment}
+                                        monthFilter={buMonth}
+                                        setMonthFilter={setBuMonth}
+                                        departments={departments}
+                                        onInteract={(e) =>
+                                            e.stopPropagation()
                                         }
-                                    >
-                                        <SelectTrigger
-                                            className="w-[180px] h-8 text-xs"
-                                            onClick={(e) => e.stopPropagation()}
-                                        >
-                                            <SelectValue placeholder="Department" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="all">
-                                                Default (First with budget)
-                                            </SelectItem>
-                                            {departments.map((d) => (
-                                                <SelectItem
-                                                    key={d.department_id}
-                                                    value={String(
-                                                        d.department_id,
-                                                    )}
-                                                >
-                                                    {d.department_name}
-                                                </SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-
-                                    <Select
-                                        value={String(budgetMonthFilter)}
-                                        onValueChange={(v) =>
-                                            setBudgetMonthFilter(
-                                                v === "all"
-                                                    ? "all"
-                                                    : parseInt(v),
-                                            )
-                                        }
-                                    >
-                                        <SelectTrigger
-                                            className="w-[130px] h-8 text-xs"
-                                            onClick={(e) => e.stopPropagation()}
-                                        >
-                                            <SelectValue placeholder="Month" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {MONTH_OPTIONS.map((opt) => (
-                                                <SelectItem
-                                                    key={opt.value}
-                                                    value={String(opt.value)}
-                                                >
-                                                    {opt.label}
-                                                </SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-
-                                    <Input
-                                        type="number"
-                                        value={budgetYearFilter}
-                                        onChange={(e) =>
-                                            setBudgetYearFilter(
-                                                parseInt(e.target.value) ||
-                                                    new Date().getFullYear(),
-                                            )
-                                        }
-                                        onClick={(e) => e.stopPropagation()}
-                                        className="w-20 h-8 text-xs"
-                                        min={2020}
-                                        max={2030}
                                     />
-
                                     <Button
                                         size="sm"
                                         variant="outline"
                                         onClick={(e) => {
                                             e.stopPropagation();
-                                            handleExport("excel", "budget", {
-                                                year: budgetYearFilter,
-                                                month: budgetMonthFilter,
-                                                department_id:
-                                                    budgetDepartmentFilter,
-                                            });
+                                            handleExport(
+                                                "excel",
+                                                "budget",
+                                                {
+                                                    year: yearFilter,
+                                                    department_id:
+                                                        buDepartment !== "all"
+                                                            ? buDepartment
+                                                            : undefined,
+                                                    ...(buMonth !== "all"
+                                                        ? { month: buMonth }
+                                                        : {}),
+                                                },
+                                            );
                                         }}
                                         disabled={exportLoading}
                                         className="h-8 px-2 text-xs"
                                     >
-                                        <FileSpreadsheet className="h-3.5 w-3.5 mr-1" />{" "}
+                                        <FileSpreadsheet className="h-3.5 w-3.5 mr-1" />
                                         Excel
                                     </Button>
                                     <Button
@@ -956,17 +973,25 @@ const MayorReports = () => {
                                         variant="outline"
                                         onClick={(e) => {
                                             e.stopPropagation();
-                                            handleExport("pdf", "budget", {
-                                                year: budgetYearFilter,
-                                                month: budgetMonthFilter,
-                                                department_id:
-                                                    budgetDepartmentFilter,
-                                            });
+                                            handleExport(
+                                                "pdf",
+                                                "budget",
+                                                {
+                                                    year: yearFilter,
+                                                    department_id:
+                                                        buDepartment !== "all"
+                                                            ? buDepartment
+                                                            : undefined,
+                                                    ...(buMonth !== "all"
+                                                        ? { month: buMonth }
+                                                        : {}),
+                                                },
+                                            );
                                         }}
                                         disabled={exportLoading}
                                         className="h-8 px-2 text-xs"
                                     >
-                                        <FileText className="h-3.5 w-3.5 mr-1" />{" "}
+                                        <FileText className="h-3.5 w-3.5 mr-1" />
                                         PDF
                                     </Button>
                                     <Button
@@ -978,7 +1003,7 @@ const MayorReports = () => {
                                         }}
                                         className="h-8 px-2 text-xs"
                                     >
-                                        <Printer className="h-3.5 w-3.5 mr-1" />{" "}
+                                        <Printer className="h-3.5 w-3.5 mr-1" />
                                         Print
                                     </Button>
                                 </>
@@ -997,18 +1022,12 @@ const MayorReports = () => {
                     </div>
                     <CardDescription>
                         {dept.department_name || "Select a department"} —{" "}
-                        {budgetMonthFilter === "all"
-                            ? "All Months"
-                            : MONTH_OPTIONS.find(
-                                  (m) => m.value === budgetMonthFilter,
-                              )?.label}{" "}
-                        {budgetYearFilter}
+                        {periodText}
                     </CardDescription>
                 </CardHeader>
 
                 {expandedSections.budgetUtilization && (
                     <CardContent>
-                        {/* ANNUAL stat cards */}
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
                             <StatsCard
                                 title="Annual Allocated"
@@ -1017,14 +1036,14 @@ const MayorReports = () => {
                                 )}
                                 icon={Wallet}
                                 color="from-blue-500 to-blue-600"
-                                subtitle={`FY ${budgetYearFilter}`}
+                                subtitle={`FY ${yearFilter}`}
                             />
                             <StatsCard
                                 title="Annual Utilized"
                                 value={formatCurrency(summary.total_used || 0)}
                                 icon={TrendingDown}
                                 color="from-yellow-500 to-yellow-600"
-                                subtitle={`FY ${budgetYearFilter}`}
+                                subtitle={`FY ${yearFilter}`}
                             />
                             <StatsCard
                                 title="Annual Remaining"
@@ -1033,39 +1052,31 @@ const MayorReports = () => {
                                 )}
                                 icon={TrendingUp}
                                 color="from-emerald-500 to-emerald-600"
-                                subtitle={`FY ${budgetYearFilter}`}
+                                subtitle={`FY ${yearFilter}`}
                             />
                             <StatsCard
                                 title="Weeks in View"
                                 value={summary.total_weeks || 0}
                                 icon={CalendarRange}
                                 color="from-purple-500 to-purple-600"
-                                subtitle={
-                                    budgetMonthFilter === "all"
-                                        ? "All Months"
-                                        : MONTH_OPTIONS.find(
-                                              (m) =>
-                                                  m.value === budgetMonthFilter,
-                                          )?.label
-                                }
+                                subtitle={periodText}
                             />
                         </div>
 
-                        {/* Roll-forward table */}
                         <div className="overflow-x-auto max-h-[500px] overflow-y-auto border rounded-lg">
                             <Table>
                                 <TableHeader className="sticky top-0 z-10 bg-slate-100 dark:bg-slate-800">
                                     <TableRow>
-                                        <TableHead className="font-semibold text-xs uppercase">
+                                        <TableHead className="text-xs uppercase">
                                             Week (Date Range)
                                         </TableHead>
-                                        <TableHead className="text-right font-semibold text-xs uppercase">
+                                        <TableHead className="text-xs uppercase text-right">
                                             Budget (₱)
                                         </TableHead>
-                                        <TableHead className="text-right font-semibold text-xs uppercase">
+                                        <TableHead className="text-xs uppercase text-right">
                                             Utilized (₱)
                                         </TableHead>
-                                        <TableHead className="text-right font-semibold text-xs uppercase">
+                                        <TableHead className="text-xs uppercase text-right">
                                             Balance (₱)
                                         </TableHead>
                                     </TableRow>
@@ -1078,16 +1089,13 @@ const MayorReports = () => {
                                                 className="text-center py-8 text-slate-500"
                                             >
                                                 No weekly budget periods for
-                                                this department, month, and year
+                                                this department and period
                                             </TableCell>
                                         </TableRow>
                                     ) : (
                                         <>
                                             {periods.map((p, i) => (
-                                                <TableRow
-                                                    key={p.period_id || i}
-                                                    className="hover:bg-slate-50 dark:hover:bg-slate-700/50"
-                                                >
+                                                <TableRow key={p.period_id || i}>
                                                     <TableCell className="font-medium">
                                                         {p.week_start
                                                             ? format(
@@ -1126,8 +1134,6 @@ const MayorReports = () => {
                                                     </TableCell>
                                                 </TableRow>
                                             ))}
-
-                                            {/* TOTAL row = last period's remaining, not sum of budgets */}
                                             <TableRow className="bg-slate-100 dark:bg-slate-800 font-bold border-t-2">
                                                 <TableCell className="text-right">
                                                     TOTAL
@@ -1171,215 +1177,737 @@ const MayorReports = () => {
     // RENDER - RECONCILIATION REPORT
     // ============================================================
 
-   const renderReconciliation = () => {
-    const reconciliations = Array.isArray(reconciliationData?.reconciliations)
-        ? reconciliationData.reconciliations
-        : [];
-    const summary = reconciliationData?.summary || {};
+    const renderReconciliation = () => {
+        const reconciliations = Array.isArray(
+            reconciliationData?.reconciliations,
+        )
+            ? reconciliationData.reconciliations
+            : [];
+        const summary = reconciliationData?.summary || {};
+        const periodText = monthLabel(rcMonth, yearFilter);
 
-    return (
-        <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-            <CardHeader
-                className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors rounded-t-2xl"
-                onClick={() => toggleSection("reconciliation")}
-            >
-                <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                        <FileCheck className="h-5 w-5 text-indigo-500" />
-                        <CardTitle className="text-slate-800 dark:text-white">
-                            Trip and Fuel Reconciliation Report
-                        </CardTitle>
-                        <Badge className="bg-indigo-500/20 text-indigo-600 ml-2">
-                            {reconciliations.length} trips
-                        </Badge>
-                    </div>
-                    <div className="flex items-center gap-2">
-                        {expandedSections.reconciliation && (
-                            <>
-                                <div className="flex items-center gap-1">
+        return (
+            <Card className="dark:bg-slate-800/80 dark:border-slate-700">
+                <CardHeader
+                    className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors rounded-t-2xl"
+                    onClick={() => toggleSection("reconciliation")}
+                >
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                        <div className="flex items-center gap-2">
+                            <FileCheck className="h-5 w-5 text-indigo-500" />
+                            <CardTitle className="text-slate-800 dark:text-white">
+                                Cash Reconciliation Report
+                            </CardTitle>
+                            <Badge className="bg-indigo-500/20 text-indigo-600 ml-2">
+                                {reconciliations.length} trips
+                            </Badge>
+                        </div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                            {expandedSections.reconciliation && (
+                                <>
+                                    <InlineFilters
+                                        departmentFilter={rcDepartment}
+                                        setDepartmentFilter={setRcDepartment}
+                                        monthFilter={rcMonth}
+                                        setMonthFilter={setRcMonth}
+                                        departments={departments}
+                                        onInteract={(e) =>
+                                            e.stopPropagation()
+                                        }
+                                    />
                                     <Select
                                         value={reconciliationThreshold}
-                                        onValueChange={setReconciliationThreshold}
+                                        onValueChange={
+                                            setReconciliationThreshold
+                                        }
                                     >
-                                        <SelectTrigger className="w-[130px] h-8 text-xs">
+                                        <SelectTrigger
+                                            className="w-[130px] h-8 text-xs"
+                                            onClick={(e) =>
+                                                e.stopPropagation()
+                                            }
+                                        >
                                             <SelectValue placeholder="Threshold" />
                                         </SelectTrigger>
                                         <SelectContent>
-                                            {RECONCILIATION_THRESHOLD_OPTIONS.map((opt) => (
-                                                <SelectItem key={opt.value} value={opt.value}>
-                                                    {opt.label}
-                                                </SelectItem>
-                                            ))}
+                                            {RECONCILIATION_THRESHOLD_OPTIONS.map(
+                                                (opt) => (
+                                                    <SelectItem
+                                                        key={opt.value}
+                                                        value={opt.value}
+                                                    >
+                                                        {opt.label}
+                                                    </SelectItem>
+                                                ),
+                                            )}
                                         </SelectContent>
                                     </Select>
-                                </div>
-                                <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleExport("excel", "reconciliation");
-                                    }}
-                                    disabled={exportLoading}
-                                    className="h-8 px-2 text-xs"
-                                >
-                                    <FileSpreadsheet className="h-3.5 w-3.5 mr-1" /> Excel
-                                </Button>
-                                <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleExport("pdf", "reconciliation");
-                                    }}
-                                    disabled={exportLoading}
-                                    className="h-8 px-2 text-xs"
-                                >
-                                    <FileText className="h-3.5 w-3.5 mr-1" /> PDF
-                                </Button>
-                                <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        window.print();
-                                    }}
-                                    className="h-8 px-2 text-xs"
-                                >
-                                    <Printer className="h-3.5 w-3.5 mr-1" /> Print
-                                </Button>
-                            </>
-                        )}
-                        <Badge variant="secondary">
-                            {expandedSections.reconciliation ? "Hide" : "Show"}
-                        </Badge>
-                        {expandedSections.reconciliation ? (
-                            <ChevronUp className="h-4 w-4" />
-                        ) : (
-                            <ChevronDown className="h-4 w-4" />
-                        )}
+                                    <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleExport(
+                                                "excel",
+                                                "reconciliation",
+                                                {
+                                                    start_date:
+                                                        rcDateRange.startDate,
+                                                    end_date:
+                                                        rcDateRange.endDate,
+                                                    department_id:
+                                                        rcDepartment !== "all"
+                                                            ? rcDepartment
+                                                            : undefined,
+                                                },
+                                                rcDateRange,
+                                            );
+                                        }}
+                                        disabled={exportLoading}
+                                        className="h-8 px-2 text-xs"
+                                    >
+                                        <FileSpreadsheet className="h-3.5 w-3.5 mr-1" />
+                                        Excel
+                                    </Button>
+                                    <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleExport(
+                                                "pdf",
+                                                "reconciliation",
+                                                {
+                                                    start_date:
+                                                        rcDateRange.startDate,
+                                                    end_date:
+                                                        rcDateRange.endDate,
+                                                    department_id:
+                                                        rcDepartment !== "all"
+                                                            ? rcDepartment
+                                                            : undefined,
+                                                },
+                                                rcDateRange,
+                                            );
+                                        }}
+                                        disabled={exportLoading}
+                                        className="h-8 px-2 text-xs"
+                                    >
+                                        <FileText className="h-3.5 w-3.5 mr-1" />
+                                        PDF
+                                    </Button>
+                                    <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            window.print();
+                                        }}
+                                        className="h-8 px-2 text-xs"
+                                    >
+                                        <Printer className="h-3.5 w-3.5 mr-1" />
+                                        Print
+                                    </Button>
+                                </>
+                            )}
+                            <Badge variant="secondary">
+                                {expandedSections.reconciliation
+                                    ? "Hide"
+                                    : "Show"}
+                            </Badge>
+                            {expandedSections.reconciliation ? (
+                                <ChevronUp className="h-4 w-4" />
+                            ) : (
+                                <ChevronDown className="h-4 w-4" />
+                            )}
+                        </div>
                     </div>
-                </div>
-                <CardDescription>
-                    For budget verification - viewable by Disbursing Officer
-                </CardDescription>
-            </CardHeader>
+                    <CardDescription>
+                        For budget verification — {periodText}
+                    </CardDescription>
+                </CardHeader>
 
-            {expandedSections.reconciliation && (
-                <CardContent>
-                    {/* ✅ Stat cards: Discrepancy is now the highlighted 3rd card */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                        <StatsCard
-                            title="Total Trips"
-                            value={summary.total_reconciliations || 0}
-                            icon={FileCheck}
-                            color="from-blue-500 to-blue-600"
-                            subtitle="Reconciled records"
-                        />
-                        <StatsCard
-                            title="Verified"
-                            value={summary.total_verified || 0}
-                            icon={CheckCircle}
-                            color="from-emerald-500 to-emerald-600"
-                            subtitle="Amounts matched"
-                        />
-                        <StatsCard
-                            title="Discrepancy"
-                            value={summary.total_discrepancy || 0}
-                            icon={AlertCircle}
-                            color="from-red-500 to-red-600"
-                            subtitle="Needs attention"
-                        />
-                        <StatsCard
-                            title="Total Released"
-                            value={formatCurrency(summary.total_amount_released || 0)}
-                            icon={PhilippinePeso}
-                            color="from-purple-500 to-purple-600"
-                            subtitle="Total funds issued"
-                        />
-                    </div>
-
-                    <div className="overflow-x-auto max-h-[400px] overflow-y-auto border rounded-lg">
-                        <Table>
-                            <TableHeader className="sticky top-0 z-10 bg-slate-100 dark:bg-slate-800">
-                                <TableRow>
-                                    <TableHead className="font-semibold text-slate-700 dark:text-slate-300 text-xs uppercase">
-                                        Trip Ticket No.
-                                    </TableHead>
-                                    <TableHead className="font-semibold text-slate-700 dark:text-slate-300 text-xs uppercase">
-                                        Vehicle
-                                    </TableHead>
-                                    <TableHead className="font-semibold text-slate-700 dark:text-slate-300 text-xs uppercase">
-                                        Driver
-                                    </TableHead>
-                                    <TableHead className="text-right font-semibold text-slate-700 dark:text-slate-300 text-xs uppercase">
-                                        Amount Released
-                                    </TableHead>
-                                    <TableHead className="text-right font-semibold text-slate-700 dark:text-slate-300 text-xs uppercase">
-                                        Actual Amount Paid
-                                    </TableHead>
-                                    <TableHead className="text-right font-semibold text-slate-700 dark:text-slate-300 text-xs uppercase">
-                                        Amount Variance
-                                    </TableHead>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {reconciliations.length === 0 ? (
-                                    <TableRow>
-                                        <TableCell colSpan="6" className="text-center py-8 text-slate-500">
-                                            No reconciliation data available
-                                        </TableCell>
-                                    </TableRow>
-                                ) : (
-                                    reconciliations.map((r, i) => {
-                                        const amountVarianceColor =
-                                            r.amount_variance !== null &&
-                                            Math.abs(r.amount_variance) > 100
-                                                ? "text-red-600"
-                                                : "";
-                                        return (
-                                            <TableRow
-                                                key={i}
-                                                className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors"
-                                            >
-                                                <TableCell className="font-mono font-medium">
-                                                    {r.ticket_number}
-                                                </TableCell>
-                                                <TableCell>{r.plate_number}</TableCell>
-                                                <TableCell>{r.driver_name}</TableCell>
-                                                <TableCell className="text-right">
-                                                    {formatCurrency(r.amount_released || 0)}
-                                                </TableCell>
-                                                <TableCell className="text-right">
-                                                    {r.actual_amount !== null &&
-                                                    r.actual_amount !== undefined ? (
-                                                        formatCurrency(r.actual_amount)
-                                                    ) : (
-                                                        <span className="text-slate-400 text-xs">
-                                                            Not verified
-                                                        </span>
-                                                    )}
-                                                </TableCell>
-                                                <TableCell
-                                                    className={`text-right font-medium ${amountVarianceColor}`}
-                                                >
-                                                    {r.amount_variance !== null &&
-                                                    r.amount_variance !== undefined
-                                                        ? formatCurrency(r.amount_variance)
-                                                        : "—"}
-                                                </TableCell>
-                                            </TableRow>
-                                        );
-                                    })
+                {expandedSections.reconciliation && (
+                    <CardContent>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                            <StatsCard
+                                title="Total Trips"
+                                value={summary.total_reconciliations || 0}
+                                icon={FileCheck}
+                                color="from-blue-500 to-blue-600"
+                                subtitle="Reconciled records"
+                            />
+                            <StatsCard
+                                title="Verified"
+                                value={summary.total_verified || 0}
+                                icon={CheckCircle}
+                                color="from-emerald-500 to-emerald-600"
+                                subtitle="Amounts matched"
+                            />
+                            <StatsCard
+                                title="Discrepancy"
+                                value={summary.total_discrepancy || 0}
+                                icon={AlertCircle}
+                                color="from-red-500 to-red-600"
+                                subtitle="Needs attention"
+                            />
+                            <StatsCard
+                                title="Total Released"
+                                value={formatCurrency(
+                                    summary.total_amount_released || 0,
                                 )}
-                            </TableBody>
-                        </Table>
+                                icon={PhilippinePeso}
+                                color="from-purple-500 to-purple-600"
+                                subtitle="Total funds issued"
+                            />
+                        </div>
+
+                        <div className="overflow-x-auto max-h-[400px] overflow-y-auto border rounded-lg">
+                            <Table>
+                                <TableHeader className="sticky top-0 z-10 bg-slate-100 dark:bg-slate-800">
+                                    <TableRow>
+                                        <TableHead className="text-xs uppercase">
+                                            Trip Ticket No.
+                                        </TableHead>
+                                        <TableHead className="text-xs uppercase">
+                                            Vehicle
+                                        </TableHead>
+                                        <TableHead className="text-xs uppercase">
+                                            Driver
+                                        </TableHead>
+                                        <TableHead className="text-xs uppercase text-right">
+                                            Amount Released
+                                        </TableHead>
+                                        <TableHead className="text-xs uppercase text-right">
+                                            Actual Amount Paid
+                                        </TableHead>
+                                        <TableHead className="text-xs uppercase text-right">
+                                            Amount Variance
+                                        </TableHead>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    {reconciliations.length === 0 ? (
+                                        <TableRow>
+                                            <TableCell
+                                                colSpan="6"
+                                                className="text-center py-8 text-slate-500"
+                                            >
+                                                No reconciliation data available
+                                            </TableCell>
+                                        </TableRow>
+                                    ) : (
+                                        reconciliations.map((r, i) => {
+                                            const amountVarianceColor =
+                                                r.amount_variance !== null &&
+                                                Math.abs(r.amount_variance) > 100
+                                                    ? "text-red-600"
+                                                    : "";
+                                            return (
+                                                <TableRow key={i}>
+                                                    <TableCell className="font-mono font-medium">
+                                                        {r.ticket_number}
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        {r.plate_number}
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        {r.driver_name}
+                                                    </TableCell>
+                                                    <TableCell className="text-right">
+                                                        {formatCurrency(
+                                                            r.amount_released ||
+                                                                0,
+                                                        )}
+                                                    </TableCell>
+                                                    <TableCell className="text-right">
+                                                        {r.actual_amount !==
+                                                            null &&
+                                                        r.actual_amount !==
+                                                            undefined ? (
+                                                            formatCurrency(
+                                                                r.actual_amount,
+                                                            )
+                                                        ) : (
+                                                            <span className="text-slate-400 text-xs">
+                                                                Not verified
+                                                            </span>
+                                                        )}
+                                                    </TableCell>
+                                                    <TableCell
+                                                        className={`text-right font-medium ${amountVarianceColor}`}
+                                                    >
+                                                        {r.amount_variance !==
+                                                            null &&
+                                                        r.amount_variance !==
+                                                            undefined
+                                                            ? formatCurrency(
+                                                                  r.amount_variance,
+                                                              )
+                                                            : "—"}
+                                                    </TableCell>
+                                                </TableRow>
+                                            );
+                                        })
+                                    )}
+                                </TableBody>
+                            </Table>
+                        </div>
+                    </CardContent>
+                )}
+            </Card>
+        );
+    };
+
+    // ============================================================
+    // RENDER - BILLING STATEMENT REPORT
+    // ============================================================
+
+    const renderBillingStatement = () => {
+        const departmentsList = Array.isArray(billingData?.departments)
+            ? billingData.departments
+            : [];
+        const grandTotals = billingData?.grand_totals || {};
+        const periodLabel = billingData?.period_label || "";
+
+        const computeFuelAmounts = (rows) => {
+            const out = { premium: 0, diesel: 0, regular: 0 };
+            (rows || []).forEach((r) => {
+                const type = (r.lubricant || "").toLowerCase();
+                const amt = parseFloat(r.amount) || 0;
+                if (type === "premium") out.premium += amt;
+                else if (type === "diesel") out.diesel += amt;
+                else if (type === "regular" || type === "gasoline")
+                    out.regular += amt;
+            });
+            return out;
+        };
+
+        return (
+            <Card className="dark:bg-slate-800/80 dark:border-slate-700">
+                <CardHeader
+                    className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors rounded-t-2xl"
+                    onClick={() => toggleSection("billingStatement")}
+                >
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                        <div className="flex items-center gap-2">
+                            <FileText className="h-5 w-5 text-amber-500" />
+                            <CardTitle className="text-slate-800 dark:text-white">
+                                Billing Statement of Fuel
+                            </CardTitle>
+                            <Badge className="bg-amber-500/20 text-amber-600 ml-2">
+                                {departmentsList.length} department
+                                {departmentsList.length !== 1 ? "s" : ""}
+                            </Badge>
+                        </div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                            {expandedSections.billingStatement && (
+                                <>
+                                    <InlineFilters
+                                        departmentFilter={bsDepartment}
+                                        setDepartmentFilter={setBsDepartment}
+                                        monthFilter={bsMonth}
+                                        setMonthFilter={setBsMonth}
+                                        departments={departments}
+                                        onInteract={(e) =>
+                                            e.stopPropagation()
+                                        }
+                                    />
+                                    <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleExport(
+                                                "excel",
+                                                "billing_statement",
+                                                {
+                                                    start_date:
+                                                        bsDateRange.startDate,
+                                                    end_date:
+                                                        bsDateRange.endDate,
+                                                    department_id:
+                                                        bsDepartment !== "all"
+                                                            ? bsDepartment
+                                                            : undefined,
+                                                },
+                                                bsDateRange,
+                                            );
+                                        }}
+                                        disabled={exportLoading}
+                                        className="h-8 px-2 text-xs"
+                                    >
+                                        <FileSpreadsheet className="h-3.5 w-3.5 mr-1" />
+                                        Excel
+                                    </Button>
+                                    <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleExport(
+                                                "pdf",
+                                                "billing_statement",
+                                                {
+                                                    start_date:
+                                                        bsDateRange.startDate,
+                                                    end_date:
+                                                        bsDateRange.endDate,
+                                                    department_id:
+                                                        bsDepartment !== "all"
+                                                            ? bsDepartment
+                                                            : undefined,
+                                                },
+                                                bsDateRange,
+                                            );
+                                        }}
+                                        disabled={exportLoading}
+                                        className="h-8 px-2 text-xs"
+                                    >
+                                        <FileText className="h-3.5 w-3.5 mr-1" />
+                                        PDF
+                                    </Button>
+                                    <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            window.print();
+                                        }}
+                                        className="h-8 px-2 text-xs"
+                                    >
+                                        <Printer className="h-3.5 w-3.5 mr-1" />
+                                        Print
+                                    </Button>
+                                </>
+                            )}
+                            <Badge variant="secondary">
+                                {expandedSections.billingStatement
+                                    ? "Hide"
+                                    : "Show"}
+                            </Badge>
+                            {expandedSections.billingStatement ? (
+                                <ChevronUp className="h-4 w-4" />
+                            ) : (
+                                <ChevronDown className="h-4 w-4" />
+                            )}
+                        </div>
                     </div>
-                </CardContent>
-            )}
-        </Card>
-    );
-};
+                    <CardDescription>{periodLabel}</CardDescription>
+                </CardHeader>
+
+                {expandedSections.billingStatement && (
+                    <CardContent>
+                        {billingLoading ? (
+                            <div className="text-center py-12">
+                                <Loader2 className="h-6 w-6 animate-spin text-slate-400 mx-auto mb-3" />
+                                <p className="text-slate-500 dark:text-slate-400">
+                                    Loading billing statement...
+                                </p>
+                            </div>
+                        ) : departmentsList.length === 0 ? (
+                            <div className="text-center py-12">
+                                <FileText className="h-12 w-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
+                                <p className="text-slate-500 dark:text-slate-400">
+                                    No fuel receipts for the selected period
+                                </p>
+                            </div>
+                        ) : (
+                            <div className="space-y-10">
+                                {departmentsList.map((dept) => {
+                                    const fuelAmounts = computeFuelAmounts(
+                                        dept.rows,
+                                    );
+                                    return (
+                                        <div
+                                            key={dept.department_id}
+                                            className="space-y-4"
+                                        >
+                                            <div className="text-center border-y-2 border-slate-800 dark:border-slate-200 py-2">
+                                                <h3 className="font-bold text-base tracking-wide text-slate-900 dark:text-white">
+                                                    FOR{" "}
+                                                    {dept.department_code}
+                                                </h3>
+                                                {dept.department_name &&
+                                                    dept.department_name !==
+                                                        dept.department_code && (
+                                                        <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                                                            {
+                                                                dept.department_name
+                                                            }
+                                                        </p>
+                                                    )}
+                                            </div>
+
+                                            {/* Fuel-type matrix */}
+                                            <div className="flex justify-end">
+                                                <div className="inline-grid grid-cols-4 border-2 border-slate-800 dark:border-slate-200 text-xs">
+                                                    <div className="px-3 py-1.5 font-bold bg-slate-100 dark:bg-slate-800 border-r border-slate-800 dark:border-slate-200 text-center">
+                                                        PREMIUM
+                                                    </div>
+                                                    <div className="px-3 py-1.5 font-bold bg-slate-100 dark:bg-slate-800 border-r border-slate-800 dark:border-slate-200 text-center">
+                                                        DIESEL
+                                                    </div>
+                                                    <div className="px-3 py-1.5 font-bold bg-slate-100 dark:bg-slate-800 border-r border-slate-800 dark:border-slate-200 text-center">
+                                                        REGULAR
+                                                    </div>
+                                                    <div className="px-3 py-1.5 font-bold bg-slate-100 dark:bg-slate-800 text-center">
+                                                        QUANTITY
+                                                    </div>
+
+                                                    <div className="px-3 py-1.5 text-right border-t border-r border-slate-800 dark:border-slate-200">
+                                                        {formatNumber(
+                                                            dept.subtotals
+                                                                ?.premium_liters ||
+                                                                0,
+                                                        )}
+                                                    </div>
+                                                    <div className="px-3 py-1.5 text-right border-t border-r border-slate-800 dark:border-slate-200">
+                                                        {formatNumber(
+                                                            dept.subtotals
+                                                                ?.diesel_liters ||
+                                                                0,
+                                                        )}
+                                                    </div>
+                                                    <div className="px-3 py-1.5 text-right border-t border-r border-slate-800 dark:border-slate-200">
+                                                        {formatNumber(
+                                                            dept.subtotals
+                                                                ?.regular_liters ||
+                                                                0,
+                                                        )}
+                                                    </div>
+                                                    <div className="px-3 py-1.5 text-right border-t border-slate-800 dark:border-slate-200 font-bold">
+                                                        {formatNumber(
+                                                            dept.subtotals
+                                                                ?.total_liters ||
+                                                                0,
+                                                        )}
+                                                    </div>
+
+                                                    <div className="px-3 py-1.5 font-bold bg-slate-100 dark:bg-slate-800 border-t border-r border-slate-800 dark:border-slate-200 text-center">
+                                                        PREMIUM
+                                                    </div>
+                                                    <div className="px-3 py-1.5 font-bold bg-slate-100 dark:bg-slate-800 border-t border-r border-slate-800 dark:border-slate-200 text-center">
+                                                        DIESEL
+                                                    </div>
+                                                    <div className="px-3 py-1.5 font-bold bg-slate-100 dark:bg-slate-800 border-t border-r border-slate-800 dark:border-slate-200 text-center">
+                                                        REGULAR
+                                                    </div>
+                                                    <div className="px-3 py-1.5 font-bold bg-slate-100 dark:bg-slate-800 border-t text-center">
+                                                        AMOUNT
+                                                    </div>
+
+                                                    <div className="px-3 py-1.5 text-right border-t border-r border-slate-800 dark:border-slate-200">
+                                                        {formatCurrency(
+                                                            fuelAmounts.premium,
+                                                        )}
+                                                    </div>
+                                                    <div className="px-3 py-1.5 text-right border-t border-r border-slate-800 dark:border-slate-200">
+                                                        {formatCurrency(
+                                                            fuelAmounts.diesel,
+                                                        )}
+                                                    </div>
+                                                    <div className="px-3 py-1.5 text-right border-t border-r border-slate-800 dark:border-slate-200">
+                                                        {formatCurrency(
+                                                            fuelAmounts.regular,
+                                                        )}
+                                                    </div>
+                                                    <div className="px-3 py-1.5 text-right border-t border-slate-800 dark:border-slate-200 font-bold text-emerald-600 dark:text-emerald-400">
+                                                        {formatCurrency(
+                                                            dept.subtotals
+                                                                ?.total_amount ||
+                                                                0,
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* Rows table */}
+                                            <div className="overflow-x-auto border-2 border-slate-800 dark:border-slate-200">
+                                                <Table>
+                                                    <TableHeader className="bg-slate-100 dark:bg-slate-800">
+                                                        <TableRow className="border-b-2 border-slate-800 dark:border-slate-200">
+                                                            <TableHead className="text-xs font-bold text-slate-900 dark:text-white">
+                                                                NO.
+                                                            </TableHead>
+                                                            <TableHead className="text-xs font-bold text-slate-900 dark:text-white">
+                                                                CHARGE INVOICE
+                                                                NO.
+                                                            </TableHead>
+                                                            <TableHead className="text-xs font-bold text-slate-900 dark:text-white">
+                                                                PLATE NO.
+                                                            </TableHead>
+                                                            <TableHead className="text-xs font-bold text-slate-900 dark:text-white">
+                                                                DATE
+                                                            </TableHead>
+                                                            <TableHead className="text-xs font-bold text-slate-900 dark:text-white">
+                                                                CONTROL NO.
+                                                            </TableHead>
+                                                            <TableHead className="text-xs font-bold text-slate-900 dark:text-white">
+                                                                LUBRICANT
+                                                            </TableHead>
+                                                            <TableHead className="text-xs font-bold text-slate-900 dark:text-white text-right">
+                                                                QUANTITY
+                                                            </TableHead>
+                                                            <TableHead className="text-xs font-bold text-slate-900 dark:text-white text-right">
+                                                                UNIT PRICE
+                                                            </TableHead>
+                                                            <TableHead className="text-xs font-bold text-slate-900 dark:text-white text-right">
+                                                                AMOUNT
+                                                            </TableHead>
+                                                        </TableRow>
+                                                    </TableHeader>
+                                                    <TableBody>
+                                                        {dept.rows.map(
+                                                            (r, i) => (
+                                                                <TableRow
+                                                                    key={i}
+                                                                    className="border-b border-slate-200 dark:border-slate-700"
+                                                                >
+                                                                    <TableCell className="text-xs">
+                                                                        {r.no}
+                                                                    </TableCell>
+                                                                    <TableCell className="text-xs font-mono">
+                                                                        {
+                                                                            r.charge_invoice_no
+                                                                        }
+                                                                    </TableCell>
+                                                                    <TableCell className="text-xs font-mono">
+                                                                        {r.plate_no}
+                                                                    </TableCell>
+                                                                    <TableCell className="text-xs">
+                                                                        {r.date}
+                                                                    </TableCell>
+                                                                    <TableCell className="text-xs font-mono">
+                                                                        {
+                                                                            r.control_no
+                                                                        }
+                                                                    </TableCell>
+                                                                    <TableCell className="text-xs">
+                                                                        {
+                                                                            r.lubricant
+                                                                        }
+                                                                    </TableCell>
+                                                                    <TableCell className="text-xs text-right">
+                                                                        {formatNumber(
+                                                                            r.quantity,
+                                                                        )}
+                                                                    </TableCell>
+                                                                    <TableCell className="text-xs text-right">
+                                                                        {formatCurrency(
+                                                                            r.unit_price,
+                                                                        )}
+                                                                    </TableCell>
+                                                                    <TableCell className="text-xs text-right font-medium">
+                                                                        {formatCurrency(
+                                                                            r.amount,
+                                                                        )}
+                                                                    </TableCell>
+                                                                </TableRow>
+                                                            ),
+                                                        )}
+
+                                                        <TableRow className="bg-slate-100 dark:bg-slate-800 font-bold border-t-2 border-slate-800 dark:border-slate-200">
+                                                            <TableCell
+                                                                colSpan="6"
+                                                                className="text-right text-xs"
+                                                            >
+                                                                TOTAL
+                                                            </TableCell>
+                                                            <TableCell className="text-right text-xs">
+                                                                {formatNumber(
+                                                                    dept
+                                                                        .subtotals
+                                                                        ?.total_liters ||
+                                                                        0,
+                                                                )}
+                                                            </TableCell>
+                                                            <TableCell></TableCell>
+                                                            <TableCell className="text-right text-xs text-emerald-600 dark:text-emerald-400">
+                                                                {formatCurrency(
+                                                                    dept
+                                                                        .subtotals
+                                                                        ?.total_amount ||
+                                                                        0,
+                                                                )}
+                                                            </TableCell>
+                                                        </TableRow>
+                                                    </TableBody>
+                                                </Table>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+
+                                {/* Grand total */}
+                                <div className="border-2 border-slate-800 dark:border-slate-200 rounded-lg overflow-hidden">
+                                    <div className="bg-slate-900 dark:bg-slate-950 text-white px-4 py-2 text-center font-bold text-sm tracking-wide">
+                                        GRAND TOTAL
+                                    </div>
+                                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4 p-4 text-center bg-slate-50 dark:bg-slate-800">
+                                        <div>
+                                            <p className="text-[10px] uppercase text-slate-500 dark:text-slate-400">
+                                                Premium
+                                            </p>
+                                            <p className="text-sm font-bold">
+                                                {formatNumber(
+                                                    grandTotals.premium_liters,
+                                                )}{" "}
+                                                L
+                                            </p>
+                                        </div>
+                                        <div>
+                                            <p className="text-[10px] uppercase text-slate-500 dark:text-slate-400">
+                                                Diesel
+                                            </p>
+                                            <p className="text-sm font-bold">
+                                                {formatNumber(
+                                                    grandTotals.diesel_liters,
+                                                )}{" "}
+                                                L
+                                            </p>
+                                        </div>
+                                        <div>
+                                            <p className="text-[10px] uppercase text-slate-500 dark:text-slate-400">
+                                                Regular
+                                            </p>
+                                            <p className="text-sm font-bold">
+                                                {formatNumber(
+                                                    grandTotals.regular_liters,
+                                                )}{" "}
+                                                L
+                                            </p>
+                                        </div>
+                                        <div>
+                                            <p className="text-[10px] uppercase text-slate-500 dark:text-slate-400">
+                                                Total Quantity
+                                            </p>
+                                            <p className="text-sm font-bold">
+                                                {formatNumber(
+                                                    grandTotals.total_liters,
+                                                )}{" "}
+                                                L
+                                            </p>
+                                        </div>
+                                        <div>
+                                            <p className="text-[10px] uppercase text-slate-500 dark:text-slate-400">
+                                                Total Amount
+                                            </p>
+                                            <p className="text-sm font-bold text-emerald-600 dark:text-emerald-400">
+                                                {formatCurrency(
+                                                    grandTotals.total_amount,
+                                                )}
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </CardContent>
+                )}
+            </Card>
+        );
+    };
 
     // ============================================================
     // LOADING STATE
@@ -1387,10 +1915,13 @@ const MayorReports = () => {
 
     const isLoading =
         (expandedSections.fuelReceipt && receiptLoading && !receiptData) ||
-        (expandedSections.budgetUtilization && budgetLoading && !budgetData) ||
+        (expandedSections.budgetUtilization &&
+            budgetLoading &&
+            !budgetData) ||
         (expandedSections.reconciliation &&
             reconciliationLoading &&
-            !reconciliationData);
+            !reconciliationData) ||
+        (expandedSections.billingStatement && billingLoading && !billingData);
 
     if (isLoading) {
         return (
@@ -1428,40 +1959,33 @@ const MayorReports = () => {
                         >
                             <ArrowLeft className="h-5 w-5" />
                         </Button>
-                        <div>
-                            <div className="flex items-center gap-3">
-                                <div className="p-2.5 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 shadow-lg shadow-blue-500/20">
-                                    <FileText className="h-5 w-5 text-white" />
-                                </div>
-                                <div>
-                                    <h1 className="text-2xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 bg-clip-text text-transparent">
-                                        Disbursing Officer Reports
-                                    </h1>
-                                    <p className="text-sm text-slate-500 dark:text-slate-400">
-                                        Period: {dateRange.startDate} to{" "}
-                                        {dateRange.endDate}
-                                        <span className="ml-2 text-xs opacity-70">
-                                            {connectionStatus}
+                        <div className="flex items-center gap-3">
+                            <div className="p-2.5 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 shadow-lg shadow-blue-500/20">
+                                <FileText className="h-5 w-5 text-white" />
+                            </div>
+                            <div>
+                                <h1 className="text-2xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 bg-clip-text text-transparent">
+                                    Disbursing Officer Reports
+                                </h1>
+                                <p className="text-sm text-slate-500 dark:text-slate-400">
+                                    {connectionStatus}
+                                    {isRealTime && (
+                                        <span className="ml-2 text-xs text-emerald-400 animate-pulse">
+                                            ● Auto-refresh
                                         </span>
-                                        {isRealTime && (
-                                            <span className="ml-2 text-xs text-emerald-400 animate-pulse">
-                                                ● Auto-refresh
-                                            </span>
-                                        )}
-                                    </p>
-                                </div>
+                                    )}
+                                </p>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                
-
-                {/* ALL 3 REPORTS */}
+                {/* ALL REPORTS */}
                 <div className="space-y-6">
                     {renderFuelReceipt()}
                     {renderBudgetUtilization()}
                     {renderReconciliation()}
+                    {renderBillingStatement()}
                 </div>
 
                 {/* Footer */}

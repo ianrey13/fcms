@@ -501,6 +501,15 @@ export const reportsAPI = {
     params,
     responseType: "blob",
   }),
+
+getBillingStatement: (params) =>
+    cachedApi.get("/reports/billing-statement", { params }),
+exportBillingStatement: (format, params) =>
+    cachedApi.get(`/reports/billing-statement/export/${format}`, {
+        params,
+        responseType: "blob",
+    }),
+
 };
 
 // ============ ADMIN DEPARTMENT API ============

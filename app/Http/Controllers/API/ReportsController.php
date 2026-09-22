@@ -2678,4 +2678,286 @@ private function prettifyAuditValue($value)
             'Cache-Control' => 'no-cache, no-store, must-revalidate',
         ]);
     }
+
+    /**
+ * BILLING STATEMENT OF FUEL
+ 
+ 
+ */
+public function getBillingStatementReport(Request $request)
+{
+    try {
+        $startDate    = $request->get('start_date');
+        $endDate      = $request->get('end_date');
+        $departmentId = $request->get('department_id');
+        $vehicleId    = $request->get('vehicle_id');
+
+        $query = FuelReceipt::with([
+            'gasSlip.tripTicket.department',
+            'gasSlip.tripTicket.vehicle',
+            'gasSlip.tripTicket',
+        ]);
+
+        if ($startDate && $endDate) {
+            $query->whereHas('gasSlip.tripTicket', function ($q) use ($startDate, $endDate) {
+                $q->whereBetween('trip_date', [
+                    Carbon::parse($startDate)->toDateString(),
+                    Carbon::parse($endDate)->toDateString(),
+                ]);
+            });
+        }
+
+        if ($departmentId) {
+            $query->whereHas('gasSlip.tripTicket', function ($q) use ($departmentId) {
+                $q->where('department_id', $departmentId);
+            });
+        }
+
+        if ($vehicleId) {
+            $query->whereHas('gasSlip.tripTicket', function ($q) use ($vehicleId) {
+                $q->where('vehicle_id', $vehicleId);
+            });
+        }
+
+        $receipts = $query->get();
+
+        // Group by department
+        $byDept = $receipts->groupBy(function ($r) {
+            return $r->gasSlip?->tripTicket?->department_id ?? 'unknown';
+        });
+
+        $departments = collect();
+        $grandTotals = [
+            'premium_liters'  => 0.0,
+            'diesel_liters'   => 0.0,
+            'regular_liters'  => 0.0,
+            'total_liters'    => 0.0,
+            'total_amount'    => 0.0,
+        ];
+
+        foreach ($byDept as $deptId => $group) {
+            $first = $group->first();
+            $department = $first->gasSlip?->tripTicket?->department;
+
+            // Sort rows by trip_date
+            $sorted = $group->sortBy(function ($r) {
+                return $r->gasSlip?->tripTicket?->trip_date
+                    ? Carbon::parse($r->gasSlip->tripTicket->trip_date)->timestamp
+                    : 0;
+            })->values();
+
+            $subtotals = [
+                'premium_liters' => 0.0,
+                'diesel_liters'  => 0.0,
+                'regular_liters' => 0.0,
+                'total_liters'   => 0.0,
+                'total_amount'   => 0.0,
+            ];
+
+            $rows = [];
+            $i = 1;
+            foreach ($sorted as $receipt) {
+                $trip    = $receipt->gasSlip?->tripTicket;
+                $vehicle = $trip?->vehicle;
+
+                $fuelType = strtolower($vehicle?->fuel_type ?? '');
+                $liters   = (float) ($receipt->liters_availed ?? 0);
+                $amount   = (float) ($receipt->amount_on_receipt ?? 0);
+
+                $unitPrice = (float) ($receipt->unit_price ?? 0);
+                if ($unitPrice == 0 && $liters > 0 && $amount > 0) {
+                    $unitPrice = round($amount / $liters, 2);
+                }
+
+                // Accumulate subtotals
+                if ($fuelType === 'premium')                    $subtotals['premium_liters']  += $liters;
+                elseif ($fuelType === 'diesel')                 $subtotals['diesel_liters']   += $liters;
+                elseif (in_array($fuelType, ['regular', 'gasoline'])) $subtotals['regular_liters'] += $liters;
+
+                $subtotals['total_liters'] += $liters;
+                $subtotals['total_amount'] += $amount;
+
+                $rows[] = [
+                    'no'                => $i++,
+                    'charge_invoice_no' => $receipt->invoice_number ?? 'N/A',
+                    'plate_no'          => $vehicle?->plate_number ?? 'N/A',
+                    'date'              => $trip?->trip_date
+                        ? Carbon::parse($trip->trip_date)->format('m/d/Y')
+                        : 'N/A',
+                    'date_raw'          => $trip?->trip_date,
+                    'control_no'        => $trip?->trip_ticket_number ?? 'N/A',
+                    'lubricant'         => strtoupper($fuelType ?: 'N/A'),
+                    'quantity'          => round($liters, 2),
+                    'unit_price'        => round($unitPrice, 2),
+                    'amount'            => round($amount, 2),
+                ];
+            }
+
+            // Round subtotals
+            $subtotals = array_map(fn($v) => round($v, 2), $subtotals);
+
+            // Accumulate grand totals
+            $grandTotals['premium_liters'] += $subtotals['premium_liters'];
+            $grandTotals['diesel_liters']  += $subtotals['diesel_liters'];
+            $grandTotals['regular_liters'] += $subtotals['regular_liters'];
+            $grandTotals['total_liters']   += $subtotals['total_liters'];
+            $grandTotals['total_amount']   += $subtotals['total_amount'];
+
+            $departments->push([
+                'department_id'   => $department?->department_id,
+                'department_code' => $department?->department_code ?? 'N/A',
+                'department_name' => $department?->department_name ?? 'Unknown',
+                'rows'            => $rows,
+                'subtotals'       => $subtotals,
+            ]);
+        }
+
+        // Sort departments by code
+        $departments = $departments->sortBy('department_code')->values();
+
+        // Round grand totals
+        $grandTotals = array_map(fn($v) => round($v, 2), $grandTotals);
+
+        // Period label for the header
+        $periodLabel = 'FOR THE PERIOD OF ' . ($startDate ? Carbon::parse($startDate)->format('F d, Y') : 'All')
+                     . ' - ' . ($endDate ? Carbon::parse($endDate)->format('F d, Y') : 'All');
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'period_label'   => $periodLabel,
+                'departments'    => $departments,
+                'grand_totals'   => $grandTotals,
+                'total_receipts' => $receipts->count(),
+                'filters' => [
+                    'start_date'    => $startDate,
+                    'end_date'      => $endDate,
+                    'department_id' => $departmentId,
+                    'vehicle_id'    => $vehicleId,
+                ],
+            ],
+        ]);
+
+    } catch (\Exception $e) {
+        Log::error('Billing statement report error: ' . $e->getMessage());
+        Log::error($e->getTraceAsString());
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to generate billing statement: ' . $e->getMessage(),
+        ], 500);
+    }
+}
+
+public function exportBillingStatement(Request $request, $format)
+{
+    try {
+        $response = $this->getBillingStatementReport($request);
+        $data = $response->getData(true);
+
+        if (!$data['success']) {
+            return response()->json(['success' => false, 'message' => 'Failed'], 500);
+        }
+
+        $reportData = $data['data'];
+        $filename = 'billing_statement_' . date('Y-m-d');
+
+        if ($format === 'excel' || $format === 'xlsx') {
+            return Excel::download(
+                new \App\Exports\BillingStatementExport($reportData),
+                $filename . '.xlsx'
+            );
+        } elseif ($format === 'pdf') {
+            $html = $this->buildBillingStatementPDFHTML($reportData);
+            return $this->streamPdf($html, $filename);
+        }
+
+        return response()->json(['success' => false, 'message' => 'Unsupported format'], 400);
+
+    } catch (\Exception $e) {
+        Log::error('Export billing statement error: ' . $e->getMessage());
+        return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+    }
+}
+
+private function buildBillingStatementPDFHTML($reportData)
+{
+    $departments = $reportData['departments'] ?? [];
+    $grandTotals = $reportData['grand_totals'] ?? [];
+
+    $html = '<!DOCTYPE html><html><head><meta charset="utf-8">';
+    $html .= '<title>Billing Statement of Fuel</title>';
+    $html .= '<style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: "DejaVu Sans", Arial, sans-serif; font-size: 8px; padding: 15px; color: #1e293b; }
+        .header { text-align: center; border-bottom: 2px solid #2563eb; padding-bottom: 10px; margin-bottom: 15px; }
+        .header h1 { font-size: 16px; font-weight: bold; color: #1e3a8a; }
+        .header p { font-size: 10px; color: #64748b; margin-top: 3px; }
+        .dept-header { background: #fef3c7; border-left: 4px solid #f59e0b; padding: 6px 10px; margin-top: 15px; margin-bottom: 6px; font-weight: bold; font-size: 11px; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 5px; }
+        th { background: #2563eb; color: white; padding: 5px 3px; font-size: 7px; border: 1px solid #1e40af; }
+        td { padding: 4px 3px; font-size: 7px; border: 1px solid #d1d5db; }
+        .text-right { text-align: right; }
+        .text-center { text-align: center; }
+        .subtotal-row td { background: #f1f5f9; font-weight: bold; }
+        .grand-total { background: #0f172a; color: white; padding: 10px; margin-top: 15px; border-radius: 4px; }
+        .grand-total table td { color: white; border: none; padding: 4px; font-size: 8px; }
+    </style></head><body>';
+
+    $html .= '<div class="header">';
+    $html .= '<h1>BILLING STATEMENT OF FUEL</h1>';
+    $html .= '<p>' . e($reportData['period_label'] ?? '') . '</p>';
+    $html .= '<p>Generated: ' . now()->format('F d, Y h:i A') . '</p>';
+    $html .= '</div>';
+
+    foreach ($departments as $dept) {
+        $html .= '<div class="dept-header">FOR ' . e($dept['department_code']) . ' — ' . e($dept['department_name']) . '</div>';
+        $html .= '<table><thead><tr>';
+        $html .= '<th>NO.</th><th>CHARGE INVOICE NO.</th><th>PLATE NO.</th><th>DATE</th>';
+        $html .= '<th>CONTROL NO.</th><th>LUBRICANT</th>';
+        $html .= '<th class="text-right">QUANTITY</th><th class="text-right">UNIT PRICE</th><th class="text-right">AMOUNT</th>';
+        $html .= '</tr></thead><tbody>';
+
+        foreach ($dept['rows'] as $r) {
+            $html .= '<tr>';
+            $html .= '<td class="text-center">' . $r['no'] . '</td>';
+            $html .= '<td>' . e($r['charge_invoice_no']) . '</td>';
+            $html .= '<td>' . e($r['plate_no']) . '</td>';
+            $html .= '<td class="text-center">' . e($r['date']) . '</td>';
+            $html .= '<td>' . e($r['control_no']) . '</td>';
+            $html .= '<td class="text-center">' . e($r['lubricant']) . '</td>';
+            $html .= '<td class="text-right">' . number_format($r['quantity'], 2) . '</td>';
+            $html .= '<td class="text-right">₱' . number_format($r['unit_price'], 2) . '</td>';
+            $html .= '<td class="text-right">₱' . number_format($r['amount'], 2) . '</td>';
+            $html .= '</tr>';
+        }
+
+        $st = $dept['subtotals'];
+        $html .= '<tr class="subtotal-row">';
+        $html .= '<td colspan="6" class="text-right">'
+              . 'Premium: ' . number_format($st['premium_liters'], 2) . ' L | '
+              . 'Diesel: ' . number_format($st['diesel_liters'], 2) . ' L | '
+              . 'Regular: ' . number_format($st['regular_liters'], 2) . ' L'
+              . '</td>';
+        $html .= '<td class="text-right">' . number_format($st['total_liters'], 2) . '</td>';
+        $html .= '<td></td>';
+        $html .= '<td class="text-right">₱' . number_format($st['total_amount'], 2) . '</td>';
+        $html .= '</tr>';
+
+        $html .= '</tbody></table>';
+    }
+
+    // Grand total
+    $gt = $grandTotals;
+    $html .= '<div class="grand-total"><table><tr>';
+    $html .= '<td class="text-center">Premium: ' . number_format($gt['premium_liters'], 2) . ' L</td>';
+    $html .= '<td class="text-center">Diesel: ' . number_format($gt['diesel_liters'], 2) . ' L</td>';
+    $html .= '<td class="text-center">Regular: ' . number_format($gt['regular_liters'], 2) . ' L</td>';
+    $html .= '<td class="text-center">Total Quantity: ' . number_format($gt['total_liters'], 2) . ' L</td>';
+    $html .= '<td class="text-center">Total Amount: ₱' . number_format($gt['total_amount'], 2) . '</td>';
+    $html .= '</tr></table></div>';
+
+    $html .= '</body></html>';
+    return $html;
+}
+
 }

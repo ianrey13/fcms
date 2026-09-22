@@ -110,6 +110,10 @@ Route::prefix('reports')->group(function () {
     Route::get('reconciliation/export/{format}', [ReportsController::class, 'exportReconciliation']);
     Route::get('driver-efficiency/export/{format}', [ReportsController::class, 'exportDriverEfficiency']);
     Route::get('audit-trail/export/{format}', [ReportsController::class, 'exportAuditTrail']);
+
+    //billing statements
+    Route::get('billing-statement', [ReportsController::class, 'getBillingStatementReport']);
+Route::get('billing-statement/export/{format}', [ReportsController::class, 'exportBillingStatement']);
 });
 
     // ============ GSO ADMIN ============
