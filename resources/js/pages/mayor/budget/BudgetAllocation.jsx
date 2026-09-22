@@ -6,6 +6,9 @@
 // KEPT: Bulk Edit functionality
 // ✅ UPDATED: Weekly ceiling is now auto-computed (annual / 52)
 // ✅ REMOVED: Weekly Ceiling dialog + Clock action button
+// ✅ Action buttons:
+//     - has_budget = false  → Pencil (Set Annual) only
+//     - has_budget = true   → Plus (Add Additional) only
 // ============================================
 
 import React, { useState, useEffect, useMemo, useRef } from "react";
@@ -136,7 +139,7 @@ const DepartmentTooltip = ({ code, name }) => {
 };
 
 // ============================================
-// ✅ ENHANCED: Form Field with error highlighting
+// Form Field with error highlighting
 // ============================================
 
 const FormField = ({
@@ -340,7 +343,7 @@ const BudgetAllocation = () => {
     });
 
     // ============================================
-    // ✅ AUTO-REFRESH
+    // AUTO-REFRESH
     // ============================================
 
     useAutoRefresh(
@@ -518,7 +521,6 @@ const BudgetAllocation = () => {
         }).format(amount);
     };
 
-    // ✅ Helper: compute weekly suggested on the fly
     const weeklySuggested = (annualAmount) => {
         const amount = parseFloat(annualAmount) || 0;
         return amount > 0 ? amount / 52 : 0;
@@ -774,7 +776,6 @@ const BudgetAllocation = () => {
         }
     }, [budgets, isBulkMode]);
 
-    // Connection status
     const connectionStatus = isConnected ? "🟢 Live" : "🔴 Offline";
     const isRealTime = isConnected;
 
@@ -1144,7 +1145,6 @@ const BudgetAllocation = () => {
 
                                         const isNew = !budget.has_budget;
 
-                                        // ✅ Compute weekly suggested on the fly
                                         const suggested = weeklySuggested(budget.annual_amount);
 
                                         return (
@@ -1204,7 +1204,6 @@ const BudgetAllocation = () => {
                                                     )}
                                                 </TableCell>
 
-                                                {/* ✅ NEW: Weekly Suggested column */}
                                                 <TableCell className="text-right">
                                                     <span className="font-medium text-purple-600 dark:text-purple-400">
                                                         {formatCurrency(suggested)}
@@ -1248,6 +1247,7 @@ const BudgetAllocation = () => {
                                                     "
                                                 >
                                                     <div className="flex items-center justify-end gap-1 min-w-[120px]">
+                                                        {/* View — always visible */}
                                                         <Button
                                                             variant="ghost"
                                                             size="sm"
@@ -1261,55 +1261,43 @@ const BudgetAllocation = () => {
                                                         </Button>
 
                                                         {!isBulkMode && (
-    <>
-        {/* ✅ + button — behavior depends on whether budget exists */}
-        {!budget.has_budget ? (
-            // No budget yet → open the SET dialog (annual_amount only, calls store())
-            <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => handleEdit(budget)}  // reuses the edit dialog, store() mutation
-                className="text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:text-emerald-300 dark:hover:bg-emerald-950/30 h-9 w-9 p-0 rounded-lg transition-all duration-200"
-                title="Set Annual Budget"
-            >
-                <Plus className="h-4 w-4" />
-            </Button>
-        ) : (
-            // Has budget → open the ADD-ADDITIONAL dialog (increment, calls addBudget())
-            <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                    setAddBudgetData({
-                        department_id: budget.department_id.toString(),
-                        additional_amount: "",
-                        reason: "",
-                    });
-                    setAddErrors({});
-                    setAddTouched({});
-                    setShowAddBudgetDialog(true);
-                }}
-                className="text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:text-emerald-300 dark:hover:bg-emerald-950/30 h-9 w-9 p-0 rounded-lg transition-all duration-200"
-                title="Add Additional Budget"
-            >
-                <Plus className="h-4 w-4" />
-            </Button>
-        )}
+                                                            <>
+                                                                {/* No budget yet → Pencil (Set Annual Budget) */}
+                                                                {!budget.has_budget && (
+                                                                    <Button
+                                                                        variant="ghost"
+                                                                        size="sm"
+                                                                        onClick={() => handleEdit(budget)}
+                                                                        className="text-green-600 hover:text-green-700 hover:bg-green-50 dark:text-green-400 dark:hover:text-green-300 dark:hover:bg-green-950/30 h-9 w-9 p-0 rounded-lg transition-all duration-200"
+                                                                        title="Set Annual Budget"
+                                                                    >
+                                                                        <Edit className="h-4 w-4" />
+                                                                    </Button>
+                                                                )}
 
-        {/* ✅ Edit button — only when budget already exists (overwrite existing annual) */}
-        {budget.has_budget && (
-            <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => handleEdit(budget)}
-                className="text-green-600 hover:text-green-700 hover:bg-green-50 dark:text-green-400 dark:hover:text-green-300 dark:hover:bg-green-950/30 h-9 w-9 p-0 rounded-lg transition-all duration-200"
-                title="Set Annual Budget"
-            >
-                <Edit className="h-4 w-4" />
-            </Button>
-        )}
-    </>
-)}
+                                                                {/* Has budget → Plus (Add Additional Budget) */}
+                                                                {budget.has_budget && (
+                                                                    <Button
+                                                                        variant="ghost"
+                                                                        size="sm"
+                                                                        onClick={() => {
+                                                                            setAddBudgetData({
+                                                                                department_id: budget.department_id.toString(),
+                                                                                additional_amount: "",
+                                                                                reason: "",
+                                                                            });
+                                                                            setAddErrors({});
+                                                                            setAddTouched({});
+                                                                            setShowAddBudgetDialog(true);
+                                                                        }}
+                                                                        className="text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:text-emerald-300 dark:hover:bg-emerald-950/30 h-9 w-9 p-0 rounded-lg transition-all duration-200"
+                                                                        title="Add Additional Budget"
+                                                                    >
+                                                                        <Plus className="h-4 w-4" />
+                                                                    </Button>
+                                                                )}
+                                                            </>
+                                                        )}
                                                     </div>
                                                 </TableCell>
                                             </TableRow>
@@ -1334,17 +1322,17 @@ const BudgetAllocation = () => {
             <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
                 <DialogContent className="dark:bg-slate-800 dark:border-slate-700 max-w-md">
                     <DialogHeader>
-                       <DialogTitle className="flex items-center gap-2 text-slate-900 dark:text-white">
-    <div className="p-2 rounded-xl bg-green-500/10">
-        <PhilippinePeso className="h-5 w-5 text-green-600 dark:text-green-400" />
-    </div>
-    {editingBudget?.has_budget ? "Edit Annual Budget" : "Set Annual Budget"}
-</DialogTitle>
-<DialogDescription className="dark:text-slate-400">
-    {editingBudget?.has_budget
-        ? `Update annual budget for ${editingBudget?.department_name}`
-        : `Set the initial annual budget for ${editingBudget?.department_name}`}
-</DialogDescription>
+                        <DialogTitle className="flex items-center gap-2 text-slate-900 dark:text-white">
+                            <div className="p-2 rounded-xl bg-green-500/10">
+                                <PhilippinePeso className="h-5 w-5 text-green-600 dark:text-green-400" />
+                            </div>
+                            {editingBudget?.has_budget ? "Edit Annual Budget" : "Set Annual Budget"}
+                        </DialogTitle>
+                        <DialogDescription className="dark:text-slate-400">
+                            {editingBudget?.has_budget
+                                ? `Update annual budget for ${editingBudget?.department_name}`
+                                : `Set the initial annual budget for ${editingBudget?.department_name}`}
+                        </DialogDescription>
                     </DialogHeader>
 
                     <div className="space-y-4">
@@ -1406,7 +1394,6 @@ const BudgetAllocation = () => {
                             />
                         </FormField>
 
-                        {/* ✅ Auto-computed weekly suggested — read-only info */}
                         <div className="bg-purple-50 dark:bg-purple-950/30 rounded-xl p-3 border border-purple-200 dark:border-purple-800">
                             <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-2">
@@ -1438,18 +1425,18 @@ const BudgetAllocation = () => {
                         >
                             Cancel
                         </Button>
-                      <Button
-    onClick={handleSetBudget}
-    disabled={setBudgetMutation.isPending}
-    className="bg-green-600 hover:bg-green-700 text-white"
->
-    {setBudgetMutation.isPending ? (
-        <Loader2 className="h-4 w-4 animate-spin mr-2" />
-    ) : (
-        <Save className="h-4 w-4 mr-2" />
-    )}
-    Save Annual Budget
-</Button>
+                        <Button
+                            onClick={handleSetBudget}
+                            disabled={setBudgetMutation.isPending}
+                            className="bg-green-600 hover:bg-green-700 text-white"
+                        >
+                            {setBudgetMutation.isPending ? (
+                                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                            ) : (
+                                <Save className="h-4 w-4 mr-2" />
+                            )}
+                            Save Annual Budget
+                        </Button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
@@ -1668,7 +1655,6 @@ const BudgetAllocation = () => {
                                 </div>
                             </div>
 
-                            {/* ✅ Annual + Weekly Suggested */}
                             <div className="grid grid-cols-2 gap-3">
                                 <div className="bg-blue-50 dark:bg-blue-950/30 rounded-xl p-3 text-center border border-blue-200 dark:border-blue-800">
                                     <p className="text-xs text-blue-600 dark:text-blue-400 font-medium">Annual Budget</p>
@@ -1687,7 +1673,6 @@ const BudgetAllocation = () => {
                                 </div>
                             </div>
 
-                            {/* ✅ Used + Remaining */}
                             <div className="grid grid-cols-2 gap-3">
                                 <div className="bg-yellow-50 dark:bg-yellow-950/30 rounded-xl p-3 text-center border border-yellow-200 dark:border-yellow-800">
                                     <p className="text-xs text-yellow-600 dark:text-yellow-400 font-medium">Total Used</p>
@@ -1720,7 +1705,6 @@ const BudgetAllocation = () => {
                                 </div>
                             </div>
 
-                            {/* ✅ Annual Utilization bar */}
                             <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-3 border border-slate-200 dark:border-slate-700">
                                 <div className="flex justify-between items-center">
                                     <span className="text-xs text-slate-500 dark:text-slate-400">Annual Utilization</span>
