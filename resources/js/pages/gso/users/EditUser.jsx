@@ -713,8 +713,7 @@ const EditUser = () => {
           <CardContent className="pt-6">
             <form onSubmit={handleSubmit} className="space-y-5">
               {/* Email */}
-              <div className="grid grid-cols-2 gap-4">
-                <FormField
+               <FormField
                   label="Email Address"
                   icon={Mail}
                   required
@@ -733,25 +732,7 @@ const EditUser = () => {
                     className="bg-white dark:bg-slate-900 dark:border-slate-700"
                   />
                 </FormField>
-
-                <FormField
-                  label="Employee Number"
-                  icon={IdCard}
-                  error={errors.employee_number}
-                  touched={touched.employee_number}
-                  helper="Unique employee identifier"
-                >
-                  <Input
-                    id="employee_number"
-                    name="employee_number"
-                    placeholder="EMP-0001"
-                    value={formData.employee_number}
-                    onChange={(e) => handleChange("employee_number", e.target.value)}
-                    onBlur={() => handleBlur("employee_number")}
-                    className="bg-white dark:bg-slate-900 dark:border-slate-700"
-                  />
-                </FormField>
-              </div>
+             
 
               {/* Name Fields */}
               <div className="grid grid-cols-2 gap-4">
