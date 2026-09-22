@@ -448,8 +448,6 @@ public function approveTicket(Request $request, $id)
                 $crossDepartmentReason
             );
 
-            // Track weekly usage (informational only — does NOT gate)
-            $this->deductWeeklyBudget($chargeDepartmentId, $amountToRelease);
 
             // Capture used_amount AFTER
             $annualBudget = AnnualBudget::where('department_id', $chargeDepartmentId)
