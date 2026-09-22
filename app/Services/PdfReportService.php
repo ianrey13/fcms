@@ -373,39 +373,93 @@ class PdfReportService
         return self::wrap('Audit Trail Report', self::table($headers, $rows), $period);
     }
 
-    // ============================================================
-    // BUDGET UTILIZATION
-    // ============================================================
-    public static function budgetUtilization(array $data, array $filters): string
-    {
-        $periods = $data['periods'] ?? [];
-        $headers = ['Department', 'Allocated (₱)', 'Utilized (₱)', 'Remaining (₱)', 'Utilization (%)'];
-        $rows = [];
-        $totalAlloc = 0; $totalUsed = 0; $totalRem = 0;
+   // ============================================================
+// BUDGET UTILIZATION
+// ============================================================
+public static function budgetUtilization(array $data, array $filters): string
+{
+    $department = $data['department'] ?? [];
+    $summary    = $data['summary'] ?? [];
+    $periods    = $data['periods'] ?? [];
+    $filterData = $data['filters'] ?? $filters;
 
-        foreach ($periods as $p) {
-            $alloc = (float) ($p['allocated'] ?? 0);
-            $used = (float) ($p['used'] ?? 0);
-            $rem = (float) ($p['remaining'] ?? 0);
-            $util = (float) ($p['utilization'] ?? 0);
+    $deptName   = $department['department_name'] ?? 'Unknown';
+    $deptCode   = $department['department_code'] ?? 'N/A';
+    $year       = $filterData['year'] ?? $filters['year'] ?? date('Y');
+    $month      = $filterData['month'] ?? null;
+    $monthLabel = $month
+        ? Carbon::create()->month((int) $month)->format('F')
+        : 'All Months';
 
-            $totalAlloc += $alloc;
-            $totalUsed += $used;
-            $totalRem += $rem;
+    // ---- Summary cards block ----
+    $summaryHtml = '
+        <table style="margin-top: 0; margin-bottom: 14px; border-collapse: separate; border-spacing: 6px;">
+            <tr>
+                <td style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 10px; text-align: center; width: 25%;">
+                    <div style="font-size: 8px; color: #1e40af; text-transform: uppercase; letter-spacing: 0.5px;">Annual Allocated</div>
+                    <div style="font-size: 12px; font-weight: bold; color: #0f172a; margin-top: 4px;">₱' . number_format($summary['total_allocated'] ?? 0, 2) . '</div>
+                </td>
+                <td style="background: #fef3c7; border: 1px solid #fde68a; border-radius: 6px; padding: 10px; text-align: center; width: 25%;">
+                    <div style="font-size: 8px; color: #92400e; text-transform: uppercase; letter-spacing: 0.5px;">Annual Utilized</div>
+                    <div style="font-size: 12px; font-weight: bold; color: #0f172a; margin-top: 4px;">₱' . number_format($summary['total_used'] ?? 0, 2) . '</div>
+                </td>
+                <td style="background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 6px; padding: 10px; text-align: center; width: 25%;">
+                    <div style="font-size: 8px; color: #065f46; text-transform: uppercase; letter-spacing: 0.5px;">Annual Remaining</div>
+                    <div style="font-size: 12px; font-weight: bold; color: #0f172a; margin-top: 4px;">₱' . number_format($summary['total_remaining'] ?? 0, 2) . '</div>
+                </td>
+                <td style="background: #f3e8ff; border: 1px solid #ddd6fe; border-radius: 6px; padding: 10px; text-align: center; width: 25%;">
+                    <div style="font-size: 8px; color: #5b21b6; text-transform: uppercase; letter-spacing: 0.5px;">Weeks in View</div>
+                    <div style="font-size: 12px; font-weight: bold; color: #0f172a; margin-top: 4px;">' . ($summary['total_weeks'] ?? 0) . '</div>
+                </td>
+            </tr>
+        </table>';
 
-            $rows[] = [
-                e($p['department_name'] ?? 'N/A'),
-                '₱' . number_format($alloc, 2),
-                '₱' . number_format($used, 2),
-                '₱' . number_format($rem, 2),
-                number_format($util, 2) . '%',
-            ];
+    // ---- Detail table ----
+    $headers = ['Week (Date Range)', 'Budget (₱)', 'Utilized (₱)', 'Balance (₱)'];
+    $rows = [];
+
+    foreach ($periods as $p) {
+        $weekStart = $p['week_start'] ?? null;
+        $weekEnd   = $p['week_end'] ?? null;
+
+        $range = '—';
+        if ($weekStart && $weekEnd) {
+            try {
+                $range = Carbon::parse($weekStart)->format('M d, Y')
+                       . ' – '
+                       . Carbon::parse($weekEnd)->format('M d, Y');
+            } catch (\Exception $e) {
+                $range = $weekStart . ' – ' . $weekEnd;
+            }
         }
 
-        $totalUtil = $totalAlloc > 0 ? ($totalUsed / $totalAlloc) * 100 : 0;
-        $totalRow = ['TOTAL', '₱' . number_format($totalAlloc, 2), '₱' . number_format($totalUsed, 2), '₱' . number_format($totalRem, 2), number_format($totalUtil, 2) . '%'];
-
-        $year = $filters['year'] ?? date('Y');
-        return self::wrap('Budget Utilization Report', self::table($headers, $rows, $totalRow), 'Year: ' . $year);
+        $rows[] = [
+            e($range),
+            '₱' . number_format((float) ($p['allocated'] ?? 0), 2),
+            '₱' . number_format((float) ($p['used'] ?? 0), 2),
+            '₱' . number_format((float) ($p['remaining'] ?? 0), 2),
+        ];
     }
+
+    // ---- TOTAL row (matches the frontend table logic) ----
+    $totalRow = null;
+    if (!empty($periods)) {
+        $firstAllocated = (float) ($periods[0]['allocated'] ?? 0);
+        $sumUsed        = array_sum(array_map(fn($p) => (float) ($p['used'] ?? 0), $periods));
+        $lastRemaining  = (float) ($periods[count($periods) - 1]['remaining'] ?? 0);
+
+        $totalRow = [
+            'TOTAL',
+            '₱' . number_format($firstAllocated, 2),
+            '₱' . number_format($sumUsed, 2),
+            '₱' . number_format($lastRemaining, 2),
+        ];
+    }
+
+    $detailTable = self::table($headers, $rows, $totalRow);
+
+    $period = $deptName . ' (' . $deptCode . ')  |  Year: ' . $year . '  |  ' . $monthLabel;
+
+    return self::wrap('Budget Utilization Report', $summaryHtml . $detailTable, $period);
+}
 }

@@ -3,27 +3,18 @@
 namespace App\Exports;
 
 use Maatwebsite\Excel\Concerns\FromArray;
-use Maatwebsite\Excel\Concerns\WithHeadings;
-use Maatwebsite\Excel\Concerns\WithStyles;
-use Maatwebsite\Excel\Concerns\WithColumnWidths;
 use Maatwebsite\Excel\Concerns\WithTitle;
 use Maatwebsite\Excel\Concerns\WithEvents;
-use Maatwebsite\Excel\Concerns\ShouldAutoSize;
 use Maatwebsite\Excel\Events\AfterSheet;
-use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use PhpOffice\PhpSpreadsheet\Style\Border;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
 use Carbon\Carbon;
 
-class FuelConsumptionExport implements 
-    FromArray, 
-    WithHeadings, 
-    WithStyles, 
-    WithColumnWidths, 
-    WithTitle, 
-    WithEvents,
-    ShouldAutoSize
+class FuelConsumptionExport implements
+    FromArray,
+    WithTitle,
+    WithEvents
 {
     protected $data;
 
@@ -36,164 +27,174 @@ class FuelConsumptionExport implements
     {
         $rows = [];
 
-        // HEADER
-        $rows[] = ['FUEL CONSUMPTION MONITORING REPORT'];
+        $filters = $this->data['filters'] ?? [];
+        $logs    = $this->data['recent_logs'] ?? [];
+
+        // ---- Header block ----
+        $rows[] = ['FUEL CONSUMPTION REPORT'];
         $rows[] = ['Laguindingan Municipality - Fuel Consumption Monitoring System'];
         $rows[] = ['Generated: ' . now()->format('F d, Y h:i A')];
-        $rows[] = [];
+        $rows[] = ['Period: ' . ($filters['start_date'] ?? 'All') . '  to  ' . ($filters['end_date'] ?? 'All')];
+        $rows[] = array_fill(0, 10, '');   // spacer
 
-        $filters = $this->data['filters'] ?? [];
-        $rows[] = ['Period: ' . ($filters['start_date'] ?? 'N/A') . ' to ' . ($filters['end_date'] ?? 'N/A')];
-        $rows[] = [];
-
-        // SECTION TITLE
-        $rows[] = ['FUEL CONSUMPTION DETAILS'];
-
-        // COLUMN HEADERS
+        // ---- Two-row table header ----
         $rows[] = [
-            '#', 'Date', 'Ticket #', 'Vehicle', 'Plate No.',
-            'Driver', 'Department', 'Destination', 'Fuel Type',
-            'Qty (L)', 'Amount (PHP)',
+            'Date', 'Vehicle', 'Driver',
+            'Fuel Type', '',
+            'Qty (L)', 'Amount (₱)', 'Department', 'Destination', 'Purpose',
+        ];
+        $rows[] = [
+            '', '', '',
+            'Diesel', 'Gasoline',
+            '', '', '', '', '',
         ];
 
-        $logs = $this->data['recent_logs'] ?? [];
+        // ---- Data rows ----
+        $totals = [
+            'diesel_liters'   => 0,
+            'gasoline_liters' => 0,
+            'liters'          => 0,
+            'amount'          => 0,
+        ];
 
-        $totalLiters = 0;
-        $totalAmount = 0;
+        foreach ($logs as $log) {
+            $liters   = (float) ($log['liters_availed'] ?? 0);
+            $amount   = (float) ($log['amount_on_receipt'] ?? 0);
+            $type     = strtolower($log['fuel_type'] ?? '');
+            $isDiesel = $type === 'diesel';
+            $isGas    = in_array($type, ['regular', 'premium', 'gasoline']);
 
-        if (empty($logs)) {
-            $rows[] = ['No data available', '', '', '', '', '', '', '', '', '', ''];
-        } else {
-            $i = 1;
-            foreach ($logs as $log) {
-                $liters = (float) ($log['liters_availed'] ?? 0);
-                $amount = (float) ($log['amount_on_receipt'] ?? 0);
-                $totalLiters += $liters;
-                $totalAmount += $amount;
+            $totals['liters'] += $liters;
+            $totals['amount'] += $amount;
+            if ($isDiesel) $totals['diesel_liters'] += $liters;
+            if ($isGas)    $totals['gasoline_liters'] += $liters;
 
-                $dateRaw = $log['trip_ended_at'] ?? null;
-                $dateDisplay = $dateRaw ? Carbon::parse($dateRaw)->format('m/d/Y') : 'N/A';
+            $date = $log['trip_ended_at']
+                ? Carbon::parse($log['trip_ended_at'])->format('Y-m-d')
+                : 'N/A';
 
-                $vehicle = $log['vehicle'] ?? 'N/A';
-                $plate = 'N/A';
-                if (strpos($vehicle, '(') !== false) {
-                    $plate = trim(explode('(', $vehicle)[0]);
-                }
+            $vehicleDisplay = trim(($log['vehicle_model'] ?? $log['vehicle'] ?? 'N/A')
+                . ' ' . ($log['plate_number'] ?? ''));
 
-                $fuelType = $log['fuel_type'] ?? 'Diesel';
-
-                $rows[] = [
-                    $i++,
-                    $dateDisplay,
-                    $log['trip_ticket_number'] ?? 'N/A',
-                    $vehicle,
-                    $plate,
-                    $log['driver'] ?? 'N/A',
-                    $log['department'] ?? 'N/A',
-                    $log['destination'] ?? 'N/A',
-                    ucfirst($fuelType),
-                    $liters,
-                    $amount,
-                ];
-            }
-
-            // TOTAL
             $rows[] = [
-                'TOTAL', '', '', '', '', '', '', '', '',
-                round($totalLiters, 2),
-                round($totalAmount, 2),
+                $date,
+                $vehicleDisplay,
+                $log['driver'] ?? 'N/A',
+                $isDiesel ? round($liters, 2) : 0,
+                $isGas    ? round($liters, 2) : 0,
+                round($liters, 2),
+                round($amount, 2),
+                $log['department_code'] ?? $log['department'] ?? 'N/A',
+                $log['destination'] ?? 'N/A',
+                $log['purpose'] ?? 'N/A',
+            ];
+        }
+
+        // ---- TOTAL row ----
+        if (!empty($logs)) {
+            $rows[] = [
+                'TOTAL', '', '',
+                round($totals['diesel_liters'], 2),
+                round($totals['gasoline_liters'], 2),
+                round($totals['liters'], 2),
+                round($totals['amount'], 2),
+                '', '', '',
             ];
         }
 
         return $rows;
     }
 
-    public function headings(): array { return []; }
-
-    public function columnWidths(): array
+    public function title(): string
     {
-        return [
-            'A' => 6,  'B' => 12, 'C' => 16, 'D' => 24, 'E' => 14,
-            'F' => 20, 'G' => 28, 'H' => 28, 'I' => 12, 'J' => 12, 'K' => 16,
-        ];
-    }
-
-    public function title(): string { return 'Fuel Consumption Report'; }
-
-    public function styles(Worksheet $sheet)
-    {
-        return [
-            1 => ['font' => ['bold' => true, 'size' => 16, 'color' => ['argb' => 'FF1E40AF']]],
-            2 => ['font' => ['bold' => true, 'size' => 12, 'color' => ['argb' => 'FF4B5563']]],
-        ];
+        return 'Fuel Consumption';
     }
 
     public function registerEvents(): array
     {
         return [
-            AfterSheet::class => function(AfterSheet $event) {
+            AfterSheet::class => function (AfterSheet $event) {
                 $sheet = $event->sheet->getDelegate();
                 $highestRow = $sheet->getHighestRow();
-                $highestCol = 'K';
+                $highestCol = 'J';
 
                 // ============================================
-                // 1. TITLE ROWS (1-3)
+                // 1. HEADER BLOCK (rows 1-4)
                 // ============================================
                 $sheet->mergeCells('A1:' . $highestCol . '1');
                 $sheet->mergeCells('A2:' . $highestCol . '2');
                 $sheet->mergeCells('A3:' . $highestCol . '3');
+                $sheet->mergeCells('A4:' . $highestCol . '4');
 
-                $sheet->getStyle('A1:' . $highestCol . '3')
+                $sheet->getStyle('A1:' . $highestCol . '4')
                     ->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
-                $sheet->getStyle('A1:' . $highestCol . '3')
+                $sheet->getStyle('A1:' . $highestCol . '4')
                     ->getAlignment()->setVertical(Alignment::VERTICAL_CENTER);
 
+                // Row 1 — background
                 $sheet->getStyle('A1:' . $highestCol . '1')
-                    ->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('DBEAFE');
+                    ->getFill()->setFillType(Fill::FILL_SOLID);
+                $sheet->getStyle('A1:' . $highestCol . '1')
+                    ->getFill()->getStartColor()->setRGB('DBEAFE');
+                // Row 1 — font (split)
+                $sheet->getStyle('A1')->getFont()->setBold(true);
+                $sheet->getStyle('A1')->getFont()->setSize(16);
+                $sheet->getStyle('A1')->getFont()->getColor()->setRGB('1E40AF');
+
+                // Row 2 — background
                 $sheet->getStyle('A2:' . $highestCol . '2')
-                    ->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('F3F4F6');
-
-                // Merge period row
-                $sheet->mergeCells('A5:' . $highestCol . '5');
-                $sheet->getStyle('A5:' . $highestCol . '5')
-                    ->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+                    ->getFill()->setFillType(Fill::FILL_SOLID);
+                $sheet->getStyle('A2:' . $highestCol . '2')
+                    ->getFill()->getStartColor()->setRGB('F3F4F6');
+                // Row 2 — font (split)
+                $sheet->getStyle('A2')->getFont()->setBold(true);
+                $sheet->getStyle('A2')->getFont()->setSize(11);
+                $sheet->getStyle('A2')->getFont()->getColor()->setRGB('4B5563');
 
                 // ============================================
-                // 2. FIND SECTION ROW (dynamic)
+                // 2. TABLE HEADER (rows 6 and 7)
                 // ============================================
-                $sectionRow = null;
-                for ($r = 1; $r <= $highestRow; $r++) {
-                    $val = (string) $sheet->getCell('A' . $r)->getValue();
-                    if (stripos($val, 'FUEL CONSUMPTION DETAILS') !== false) {
-                        $sectionRow = $r;
-                        break;
-                    }
-                }
+                $headerRow1 = 6;
+                $headerRow2 = 7;
 
-                if (!$sectionRow) $sectionRow = 7;
-                $headerRow = $sectionRow + 1;
+                $sheet->mergeCells('A' . $headerRow1 . ':A' . $headerRow2);
+                $sheet->mergeCells('B' . $headerRow1 . ':B' . $headerRow2);
+                $sheet->mergeCells('C' . $headerRow1 . ':C' . $headerRow2);
+                $sheet->mergeCells('D' . $headerRow1 . ':E' . $headerRow1);
+                $sheet->mergeCells('F' . $headerRow1 . ':F' . $headerRow2);
+                $sheet->mergeCells('G' . $headerRow1 . ':G' . $headerRow2);
+                $sheet->mergeCells('H' . $headerRow1 . ':H' . $headerRow2);
+                $sheet->mergeCells('I' . $headerRow1 . ':I' . $headerRow2);
+                $sheet->mergeCells('J' . $headerRow1 . ':J' . $headerRow2);
 
-                // Section title style
-                $sheet->mergeCells('A' . $sectionRow . ':' . $highestCol . $sectionRow);
-                $sheet->getStyle('A' . $sectionRow . ':' . $highestCol . $sectionRow)
-                    ->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('BFDBFE');
-                $sheet->getStyle('A' . $sectionRow . ':' . $highestCol . $sectionRow)
-                    ->getFont()->setBold(true)->setSize(12);
-                $sheet->getStyle('A' . $sectionRow . ':' . $highestCol . $sectionRow)
-                    ->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT);
+                // Header background
+                $sheet->getStyle('A' . $headerRow1 . ':' . $highestCol . $headerRow2)
+                    ->getFill()->setFillType(Fill::FILL_SOLID);
+                $sheet->getStyle('A' . $headerRow1 . ':' . $highestCol . $headerRow2)
+                    ->getFill()->getStartColor()->setRGB('2563EB');
 
-                // Header row style
-                $sheet->getStyle('A' . $headerRow . ':' . $highestCol . $headerRow)
-                    ->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('2563EB');
-                $sheet->getStyle('A' . $headerRow . ':' . $highestCol . $headerRow)
-                    ->getFont()->setBold(true)->getColor()->setRGB('FFFFFF');
-                $sheet->getStyle('A' . $headerRow . ':' . $highestCol . $headerRow)
-                    ->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+                // Header font (split — setSize before getColor)
+                $sheet->getStyle('A' . $headerRow1 . ':' . $highestCol . $headerRow2)
+                    ->getFont()->setBold(true);
+                $sheet->getStyle('A' . $headerRow1 . ':' . $highestCol . $headerRow2)
+                    ->getFont()->setSize(10);
+                $sheet->getStyle('A' . $headerRow1 . ':' . $highestCol . $headerRow2)
+                    ->getFont()->getColor()->setRGB('FFFFFF');
+
+                // Header alignment
+                $sheet->getStyle('A' . $headerRow1 . ':' . $highestCol . $headerRow2)
+                    ->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER)
+                    ->setVertical(Alignment::VERTICAL_CENTER)
+                    ->setWrapText(true);
+
+                // Header border
+                $sheet->getStyle('A' . $headerRow1 . ':' . $highestCol . $headerRow2)
+                    ->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN);
 
                 // ============================================
                 // 3. DATA ROWS
                 // ============================================
-                $startRow = $headerRow + 1;
+                $startRow = $headerRow2 + 1;
                 $endRow = $highestRow;
 
                 if ($startRow <= $endRow) {
@@ -203,33 +204,28 @@ class FuelConsumptionExport implements
                     for ($row = $startRow; $row <= $endRow; $row++) {
                         $cellA = (string) $sheet->getCell('A' . $row)->getValue();
 
-                        if ($cellA === 'No data available') {
-                            $sheet->getStyle('A' . $row . ':' . $highestCol . $row)
-                                ->getFont()->setItalic(true)->getColor()->setRGB('94A3B8');
-                            $sheet->getStyle('A' . $row . ':' . $highestCol . $row)
-                                ->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
-                            continue;
-                        }
-
                         if ($cellA === 'TOTAL') {
                             $sheet->getStyle('A' . $row . ':' . $highestCol . $row)
-                                ->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('E5E7EB');
+                                ->getFill()->setFillType(Fill::FILL_SOLID);
+                            $sheet->getStyle('A' . $row . ':' . $highestCol . $row)
+                                ->getFill()->getStartColor()->setRGB('E5E7EB');
                             $sheet->getStyle('A' . $row . ':' . $highestCol . $row)
                                 ->getFont()->setBold(true);
                             continue;
                         }
 
-                        // Alternating on even rows only
                         if ($row % 2 == 0) {
                             $sheet->getStyle('A' . $row . ':' . $highestCol . $row)
-                                ->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('F8FAFC');
+                                ->getFill()->setFillType(Fill::FILL_SOLID);
+                            $sheet->getStyle('A' . $row . ':' . $highestCol . $row)
+                                ->getFill()->getStartColor()->setRGB('F8FAFC');
                         }
                     }
 
-                    // Number format for Qty + Amount
-                    $sheet->getStyle('J' . $startRow . ':J' . $endRow)
+                    // Number formats
+                    $sheet->getStyle('D' . $startRow . ':F' . $endRow)
                         ->getNumberFormat()->setFormatCode('#,##0.00');
-                    $sheet->getStyle('K' . $startRow . ':K' . $endRow)
+                    $sheet->getStyle('G' . $startRow . ':G' . $endRow)
                         ->getNumberFormat()->setFormatCode('₱#,##0.00');
                 }
 
@@ -239,13 +235,28 @@ class FuelConsumptionExport implements
                 $footerRow = $endRow + 2;
                 $sheet->mergeCells('A' . $footerRow . ':' . $highestCol . $footerRow);
                 $sheet->setCellValue('A' . $footerRow, '© ' . date('Y') . ' Laguindingan Municipality - Fuel Consumption Monitoring System');
-                $sheet->getStyle('A' . $footerRow)->getFont()->setSize(8)->getColor()->setRGB('94A3B8');
+                $sheet->getStyle('A' . $footerRow)->getFont()->setSize(8);
+                $sheet->getStyle('A' . $footerRow)->getFont()->getColor()->setRGB('94A3B8');
                 $sheet->getStyle('A' . $footerRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
 
                 // ============================================
                 // 5. FREEZE PANE
                 // ============================================
-                $sheet->freezePane('A' . ($headerRow + 1));
+                $sheet->freezePane('A' . ($headerRow2 + 1));
+
+                // ============================================
+                // 6. COLUMN WIDTHS
+                // ============================================
+                $sheet->getColumnDimension('A')->setWidth(12);
+                $sheet->getColumnDimension('B')->setWidth(24);
+                $sheet->getColumnDimension('C')->setWidth(20);
+                $sheet->getColumnDimension('D')->setWidth(10);
+                $sheet->getColumnDimension('E')->setWidth(10);
+                $sheet->getColumnDimension('F')->setWidth(10);
+                $sheet->getColumnDimension('G')->setWidth(14);
+                $sheet->getColumnDimension('H')->setWidth(14);
+                $sheet->getColumnDimension('I')->setWidth(28);
+                $sheet->getColumnDimension('J')->setWidth(28);
             },
         ];
     }

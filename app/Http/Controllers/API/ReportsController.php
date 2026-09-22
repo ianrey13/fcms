@@ -304,7 +304,7 @@ class ReportsController extends Controller
     // ============================================================
     // 3. BUDGET REPORT
     // ============================================================
- public function getBudgetReport(Request $request)
+public function getBudgetReport(Request $request)
 {
     try {
         $departmentId = $request->get('department_id');
@@ -320,7 +320,7 @@ class ReportsController extends Controller
                 ?: Department::where('is_active', 1)->orderBy('department_id')->value('department_id');
         }
 
-        // 2. Annual budget — the ONLY source of truth
+        // 2. Current annual
         $annual = DB::table('annual_budgets')
             ->where('department_id', $departmentId)
             ->where('fiscal_year', $year)
@@ -336,12 +336,8 @@ class ReportsController extends Controller
             ->whereYear('p.week_start', $year)
             ->sum('gs.amount_released');
 
-        // 4. Weekly periods with their utilization
+        // 4. Periods — used computed from gas_slip directly (not weekly_budget_usage)
         $periodQuery = DB::table('dept_budget_period as p')
-            ->leftJoin('weekly_budget_usage as u', function ($join) {
-                $join->on('u.department_id', '=', 'p.department_id')
-                     ->on('u.week_start',   '=', 'p.week_start');
-            })
             ->where('p.department_id', $departmentId)
             ->whereYear('p.week_start', $year);
 
@@ -356,12 +352,15 @@ class ReportsController extends Controller
                 'p.week_start',
                 'p.week_end',
                 'p.status',
-                'u.amount_used as used',
+                DB::raw("(
+                    SELECT COALESCE(SUM(gs.amount_released), 0)
+                    FROM gas_slip gs
+                    WHERE gs.period_id = p.period_id
+                ) AS used"),
             ])
             ->get();
 
-        // 5. Carry-forward loop
-        // ✅ NO budget_history replay. opening = current annual_amount.
+        // 5. Simple carry-forward. Current annual_amount as opening.
         $openingBalance = $annualAllocated;
         $rows = collect();
 
@@ -401,7 +400,7 @@ class ReportsController extends Controller
                     'weekly_suggested'  => $weeklySuggested,
                     'month_allocated'   => round($rows->first()['allocated'] ?? 0, 2),
                     'month_used'        => round($rows->sum('used'), 2),
-                    'month_remaining'   => round($rows->last()['remaining'] ?? 0, 2),
+                    'month_remaining'   => $rows->last()['remaining'] ?? 0,
                 ],
                 'periods'   => $rows,
                 'filters'   => [
@@ -1908,67 +1907,170 @@ public function getMoActivityLogs(Request $request)
     }
 
     private function buildFuelConsumptionPDFHTML($reportData)
-    {
-        $logs = $reportData['recent_logs'] ?? [];
-        $filters = $reportData['filters'] ?? [];
-        $totalLiters = 0;
-        $totalCost = 0;
+{
+    $logs    = $reportData['recent_logs'] ?? [];
+    $filters = $reportData['filters'] ?? [];
 
-        $html = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Fuel Consumption Report</title>
-        <style>
-            * { margin: 0; padding: 0; box-sizing: border-box; }
-            body { font-family: "DejaVu Sans", Arial, sans-serif; font-size: 9px; padding: 20px; color: #1e293b; }
-            .header { text-align: center; border-bottom: 2px solid #2563eb; padding-bottom: 12px; margin-bottom: 15px; }
-            .header h1 { font-size: 18px; color: #1e293b; font-weight: bold; }
-            .header p { color: #64748b; font-size: 10px; margin-top: 4px; }
-            table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 8px; }
-            th { background: #2563eb; color: white; padding: 6px 4px; text-align: center; font-weight: bold; border: 1px solid #1e40af; }
-            td { padding: 5px 4px; border: 1px solid #d1d5db; text-align: center; font-size: 8px; }
-            tr:nth-child(even) { background: #f8fafc; }
-            .total-row { background: #e2e8f0; font-weight: bold; }
-            .text-right { text-align: right; }
-            .text-left { text-align: left; }
-            .footer { text-align: center; border-top: 1px solid #e2e8f0; padding-top: 10px; margin-top: 15px; color: #94a3b8; font-size: 7px; }
-        </style></head><body>
-        <div class="header"><h1>FUEL CONSUMPTION REPORT</h1><p>LGU Laguindingan - FCMS</p>
-        <p style="font-size: 8px; color: #64748b;">Generated: ' . now()->format('F d, Y h:i A') . '</p></div>
-        <table><thead><tr>
-        <th>#</th><th>Date</th><th>Ticket #</th><th>Vehicle</th><th>Plate</th><th>Driver</th>
-        <th>Department</th><th>Destination</th><th>Qty (L)</th><th>Amount</th>
-        </tr></thead><tbody>';
+    $totals = [
+        'diesel_liters'   => 0,
+        'gasoline_liters' => 0,
+        'liters'          => 0,
+        'amount'          => 0,
+    ];
 
-        if (count($logs) > 0) {
-            $i = 1;
-            foreach ($logs as $log) {
-                $liters = (float) ($log['liters_availed'] ?? 0);
-                $amount = (float) ($log['amount_on_receipt'] ?? 0);
-                $totalLiters += $liters;
-                $totalCost += $amount;
-                $dateRaw = $log['trip_ended_at'] ?? null;
-                $dateDisplay = $dateRaw ? \Carbon\Carbon::parse($dateRaw)->format('m/d/Y') : 'N/A';
+    $periodText = 'Period: ' . ($filters['start_date'] ?? 'All')
+                . ' to ' . ($filters['end_date'] ?? 'All');
 
-                $html .= '<tr>
-                    <td>' . $i++ . '</td>
-                    <td>' . $dateDisplay . '</td>
-                    <td>' . ($log['trip_ticket_number'] ?? 'N/A') . '</td>
-                    <td class="text-left">' . ($log['vehicle'] ?? 'N/A') . '</td>
-                    <td>' . ($log['plate_number'] ?? 'N/A') . '</td>
-                    <td class="text-left">' . ($log['driver'] ?? 'N/A') . '</td>
-                    <td class="text-left">' . ($log['department'] ?? 'N/A') . '</td>
-                    <td class="text-left">' . ($log['destination'] ?? 'N/A') . '</td>
-                    <td class="text-right">' . number_format($liters, 2) . '</td>
-                    <td class="text-right" style="color:#059669;font-weight:bold;">₱' . number_format($amount, 2) . '</td>
-                </tr>';
-            }
-            $html .= '<tr class="total-row"><td colspan="8" class="text-right">TOTAL</td>
-                <td class="text-right">' . number_format($totalLiters, 2) . '</td>
-                <td class="text-right" style="color:#059669;">₱' . number_format($totalCost, 2) . '</td></tr>';
-        } else {
-            $html .= '<tr><td colspan="10" style="text-align:center;color:#94a3b8;padding:20px;">No data</td></tr>';
+    $html = '<!DOCTYPE html><html><head><meta charset="utf-8">';
+    $html .= '<title>Fuel Consumption Report</title>';
+    $html .= '<style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: "DejaVu Sans", Arial, sans-serif; font-size: 9px; padding: 20px; color: #1e293b; }
+
+        .report-header { text-align: center; border-bottom: 2px solid #2563eb; padding-bottom: 12px; margin-bottom: 15px; }
+        .report-header h1 { font-size: 18px; font-weight: bold; color: #1e3a8a; letter-spacing: 0.5px; }
+        .report-header .org { font-size: 10px; color: #64748b; margin-top: 4px; }
+        .report-header .meta { font-size: 8px; color: #94a3b8; margin-top: 3px; }
+
+        table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 8px; }
+        th {
+            background: #2563eb;
+            color: white;
+            padding: 6px 4px;
+            text-align: center;
+            font-weight: bold;
+            border: 1px solid #1e40af;
+            font-size: 8px;
         }
-        $html .= '</tbody></table><div class="footer"><p>FCMS — © ' . date('Y') . ' Laguindingan</p></div></body></html>';
-        return $html;
+        td {
+            padding: 5px 4px;
+            border: 1px solid #d1d5db;
+            font-size: 8px;
+            vertical-align: top;
+        }
+        tr:nth-child(even) td { background: #f8fafc; }
+
+        .total-row td {
+            background: #e2e8f0;
+            font-weight: bold;
+            border-top: 2px solid #2563eb;
+            padding: 6px 4px;
+        }
+
+        .text-left   { text-align: left; }
+        .text-right  { text-align: right; }
+        .text-center { text-align: center; }
+
+        .vehicle-main { font-weight: bold; color: #1e293b; }
+        .vehicle-sub  { font-family: "DejaVu Sans Mono", monospace; font-size: 7px; color: #64748b; margin-top: 1px; }
+        .amount { color: #059669; font-weight: bold; }
+
+        .footer {
+            text-align: center;
+            border-top: 1px solid #e2e8f0;
+            padding-top: 10px;
+            margin-top: 15px;
+            color: #94a3b8;
+            font-size: 7px;
+        }
+    </style></head><body>';
+
+    // ---- Header block ----
+    $html .= '<div class="report-header">';
+    $html .= '<h1>FUEL CONSUMPTION REPORT</h1>';
+    $html .= '<p class="org">Laguindingan Municipality - Fuel Consumption Monitoring System</p>';
+    $html .= '<p class="meta">' . e($periodText) . '</p>';
+    $html .= '<p class="meta">Generated: ' . now()->format('F d, Y h:i A') . '</p>';
+    $html .= '</div>';
+
+    // ---- Table ----
+    $html .= '<table><thead>';
+    $html .= '<tr>';
+    $html .= '<th rowspan="2" style="vertical-align: bottom;">Date</th>';
+    $html .= '<th rowspan="2" style="vertical-align: bottom;">Vehicle</th>';
+    $html .= '<th rowspan="2" style="vertical-align: bottom;">Driver</th>';
+    $html .= '<th colspan="2">Fuel Type</th>';
+    $html .= '<th rowspan="2" style="vertical-align: bottom;">Qty (L)</th>';
+    $html .= '<th rowspan="2" style="vertical-align: bottom;">Amount (₱)</th>';
+    $html .= '<th rowspan="2" style="vertical-align: bottom;">Department</th>';
+    $html .= '<th rowspan="2" style="vertical-align: bottom;">Destination</th>';
+    $html .= '<th rowspan="2" style="vertical-align: bottom;">Purpose</th>';
+    $html .= '</tr>';
+    $html .= '<tr>';
+    $html .= '<th>Diesel</th>';
+    $html .= '<th>Gasoline</th>';
+    $html .= '</tr>';
+    $html .= '</thead><tbody>';
+
+    if (empty($logs)) {
+        $html .= '<tr><td colspan="10" class="text-center" style="padding: 20px; color: #94a3b8;">No fuel consumption data available</td></tr>';
+    } else {
+        foreach ($logs as $log) {
+            $liters = (float) ($log['liters_availed'] ?? 0);
+            $amount = (float) ($log['amount_on_receipt'] ?? 0);
+            $type   = strtolower($log['fuel_type'] ?? '');
+            $isDiesel = $type === 'diesel';
+            $isGas    = in_array($type, ['regular', 'premium', 'gasoline']);
+
+            $totals['liters'] += $liters;
+            $totals['amount'] += $amount;
+            if ($isDiesel) $totals['diesel_liters'] += $liters;
+            if ($isGas)    $totals['gasoline_liters'] += $liters;
+
+            $date = 'N/A';
+            if (!empty($log['trip_ended_at'])) {
+                try {
+                    $date = \Carbon\Carbon::parse($log['trip_ended_at'])->format('Y-m-d');
+                } catch (\Exception $e) {
+                    $date = 'N/A';
+                }
+            }
+
+            $vehicleModel = $log['vehicle_model'] ?? $log['vehicle'] ?? 'N/A';
+            $plate        = $log['plate_number'] ?? '';
+
+            $vehicleCell = '<div class="vehicle-main">' . e($vehicleModel) . '</div>';
+            if ($plate && $plate !== 'N/A') {
+                $vehicleCell .= '<div class="vehicle-sub">' . e($plate) . '</div>';
+            }
+
+            $html .= '<tr>';
+            $html .= '<td class="text-center">' . e($date) . '</td>';
+            $html .= '<td class="text-left">' . $vehicleCell . '</td>';
+            $html .= '<td class="text-left">' . e($log['driver'] ?? 'N/A') . '</td>';
+            $html .= '<td class="text-center">' . ($isDiesel ? number_format($liters, 2) : '0') . '</td>';
+            $html .= '<td class="text-center">' . ($isGas    ? number_format($liters, 2) : '0') . '</td>';
+            $html .= '<td class="text-right">'  . number_format($liters, 2) . '</td>';
+            $html .= '<td class="text-right amount">₱' . number_format($amount, 2) . '</td>';
+            $html .= '<td class="text-center">' . e($log['department_code'] ?? $log['department'] ?? 'N/A') . '</td>';
+            $html .= '<td class="text-left">' . e($log['destination'] ?? 'N/A') . '</td>';
+            $html .= '<td class="text-left">' . e($log['purpose'] ?? 'N/A') . '</td>';
+            $html .= '</tr>';
+        }
+
+        // ---- TOTAL row ----
+        $html .= '<tr class="total-row">';
+        $html .= '<td colspan="3" class="text-right">TOTAL</td>';
+        $html .= '<td class="text-center">' . number_format($totals['diesel_liters'], 2) . '</td>';
+        $html .= '<td class="text-center">' . number_format($totals['gasoline_liters'], 2) . '</td>';
+        $html .= '<td class="text-right">'  . number_format($totals['liters'], 2) . '</td>';
+        $html .= '<td class="text-right amount">₱' . number_format($totals['amount'], 2) . '</td>';
+        $html .= '<td colspan="3"></td>';
+        $html .= '</tr>';
     }
+
+    $html .= '</tbody></table>';
+
+    // ---- Footer ----
+    $html .= '<div class="footer">';
+    $html .= '<p>This report is automatically generated by the FCMS System</p>';
+    $html .= '<p>© ' . date('Y') . ' Laguindingan Municipality - Fuel Consumption Monitoring System</p>';
+    $html .= '</div>';
+
+    $html .= '</body></html>';
+
+    return $html;
+}
 
     private function buildFuelReceiptPDFHTML($reportData)
     {
