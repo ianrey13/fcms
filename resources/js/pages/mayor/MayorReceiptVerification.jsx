@@ -300,8 +300,11 @@ const MayorReceiptVerification = () => {
   const [selectedReceipt, setSelectedReceipt] = useState(null);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+
+  // ✅ FIXED: added unit_price to initial state
   const [editData, setEditData] = useState({
     invoice_number: "",
+    unit_price: "",
     amount_on_receipt: "",
   });
 
@@ -384,6 +387,7 @@ const MayorReceiptVerification = () => {
     setSelectedReceipt(receipt);
     setEditData({
       invoice_number: receipt.invoice_number || "",
+      unit_price: receipt.unit_price || "",
       amount_on_receipt: receipt.amount || "",
     });
     setIsEditing(false);
@@ -394,6 +398,7 @@ const MayorReceiptVerification = () => {
     if (isEditing) {
       setEditData({
         invoice_number: selectedReceipt?.invoice_number || "",
+        unit_price: selectedReceipt?.unit_price || "",
         amount_on_receipt: selectedReceipt?.amount || "",
       });
     }
@@ -421,8 +426,11 @@ const MayorReceiptVerification = () => {
       return;
     }
 
+    const unitPrice = parseFloat(editData.unit_price) || 0;
+
     const payload = {
       invoice_number: editData.invoice_number || null,
+      unit_price: unitPrice > 0 ? unitPrice : null,
       amount_on_receipt: amount,
     };
 
@@ -894,8 +902,8 @@ const MayorReceiptVerification = () => {
                   </div>
                 </div>
 
-                {/* Amount Section */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                {/* Amount Section — 4 columns now: Invoice, Released, Unit Price, Amount */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
                   {/* Invoice Number */}
                   <div>
                     <p className="text-xs text-slate-500 dark:text-slate-400">Invoice Number</p>
@@ -922,6 +930,41 @@ const MayorReceiptVerification = () => {
                     <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">
                       From fund issuance
                     </p>
+                  </div>
+
+                  {/* ✅ NEW: Unit Price (editable) */}
+                  <div className={`p-3 rounded-lg border ${
+                    isEditing && !isVerifiedView
+                      ? 'bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800'
+                      : 'bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700'
+                  }`}>
+                    <p className={`text-xs font-semibold ${
+                      isEditing && !isVerifiedView
+                        ? 'text-blue-600 dark:text-blue-400'
+                        : 'text-slate-500 dark:text-slate-400'
+                    }`}>
+                      Unit Price {isEditing && !isVerifiedView && '(per L)'}
+                    </p>
+                    {isEditing && !isVerifiedView ? (
+                      <div className="relative mt-1">
+                        <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-500 dark:text-slate-400 text-sm font-medium">
+                          ₱
+                        </span>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={editData.unit_price}
+                          onChange={(e) => handleInputChange('unit_price', e.target.value)}
+                          className="pl-7 h-9 text-sm font-semibold bg-white dark:bg-slate-900 border-blue-300 dark:border-blue-700 text-slate-900 dark:text-white"
+                          placeholder="0.00"
+                        />
+                      </div>
+                    ) : (
+                      <p className="font-semibold text-blue-600 dark:text-blue-400 text-base mt-0.5">
+                        {formatCurrency(selectedReceipt.unit_price)}
+                      </p>
+                    )}
                   </div>
 
                   {/* Amount on Receipt (editable) */}
@@ -964,8 +1007,8 @@ const MayorReceiptVerification = () => {
                 {isEditing && !isVerifiedView && (
                   <div className="text-xs text-slate-600 dark:text-slate-300 bg-blue-50 dark:bg-blue-950/30 p-3 rounded-lg border border-blue-200 dark:border-blue-800">
                     <Info className="h-4 w-4 inline mr-1 text-blue-500 dark:text-blue-400" />
-                    Enter the <strong>Amount on Receipt</strong> (from the physical receipt).
-                    It must not exceed the <strong>Amount Released</strong> of{' '}
+                    Enter the <strong>Unit Price</strong> and <strong>Amount on Receipt</strong> (from the physical receipt).
+                    Amount must not exceed the <strong>Amount Released</strong> of{' '}
                     <strong>{formatCurrency(selectedReceipt.amount_released)}</strong>.
                   </div>
                 )}
