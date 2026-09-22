@@ -1261,43 +1261,55 @@ const BudgetAllocation = () => {
                                                         </Button>
 
                                                         {!isBulkMode && (
-                                                            <>
-                                                                <Button
-                                                                    variant="ghost"
-                                                                    size="sm"
-                                                                    onClick={() => {
-                                                                        setAddBudgetData({
-                                                                            department_id:
-                                                                                budget.department_id.toString(),
-                                                                            additional_amount:
-                                                                                "",
-                                                                            reason: "",
-                                                                        });
-                                                                        setAddErrors({});
-                                                                        setAddTouched({});
-                                                                        setShowAddBudgetDialog(
-                                                                            true
-                                                                        );
-                                                                    }}
-                                                                    className="text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:text-emerald-300 dark:hover:bg-emerald-950/30 h-9 w-9 p-0 rounded-lg transition-all duration-200"
-                                                                    title="Add Budget"
-                                                                >
-                                                                    <Plus className="h-4 w-4" />
-                                                                </Button>
+    <>
+        {/* ✅ + button — behavior depends on whether budget exists */}
+        {!budget.has_budget ? (
+            // No budget yet → open the SET dialog (annual_amount only, calls store())
+            <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => handleEdit(budget)}  // reuses the edit dialog, store() mutation
+                className="text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:text-emerald-300 dark:hover:bg-emerald-950/30 h-9 w-9 p-0 rounded-lg transition-all duration-200"
+                title="Set Annual Budget"
+            >
+                <Plus className="h-4 w-4" />
+            </Button>
+        ) : (
+            // Has budget → open the ADD-ADDITIONAL dialog (increment, calls addBudget())
+            <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                    setAddBudgetData({
+                        department_id: budget.department_id.toString(),
+                        additional_amount: "",
+                        reason: "",
+                    });
+                    setAddErrors({});
+                    setAddTouched({});
+                    setShowAddBudgetDialog(true);
+                }}
+                className="text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:text-emerald-300 dark:hover:bg-emerald-950/30 h-9 w-9 p-0 rounded-lg transition-all duration-200"
+                title="Add Additional Budget"
+            >
+                <Plus className="h-4 w-4" />
+            </Button>
+        )}
 
-                                                                <Button
-                                                                    variant="ghost"
-                                                                    size="sm"
-                                                                    onClick={() =>
-                                                                        handleEdit(budget)
-                                                                    }
-                                                                    className="text-green-600 hover:text-green-700 hover:bg-green-50 dark:text-green-400 dark:hover:text-green-300 dark:hover:bg-green-950/30 h-9 w-9 p-0 rounded-lg transition-all duration-200"
-                                                                    title="Edit Annual Budget"
-                                                                >
-                                                                    <Edit className="h-4 w-4" />
-                                                                </Button>
-                                                            </>
-                                                        )}
+        {/* ✅ Edit button — only when budget already exists (overwrite existing annual) */}
+        {budget.has_budget && (
+            <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => handleEdit(budget)}
+                className="text-green-600 hover:text-green-700 hover:bg-green-50 dark:text-green-400 dark:hover:text-green-300 dark:hover:bg-green-950/30 h-9 w-9 p-0 rounded-lg transition-all duration-200"
+                title="Set Annual Budget"
+            >
+                <Edit className="h-4 w-4" />
+            </Button>
+        )}
+    </>
+)}
                                                     </div>
                                                 </TableCell>
                                             </TableRow>
@@ -1322,15 +1334,17 @@ const BudgetAllocation = () => {
             <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
                 <DialogContent className="dark:bg-slate-800 dark:border-slate-700 max-w-md">
                     <DialogHeader>
-                        <DialogTitle className="flex items-center gap-2 text-slate-900 dark:text-white">
-                            <div className="p-2 rounded-xl bg-green-500/10">
-                                <PhilippinePeso className="h-5 w-5 text-green-600 dark:text-green-400" />
-                            </div>
-                            Edit Annual Budget
-                        </DialogTitle>
-                        <DialogDescription className="dark:text-slate-400">
-                            Update annual budget for {editingBudget?.department_name}
-                        </DialogDescription>
+                       <DialogTitle className="flex items-center gap-2 text-slate-900 dark:text-white">
+    <div className="p-2 rounded-xl bg-green-500/10">
+        <PhilippinePeso className="h-5 w-5 text-green-600 dark:text-green-400" />
+    </div>
+    {editingBudget?.has_budget ? "Edit Annual Budget" : "Set Annual Budget"}
+</DialogTitle>
+<DialogDescription className="dark:text-slate-400">
+    {editingBudget?.has_budget
+        ? `Update annual budget for ${editingBudget?.department_name}`
+        : `Set the initial annual budget for ${editingBudget?.department_name}`}
+</DialogDescription>
                     </DialogHeader>
 
                     <div className="space-y-4">
@@ -1424,18 +1438,18 @@ const BudgetAllocation = () => {
                         >
                             Cancel
                         </Button>
-                        <Button
-                            onClick={handleSetBudget}
-                            disabled={setBudgetMutation.isPending}
-                            className="bg-green-600 hover:bg-green-700 text-white"
-                        >
-                            {setBudgetMutation.isPending ? (
-                                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                            ) : (
-                                <Save className="h-4 w-4 mr-2" />
-                            )}
-                            Save Annual Budget
-                        </Button>
+                      <Button
+    onClick={handleSetBudget}
+    disabled={setBudgetMutation.isPending}
+    className="bg-green-600 hover:bg-green-700 text-white"
+>
+    {setBudgetMutation.isPending ? (
+        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+    ) : (
+        <Save className="h-4 w-4 mr-2" />
+    )}
+    Save Annual Budget
+</Button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
