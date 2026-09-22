@@ -5,11 +5,11 @@
 // 1. Fuel Receipt Report
 // 2. Budget Utilization Report
 // 3. Reconciliation Report
-// 4. Billing Statement of Fuel
+// 4. Billing Statement of Fuel (uses 2 date pickers — not month)
 //
-// ✅ Each card has INDEPENDENT Department + Month filters
-// ✅ Month = single dropdown with "All Months" (no range toggle)
-// ✅ Year fixed to current year internally
+// ✅ Each card has INDEPENDENT filters
+// ✅ Billing Statement: Start Date + End Date (Popover + Calendar)
+// ✅ Year fixed to current year internally for the other three cards
 // ============================================
 
 import React, { useState, useMemo, useCallback } from "react";
@@ -27,6 +27,12 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
+} from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
 import { saveAs } from "file-saver";
 import {
     Select,
@@ -47,6 +53,7 @@ import {
     Loader2,
     FileText,
     CalendarRange,
+    CalendarIcon,
     TrendingUp,
     TrendingDown,
     CheckCircle,
@@ -58,6 +65,7 @@ import {
     AlertCircle,
     Receipt,
     ArrowLeft,
+    ArrowRight,
     Wallet,
     FileCheck,
     PhilippinePeso,
@@ -67,7 +75,7 @@ import { format, endOfMonth } from "date-fns";
 import { useNavigate } from "react-router-dom";
 
 // ============================================
-// SAFE ARRAY EXTRACTION HELPER
+// SAFE ARRAY EXTRACTION
 // ============================================
 
 const extractArray = (response) => {
@@ -102,16 +110,8 @@ const extractArray = (response) => {
     return [];
 };
 
-// ============================================
-// CACHE CONSTANTS
-// ============================================
-
 const CACHE_5MIN = 5 * 60 * 1000;
 const CACHE_10MIN = 10 * 60 * 1000;
-
-// ============================================
-// CONSTANTS & HELPERS
-// ============================================
 
 const RECEIPT_STATUS_OPTIONS = [
     { value: "all", label: "All Status" },
@@ -161,7 +161,6 @@ const formatNumber = (num) => {
     }).format(num);
 };
 
-// Derive date range from a single month (or "all") + current year
 const deriveDateRange = (month, year) => {
     if (month === "all") {
         return {
@@ -182,7 +181,7 @@ const monthLabel = (month, year) =>
         : `${MONTH_OPTIONS.find((m) => m.value === month)?.label} ${year}`;
 
 // ============================================
-// STATS CARD COMPONENT
+// STATS CARD
 // ============================================
 
 const StatsCard = ({ title, value, icon: Icon, color, subtitle }) => (
@@ -211,7 +210,7 @@ const StatsCard = ({ title, value, icon: Icon, color, subtitle }) => (
 );
 
 // ============================================
-// INLINE FILTER CONTROLS (for card headers)
+// INLINE FILTERS (Department + Month)
 // ============================================
 
 const InlineFilters = ({
@@ -221,59 +220,99 @@ const InlineFilters = ({
     setMonthFilter,
     departments,
     onInteract,
-}) => {
-    return (
-        <>
-            {/* Department */}
-            <Select
-                value={departmentFilter}
-                onValueChange={setDepartmentFilter}
+}) => (
+    <>
+        <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
+            <SelectTrigger
+                className="w-[180px] h-8 text-xs"
+                onClick={onInteract}
             >
-                <SelectTrigger
-                    className="w-[180px] h-8 text-xs"
-                    onClick={onInteract}
-                >
-                    <SelectValue placeholder="All Departments" />
-                </SelectTrigger>
-                <SelectContent>
-                    <SelectItem value="all">All Departments</SelectItem>
-                    {departments.map((d) => (
-                        <SelectItem
-                            key={d.department_id}
-                            value={String(d.department_id)}
-                        >
-                            {d.department_name}
-                        </SelectItem>
-                    ))}
-                </SelectContent>
-            </Select>
+                <SelectValue placeholder="All Departments" />
+            </SelectTrigger>
+            <SelectContent>
+                <SelectItem value="all">All Departments</SelectItem>
+                {departments.map((d) => (
+                    <SelectItem
+                        key={d.department_id}
+                        value={String(d.department_id)}
+                    >
+                        {d.department_name}
+                    </SelectItem>
+                ))}
+            </SelectContent>
+        </Select>
 
-            {/* Month */}
-            <Select
-                value={String(monthFilter)}
-                onValueChange={(v) =>
-                    setMonthFilter(v === "all" ? "all" : parseInt(v))
-                }
+        <Select
+            value={String(monthFilter)}
+            onValueChange={(v) =>
+                setMonthFilter(v === "all" ? "all" : parseInt(v))
+            }
+        >
+            <SelectTrigger
+                className="w-[140px] h-8 text-xs"
+                onClick={onInteract}
             >
-                <SelectTrigger
-                    className="w-[140px] h-8 text-xs"
-                    onClick={onInteract}
+                <SelectValue placeholder="Month" />
+            </SelectTrigger>
+            <SelectContent>
+                <SelectItem value="all">All Months</SelectItem>
+                {MONTH_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={String(opt.value)}>
+                        {opt.label}
+                    </SelectItem>
+                ))}
+            </SelectContent>
+        </Select>
+    </>
+);
+
+// ============================================
+// DATE PICKER BUTTON (Popover + Calendar)
+// ============================================
+
+const DatePickerButton = ({
+    date,
+    setDate,
+    placeholder,
+    disabled,
+    onInteract,
+}) => {
+    const [open, setOpen] = React.useState(false);
+
+    return (
+        <Popover open={open} onOpenChange={setOpen}>
+            <PopoverTrigger asChild>
+                <button
+                    type="button"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        if (onInteract) onInteract(e);
+                    }}
+                    className={`inline-flex items-center gap-1.5 h-8 px-2.5 text-xs rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors ${
+                        !date ? "text-slate-500 dark:text-slate-400" : ""
+                    }`}
                 >
-                    <SelectValue placeholder="Month" />
-                </SelectTrigger>
-                <SelectContent>
-                    <SelectItem value="all">All Months</SelectItem>
-                    {MONTH_OPTIONS.map((opt) => (
-                        <SelectItem
-                            key={opt.value}
-                            value={String(opt.value)}
-                        >
-                            {opt.label}
-                        </SelectItem>
-                    ))}
-                </SelectContent>
-            </Select>
-        </>
+                    <CalendarIcon className="h-3.5 w-3.5" />
+                    {date ? format(date, "MMM d, yyyy") : placeholder}
+                </button>
+            </PopoverTrigger>
+            <PopoverContent
+                align="start"
+                className="w-auto p-0"
+                onClick={(e) => e.stopPropagation()}
+            >
+                <Calendar
+                    mode="single"
+                    selected={date}
+                    onSelect={(d) => {
+                        setDate(d);
+                        setOpen(false);
+                    }}
+                    disabled={disabled}
+                    initialFocus
+                />
+            </PopoverContent>
+        </Popover>
     );
 };
 
@@ -286,30 +325,28 @@ const MayorReports = () => {
     const queryClient = useQueryClient();
     const { isConnected } = useRealtime();
 
-    // Fixed internally — not exposed as a filter
     const yearFilter = new Date().getFullYear();
     const currentMonth = new Date().getMonth() + 1;
 
-    // ============ PER-CARD FILTERS (independent) ============
-
-    // 1. Fuel Receipt card
+    // ---- Fuel Receipt ----
     const [frDepartment, setFrDepartment] = useState("all");
     const [frMonth, setFrMonth] = useState(currentMonth);
     const [receiptStatusFilter, setReceiptStatusFilter] = useState("all");
 
-    // 2. Budget Utilization card
+    // ---- Budget Utilization ----
     const [buDepartment, setBuDepartment] = useState("all");
     const [buMonth, setBuMonth] = useState(currentMonth);
 
-    // 3. Reconciliation card
+    // ---- Reconciliation ----
     const [rcDepartment, setRcDepartment] = useState("all");
     const [rcMonth, setRcMonth] = useState(currentMonth);
     const [reconciliationThreshold, setReconciliationThreshold] =
         useState("all");
 
-    // 4. Billing Statement card
+    // ---- Billing Statement (DATE PICKERS) ----
     const [bsDepartment, setBsDepartment] = useState("all");
-    const [bsMonth, setBsMonth] = useState(currentMonth);
+    const [bsStartDate, setBsStartDate] = useState(null);
+    const [bsEndDate, setBsEndDate] = useState(null);
 
     const [exportLoading, setExportLoading] = useState(false);
 
@@ -320,15 +357,15 @@ const MayorReports = () => {
         billingStatement: true,
     });
 
-    // ============================================
-    // AUTO-REFRESH
-    // ============================================
+    // ============ AUTO-REFRESH ============
 
     const fetchAllData = useCallback(() => {
         queryClient.invalidateQueries({ queryKey: ["mayor-fuel-receipt"] });
         queryClient.invalidateQueries({ queryKey: ["mayor-budget"] });
         queryClient.invalidateQueries({ queryKey: ["mayor-reconciliation"] });
-        queryClient.invalidateQueries({ queryKey: ["mayor-billing-statement"] });
+        queryClient.invalidateQueries({
+            queryKey: ["mayor-billing-statement"],
+        });
     }, [queryClient]);
 
     useAutoRefresh(
@@ -341,9 +378,7 @@ const MayorReports = () => {
         fetchAllData,
     );
 
-    // ============================================
-    // DATE RANGES (per card)
-    // ============================================
+    // ============ DATE RANGES ============
 
     const frDateRange = useMemo(
         () => deriveDateRange(frMonth, yearFilter),
@@ -353,14 +388,17 @@ const MayorReports = () => {
         () => deriveDateRange(rcMonth, yearFilter),
         [rcMonth, yearFilter],
     );
-    const bsDateRange = useMemo(
-        () => deriveDateRange(bsMonth, yearFilter),
-        [bsMonth, yearFilter],
-    );
 
-    // ============================================
-    // DEPARTMENTS (shared source list)
-    // ============================================
+    // Billing Statement range comes directly from the two calendar pickers
+    const bsRange = useMemo(() => {
+        if (!bsStartDate || !bsEndDate) return null;
+        return {
+            startDate: format(bsStartDate, "yyyy-MM-dd"),
+            endDate: format(bsEndDate, "yyyy-MM-dd"),
+        };
+    }, [bsStartDate, bsEndDate]);
+
+    // ============ DEPARTMENTS ============
 
     const { data: departmentsRaw = [] } = useOptimizedQuery({
         queryKey: ["mayor-departments-selector"],
@@ -379,11 +417,9 @@ const MayorReports = () => {
     });
     const departments = departmentsRaw || [];
 
-    // ============================================
-    // QUERIES
-    // ============================================
+    // ============ QUERIES ============
 
-    // 1. FUEL RECEIPT REPORT
+    // 1. FUEL RECEIPT
     const { data: receiptData, isLoading: receiptLoading } = useQuery({
         queryKey: [
             "mayor-fuel-receipt",
@@ -411,23 +447,16 @@ const MayorReports = () => {
         staleTime: CACHE_5MIN,
     });
 
-    // 2. BUDGET UTILIZATION REPORT
+    // 2. BUDGET UTILIZATION
     const { data: budgetData, isLoading: budgetLoading } = useQuery({
-        queryKey: [
-            "mayor-budget",
-            yearFilter,
-            buDepartment,
-            buMonth,
-        ],
+        queryKey: ["mayor-budget", yearFilter, buDepartment, buMonth],
         queryFn: async () => {
             const params = {
                 year: yearFilter,
                 department_id:
                     buDepartment !== "all" ? buDepartment : undefined,
             };
-            if (buMonth !== "all") {
-                params.month = buMonth;
-            }
+            if (buMonth !== "all") params.month = buMonth;
             const res = await reportsAPI.getBudgetReport(params);
             const data = res?.data?.data ?? res?.data ?? {};
             return {
@@ -440,7 +469,7 @@ const MayorReports = () => {
         staleTime: CACHE_5MIN,
     });
 
-    // 3. RECONCILIATION REPORT
+    // 3. RECONCILIATION
     const { data: reconciliationData, isLoading: reconciliationLoading } =
         useQuery({
             queryKey: [
@@ -476,24 +505,29 @@ const MayorReports = () => {
             staleTime: CACHE_5MIN,
         });
 
-    // 4. BILLING STATEMENT OF FUEL
+    // 4. BILLING STATEMENT (only fires when both dates picked)
     const { data: billingData, isLoading: billingLoading } = useQuery({
         queryKey: [
             "mayor-billing-statement",
-            bsDateRange,
+            bsRange,
             bsDepartment,
         ],
         queryFn: async () => {
+            if (!bsRange) return {};
             const params = {
-                start_date: bsDateRange.startDate,
-                end_date: bsDateRange.endDate,
+                start_date: bsRange.startDate,
+                end_date: bsRange.endDate,
                 department_id:
                     bsDepartment !== "all" ? bsDepartment : undefined,
             };
             const res = await reportsAPI.getBillingStatement(params);
             return res?.data?.data ?? res?.data ?? {};
         },
-        enabled: expandedSections.billingStatement,
+        enabled:
+            expandedSections.billingStatement &&
+            !!bsRange &&
+            !!bsStartDate &&
+            !!bsEndDate,
         staleTime: CACHE_5MIN,
     });
 
@@ -503,7 +537,6 @@ const MayorReports = () => {
         setExpandedSections((prev) => ({ ...prev, [section]: !prev[section] }));
     };
 
-    // Pass each card's own filter values explicitly
     const handleExport = async (
         format,
         reportType,
@@ -515,8 +548,12 @@ const MayorReports = () => {
             toast.loading(`Exporting ${format.toUpperCase()} report...`);
 
             let response;
-            const range = rangeOverride || frDateRange;
-            let fileName = `${reportType}_${range.startDate}_to_${range.endDate}`;
+            let fileName;
+            if (rangeOverride) {
+                fileName = `${reportType}_${rangeOverride.startDate}_to_${rangeOverride.endDate}`;
+            } else {
+                fileName = `${reportType}_${format(new Date(), "yyyy-MM-dd")}`;
+            }
 
             switch (reportType) {
                 case "fuel_receipt":
@@ -552,7 +589,6 @@ const MayorReports = () => {
 
             const extension = format === "pdf" ? "pdf" : "xlsx";
             saveAs(response.data, `${fileName}.${extension}`);
-
             toast.dismiss();
             toast.success(`${format.toUpperCase()} exported successfully`);
         } catch (error) {
@@ -570,7 +606,7 @@ const MayorReports = () => {
     const isRealTime = isConnected;
 
     // ============================================================
-    // RENDER - FUEL RECEIPT REPORT
+    // FUEL RECEIPT
     // ============================================================
 
     const renderFuelReceipt = () => {
@@ -578,7 +614,6 @@ const MayorReports = () => {
             ? receiptData.receipts
             : [];
         const summary = receiptData?.summary || {};
-
         const totals = receipts.reduce(
             (acc, r) => {
                 acc.amount += parseFloat(r.amount || 0);
@@ -587,13 +622,11 @@ const MayorReports = () => {
             },
             { amount: 0, quantity: 0 },
         );
-
         const statusColors = {
             verified: "bg-emerald-500",
             pending: "bg-orange-500",
             rejected: "bg-red-500",
         };
-
         const periodText = monthLabel(frMonth, yearFilter);
 
         return (
@@ -774,7 +807,6 @@ const MayorReports = () => {
                                 color="from-orange-500 to-orange-600"
                             />
                         </div>
-
                         <div className="overflow-x-auto max-h-[400px] overflow-y-auto border rounded-lg">
                             <Table>
                                 <TableHeader className="sticky top-0 z-10 bg-slate-100 dark:bg-slate-800">
@@ -870,14 +902,13 @@ const MayorReports = () => {
                                                             const dateValue =
                                                                 r.verified_at ||
                                                                 r.reconciled_at;
-                                                            if (!dateValue) {
+                                                            if (!dateValue)
                                                                 return (
                                                                     <span className="text-slate-400 text-xs">
                                                                         Not
                                                                         verified
                                                                     </span>
                                                                 );
-                                                            }
                                                             return format(
                                                                 new Date(
                                                                     dateValue,
@@ -900,7 +931,7 @@ const MayorReports = () => {
     };
 
     // ============================================================
-    // RENDER - BUDGET UTILIZATION REPORT
+    // BUDGET UTILIZATION
     // ============================================================
 
     const renderBudgetUtilization = () => {
@@ -909,7 +940,6 @@ const MayorReports = () => {
             : [];
         const summary = budgetData?.summary || {};
         const dept = budgetData?.department || {};
-
         const periodText = monthLabel(buMonth, yearFilter);
 
         return (
@@ -947,20 +977,16 @@ const MayorReports = () => {
                                         variant="outline"
                                         onClick={(e) => {
                                             e.stopPropagation();
-                                            handleExport(
-                                                "excel",
-                                                "budget",
-                                                {
-                                                    year: yearFilter,
-                                                    department_id:
-                                                        buDepartment !== "all"
-                                                            ? buDepartment
-                                                            : undefined,
-                                                    ...(buMonth !== "all"
-                                                        ? { month: buMonth }
-                                                        : {}),
-                                                },
-                                            );
+                                            handleExport("excel", "budget", {
+                                                year: yearFilter,
+                                                department_id:
+                                                    buDepartment !== "all"
+                                                        ? buDepartment
+                                                        : undefined,
+                                                ...(buMonth !== "all"
+                                                    ? { month: buMonth }
+                                                    : {}),
+                                            });
                                         }}
                                         disabled={exportLoading}
                                         className="h-8 px-2 text-xs"
@@ -973,20 +999,16 @@ const MayorReports = () => {
                                         variant="outline"
                                         onClick={(e) => {
                                             e.stopPropagation();
-                                            handleExport(
-                                                "pdf",
-                                                "budget",
-                                                {
-                                                    year: yearFilter,
-                                                    department_id:
-                                                        buDepartment !== "all"
-                                                            ? buDepartment
-                                                            : undefined,
-                                                    ...(buMonth !== "all"
-                                                        ? { month: buMonth }
-                                                        : {}),
-                                                },
-                                            );
+                                            handleExport("pdf", "budget", {
+                                                year: yearFilter,
+                                                department_id:
+                                                    buDepartment !== "all"
+                                                        ? buDepartment
+                                                        : undefined,
+                                                ...(buMonth !== "all"
+                                                    ? { month: buMonth }
+                                                    : {}),
+                                            });
                                         }}
                                         disabled={exportLoading}
                                         className="h-8 px-2 text-xs"
@@ -1062,7 +1084,6 @@ const MayorReports = () => {
                                 subtitle={periodText}
                             />
                         </div>
-
                         <div className="overflow-x-auto max-h-[500px] overflow-y-auto border rounded-lg">
                             <Table>
                                 <TableHeader className="sticky top-0 z-10 bg-slate-100 dark:bg-slate-800">
@@ -1174,7 +1195,7 @@ const MayorReports = () => {
     };
 
     // ============================================================
-    // RENDER - RECONCILIATION REPORT
+    // RECONCILIATION
     // ============================================================
 
     const renderReconciliation = () => {
@@ -1361,7 +1382,6 @@ const MayorReports = () => {
                                 subtitle="Total funds issued"
                             />
                         </div>
-
                         <div className="overflow-x-auto max-h-[400px] overflow-y-auto border rounded-lg">
                             <Table>
                                 <TableHeader className="sticky top-0 z-10 bg-slate-100 dark:bg-slate-800">
@@ -1460,11 +1480,11 @@ const MayorReports = () => {
     };
 
     // ============================================================
-    // RENDER - BILLING STATEMENT REPORT
+    // BILLING STATEMENT
     // ============================================================
 
     const renderBillingStatement = () => {
-        const departmentsList = Array.isArray(billingData?.departments)
+        const deptList = Array.isArray(billingData?.departments)
             ? billingData.departments
             : [];
         const grandTotals = billingData?.grand_totals || {};
@@ -1483,6 +1503,8 @@ const MayorReports = () => {
             return out;
         };
 
+        const bothDatesPicked = !!bsStartDate && !!bsEndDate;
+
         return (
             <Card className="dark:bg-slate-800/80 dark:border-slate-700">
                 <CardHeader
@@ -1496,42 +1518,95 @@ const MayorReports = () => {
                                 Billing Statement of Fuel
                             </CardTitle>
                             <Badge className="bg-amber-500/20 text-amber-600 ml-2">
-                                {departmentsList.length} department
-                                {departmentsList.length !== 1 ? "s" : ""}
+                                {deptList.length} department
+                                {deptList.length !== 1 ? "s" : ""}
                             </Badge>
                         </div>
                         <div className="flex items-center gap-2 flex-wrap">
                             {expandedSections.billingStatement && (
                                 <>
-                                    <InlineFilters
-                                        departmentFilter={bsDepartment}
-                                        setDepartmentFilter={setBsDepartment}
-                                        monthFilter={bsMonth}
-                                        setMonthFilter={setBsMonth}
-                                        departments={departments}
+                                    {/* Department */}
+                                    <Select
+                                        value={bsDepartment}
+                                        onValueChange={setBsDepartment}
+                                    >
+                                        <SelectTrigger
+                                            className="w-[180px] h-8 text-xs"
+                                            onClick={(e) =>
+                                                e.stopPropagation()
+                                            }
+                                        >
+                                            <SelectValue placeholder="All Departments" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="all">
+                                                All Departments
+                                            </SelectItem>
+                                            {departments.map((d) => (
+                                                <SelectItem
+                                                    key={d.department_id}
+                                                    value={String(
+                                                        d.department_id,
+                                                    )}
+                                                >
+                                                    {d.department_name}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+
+                                    {/* Start Date */}
+                                    <DatePickerButton
+                                        date={bsStartDate}
+                                        setDate={setBsStartDate}
+                                        placeholder="Start date"
+                                        disabled={(d) =>
+                                            bsEndDate && d > bsEndDate
+                                        }
                                         onInteract={(e) =>
                                             e.stopPropagation()
                                         }
                                     />
+
+                                    <ArrowRight className="h-3.5 w-3.5 text-slate-400" />
+
+                                    {/* End Date */}
+                                    <DatePickerButton
+                                        date={bsEndDate}
+                                        setDate={setBsEndDate}
+                                        placeholder="End date"
+                                        disabled={(d) =>
+                                            bsStartDate && d < bsStartDate
+                                        }
+                                        onInteract={(e) =>
+                                            e.stopPropagation()
+                                        }
+                                    />
+
                                     <Button
                                         size="sm"
                                         variant="outline"
                                         onClick={(e) => {
                                             e.stopPropagation();
+                                            if (!bothDatesPicked) {
+                                                toast.error(
+                                                    "Pick both start and end dates first",
+                                                );
+                                                return;
+                                            }
                                             handleExport(
                                                 "excel",
                                                 "billing_statement",
                                                 {
                                                     start_date:
-                                                        bsDateRange.startDate,
-                                                    end_date:
-                                                        bsDateRange.endDate,
+                                                        bsRange.startDate,
+                                                    end_date: bsRange.endDate,
                                                     department_id:
                                                         bsDepartment !== "all"
                                                             ? bsDepartment
                                                             : undefined,
                                                 },
-                                                bsDateRange,
+                                                bsRange,
                                             );
                                         }}
                                         disabled={exportLoading}
@@ -1545,20 +1620,25 @@ const MayorReports = () => {
                                         variant="outline"
                                         onClick={(e) => {
                                             e.stopPropagation();
+                                            if (!bothDatesPicked) {
+                                                toast.error(
+                                                    "Pick both start and end dates first",
+                                                );
+                                                return;
+                                            }
                                             handleExport(
                                                 "pdf",
                                                 "billing_statement",
                                                 {
                                                     start_date:
-                                                        bsDateRange.startDate,
-                                                    end_date:
-                                                        bsDateRange.endDate,
+                                                        bsRange.startDate,
+                                                    end_date: bsRange.endDate,
                                                     department_id:
                                                         bsDepartment !== "all"
                                                             ? bsDepartment
                                                             : undefined,
                                                 },
-                                                bsDateRange,
+                                                bsRange,
                                             );
                                         }}
                                         disabled={exportLoading}
@@ -1593,19 +1673,31 @@ const MayorReports = () => {
                             )}
                         </div>
                     </div>
-                    <CardDescription>{periodLabel}</CardDescription>
+                    <CardDescription>
+                        {bothDatesPicked
+                            ? periodLabel
+                            : "Pick a start and end date to generate the statement"}
+                    </CardDescription>
                 </CardHeader>
 
                 {expandedSections.billingStatement && (
                     <CardContent>
-                        {billingLoading ? (
+                        {!bothDatesPicked ? (
+                            <div className="text-center py-12">
+                                <CalendarIcon className="h-12 w-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
+                                <p className="text-slate-500 dark:text-slate-400">
+                                    Select a start date and end date to
+                                    generate the billing statement
+                                </p>
+                            </div>
+                        ) : billingLoading ? (
                             <div className="text-center py-12">
                                 <Loader2 className="h-6 w-6 animate-spin text-slate-400 mx-auto mb-3" />
                                 <p className="text-slate-500 dark:text-slate-400">
                                     Loading billing statement...
                                 </p>
                             </div>
-                        ) : departmentsList.length === 0 ? (
+                        ) : deptList.length === 0 ? (
                             <div className="text-center py-12">
                                 <FileText className="h-12 w-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
                                 <p className="text-slate-500 dark:text-slate-400">
@@ -1614,7 +1706,7 @@ const MayorReports = () => {
                             </div>
                         ) : (
                             <div className="space-y-10">
-                                {departmentsList.map((dept) => {
+                                {deptList.map((dept) => {
                                     const fuelAmounts = computeFuelAmounts(
                                         dept.rows,
                                     );
@@ -1625,8 +1717,7 @@ const MayorReports = () => {
                                         >
                                             <div className="text-center border-y-2 border-slate-800 dark:border-slate-200 py-2">
                                                 <h3 className="font-bold text-base tracking-wide text-slate-900 dark:text-white">
-                                                    FOR{" "}
-                                                    {dept.department_code}
+                                                    FOR {dept.department_code}
                                                 </h3>
                                                 {dept.department_name &&
                                                     dept.department_name !==
@@ -1910,7 +2001,7 @@ const MayorReports = () => {
     };
 
     // ============================================================
-    // LOADING STATE
+    // LOADING
     // ============================================================
 
     const isLoading =
@@ -1920,8 +2011,7 @@ const MayorReports = () => {
             !budgetData) ||
         (expandedSections.reconciliation &&
             reconciliationLoading &&
-            !reconciliationData) ||
-        (expandedSections.billingStatement && billingLoading && !billingData);
+            !reconciliationData);
 
     if (isLoading) {
         return (
@@ -1948,7 +2038,6 @@ const MayorReports = () => {
     return (
         <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
             <div className="space-y-6 p-4 md:p-6 print:p-4">
-                {/* HEADER */}
                 <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 print:hidden">
                     <div className="flex items-center gap-3">
                         <Button
@@ -1980,7 +2069,6 @@ const MayorReports = () => {
                     </div>
                 </div>
 
-                {/* ALL REPORTS */}
                 <div className="space-y-6">
                     {renderFuelReceipt()}
                     {renderBudgetUtilization()}
@@ -1988,7 +2076,6 @@ const MayorReports = () => {
                     {renderBillingStatement()}
                 </div>
 
-                {/* Footer */}
                 <div className="text-center text-xs text-slate-400 dark:text-slate-500 pt-4 border-t border-slate-200 dark:border-slate-700 print:block hidden">
                     <p>
                         Generated on {format(new Date(), "MMMM d, yyyy h:mm a")}
