@@ -115,7 +115,7 @@ export const useToggleDepartmentStatus = () => {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: ({ id, status }) => departmentAPI.toggleStatus(id, status),
+    mutationFn: ({ id, status }) => departmentAPI.toggleStatus(id, status === "active"),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['departments'] });
       // ✅ No toast — component handles it
