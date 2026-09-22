@@ -96,7 +96,7 @@ const TripTicketReport = ({
                                     <TableHead className="text-xs uppercase">Driver</TableHead>
                                     <TableHead className="text-xs uppercase">Destination</TableHead>
                                     <TableHead className="text-xs uppercase">Purpose</TableHead>
-                                    <TableHead className="text-right text-xs uppercase">Distance (km)</TableHead>
+                                   
                                     <TableHead className="text-xs uppercase">Status</TableHead>
                                 </TableRow>
                             </TableHeader>
@@ -119,7 +119,7 @@ const TripTicketReport = ({
                                                 <TableCell>{t.driver_name}</TableCell>
                                                 <TableCell className="max-w-[120px] truncate">{t.destination}</TableCell>
                                                 <TableCell className="max-w-[120px] truncate">{t.purpose}</TableCell>
-                                                <TableCell className="text-right">{t.estimated_distance_km || t.actual_distance_km || 'N/A'}</TableCell>
+                                               
                                                 <TableCell><Badge className={badge.color}>{badge.label}</Badge></TableCell>
                                             </TableRow>
                                         );
