@@ -864,7 +864,7 @@ public function getActiveTrip(Request $request)
     }
 }
 
-    public function acknowledgeFunds(Request $request, $id)
+        public function acknowledgeFunds(Request $request, $id)
     {
         try {
             $user = $request->user();
@@ -880,6 +880,21 @@ public function getActiveTrip(Request $request)
 
             if (!$ticket) {
                 return response()->json(['success' => false, 'message' => 'Trip ticket not found'], 404);
+            }
+
+            // ✅ Idempotency: if the driver already acknowledged, don't re-process
+            // and don't re-send notifications (protects against double-tap races)
+            $existingGasSlip = GasSlip::where('trip_ticket_id', $id)->first();
+            if ($existingGasSlip && $existingGasSlip->acknowledged_at) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Funds already acknowledged',
+                    'data' => [
+                        'trip_ticket_id' => $ticket->trip_ticket_id,
+                        'status' => $ticket->status,
+                        'acknowledged_at' => $existingGasSlip->acknowledged_at,
+                    ],
+                ]);
             }
 
             if ($ticket->status !== 'funds_issued') {
@@ -925,6 +940,16 @@ public function getActiveTrip(Request $request)
                 );
             }
 
+            // ✅ PM RULE: Once the driver acknowledges, clear their own stale
+            // fund/trip notifications for this trip. They already acted on it,
+            // so keeping them in the unread badge is misleading.
+            Notification::where('recipient_user_id', $user->user_id)
+                ->where('entity_type', 'trip_ticket')
+                ->where('entity_id', $ticket->trip_ticket_id)
+                ->whereIn('notification_type', ['trip_created', 'fund_released', 'fund_issued'])
+                ->where('is_read', false)
+                ->update(['is_read' => true, 'read_at' => now()]);
+
             return response()->json([
                 'success' => true,
                 'message' => 'Gas slip acknowledged successfully',
@@ -940,7 +965,8 @@ public function getActiveTrip(Request $request)
         }
     }
 
-    public function startTrip(Request $request, $id)
+
+       public function startTrip(Request $request, $id)
     {
         try {
             $user = $request->user();
@@ -997,6 +1023,14 @@ public function getActiveTrip(Request $request)
                 $gasSlip->acknowledged_at = now();
                 $gasSlip->save();
                 Log::info("Auto-acknowledged gas slip for ticket {$ticket->trip_ticket_number} on startTrip");
+
+                // ✅ PM RULE: Clear driver's stale fund notifications on auto-acknowledge
+                Notification::where('recipient_user_id', $user->user_id)
+                    ->where('entity_type', 'trip_ticket')
+                    ->where('entity_id', $ticket->trip_ticket_id)
+                    ->whereIn('notification_type', ['trip_created', 'fund_released', 'fund_issued'])
+                    ->where('is_read', false)
+                    ->update(['is_read' => true, 'read_at' => now()]);
             }
 
             $ticket->trip_count = ($ticket->trip_count ?? 0) + 1;

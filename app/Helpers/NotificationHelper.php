@@ -5,6 +5,8 @@ namespace App\Helpers;
 use App\Models\Notification;
 use App\Events\NewNotification;
 use App\Models\User;
+use App\Models\GasSlip;
+
 use App\Services\ExpoPushService;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
@@ -17,12 +19,30 @@ class NotificationHelper
      *
      * Push dispatch is best-effort and NEVER blocks the notification insert.
      */
-    public static function send($userId, $type, $entityType, $entityId, $message, $channel = 'in_app', $delay = 0)
+       public static function send($userId, $type, $entityType, $entityId, $message, $channel = 'in_app', $delay = 0)
     {
         $startTime = microtime(true);
         Log::info('🔔 NotificationHelper::send START at ' . now()->toDateTimeString());
 
         try {
+            // ✅ PM RULE: Never re-notify about fund release once acknowledged.
+            // Blocks: MO double-clicks, backend retries, scheduled jobs, and any
+            // code path that tries to send fund_released/fund_issued for an
+            // already-acknowledged trip.
+            if (in_array($type, ['fund_released', 'fund_issued'])) {
+                if ($entityType === 'trip_ticket') {
+                    $existingGasSlip = GasSlip::where('trip_ticket_id', $entityId)->first();
+                    if ($existingGasSlip && $existingGasSlip->acknowledged_at) {
+                        Log::info('🚫 Skipping fund notification — already acknowledged', [
+                            'trip_id' => $entityId,
+                            'user_id' => $userId,
+                            'type' => $type,
+                        ]);
+                        return null;
+                    }
+                }
+            }
+
             DB::beginTransaction();
 
             $notification = Notification::create([
