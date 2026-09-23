@@ -3,6 +3,8 @@
 // ✅ FIXED: Duplicate subscriptions (subscribeAll running 4+ times)
 // ✅ ADDED: hasSubscribedRef + subscribedUserIdRef guards
 // ✅ FIXED: Pusher "startTime" error from duplicate subscriptions
+// ✅ FIXED: gso-live-tracking duplicate subscription removed
+//           (LiveTracking.jsx owns it exclusively)
 // ============================================
 
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
@@ -27,7 +29,7 @@ export const RealtimeProvider = ({ children }) => {
     const [latestNotifications, setLatestNotifications] = useState([]);
     const subscriptionsRef = useRef({});
     const userRef = useRef(null);
-    
+
     // ✅ Guards to prevent duplicate subscriptions
     const hasSubscribedRef = useRef(false);
     const subscribedUserIdRef = useRef(null);
@@ -105,7 +107,7 @@ export const RealtimeProvider = ({ children }) => {
     // CONNECTION MANAGEMENT
     // ============================================
 
-       useEffect(() => {
+    useEffect(() => {
         if (!echo?.connector?.pusher) return;
 
         const connection = echo.connector.pusher.connection;
@@ -114,8 +116,6 @@ export const RealtimeProvider = ({ children }) => {
             console.log('✅ Real-time connected');
             setIsConnected(true);
 
-            // ✅ Only subscribe if we haven't already subscribed for this user
-            // Pusher reconnects automatically without needing re-subscription
             const user = getUser();
             if (user && !hasSubscribedRef.current) {
                 subscribeAllRef.current(user);
@@ -137,7 +137,6 @@ export const RealtimeProvider = ({ children }) => {
         connection.bind('disconnected', handleDisconnected);
         connection.bind('error', handleError);
 
-        // ✅ Initial subscription with guard
         const user = getUser();
         if (user && !hasSubscribedRef.current) {
             setTimeout(() => {
@@ -147,16 +146,13 @@ export const RealtimeProvider = ({ children }) => {
             }, 500);
         }
 
-        // Listen for login/logout events
         const handleAuthChange = () => {
             const newUser = getUser();
             if (newUser && subscribedUserIdRef.current !== newUser.user_id) {
-                // ✅ New user — reset guards and subscribe
                 hasSubscribedRef.current = false;
                 subscribedUserIdRef.current = null;
                 subscribeAllRef.current(newUser);
             } else if (!newUser) {
-                // ✅ Logout — reset everything
                 Object.values(subscriptionsRef.current).forEach(unsub => {
                     if (typeof unsub === 'function') unsub();
                 });
@@ -229,87 +225,61 @@ export const RealtimeProvider = ({ children }) => {
     // ============================================
     // GSO SUBSCRIPTIONS
     // ============================================
-const subscribeToGSO = useCallback((user) => {
-    try {
-        // 1. GSO Dashboard
-        const gsoChannel = echo.private('gso.dashboard');
 
-        gsoChannel.listen('.trip.updated', (data) => {
-            console.log('📋 GSO: Trip updated:', data);
-            eventBus.emit('gso-trip-updated', data);
-            eventBus.emit('refresh-gso-dashboard');
-        });
+    const subscribeToGSO = useCallback((user) => {
+        try {
+            // 1. GSO Dashboard
+            const gsoChannel = echo.private('gso.dashboard');
 
-        gsoChannel.listen('.trip.status_changed', (data) => {
-            console.log('📋 GSO: Trip status changed:', data);
-            toast.info(`Trip ${data.ticket_number} status: ${data.new_status}`);
-            eventBus.emit('gso-trip-status-changed', data);
-            eventBus.emit('refresh-gso-dashboard');
-        });
+            gsoChannel.listen('.trip.updated', (data) => {
+                console.log('📋 GSO: Trip updated:', data);
+                eventBus.emit('gso-trip-updated', data);
+                eventBus.emit('refresh-gso-dashboard');
+            });
 
-        gsoChannel.listen('.trip.funds_released', (data) => {
-            console.log('💰 GSO: Funds released:', data);
-            toast.success(`Funds released for trip ${data.ticket_number}`);
-            eventBus.emit('gso-funds-released', data);
-            eventBus.emit('refresh-gso-dashboard');
-        });
+            gsoChannel.listen('.trip.status_changed', (data) => {
+                console.log('📋 GSO: Trip status changed:', data);
+                toast.info(`Trip ${data.ticket_number} status: ${data.new_status}`);
+                eventBus.emit('gso-trip-status-changed', data);
+                eventBus.emit('refresh-gso-dashboard');
+            });
 
-        gsoChannel.listen('.trip.cancelled', (data) => {
-            console.log('❌ GSO: Trip cancelled:', data);
-            toast.info(`Trip ${data.trip_ticket_number || data.ticket_number} was cancelled`);
-            eventBus.emit('trip-cancelled', data);
-            eventBus.emit('gso-trip-updated', data);
-            eventBus.emit('refresh-gso-dashboard');
-        });
+            gsoChannel.listen('.trip.funds_released', (data) => {
+                console.log('💰 GSO: Funds released:', data);
+                toast.success(`Funds released for trip ${data.ticket_number}`);
+                eventBus.emit('gso-funds-released', data);
+                eventBus.emit('refresh-gso-dashboard');
+            });
 
-        subscriptionsRef.current.gso = () => {
-            gsoChannel.unsubscribe();
-        };
+            gsoChannel.listen('.trip.cancelled', (data) => {
+                console.log('❌ GSO: Trip cancelled:', data);
+                toast.info(`Trip ${data.trip_ticket_number || data.ticket_number} was cancelled`);
+                eventBus.emit('trip-cancelled', data);
+                eventBus.emit('gso-trip-updated', data);
+                eventBus.emit('refresh-gso-dashboard');
+            });
 
-        // ✅ Live tracking — THROTTLED event emission
-        const trackingChannel = echo.channel('gso-live-tracking');
+            subscriptionsRef.current.gso = () => {
+                gsoChannel.unsubscribe();
+            };
 
-        // ✅ Throttle window (ms) — prevents render storms
-        let lastLocationEmit = 0;
-        const LOCATION_THROTTLE_MS = 1000;
+            // ✅ Live tracking subscription is handled ENTIRELY by LiveTracking.jsx.
+            // Do NOT subscribe to 'gso-live-tracking' here. Duplicate subscribers caused
+            // a race where .trip.started triggered competing refetches before the new
+            // trip was committed to the DB, leaving the marker invisible until the
+            // user switched browser tabs.
+            //
+            // GSO trip notifications (started/completed) still arrive via the
+            // notifications.{userId} channel (backend dispatches via NotificationHelper),
+            // so the dashboard still gets notified.
 
-        trackingChannel.listen('.location.updated', (data) => {
-            const now = Date.now();
-            if (now - lastLocationEmit < LOCATION_THROTTLE_MS) {
-                return;  // Skip — too soon
-            }
-            lastLocationEmit = now;
+            console.log('✅ GSO real-time subscriptions active');
 
-            console.log('📍 GSO: Location updated (throttled):', data.trip_id);
-            eventBus.emit('gps-location-updated', data);
-            // ❌ Removed: refresh-gso-tracking — LiveTracking.jsx updates state directly
-        });
+        } catch (error) {
+            console.error('❌ Failed to subscribe to GSO:', error);
+        }
+    }, []);
 
-        trackingChannel.listen('.trip.started', (data) => {
-            console.log('🚗 GSO: Trip started:', data);
-            toast.info(`Trip ${data.trip_id} has started`);
-            eventBus.emit('trip-started', data);
-            eventBus.emit('refresh-gso-tracking');
-        });
-
-        trackingChannel.listen('.trip.completed', (data) => {
-            console.log('🏁 GSO: Trip completed:', data);
-            toast.success(`Trip ${data.trip_id} completed!`);
-            eventBus.emit('trip-completed', data);
-            eventBus.emit('refresh-gso-tracking');
-            eventBus.emit('refresh-gso-dashboard');
-        });
-
-        subscriptionsRef.current.tracking = () => {
-            trackingChannel.unsubscribe();
-        };
-
-        console.log('✅ GSO real-time subscriptions active');
-
-    } catch (error) {
-        console.error('❌ Failed to subscribe to GSO:', error);
-    }
-}, []);
     // ============================================
     // MAYOR SUBSCRIPTIONS
     // ============================================

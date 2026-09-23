@@ -1,15 +1,4 @@
 // src/pages/gso/LiveTracking.jsx
-// ============================================
-// ✅ FIXED: pendingPingsRef — marker appears on first ping
-// ✅ FIXED: immediate removal on .trip.completed
-// ✅ FIXED: no duplicate toasts (delegated to RealtimeContext)
-// ✅ FIXED: Merge server trips + live locations
-// ✅ FIXED: WS setup race (hasSetupRef set before subscribe)
-// ✅ FIXED: isMounted guard for WS handler
-// ✅ FIXED: GPS jitter filter (accuracy > 30m, movement < 15m @ < 2km/h)
-// ✅ FIXED: staleTime 0
-// ✅ FIXED: Removed `Map` lucide import
-// ============================================
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -577,15 +566,10 @@ const LiveTracking = () => {
     const hasSetupRef = useRef(false);
 
     const followedTripIdRef = useRef(null);
-const mapZoomRef = useRef(13);
+    const mapZoomRef = useRef(13);
 
-    // ✅ Mirrors tripsData for use inside WebSocket handler
     const tripsDataRef = useRef([]);
-
-    // ✅ Caches pings for trips not yet in tripsData
     const pendingPingsRef = useRef({});
-
-    // ✅ Mounted guard
     const isMountedRef = useRef(true);
 
     useEffect(() => {
@@ -595,19 +579,16 @@ const mapZoomRef = useRef(13);
         };
     }, []);
 
-    // ✅ hasActiveTrips (no setState loop)
     const hasActiveTrips = useMemo(() => {
         return Array.isArray(tripsData) && tripsData.some(trip => trip && trip.current_location);
     }, [tripsData]);
 
-    // ✅ Keep tripsDataRef in sync
     useEffect(() => {
         tripsDataRef.current = tripsData;
     }, [tripsData]);
     useEffect(() => { followedTripIdRef.current = followedTripId; }, [followedTripId]);
-useEffect(() => { mapZoomRef.current = mapZoom; }, [mapZoom]);
+    useEffect(() => { mapZoomRef.current = mapZoom; }, [mapZoom]);
 
-    // Close dropdown when clicking outside
     useEffect(() => {
         const handleClickOutside = (event) => {
             if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
@@ -617,10 +598,6 @@ useEffect(() => { mapZoomRef.current = mapZoom; }, [mapZoom]);
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
-
-    // ============================================
-    // AUTO-REFRESH
-    // ============================================
 
     const fetchAllData = useCallback(() => {
         queryClient.invalidateQueries({ queryKey: ['gps-active-trips-live'] });
@@ -637,10 +614,6 @@ useEffect(() => { mapZoomRef.current = mapZoom; }, [mapZoom]);
         fetchAllData,
         2000
     );
-
-    // ============================================
-    // OPTIMIZED QUERY
-    // ============================================
 
     const {
         data: activeTripsRaw,
@@ -697,9 +670,6 @@ useEffect(() => { mapZoomRef.current = mapZoom; }, [mapZoom]);
         [activeTripsRaw]
     );
 
-    // ============================================
-    // MERGE server trips with existing live locations + pending pings
-    // ============================================
     useEffect(() => {
         if (!Array.isArray(activeTrips)) return;
 
@@ -715,7 +685,6 @@ useEffect(() => { mapZoomRef.current = mapZoom; }, [mapZoom]);
             return activeTrips.map(serverTrip => {
                 const existing = prevById[serverTrip.trip_id];
 
-                // ✅ Apply any pending ping for this trip (arrived before trip was in data)
                 const pending = pendingPingsRef.current[serverTrip.trip_id];
                 if (pending && !serverTrip.current_location) {
                     delete pendingPingsRef.current[serverTrip.trip_id];
@@ -733,7 +702,6 @@ useEffect(() => { mapZoomRef.current = mapZoom; }, [mapZoom]);
                     };
                 }
 
-                // Preserve existing location if server doesn't have one
                 if (existing?.current_location && !serverTrip.current_location) {
                     return {
                         ...serverTrip,
@@ -753,16 +721,11 @@ useEffect(() => { mapZoomRef.current = mapZoom; }, [mapZoom]);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activeTrips]);
 
-    // ============================================
-    // WEBSOCKET (setup only once)
-    // ============================================
-
     useEffect(() => {
         if (hasSetupRef.current) {
             console.log('⏭️ WS already set up — skipping');
             return;
         }
-     
 
         hasSetupRef.current = true;
         console.log('🗺️ Setting up GSO live tracking WebSocket...');
@@ -770,20 +733,17 @@ useEffect(() => { mapZoomRef.current = mapZoom; }, [mapZoom]);
         const channel = echo.channel('gso-live-tracking');
         setIsWsConnected(true);
 
-        // ✅ .location.updated with jitter filter + pending ping cache
         channel.listen('.location.updated', (data) => {
             if (!isMountedRef.current) return;
 
             console.log('📍 Real-time location update:', data);
 
-            // GPS jitter filter — accuracy
             const accuracy = data.accuracy_meters || 0;
             if (accuracy > 30) {
                 console.log(`⚠️ Skipping ping (accuracy ${accuracy}m > 30m)`);
                 return;
             }
 
-            // Jitter filter — movement
             const existingTrip = tripsDataRef.current.find(t => t.trip_id === data.trip_id);
             if (existingTrip?.current_location) {
                 const distMeters = haversineMeters(
@@ -802,7 +762,6 @@ useEffect(() => { mapZoomRef.current = mapZoom; }, [mapZoom]);
             pingCounterRef.current += 1;
             setPingCount(pingCounterRef.current);
 
-            // ✅ If trip not in data yet, cache ping + refetch
             const tripExists = tripsDataRef.current.some(t => t.trip_id === data.trip_id);
             if (!tripExists) {
                 console.log('🆕 New trip detected:', data.trip_id, '— caching ping + refetching...');
@@ -811,7 +770,6 @@ useEffect(() => { mapZoomRef.current = mapZoom; }, [mapZoom]);
                 return;
             }
 
-            // Update existing trip
             setTripsData(prev => {
                 if (!Array.isArray(prev)) return [];
                 return prev.map(trip => {
@@ -866,15 +824,13 @@ useEffect(() => { mapZoomRef.current = mapZoom; }, [mapZoom]);
                 return prev;
             });
 
-           if (followedTripIdRef.current === data.trip_id && mapRef.current) {
-    mapRef.current.setView([data.latitude, data.longitude], mapZoomRef.current);
-}
+            if (followedTripIdRef.current === data.trip_id && mapRef.current) {
+                mapRef.current.setView([data.latitude, data.longitude], mapZoomRef.current);
+            }
 
             setLastUpdate(new Date());
         });
 
-        // ✅ .trip.completed — NO toast here (RealtimeContext handles it)
-        // ✅ Immediately remove from local state — don't wait for refetch
         channel.listen('.trip.completed', (data) => {
             if (!isMountedRef.current) return;
             console.log('🏁 Trip completed (LiveTracking local removal):', data);
@@ -887,13 +843,11 @@ useEffect(() => { mapZoomRef.current = mapZoom; }, [mapZoom]);
             setFocusedTrip(prev => (prev?.trip_id === data.trip_id ? null : prev));
             setFollowedTripId(prev => (prev === data.trip_id ? null : prev));
 
-            // Clean up any stale pending ping for this trip
             delete pendingPingsRef.current[data.trip_id];
 
             queryClient.invalidateQueries({ queryKey: ['gps-active-trips-live'] });
         });
 
-        // ✅ .trip.started — NO toast here (RealtimeContext handles it)
         channel.listen('.trip.started', (data) => {
             if (!isMountedRef.current) return;
             console.log('🚗 Trip started (LiveTracking):', data);
@@ -940,10 +894,6 @@ useEffect(() => { mapZoomRef.current = mapZoom; }, [mapZoom]);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // ============================================
-    // DERIVED DATA
-    // ============================================
-
     const tripsWithLocation = useMemo(() => {
         return Array.isArray(tripsData)
             ? tripsData.filter(trip => trip && trip.current_location)
@@ -954,10 +904,6 @@ useEffect(() => { mapZoomRef.current = mapZoom; }, [mapZoom]);
 
     const connectionStatus = isConnected ? "🟢 Live" : "🔴 Offline";
     const isRealTime = isConnected;
-
-    // ============================================
-    // STATS
-    // ============================================
 
     const stats = useMemo(() => [
         {
@@ -984,10 +930,6 @@ useEffect(() => { mapZoomRef.current = mapZoom; }, [mapZoom]);
             subtitle: `Pings: ${pingCount}`,
         },
     ], [activeCount, tripsWithLocation, lastUpdate, pingCount]);
-
-    // ============================================
-    // HANDLERS
-    // ============================================
 
     const handleTripSelect = (trip) => {
         setSelectedTrip(trip);
@@ -1067,10 +1009,6 @@ useEffect(() => { mapZoomRef.current = mapZoom; }, [mapZoom]);
         }
     };
 
-    // ============================================
-    // RENDER MAP TILE
-    // ============================================
-
     const renderMapTiles = () => {
         switch (mapType) {
             case 'satellite':
@@ -1083,7 +1021,7 @@ useEffect(() => { mapZoomRef.current = mapZoom; }, [mapZoom]);
                 );
             case 'hybrid':
                 return (
-                    <div key="hybrid">
+                    <React.Fragment key="hybrid">
                         <TileLayer
                             url={MAP_TILES.satellite.url}
                             attribution={MAP_TILES.satellite.attribution}
@@ -1093,7 +1031,7 @@ useEffect(() => { mapZoomRef.current = mapZoom; }, [mapZoom]);
                             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>, &copy; CartoDB'
                             opacity={0.7}
                         />
-                    </div>
+                    </React.Fragment>
                 );
             case 'terrain':
                 return (
@@ -1122,17 +1060,9 @@ useEffect(() => { mapZoomRef.current = mapZoom; }, [mapZoom]);
         }
     };
 
-    // ============================================
-    // LOADING STATE
-    // ============================================
-
     if (isLoading && tripsData.length === 0) {
         return <LoadingSkeleton />;
     }
-
-    // ============================================
-    // RENDER
-    // ============================================
 
     return (
         <div className="h-screen flex flex-col bg-slate-50 dark:bg-slate-950">
@@ -1293,7 +1223,7 @@ useEffect(() => { mapZoomRef.current = mapZoom; }, [mapZoom]);
                                     const plateNumber = trip?.vehicle?.plate_number || trip?.plate_number || '';
 
                                     return (
-                                        <div key={trip.trip_id}>
+                                        <React.Fragment key={trip.trip_id}>
                                             {trip.route && trip.route.length > 1 && (
                                                 <Polyline
                                                     positions={trip.route.map(p => [p.latitude, p.longitude])}
@@ -1341,7 +1271,7 @@ useEffect(() => { mapZoomRef.current = mapZoom; }, [mapZoom]);
                                                     fillOpacity={0.1}
                                                 />
                                             )}
-                                        </div>
+                                        </React.Fragment>
                                     );
                                 })
                             ) : (

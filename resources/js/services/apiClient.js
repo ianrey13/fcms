@@ -2,6 +2,8 @@
 import axios from "axios";
 
 const apiUrl = document.querySelector('meta[name="api-url"]')?.content || '/api';
+//  const apiUrl = 'https://fcms-production-5058.up.railway.app/api';
+
 
 const api = axios.create({
   baseURL: apiUrl,
