@@ -945,7 +945,7 @@ const LiveTracking = () => {
     }
 
     return (
-        <div className="h-screen flex flex-col bg-slate-50 dark:bg-slate-950">
+        <div className="h-[80vh] flex flex-col bg-slate-50 dark:bg-slate-950">
             {/* ============ Header (stats inside) ============ */}
             <header className="flex-shrink-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm border-b border-slate-200/60 dark:border-slate-800/60 px-4 md:px-6 py-3">
                 <div className="flex items-center gap-3 flex-wrap lg:flex-nowrap">

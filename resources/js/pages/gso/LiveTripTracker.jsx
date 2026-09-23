@@ -357,7 +357,7 @@ const LiveTripTracker = ({ trip, onClose, isOpen, allTrips }) => {
   }
 
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-w-5xl w-full max-h-[92vh] overflow-hidden border border-slate-200/60 dark:border-slate-700/60">
+    <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-w-5xl w-full max-h-[80vh] overflow-hidden border border-slate-200/60 dark:border-slate-700/60">
       {/* ============ Header ============ */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200/60 dark:border-slate-700/60 bg-gradient-to-r from-slate-50 to-white dark:from-slate-900 dark:to-slate-800">
         <div className="flex items-center gap-2.5 min-w-0">
