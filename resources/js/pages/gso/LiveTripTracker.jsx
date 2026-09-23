@@ -19,9 +19,6 @@ import {
   Focus,
   Crosshair,
   X,
-  Move,
-  Zap,
-  Fuel,
   Clock,
   MapPin,
   Truck,
@@ -29,6 +26,9 @@ import {
   Satellite,
   Plus,
   Minus,
+  Gauge,
+  Navigation,
+  Activity,
 } from 'lucide-react';
 
 // Fix Leaflet icons
@@ -51,7 +51,10 @@ trackerStyleSheet.textContent = `
 `;
 document.head.appendChild(trackerStyleSheet);
 
-// Create vehicle icon for focused marker
+// ============================================
+// VEHICLE ICON
+// ============================================
+
 const createVehicleIcon = (status, isSelected, isOnline = true, isFocused = false) => {
   const colors = {
     in_transit: '#22c55e',
@@ -65,43 +68,27 @@ const createVehicleIcon = (status, isSelected, isOnline = true, isFocused = fals
     returned_for_revision: '#ef4444',
   };
   const color = colors[status] || '#6b7280';
-  const size = isFocused ? 44 : (isSelected ? 38 : 32);
+  const size = isFocused ? 40 : (isSelected ? 34 : 30);
 
   return L.divIcon({
     className: 'custom-vehicle-icon',
     html: `
       <div style="
         position: relative;
-        width: ${size + 12}px;
-        height: ${size + 12}px;
+        width: ${size + 8}px;
+        height: ${size + 8}px;
         cursor: pointer;
         transition: all 0.3s ease;
       ">
         ${isFocused ? `
           <div style="
             position: absolute;
-            inset: -8px;
+            inset: -6px;
             border-radius: 50%;
             background: rgba(59, 130, 246, 0.15);
-            border: 3px solid rgba(59, 130, 246, 0.5);
+            border: 2.5px solid rgba(59, 130, 246, 0.5);
             animation: pulse-ring 1.5s ease-out infinite;
-            box-shadow: 0 0 40px rgba(59, 130, 246, 0.3);
-          "></div>
-          <div style="
-            position: absolute;
-            inset: -4px;
-            border-radius: 50%;
-            background: rgba(59, 130, 246, 0.05);
-            border: 2px solid rgba(59, 130, 246, 0.2);
-          "></div>
-        ` : isSelected ? `
-          <div style="
-            position: absolute;
-            inset: -4px;
-            border-radius: 50%;
-            background: rgba(59, 130, 246, 0.15);
-            border: 2px solid rgba(59, 130, 246, 0.3);
-            animation: pulse-ring 2s ease-out infinite;
+            box-shadow: 0 0 30px rgba(59, 130, 246, 0.3);
           "></div>
         ` : ''}
 
@@ -109,15 +96,15 @@ const createVehicleIcon = (status, isSelected, isOnline = true, isFocused = fals
           position: absolute;
           top: 50%;
           left: 50%;
-          transform: translate(-50%, -50%) ${isFocused ? 'scale(1.15)' : isSelected ? 'scale(1.08)' : 'scale(1)'};
+          transform: translate(-50%, -50%);
           width: ${size}px;
           height: ${size}px;
           background: ${color};
-          border-radius: 12px;
-          border: ${isFocused ? '3px solid #3b82f6' : '2px solid white'};
+          border-radius: 10px;
+          border: ${isFocused ? '2.5px solid #3b82f6' : '2px solid white'};
           box-shadow: ${isFocused
-            ? '0 4px 24px rgba(59,130,246,0.6), 0 0 60px rgba(59,130,246,0.15)'
-            : '0 4px 12px rgba(0,0,0,0.25)'};
+            ? '0 4px 20px rgba(59,130,246,0.6)'
+            : '0 3px 10px rgba(0,0,0,0.25)'};
           display: flex;
           align-items: center;
           justify-content: center;
@@ -133,33 +120,11 @@ const createVehicleIcon = (status, isSelected, isOnline = true, isFocused = fals
             <circle cx="17" cy="17" r="2"/>
           </svg>
         </div>
-
-        ${isFocused ? `
-          <div style="
-            position: absolute;
-            top: -8px;
-            right: -8px;
-            background: #3b82f6;
-            border-radius: 50%;
-            width: 18px;
-            height: 18px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border: 2px solid white;
-            font-size: 9px;
-            color: white;
-            box-shadow: 0 2px 8px rgba(59,130,246,0.4);
-            z-index: 2;
-          ">
-            🎯
-          </div>
-        ` : ''}
       </div>
     `,
-    iconSize: [size + 12, size + 12],
-    iconAnchor: [(size + 12) / 2, (size + 12) / 2],
-    popupAnchor: [0, -(size + 12) / 2 - 5],
+    iconSize: [size + 8, size + 8],
+    iconAnchor: [(size + 8) / 2, (size + 8) / 2],
+    popupAnchor: [0, -(size + 8) / 2 - 5],
   });
 };
 
@@ -192,7 +157,6 @@ const LiveTripTracker = ({ trip, onClose, isOpen, allTrips }) => {
   const intervalRef = useRef(null);
   const [followMode, setFollowMode] = useState(true);
 
-  // ✅ Refs to keep latest values inside stable callbacks
   const followModeRef = useRef(true);
   const mapZoomRef = useRef(15);
 
@@ -200,7 +164,7 @@ const LiveTripTracker = ({ trip, onClose, isOpen, allTrips }) => {
   useEffect(() => { mapZoomRef.current = mapZoom; }, [mapZoom]);
 
   // ============================================
-  // FETCH TRIP STATS (stable — no followMode/mapZoom in deps)
+  // FETCH TRIP STATS
   // ============================================
 
   const fetchTripStats = useCallback(async () => {
@@ -213,7 +177,6 @@ const LiveTripTracker = ({ trip, onClose, isOpen, allTrips }) => {
       if (data) {
         setTripStats(data);
 
-        // ✅ Use refs for follow/zoom so callback identity is stable
         if (data.latest_location && followModeRef.current) {
           const { latitude, longitude } = data.latest_location;
           setMapCenter([latitude, longitude]);
@@ -234,14 +197,12 @@ const LiveTripTracker = ({ trip, onClose, isOpen, allTrips }) => {
   }, [trip?.trip_id]);
 
   // ============================================
-  // EFFECT 1 — Initial fetch + polling interval
-  // Deps: trip_id, isTracking only
+  // EFFECT 1 — Polling interval
   // ============================================
 
   useEffect(() => {
     if (!trip?.trip_id || !isOpen) return;
 
-    console.log('🚀 Starting polling for trip:', trip.trip_id);
     fetchTripStats();
 
     intervalRef.current = setInterval(() => {
@@ -259,11 +220,7 @@ const LiveTripTracker = ({ trip, onClose, isOpen, allTrips }) => {
   }, [trip?.trip_id, isOpen, isTracking, fetchTripStats]);
 
   // ============================================
-  // EFFECT 2 — WebSocket subscription (stable)
-  // Deps: trip_id, isOpen only — NOT followMode, mapZoom
-  //
-  // ✅ CRITICAL: pass the handler to stopListening so we remove ONLY our
-  // listener — NOT the one LiveTracking.jsx registered on the same channel.
+  // EFFECT 2 — WebSocket subscription
   // ============================================
 
   useEffect(() => {
@@ -271,13 +228,9 @@ const LiveTripTracker = ({ trip, onClose, isOpen, allTrips }) => {
 
     let channel = null;
 
-    // ✅ Named handler — required for targeted stopListening
     const locationHandler = (data) => {
       if (data.trip_id !== trip.trip_id) return;
 
-      console.log('📍 WS update for focused trip:', data.trip_id);
-
-      // ✅ Use refs for follow/zoom so we don't need them in deps
       if (markerRef.current && data.latitude && data.longitude) {
         markerRef.current.setLatLng([data.latitude, data.longitude]);
       }
@@ -286,7 +239,6 @@ const LiveTripTracker = ({ trip, onClose, isOpen, allTrips }) => {
         mapRef.current.setView([data.latitude, data.longitude], mapZoomRef.current);
       }
 
-      // Refresh stats panel
       fetchTripStats();
     };
 
@@ -298,18 +250,14 @@ const LiveTripTracker = ({ trip, onClose, isOpen, allTrips }) => {
         channel.subscribed(() => {
           console.log('✅ LiveTripTracker subscribed to gso-live-tracking');
         });
-      } else {
-        console.warn('⚠️ Echo connector not available for WebSocket');
       }
     } catch (error) {
       console.error('❌ WebSocket setup error:', error);
     }
 
     return () => {
-      console.log('🧹 Cleaning up WS for trip:', trip.trip_id);
       if (channel) {
         try {
-          // ✅ Pass handler to remove ONLY our listener
           channel.stopListening('.location.updated', locationHandler);
         } catch (e) {
           console.warn('⚠️ WebSocket cleanup error:', e);
@@ -319,8 +267,7 @@ const LiveTripTracker = ({ trip, onClose, isOpen, allTrips }) => {
   }, [trip?.trip_id, isOpen, fetchTripStats]);
 
   // ============================================
-  // EFFECT 3 — Follow mode recenters map on demand
-  // Only runs when user toggles follow or tripStats updates the location
+  // EFFECT 3 — Follow mode recenters map
   // ============================================
 
   useEffect(() => {
@@ -410,36 +357,36 @@ const LiveTripTracker = ({ trip, onClose, isOpen, allTrips }) => {
   }
 
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-w-6xl w-full max-h-[95vh] overflow-hidden border border-slate-200/60 dark:border-slate-700/60">
-      {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-slate-200/60 dark:border-slate-700/60 bg-gradient-to-r from-slate-50 to-white dark:from-slate-900 dark:to-slate-800">
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-xl bg-emerald-500/10">
-            <Focus className="h-5 w-5 text-emerald-500" />
+    <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-w-5xl w-full max-h-[92vh] overflow-hidden border border-slate-200/60 dark:border-slate-700/60">
+      {/* ============ Header ============ */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200/60 dark:border-slate-700/60 bg-gradient-to-r from-slate-50 to-white dark:from-slate-900 dark:to-slate-800">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="p-1.5 rounded-lg bg-emerald-500/10 flex-shrink-0">
+            <Focus className="h-4 w-4 text-emerald-500" />
           </div>
-          <div>
-            <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-              {trip?.ticket_number || 'Vehicle'}
-              <span className="bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 text-[10px] px-2 py-0.5 rounded-full">
-                ● Live
+          <div className="min-w-0">
+            <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2 flex-wrap">
+              <span className="font-mono">{trip?.ticket_number || 'Vehicle'}</span>
+              <span className="bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 text-[9px] px-1.5 py-0.5 rounded-full font-medium">
+                ● LIVE
               </span>
-              <span className="bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/30 text-[10px] px-2 py-0.5 rounded-full">
+              <span className="bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/30 text-[9px] px-1.5 py-0.5 rounded-full font-medium">
                 {tripStats?.ping_count || 0} pings
               </span>
             </h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2 flex-wrap">
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-2 flex-wrap mt-0.5">
               <span className="flex items-center gap-1">
-                <MapPin className="h-3 w-3" />
+                <MapPin className="h-2.5 w-2.5" />
                 {trip?.destination || 'No destination'}
               </span>
-              <span className="text-slate-300 dark:text-slate-600">|</span>
+              <span className="text-slate-300 dark:text-slate-600">·</span>
               <span className="flex items-center gap-1">
-                <Truck className="h-3 w-3" />
+                <Truck className="h-2.5 w-2.5" />
                 {trip?.vehicle?.plate_number || 'N/A'}
               </span>
-              <span className="text-slate-300 dark:text-slate-600">|</span>
+              <span className="text-slate-300 dark:text-slate-600">·</span>
               <span className="flex items-center gap-1">
-                <User className="h-3 w-3" />
+                <User className="h-2.5 w-2.5" />
                 {trip?.driver?.name || 'N/A'}
               </span>
               <span className="text-emerald-500 text-[10px] font-medium ml-auto">
@@ -448,11 +395,11 @@ const LiveTripTracker = ({ trip, onClose, isOpen, allTrips }) => {
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-shrink-0 ml-2">
           <button
             onClick={toggleFollow}
             className={cn(
-              "px-3 py-1.5 text-xs rounded-lg transition-colors flex items-center gap-1.5",
+              "px-2.5 py-1.5 text-xs rounded-lg transition-colors flex items-center gap-1.5",
               followMode 
                 ? "bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400" 
                 : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700"
@@ -465,41 +412,44 @@ const LiveTripTracker = ({ trip, onClose, isOpen, allTrips }) => {
             onClick={onClose}
             className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
           >
-            <X className="h-5 w-5 text-slate-500" />
+            <X className="h-4 w-4 text-slate-500" />
           </button>
         </div>
       </div>
 
-      {/* Stats Dashboard */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 p-3 bg-slate-50/50 dark:bg-slate-800/30 border-b border-slate-200/60 dark:border-slate-700/60">
-        <div className="bg-white dark:bg-slate-800 rounded-xl p-2 shadow-sm border border-slate-200/60 dark:border-slate-700/60">
-          <p className="text-[9px] text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1">
-            <Move className="h-3 w-3" /> Distance
+      {/* ============ Stats Row (compact, no fuel) ============ */}
+      <div className="grid grid-cols-3 gap-2 px-3 py-2.5 bg-slate-50/50 dark:bg-slate-800/30 border-b border-slate-200/60 dark:border-slate-700/60">
+        <div className="bg-white dark:bg-slate-800 rounded-lg px-2.5 py-1.5 shadow-sm border border-slate-200/60 dark:border-slate-700/60">
+          <p className="text-[9px] text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1 font-semibold">
+            <Navigation className="h-3 w-3" /> Distance
           </p>
-          <p className="text-lg font-bold text-slate-900 dark:text-white">
-            {tripStats?.total_distance_km?.toFixed(2) || '0.00'} km
-          </p>
-        </div>
-        <div className="bg-white dark:bg-slate-800 rounded-xl p-2 shadow-sm border border-slate-200/60 dark:border-slate-700/60">
-          <p className="text-[9px] text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1">
-            <Zap className="h-3 w-3" /> Speed
-          </p>
-          <p className="text-lg font-bold text-slate-900 dark:text-white">
-            {tripStats?.current_speed_kmh?.toFixed(0) || '0'} km/h
+          <p className="text-base font-bold text-slate-900 dark:text-white leading-tight">
+            {tripStats?.total_distance_km?.toFixed(2) || '0.00'}
+            <span className="text-xs font-medium text-slate-400 ml-1">km</span>
           </p>
         </div>
-        <div className="bg-white dark:bg-slate-800 rounded-xl p-2 shadow-sm border border-slate-200/60 dark:border-slate-700/60">
-          <p className="text-[9px] text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1">
+        <div className="bg-white dark:bg-slate-800 rounded-lg px-2.5 py-1.5 shadow-sm border border-slate-200/60 dark:border-slate-700/60">
+          <p className="text-[9px] text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1 font-semibold">
+            <Gauge className="h-3 w-3" /> Speed
+          </p>
+          <p className="text-base font-bold text-slate-900 dark:text-white leading-tight">
+            {tripStats?.current_speed_kmh?.toFixed(0) || '0'}
+            <span className="text-xs font-medium text-slate-400 ml-1">km/h</span>
+          </p>
+        </div>
+        <div className="bg-white dark:bg-slate-800 rounded-lg px-2.5 py-1.5 shadow-sm border border-slate-200/60 dark:border-slate-700/60">
+          <p className="text-[9px] text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1 font-semibold">
             <Clock className="h-3 w-3" /> Duration
           </p>
-          <p className="text-lg font-bold text-slate-900 dark:text-white">
-            {tripStats?.duration_minutes?.toFixed(0) || '0'} min
+          <p className="text-base font-bold text-slate-900 dark:text-white leading-tight">
+            {tripStats?.duration_minutes?.toFixed(0) || '0'}
+            <span className="text-xs font-medium text-slate-400 ml-1">min</span>
           </p>
         </div>
       </div>
 
-      {/* Map */}
-      <div className="relative h-[400px] md:h-[500px]">
+      {/* ============ Map (smaller height) ============ */}
+      <div className="relative h-[340px] md:h-[420px]">
         <MapContainer
           ref={mapRef}
           center={mapCenter}
@@ -515,6 +465,7 @@ const LiveTripTracker = ({ trip, onClose, isOpen, allTrips }) => {
 
           <ZoomControl position="bottomright" />
 
+          {/* Route Polyline */}
           {tripStats?.route_points && tripStats.route_points.length > 1 && (
             <Polyline
               positions={tripStats.route_points.map(p => [p.latitude, p.longitude])}
@@ -525,6 +476,7 @@ const LiveTripTracker = ({ trip, onClose, isOpen, allTrips }) => {
             />
           )}
 
+          {/* Start Marker */}
           {tripStats?.route_points && tripStats.route_points.length > 0 && (
             <Marker 
               position={[
@@ -534,7 +486,10 @@ const LiveTripTracker = ({ trip, onClose, isOpen, allTrips }) => {
             >
               <Popup>
                 <div className="p-1">
-                  <p className="text-xs font-semibold text-green-600">🟢 Start Point</p>
+                  <p className="text-xs font-semibold text-green-600 flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-green-500" />
+                    Start Point
+                  </p>
                   <p className="text-xs text-slate-500">
                     {new Date(tripStats.route_points[0].recorded_at).toLocaleTimeString()}
                   </p>
@@ -543,6 +498,7 @@ const LiveTripTracker = ({ trip, onClose, isOpen, allTrips }) => {
             </Marker>
           )}
 
+          {/* Live Vehicle Marker */}
           {hasLocation && (
             <Marker
               position={[
@@ -555,10 +511,10 @@ const LiveTripTracker = ({ trip, onClose, isOpen, allTrips }) => {
               <Popup>
                 <div className="p-2 min-w-[180px]">
                   <div className="flex items-center gap-2 mb-2">
-                    <div className="w-3 h-3 rounded-full bg-green-500 animate-pulse" />
+                    <div className="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse" />
                     <span className="font-semibold text-sm">{trip?.ticket_number}</span>
-                    <span className="bg-emerald-500/20 text-emerald-600 text-[10px] px-2 py-0.5 rounded-full ml-auto">
-                      ● Live
+                    <span className="bg-emerald-500/20 text-emerald-600 text-[10px] px-1.5 py-0.5 rounded-full ml-auto font-medium">
+                      ● LIVE
                     </span>
                   </div>
                   <div className="space-y-1 text-sm">
@@ -569,10 +525,6 @@ const LiveTripTracker = ({ trip, onClose, isOpen, allTrips }) => {
                     <div className="flex justify-between">
                       <span className="text-slate-500">Distance:</span>
                       <span className="font-medium">{tripStats?.total_distance_km?.toFixed(2) || 0} km</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-500">Fuel:</span>
-                      <span className="font-medium text-amber-600">{tripStats?.estimated_fuel_liters?.toFixed(2) || 0} L</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-slate-500">Duration:</span>
@@ -592,6 +544,7 @@ const LiveTripTracker = ({ trip, onClose, isOpen, allTrips }) => {
             </Marker>
           )}
 
+          {/* Accuracy Circle */}
           {hasLocation && tripStats.latest_location.accuracy_meters && 
             tripStats.latest_location.accuracy_meters < 100 && (
             <Circle
@@ -608,86 +561,70 @@ const LiveTripTracker = ({ trip, onClose, isOpen, allTrips }) => {
         </MapContainer>
 
         {/* Controls Overlay */}
-        <div className="absolute top-4 right-4 flex flex-col gap-2 z-[1000]">
+        <div className="absolute top-3 right-3 flex flex-col gap-1.5 z-[1000]">
           <button
             onClick={toggleFollow}
             className={cn(
-              "bg-white dark:bg-slate-800 rounded-lg shadow-lg p-2 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors",
+              "bg-white dark:bg-slate-800 rounded-lg shadow-lg p-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors border border-slate-200/60 dark:border-slate-700/60",
               followMode ? "text-blue-500" : "text-slate-400"
             )}
             title={followMode ? "Following vehicle" : "Free movement"}
           >
-            <Crosshair className="h-5 w-5" />
+            <Crosshair className="h-4 w-4" />
           </button>
           <button
             onClick={handleZoomIn}
-            className="bg-white dark:bg-slate-800 rounded-lg shadow-lg p-2 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+            className="bg-white dark:bg-slate-800 rounded-lg shadow-lg p-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors border border-slate-200/60 dark:border-slate-700/60"
             title="Zoom in"
           >
-            <Plus className="h-5 w-5 text-slate-600 dark:text-slate-300" />
+            <Plus className="h-4 w-4 text-slate-600 dark:text-slate-300" />
           </button>
           <button
             onClick={handleZoomOut}
-            className="bg-white dark:bg-slate-800 rounded-lg shadow-lg p-2 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+            className="bg-white dark:bg-slate-800 rounded-lg shadow-lg p-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors border border-slate-200/60 dark:border-slate-700/60"
             title="Zoom out"
           >
-            <Minus className="h-5 w-5 text-slate-600 dark:text-slate-300" />
+            <Minus className="h-4 w-4 text-slate-600 dark:text-slate-300" />
           </button>
         </div>
 
         {/* Status Badge */}
-        <div className="absolute bottom-4 left-4 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm rounded-lg shadow-lg px-3 py-2 text-xs z-[1000] flex items-center gap-3 border border-slate-200/60 dark:border-slate-700/60">
-          <div className="flex items-center gap-1.5">
-            <div className={`w-2 h-2 rounded-full ${isTracking ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
-            <span className="text-slate-600 dark:text-slate-300">
+        <div className="absolute bottom-3 left-3 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm rounded-lg shadow-lg px-2.5 py-1.5 text-[11px] z-[1000] flex items-center gap-2 border border-slate-200/60 dark:border-slate-700/60">
+          <div className="flex items-center gap-1">
+            <div className={`w-1.5 h-1.5 rounded-full ${isTracking ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
+            <span className="text-slate-600 dark:text-slate-300 font-medium">
               {isTracking ? 'Live' : 'Paused'}
             </span>
           </div>
-          <span className="text-slate-300 dark:text-slate-600">|</span>
-          <span className="text-slate-500">
-            {tripStats?.ping_count || 0} pings
-          </span>
-          <span className="text-slate-300 dark:text-slate-600">|</span>
-          <span className="text-slate-500">
-            {followMode ? 'Following' : 'Free'}
-          </span>
-        </div>
-
-        {/* Trip Info Overlay */}
-        <div className="absolute bottom-4 right-4 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm rounded-lg shadow-lg px-3 py-2 text-xs z-[1000] border border-slate-200/60 dark:border-slate-700/60">
-          <span className="font-semibold text-slate-700 dark:text-slate-300">
-            Trip {trip?.ticket_number}
-          </span>
-          <span className="ml-2 text-emerald-500">● Live</span>
+          <span className="text-slate-300 dark:text-slate-600">·</span>
+          <span className="text-slate-500">{tripStats?.ping_count || 0} pings</span>
+          <span className="text-slate-300 dark:text-slate-600">·</span>
+          <span className="text-slate-500">{followMode ? 'Following' : 'Free'}</span>
         </div>
       </div>
 
-      {/* Bottom Stats Bar */}
-      <div className="p-3 border-t border-slate-200/60 dark:border-slate-700/60 bg-slate-50/50 dark:bg-slate-800/30">
-        <div className="grid grid-cols-6 gap-2">
+      {/* ============ Bottom Stats Bar (no fuel) ============ */}
+      <div className="px-3 py-2.5 border-t border-slate-200/60 dark:border-slate-700/60 bg-slate-50/50 dark:bg-slate-800/30">
+        <div className="grid grid-cols-5 gap-2">
           <div className="text-center">
-            <p className="text-[8px] text-slate-500 dark:text-slate-400 uppercase tracking-wider">Pings</p>
+            <p className="text-[8px] text-slate-500 dark:text-slate-400 uppercase tracking-wider font-semibold">Pings</p>
             <p className="text-sm font-bold text-slate-900 dark:text-white">{tripStats?.ping_count || 0}</p>
           </div>
           <div className="text-center">
-            <p className="text-[8px] text-slate-500 dark:text-slate-400 uppercase tracking-wider">Max Speed</p>
-            <p className="text-sm font-bold text-slate-900 dark:text-white">{tripStats?.max_speed_kmh?.toFixed(0) || 0} km/h</p>
+            <p className="text-[8px] text-slate-500 dark:text-slate-400 uppercase tracking-wider font-semibold">Max Speed</p>
+            <p className="text-sm font-bold text-slate-900 dark:text-white">{tripStats?.max_speed_kmh?.toFixed(0) || 0} <span className="text-[10px] font-medium text-slate-400">km/h</span></p>
           </div>
           <div className="text-center">
-            <p className="text-[8px] text-slate-500 dark:text-slate-400 uppercase tracking-wider">Avg Speed</p>
-            <p className="text-sm font-bold text-slate-900 dark:text-white">{tripStats?.avg_speed_kmh?.toFixed(0) || 0} km/h</p>
+            <p className="text-[8px] text-slate-500 dark:text-slate-400 uppercase tracking-wider font-semibold">Avg Speed</p>
+            <p className="text-sm font-bold text-slate-900 dark:text-white">{tripStats?.avg_speed_kmh?.toFixed(0) || 0} <span className="text-[10px] font-medium text-slate-400">km/h</span></p>
           </div>
           <div className="text-center">
-            <p className="text-[8px] text-slate-500 dark:text-slate-400 uppercase tracking-wider">Distance</p>
-            <p className="text-sm font-bold text-blue-600 dark:text-blue-400">{tripStats?.total_distance_km?.toFixed(2) || 0} km</p>
+            <p className="text-[8px] text-slate-500 dark:text-slate-400 uppercase tracking-wider font-semibold">Distance</p>
+            <p className="text-sm font-bold text-blue-600 dark:text-blue-400">{tripStats?.total_distance_km?.toFixed(2) || 0} <span className="text-[10px] font-medium text-blue-400">km</span></p>
           </div>
           <div className="text-center">
-            <p className="text-[8px] text-slate-500 dark:text-slate-400 uppercase tracking-wider">Fuel</p>
-            <p className="text-sm font-bold text-amber-600 dark:text-amber-400">{tripStats?.estimated_fuel_liters?.toFixed(2) || 0} L</p>
-          </div>
-          <div className="text-center">
-            <p className="text-[8px] text-slate-500 dark:text-slate-400 uppercase tracking-wider">Duration</p>
-            <p className="text-sm font-bold text-slate-900 dark:text-white">{tripStats?.duration_minutes?.toFixed(0) || 0} min</p>
+            <p className="text-[8px] text-slate-500 dark:text-slate-400 uppercase tracking-wider font-semibold">Duration</p>
+            <p className="text-sm font-bold text-slate-900 dark:text-white">{tripStats?.duration_minutes?.toFixed(0) || 0} <span className="text-[10px] font-medium text-slate-400">min</span></p>
           </div>
         </div>
       </div>
