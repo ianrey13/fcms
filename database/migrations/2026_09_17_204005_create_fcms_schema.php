@@ -192,7 +192,7 @@ return new class extends Migration
             $table->unsignedBigInteger('department_id');
             $table->string('vehicle_model', 120);
             $table->string('plate_number', 20)->unique();
-            $table->enum('fuel_type', ['diesel', 'regular', 'premium']);
+            $table->enum('fuel_type', ['diesel', 'gasoline', 'premium']);
             $table->decimal('fuel_efficiency', 5, 2)->default(10.00);
             $table->decimal('current_fuel_balance', 10, 2)->default(0.00);
             $table->decimal('fuel_capacity', 10, 2)->default(60.00);
@@ -268,7 +268,7 @@ return new class extends Migration
         Schema::create('trip_vehicle_snapshot', function (Blueprint $table) {
             $table->unsignedBigInteger('trip_ticket_id')->primary();
             $table->enum('vehicle_status', ['active', 'inactive']);
-            $table->enum('fuel_type', ['diesel', 'regular', 'premium']);
+            $table->enum('fuel_type', ['diesel', 'gasoline', 'premium']);
             $table->timestamp('snapshot_taken_at')->useCurrent();
 
             $table->foreign('trip_ticket_id')->references('trip_ticket_id')->on('trip_ticket');

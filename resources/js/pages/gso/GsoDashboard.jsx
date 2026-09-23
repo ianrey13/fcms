@@ -1,12 +1,4 @@
 // src/pages/gso/GsoDashboard.jsx
-// ============================================
-// ✅ BULLETPROOF: All arrays forced with useMemo
-// ✅ FIXED: allTrips.filter crash on refetch
-// ✅ ADDED: Cancelled tab
-// ✅ REMOVED: GPS (handled by LiveTracking component)
-// ✅ LAZY + PREFETCH: Chart loads fast on demand
-// ============================================
-
 import React, {
     useState,
     useMemo,
@@ -823,13 +815,13 @@ const GsoDashboard = () => {
             try {
                 const res = await gpsAPI.getActiveTrips();
                 const data = res.data?.data;
-                return Array.isArray(data) ? data : []; // ✅ Always array
+                return Array.isArray(data) ? data : []; 
             } catch (err) {
                 console.error(err);
-                return []; // ✅ Return empty array on error
+                return []; 
             }
         },
-        refetchInterval: 30000, // ✅ 30 sec instead of 15
+        refetchInterval: 30000,
     });
 
     // ============================================
@@ -1307,10 +1299,7 @@ const GsoDashboard = () => {
                         <CardContent className="pt-6">
                             <TicketTable
                                 tickets={filteredAllTrips}
-                                onView={(id) => {
-                                    if (id) navigate(`/gso/trip/${id}`);
-                                    else toast.error("Invalid ticket ID");
-                                }}
+                                onView={(id) => navigate(`/gso/tickets/${id}`)}
                                 isLoading={allTripsLoading}
                                 showActions={true}
                                 maxHeight="450px"
@@ -1343,7 +1332,7 @@ const GsoDashboard = () => {
                             <TicketTable
                                 tickets={filteredValidation}
                                 showValidate={true}
-                                onView={(id) => navigate(`/gso/trip/${id}`)}
+                               onView={(id) => navigate(`/gso/tickets/${id}`)}
                                 onValidate={(ticket) => {
                                     setSelectedTicket(ticket);
                                     setShowValidateDialog(true);
@@ -1379,7 +1368,7 @@ const GsoDashboard = () => {
                         <CardContent className="pt-6">
                             <TicketTable
                                 tickets={filteredCancelled}
-                                onView={(id) => navigate(`/gso/trip/${id}`)}
+                               onView={(id) => navigate(`/gso/tickets/${id}`)}
                                 isLoading={cancelledLoading}
                                 showActions={true}
                                 maxHeight="450px"

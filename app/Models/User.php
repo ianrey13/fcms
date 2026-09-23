@@ -27,7 +27,7 @@ class User extends Authenticatable
     
     protected $fillable = [
         'department_id', 'first_name', 'middle_name', 'last_name', 'email','employee_number',
-        'password_hash', 'role', 'can_drive', 'esignature_path', 'esignature_hash',
+        'password_hash', 'role', 'can_drive', 
         'status', 'last_login_at', 'failed_login_attempts', 'locked_until',
         'account_locked_until', 'deactivated_at', 'deactivated_by',
         'deactivation_reason', 'password_changed_at'

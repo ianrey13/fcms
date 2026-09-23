@@ -49,7 +49,7 @@ class UserController extends Controller
             $users = $query->orderBy('created_at', 'desc')->get();
 
             $formattedUsers = $users->map(function($user) {
-                $hasSignature = !empty($user->esignature_path) && $user->esignature_path !== null;
+                // $hasSignature = !empty($user->esignature_path) && $user->esignature_path !== null;
                 $canDrive = $user->can_drive ?? false;
                 
                 return [
@@ -69,8 +69,8 @@ class UserController extends Controller
                     'can_drive' => $canDrive,
                     'last_login_at' => $user->last_login_at,
                     'created_at' => $user->created_at,
-                    'has_signature' => $hasSignature,
-                    'signature_url' => $hasSignature ? Storage::url($user->esignature_path) : null,
+                    // 'has_signature' => $hasSignature,
+                    // 'signature_url' => $hasSignature ? Storage::url($user->esignature_path) : null,
                 ];
             });
 
@@ -229,7 +229,7 @@ class UserController extends Controller
         try {
             $user = User::with('department')->findOrFail($id);
             
-            $hasSignature = !empty($user->esignature_path) && $user->esignature_path !== null;
+            // $hasSignature = !empty($user->esignature_path) && $user->esignature_path !== null;
             $canDrive = $user->can_drive ?? false;
 
             return response()->json([
@@ -253,8 +253,8 @@ class UserController extends Controller
                     'created_at' => $user->created_at,
                     'password_expires_at' => $user->password_expires_at,
                     'account_locked_until' => $user->account_locked_until,
-                    'has_signature' => $hasSignature,
-                    'signature_url' => $hasSignature ? Storage::url($user->esignature_path) : null,
+                    // 'has_signature' => $hasSignature,
+                    // 'signature_url' => $hasSignature ? Storage::url($user->esignature_path) : null,
                     // ✅ Add available roles for this user's department
                     'available_roles' => $this->getAvailableRoles($user->department_id),
                 ]
@@ -599,164 +599,164 @@ class UserController extends Controller
         return $labels[$role] ?? ucfirst($role);
     }
 
-    /**
-     * Upload e-signature for a user
-     */
-    public function uploadSignature(Request $request, $id)
-    {
-        try {
-            $user = $request->user();
+    // /**
+    //  * Upload e-signature for a user
+    //  */
+    // public function uploadSignature(Request $request, $id)
+    // {
+    //     try {
+    //         $user = $request->user();
             
-            if (!$user->isGsoOffice()) {
-                return response()->json(['message' => 'Unauthorized. Only GSO Office can upload signatures.'], 403);
-            }
+    //         if (!$user->isGsoOffice()) {
+    //             return response()->json(['message' => 'Unauthorized. Only GSO Office can upload signatures.'], 403);
+    //         }
             
-            $targetUser = User::findOrFail($id);
+    //         $targetUser = User::findOrFail($id);
             
-            $validator = Validator::make($request->all(), [
-                'signature' => 'required|image|mimes:jpeg,png,jpg|max:2048',
-            ]);
+    //         $validator = Validator::make($request->all(), [
+    //             'signature' => 'required|image|mimes:jpeg,png,jpg|max:2048',
+    //         ]);
             
-            if ($validator->fails()) {
-                return response()->json(['errors' => $validator->errors()], 422);
-            }
+    //         if ($validator->fails()) {
+    //             return response()->json(['errors' => $validator->errors()], 422);
+    //         }
             
-            $file = $request->file('signature');
-            $filename = 'signature_' . $id . '_' . time() . '.' . $file->getClientOriginalExtension();
-            $path = $file->storeAs('signatures', $filename, 'public');
+    //         $file = $request->file('signature');
+    //         $filename = 'signature_' . $id . '_' . time() . '.' . $file->getClientOriginalExtension();
+    //         $path = $file->storeAs('signatures', $filename, 'public');
             
-            $targetUser->esignature_path = $path;
-            $targetUser->esignature_hash = hash('sha256', file_get_contents($file->getRealPath()));
-            $targetUser->save();
+    //         $targetUser->esignature_path = $path;
+    //         $targetUser->esignature_hash = hash('sha256', file_get_contents($file->getRealPath()));
+    //         $targetUser->save();
             
-            return response()->json([
-                'success' => true,
-                'message' => 'Signature uploaded successfully',
-                'data' => [
-                    'signature_url' => Storage::url($path),
-                ]
-            ]);
+    //         return response()->json([
+    //             'success' => true,
+    //             'message' => 'Signature uploaded successfully',
+    //             'data' => [
+    //                 'signature_url' => Storage::url($path),
+    //             ]
+    //         ]);
             
-        } catch (\Exception $e) {
-            Log::error('Upload signature error: ' . $e->getMessage());
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to upload signature: ' . $e->getMessage()
-            ], 500);
-        }
-    }
+    //     } catch (\Exception $e) {
+    //         Log::error('Upload signature error: ' . $e->getMessage());
+    //         return response()->json([
+    //             'success' => false,
+    //             'message' => 'Failed to upload signature: ' . $e->getMessage()
+    //         ], 500);
+    //     }
+    // }
     
     /**
      * Get user's active signature
      */
-    public function getSignature($id)
-    {
-        try {
-            $user = auth()->user();
+    // public function getSignature($id)
+    // {
+    //     try {
+    //         $user = auth()->user();
             
-            if (!$user->isGsoOffice()) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Unauthorized. Only GSO Office can view signatures.'
-                ], 403);
-            }
+    //         if (!$user->isGsoOffice()) {
+    //             return response()->json([
+    //                 'success' => false,
+    //                 'message' => 'Unauthorized. Only GSO Office can view signatures.'
+    //             ], 403);
+    //         }
             
-            $targetUser = User::findOrFail($id);
+    //         $targetUser = User::findOrFail($id);
             
-            if (empty($targetUser->esignature_path)) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'No signature found for this user'
-                ], 404);
-            }
+    //         if (empty($targetUser->esignature_path)) {
+    //             return response()->json([
+    //                 'success' => false,
+    //                 'message' => 'No signature found for this user'
+    //             ], 404);
+    //         }
             
-            return response()->json([
-                'success' => true,
-                'data' => [
-                    'signature_url' => Storage::url($targetUser->esignature_path),
-                ]
-            ]);
+    //         return response()->json([
+    //             'success' => true,
+    //             'data' => [
+    //                 'signature_url' => Storage::url($targetUser->esignature_path),
+    //             ]
+    //         ]);
             
-        } catch (\Exception $e) {
-            Log::error('Get signature error: ' . $e->getMessage());
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to get signature'
-            ], 500);
-        }
-    }
+    //     } catch (\Exception $e) {
+    //         Log::error('Get signature error: ' . $e->getMessage());
+    //         return response()->json([
+    //             'success' => false,
+    //             'message' => 'Failed to get signature'
+    //         ], 500);
+    //     }
+    // }
     
-    /**
-     * Delete user's signature
-     */
-    public function deleteSignature(Request $request, $id)
-    {
-        try {
-            $user = $request->user();
+    // /**
+    //  * Delete user's signature
+    //  */
+    // public function deleteSignature(Request $request, $id)
+    // {
+    //     try {
+    //         $user = $request->user();
             
-            if (!$user->isGsoOffice()) {
-                return response()->json(['message' => 'Unauthorized. Only GSO Office can delete signatures.'], 403);
-            }
+    //         if (!$user->isGsoOffice()) {
+    //             return response()->json(['message' => 'Unauthorized. Only GSO Office can delete signatures.'], 403);
+    //         }
             
-            $targetUser = User::findOrFail($id);
+    //         $targetUser = User::findOrFail($id);
             
-            $targetUser->esignature_path = null;
-            $targetUser->esignature_hash = null;
-            $targetUser->save();
+    //         $targetUser->esignature_path = null;
+    //         $targetUser->esignature_hash = null;
+    //         $targetUser->save();
             
-            return response()->json([
-                'success' => true,
-                'message' => 'Signature deleted successfully'
-            ]);
+    //         return response()->json([
+    //             'success' => true,
+    //             'message' => 'Signature deleted successfully'
+    //         ]);
             
-        } catch (\Exception $e) {
-            Log::error('Delete signature error: ' . $e->getMessage());
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to delete signature'
-            ], 500);
-        }
-    }
+    //     } catch (\Exception $e) {
+    //         Log::error('Delete signature error: ' . $e->getMessage());
+    //         return response()->json([
+    //             'success' => false,
+    //             'message' => 'Failed to delete signature'
+    //         ], 500);
+    //     }
+    // }
 
     /**
      * Get user's active signature for GSO
      */
-    public function getSignatureForGso($id)
-    {
-        try {
-            $user = auth()->user();
+    // public function getSignatureForGso($id)
+    // {
+    //     try {
+    //         $user = auth()->user();
             
-            if (!$user->isGsoOffice()) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Unauthorized'
-                ], 403);
-            }
+    //         if (!$user->isGsoOffice()) {
+    //             return response()->json([
+    //                 'success' => false,
+    //                 'message' => 'Unauthorized'
+    //             ], 403);
+    //         }
             
-            $targetUser = User::findOrFail($id);
+    //         $targetUser = User::findOrFail($id);
             
-            if (empty($targetUser->esignature_path)) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'No signature found for this user'
-                ], 404);
-            }
+    //         if (empty($targetUser->esignature_path)) {
+    //             return response()->json([
+    //                 'success' => false,
+    //                 'message' => 'No signature found for this user'
+    //             ], 404);
+    //         }
             
-            return response()->json([
-                'success' => true,
-                'data' => [
-                    'signature_url' => Storage::url($targetUser->esignature_path),
-                ]
-            ]);
+    //         return response()->json([
+    //             'success' => true,
+    //             'data' => [
+    //                 'signature_url' => Storage::url($targetUser->esignature_path),
+    //             ]
+    //         ]);
             
-        } catch (\Exception $e) {
-            Log::error('Get signature for GSO error: ' . $e->getMessage());
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to get signature'
-            ], 500);
-        }
-    }
+    //     } catch (\Exception $e) {
+    //         Log::error('Get signature for GSO error: ' . $e->getMessage());
+    //         return response()->json([
+    //             'success' => false,
+    //             'message' => 'Failed to get signature'
+    //         ], 500);
+    //     }
+    // }
 
     /**
      * ✅ Get available roles for a department (for frontend)
