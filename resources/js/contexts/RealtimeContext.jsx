@@ -4,8 +4,8 @@
 // ✅ ADDED: hasSubscribedRef + subscribedUserIdRef guards
 // ✅ FIXED: Pusher "startTime" error from duplicate subscriptions
 // ✅ FIXED: gso-live-tracking duplicate subscription removed
-//           (LiveTracking.jsx owns it exclusively)
 // ✅ FIXED: Retry loop for echo.connector.pusher (was bailing on mount race)
+// ✅ FIXED: Per-channel guards (survive component remounts via module scope)
 // ============================================
 
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
@@ -23,6 +23,21 @@ export const useRealtime = () => {
     return context;
 };
 
+// ============================================
+// ✅ MODULE-SCOPE GUARDS (survive component remounts)
+// ============================================
+// These live OUTSIDE the component so they persist across React StrictMode
+// double-mounts and AuthContext re-renders.
+const moduleGuards = {
+    notifications: false,
+    gso: false,
+    mayor: false,
+    driver: false,
+    department: false,
+    system: false,
+    subscribedUserId: null,
+};
+
 export const RealtimeProvider = ({ children }) => {
     const [isConnected, setIsConnected] = useState(false);
     const [subscriptions, setSubscriptions] = useState([]);
@@ -30,11 +45,6 @@ export const RealtimeProvider = ({ children }) => {
     const [latestNotifications, setLatestNotifications] = useState([]);
     const subscriptionsRef = useRef({});
     const userRef = useRef(null);
-
-    // ✅ Guards to prevent duplicate subscriptions
-    const hasSubscribedRef = useRef(false);
-    const subscribedUserIdRef = useRef(null);
-    const subscribeAllRef = useRef(null);
 
     // ============================================
     // GET USER
@@ -55,193 +65,17 @@ export const RealtimeProvider = ({ children }) => {
     }, []);
 
     // ============================================
-    // SUBSCRIBE ALL
-    // ============================================
-
-    const subscribeAll = useCallback((user) => {
-        if (!user) return;
-
-        const userId = String(user.user_id || user.id || '');
-
-        // ✅ Guard: Skip if already subscribed for this user
-        if (String(subscribedUserIdRef.current) === userId) {
-            console.log('⏭️ Already subscribed for user', userId, '— skipping');
-            return;
-        }
-
-        console.log('🔔 Subscribing to all real-time channels for user:', userId);
-
-        // Cleanup old subscriptions
-        Object.values(subscriptionsRef.current).forEach(unsub => {
-            if (typeof unsub === 'function') unsub();
-        });
-        subscriptionsRef.current = {};
-
-        // ✅ Mark as subscribed BEFORE subscribing to prevent race conditions
-        subscribedUserIdRef.current = userId;
-        hasSubscribedRef.current = true;
-
-        // 1. Notifications
-        subscribeToNotifications(user);
-
-        // 2. Role-specific subscriptions
-        if (user.role === 'gso_office') {
-            subscribeToGSO(user);
-        } else if (user.role === 'mayors_office') {
-            subscribeToMayor(user);
-        } else if (user.role === 'driver') {
-            subscribeToDriver(user);
-        } else {
-            subscribeToDepartment(user);
-        }
-
-        // 3. System-wide
-        subscribeToSystem(user);
-
-        // 4. Fetch initial unread count
-        fetchUnreadCount();
-
-        // Emit event
-        eventBus.emit('realtime-ready', { user });
-    }, []);
-
-    // Store in ref for access without re-creating effects
-    subscribeAllRef.current = subscribeAll;
-
-    // ============================================
-    // CONNECTION MANAGEMENT
-    // ============================================
-
-    useEffect(() => {
-        let cancelled = false;
-        let attempt = 0;
-        const MAX_ATTEMPTS = 60; // 30 seconds of retries
-
-        // ✅ Retry loop — waits for echo.connector.pusher to be ready
-        const trySetup = () => {
-            if (cancelled) return;
-            if (attempt++ >= MAX_ATTEMPTS) {
-                console.error('❌ RealtimeContext: gave up waiting for echo.connector.pusher after', MAX_ATTEMPTS, 'attempts');
-                return;
-            }
-
-            // Wait for echo to be ready
-            if (!echo?.connector?.pusher) {
-                if (attempt === 1) {
-                    console.log('⏳ RealtimeContext: waiting for echo.connector.pusher...');
-                }
-                setTimeout(trySetup, 500);
-                return;
-            }
-
-            console.log('🔌 RealtimeContext: echo is ready — setting up subscriptions');
-
-            const connection = echo.connector.pusher.connection;
-
-            const handleConnected = () => {
-                if (cancelled) return;
-                console.log('✅ Real-time connected');
-                setIsConnected(true);
-
-                const user = getUser();
-                if (user && !hasSubscribedRef.current) {
-                    subscribeAllRef.current(user);
-                }
-            };
-
-            const handleDisconnected = () => {
-                if (cancelled) return;
-                console.log('❌ Real-time disconnected');
-                setIsConnected(false);
-                // ✅ DO NOT reset guards — Pusher auto-reconnects to the same channels.
-            };
-
-            const handleError = (error) => {
-                console.error('❌ Pusher error:', error);
-            };
-
-            connection.bind('connected', handleConnected);
-            connection.bind('disconnected', handleDisconnected);
-            connection.bind('error', handleError);
-
-            // ✅ Subscribe NOW if already connected (doesn't wait for event)
-            if (connection.state === 'connected') {
-                console.log('✅ Already connected — subscribing immediately');
-                setIsConnected(true);
-                const user = getUser();
-                if (user && !hasSubscribedRef.current) {
-                    subscribeAllRef.current(user);
-                }
-            } else {
-                // Otherwise, wait for connected event
-                const user = getUser();
-                if (user && !hasSubscribedRef.current) {
-                    // Fallback timeout in case 'connected' event already fired
-                    setTimeout(() => {
-                        if (cancelled) return;
-                        if (!hasSubscribedRef.current && getUser()) {
-                            console.log('⏱️ Fallback: subscribing after timeout');
-                            subscribeAllRef.current(getUser());
-                        }
-                    }, 1500);
-                }
-            }
-
-            // Auth change listener (login/logout)
-            const handleAuthChange = () => {
-                const newUser = getUser();
-                const newUserId = newUser ? String(newUser.user_id || newUser.id) : null;
-
-                if (newUser && String(subscribedUserIdRef.current) !== newUserId) {
-                    // Different user — reset and subscribe
-                    Object.values(subscriptionsRef.current).forEach(unsub => {
-                        if (typeof unsub === 'function') unsub();
-                    });
-                    subscriptionsRef.current = {};
-                    hasSubscribedRef.current = false;
-                    subscribedUserIdRef.current = null;
-                    subscribeAllRef.current(newUser);
-                } else if (!newUser) {
-                    // Logout — unsubscribe everything
-                    Object.values(subscriptionsRef.current).forEach(unsub => {
-                        if (typeof unsub === 'function') unsub();
-                    });
-                    subscriptionsRef.current = {};
-                    hasSubscribedRef.current = false;
-                    subscribedUserIdRef.current = null;
-                }
-            };
-            window.addEventListener('auth-change', handleAuthChange);
-
-            // Store cleanup for outer return
-            trySetup._cleanup = () => {
-                connection.unbind('connected', handleConnected);
-                connection.unbind('disconnected', handleDisconnected);
-                connection.unbind('error', handleError);
-                window.removeEventListener('auth-change', handleAuthChange);
-            };
-        };
-
-        trySetup();
-
-        return () => {
-            cancelled = true;
-            if (trySetup._cleanup) trySetup._cleanup();
-
-            Object.values(subscriptionsRef.current).forEach(unsub => {
-                if (typeof unsub === 'function') unsub();
-            });
-            subscriptionsRef.current = {};
-            hasSubscribedRef.current = false;
-            subscribedUserIdRef.current = null;
-        };
-    }, [getUser]);
-
-    // ============================================
     // NOTIFICATIONS
     // ============================================
 
     const subscribeToNotifications = useCallback((user) => {
+        // ✅ Module-scope guard — survives remounts
+        if (moduleGuards.notifications) {
+            console.log('⏭️ Notifications already subscribed — skipping');
+            return;
+        }
+        moduleGuards.notifications = true;
+
         try {
             const userId = user.user_id || user.id;
             const channel = echo.private(`notifications.${userId}`);
@@ -280,9 +114,11 @@ export const RealtimeProvider = ({ children }) => {
             subscriptionsRef.current.notifications = () => {
                 channel.stopListening('.notification.new');
                 channel.unsubscribe();
+                moduleGuards.notifications = false;
             };
 
         } catch (error) {
+            moduleGuards.notifications = false;
             console.error('❌ Failed to subscribe to notifications:', error);
         }
     }, []);
@@ -292,6 +128,12 @@ export const RealtimeProvider = ({ children }) => {
     // ============================================
 
     const subscribeToGSO = useCallback((user) => {
+        if (moduleGuards.gso) {
+            console.log('⏭️ GSO already subscribed — skipping');
+            return;
+        }
+        moduleGuards.gso = true;
+
         try {
             const gsoChannel = echo.private('gso.dashboard');
 
@@ -330,7 +172,6 @@ export const RealtimeProvider = ({ children }) => {
                 eventBus.emit('refresh-gso-dashboard');
             });
 
-            // ✅ Also listen for new notifications (bell + toast)
             gsoChannel.listen('.trip.created', (data) => {
                 console.log('📋 GSO: Trip created:', data);
                 if (data.ticket_number) {
@@ -347,11 +188,13 @@ export const RealtimeProvider = ({ children }) => {
                 gsoChannel.stopListening('.trip.cancelled');
                 gsoChannel.stopListening('.trip.created');
                 gsoChannel.unsubscribe();
+                moduleGuards.gso = false;
             };
 
             console.log('✅ GSO real-time subscriptions active');
 
         } catch (error) {
+            moduleGuards.gso = false;
             console.error('❌ Failed to subscribe to GSO:', error);
         }
     }, []);
@@ -361,6 +204,9 @@ export const RealtimeProvider = ({ children }) => {
     // ============================================
 
     const subscribeToMayor = useCallback((user) => {
+        if (moduleGuards.mayor) return;
+        moduleGuards.mayor = true;
+
         try {
             const channel = echo.private('mayor.dashboard');
 
@@ -410,11 +256,13 @@ export const RealtimeProvider = ({ children }) => {
 
             subscriptionsRef.current.mayor = () => {
                 channel.unsubscribe();
+                moduleGuards.mayor = false;
             };
 
             console.log('✅ Mayor real-time subscriptions active');
 
         } catch (error) {
+            moduleGuards.mayor = false;
             console.error('❌ Failed to subscribe to Mayor:', error);
         }
     }, []);
@@ -424,10 +272,14 @@ export const RealtimeProvider = ({ children }) => {
     // ============================================
 
     const subscribeToDriver = useCallback((user) => {
+        if (moduleGuards.driver) return;
+        moduleGuards.driver = true;
+
         try {
             const driverId = user.driver?.driver_id || user.driver_id;
             if (!driverId) {
                 console.log('⚠️ No driver ID found for user:', user.user_id);
+                moduleGuards.driver = false;
                 return;
             }
 
@@ -459,11 +311,13 @@ export const RealtimeProvider = ({ children }) => {
 
             subscriptionsRef.current.driver = () => {
                 channel.unsubscribe();
+                moduleGuards.driver = false;
             };
 
             console.log('✅ Driver real-time subscriptions active');
 
         } catch (error) {
+            moduleGuards.driver = false;
             console.error('❌ Failed to subscribe to Driver:', error);
         }
     }, []);
@@ -473,8 +327,14 @@ export const RealtimeProvider = ({ children }) => {
     // ============================================
 
     const subscribeToDepartment = useCallback((user) => {
+        if (moduleGuards.department) return;
+        moduleGuards.department = true;
+
         try {
-            if (!user.department_id) return;
+            if (!user.department_id) {
+                moduleGuards.department = false;
+                return;
+            }
 
             const channel = echo.private(`department.${user.department_id}`);
 
@@ -504,11 +364,13 @@ export const RealtimeProvider = ({ children }) => {
 
             subscriptionsRef.current.department = () => {
                 channel.unsubscribe();
+                moduleGuards.department = false;
             };
 
             console.log('✅ Department real-time subscriptions active');
 
         } catch (error) {
+            moduleGuards.department = false;
             console.error('❌ Failed to subscribe to Department:', error);
         }
     }, []);
@@ -518,8 +380,14 @@ export const RealtimeProvider = ({ children }) => {
     // ============================================
 
     const subscribeToSystem = useCallback((user) => {
+        if (moduleGuards.system) return;
+        moduleGuards.system = true;
+
         try {
-            if (user.role !== 'gso_office') return;
+            if (user.role !== 'gso_office') {
+                moduleGuards.system = false;
+                return;
+            }
 
             const channel = echo.channel('system');
 
@@ -533,12 +401,173 @@ export const RealtimeProvider = ({ children }) => {
 
             subscriptionsRef.current.system = () => {
                 channel.unsubscribe();
+                moduleGuards.system = false;
             };
 
         } catch (error) {
+            moduleGuards.system = false;
             console.error('❌ Failed to subscribe to System:', error);
         }
     }, []);
+
+    // ============================================
+    // SUBSCRIBE ALL
+    // ============================================
+
+    const subscribeAll = useCallback((user) => {
+        if (!user) return;
+
+        const userId = String(user.user_id || user.id || '');
+
+        // ✅ Module-scope guard
+        if (moduleGuards.subscribedUserId === userId) {
+            console.log('⏭️ Already subscribed for user', userId, '— skipping');
+            return;
+        }
+
+        console.log('🔔 Subscribing to all real-time channels for user:', userId);
+
+        moduleGuards.subscribedUserId = userId;
+
+        subscribeToNotifications(user);
+
+        if (user.role === 'gso_office') {
+            subscribeToGSO(user);
+        } else if (user.role === 'mayors_office') {
+            subscribeToMayor(user);
+        } else if (user.role === 'driver') {
+            subscribeToDriver(user);
+        } else {
+            subscribeToDepartment(user);
+        }
+
+        subscribeToSystem(user);
+
+        fetchUnreadCount();
+
+        eventBus.emit('realtime-ready', { user });
+    }, [subscribeToNotifications, subscribeToGSO, subscribeToMayor, subscribeToDriver, subscribeToDepartment, subscribeToSystem]);
+
+    // ============================================
+    // CONNECTION MANAGEMENT
+    // ============================================
+
+    useEffect(() => {
+        let cancelled = false;
+        let attempt = 0;
+        const MAX_ATTEMPTS = 60;
+
+        const trySetup = () => {
+            if (cancelled) return;
+            if (attempt++ >= MAX_ATTEMPTS) {
+                console.error('❌ RealtimeContext: gave up waiting for echo.connector.pusher');
+                return;
+            }
+
+            if (!echo?.connector?.pusher) {
+                if (attempt === 1) {
+                    console.log('⏳ RealtimeContext: waiting for echo.connector.pusher...');
+                }
+                setTimeout(trySetup, 500);
+                return;
+            }
+
+            console.log('🔌 RealtimeContext: echo is ready — setting up subscriptions');
+
+            const connection = echo.connector.pusher.connection;
+
+            const handleConnected = () => {
+                if (cancelled) return;
+                console.log('✅ Real-time connected');
+                setIsConnected(true);
+
+                const user = getUser();
+                if (user) {
+                    subscribeAll(user);
+                }
+            };
+
+            const handleDisconnected = () => {
+                if (cancelled) return;
+                console.log('❌ Real-time disconnected');
+                setIsConnected(false);
+            };
+
+            const handleError = (error) => {
+                console.error('❌ Pusher error:', error);
+            };
+
+            connection.bind('connected', handleConnected);
+            connection.bind('disconnected', handleDisconnected);
+            connection.bind('error', handleError);
+
+            if (connection.state === 'connected') {
+                console.log('✅ Already connected — subscribing immediately');
+                setIsConnected(true);
+                const user = getUser();
+                if (user) {
+                    subscribeAll(user);
+                }
+            } else {
+                const user = getUser();
+                if (user) {
+                    setTimeout(() => {
+                        if (cancelled) return;
+                        const u = getUser();
+                        if (u) {
+                            console.log('⏱️ Fallback: subscribing after timeout');
+                            subscribeAll(u);
+                        }
+                    }, 1500);
+                }
+            }
+
+            const handleAuthChange = () => {
+                const newUser = getUser();
+                const newUserId = newUser ? String(newUser.user_id || newUser.id) : null;
+
+                if (newUser && moduleGuards.subscribedUserId !== newUserId) {
+                    // Different user — force full resubscribe
+                    Object.values(subscriptionsRef.current).forEach(unsub => {
+                        if (typeof unsub === 'function') unsub();
+                    });
+                    subscriptionsRef.current = {};
+                    moduleGuards.subscribedUserId = null;
+                    subscribeAll(newUser);
+                } else if (!newUser) {
+                    // Logout — full cleanup
+                    Object.values(subscriptionsRef.current).forEach(unsub => {
+                        if (typeof unsub === 'function') unsub();
+                    });
+                    subscriptionsRef.current = {};
+                    moduleGuards.notifications = false;
+                    moduleGuards.gso = false;
+                    moduleGuards.mayor = false;
+                    moduleGuards.driver = false;
+                    moduleGuards.department = false;
+                    moduleGuards.system = false;
+                    moduleGuards.subscribedUserId = null;
+                }
+            };
+            window.addEventListener('auth-change', handleAuthChange);
+
+            trySetup._cleanup = () => {
+                connection.unbind('connected', handleConnected);
+                connection.unbind('disconnected', handleDisconnected);
+                connection.unbind('error', handleError);
+                window.removeEventListener('auth-change', handleAuthChange);
+            };
+        };
+
+        trySetup();
+
+        return () => {
+            cancelled = true;
+            if (trySetup._cleanup) trySetup._cleanup();
+            // ❌ DO NOT unsubscribe on cleanup — moduleGuards persists
+            // Only unsubscribe on explicit logout (auth-change with null user)
+        };
+    }, [getUser, subscribeAll]);
 
     // ============================================
     // FETCH UNREAD COUNT
@@ -558,7 +587,6 @@ export const RealtimeProvider = ({ children }) => {
 
             if (response.ok) {
                 const data = await response.json();
-                // ✅ Handle both response shapes
                 const count = data?.data?.unread_count ?? data?.count ?? 0;
                 setUnreadCount(count);
             }
