@@ -24,6 +24,16 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Search,
   Receipt,
   CheckCircle,
@@ -259,6 +269,15 @@ const formatDate = (date) => {
   }
 };
 
+const formatDateShort = (date) => {
+  if (!date) return "N/A";
+  try {
+    return format(new Date(date), "MMM dd, yyyy");
+  } catch {
+    return "N/A";
+  }
+};
+
 const formatCurrency = (amount) => {
   const numAmount = parseFloat(amount);
   if (isNaN(numAmount) || numAmount === 0) return "₱0.00";
@@ -301,7 +320,10 @@ const MayorReceiptVerification = () => {
   const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
 
-  // ✅ FIXED: added unit_price to initial state
+  // ✅ Confirmation dialog state
+  const [showConfirmVerify, setShowConfirmVerify] = useState(false);
+
+  // ✅ edit state for the table-style modal
   const [editData, setEditData] = useState({
     invoice_number: "",
     unit_price: "",
@@ -312,11 +334,9 @@ const MayorReceiptVerification = () => {
   // QUERIES
   // ============================================
 
-  // Pending receipts
   const {
     data: pendingReceipts = [],
     isLoading: isLoadingPending,
-    isFetching: isFetchingPending,
   } = useQuery({
     queryKey: ["mayor-receipt-verification", "pending"],
     queryFn: async () => {
@@ -325,11 +345,9 @@ const MayorReceiptVerification = () => {
     },
   });
 
-  // Verified receipts (new endpoint)
   const {
     data: verifiedReceipts = [],
     isLoading: isLoadingVerified,
-    isFetching: isFetchingVerified,
   } = useQuery({
     queryKey: ["mayor-receipt-verification", "verified"],
     queryFn: async () => {
@@ -409,7 +427,8 @@ const MayorReceiptVerification = () => {
     setEditData(prev => ({ ...prev, [field]: value }));
   }, []);
 
-  const handleVerify = () => {
+  // ✅ Step 1: validate, open confirmation
+  const handleVerifyClick = () => {
     const amount = parseFloat(editData.amount_on_receipt) || 0;
 
     if (!editData.amount_on_receipt || amount <= 0) {
@@ -417,7 +436,6 @@ const MayorReceiptVerification = () => {
       return;
     }
 
-    // ✅ Cap check: amount must not exceed released
     const released = parseFloat(selectedReceipt?.amount_released) || 0;
     if (released > 0 && amount > released) {
       toast.error(
@@ -426,6 +444,13 @@ const MayorReceiptVerification = () => {
       return;
     }
 
+    setShowConfirmVerify(true);
+  };
+
+  // ✅ Step 2: confirm → fire mutation
+  const handleConfirmVerify = () => {
+    setShowConfirmVerify(false);
+    const amount = parseFloat(editData.amount_on_receipt) || 0;
     const unitPrice = parseFloat(editData.unit_price) || 0;
 
     const payload = {
@@ -517,6 +542,26 @@ const MayorReceiptVerification = () => {
   }
 
   const isVerifiedView = activeTab === "verified";
+
+  // ============================================
+  // MODAL DERIVED VALUES
+  // ============================================
+
+  const modalPlateCombined = selectedReceipt
+    ? [
+        selectedReceipt.vehicle_model,
+        selectedReceipt.plate_number,
+      ].filter(Boolean).join(' - ') || 'N/A'
+    : 'N/A';
+
+
+
+  const modalUnitPrice =
+    selectedReceipt?.unit_price !== null &&
+    selectedReceipt?.unit_price !== undefined &&
+    parseFloat(selectedReceipt.unit_price) > 0
+      ? formatCurrency(selectedReceipt.unit_price)
+      : null;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
@@ -785,7 +830,7 @@ const MayorReceiptVerification = () => {
 
         {/* Receipt Detail Modal */}
         <Dialog open={showReceiptModal} onOpenChange={setShowReceiptModal}>
-          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto dark:bg-slate-800 dark:border-slate-700">
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto dark:bg-slate-800 dark:border-slate-700">
             <DialogHeader>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
@@ -856,72 +901,91 @@ const MayorReceiptVerification = () => {
                 {/* Receipt Image */}
                 <ReceiptImage receipt={selectedReceipt} />
 
-                {/* Receipt Details Grid */}
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                  <div className="p-2 rounded-lg bg-slate-50 dark:bg-slate-900/50">
-                    <p className="text-xs text-slate-500 dark:text-slate-400">Ticket Number</p>
-                    <p className="font-medium text-slate-800 dark:text-white flex items-center gap-1">
-                      <FileText className="h-3 w-3 text-slate-400" />
-                      {selectedReceipt.ticket_number}
-                    </p>
-                  </div>
-                  <div className="p-2 rounded-lg bg-slate-50 dark:bg-slate-900/50">
-                    <p className="text-xs text-slate-500 dark:text-slate-400">Driver</p>
-                    <p className="font-medium text-slate-800 dark:text-white flex items-center gap-1">
-                      <User className="h-3 w-3 text-slate-400" />
-                      {selectedReceipt.driver_name}
-                    </p>
-                  </div>
-                  <div className="p-2 rounded-lg bg-slate-50 dark:bg-slate-900/50">
-                    <p className="text-xs text-slate-500 dark:text-slate-400">Vehicle</p>
-                    <p className="font-medium text-slate-800 dark:text-white flex items-center gap-1">
-                      <Truck className="h-3 w-3 text-slate-400" />
-                      {selectedReceipt.plate_number}
-                    </p>
-                  </div>
-                  <div className="p-2 rounded-lg bg-slate-50 dark:bg-slate-900/50">
-                    <p className="text-xs text-slate-500 dark:text-slate-400">Department</p>
-                    <p className="font-medium text-slate-800 dark:text-white flex items-center gap-1">
-                      <Building2 className="h-3 w-3 text-slate-400" />
-                      {selectedReceipt.department_name}
-                    </p>
-                  </div>
-                  <div className="p-2 rounded-lg bg-slate-50 dark:bg-slate-900/50">
-                    <p className="text-xs text-slate-500 dark:text-slate-400">Fuel Type</p>
-                    <p className="font-medium text-slate-800 dark:text-white flex items-center gap-1">
-                      <Fuel className="h-3 w-3 text-slate-400" />
-                      {selectedReceipt.fuel_type || "N/A"}
-                    </p>
-                  </div>
-                  <div className="p-2 rounded-lg bg-slate-50 dark:bg-slate-900/50">
-                    <p className="text-xs text-slate-500 dark:text-slate-400">Trip Date</p>
-                    <p className="font-medium text-slate-800 dark:text-white flex items-center gap-1">
-                      <Calendar className="h-3 w-3 text-slate-400" />
-                      {formatDate(selectedReceipt.trip_date)}
-                    </p>
-                  </div>
+                {/* ✅ REBUILT: Table-style receipt info */}
+                <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead className="bg-slate-50 dark:bg-slate-900/50">
+                      <tr>
+                        <th className="px-3 py-2 text-left text-[11px] font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
+                          Charge Invoice No.
+                        </th>
+                        <th className="px-3 py-2 text-left text-[11px] font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
+                          Plate No.
+                        </th>
+                        <th className="px-3 py-2 text-left text-[11px] font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
+                          Date
+                        </th>
+                        <th className="px-3 py-2 text-left text-[11px] font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
+                          Control No.
+                        </th>
+                        <th className="px-3 py-2 text-left text-[11px] font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
+                          Lubricant
+                        </th>
+                       
+                        <th className="px-3 py-2 text-right text-[11px] font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
+                          Unit Price
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white dark:bg-slate-800">
+                      <tr>
+                        <td className="px-3 py-3 font-mono text-slate-800 dark:text-slate-200">
+                          {isEditing && !isVerifiedView ? (
+                            <Input
+                              value={editData.invoice_number}
+                              onChange={(e) => handleInputChange('invoice_number', e.target.value)}
+                              className="h-8 text-xs dark:bg-slate-900 dark:border-slate-700 dark:text-white"
+                              placeholder="Invoice #"
+                            />
+                          ) : (
+                            selectedReceipt.invoice_number || "N/A"
+                          )}
+                        </td>
+                        <td className="px-3 py-3 text-slate-800 dark:text-slate-200">
+                          {modalPlateCombined}
+                        </td>
+                        <td className="px-3 py-3 text-slate-800 dark:text-slate-200">
+                          {formatDateShort(selectedReceipt.trip_date)}
+                        </td>
+                        <td className="px-3 py-3 font-mono text-slate-800 dark:text-slate-200">
+                          {selectedReceipt.ticket_number || selectedReceipt.trip_ticket_number || "N/A"}
+                        </td>
+                        <td className="px-3 py-3 text-slate-800 dark:text-slate-200">
+                          {selectedReceipt.fuel_type
+                            ? String(selectedReceipt.fuel_type).toUpperCase()
+                            : "N/A"}
+                        </td>
+                       
+                        <td className="px-3 py-3 text-right text-slate-800 dark:text-slate-200">
+                          {isEditing && !isVerifiedView ? (
+                            <div className="relative">
+                              <span className="absolute left-2 top-1/2 transform -translate-y-1/2 text-slate-500 dark:text-slate-400 text-xs font-medium">
+                                ₱
+                              </span>
+                              <Input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={editData.unit_price}
+                                onChange={(e) => handleInputChange('unit_price', e.target.value)}
+                                className="pl-6 h-8 text-xs font-semibold bg-white dark:bg-slate-900 border-blue-300 dark:border-blue-700 text-slate-900 dark:text-white text-right"
+                                placeholder="0.00"
+                              />
+                            </div>
+                          ) : (
+                            modalUnitPrice || (
+                              <span className="text-slate-400 dark:text-slate-500 italic">N/A</span>
+                            )
+                          )}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
                 </div>
 
-                {/* Amount Section — 4 columns now: Invoice, Released, Unit Price, Amount */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-                  {/* Invoice Number */}
-                  <div>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">Invoice Number</p>
-                    {isEditing && !isVerifiedView ? (
-                      <Input
-                        value={editData.invoice_number}
-                        onChange={(e) => handleInputChange('invoice_number', e.target.value)}
-                        className="mt-1 dark:bg-slate-900 dark:border-slate-700 h-9 text-sm dark:text-white"
-                        placeholder="Invoice #"
-                      />
-                    ) : (
-                      <p className="font-medium text-slate-800 dark:text-white text-sm mt-1">
-                        {selectedReceipt.invoice_number || "N/A"}
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Amount Released (read-only, from gas_slip) */}
+                {/* Amount Released + Amount on Receipt */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {/* Amount Released (read-only) */}
                   <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700">
                     <p className="text-xs text-slate-500 dark:text-slate-400">Amount Released</p>
                     <p className="font-semibold text-slate-800 dark:text-white text-base mt-0.5">
@@ -930,41 +994,6 @@ const MayorReceiptVerification = () => {
                     <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">
                       From fund issuance
                     </p>
-                  </div>
-
-                  {/* ✅ NEW: Unit Price (editable) */}
-                  <div className={`p-3 rounded-lg border ${
-                    isEditing && !isVerifiedView
-                      ? 'bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800'
-                      : 'bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700'
-                  }`}>
-                    <p className={`text-xs font-semibold ${
-                      isEditing && !isVerifiedView
-                        ? 'text-blue-600 dark:text-blue-400'
-                        : 'text-slate-500 dark:text-slate-400'
-                    }`}>
-                      Unit Price {isEditing && !isVerifiedView && '(per L)'}
-                    </p>
-                    {isEditing && !isVerifiedView ? (
-                      <div className="relative mt-1">
-                        <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-500 dark:text-slate-400 text-sm font-medium">
-                          ₱
-                        </span>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          value={editData.unit_price}
-                          onChange={(e) => handleInputChange('unit_price', e.target.value)}
-                          className="pl-7 h-9 text-sm font-semibold bg-white dark:bg-slate-900 border-blue-300 dark:border-blue-700 text-slate-900 dark:text-white"
-                          placeholder="0.00"
-                        />
-                      </div>
-                    ) : (
-                      <p className="font-semibold text-blue-600 dark:text-blue-400 text-base mt-0.5">
-                        {formatCurrency(selectedReceipt.unit_price)}
-                      </p>
-                    )}
                   </div>
 
                   {/* Amount on Receipt (editable) */}
@@ -1007,7 +1036,8 @@ const MayorReceiptVerification = () => {
                 {isEditing && !isVerifiedView && (
                   <div className="text-xs text-slate-600 dark:text-slate-300 bg-blue-50 dark:bg-blue-950/30 p-3 rounded-lg border border-blue-200 dark:border-blue-800">
                     <Info className="h-4 w-4 inline mr-1 text-blue-500 dark:text-blue-400" />
-                    Enter the <strong>Unit Price</strong> and <strong>Amount on Receipt</strong> (from the physical receipt).
+                    Enter the <strong>Charge Invoice No.</strong>, <strong>Unit Price</strong>, and{' '}
+                    <strong>Amount on Receipt</strong> (from the physical receipt).
                     Amount must not exceed the <strong>Amount Released</strong> of{' '}
                     <strong>{formatCurrency(selectedReceipt.amount_released)}</strong>.
                   </div>
@@ -1038,7 +1068,7 @@ const MayorReceiptVerification = () => {
 
                     {!isVerifiedView && selectedReceipt.status !== "verified" && (
                       <Button
-                        onClick={handleVerify}
+                        onClick={handleVerifyClick}
                         className="bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700 shadow-lg shadow-emerald-500/20 transition-all duration-300 hover:scale-[1.02] active:scale-[0.98] text-white"
                         disabled={verifyMutation.isPending}
                       >
@@ -1068,6 +1098,56 @@ const MayorReceiptVerification = () => {
             )}
           </DialogContent>
         </Dialog>
+
+        {/* ✅ CONFIRMATION: Verify Receipt */}
+        <AlertDialog open={showConfirmVerify} onOpenChange={setShowConfirmVerify}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2">
+                <CheckCircle className="h-5 w-5 text-emerald-500" />
+                Confirm Receipt Verification
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                You are about to <strong>verify</strong> the fuel receipt for ticket{' '}
+                <strong className="text-slate-900 dark:text-white">
+                  {selectedReceipt?.ticket_number || 'N/A'}
+                </strong>
+                .
+                <br /><br />
+                Amount Released:{' '}
+                <strong className="text-slate-900 dark:text-white">
+                  {formatCurrency(selectedReceipt?.amount_released)}
+                </strong>
+                <br />
+                Amount on Receipt:{' '}
+                <strong className="text-emerald-600 dark:text-emerald-400">
+                  {formatCurrency(editData.amount_on_receipt)}
+                </strong>
+                {editData.unit_price && (
+                  <>
+                    <br />
+                    Unit Price:{' '}
+                    <strong className="text-slate-900 dark:text-white">
+                      {formatCurrency(editData.unit_price)}
+                    </strong>
+                  </>
+                )}
+                <br /><br />
+                This action cannot be undone. Continue?
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleConfirmVerify}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              >
+                <CheckCircle className="h-4 w-4 mr-2" />
+                Confirm Verify
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         {/* Footer */}
         <div className="text-center text-xs text-slate-400 dark:text-slate-500 pt-2 border-t border-slate-200 dark:border-slate-700">

@@ -16,6 +16,16 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
     Search,
     Receipt,
     Loader2,
@@ -365,8 +375,10 @@ const FuelReceipts = () => {
     // ✅ modal-only liters editing
     const [modalLiters, setModalLiters] = useState('');
     const [isSavingModal, setIsSavingModal] = useState(false);
-    // ✅ NEW: track whether the input is in edit mode
     const [isEditingLiters, setIsEditingLiters] = useState(false);
+
+    // ✅ confirmation dialog for saving liters
+    const [showConfirmSave, setShowConfirmSave] = useState(false);
 
     // ============================================
     // ✅ AUTO-REFRESH
@@ -463,8 +475,6 @@ const FuelReceipts = () => {
 
     // ============================================
     // ✅ OPEN MODAL
-    // - If receipt already has liters (> 0): show as read-only with Edit button
-    // - If no liters yet: enter edit mode immediately
     // ============================================
 
     const handleOpenModal = useCallback((receipt) => {
@@ -473,7 +483,7 @@ const FuelReceipts = () => {
         const hasLiters = existing > 0;
 
         setModalLiters(hasLiters ? String(existing) : '');
-        setIsEditingLiters(!hasLiters); // ✅ auto-edit if no value yet
+        setIsEditingLiters(!hasLiters);
         setShowReceiptDialog(true);
     }, []);
 
@@ -496,26 +506,30 @@ const FuelReceipts = () => {
     }, [selectedReceipt]);
 
     // ============================================
-    // ✅ SAVE LITERS — updates cache, no refetch
+    // ✅ SAVE LITERS — now with confirmation
     // ============================================
 
-    const handleSaveModalLiters = useCallback(async () => {
-        if (!selectedReceipt) return;
-
-        const id = selectedReceipt.id || selectedReceipt.fuel_receipt_id;
+    const handleSaveClick = useCallback(() => {
         const parsed = parseFloat(modalLiters);
-
         if (modalLiters === '' || isNaN(parsed) || parsed <= 0) {
             toast.error('Please enter a valid liters value (positive number)');
             return;
         }
+        setShowConfirmSave(true);
+    }, [modalLiters]);
+
+    const handleConfirmSaveLiters = useCallback(async () => {
+        setShowConfirmSave(false);
+        if (!selectedReceipt) return;
+
+        const id = selectedReceipt.id || selectedReceipt.fuel_receipt_id;
+        const parsed = parseFloat(modalLiters);
 
         setIsSavingModal(true);
         try {
             const res = await gsoAPI.updateFuelReceiptLiters(id, parsed);
             const updated = res?.data?.data || {};
 
-            // ✅ Update cache in place — no refetch
             queryClient.setQueryData(['gso-fuel-receipts'], (old) => {
                 if (!Array.isArray(old)) return old;
                 return old.map(r => {
@@ -531,14 +545,12 @@ const FuelReceipts = () => {
                 });
             });
 
-            // ✅ Update selected receipt
             setSelectedReceipt(prev => prev ? {
                 ...prev,
                 liters: updated.liters_availed ?? parsed,
                 unit_price: updated.unit_price ?? prev.unit_price,
             } : prev);
 
-            // ✅ Lock the field back down — no longer editable until Edit clicked
             setModalLiters(String(updated.liters_availed ?? parsed));
             setIsEditingLiters(false);
             toast.success('Liters saved');
@@ -836,7 +848,7 @@ const FuelReceipts = () => {
                                                     onKeyDown={(e) => {
                                                         if (e.key === 'Enter') {
                                                             e.preventDefault();
-                                                            handleSaveModalLiters();
+                                                            handleSaveClick();
                                                         }
                                                         if (e.key === 'Escape') {
                                                             e.preventDefault();
@@ -914,7 +926,7 @@ const FuelReceipts = () => {
                                 </Button>
                                 {isEditingLiters && (
                                     <Button
-                                        onClick={handleSaveModalLiters}
+                                        onClick={handleSaveClick}
                                         disabled={isSavingModal || modalLiters === ''}
                                         className="bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-50"
                                     >
@@ -936,6 +948,39 @@ const FuelReceipts = () => {
                     )}
                 </DialogContent>
             </Dialog>
+
+            {/* ✅ CONFIRMATION: Save Liters */}
+            <AlertDialog open={showConfirmSave} onOpenChange={setShowConfirmSave}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle className="flex items-center gap-2">
+                            <Fuel className="h-5 w-5 text-blue-500" />
+                            Confirm Fuel Loaded
+                        </AlertDialogTitle>
+                        <AlertDialogDescription>
+                            You are about to save{' '}
+                            <strong className="text-slate-900 dark:text-white">
+                                {modalLiters} L
+                            </strong>{' '}
+                            of fuel loaded for ticket{' '}
+                            <strong className="text-slate-900 dark:text-white">
+                                {selectedReceipt?.ticket_number || selectedReceipt?.trip_ticket_number || 'N/A'}
+                            </strong>
+                            . This will update the receipt record. Continue?
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                            onClick={handleConfirmSaveLiters}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                        >
+                            <Save className="h-4 w-4 mr-2" />
+                            Confirm Save
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </div>
     );
 };
