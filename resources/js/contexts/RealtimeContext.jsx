@@ -5,6 +5,7 @@
 // ✅ FIXED: Pusher "startTime" error from duplicate subscriptions
 // ✅ FIXED: gso-live-tracking duplicate subscription removed
 //           (LiveTracking.jsx owns it exclusively)
+// ✅ FIXED: Retry loop for echo.connector.pusher (was bailing on mount race)
 // ============================================
 
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
@@ -47,7 +48,9 @@ export const RealtimeProvider = ({ children }) => {
                 userRef.current = user;
                 return user;
             }
-        } catch (e) {}
+        } catch (e) {
+            console.warn('getUser parse error:', e);
+        }
         return null;
     }, []);
 
@@ -58,13 +61,15 @@ export const RealtimeProvider = ({ children }) => {
     const subscribeAll = useCallback((user) => {
         if (!user) return;
 
+        const userId = String(user.user_id || user.id || '');
+
         // ✅ Guard: Skip if already subscribed for this user
-        if (subscribedUserIdRef.current === user.user_id) {
-            console.log('⏭️ Already subscribed for user', user.user_id, '— skipping');
+        if (String(subscribedUserIdRef.current) === userId) {
+            console.log('⏭️ Already subscribed for user', userId, '— skipping');
             return;
         }
 
-        console.log('🔔 Subscribing to all real-time channels for user:', user.user_id);
+        console.log('🔔 Subscribing to all real-time channels for user:', userId);
 
         // Cleanup old subscriptions
         Object.values(subscriptionsRef.current).forEach(unsub => {
@@ -73,7 +78,7 @@ export const RealtimeProvider = ({ children }) => {
         subscriptionsRef.current = {};
 
         // ✅ Mark as subscribed BEFORE subscribing to prevent race conditions
-        subscribedUserIdRef.current = user.user_id;
+        subscribedUserIdRef.current = userId;
         hasSubscribedRef.current = true;
 
         // 1. Notifications
@@ -108,66 +113,120 @@ export const RealtimeProvider = ({ children }) => {
     // ============================================
 
     useEffect(() => {
-        if (!echo?.connector?.pusher) return;
+        let cancelled = false;
+        let attempt = 0;
+        const MAX_ATTEMPTS = 60; // 30 seconds of retries
 
-        const connection = echo.connector.pusher.connection;
-
-        const handleConnected = () => {
-            console.log('✅ Real-time connected');
-            setIsConnected(true);
-
-            const user = getUser();
-            if (user && !hasSubscribedRef.current) {
-                subscribeAllRef.current(user);
+        // ✅ Retry loop — waits for echo.connector.pusher to be ready
+        const trySetup = () => {
+            if (cancelled) return;
+            if (attempt++ >= MAX_ATTEMPTS) {
+                console.error('❌ RealtimeContext: gave up waiting for echo.connector.pusher after', MAX_ATTEMPTS, 'attempts');
+                return;
             }
-        };
 
-        const handleDisconnected = () => {
-            console.log('❌ Real-time disconnected');
-            setIsConnected(false);
-            // ✅ DO NOT reset guards — Pusher auto-reconnects to the same channels.
-            // Only reset on explicit login/logout via `auth-change` event.
-        };
+            // Wait for echo to be ready
+            if (!echo?.connector?.pusher) {
+                if (attempt === 1) {
+                    console.log('⏳ RealtimeContext: waiting for echo.connector.pusher...');
+                }
+                setTimeout(trySetup, 500);
+                return;
+            }
 
-        const handleError = (error) => {
-            console.error('❌ Pusher error:', error);
-        };
+            console.log('🔌 RealtimeContext: echo is ready — setting up subscriptions');
 
-        connection.bind('connected', handleConnected);
-        connection.bind('disconnected', handleDisconnected);
-        connection.bind('error', handleError);
+            const connection = echo.connector.pusher.connection;
 
-        const user = getUser();
-        if (user && !hasSubscribedRef.current) {
-            setTimeout(() => {
-                if (!hasSubscribedRef.current) {
+            const handleConnected = () => {
+                if (cancelled) return;
+                console.log('✅ Real-time connected');
+                setIsConnected(true);
+
+                const user = getUser();
+                if (user && !hasSubscribedRef.current) {
                     subscribeAllRef.current(user);
                 }
-            }, 500);
-        }
+            };
 
-        const handleAuthChange = () => {
-            const newUser = getUser();
-            if (newUser && subscribedUserIdRef.current !== newUser.user_id) {
-                hasSubscribedRef.current = false;
-                subscribedUserIdRef.current = null;
-                subscribeAllRef.current(newUser);
-            } else if (!newUser) {
-                Object.values(subscriptionsRef.current).forEach(unsub => {
-                    if (typeof unsub === 'function') unsub();
-                });
-                subscriptionsRef.current = {};
-                hasSubscribedRef.current = false;
-                subscribedUserIdRef.current = null;
+            const handleDisconnected = () => {
+                if (cancelled) return;
+                console.log('❌ Real-time disconnected');
+                setIsConnected(false);
+                // ✅ DO NOT reset guards — Pusher auto-reconnects to the same channels.
+            };
+
+            const handleError = (error) => {
+                console.error('❌ Pusher error:', error);
+            };
+
+            connection.bind('connected', handleConnected);
+            connection.bind('disconnected', handleDisconnected);
+            connection.bind('error', handleError);
+
+            // ✅ Subscribe NOW if already connected (doesn't wait for event)
+            if (connection.state === 'connected') {
+                console.log('✅ Already connected — subscribing immediately');
+                setIsConnected(true);
+                const user = getUser();
+                if (user && !hasSubscribedRef.current) {
+                    subscribeAllRef.current(user);
+                }
+            } else {
+                // Otherwise, wait for connected event
+                const user = getUser();
+                if (user && !hasSubscribedRef.current) {
+                    // Fallback timeout in case 'connected' event already fired
+                    setTimeout(() => {
+                        if (cancelled) return;
+                        if (!hasSubscribedRef.current && getUser()) {
+                            console.log('⏱️ Fallback: subscribing after timeout');
+                            subscribeAllRef.current(getUser());
+                        }
+                    }, 1500);
+                }
             }
+
+            // Auth change listener (login/logout)
+            const handleAuthChange = () => {
+                const newUser = getUser();
+                const newUserId = newUser ? String(newUser.user_id || newUser.id) : null;
+
+                if (newUser && String(subscribedUserIdRef.current) !== newUserId) {
+                    // Different user — reset and subscribe
+                    Object.values(subscriptionsRef.current).forEach(unsub => {
+                        if (typeof unsub === 'function') unsub();
+                    });
+                    subscriptionsRef.current = {};
+                    hasSubscribedRef.current = false;
+                    subscribedUserIdRef.current = null;
+                    subscribeAllRef.current(newUser);
+                } else if (!newUser) {
+                    // Logout — unsubscribe everything
+                    Object.values(subscriptionsRef.current).forEach(unsub => {
+                        if (typeof unsub === 'function') unsub();
+                    });
+                    subscriptionsRef.current = {};
+                    hasSubscribedRef.current = false;
+                    subscribedUserIdRef.current = null;
+                }
+            };
+            window.addEventListener('auth-change', handleAuthChange);
+
+            // Store cleanup for outer return
+            trySetup._cleanup = () => {
+                connection.unbind('connected', handleConnected);
+                connection.unbind('disconnected', handleDisconnected);
+                connection.unbind('error', handleError);
+                window.removeEventListener('auth-change', handleAuthChange);
+            };
         };
-        window.addEventListener('auth-change', handleAuthChange);
+
+        trySetup();
 
         return () => {
-            connection.unbind('connected', handleConnected);
-            connection.unbind('disconnected', handleDisconnected);
-            connection.unbind('error', handleError);
-            window.removeEventListener('auth-change', handleAuthChange);
+            cancelled = true;
+            if (trySetup._cleanup) trySetup._cleanup();
 
             Object.values(subscriptionsRef.current).forEach(unsub => {
                 if (typeof unsub === 'function') unsub();
@@ -184,7 +243,8 @@ export const RealtimeProvider = ({ children }) => {
 
     const subscribeToNotifications = useCallback((user) => {
         try {
-            const channel = echo.private(`notifications.${user.user_id}`);
+            const userId = user.user_id || user.id;
+            const channel = echo.private(`notifications.${userId}`);
 
             channel.listen('.notification.new', (data) => {
                 console.log('📨 Real-time notification:', data);
@@ -210,10 +270,15 @@ export const RealtimeProvider = ({ children }) => {
             });
 
             channel.subscribed(() => {
-                console.log(`✅ Subscribed to notifications.${user.user_id}`);
+                console.log(`✅ Subscribed to notifications.${userId}`);
+            });
+
+            channel.error((error) => {
+                console.error(`❌ Subscription error for notifications.${userId}:`, error);
             });
 
             subscriptionsRef.current.notifications = () => {
+                channel.stopListening('.notification.new');
                 channel.unsubscribe();
             };
 
@@ -228,7 +293,6 @@ export const RealtimeProvider = ({ children }) => {
 
     const subscribeToGSO = useCallback((user) => {
         try {
-            // 1. GSO Dashboard
             const gsoChannel = echo.private('gso.dashboard');
 
             gsoChannel.listen('.trip.updated', (data) => {
@@ -239,39 +303,51 @@ export const RealtimeProvider = ({ children }) => {
 
             gsoChannel.listen('.trip.status_changed', (data) => {
                 console.log('📋 GSO: Trip status changed:', data);
-                toast.info(`Trip ${data.ticket_number} status: ${data.new_status}`);
+                if (data.ticket_number && data.new_status) {
+                    toast.info(`Trip ${data.ticket_number} status: ${data.new_status}`);
+                }
                 eventBus.emit('gso-trip-status-changed', data);
                 eventBus.emit('refresh-gso-dashboard');
             });
 
             gsoChannel.listen('.trip.funds_released', (data) => {
                 console.log('💰 GSO: Funds released:', data);
-                toast.success(`Funds released for trip ${data.ticket_number}`);
+                if (data.ticket_number) {
+                    toast.success(`Funds released for trip ${data.ticket_number}`);
+                }
                 eventBus.emit('gso-funds-released', data);
                 eventBus.emit('refresh-gso-dashboard');
             });
 
             gsoChannel.listen('.trip.cancelled', (data) => {
                 console.log('❌ GSO: Trip cancelled:', data);
-                toast.info(`Trip ${data.trip_ticket_number || data.ticket_number} was cancelled`);
+                const num = data.trip_ticket_number || data.ticket_number;
+                if (num) {
+                    toast.info(`Trip ${num} was cancelled`);
+                }
                 eventBus.emit('trip-cancelled', data);
                 eventBus.emit('gso-trip-updated', data);
                 eventBus.emit('refresh-gso-dashboard');
             });
 
+            // ✅ Also listen for new notifications (bell + toast)
+            gsoChannel.listen('.trip.created', (data) => {
+                console.log('📋 GSO: Trip created:', data);
+                if (data.ticket_number) {
+                    toast.info(`New trip created: ${data.ticket_number}`);
+                }
+                eventBus.emit('gso-trip-created', data);
+                eventBus.emit('refresh-gso-dashboard');
+            });
+
             subscriptionsRef.current.gso = () => {
+                gsoChannel.stopListening('.trip.updated');
+                gsoChannel.stopListening('.trip.status_changed');
+                gsoChannel.stopListening('.trip.funds_released');
+                gsoChannel.stopListening('.trip.cancelled');
+                gsoChannel.stopListening('.trip.created');
                 gsoChannel.unsubscribe();
             };
-
-            // ✅ Live tracking subscription is handled ENTIRELY by LiveTracking.jsx.
-            // Do NOT subscribe to 'gso-live-tracking' here. Duplicate subscribers caused
-            // a race where .trip.started triggered competing refetches before the new
-            // trip was committed to the DB, leaving the marker invisible until the
-            // user switched browser tabs.
-            //
-            // GSO trip notifications (started/completed) still arrive via the
-            // notifications.{userId} channel (backend dispatches via NotificationHelper),
-            // so the dashboard still gets notified.
 
             console.log('✅ GSO real-time subscriptions active');
 
@@ -296,7 +372,9 @@ export const RealtimeProvider = ({ children }) => {
 
             channel.listen('.trip.pending', (data) => {
                 console.log('🏛️ Mayor: New pending trip:', data);
-                toast.info(`New trip ${data.ticket_number} pending approval`);
+                if (data.ticket_number) {
+                    toast.info(`New trip ${data.ticket_number} pending approval`);
+                }
                 eventBus.emit('mayor-new-pending', data);
                 eventBus.emit('refresh-mayor-dashboard');
                 eventBus.emit('refresh-mayor-pending');
@@ -304,21 +382,27 @@ export const RealtimeProvider = ({ children }) => {
 
             channel.listen('.budget.updated', (data) => {
                 console.log('💰 Mayor: Budget updated:', data);
-                toast.info(`Budget updated for ${data.department_name}`);
+                if (data.department_name) {
+                    toast.info(`Budget updated for ${data.department_name}`);
+                }
                 eventBus.emit('mayor-budget-updated', data);
                 eventBus.emit('refresh-mayor-budget');
             });
 
             channel.listen('.budget.low_warning', (data) => {
                 console.log('⚠️ Mayor: Budget low warning:', data);
-                toast.warning(`⚠️ ${data.department_name} budget is running low!`);
+                if (data.department_name) {
+                    toast.warning(`${data.department_name} budget is running low!`);
+                }
                 eventBus.emit('mayor-budget-warning', data);
                 eventBus.emit('refresh-mayor-budget');
             });
 
             channel.listen('.trip.cancelled', (data) => {
                 console.log('🏛️ Mayor: Trip cancelled:', data);
-                toast.info(`Trip ${data.ticket_number} was cancelled by GSO`);
+                if (data.ticket_number) {
+                    toast.info(`Trip ${data.ticket_number} was cancelled by GSO`);
+                }
                 eventBus.emit('mayor-trip-cancelled', data);
                 eventBus.emit('refresh-mayor-dashboard');
                 eventBus.emit('refresh-mayor-pending');
@@ -351,14 +435,18 @@ export const RealtimeProvider = ({ children }) => {
 
             channel.listen('.trip.assigned', (data) => {
                 console.log('🚗 Driver: New trip assigned:', data);
-                toast.info(`🚗 New trip assigned: ${data.ticket_number}`);
+                if (data.ticket_number) {
+                    toast.info(`New trip assigned: ${data.ticket_number}`);
+                }
                 eventBus.emit('driver-trip-assigned', data);
                 eventBus.emit('refresh-driver-trips');
             });
 
             channel.listen('.trip.funds_released', (data) => {
                 console.log('💰 Driver: Funds released:', data);
-                toast.success(`✅ Funds released for trip ${data.ticket_number}`);
+                if (data.ticket_number) {
+                    toast.success(`Funds released for trip ${data.ticket_number}`);
+                }
                 eventBus.emit('driver-funds-released', data);
                 eventBus.emit('refresh-driver-trips');
             });
@@ -392,7 +480,9 @@ export const RealtimeProvider = ({ children }) => {
 
             channel.listen('.trip.created', (data) => {
                 console.log('🏢 Department: Trip created:', data);
-                toast.info(`New trip created: ${data.ticket_number}`);
+                if (data.ticket_number) {
+                    toast.info(`New trip created: ${data.ticket_number}`);
+                }
                 eventBus.emit('dept-trip-created', data);
                 eventBus.emit('refresh-dept-trips');
             });
@@ -405,7 +495,9 @@ export const RealtimeProvider = ({ children }) => {
 
             channel.listen('.trip.rejected', (data) => {
                 console.log('🏢 Department: Trip rejected:', data);
-                toast.error(`Trip ${data.ticket_number} was rejected`);
+                if (data.ticket_number) {
+                    toast.error(`Trip ${data.ticket_number} was rejected`);
+                }
                 eventBus.emit('dept-trip-rejected', data);
                 eventBus.emit('refresh-dept-trips');
             });
@@ -433,7 +525,9 @@ export const RealtimeProvider = ({ children }) => {
 
             channel.listen('.system.announcement', (data) => {
                 console.log('📢 System announcement:', data);
-                toast.info(`📢 ${data.message}`);
+                if (data.message) {
+                    toast.info(`📢 ${data.message}`);
+                }
                 eventBus.emit('system-announcement', data);
             });
 
@@ -464,7 +558,9 @@ export const RealtimeProvider = ({ children }) => {
 
             if (response.ok) {
                 const data = await response.json();
-                setUnreadCount(data.count || 0);
+                // ✅ Handle both response shapes
+                const count = data?.data?.unread_count ?? data?.count ?? 0;
+                setUnreadCount(count);
             }
         } catch (error) {
             console.error('Failed to fetch unread count:', error);
