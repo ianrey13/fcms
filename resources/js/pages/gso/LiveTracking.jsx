@@ -402,13 +402,13 @@ const TripPopupContent = ({ trip, onViewTrip, onCenter, onFocus }) => {
                     <Navigation className="h-3 w-3" />
                     Center
                 </button>
-                <button
+                {/* <button
                     onClick={() => onFocus(trip)}
                     className="text-xs bg-emerald-600 text-white px-3 py-1.5 rounded-lg hover:bg-emerald-700 transition-colors flex items-center justify-center gap-1"
                 >
                     <Focus className="h-3 w-3" />
                     Focus
-                </button>
+                </button> */}
             </div>
         </div>
     );
@@ -1242,12 +1242,12 @@ const LiveTracking = () => {
                                                         : "hover:bg-slate-50 dark:hover:bg-slate-800/50"
                                             )}
                                         >
-                                            {isFocused && (
+                                            {/* {isFocused && (
                                                 <div className="absolute top-2 right-2 bg-emerald-500 text-white text-[8px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
                                                     <Focus className="h-2.5 w-2.5" />
                                                     FOCUS
                                                 </div>
-                                            )}
+                                            )} */}
                                             <div className="flex items-start justify-between gap-2">
                                                 <div className="flex-1 min-w-0">
                                                     <div className="flex items-center gap-2">
@@ -1286,7 +1286,7 @@ const LiveTracking = () => {
                                                 </div>
                                             </div>
 
-                                            <div className="mt-2 flex gap-2">
+                                            {/* <div className="mt-2 flex gap-2">
                                                 <button
                                                     onClick={(e) => {
                                                         e.stopPropagation();
@@ -1297,14 +1297,14 @@ const LiveTracking = () => {
                                                     <Focus className="h-3 w-3" />
                                                     Focus Monitor
                                                 </button>
-                                            </div>
+                                            </div> */}
 
-                                            {isSelected && current_location && (
+                                            {/* {isSelected && current_location && (
                                                 <div className="mt-2 text-xs text-blue-600 dark:text-blue-400 flex items-center gap-2 bg-blue-50/50 dark:bg-blue-950/20 rounded-lg px-2 py-1">
                                                     <Navigation className="h-3 w-3" />
                                                     {current_location.latitude.toFixed(5)}, {current_location.longitude.toFixed(5)}
                                                 </div>
-                                            )}
+                                            )} */}
                                         </div>
                                     );
                                 })
@@ -1314,7 +1314,7 @@ const LiveTracking = () => {
                 </div>
             </div>
 
-            {/* Focus Monitoring Modal */}
+            {/* Focus Monitoring Modal
             {focusModalOpen && focusedTrip && (
                 <div className="fixed inset-0 z-[2000] overflow-y-auto">
                     <div className="min-h-screen px-2 py-4 md:px-4 md:py-8 flex items-center justify-center bg-black/80 backdrop-blur-md">
@@ -1326,7 +1326,7 @@ const LiveTracking = () => {
                         />
                     </div>
                 </div>
-            )}
+            )} */}
         </div>
     );
 };
