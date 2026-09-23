@@ -7,7 +7,7 @@ import {
   Popup, 
   Polyline, 
   Circle,
-  ZoomControl,  // ✅ ADDED
+  ZoomControl,
 } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -29,7 +29,6 @@ import {
   Satellite,
   Plus,
   Minus,
-
 } from 'lucide-react';
 
 // Fix Leaflet icons
@@ -51,7 +50,6 @@ trackerStyleSheet.textContent = `
   }
 `;
 document.head.appendChild(trackerStyleSheet);
-
 
 // Create vehicle icon for focused marker
 const createVehicleIcon = (status, isSelected, isOnline = true, isFocused = false) => {
@@ -107,7 +105,6 @@ const createVehicleIcon = (status, isSelected, isOnline = true, isFocused = fals
           "></div>
         ` : ''}
 
-       
         <div style="
           position: absolute;
           top: 50%;
@@ -166,10 +163,6 @@ const createVehicleIcon = (status, isSelected, isOnline = true, isFocused = fals
   });
 };
 
-// ============================================
-// HELPER FUNCTIONS
-// ============================================
-
 const formatTime = (dateString) => {
   if (!dateString) return 'N/A';
   try {
@@ -191,7 +184,7 @@ const formatTime = (dateString) => {
 const LiveTripTracker = ({ trip, onClose, isOpen, allTrips }) => {
   const [tripStats, setTripStats] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [isTracking, setIsTracking] = useState(true);
+  const [isTracking] = useState(true);
   const [mapCenter, setMapCenter] = useState([8.5833, 124.6667]);
   const [mapZoom, setMapZoom] = useState(15);
   const mapRef = useRef(null);
@@ -199,37 +192,38 @@ const LiveTripTracker = ({ trip, onClose, isOpen, allTrips }) => {
   const intervalRef = useRef(null);
   const [followMode, setFollowMode] = useState(true);
 
-  const fetchTripStats = useCallback(async () => {
-    if (!trip?.trip_id) {
-      console.warn('⚠️ No trip ID provided to fetchTripStats');
-      return;
-    }
+  // ✅ Refs to keep latest values inside stable callbacks
+  const followModeRef = useRef(true);
+  const mapZoomRef = useRef(15);
 
-    console.log('📡 Fetching trip stats for trip:', trip.trip_id);
+  useEffect(() => { followModeRef.current = followMode; }, [followMode]);
+  useEffect(() => { mapZoomRef.current = mapZoom; }, [mapZoom]);
+
+  // ============================================
+  // FETCH TRIP STATS (stable — no followMode/mapZoom in deps)
+  // ============================================
+
+  const fetchTripStats = useCallback(async () => {
+    if (!trip?.trip_id) return;
 
     try {
       const response = await gpsAPI.getTripStats(trip.trip_id);
-      console.log('📊 Trip stats response:', response.data);
-
       const data = response.data?.data;
 
       if (data) {
         setTripStats(data);
 
-        if (data.latest_location && followMode) {
+        // ✅ Use refs for follow/zoom so callback identity is stable
+        if (data.latest_location && followModeRef.current) {
           const { latitude, longitude } = data.latest_location;
           setMapCenter([latitude, longitude]);
-
           if (mapRef.current) {
-            mapRef.current.setView([latitude, longitude], mapZoom);
+            mapRef.current.setView([latitude, longitude], mapZoomRef.current);
           }
-
           if (markerRef.current) {
             markerRef.current.setLatLng([latitude, longitude]);
           }
         }
-      } else {
-        console.warn('⚠️ No data in response');
       }
     } catch (error) {
       console.error('❌ Failed to fetch trip stats:', error);
@@ -237,51 +231,72 @@ const LiveTripTracker = ({ trip, onClose, isOpen, allTrips }) => {
     } finally {
       setLoading(false);
     }
-  }, [trip, followMode, mapZoom]);
+  }, [trip?.trip_id]);
+
+  // ============================================
+  // EFFECT 1 — Initial fetch + polling interval
+  // Deps: trip_id, isTracking only
+  // ============================================
 
   useEffect(() => {
-    if (!trip?.trip_id || !isOpen) {
-      console.log('⏸️ Skipping real-time updates - no trip or modal closed');
-      return;
-    }
+    if (!trip?.trip_id || !isOpen) return;
 
-    console.log('🚀 Starting real-time updates for trip:', trip.trip_id);
-
+    console.log('🚀 Starting polling for trip:', trip.trip_id);
     fetchTripStats();
 
     intervalRef.current = setInterval(() => {
       if (isTracking) {
-        console.log('🔄 Interval ping - fetching stats...');
         fetchTripStats();
       }
     }, 3000);
 
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
+  }, [trip?.trip_id, isOpen, isTracking, fetchTripStats]);
+
+  // ============================================
+  // EFFECT 2 — WebSocket subscription (stable)
+  // Deps: trip_id, isOpen only — NOT followMode, mapZoom
+  //
+  // ✅ CRITICAL: pass the handler to stopListening so we remove ONLY our
+  // listener — NOT the one LiveTracking.jsx registered on the same channel.
+  // ============================================
+
+  useEffect(() => {
+    if (!trip?.trip_id || !isOpen) return;
+
     let channel = null;
+
+    // ✅ Named handler — required for targeted stopListening
+    const locationHandler = (data) => {
+      if (data.trip_id !== trip.trip_id) return;
+
+      console.log('📍 WS update for focused trip:', data.trip_id);
+
+      // ✅ Use refs for follow/zoom so we don't need them in deps
+      if (markerRef.current && data.latitude && data.longitude) {
+        markerRef.current.setLatLng([data.latitude, data.longitude]);
+      }
+
+      if (followModeRef.current && mapRef.current && data.latitude && data.longitude) {
+        mapRef.current.setView([data.latitude, data.longitude], mapZoomRef.current);
+      }
+
+      // Refresh stats panel
+      fetchTripStats();
+    };
+
     try {
       if (echo.connector && echo.connector.pusher) {
         channel = echo.channel('gso-live-tracking');
-
-        channel.listen('.location.updated', (data) => {
-          console.log('📍 WebSocket location update received:', data);
-          
-          if (data.trip_id === trip.trip_id) {
-            console.log('🎯 Update matches current trip:', trip.trip_id);
-            
-            if (markerRef.current && data.latitude && data.longitude) {
-              markerRef.current.setLatLng([data.latitude, data.longitude]);
-              console.log('📍 Marker updated to:', data.latitude, data.longitude);
-            }
-
-            if (followMode && mapRef.current && data.latitude && data.longitude) {
-              mapRef.current.setView([data.latitude, data.longitude], mapZoom);
-            }
-
-            fetchTripStats();
-          }
-        });
+        channel.listen('.location.updated', locationHandler);
 
         channel.subscribed(() => {
-          console.log('✅ WebSocket subscribed to gso-live-tracking');
+          console.log('✅ LiveTripTracker subscribed to gso-live-tracking');
         });
       } else {
         console.warn('⚠️ Echo connector not available for WebSocket');
@@ -291,38 +306,69 @@ const LiveTripTracker = ({ trip, onClose, isOpen, allTrips }) => {
     }
 
     return () => {
-      console.log('🧹 Cleaning up real-time updates for trip:', trip.trip_id);
-      
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
-
+      console.log('🧹 Cleaning up WS for trip:', trip.trip_id);
       if (channel) {
         try {
-          channel.stopListening('.location.updated');
-          //echo.leave('gso-live-tracking');
+          // ✅ Pass handler to remove ONLY our listener
+          channel.stopListening('.location.updated', locationHandler);
         } catch (e) {
           console.warn('⚠️ WebSocket cleanup error:', e);
         }
       }
     };
-  }, [trip, isOpen, isTracking, followMode, fetchTripStats, mapZoom]);
+  }, [trip?.trip_id, isOpen, fetchTripStats]);
+
+  // ============================================
+  // EFFECT 3 — Follow mode recenters map on demand
+  // Only runs when user toggles follow or tripStats updates the location
+  // ============================================
+
+  useEffect(() => {
+    if (!followMode) return;
+    if (!tripStats?.latest_location) return;
+
+    const { latitude, longitude } = tripStats.latest_location;
+    if (!latitude || !longitude) return;
+
+    setMapCenter([latitude, longitude]);
+    if (mapRef.current) {
+      mapRef.current.setView([latitude, longitude], mapZoomRef.current);
+    }
+  }, [followMode, tripStats?.latest_location?.latitude, tripStats?.latest_location?.longitude]);
+
+  // ============================================
+  // HANDLERS
+  // ============================================
 
   const toggleFollow = () => {
-    setFollowMode(!followMode);
-    if (!followMode && tripStats?.latest_location) {
-      const { latitude, longitude } = tripStats.latest_location;
-      setMapCenter([latitude, longitude]);
-      if (mapRef.current) {
-        mapRef.current.setView([latitude, longitude], mapZoom);
+    setFollowMode(prev => {
+      const next = !prev;
+      if (next && tripStats?.latest_location) {
+        const { latitude, longitude } = tripStats.latest_location;
+        setMapCenter([latitude, longitude]);
+        if (mapRef.current) {
+          mapRef.current.setView([latitude, longitude], mapZoomRef.current);
+        }
       }
-    }
+      return next;
+    });
   };
 
-  if (!isOpen || !trip) {
-    return null;
-  }
+  const handleZoomIn = () => {
+    const newZoom = mapZoom === 18 ? 14 : mapZoom + 1;
+    setMapZoom(newZoom);
+    mapZoomRef.current = newZoom;
+    if (mapRef.current) mapRef.current.setZoom(newZoom);
+  };
+
+  const handleZoomOut = () => {
+    const newZoom = mapZoom === 4 ? 14 : mapZoom - 1;
+    setMapZoom(newZoom);
+    mapZoomRef.current = newZoom;
+    if (mapRef.current) mapRef.current.setZoom(newZoom);
+  };
+
+  if (!isOpen || !trip) return null;
 
   if (loading) {
     return (
@@ -442,14 +488,6 @@ const LiveTripTracker = ({ trip, onClose, isOpen, allTrips }) => {
             {tripStats?.current_speed_kmh?.toFixed(0) || '0'} km/h
           </p>
         </div>
-        {/* <div className="bg-white dark:bg-slate-800 rounded-xl p-2 shadow-sm border border-slate-200/60 dark:border-slate-700/60">
-          <p className="text-[9px] text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1">
-            <Fuel className="h-3 w-3" /> Fuel Used
-          </p>
-          <p className="text-lg font-bold text-amber-600 dark:text-amber-400">
-            {tripStats?.estimated_fuel_liters?.toFixed(2) || '0.00'} L
-          </p>
-        </div> */}
         <div className="bg-white dark:bg-slate-800 rounded-xl p-2 shadow-sm border border-slate-200/60 dark:border-slate-700/60">
           <p className="text-[9px] text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1">
             <Clock className="h-3 w-3" /> Duration
@@ -460,7 +498,7 @@ const LiveTripTracker = ({ trip, onClose, isOpen, allTrips }) => {
         </div>
       </div>
 
-      {/* Map with Live Tracking */}
+      {/* Map */}
       <div className="relative h-[400px] md:h-[500px]">
         <MapContainer
           ref={mapRef}
@@ -477,7 +515,6 @@ const LiveTripTracker = ({ trip, onClose, isOpen, allTrips }) => {
 
           <ZoomControl position="bottomright" />
 
-          {/* Route Polyline */}
           {tripStats?.route_points && tripStats.route_points.length > 1 && (
             <Polyline
               positions={tripStats.route_points.map(p => [p.latitude, p.longitude])}
@@ -488,7 +525,6 @@ const LiveTripTracker = ({ trip, onClose, isOpen, allTrips }) => {
             />
           )}
 
-          {/* Start Marker */}
           {tripStats?.route_points && tripStats.route_points.length > 0 && (
             <Marker 
               position={[
@@ -507,7 +543,6 @@ const LiveTripTracker = ({ trip, onClose, isOpen, allTrips }) => {
             </Marker>
           )}
 
-          {/* Live Vehicle Marker */}
           {hasLocation && (
             <Marker
               position={[
@@ -557,7 +592,6 @@ const LiveTripTracker = ({ trip, onClose, isOpen, allTrips }) => {
             </Marker>
           )}
 
-          {/* Accuracy Circle */}
           {hasLocation && tripStats.latest_location.accuracy_meters && 
             tripStats.latest_location.accuracy_meters < 100 && (
             <Circle
@@ -586,26 +620,14 @@ const LiveTripTracker = ({ trip, onClose, isOpen, allTrips }) => {
             <Crosshair className="h-5 w-5" />
           </button>
           <button
-            onClick={() => {
-              const newZoom = mapZoom === 18 ? 14 : mapZoom + 1;
-              setMapZoom(newZoom);
-              if (mapRef.current) {
-                mapRef.current.setZoom(newZoom);
-              }
-            }}
+            onClick={handleZoomIn}
             className="bg-white dark:bg-slate-800 rounded-lg shadow-lg p-2 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
             title="Zoom in"
           >
             <Plus className="h-5 w-5 text-slate-600 dark:text-slate-300" />
           </button>
           <button
-            onClick={() => {
-              const newZoom = mapZoom === 4 ? 14 : mapZoom - 1;
-              setMapZoom(newZoom);
-              if (mapRef.current) {
-                mapRef.current.setZoom(newZoom);
-              }
-            }}
+            onClick={handleZoomOut}
             className="bg-white dark:bg-slate-800 rounded-lg shadow-lg p-2 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
             title="Zoom out"
           >
