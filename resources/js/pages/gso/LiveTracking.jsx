@@ -1085,7 +1085,7 @@ const LiveTracking = () => {
                             zoomControl={false}
                             className="z-0"
                         >
-                            {/* {renderMapTiles()} */}
+                            {renderMapTiles()}
                             <ZoomControl position="bottomright" />
 
                             {tripsWithLocation.length > 0 ? (
