@@ -3,6 +3,9 @@
 // ENHANCED: Improved validation with field highlighting
 // No duplicate toasts - single toast with all errors
 // Auto-focus first error field
+// + Title Case name formatting
+// + AlertDialog confirmation before update
+// + FIX: password no longer required on edit
 // ============================================
 
 import React, { useState, useEffect, useRef } from "react";
@@ -12,6 +15,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   ArrowLeft,
   Edit,
@@ -38,36 +50,65 @@ import { toast } from "react-hot-toast";
 import { cn } from "@/lib/utils";
 
 // ============================================
+// ✅ NAME FORMATTING — Title Case with acronym preservation
+// ============================================
+
+const formatProperName = (value) => {
+  if (!value || typeof value !== "string") return "";
+
+  return value
+    .trim()
+    .replace(/[^A-Za-z\s'\-\.]/g, "")
+    .replace(/\s+/g, " ")
+    .split(" ")
+    .filter(Boolean)
+    .map((word) => {
+      const stripped = word.replace(/[^A-Za-z]/g, "");
+      if (
+        stripped.length >= 1 &&
+        stripped.length <= 7 &&
+        stripped === stripped.toUpperCase()
+      ) {
+        return word;
+      }
+      return word
+        .toLowerCase()
+        .replace(/(^|[\s'\-])([a-z])/g, (_, sep, ch) => sep + ch.toUpperCase());
+    })
+    .join(" ");
+};
+
+// ============================================
 // ✅ GET AVAILABLE ROLES BASED ON DEPARTMENT
 // ============================================
 
 const getAvailableRoles = (departmentId, departments) => {
-    const department = departments.find(d => d.department_id === parseInt(departmentId));
-    
-    if (!department) return [{ value: '', label: 'Select Role' }];
-    
-    const code = department.department_code?.toUpperCase() || '';
-    
-    if (code === 'GSO') {
-        return [
-            { value: '', label: 'Select Role' },
-            { value: 'gso_office', label: 'GSO Staff' },
-            { value: 'driver', label: 'Driver' },
-        ];
-    }
-    
-    if (code === 'MO') {
-        return [
-            { value: '', label: 'Select Role' },
-            { value: 'mayors_office', label: 'Disbursing Officer' },
-            { value: 'driver', label: 'Driver' },
-        ];
-    }
-    
+  const department = departments.find(d => d.department_id === parseInt(departmentId));
+
+  if (!department) return [{ value: '', label: 'Select Role' }];
+
+  const code = department.department_code?.toUpperCase() || '';
+
+  if (code === 'GSO') {
     return [
-        { value: '', label: 'Select Role' },
-        { value: 'driver', label: 'Driver' },
+      { value: '', label: 'Select Role' },
+      { value: 'gso_office', label: 'GSO Staff' },
+      { value: 'driver', label: 'Driver' },
     ];
+  }
+
+  if (code === 'MO') {
+    return [
+      { value: '', label: 'Select Role' },
+      { value: 'mayors_office', label: 'Disbursing Officer' },
+      { value: 'driver', label: 'Driver' },
+    ];
+  }
+
+  return [
+    { value: '', label: 'Select Role' },
+    { value: 'driver', label: 'Driver' },
+  ];
 };
 
 // ============================================
@@ -85,7 +126,7 @@ const FormField = ({
   className,
 }) => {
   const hasError = touched && error;
-  
+
   return (
     <div className={cn("space-y-1.5", className)}>
       <Label className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300">
@@ -127,43 +168,43 @@ const FormField = ({
 // ============================================
 
 const RoleSelect = ({ value, onChange, onBlur, error, touched, departmentId, departments }) => {
-    const roleOptions = getAvailableRoles(departmentId, departments);
-    const hasError = touched && error;
-    
-    useEffect(() => {
-        if (departmentId && roleOptions.length === 2 && roleOptions[1]?.value === 'driver') {
-            if (!value || value === '') {
-                onChange('driver');
-            }
-        }
-    }, [departmentId, roleOptions, value, onChange]);
-    
-    return (
-        <div className="relative">
-            <select
-                value={value}
-                onChange={(e) => onChange(e.target.value)}
-                onBlur={onBlur}
-                className={cn(
-                    "w-full mt-1 px-3 py-2.5 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-slate-900 dark:border-slate-700 appearance-none",
-                    hasError && "border-red-500 ring-red-500 bg-red-50/50 dark:bg-red-950/10",
-                    roleOptions.length === 2 && roleOptions[1]?.value === 'driver' && "cursor-not-allowed opacity-60"
-                )}
-                disabled={roleOptions.length === 2 && roleOptions[1]?.value === 'driver'}
-            >
-                {roleOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                        {option.label}
-                    </option>
-                ))}
-            </select>
-            {hasError && (
-                <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                    <AlertCircle className="h-4 w-4 text-red-500 animate-pulse" />
-                </div>
-            )}
+  const roleOptions = getAvailableRoles(departmentId, departments);
+  const hasError = touched && error;
+
+  useEffect(() => {
+    if (departmentId && roleOptions.length === 2 && roleOptions[1]?.value === 'driver') {
+      if (!value || value === '') {
+        onChange('driver');
+      }
+    }
+  }, [departmentId, roleOptions, value, onChange]);
+
+  return (
+    <div className="relative">
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onBlur={onBlur}
+        className={cn(
+          "w-full mt-1 px-3 py-2.5 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-slate-900 dark:border-slate-700 appearance-none",
+          hasError && "border-red-500 ring-red-500 bg-red-50/50 dark:bg-red-950/10",
+          roleOptions.length === 2 && roleOptions[1]?.value === 'driver' && "cursor-not-allowed opacity-60"
+        )}
+        disabled={roleOptions.length === 2 && roleOptions[1]?.value === 'driver'}
+      >
+        {roleOptions.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+      {hasError && (
+        <div className="absolute right-3 top-1/2 -translate-y-1/2">
+          <AlertCircle className="h-4 w-4 text-red-500 animate-pulse" />
         </div>
-    );
+      )}
+    </div>
+  );
 };
 
 // ============================================
@@ -192,12 +233,12 @@ const DepartmentDatalist = ({ value, onChange, onBlur, error, touched, departmen
   const handleInputChange = (e) => {
     const input = e.target.value;
     setSearchTerm(input);
-    
-    const match = departments.find(d => 
+
+    const match = departments.find(d =>
       d.department_name.toLowerCase() === input.toLowerCase() ||
       d.department_code?.toLowerCase() === input.toLowerCase()
     );
-    
+
     if (match) {
       setSelectedDepartment(match);
       onChange(match.department_id);
@@ -222,7 +263,7 @@ const DepartmentDatalist = ({ value, onChange, onBlur, error, touched, departmen
   };
 
   const filteredDepartments = searchTerm.length > 0
-    ? departments.filter(d => 
+    ? departments.filter(d =>
         d.department_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         d.department_code?.toLowerCase().includes(searchTerm.toLowerCase())
       )
@@ -242,7 +283,7 @@ const DepartmentDatalist = ({ value, onChange, onBlur, error, touched, departmen
           onChange={handleInputChange}
           onBlur={() => {
             if (searchTerm && !selectedDepartment) {
-              const match = departments.find(d => 
+              const match = departments.find(d =>
                 d.department_name.toLowerCase() === searchTerm.toLowerCase()
               );
               if (!match) {
@@ -391,9 +432,11 @@ const EditUser = () => {
   const { data: departments = [] } = useDepartments();
   const updateUser = useUpdateUser();
   const toastIdRef = useRef(null);
-  
+
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [pendingPayload, setPendingPayload] = useState(null);
   const [formData, setFormData] = useState({
     email: "",
     employee_number: "",
@@ -453,7 +496,7 @@ const EditUser = () => {
   // ✅ ENHANCED VALIDATION - Single toast with all errors
   // ============================================
 
-   const validate = () => {
+  const validate = () => {
     const newErrors = {};
     const newTouched = {};
     const NAME_REGEX = /^[A-Za-z\s\.\-\'\,]+$/;
@@ -528,19 +571,16 @@ const EditUser = () => {
       }
     }
 
-    // Password validation
-    if (!formData.password) {
-      newErrors.password = "Password is required";
-      newTouched.password = true;
-    } else if (formData.password.length < 8) {
-      newErrors.password = "Password must be at least 8 characters";
-      newTouched.password = true;
-    }
-
-    // Password confirmation validation
-    if (formData.password !== formData.password_confirmation) {
-      newErrors.password_confirmation = "Passwords do not match";
-      newTouched.password_confirmation = true;
+    // ✅ FIXED: Password validation — only if user typed something (blank = keep current)
+    if (formData.password) {
+      if (formData.password.length < 8) {
+        newErrors.password = "Password must be at least 8 characters";
+        newTouched.password = true;
+      }
+      if (formData.password !== formData.password_confirmation) {
+        newErrors.password_confirmation = "Passwords do not match";
+        newTouched.password_confirmation = true;
+      }
     }
 
     setErrors(newErrors);
@@ -578,7 +618,7 @@ const EditUser = () => {
 
       const firstField = Object.keys(newErrors)[0];
       if (firstField) {
-        const element = document.querySelector(`[name="${firstField}"]`) || 
+        const element = document.querySelector(`[name="${firstField}"]`) ||
                         document.getElementById(firstField);
         if (element) {
           setTimeout(() => element.focus(), 100);
@@ -604,11 +644,15 @@ const EditUser = () => {
     }
   };
 
-   const handleSubmit = (e) => {
+  // ============================================
+  // ✅ SUBMIT — validate, format names, then confirm
+  // ============================================
+
+  const handleSubmitClick = (e) => {
     e.preventDefault();
-    
+
     if (toastIdRef.current) toast.dismiss(toastIdRef.current);
-    
+
     if (!validate()) {
       return;
     }
@@ -616,30 +660,43 @@ const EditUser = () => {
     const payload = {
       ...formData,
       email: formData.email.trim().toLowerCase(),
-      first_name: formData.first_name.trim(),
-      last_name: formData.last_name.trim(),
-      middle_name: formData.middle_name?.trim() || null,
+      first_name: formatProperName(formData.first_name),
+      last_name: formatProperName(formData.last_name),
+      middle_name: formatProperName(formData.middle_name) || null,
     };
 
+    // Only include password if user typed one
     if (!payload.password) {
       delete payload.password;
       delete payload.password_confirmation;
     }
 
+    setPendingPayload(payload);
+    setShowConfirm(true);
+  };
+
+  const handleConfirmUpdate = () => {
+    if (!pendingPayload) return;
+
     updateUser.mutate(
-      { userId: parseInt(id), userData: payload },
+      { userId: parseInt(id), userData: pendingPayload },
       {
         onSuccess: () => {
+          setShowConfirm(false);
+          setPendingPayload(null);
           if (toastIdRef.current) toast.dismiss(toastIdRef.current);
           toastIdRef.current = toast.success("✅ User updated successfully!");
           navigate("/admin/users");
         },
         onError: (error) => {
+          setShowConfirm(false);
           if (toastIdRef.current) toast.dismiss(toastIdRef.current);
           const message = error.response?.data?.message || "Failed to update user";
-          
+
           if (error.response?.data?.errors?.email) {
-            toastIdRef.current = toast.error(`Email "${formData.email}" already exists. Please use a different email.`);
+            toastIdRef.current = toast.error(
+              `Email "${pendingPayload.email}" already exists. Please use a different email.`
+            );
             setErrors(prev => ({ ...prev, email: "Email already exists" }));
             setTouched(prev => ({ ...prev, email: true }));
             document.querySelector('[name="email"]')?.focus();
@@ -711,28 +768,27 @@ const EditUser = () => {
             </div>
           </CardHeader>
           <CardContent className="pt-6">
-            <form onSubmit={handleSubmit} className="space-y-5">
+            <form onSubmit={handleSubmitClick} className="space-y-5">
               {/* Email */}
-               <FormField
-                  label="Email Address"
-                  icon={Mail}
-                  required
-                  error={errors.email}
-                  touched={touched.email}
-                  helper="User's login email address"
-                >
-                  <Input
-                    id="email"
-                    name="email"
-                    type="email"
-                    placeholder="user@example.com"
-                    value={formData.email}
-                    onChange={(e) => handleChange("email", e.target.value)}
-                    onBlur={() => handleBlur("email")}
-                    className="bg-white dark:bg-slate-900 dark:border-slate-700"
-                  />
-                </FormField>
-             
+              <FormField
+                label="Email Address"
+                icon={Mail}
+                required
+                error={errors.email}
+                touched={touched.email}
+                helper="User's login email address"
+              >
+                <Input
+                  id="email"
+                  name="email"
+                  type="email"
+                  placeholder="user@example.com"
+                  value={formData.email}
+                  onChange={(e) => handleChange("email", e.target.value)}
+                  onBlur={() => handleBlur("email")}
+                  className="bg-white dark:bg-slate-900 dark:border-slate-700"
+                />
+              </FormField>
 
               {/* Name Fields */}
               <div className="grid grid-cols-2 gap-4">
@@ -833,41 +889,6 @@ const EditUser = () => {
                 />
               </FormField>
 
-              {/* Can Drive Toggle - Only for Drivers */}
-              {/* {showCanDrive && (
-                <div className="bg-cyan-50/50 dark:bg-cyan-950/20 rounded-xl p-4 border border-cyan-200 dark:border-cyan-800">
-                  <div className="flex items-center gap-4">
-                    <Car className="h-5 w-5 text-cyan-600 dark:text-cyan-400" />
-                    <div className="flex items-center gap-3">
-                      <Label className="cursor-pointer font-medium text-cyan-800 dark:text-cyan-300">
-                        Can Drive?
-                      </Label>
-                      <button
-                        type="button"
-                        onClick={() => handleChange("can_drive", !formData.can_drive)}
-                        className={cn(
-                          "relative w-12 h-7 rounded-full transition-colors",
-                          formData.can_drive ? "bg-cyan-600" : "bg-slate-300 dark:bg-slate-600"
-                        )}
-                      >
-                        <span
-                          className={cn(
-                            "absolute top-1 left-1 w-5 h-5 bg-white rounded-full transition-transform",
-                            formData.can_drive ? "translate-x-5" : "translate-x-0"
-                          )}
-                        />
-                      </button>
-                      <span className="text-sm font-medium text-cyan-700 dark:text-cyan-300">
-                        {formData.can_drive ? "Yes" : "No"}
-                      </span>
-                    </div>
-                    <p className="text-xs text-cyan-600/70 dark:text-cyan-400/70 ml-auto">
-                      Allows user to be assigned as a driver
-                    </p>
-                  </div>
-                </div>
-              )} */}
-
               {/* Password Section */}
               <div className="bg-amber-50/50 dark:bg-amber-950/20 rounded-xl p-4 border border-amber-200 dark:border-amber-800">
                 <p className="text-sm text-amber-800 dark:text-amber-400 flex items-center gap-2">
@@ -964,8 +985,6 @@ const EditUser = () => {
                 </div>
               )}
 
-         
-
               {/* Action Buttons */}
               <div className="flex gap-3 pt-4 border-t border-slate-200/60 dark:border-slate-700/60">
                 <Button
@@ -1005,6 +1024,72 @@ const EditUser = () => {
           </CardContent>
         </Card>
       </div>
+
+      {/* Confirm Update Dialog */}
+      <AlertDialog open={showConfirm} onOpenChange={setShowConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Save changes to this user?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 pt-2">
+                <div className="grid grid-cols-3 gap-2 text-sm">
+                  <span className="text-slate-500">Name:</span>
+                  <span className="col-span-2 font-medium text-slate-800 dark:text-slate-100">
+                    {pendingPayload?.first_name}{" "}
+                    {pendingPayload?.middle_name ? `${pendingPayload.middle_name} ` : ""}
+                    {pendingPayload?.last_name}
+                  </span>
+
+                  <span className="text-slate-500">Email:</span>
+                  <span className="col-span-2 font-medium text-slate-800 dark:text-slate-100 break-all">
+                    {pendingPayload?.email}
+                  </span>
+
+                  <span className="text-slate-500">Department:</span>
+                  <span className="col-span-2 font-medium text-slate-800 dark:text-slate-100">
+                    {departments.find(d => d.department_id === parseInt(pendingPayload?.department_id))?.department_name || "—"}
+                  </span>
+
+                  <span className="text-slate-500">Role:</span>
+                  <span className="col-span-2 font-medium text-slate-800 dark:text-slate-100">
+                    {pendingPayload?.role === "gso_office" ? "GSO Staff"
+                      : pendingPayload?.role === "mayors_office" ? "Disbursing Officer"
+                      : pendingPayload?.role === "driver" ? "Driver"
+                      : "—"}
+                  </span>
+
+                  {pendingPayload?.password && (
+                    <>
+                      <span className="text-slate-500">Password:</span>
+                      <span className="col-span-2 font-medium text-amber-600 dark:text-amber-400">
+                        Will be changed
+                      </span>
+                    </>
+                  )}
+                </div>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={updateUser.isPending}>Cancel</AlertDialogCancel>
+            <button
+              type="button"
+              onClick={handleConfirmUpdate}
+              disabled={updateUser.isPending}
+              className="inline-flex items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {updateUser.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  Updating...
+                </>
+              ) : (
+                "Save Changes"
+              )}
+            </button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

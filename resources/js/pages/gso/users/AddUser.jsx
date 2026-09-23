@@ -3,6 +3,8 @@
 // ENHANCED: Improved validation with field highlighting
 // No duplicate toasts - single toast with all errors
 // Auto-focus first error field
+// + Title Case name formatting
+// + AlertDialog confirmation before create
 // ============================================
 
 import React, { useState, useEffect, useRef } from "react";
@@ -12,6 +14,16 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   ArrowLeft,
   UserPlus,
@@ -37,36 +49,67 @@ import { toast } from "react-hot-toast";
 import { cn } from "@/lib/utils";
 
 // ============================================
+// ✅ NAME FORMATTING — Title Case with acronym preservation
+// ============================================
+
+const formatProperName = (value) => {
+  if (!value || typeof value !== "string") return "";
+
+  return value
+    .trim()
+    .replace(/[^A-Za-z\s'\-\.]/g, "") // strip digits + specials (keep ' - .)
+    .replace(/\s+/g, " ") // collapse spaces
+    .split(" ")
+    .filter(Boolean)
+    .map((word) => {
+      // Preserve 1–7 char ALL-CAPS acronyms/initials (RHU, MDRRMO, MO, G.)
+      const stripped = word.replace(/[^A-Za-z]/g, "");
+      if (
+        stripped.length >= 1 &&
+        stripped.length <= 7 &&
+        stripped === stripped.toUpperCase()
+      ) {
+        return word; // keep as-is
+      }
+      // Title Case — also capitalize after apostrophes and hyphens
+      return word
+        .toLowerCase()
+        .replace(/(^|[\s'\-])([a-z])/g, (_, sep, ch) => sep + ch.toUpperCase());
+    })
+    .join(" ");
+};
+
+// ============================================
 // ✅ GET AVAILABLE ROLES BASED ON DEPARTMENT
 // ============================================
 
 const getAvailableRoles = (departmentId, departments) => {
-    const department = departments.find(d => d.department_id === parseInt(departmentId));
-    
-    if (!department) return [{ value: '', label: 'Select Role' }];
-    
-    const code = department.department_code?.toUpperCase() || '';
-    
-    if (code === 'GSO') {
-        return [
-            { value: '', label: 'Select Role' },
-            { value: 'gso_office', label: 'GSO Staff' },
-            { value: 'driver', label: 'Driver' },
-        ];
-    }
-    
-    if (code === 'MO') {
-        return [
-            { value: '', label: 'Select Role' },
-            { value: 'mayors_office', label: 'Disbursing Officer' },
-            { value: 'driver', label: 'Driver' },
-        ];
-    }
-    
+  const department = departments.find(d => d.department_id === parseInt(departmentId));
+
+  if (!department) return [{ value: '', label: 'Select Role' }];
+
+  const code = department.department_code?.toUpperCase() || '';
+
+  if (code === 'GSO') {
     return [
-        { value: '', label: 'Select Role' },
-        { value: 'driver', label: 'Driver' },
+      { value: '', label: 'Select Role' },
+      { value: 'gso_office', label: 'GSO Staff' },
+      { value: 'driver', label: 'Driver' },
     ];
+  }
+
+  if (code === 'MO') {
+    return [
+      { value: '', label: 'Select Role' },
+      { value: 'mayors_office', label: 'Disbursing Officer' },
+      { value: 'driver', label: 'Driver' },
+    ];
+  }
+
+  return [
+    { value: '', label: 'Select Role' },
+    { value: 'driver', label: 'Driver' },
+  ];
 };
 
 // ============================================
@@ -84,7 +127,7 @@ const FormField = ({
   className,
 }) => {
   const hasError = touched && error;
-  
+
   return (
     <div className={cn("space-y-1.5", className)}>
       <Label className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300">
@@ -126,43 +169,43 @@ const FormField = ({
 // ============================================
 
 const RoleSelect = ({ value, onChange, onBlur, error, touched, departmentId, departments }) => {
-    const roleOptions = getAvailableRoles(departmentId, departments);
-    const hasError = touched && error;
-    
-    useEffect(() => {
-        if (departmentId && roleOptions.length === 2 && roleOptions[1]?.value === 'driver') {
-            if (!value || value === '') {
-                onChange('driver');
-            }
-        }
-    }, [departmentId, roleOptions, value, onChange]);
-    
-    return (
-        <div className="relative">
-            <select
-                value={value}
-                onChange={(e) => onChange(e.target.value)}
-                onBlur={onBlur}
-                className={cn(
-                    "w-full mt-1 px-3 py-2.5 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-slate-900 dark:border-slate-700 appearance-none",
-                    hasError && "border-red-500 ring-red-500 bg-red-50/50 dark:bg-red-950/10",
-                    roleOptions.length === 2 && roleOptions[1]?.value === 'driver' && "cursor-not-allowed opacity-60"
-                )}
-                disabled={roleOptions.length === 2 && roleOptions[1]?.value === 'driver'}
-            >
-                {roleOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                        {option.label}
-                    </option>
-                ))}
-            </select>
-            {hasError && (
-                <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                    <AlertCircle className="h-4 w-4 text-red-500 animate-pulse" />
-                </div>
-            )}
+  const roleOptions = getAvailableRoles(departmentId, departments);
+  const hasError = touched && error;
+
+  useEffect(() => {
+    if (departmentId && roleOptions.length === 2 && roleOptions[1]?.value === 'driver') {
+      if (!value || value === '') {
+        onChange('driver');
+      }
+    }
+  }, [departmentId, roleOptions, value, onChange]);
+
+  return (
+    <div className="relative">
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onBlur={onBlur}
+        className={cn(
+          "w-full mt-1 px-3 py-2.5 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-slate-900 dark:border-slate-700 appearance-none",
+          hasError && "border-red-500 ring-red-500 bg-red-50/50 dark:bg-red-950/10",
+          roleOptions.length === 2 && roleOptions[1]?.value === 'driver' && "cursor-not-allowed opacity-60"
+        )}
+        disabled={roleOptions.length === 2 && roleOptions[1]?.value === 'driver'}
+      >
+        {roleOptions.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+      {hasError && (
+        <div className="absolute right-3 top-1/2 -translate-y-1/2">
+          <AlertCircle className="h-4 w-4 text-red-500 animate-pulse" />
         </div>
-    );
+      )}
+    </div>
+  );
 };
 
 // ============================================
@@ -191,12 +234,12 @@ const DepartmentDatalist = ({ value, onChange, onBlur, error, touched, departmen
   const handleInputChange = (e) => {
     const input = e.target.value;
     setSearchTerm(input);
-    
-    const match = departments.find(d => 
+
+    const match = departments.find(d =>
       d.department_name.toLowerCase() === input.toLowerCase() ||
       d.department_code?.toLowerCase() === input.toLowerCase()
     );
-    
+
     if (match) {
       setSelectedDepartment(match);
       onChange(match.department_id);
@@ -221,7 +264,7 @@ const DepartmentDatalist = ({ value, onChange, onBlur, error, touched, departmen
   };
 
   const filteredDepartments = searchTerm.length > 0
-    ? departments.filter(d => 
+    ? departments.filter(d =>
         d.department_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         d.department_code?.toLowerCase().includes(searchTerm.toLowerCase())
       )
@@ -241,7 +284,7 @@ const DepartmentDatalist = ({ value, onChange, onBlur, error, touched, departmen
           onChange={handleInputChange}
           onBlur={() => {
             if (searchTerm && !selectedDepartment) {
-              const match = departments.find(d => 
+              const match = departments.find(d =>
                 d.department_name.toLowerCase() === searchTerm.toLowerCase()
               );
               if (!match) {
@@ -343,11 +386,13 @@ const AddUser = () => {
   const navigate = useNavigate();
   const createUser = useCreateUser();
   const toastIdRef = useRef(null);
-  
+
   const [departments, setDepartments] = useState([]);
   const [loadingDepartments, setLoadingDepartments] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [pendingPayload, setPendingPayload] = useState(null);
   const [formData, setFormData] = useState({
     email: "",
     first_name: "",
@@ -394,7 +439,7 @@ const AddUser = () => {
   // ✅ ENHANCED VALIDATION - Single toast with all errors
   // ============================================
 
-    const validate = () => {
+  const validate = () => {
     const newErrors = {};
     const newTouched = {};
     const NAME_REGEX = /^[A-Za-z\s\.\-\'\,]+$/;
@@ -519,7 +564,7 @@ const AddUser = () => {
 
       const firstField = Object.keys(newErrors)[0];
       if (firstField) {
-        const element = document.querySelector(`[name="${firstField}"]`) || 
+        const element = document.querySelector(`[name="${firstField}"]`) ||
                         document.getElementById(firstField);
         if (element) {
           setTimeout(() => element.focus(), 100);
@@ -545,37 +590,52 @@ const AddUser = () => {
     }
   };
 
-   const handleSubmit = (e) => {
+  // ============================================
+  // ✅ SUBMIT — validate, format names, then confirm
+  // ============================================
+
+  const handleSubmitClick = (e) => {
     e.preventDefault();
-    
+
     if (toastIdRef.current) toast.dismiss(toastIdRef.current);
-    
+
     if (!validate()) {
       return;
     }
 
-    // Normalize before sending
+    // Normalize + format names BEFORE confirming so dialog shows final values
     const payload = {
       ...formData,
       email: formData.email.trim().toLowerCase(),
-      first_name: formData.first_name.trim(),
-      last_name: formData.last_name.trim(),
-      middle_name: formData.middle_name?.trim() || null,
+      first_name: formatProperName(formData.first_name),
+      last_name: formatProperName(formData.last_name),
+      middle_name: formatProperName(formData.middle_name) || null,
     };
 
-    createUser.mutate(payload, {
-  onSuccess: () => {
-    if (toastIdRef.current) toast.dismiss(toastIdRef.current);
-    toastIdRef.current = toast.success("✅ User created successfully!");
-    navigate("/admin/users");   // ✅ inside onSuccess
-  },
- 
+    setPendingPayload(payload);
+    setShowConfirm(true);
+  };
+
+  const handleConfirmCreate = () => {
+    if (!pendingPayload) return;
+
+    createUser.mutate(pendingPayload, {
+      onSuccess: () => {
+        setShowConfirm(false);
+        setPendingPayload(null);
+        if (toastIdRef.current) toast.dismiss(toastIdRef.current);
+        toastIdRef.current = toast.success("✅ User created successfully!");
+        navigate("/admin/users");
+      },
       onError: (error) => {
+        setShowConfirm(false);
         if (toastIdRef.current) toast.dismiss(toastIdRef.current);
         const message = error.response?.data?.message || "Failed to create user";
-        
+
         if (error.response?.data?.errors?.email) {
-          toastIdRef.current = toast.error(`Email "${formData.email}" already exists. Please use a different email.`);
+          toastIdRef.current = toast.error(
+            `Email "${pendingPayload.email}" already exists. Please use a different email.`
+          );
           setErrors(prev => ({ ...prev, email: "Email already exists" }));
           setTouched(prev => ({ ...prev, email: true }));
           document.querySelector('[name="email"]')?.focus();
@@ -585,6 +645,7 @@ const AddUser = () => {
       },
     });
   };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
       <div className="max-w-3xl mx-auto p-4 md:p-6">
@@ -635,7 +696,7 @@ const AddUser = () => {
             </div>
           </CardHeader>
           <CardContent className="pt-6">
-            <form onSubmit={handleSubmit} className="space-y-5">
+            <form onSubmit={handleSubmitClick} className="space-y-5">
               {/* Email */}
               <FormField
                 label="Email Address"
@@ -851,8 +912,6 @@ const AddUser = () => {
                 </div>
               )}
 
-           
-
               {/* Action Buttons */}
               <div className="flex gap-3 pt-4 border-t border-slate-200/60 dark:border-slate-700/60">
                 <Button
@@ -885,6 +944,62 @@ const AddUser = () => {
           </CardContent>
         </Card>
       </div>
+
+      {/* Confirm Create Dialog */}
+      <AlertDialog open={showConfirm} onOpenChange={setShowConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Create this user?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 pt-2">
+                <div className="grid grid-cols-3 gap-2 text-sm">
+                  <span className="text-slate-500">Name:</span>
+                  <span className="col-span-2 font-medium text-slate-800 dark:text-slate-100">
+                    {pendingPayload?.first_name}{" "}
+                    {pendingPayload?.middle_name ? `${pendingPayload.middle_name} ` : ""}
+                    {pendingPayload?.last_name}
+                  </span>
+
+                  <span className="text-slate-500">Email:</span>
+                  <span className="col-span-2 font-medium text-slate-800 dark:text-slate-100 break-all">
+                    {pendingPayload?.email}
+                  </span>
+
+                  <span className="text-slate-500">Department:</span>
+                  <span className="col-span-2 font-medium text-slate-800 dark:text-slate-100">
+                    {departments.find(d => d.department_id === parseInt(pendingPayload?.department_id))?.department_name || "—"}
+                  </span>
+
+                  <span className="text-slate-500">Role:</span>
+                  <span className="col-span-2 font-medium text-slate-800 dark:text-slate-100">
+                    {pendingPayload?.role === "gso_office" ? "GSO Staff"
+                      : pendingPayload?.role === "mayors_office" ? "Disbursing Officer"
+                      : pendingPayload?.role === "driver" ? "Driver"
+                      : "—"}
+                  </span>
+                </div>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={createUser.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmCreate}
+              disabled={createUser.isPending}
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              {createUser.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  Creating...
+                </>
+              ) : (
+                "Create User"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

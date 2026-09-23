@@ -3,6 +3,8 @@
 // ENHANCED: Improved validation with field highlighting
 // No duplicate toasts - single toast with all errors
 // Auto-focus first error field
+// + AlertDialog confirmation before update
+// + REMOVED: odometer_status (column does not exist in DB)
 // ============================================
 
 import React, { useState, useEffect, useRef } from "react";
@@ -12,6 +14,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   ArrowLeft,
   Car,
@@ -26,7 +37,6 @@ import {
   X,
   Zap,
   Shield,
-  Gauge,
   Edit,
 } from "lucide-react";
 import { useVehicles, useUpdateVehicle, useDepartmentsForVehicles } from "../../../hooks/useVehicleManagement";
@@ -48,7 +58,7 @@ const FormField = ({
   className,
 }) => {
   const hasError = touched && error;
-  
+
   return (
     <div className={cn("space-y-1.5", className)}>
       <Label className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300">
@@ -111,12 +121,12 @@ const DepartmentDatalist = ({ value, onChange, onBlur, error, touched, departmen
   const handleInputChange = (e) => {
     const input = e.target.value;
     setSearchTerm(input);
-    
-    const match = departments.find(d => 
+
+    const match = departments.find(d =>
       d.department_name.toLowerCase() === input.toLowerCase() ||
       d.department_code?.toLowerCase() === input.toLowerCase()
     );
-    
+
     if (match) {
       setSelectedDepartment(match);
       onChange(match.department_id);
@@ -141,7 +151,7 @@ const DepartmentDatalist = ({ value, onChange, onBlur, error, touched, departmen
   };
 
   const filteredDepartments = searchTerm.length > 0
-    ? departments.filter(d => 
+    ? departments.filter(d =>
         d.department_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         d.department_code?.toLowerCase().includes(searchTerm.toLowerCase())
       )
@@ -161,7 +171,7 @@ const DepartmentDatalist = ({ value, onChange, onBlur, error, touched, departmen
           onChange={handleInputChange}
           onBlur={() => {
             if (searchTerm && !selectedDepartment) {
-              const match = departments.find(d => 
+              const match = departments.find(d =>
                 d.department_name.toLowerCase() === searchTerm.toLowerCase()
               );
               if (!match) {
@@ -284,7 +294,7 @@ const EditVehicle = () => {
   const { data: vehicles = [], isLoading } = useVehicles();
   const { data: departments = [] } = useDepartmentsForVehicles();
   const updateVehicle = useUpdateVehicle();
-  
+
   const [formData, setFormData] = useState({
     department_id: "",
     vehicle_model: "",
@@ -292,12 +302,13 @@ const EditVehicle = () => {
     fuel_type: "diesel",
     status: "active",
     maintenance_flag: false,
-    odometer_status: "functional",
     display_status: "Serviceable",
   });
   const [errors, setErrors] = useState({});
   const [touched, setTouched] = useState({});
   const [originalData, setOriginalData] = useState(null);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [pendingPayload, setPendingPayload] = useState(null);
 
   // ============ STATUS OPTIONS ============
   const statusOptions = [
@@ -325,7 +336,6 @@ const EditVehicle = () => {
           fuel_type: vehicle.fuel_type || "diesel",
           status: vehicle.status || "active",
           maintenance_flag: vehicle.maintenance_flag || false,
-         
           display_status: displayStatus,
         };
         setFormData(data);
@@ -416,7 +426,7 @@ const EditVehicle = () => {
 
       const firstField = Object.keys(newErrors)[0];
       if (firstField) {
-        const element = document.querySelector(`[name="${firstField}"]`) || 
+        const element = document.querySelector(`[name="${firstField}"]`) ||
                         document.getElementById(firstField);
         if (element) {
           setTimeout(() => element.focus(), 100);
@@ -454,40 +464,52 @@ const EditVehicle = () => {
     }
   };
 
-  const handleSubmit = (e) => {
+  // ============================================
+  // ✅ SUBMIT — validate, build payload, then confirm
+  // ============================================
+
+  const handleSubmitClick = (e) => {
     e.preventDefault();
-    
+
     if (toastIdRef.current) toast.dismiss(toastIdRef.current);
-    
+
     if (!validate()) {
       return;
     }
 
+    const payload = {
+      department_id: parseInt(formData.department_id),
+      vehicle_model: formData.vehicle_model.trim(),
+      plate_number: formData.plate_number.trim().toUpperCase(),
+      fuel_type: formData.fuel_type,
+      status: formData.status,
+      maintenance_flag: formData.maintenance_flag,
+    };
+
+    setPendingPayload(payload);
+    setShowConfirm(true);
+  };
+
+  const handleConfirmUpdate = () => {
+    if (!pendingPayload) return;
+
     updateVehicle.mutate(
-      {
-        vehicleId: parseInt(id),
-        vehicleData: {
-          department_id: parseInt(formData.department_id),
-          vehicle_model: formData.vehicle_model.trim(),
-          plate_number: formData.plate_number.trim().toUpperCase(),
-          fuel_type: formData.fuel_type,
-          status: formData.status,
-          maintenance_flag: formData.maintenance_flag,
-          odometer_status: formData.odometer_status,
-        },
-      },
+      { vehicleId: parseInt(id), vehicleData: pendingPayload },
       {
         onSuccess: () => {
+          setShowConfirm(false);
+          setPendingPayload(null);
           if (toastIdRef.current) toast.dismiss(toastIdRef.current);
           toastIdRef.current = toast.success("✅ Vehicle updated successfully!");
           navigate("/admin/vehicles");
         },
         onError: (error) => {
+          setShowConfirm(false);
           if (toastIdRef.current) toast.dismiss(toastIdRef.current);
           const message = error.response?.data?.message || "Failed to update vehicle";
-          
+
           if (error.response?.data?.errors?.plate_number) {
-            toastIdRef.current = toast.error(`Plate number "${formData.plate_number}" already exists. Please use a different plate number.`);
+            toastIdRef.current = toast.error(`Plate number "${pendingPayload.plate_number}" already exists. Please use a different plate number.`);
             setErrors(prev => ({ ...prev, plate_number: "This plate number is already registered" }));
             setTouched(prev => ({ ...prev, plate_number: true }));
             document.querySelector('[name="plate_number"]')?.focus();
@@ -563,7 +585,7 @@ const EditVehicle = () => {
             </div>
           </CardHeader>
           <CardContent className="pt-6">
-            <form onSubmit={handleSubmit} className="space-y-5">
+            <form onSubmit={handleSubmitClick} className="space-y-5">
               {/* Department */}
               <FormField
                 label="Department"
@@ -645,9 +667,9 @@ const EditVehicle = () => {
                     hasError("fuel_type") && "border-red-500 ring-red-500 bg-red-50/50 dark:bg-red-950/10"
                   )}
                 >
-                 <option value="diesel">Diesel</option>
-<option value="gasoline">Gasoline</option>
-<option value="premium">Premium</option>
+                  <option value="diesel">Diesel</option>
+                  <option value="gasoline">Gasoline</option>
+                  <option value="premium">Premium</option>
                 </select>
               </FormField>
 
@@ -670,10 +692,6 @@ const EditVehicle = () => {
                   ))}
                 </select>
               </FormField>
-
-             
-
-        
 
               {/* Action Buttons */}
               <div className="flex gap-3 pt-4 border-t border-slate-200/60 dark:border-slate-700/60">
@@ -714,6 +732,63 @@ const EditVehicle = () => {
           </CardContent>
         </Card>
       </div>
+
+      {/* Confirm Update Dialog */}
+      <AlertDialog open={showConfirm} onOpenChange={setShowConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Save changes to this vehicle?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 pt-2">
+                <div className="grid grid-cols-3 gap-2 text-sm">
+                  <span className="text-slate-500">Model:</span>
+                  <span className="col-span-2 font-medium text-slate-800 dark:text-slate-100">
+                    {pendingPayload?.vehicle_model || "—"}
+                  </span>
+
+                  <span className="text-slate-500">Plate No.:</span>
+                  <span className="col-span-2 font-mono font-medium text-slate-800 dark:text-slate-100">
+                    {pendingPayload?.plate_number || "—"}
+                  </span>
+
+                  <span className="text-slate-500">Department:</span>
+                  <span className="col-span-2 font-medium text-slate-800 dark:text-slate-100">
+                    {departments.find(d => d.department_id === pendingPayload?.department_id)?.department_name || "—"}
+                  </span>
+
+                  <span className="text-slate-500">Fuel Type:</span>
+                  <span className="col-span-2 font-medium text-slate-800 dark:text-slate-100 capitalize">
+                    {pendingPayload?.fuel_type || "—"}
+                  </span>
+
+                  <span className="text-slate-500">Status:</span>
+                  <span className="col-span-2 font-medium text-slate-800 dark:text-slate-100">
+                    {currentDisplayStatus}
+                  </span>
+                </div>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={updateVehicle.isPending}>Cancel</AlertDialogCancel>
+            <button
+              type="button"
+              onClick={handleConfirmUpdate}
+              disabled={updateVehicle.isPending}
+              className="inline-flex items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {updateVehicle.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  Updating...
+                </>
+              ) : (
+                "Save Changes"
+              )}
+            </button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

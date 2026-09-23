@@ -3,6 +3,8 @@
 // ENHANCED: Improved validation with field highlighting
 // No duplicate toasts - single toast with all errors
 // Auto-focus first error field
+// ✅ Title Case formatting for department_name + head_of_office
+// ✅ AlertDialog confirmation before update
 // ============================================
 
 import React, { useState, useEffect, useRef } from "react";
@@ -12,12 +14,22 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { 
-  ArrowLeft, 
-  Building2, 
-  Code, 
-  User, 
-  Loader2, 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  ArrowLeft,
+  Building2,
+  Code,
+  User,
+  Loader2,
   CheckCircle,
   AlertCircle,
   Info,
@@ -30,21 +42,46 @@ import { toast } from "react-hot-toast";
 import { cn } from "@/lib/utils";
 
 // ============================================
+// ✅ TITLE CASE FORMATTER
+// ============================================
+const formatProperName = (value, { keepPeriods = false } = {}) => {
+  if (!value) return '';
+  const allowed = keepPeriods
+    ? /[^A-Za-z\s.'\-]/g
+    : /[^A-Za-z\s'\-]/g;
+
+  return String(value)
+    .replace(allowed, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .split(' ')
+    .map((word) => {
+      if (!word) return '';
+      if (word.length >= 2 && word.length <= 7 && word === word.toUpperCase()) {
+        return word;
+      }
+      const lower = word.toLowerCase();
+      return lower.replace(/(^|[\-'])([a-z])/g, (_, p, c) => p + c.toUpperCase());
+    })
+    .join(' ');
+};
+
+// ============================================
 // ✅ ENHANCED: Form Field with error highlighting
 // ============================================
 
-const FormField = ({ 
-  label, 
-  icon: Icon, 
-  required, 
-  error, 
+const FormField = ({
+  label,
+  icon: Icon,
+  required,
+  error,
   touched,
-  helper, 
+  helper,
   children,
-  className 
+  className
 }) => {
   const hasError = touched && error;
-  
+
   return (
     <div className={cn("space-y-1.5", className)}>
       <Label className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300">
@@ -114,15 +151,16 @@ const EditDepartment = () => {
   const { data: departments = [], isLoading } = useDepartments();
   const updateDepartment = useUpdateDepartment();
   const toastIdRef = useRef(null);
-  
-  const [formData, setFormData] = useState({ 
-    department_name: "", 
+
+  const [formData, setFormData] = useState({
+    department_name: "",
     department_code: "",
     head_of_office: "",
   });
   const [errors, setErrors] = useState({});
   const [touched, setTouched] = useState({});
   const [originalData, setOriginalData] = useState(null);
+  const [showConfirmUpdate, setShowConfirmUpdate] = useState(false);
 
   // ============ LOAD DEPARTMENT DATA ============
   useEffect(() => {
@@ -162,6 +200,12 @@ const EditDepartment = () => {
     } else if (formData.department_name.trim().length > 150) {
       newErrors.department_name = "Department name must be 150 characters or less";
       newTouched.department_name = true;
+    } else if (/[0-9]/.test(formData.department_name)) {
+      newErrors.department_name = "Department name cannot contain numbers";
+      newTouched.department_name = true;
+    } else if (/[^A-Za-z\s'\-]/.test(formData.department_name)) {
+      newErrors.department_name = "Department name can only contain letters, spaces, apostrophes, and hyphens";
+      newTouched.department_name = true;
     }
 
     // Department Code validation
@@ -183,12 +227,17 @@ const EditDepartment = () => {
     if (formData.head_of_office && formData.head_of_office.trim().length > 150) {
       newErrors.head_of_office = "Head of office name is too long (max 150 characters)";
       newTouched.head_of_office = true;
+    } else if (formData.head_of_office && /[0-9]/.test(formData.head_of_office)) {
+      newErrors.head_of_office = "Head of office name cannot contain numbers";
+      newTouched.head_of_office = true;
+    } else if (formData.head_of_office && /[^A-Za-z\s.'\-]/.test(formData.head_of_office)) {
+      newErrors.head_of_office = "Head of office can only contain letters, spaces, periods, apostrophes, and hyphens";
+      newTouched.head_of_office = true;
     }
 
     setErrors(newErrors);
     setTouched(prev => ({ ...prev, ...newTouched }));
 
-    // ✅ Show single toast with all errors
     if (Object.keys(newErrors).length > 0) {
       const errorMessages = Object.entries(newErrors).map(([field, msg]) => {
         const labels = {
@@ -200,7 +249,6 @@ const EditDepartment = () => {
         return `• ${label}: ${msg}`;
       });
 
-      // ✅ Dismiss any existing toast
       if (toastIdRef.current) toast.dismiss(toastIdRef.current);
 
       toastIdRef.current = toast.error(
@@ -215,10 +263,9 @@ const EditDepartment = () => {
         { duration: 5000 }
       );
 
-      // ✅ Auto-focus first error field
       const firstField = Object.keys(newErrors)[0];
       if (firstField) {
-        const element = document.querySelector(`[name="${firstField}"]`) || 
+        const element = document.querySelector(`[name="${firstField}"]`) ||
                         document.getElementById(firstField);
         if (element) {
           setTimeout(() => element.focus(), 100);
@@ -244,23 +291,33 @@ const EditDepartment = () => {
     }
   };
 
+  // ✅ Step 1: validate, open confirmation
   const handleSubmit = (e) => {
     e.preventDefault();
-    
-    // ✅ Dismiss any existing toast before validation
+
     if (toastIdRef.current) toast.dismiss(toastIdRef.current);
-    
+
     if (!validate()) {
       return;
     }
+
+    setShowConfirmUpdate(true);
+  };
+
+  // ✅ Step 2: confirm → fire mutation
+  const handleConfirmUpdate = () => {
+    setShowConfirmUpdate(false);
+
+    const finalName = formatProperName(formData.department_name, { keepPeriods: false });
+    const finalHead = formatProperName(formData.head_of_office, { keepPeriods: true });
 
     updateDepartment.mutate(
       {
         departmentId: parseInt(id),
         departmentData: {
-          department_name: formData.department_name.trim(),
+          department_name: finalName,
           department_code: formData.department_code.trim().toUpperCase(),
-          head_of_office: formData.head_of_office.trim() || null,
+          head_of_office: finalHead || null,
         },
       },
       {
@@ -272,8 +329,7 @@ const EditDepartment = () => {
         onError: (error) => {
           if (toastIdRef.current) toast.dismiss(toastIdRef.current);
           const message = error.response?.data?.message || "Failed to update department";
-          
-          // Check for duplicate code error
+
           if (error.response?.data?.errors?.department_code) {
             toastIdRef.current = toast.error(`Department code "${formData.department_code}" already exists. Please use a different code.`);
             setErrors(prev => ({ ...prev, department_code: "This code is already in use" }));
@@ -288,6 +344,9 @@ const EditDepartment = () => {
   };
 
   const hasChanges = JSON.stringify(formData) !== JSON.stringify(originalData);
+
+  const previewName = formatProperName(formData.department_name, { keepPeriods: false });
+  const previewHead = formatProperName(formData.head_of_office, { keepPeriods: true });
 
   if (isLoading) {
     return <LoadingSkeleton />;
@@ -380,7 +439,7 @@ const EditDepartment = () => {
                 required
                 error={errors.department_name}
                 touched={touched.department_name}
-                helper="Full, descriptive name of the department (3-150 characters)"
+                helper="Full name (3-150 characters). Auto-formatted to Title Case on save."
               >
                 <Input
                   id="department_name"
@@ -400,7 +459,7 @@ const EditDepartment = () => {
                 icon={User}
                 error={errors.head_of_office}
                 touched={touched.head_of_office}
-                helper="Full name of the department head (appears on trip tickets)"
+                helper="Full name of the department head. Auto-formatted on save."
               >
                 <Input
                   id="head_of_office"
@@ -413,8 +472,6 @@ const EditDepartment = () => {
                   maxLength={150}
                 />
               </FormField>
-
-            
 
               {/* Action Buttons */}
               <div className="flex gap-3 pt-4 border-t border-slate-200/60 dark:border-slate-700/60">
@@ -455,6 +512,52 @@ const EditDepartment = () => {
           </CardContent>
         </Card>
       </div>
+
+      {/* ✅ CONFIRMATION: Update Department */}
+      <AlertDialog open={showConfirmUpdate} onOpenChange={setShowConfirmUpdate}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <Building2 className="h-5 w-5 text-blue-500" />
+              Confirm Department Update
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              You are about to update the department with the following details:
+              <br /><br />
+              Code:{' '}
+              <strong className="text-slate-900 dark:text-white font-mono">
+                {formData.department_code.trim().toUpperCase()}
+              </strong>
+              <br />
+              Name:{' '}
+              <strong className="text-slate-900 dark:text-white">
+                {previewName || '—'}
+              </strong>
+              {previewHead && (
+                <>
+                  <br />
+                  Head of Office:{' '}
+                  <strong className="text-slate-900 dark:text-white">
+                    {previewHead}
+                  </strong>
+                </>
+              )}
+              <br /><br />
+              Continue?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmUpdate}
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              <Save className="h-4 w-4 mr-2" />
+              Confirm Update
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
