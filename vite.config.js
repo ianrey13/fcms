@@ -101,6 +101,25 @@ export default defineConfig({
         watch: {
             usePolling: true,
         },
+        // ✅ PROXY — routes /api and /broadcasting to Laravel backend (:8000)
+        // Without this, calls to /api/broadcasting/auth hit Vite (:5173) and 404.
+        proxy: {
+            '/api': {
+                target: 'http://localhost:8000',
+                changeOrigin: true,
+                secure: false,
+            },
+            '/broadcasting': {
+                target: 'http://localhost:8000',
+                changeOrigin: true,
+                secure: false,
+            },
+            '/sanctum': {
+                target: 'http://localhost:8000',
+                changeOrigin: true,
+                secure: false,
+            },
+        },
     },
     optimizeDeps: {
         include: [
