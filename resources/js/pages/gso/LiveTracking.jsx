@@ -224,20 +224,6 @@ styleSheet.textContent = `
     .custom-vehicle-icon:hover {
         filter: brightness(1.1);
     }
-    .sidebar-slide-enter {
-        transform: translateX(100%);
-    }
-    .sidebar-slide-enter-active {
-        transform: translateX(0);
-        transition: transform 300ms ease-out;
-    }
-    .sidebar-slide-exit {
-        transform: translateX(0);
-    }
-    .sidebar-slide-exit-active {
-        transform: translateX(100%);
-        transition: transform 300ms ease-in;
-    }
 `;
 document.head.appendChild(styleSheet);
 
@@ -328,22 +314,22 @@ const getMapTypeLabel = (type) => {
 };
 
 // ============================================
-// STATS CARD COMPONENT
+// INLINE STAT — compact horizontal pill for header
+// ✅ Moved OUTSIDE the component so it's always defined
 // ============================================
 
-const StatsCard = ({ title, value, icon: Icon, color, subtitle }) => (
-    <div className="bg-white dark:bg-slate-800/80 rounded-xl p-3 border border-slate-200/60 dark:border-slate-700/60">
-        <div className="flex items-center gap-3">
-            <div className={`p-2 rounded-lg bg-gradient-to-br ${color} shadow-lg flex-shrink-0`}>
-                <Icon className="h-4 w-4 text-white" />
-            </div>
-            <div className="min-w-0 flex-1">
-                <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium uppercase tracking-wider">{title}</p>
-                <p className="text-lg font-bold text-slate-900 dark:text-white leading-tight">{value}</p>
-                {subtitle && (
-                    <p className="text-[10px] text-slate-400 dark:text-slate-500 truncate">{subtitle}</p>
-                )}
-            </div>
+const InlineStat = ({ title, value, icon: Icon, color, subtitle }) => (
+    <div className="flex items-center gap-2 px-2.5 py-1.5 bg-slate-100/80 dark:bg-slate-800/80 rounded-lg border border-slate-200/60 dark:border-slate-700/60 flex-shrink-0">
+        <div className={`p-1.5 rounded-md bg-gradient-to-br ${color} shadow-sm flex-shrink-0`}>
+            <Icon className="h-3.5 w-3.5 text-white" />
+        </div>
+        <div className="min-w-0">
+            <p className="text-[9px] text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider leading-none">
+                {title}
+            </p>
+            <p className="text-sm font-bold text-slate-900 dark:text-white leading-tight">
+                {value}
+            </p>
         </div>
     </div>
 );
@@ -474,7 +460,6 @@ const LiveTracking = () => {
     const [isWsConnected, setIsWsConnected] = useState(false);
     const [pingCount, setPingCount] = useState(0);
     const [refreshAttempts, setRefreshAttempts] = useState(0);
-    // ✅ NEW: sidebar toggle state
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
     const mapRef = useRef(null);
     const dropdownRef = useRef(null);
@@ -497,13 +482,12 @@ const LiveTracking = () => {
         };
     }, []);
 
-    // ✅ NEW: when sidebar toggles, invalidate map size so Leaflet recalculates
     useEffect(() => {
         const t = setTimeout(() => {
             if (mapRef.current) {
                 mapRef.current.invalidateSize();
             }
-        }, 350); // wait for CSS transition to complete
+        }, 350);
         return () => clearTimeout(t);
     }, [isSidebarOpen]);
 
@@ -805,14 +789,14 @@ const LiveTracking = () => {
 
     const stats = useMemo(() => [
         {
-            title: 'Active Vehicles',
+            title: 'Active',
             value: activeCount,
             icon: Car,
             color: 'from-green-500 to-emerald-600',
             subtitle: `${activeCount} on the road`,
         },
         {
-            title: 'Average Speed',
+            title: 'Avg Speed',
             value: activeCount > 0
                 ? Math.round(tripsWithLocation.reduce((acc, t) => acc + (t?.current_location?.speed_kmh || 0), 0) / activeCount)
                 : 0,
@@ -825,7 +809,7 @@ const LiveTracking = () => {
             value: lastUpdate ? formatTime(lastUpdate) : '--',
             icon: Clock,
             color: 'from-purple-500 to-purple-600',
-            subtitle: `Pings: ${pingCount}`,
+            subtitle: `${pingCount} pings`,
         },
     ], [activeCount, tripsWithLocation, lastUpdate, pingCount]);
 
@@ -905,27 +889,6 @@ const LiveTracking = () => {
         }
     };
 
-
-    // ============================================
-// INLINE STAT — compact horizontal pill for header
-// ============================================
-
-const InlineStat = ({ title, value, icon: Icon, color, subtitle }) => (
-    <div className="flex items-center gap-2 px-2.5 py-1.5 bg-slate-100/80 dark:bg-slate-800/80 rounded-lg border border-slate-200/60 dark:border-slate-700/60 flex-shrink-0">
-        <div className={`p-1.5 rounded-md bg-gradient-to-br ${color} shadow-sm flex-shrink-0`}>
-            <Icon className="h-3.5 w-3.5 text-white" />
-        </div>
-        <div className="min-w-0">
-            <p className="text-[9px] text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider leading-none">
-                {title}
-            </p>
-            <p className="text-sm font-bold text-slate-900 dark:text-white leading-tight">
-                {value}
-            </p>
-        </div>
-    </div>
-);
-
     const renderMapTiles = () => {
         switch (mapType) {
             case 'satellite':
@@ -981,7 +944,7 @@ const InlineStat = ({ title, value, icon: Icon, color, subtitle }) => (
         return <LoadingSkeleton />;
     }
 
-       return (
+    return (
         <div className="h-screen flex flex-col bg-slate-50 dark:bg-slate-950">
             {/* ============ Header (stats inside) ============ */}
             <header className="flex-shrink-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm border-b border-slate-200/60 dark:border-slate-800/60 px-4 md:px-6 py-3">
@@ -1104,7 +1067,7 @@ const InlineStat = ({ title, value, icon: Icon, color, subtitle }) => (
             {/* ============ Main Content — Map + Sidebar ============ */}
             <div className="flex-1 flex overflow-hidden relative min-h-0">
 
-                {/* Map */}
+                {/* Map — flex-1 so it fills available space */}
                 <div className="flex-1 relative min-h-0 min-w-0">
                     {isLoading ? (
                         <div className="w-full h-full flex items-center justify-center bg-slate-100 dark:bg-slate-800">
