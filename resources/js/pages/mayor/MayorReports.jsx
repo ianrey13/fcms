@@ -1524,9 +1524,7 @@ const MayorReports = () => {
                                         <SelectValue placeholder="All Departments" />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        <SelectItem value="all">
-                                            All Departments
-                                        </SelectItem>
+                                       
                                         {departments.map((d) => (
                                             <SelectItem
                                                 key={d.department_id}

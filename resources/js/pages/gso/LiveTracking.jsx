@@ -40,6 +40,8 @@ import {
     Layers,
     Activity,
     ChevronDown,
+    ChevronLeft,
+    ChevronRight,
     Check,
     Wifi,
     WifiOff,
@@ -222,6 +224,20 @@ styleSheet.textContent = `
     .custom-vehicle-icon:hover {
         filter: brightness(1.1);
     }
+    .sidebar-slide-enter {
+        transform: translateX(100%);
+    }
+    .sidebar-slide-enter-active {
+        transform: translateX(0);
+        transition: transform 300ms ease-out;
+    }
+    .sidebar-slide-exit {
+        transform: translateX(0);
+    }
+    .sidebar-slide-exit-active {
+        transform: translateX(100%);
+        transition: transform 300ms ease-in;
+    }
 `;
 document.head.appendChild(styleSheet);
 
@@ -318,14 +334,14 @@ const getMapTypeLabel = (type) => {
 const StatsCard = ({ title, value, icon: Icon, color, subtitle }) => (
     <div className="bg-white dark:bg-slate-800/80 rounded-xl p-3 border border-slate-200/60 dark:border-slate-700/60">
         <div className="flex items-center gap-3">
-            <div className={`p-2 rounded-lg bg-gradient-to-br ${color} shadow-lg`}>
+            <div className={`p-2 rounded-lg bg-gradient-to-br ${color} shadow-lg flex-shrink-0`}>
                 <Icon className="h-4 w-4 text-white" />
             </div>
-            <div>
-                <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">{title}</p>
-                <p className="text-lg font-bold text-slate-900 dark:text-white">{value}</p>
+            <div className="min-w-0 flex-1">
+                <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium uppercase tracking-wider">{title}</p>
+                <p className="text-lg font-bold text-slate-900 dark:text-white leading-tight">{value}</p>
                 {subtitle && (
-                    <p className="text-[10px] text-slate-400 dark:text-slate-500">{subtitle}</p>
+                    <p className="text-[10px] text-slate-400 dark:text-slate-500 truncate">{subtitle}</p>
                 )}
             </div>
         </div>
@@ -333,7 +349,7 @@ const StatsCard = ({ title, value, icon: Icon, color, subtitle }) => (
 );
 
 // ============================================
-// POPUP CONTENT COMPONENT (fuel removed)
+// POPUP CONTENT COMPONENT
 // ============================================
 
 const TripPopupContent = ({ trip, onViewTrip, onCenter, onFocus }) => {
@@ -426,55 +442,12 @@ const LoadingSkeleton = () => (
                     <SkeletonText width="w-48" className="h-3" />
                 </div>
             </div>
-            <div className="flex items-center gap-2">
-                <SkeletonCard className="h-8 w-24" />
-                <SkeletonCard className="h-8 w-24" />
-            </div>
         </header>
-        <div className="px-4 md:px-6 py-3">
-            <div className="grid grid-cols-3 gap-3 max-w-lg">
-                {[1, 2, 3].map((i) => (
-                    <SkeletonCard key={i} className="p-3">
-                        <div className="flex items-center gap-3">
-                            <SkeletonCard className="h-8 w-8 rounded-lg" />
-                            <div>
-                                <SkeletonText width="w-16" className="h-3" />
-                                <SkeletonTitle width="w-12" className="h-4" />
-                            </div>
-                        </div>
-                    </SkeletonCard>
-                ))}
-            </div>
-        </div>
         <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
-            <div className="flex-1 relative min-h-[50vh] lg:min-h-0 bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
+            <div className="flex-1 relative bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
                 <div className="text-center">
                     <SkeletonCard className="w-16 h-16 rounded-full mx-auto mb-4" />
                     <SkeletonText width="w-32" className="h-4 mx-auto" />
-                    <SkeletonText width="w-48" className="h-3 mx-auto mt-2" />
-                </div>
-            </div>
-            <div className="w-full lg:w-80 bg-white dark:bg-slate-900 border-t lg:border-t-0 lg:border-l border-slate-200/60 dark:border-slate-800/60">
-                <div className="p-4 border-b">
-                    <SkeletonTitle width="w-32" className="h-5" />
-                    <SkeletonText width="w-48" className="h-3 mt-1" />
-                </div>
-                <div className="p-3 space-y-2">
-                    {[1, 2, 3].map((i) => (
-                        <SkeletonCard key={i} className="p-3">
-                            <div className="flex justify-between">
-                                <div className="space-y-2 flex-1">
-                                    <SkeletonText width="w-24" className="h-4" />
-                                    <SkeletonText width="w-32" className="h-3" />
-                                    <SkeletonText width="w-40" className="h-3" />
-                                </div>
-                                <div className="text-right">
-                                    <SkeletonText width="w-16" className="h-3" />
-                                    <SkeletonText width="w-16" className="h-3 mt-1" />
-                                </div>
-                            </div>
-                        </SkeletonCard>
-                    ))}
                 </div>
             </div>
         </div>
@@ -501,6 +474,8 @@ const LiveTracking = () => {
     const [isWsConnected, setIsWsConnected] = useState(false);
     const [pingCount, setPingCount] = useState(0);
     const [refreshAttempts, setRefreshAttempts] = useState(0);
+    // ✅ NEW: sidebar toggle state
+    const [isSidebarOpen, setIsSidebarOpen] = useState(true);
     const mapRef = useRef(null);
     const dropdownRef = useRef(null);
     const pingCounterRef = useRef(0);
@@ -521,6 +496,16 @@ const LiveTracking = () => {
             isMountedRef.current = false;
         };
     }, []);
+
+    // ✅ NEW: when sidebar toggles, invalidate map size so Leaflet recalculates
+    useEffect(() => {
+        const t = setTimeout(() => {
+            if (mapRef.current) {
+                mapRef.current.invalidateSize();
+            }
+        }, 350); // wait for CSS transition to complete
+        return () => clearTimeout(t);
+    }, [isSidebarOpen]);
 
     const hasActiveTrips = useMemo(() => {
         return Array.isArray(tripsData) && tripsData.some(trip => trip && trip.current_location);
@@ -920,6 +905,27 @@ const LiveTracking = () => {
         }
     };
 
+
+    // ============================================
+// INLINE STAT — compact horizontal pill for header
+// ============================================
+
+const InlineStat = ({ title, value, icon: Icon, color, subtitle }) => (
+    <div className="flex items-center gap-2 px-2.5 py-1.5 bg-slate-100/80 dark:bg-slate-800/80 rounded-lg border border-slate-200/60 dark:border-slate-700/60 flex-shrink-0">
+        <div className={`p-1.5 rounded-md bg-gradient-to-br ${color} shadow-sm flex-shrink-0`}>
+            <Icon className="h-3.5 w-3.5 text-white" />
+        </div>
+        <div className="min-w-0">
+            <p className="text-[9px] text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider leading-none">
+                {title}
+            </p>
+            <p className="text-sm font-bold text-slate-900 dark:text-white leading-tight">
+                {value}
+            </p>
+        </div>
+    </div>
+);
+
     const renderMapTiles = () => {
         switch (mapType) {
             case 'satellite':
@@ -975,43 +981,47 @@ const LiveTracking = () => {
         return <LoadingSkeleton />;
     }
 
-    return (
+       return (
         <div className="h-screen flex flex-col bg-slate-50 dark:bg-slate-950">
-            {/* Header */}
-            <header className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm border-b border-slate-200/60 dark:border-slate-800/60 px-4 md:px-6 py-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-                <div className="flex items-center gap-3">
+            {/* ============ Header (stats inside) ============ */}
+            <header className="flex-shrink-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm border-b border-slate-200/60 dark:border-slate-800/60 px-4 md:px-6 py-3">
+                <div className="flex items-center gap-3 flex-wrap lg:flex-nowrap">
+
+                    {/* Back button */}
                     <Button
                         variant="ghost"
                         size="icon"
                         onClick={() => navigate('/gso/dashboard')}
-                        className="rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 h-9 w-9"
+                        className="rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 h-9 w-9 flex-shrink-0"
                     >
                         <ArrowLeft className="h-4 w-4" />
                     </Button>
-                    <div>
-                        <h1 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                            <Satellite className="h-5 w-5 text-blue-500" />
+
+                    {/* Title block */}
+                    <div className="flex-shrink-0">
+                        <h1 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                            <Satellite className="h-4 w-4 text-blue-500" />
                             Live Tracking
                             {!hasActiveTrips && (
-                                <Badge variant="outline" className="text-xs text-slate-400 border-slate-300 dark:border-slate-600 ml-2">
-                                    <Activity className="h-3 w-3 mr-1" />
+                                <Badge variant="outline" className="text-[10px] text-slate-400 border-slate-300 dark:border-slate-600 ml-1">
+                                    <Activity className="h-2.5 w-2.5 mr-1" />
                                     Paused
                                 </Badge>
                             )}
                         </h1>
-                        <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2 flex-wrap">
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-2 flex-wrap">
                             <span className="flex items-center gap-1">
-                                <span className={`h-2 w-2 rounded-full ${hasActiveTrips ? 'bg-green-500 animate-pulse' : 'bg-slate-400'}`} />
-                                {hasActiveTrips ? `${activeCount} active vehicle${activeCount !== 1 ? 's' : ''} tracking` : 'No active trips'}
+                                <span className={`h-1.5 w-1.5 rounded-full ${hasActiveTrips ? 'bg-green-500 animate-pulse' : 'bg-slate-400'}`} />
+                                {hasActiveTrips ? `${activeCount} active` : 'No active trips'}
                             </span>
                             {hasActiveTrips && (
                                 <span className="text-blue-500 text-[10px] font-medium">● Live</span>
                             )}
                             <span className="flex items-center gap-1">
                                 {isWsConnected ? (
-                                    <Wifi className="h-3 w-3 text-emerald-500" />
+                                    <Wifi className="h-2.5 w-2.5 text-emerald-500" />
                                 ) : (
-                                    <WifiOff className="h-3 w-3 text-red-500" />
+                                    <WifiOff className="h-2.5 w-2.5 text-red-500" />
                                 )}
                                 <span className={isWsConnected ? 'text-emerald-500' : 'text-red-500'}>
                                     {isWsConnected ? 'Connected' : 'Disconnected'}
@@ -1019,77 +1029,83 @@ const LiveTracking = () => {
                             </span>
                             {isFetching && hasActiveTrips && (
                                 <span className="flex items-center gap-1 text-slate-400">
-                                    <RefreshCw className="h-3 w-3 animate-spin" />
-                                    Updating...
+                                    <RefreshCw className="h-2.5 w-2.5 animate-spin" />
+                                    Updating
                                 </span>
                             )}
                         </p>
                     </div>
-                </div>
 
-                <div className="flex items-center gap-2 flex-wrap">
-                    <div className="relative" ref={dropdownRef}>
-                        <button
-                            onClick={() => setIsMapTypeDropdownOpen(!isMapTypeDropdownOpen)}
-                            className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors text-sm font-medium flex items-center gap-2"
-                        >
-                            <Layers className="h-4 w-4" />
-                            {getMapTypeLabel(mapType)}
-                            <ChevronDown className="h-4 w-4" />
-                        </button>
+                    {/* Divider */}
+                    <div className="hidden lg:block h-10 w-px bg-slate-200 dark:bg-slate-700 flex-shrink-0" />
 
-                        {isMapTypeDropdownOpen && (
-                            <div className="absolute top-full right-0 mt-1 w-48 bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700 z-50 py-1 overflow-hidden">
-                                {Object.entries(MAP_TILES).map(([key, config]) => {
-                                    const isActive = mapType === key;
-                                    return (
-                                        <button
-                                            key={key}
-                                            onClick={() => handleMapTypeChange(key)}
-                                            className={cn(
-                                                "w-full text-left px-4 py-2 text-sm transition-colors flex items-center gap-3",
-                                                isActive
-                                                    ? "bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300"
-                                                    : "hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300"
-                                            )}
-                                        >
-                                            <span>{config.name}</span>
-                                            {isActive && (
-                                                <Check className="h-4 w-4 ml-auto text-blue-600" />
-                                            )}
-                                        </button>
-                                    );
-                                })}
-                            </div>
-                        )}
+                    {/* Stats — inline horizontal pills */}
+                    <div className="flex items-center gap-2 flex-shrink-0 overflow-x-auto lg:overflow-visible">
+                        {stats.map((stat, index) => (
+                            <InlineStat key={index} {...stat} />
+                        ))}
                     </div>
 
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={handleFitBounds}
-                        disabled={!hasActiveTrips}
-                        className="dark:border-slate-700 dark:text-slate-300"
-                    >
-                        <Maximize2 className="h-4 w-4 mr-1.5" />
-                        Fit All
-                    </Button>
+                    {/* Spacer */}
+                    <div className="flex-1 hidden lg:block" />
+
+                    {/* Controls */}
+                    <div className="flex items-center gap-2 flex-shrink-0 ml-auto">
+                        <div className="relative" ref={dropdownRef}>
+                            <button
+                                onClick={() => setIsMapTypeDropdownOpen(!isMapTypeDropdownOpen)}
+                                className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors text-xs font-medium flex items-center gap-1.5"
+                            >
+                                <Layers className="h-3.5 w-3.5" />
+                                {getMapTypeLabel(mapType)}
+                                <ChevronDown className="h-3.5 w-3.5" />
+                            </button>
+
+                            {isMapTypeDropdownOpen && (
+                                <div className="absolute top-full right-0 mt-1 w-44 bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700 z-50 py-1 overflow-hidden">
+                                    {Object.entries(MAP_TILES).map(([key, config]) => {
+                                        const isActive = mapType === key;
+                                        return (
+                                            <button
+                                                key={key}
+                                                onClick={() => handleMapTypeChange(key)}
+                                                className={cn(
+                                                    "w-full text-left px-3 py-2 text-xs transition-colors flex items-center gap-2",
+                                                    isActive
+                                                        ? "bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300"
+                                                        : "hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300"
+                                                )}
+                                            >
+                                                <span>{config.name}</span>
+                                                {isActive && (
+                                                    <Check className="h-3.5 w-3.5 ml-auto text-blue-600" />
+                                                )}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
+
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handleFitBounds}
+                            disabled={!hasActiveTrips}
+                            className="dark:border-slate-700 dark:text-slate-300 h-8 text-xs"
+                        >
+                            <Maximize2 className="h-3.5 w-3.5 mr-1" />
+                            Fit All
+                        </Button>
+                    </div>
                 </div>
             </header>
 
-            {/* Stats Bar */}
-            <div className="px-4 md:px-6 py-3 bg-slate-50/80 dark:bg-slate-900/50 border-b border-slate-200/60 dark:border-slate-800/60">
-                <div className="grid grid-cols-3 gap-3 max-w-lg">
-                    {stats.map((stat, index) => (
-                        <StatsCard key={index} {...stat} />
-                    ))}
-                </div>
-            </div>
+            {/* ============ Main Content — Map + Sidebar ============ */}
+            <div className="flex-1 flex overflow-hidden relative min-h-0">
 
-            {/* Main Content */}
-            <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
                 {/* Map */}
-                <div className="flex-1 relative min-h-[50vh] lg:min-h-0">
+                <div className="flex-1 relative min-h-0 min-w-0">
                     {isLoading ? (
                         <div className="w-full h-full flex items-center justify-center bg-slate-100 dark:bg-slate-800">
                             <div className="text-center">
@@ -1185,125 +1201,152 @@ const LiveTracking = () => {
                     )}
                 </div>
 
+                {/* Toggle button for sidebar */}
+                <button
+                    onClick={() => setIsSidebarOpen(prev => !prev)}
+                    className={cn(
+                        "absolute top-1/2 -translate-y-1/2 z-[1001] flex items-center justify-center",
+                        "w-8 h-16 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700",
+                        "border-y border-l border-slate-200 dark:border-slate-700",
+                        "rounded-l-lg shadow-lg transition-all duration-300",
+                        isSidebarOpen ? "right-80" : "right-0"
+                    )}
+                    title={isSidebarOpen ? "Hide vehicles panel" : "Show vehicles panel"}
+                >
+                    {isSidebarOpen ? (
+                        <ChevronRight className="h-4 w-4 text-slate-600 dark:text-slate-300" />
+                    ) : (
+                        <ChevronLeft className="h-4 w-4 text-slate-600 dark:text-slate-300" />
+                    )}
+                </button>
+
                 {/* Sidebar */}
-                <div className="w-full lg:w-80 bg-white dark:bg-slate-900 border-t lg:border-t-0 lg:border-l border-slate-200/60 dark:border-slate-800/60 overflow-y-auto">
-                    <div className="p-4 border-b border-slate-200/60 dark:border-slate-800/60">
-                        <div className="flex items-center justify-between">
-                            <h2 className="font-semibold text-slate-800 dark:text-white flex items-center gap-2">
-                                <Car className="h-4 w-4 text-blue-500" />
-                                Active Vehicles
-                            </h2>
-                            {tripsWithLocation.length > 0 && (
-                                <button
-                                    onClick={handleFocusAll}
-                                    className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1"
-                                >
-                                    <Focus className="h-3 w-3" />
-                                    Focus All
-                                </button>
+                <div
+                    className={cn(
+                        "flex-shrink-0 bg-white dark:bg-slate-900 border-l border-slate-200/60 dark:border-slate-800/60 overflow-hidden",
+                        "transition-[width] duration-300 ease-in-out",
+                        isSidebarOpen ? "w-80" : "w-0"
+                    )}
+                >
+                    <div className="w-80 h-full flex flex-col">
+                        <div className="flex-shrink-0 p-4 border-b border-slate-200/60 dark:border-slate-800/60">
+                            <div className="flex items-center justify-between">
+                                <h2 className="font-semibold text-slate-800 dark:text-white flex items-center gap-2">
+                                    <Car className="h-4 w-4 text-blue-500" />
+                                    Active Vehicles
+                                </h2>
+                                {tripsWithLocation.length > 0 && (
+                                    <button
+                                        onClick={handleFocusAll}
+                                        className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1"
+                                    >
+                                        <Focus className="h-3 w-3" />
+                                        Focus All
+                                    </button>
+                                )}
+                            </div>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                                {hasActiveTrips ? 'Click a vehicle to focus on map' : 'No active trips at the moment'}
+                            </p>
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                            {tripsWithLocation.length === 0 ? (
+                                <div className="text-center py-12">
+                                    <div className="w-12 h-12 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto mb-3">
+                                        <Car className="h-6 w-6 text-slate-400 dark:text-slate-500" />
+                                    </div>
+                                    <p className="text-slate-500 dark:text-slate-400 text-sm">No active vehicles</p>
+                                    <p className="text-xs text-slate-400 mt-1">Waiting for GPS pings...</p>
+                                </div>
+                            ) : (
+                                tripsWithLocation.map((trip) => {
+                                    if (!trip) return null;
+                                    const isSelected = selectedTrip?.trip_id === trip.trip_id;
+                                    const isFocused = focusedTrip?.trip_id === trip.trip_id;
+                                    const { current_location } = trip;
+
+                                    return (
+                                        <div
+                                            key={trip.trip_id}
+                                            onClick={() => handleTripSelect(trip)}
+                                            className={cn(
+                                                "p-3 rounded-xl cursor-pointer transition-all duration-200 relative",
+                                                isFocused
+                                                    ? "bg-emerald-50 dark:bg-emerald-950/30 ring-2 ring-emerald-500 shadow-lg shadow-emerald-500/10"
+                                                    : isSelected
+                                                        ? "bg-blue-50 dark:bg-blue-900/20 ring-2 ring-blue-500 shadow-sm shadow-blue-500/10"
+                                                        : "hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                                            )}
+                                        >
+                                            {isFocused && (
+                                                <div className="absolute top-2 right-2 bg-emerald-500 text-white text-[8px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                                                    <Focus className="h-2.5 w-2.5" />
+                                                    FOCUS
+                                                </div>
+                                            )}
+                                            <div className="flex items-start justify-between gap-2">
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex items-center gap-2">
+                                                        <div className={`w-2 h-2 rounded-full ${getStatusDot(trip.status)} ${isFocused ? 'animate-ping' : 'animate-pulse'}`} />
+                                                        <span className={cn(
+                                                            "font-mono text-sm font-semibold truncate",
+                                                            isFocused ? "text-emerald-700 dark:text-emerald-300" : "text-slate-800 dark:text-white"
+                                                        )}>
+                                                            {trip.ticket_number}
+                                                        </span>
+                                                        <span className="text-[10px] text-emerald-500 font-medium">● Live</span>
+                                                    </div>
+                                                    <div className="mt-1 text-sm text-slate-600 dark:text-slate-300 truncate flex items-center gap-1.5">
+                                                        <Car className="h-3 w-3 text-slate-400" />
+                                                        <span className="font-mono font-semibold">
+                                                            {trip.vehicle?.plate_number || 'N/A'}
+                                                        </span>
+                                                        <span className="text-slate-400 mx-1">•</span>
+                                                        <User className="h-3 w-3 text-slate-400" />
+                                                        {trip.driver?.name || 'N/A'}
+                                                    </div>
+                                                    <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-400 truncate flex items-center gap-1">
+                                                        <MapPin className="h-3 w-3" />
+                                                        {trip.destination || 'N/A'}
+                                                    </div>
+                                                </div>
+                                                <div className="text-right flex-shrink-0">
+                                                    <div className="text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-1 justify-end">
+                                                        <Gauge className="h-3 w-3 text-slate-400" />
+                                                        {current_location?.speed_kmh || 0} km/h
+                                                    </div>
+                                                    <div className="text-xs text-slate-400 dark:text-slate-500 flex items-center gap-1 justify-end">
+                                                        <Clock className="h-3 w-3" />
+                                                        {formatTime(current_location?.recorded_at)}
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <div className="mt-2 flex gap-2">
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleFocus(trip);
+                                                    }}
+                                                    className="flex-1 text-[10px] bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg transition-colors flex items-center justify-center gap-1"
+                                                >
+                                                    <Focus className="h-3 w-3" />
+                                                    Focus Monitor
+                                                </button>
+                                            </div>
+
+                                            {isSelected && current_location && (
+                                                <div className="mt-2 text-xs text-blue-600 dark:text-blue-400 flex items-center gap-2 bg-blue-50/50 dark:bg-blue-950/20 rounded-lg px-2 py-1">
+                                                    <Navigation className="h-3 w-3" />
+                                                    {current_location.latitude.toFixed(5)}, {current_location.longitude.toFixed(5)}
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })
                             )}
                         </div>
-                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                            {hasActiveTrips ? 'Click a vehicle to focus on map' : 'No active trips at the moment'}
-                        </p>
-                    </div>
-
-                    <div className="p-3 space-y-2">
-                        {tripsWithLocation.length === 0 ? (
-                            <div className="text-center py-12">
-                                <div className="w-12 h-12 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto mb-3">
-                                    <Car className="h-6 w-6 text-slate-400 dark:text-slate-500" />
-                                </div>
-                                <p className="text-slate-500 dark:text-slate-400 text-sm">No active vehicles</p>
-                                <p className="text-xs text-slate-400 mt-1">Waiting for GPS pings...</p>
-                            </div>
-                        ) : (
-                            tripsWithLocation.map((trip) => {
-                                if (!trip) return null;
-                                const isSelected = selectedTrip?.trip_id === trip.trip_id;
-                                const isFocused = focusedTrip?.trip_id === trip.trip_id;
-                                const { current_location } = trip;
-
-                                return (
-                                    <div
-                                        key={trip.trip_id}
-                                        onClick={() => handleTripSelect(trip)}
-                                        className={cn(
-                                            "p-3 rounded-xl cursor-pointer transition-all duration-200 relative",
-                                            isFocused
-                                                ? "bg-emerald-50 dark:bg-emerald-950/30 ring-2 ring-emerald-500 shadow-lg shadow-emerald-500/10"
-                                                : isSelected
-                                                    ? "bg-blue-50 dark:bg-blue-900/20 ring-2 ring-blue-500 shadow-sm shadow-blue-500/10"
-                                                    : "hover:bg-slate-50 dark:hover:bg-slate-800/50"
-                                        )}
-                                    >
-                                        {isFocused && (
-                                            <div className="absolute top-2 right-2 bg-emerald-500 text-white text-[8px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
-                                                <Focus className="h-2.5 w-2.5" />
-                                                FOCUS
-                                            </div>
-                                        )}
-                                        <div className="flex items-start justify-between gap-2">
-                                            <div className="flex-1 min-w-0">
-                                                <div className="flex items-center gap-2">
-                                                    <div className={`w-2 h-2 rounded-full ${getStatusDot(trip.status)} ${isFocused ? 'animate-ping' : 'animate-pulse'}`} />
-                                                    <span className={cn(
-                                                        "font-mono text-sm font-semibold truncate",
-                                                        isFocused ? "text-emerald-700 dark:text-emerald-300" : "text-slate-800 dark:text-white"
-                                                    )}>
-                                                        {trip.ticket_number}
-                                                    </span>
-                                                    <span className="text-[10px] text-emerald-500 font-medium">● Live</span>
-                                                </div>
-                                                <div className="mt-1 text-sm text-slate-600 dark:text-slate-300 truncate flex items-center gap-1.5">
-                                                    <Car className="h-3 w-3 text-slate-400" />
-                                                    <span className="font-mono font-semibold">
-                                                        {trip.vehicle?.plate_number || 'N/A'}
-                                                    </span>
-                                                    <span className="text-slate-400 mx-1">•</span>
-                                                    <User className="h-3 w-3 text-slate-400" />
-                                                    {trip.driver?.name || 'N/A'}
-                                                </div>
-                                                <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-400 truncate flex items-center gap-1">
-                                                    <MapPin className="h-3 w-3" />
-                                                    {trip.destination || 'N/A'}
-                                                </div>
-                                            </div>
-                                            <div className="text-right flex-shrink-0">
-                                                <div className="text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-1 justify-end">
-                                                    <Gauge className="h-3 w-3 text-slate-400" />
-                                                    {current_location?.speed_kmh || 0} km/h
-                                                </div>
-                                                <div className="text-xs text-slate-400 dark:text-slate-500 flex items-center gap-1 justify-end">
-                                                    <Clock className="h-3 w-3" />
-                                                    {formatTime(current_location?.recorded_at)}
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        <div className="mt-2 flex gap-2">
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    handleFocus(trip);
-                                                }}
-                                                className="flex-1 text-[10px] bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg transition-colors flex items-center justify-center gap-1"
-                                            >
-                                                <Focus className="h-3 w-3" />
-                                                Focus Monitor
-                                            </button>
-                                        </div>
-
-                                        {isSelected && current_location && (
-                                            <div className="mt-2 text-xs text-blue-600 dark:text-blue-400 flex items-center gap-2 bg-blue-50/50 dark:bg-blue-950/20 rounded-lg px-2 py-1">
-                                                <Navigation className="h-3 w-3" />
-                                                {current_location.latitude.toFixed(5)}, {current_location.longitude.toFixed(5)}
-                                            </div>
-                                        )}
-                                    </div>
-                                );
-                            })
-                        )}
                     </div>
                 </div>
             </div>
