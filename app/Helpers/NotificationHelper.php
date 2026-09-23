@@ -5,13 +5,17 @@ namespace App\Helpers;
 use App\Models\Notification;
 use App\Events\NewNotification;
 use App\Models\User;
+use App\Services\ExpoPushService;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 
 class NotificationHelper
 {
-       /**
+    /**
      * Send notification to a single user with real-time broadcast
+     * and (if the user has a push token) an Expo push.
+     *
+     * Push dispatch is best-effort and NEVER blocks the notification insert.
      */
     public static function send($userId, $type, $entityType, $entityId, $message, $channel = 'in_app', $delay = 0)
     {
@@ -55,6 +59,31 @@ class NotificationHelper
                 // Do NOT rethrow — the notification is already persisted
             }
 
+            // ✅ ALSO dispatch an Expo push — works even when app is closed.
+            // Wrapped in its own try/catch so a failed push never breaks the flow.
+            // Users without a push_token (web GSO/MO) are silently skipped.
+            try {
+                $user = User::find($userId);
+                if ($user && $user->push_token) {
+                    $title = self::buildPushTitle($type);
+                    $body = $message;
+                    $data = [
+                        'notification_id' => $notification->notification_id,
+                        'notification_type' => $type,
+                        'entity_type' => $entityType,
+                        'entity_id' => $entityId,
+                    ];
+
+                    app(ExpoPushService::class)->send($user->push_token, $title, $body, $data);
+                }
+            } catch (\Exception $pushError) {
+                Log::warning('⚠️ Expo push failed (notification still saved)', [
+                    'error' => $pushError->getMessage(),
+                    'notification_id' => $notification->notification_id,
+                    'user_id' => $userId,
+                ]);
+            }
+
             return $notification;
 
         } catch (\Exception $e) {
@@ -75,7 +104,7 @@ class NotificationHelper
     public static function sendFundRelease($driverId, $tripId, $tripNumber, $amount)
     {
         $message = "Funds of ₱{$amount} have been released for trip {$tripNumber}";
-        
+
         // Get driver user ID
         $driver = \App\Models\Driver::where('driver_id', $driverId)->first();
         if (!$driver) {
@@ -99,7 +128,7 @@ class NotificationHelper
     public static function sendTripAssignment($driverId, $tripId, $tripNumber, $destination)
     {
         $message = "You have been assigned to trip {$tripNumber} to {$destination}";
-        
+
         $driver = \App\Models\Driver::where('driver_id', $driverId)->first();
         if (!$driver) {
             Log::error('Driver not found for trip assignment notification', ['driver_id' => $driverId]);
@@ -130,7 +159,7 @@ class NotificationHelper
         }
         return $notifications;
     }
-    
+
     /**
      * Send notification to all users with a specific role
      */
@@ -139,7 +168,7 @@ class NotificationHelper
         $users = User::where('role', $role)
             ->where('status', 'active')
             ->get();
-        
+
         $notifications = [];
         foreach ($users as $user) {
             $notification = self::send($user->user_id, $type, $entityType, $entityId, $message, $channel);
@@ -149,7 +178,7 @@ class NotificationHelper
         }
         return $notifications;
     }
-    
+
     /**
      * Send notification to all users in a department
      */
@@ -158,7 +187,7 @@ class NotificationHelper
         $users = User::where('department_id', $departmentId)
             ->where('status', 'active')
             ->get();
-        
+
         $notifications = [];
         foreach ($users as $user) {
             $notification = self::send($user->user_id, $type, $entityType, $entityId, $message, $channel);
@@ -221,5 +250,31 @@ class NotificationHelper
             ->skip($offset)
             ->take($limit)
             ->get();
+    }
+
+    /**
+     * Map notification_type → human-friendly push title
+     */
+    private static function buildPushTitle(string $type): string
+    {
+        $titles = [
+            'fund_released' => 'Funds Released',
+            'fund_issued' => 'Funds Issued',
+            'trip_assigned' => 'New Trip Assigned',
+            'trip_created' => 'Trip Created',
+            'trip_started' => 'Trip Started',
+            'trip_completed' => 'Trip Completed',
+            'trip_cancelled' => 'Trip Cancelled',
+            'trip_closed' => 'Trip Closed',
+            'driver_acknowledged' => 'Acknowledged',
+            'receipt_uploaded' => 'Receipt Uploaded',
+            'mo_approved' => 'Approved by MO',
+            'mo_rejected' => 'Rejected by MO',
+            'gso_rejected' => 'Rejected by GSO',
+            'budget_low_warning' => 'Budget Low',
+            'trip_pending_validation' => 'Pending Validation',
+        ];
+
+        return $titles[$type] ?? 'FCMS Notification';
     }
 }

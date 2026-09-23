@@ -19,7 +19,8 @@ use Illuminate\Support\Facades\Broadcast;
 use App\Http\Controllers\API\AuditLogController;
 use App\Http\Controllers\API\AnnualBudgetController;
 use App\Http\Controllers\API\FiscalYearController;
-use App\Http\Controllers\API\OfflineSyncController;   
+use App\Http\Controllers\API\OfflineSyncController;
+use App\Http\Controllers\API\PushTokenController;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -37,8 +38,7 @@ Route::prefix('location')->group(function () {
     Route::get('/geocode', [LocationController::class, 'geocode']);
     Route::get('/barangays', [LocationController::class, 'getBarangays']);
     Route::get('/municipalities', [LocationController::class, 'getMunicipalities']);
-        Route::get('/reverse', [LocationController::class, 'reverseGeocode']); 
-
+    Route::get('/reverse', [LocationController::class, 'reverseGeocode']);
 });
 
 Route::get('/public/fuel-prices', function () {
@@ -63,58 +63,62 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         Route::post('change-password', [AuthController::class, 'changePassword']);
         Route::post('update-profile', [AuthController::class, 'updateProfile']);
     });
+    // ============ PUSH TOKENS ============
+    Route::post('push-token', [PushTokenController::class, 'store']);
+    Route::delete('push-token', [PushTokenController::class, 'destroy']);
 
- // ============ REPORTS ============
-Route::prefix('reports')->group(function () {
-    // ============================================================
-    // DATA ENDPOINTS
-    // ============================================================
-    Route::get('trips', [ReportsController::class, 'getTripReport']);
-    Route::get('fuel', [ReportsController::class, 'getFuelReport']);
-    Route::get('budget', [ReportsController::class, 'getBudgetReport']);
-    Route::get('vehicles', [ReportsController::class, 'getVehicleReport']);
-    Route::get('summary', [ReportsController::class, 'getReportSummary']);
-    Route::get('fuel-consumption', [ReportsController::class, 'getFuelConsumptionReport']);
-    Route::get('fuel-receipts', [ReportsController::class, 'getFuelReceiptReport']);
-    Route::get('weekly-monitoring', [ReportsController::class, 'getWeeklyMonitoring']);
-    Route::get('fuel-without-trip', [ReportsController::class, 'getFuelWithoutTrip']);
-    Route::get('fund-release-history', [ReportsController::class, 'getFundReleaseHistory']);
-    
-    // ✅ NEW DATA ENDPOINTS
-    Route::get('department-fuel-consumption', [ReportsController::class, 'getDepartmentFuelConsumption']);
-    Route::get('monthly-fuel-consumption', [ReportsController::class, 'getMonthlyFuelConsumption']);
-    Route::get('trip-tickets', [ReportsController::class, 'getTripTicketReport']);
-    Route::get('gps-vehicle-activity', [ReportsController::class, 'getGPSVehicleActivity']);
-    Route::get('reconciliation', [ReportsController::class, 'getReconciliationReport']);
-    Route::get('driver-efficiency', [ReportsController::class, 'getDriverEfficiencyReport']);
-    Route::get('audit-trail', [ReportsController::class, 'getAuditTrailReport']);
 
-    // ============================================================
-    // EXPORT ENDPOINTS
-    // ============================================================
-    Route::get('trips/export/{format}', [ReportsController::class, 'exportTripReport']);
-    Route::get('fuel/export/{format}', [ReportsController::class, 'exportFuelReport']);
-    Route::get('budget/export/{format}', [ReportsController::class, 'exportBudgetReport']);
-    Route::get('vehicles/export/{format}', [ReportsController::class, 'exportVehicleReport']);
-    Route::get('fuel-consumption/export/{format}', [ReportsController::class, 'exportFuelConsumptionReport']);
-    Route::get('fuel-receipts/export/{format}', [ReportsController::class, 'exportFuelReceiptReport']);
-    Route::get('weekly-monitoring/export/{format}', [ReportsController::class, 'exportWeeklyMonitoring']);
-    Route::get('fuel-without-trip/export/{format}', [ReportsController::class, 'exportFuelWithoutTrip']);
-    Route::get('fund-release-history/export/{format}', [ReportsController::class, 'exportFundReleaseHistory']);
-    
-    // ✅ NEW EXPORT ENDPOINTS - ADD THESE
-    Route::get('department-fuel-consumption/export/{format}', [ReportsController::class, 'exportDepartmentFuelConsumption']);
-    Route::get('monthly-fuel-consumption/export/{format}', [ReportsController::class, 'exportMonthlyFuelConsumption']);
-    Route::get('trip-tickets/export/{format}', [ReportsController::class, 'exportTripTicketReport']);
-    Route::get('gps-vehicle-activity/export/{format}', [ReportsController::class, 'exportGPSVehicleActivity']);
-    Route::get('reconciliation/export/{format}', [ReportsController::class, 'exportReconciliation']);
-    Route::get('driver-efficiency/export/{format}', [ReportsController::class, 'exportDriverEfficiency']);
-    Route::get('audit-trail/export/{format}', [ReportsController::class, 'exportAuditTrail']);
+    // ============ REPORTS ============
+    Route::prefix('reports')->group(function () {
+        // ============================================================
+        // DATA ENDPOINTS
+        // ============================================================
+        Route::get('trips', [ReportsController::class, 'getTripReport']);
+        Route::get('fuel', [ReportsController::class, 'getFuelReport']);
+        Route::get('budget', [ReportsController::class, 'getBudgetReport']);
+        Route::get('vehicles', [ReportsController::class, 'getVehicleReport']);
+        Route::get('summary', [ReportsController::class, 'getReportSummary']);
+        Route::get('fuel-consumption', [ReportsController::class, 'getFuelConsumptionReport']);
+        Route::get('fuel-receipts', [ReportsController::class, 'getFuelReceiptReport']);
+        Route::get('weekly-monitoring', [ReportsController::class, 'getWeeklyMonitoring']);
+        Route::get('fuel-without-trip', [ReportsController::class, 'getFuelWithoutTrip']);
+        Route::get('fund-release-history', [ReportsController::class, 'getFundReleaseHistory']);
 
-    //billing statements
-    Route::get('billing-statement', [ReportsController::class, 'getBillingStatementReport']);
-Route::get('billing-statement/export/{format}', [ReportsController::class, 'exportBillingStatement']);
-});
+        // ✅ NEW DATA ENDPOINTS
+        Route::get('department-fuel-consumption', [ReportsController::class, 'getDepartmentFuelConsumption']);
+        Route::get('monthly-fuel-consumption', [ReportsController::class, 'getMonthlyFuelConsumption']);
+        Route::get('trip-tickets', [ReportsController::class, 'getTripTicketReport']);
+        Route::get('gps-vehicle-activity', [ReportsController::class, 'getGPSVehicleActivity']);
+        Route::get('reconciliation', [ReportsController::class, 'getReconciliationReport']);
+        Route::get('driver-efficiency', [ReportsController::class, 'getDriverEfficiencyReport']);
+        Route::get('audit-trail', [ReportsController::class, 'getAuditTrailReport']);
+
+        // ============================================================
+        // EXPORT ENDPOINTS
+        // ============================================================
+        Route::get('trips/export/{format}', [ReportsController::class, 'exportTripReport']);
+        Route::get('fuel/export/{format}', [ReportsController::class, 'exportFuelReport']);
+        Route::get('budget/export/{format}', [ReportsController::class, 'exportBudgetReport']);
+        Route::get('vehicles/export/{format}', [ReportsController::class, 'exportVehicleReport']);
+        Route::get('fuel-consumption/export/{format}', [ReportsController::class, 'exportFuelConsumptionReport']);
+        Route::get('fuel-receipts/export/{format}', [ReportsController::class, 'exportFuelReceiptReport']);
+        Route::get('weekly-monitoring/export/{format}', [ReportsController::class, 'exportWeeklyMonitoring']);
+        Route::get('fuel-without-trip/export/{format}', [ReportsController::class, 'exportFuelWithoutTrip']);
+        Route::get('fund-release-history/export/{format}', [ReportsController::class, 'exportFundReleaseHistory']);
+
+        // ✅ NEW EXPORT ENDPOINTS - ADD THESE
+        Route::get('department-fuel-consumption/export/{format}', [ReportsController::class, 'exportDepartmentFuelConsumption']);
+        Route::get('monthly-fuel-consumption/export/{format}', [ReportsController::class, 'exportMonthlyFuelConsumption']);
+        Route::get('trip-tickets/export/{format}', [ReportsController::class, 'exportTripTicketReport']);
+        Route::get('gps-vehicle-activity/export/{format}', [ReportsController::class, 'exportGPSVehicleActivity']);
+        Route::get('reconciliation/export/{format}', [ReportsController::class, 'exportReconciliation']);
+        Route::get('driver-efficiency/export/{format}', [ReportsController::class, 'exportDriverEfficiency']);
+        Route::get('audit-trail/export/{format}', [ReportsController::class, 'exportAuditTrail']);
+
+        //billing statements
+        Route::get('billing-statement', [ReportsController::class, 'getBillingStatementReport']);
+        Route::get('billing-statement/export/{format}', [ReportsController::class, 'exportBillingStatement']);
+    });
 
     // ============ GSO ADMIN ============
     Route::middleware(['role:gso_office'])->prefix('admin')->group(function () {
@@ -131,7 +135,7 @@ Route::get('billing-statement/export/{format}', [ReportsController::class, 'expo
         Route::apiResource('vehicles', VehicleController::class);
         Route::patch('vehicles/{id}/status', [VehicleController::class, 'updateStatus']);
         Route::patch('vehicles/{id}/maintenance', [VehicleController::class, 'updateMaintenance']);
-       // Route::patch('vehicles/{id}/odometer-status', [VehicleController::class, 'updateOdometerStatus']);
+        // Route::patch('vehicles/{id}/odometer-status', [VehicleController::class, 'updateOdometerStatus']);
 
         // Departments
         Route::get('departments', [DepartmentController::class, 'index']);
@@ -171,7 +175,7 @@ Route::get('billing-statement/export/{format}', [ReportsController::class, 'expo
         Route::get('fuel-receipts/{id}', [GsoController::class, 'getFuelReceipt']);
         Route::post('fuel-receipts/record', [GsoController::class, 'recordReceipt']);
         Route::get('completed-trips', [GsoController::class, 'getCompletedTrips']);
-         Route::put('fuel-receipts/{id}/liters', [GsoController::class, 'updateFuelReceiptLiters']);
+        Route::put('fuel-receipts/{id}/liters', [GsoController::class, 'updateFuelReceiptLiters']);
 
         // Audit Logs
         Route::get('audit-logs', [AuditLogController::class, 'index']);
@@ -214,19 +218,19 @@ Route::get('billing-statement/export/{format}', [ReportsController::class, 'expo
         Route::post('tickets/{id}/validate', [GsoController::class, 'validateTrip']);
         Route::get('fiscal-years', [FiscalYearController::class, 'index']);
         Route::get('tickets/{id}/history', [GsoController::class, 'getTripHistory']);
-        Route::get('/verified-receipts', [GsoController::class, 'getVerifiedReceipts']);  
-        
-           // Activity Logs (audit + trip history)
-    Route::get('activity-logs', [ReportsController::class, 'getGsoActivityLogs']);
-       
-        
+        Route::get('/verified-receipts', [GsoController::class, 'getVerifiedReceipts']);
+
+        // Activity Logs (audit + trip history)
+        Route::get('activity-logs', [ReportsController::class, 'getGsoActivityLogs']);
+
+
         // ✅ GSO GPS Live Tracking
         Route::get('live-tracking', [GpsPingController::class, 'getActiveTrips']);
         Route::get('trip/{id}/location', [GpsPingController::class, 'getTripWithLocations']);
 
-         // ✅ Cancellation
-    Route::get('/cancelled-trips', [GsoController::class, 'getCancelledTrips']);
-    Route::post('/trips/{id}/cancel', [GsoController::class, 'cancelTrip']);
+        // ✅ Cancellation
+        Route::get('/cancelled-trips', [GsoController::class, 'getCancelledTrips']);
+        Route::post('/trips/{id}/cancel', [GsoController::class, 'cancelTrip']);
     });
 
     // ============ MAYOR'S OFFICE ============
@@ -268,14 +272,14 @@ Route::get('billing-statement/export/{format}', [ReportsController::class, 'expo
         Route::get('budget-history', [BudgetPolicyController::class, 'getBudgetHistory']);
         Route::get('budget-summary', [BudgetPolicyController::class, 'getBudgetSummary']);
 
-         Route::get('activity-logs', [ReportsController::class, 'getMoActivityLogs']);
-Route::get('weekly-tracking', [MayorsOfficeController::class, 'getWeeklyTracking']);
+        Route::get('activity-logs', [ReportsController::class, 'getMoActivityLogs']);
+        Route::get('weekly-tracking', [MayorsOfficeController::class, 'getWeeklyTracking']);
 
         // Receipt Verification
         Route::get('/receipts/for-verification', [MayorsOfficeController::class, 'getReceiptsForVerification']);
-Route::post('/receipts/{id}/verify',      [MayorsOfficeController::class, 'verifyReceipt']);
-Route::get('/receipts/verified',          [MayorsOfficeController::class, 'getVerifiedReceipts']);  
-        
+        Route::post('/receipts/{id}/verify',      [MayorsOfficeController::class, 'verifyReceipt']);
+        Route::get('/receipts/verified',          [MayorsOfficeController::class, 'getVerifiedReceipts']);
+
         // Cross-Department Usage
         Route::get('cross-department-usage', [MayorsOfficeController::class, 'getCrossDepartmentUsage']);
         Route::get('cross-department-usage/{id}', [MayorsOfficeController::class, 'getCrossDepartmentUsageDetails']);
@@ -301,9 +305,8 @@ Route::get('/receipts/verified',          [MayorsOfficeController::class, 'getVe
 
         //CANCEL
 
-         Route::get('cancelled-trips', [MayorsOfficeController::class, 'getCancelledTrips']);
-    Route::post('tickets/{id}/cancel', [MayorsOfficeController::class, 'cancelTrip']);
-    
+        Route::get('cancelled-trips', [MayorsOfficeController::class, 'getCancelledTrips']);
+        Route::post('tickets/{id}/cancel', [MayorsOfficeController::class, 'cancelTrip']);
     });
 
     // ============ DRIVER ============
@@ -332,14 +335,14 @@ Route::get('/receipts/verified',          [MayorsOfficeController::class, 'getVe
         Route::post('gps/stop', [GpsPingController::class, 'stopTracking']);
         Route::post('gps/ping', [GpsPingController::class, 'store']);
         Route::post('gps/batch', [GpsPingController::class, 'storeBatch']);
-        
+
         // ✅ NEW: Driver can check their own trip location data
         Route::get('gps/trips/{id}/pings', [GpsPingController::class, 'getPings']);
         Route::get('gps/trips/{id}/latest', [GpsPingController::class, 'getLatestPing']);
         Route::get('gps/trips/{id}/track', [GpsPingController::class, 'getTrack']);
         Route::get('gps/trips/{id}/summary', [GpsPingController::class, 'getTripSummary']);
         Route::get('gps/trips/{id}/distance', [GpsPingController::class, 'calculateDistance']);
-        
+
         // ✅ NEW: Driver can check deviation
         Route::post('gps/check-deviation', [GpsPingController::class, 'checkDeviation']);
 
@@ -361,7 +364,6 @@ Route::get('/receipts/verified',          [MayorsOfficeController::class, 'getVe
         Route::get('reports/summary', [ReportsController::class, 'getReportSummary']);
         Route::get('trips/{id}/history', [DriverController::class, 'getTripHistory']);
         Route::get('trips/history/all', [DriverController::class, 'getAllTripHistory']);
-        
     });
 
     // ============ GPS (General Access - Authenticated Users) ============
@@ -369,7 +371,7 @@ Route::get('/receipts/verified',          [MayorsOfficeController::class, 'getVe
         // POST endpoints
         Route::post('pings', [GpsPingController::class, 'store']);
         Route::post('pings/batch', [GpsPingController::class, 'storeBatch']);
-        
+
         // GET endpoints - accessible by authenticated users with proper authorization
         Route::get('trips/{id}/route', [GpsPingController::class, 'getTripRoute']);
         Route::get('trips/{id}/track', [GpsPingController::class, 'getTrack']);
@@ -378,22 +380,19 @@ Route::get('/receipts/verified',          [MayorsOfficeController::class, 'getVe
         Route::get('trips/{id}/summary', [GpsPingController::class, 'getTripSummary']);
         Route::get('trips/{id}/distance', [GpsPingController::class, 'calculateDistance']);
         Route::get('trips/{id}/locations', [GpsPingController::class, 'getTripWithLocations']);
-        
+
         // ✅ NEW: Geofencing / Deviation check
         Route::post('check-deviation', [GpsPingController::class, 'checkDeviation']);
-        
+
         // Active trips - GSO only
         Route::get('active-trips', [GpsPingController::class, 'getActiveTrips'])
             ->middleware(['role:gso_office']);
-        
+
         // Delete - GSO only
         Route::delete('trips/{id}/pings', [GpsPingController::class, 'deletePings'])
             ->middleware(['role:gso_office']);
-           // Real-time stats for active trip
-    Route::get('trips/{id}/stats', [GpsPingController::class, 'getRealtimeStats']);
-
-
-   
+        // Real-time stats for active trip
+        Route::get('trips/{id}/stats', [GpsPingController::class, 'getRealtimeStats']);
     });
 
     // ============ NOTIFICATIONS ============

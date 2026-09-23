@@ -52,8 +52,11 @@ return new class extends Migration
             // ✅ Merged enum — includes budget_office
             $table->enum('role', ['gso_office', 'mayors_office', 'driver', 'budget_office']);
             $table->boolean('can_drive')->default(false);
-            $table->string('esignature_path', 500)->nullable();
-            $table->string('esignature_hash', 64)->nullable();
+            // $table->string('esignature_path', 500)->nullable();
+            // $table->string('esignature_hash', 64)->nullable();
+           $table->string('push_token', 255)->nullable()->after('password_hash');
+$table->string('push_token_platform', 20)->nullable()->after('push_token');
+$table->timestamp('push_token_updated_at')->nullable()->after('push_token_platform');
             $table->enum('status', ['active', 'inactive'])->default('active');
             $table->timestamp('created_at')->useCurrent();
             $table->timestamp('updated_at')->nullable();

@@ -183,6 +183,9 @@ class GpsPingController extends Controller
     /**
      * Store batch GPS pings (offline sync)
      */
+       /**
+     * Store batch GPS pings (offline sync)
+     */
     public function storeBatch(Request $request)
     {
         try {
@@ -237,11 +240,16 @@ class GpsPingController extends Controller
                 ]);
             }
 
+            // ✅ FIX: pull pings into a local variable.
+            // `$request->pings` is a magic property — iterating/ending/modifying it
+            // directly throws "Indirect modification of overloaded property ... has no effect".
+            $pings = $request->input('pings', []);
+
             $createdPings = [];
 
             DB::beginTransaction();
 
-            foreach ($request->pings as $pingData) {
+            foreach ($pings as $pingData) {
                 $accuracy = (float) ($pingData['accuracy_meters'] ?? 0);
                 $isLowAccuracy = $accuracy > self::ACCURACY_THRESHOLD;
 
@@ -263,8 +271,8 @@ class GpsPingController extends Controller
 
             DB::commit();
 
-            if (!empty($request->pings)) {
-                $lastPing = end($request->pings);
+            if (!empty($pings)) {
+                $lastPing = end($pings); // ✅ use local var, not $request->pings
                 $lastAccuracy = (float) ($lastPing['accuracy_meters'] ?? 0);
                 if ($lastAccuracy <= self::ACCURACY_THRESHOLD) {
                     try {
