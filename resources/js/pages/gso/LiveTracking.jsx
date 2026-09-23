@@ -41,19 +41,10 @@ import {
     Activity,
     ChevronDown,
     Check,
-    X,
     Wifi,
     WifiOff,
     Focus,
     Eye,
-    Fuel,
-    Zap,
-    Target,
-    Move,
-    Crosshair,
-    Minimize2,
-    Plus,
-    Minus,
     Car,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -61,7 +52,7 @@ import { Badge } from '@/components/ui/badge';
 import { toast } from 'react-hot-toast';
 
 // ============================================
-// ✅ Haversine distance helper (meters)
+// Haversine distance helper (meters)
 // ============================================
 const haversineMeters = (lat1, lon1, lat2, lon2) => {
     const R = 6371000;
@@ -164,18 +155,6 @@ const createVehicleIcon = (status, isSelected, isOnline = true, isFocused = fals
                         animation: pulse-ring 1.5s ease-out infinite;
                         box-shadow: 0 0 40px rgba(59, 130, 246, 0.3);
                     "></div>
-                    <div style="
-                        position: absolute;
-                        top: 26px;
-                        left: 50%;
-                        transform: translateX(-50%);
-                        width: ${size + 16}px;
-                        height: ${size + 16}px;
-                        margin-left: -${(size + 16) / 2}px;
-                        border-radius: 50%;
-                        background: rgba(59, 130, 246, 0.05);
-                        border: 2px solid rgba(59, 130, 246, 0.2);
-                    "></div>
                 ` : isSelected ? `
                     <div style="
                         position: absolute;
@@ -220,28 +199,6 @@ const createVehicleIcon = (status, isSelected, isOnline = true, isFocused = fals
                         <circle cx="17" cy="17" r="2"/>
                     </svg>
                 </div>
-                
-                ${isFocused ? `
-                    <div style="
-                        position: absolute;
-                        top: 18px;
-                        right: 4px;
-                        background: #3b82f6;
-                        border-radius: 50%;
-                        width: 18px;
-                        height: 18px;
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                        border: 2px solid white;
-                        font-size: 9px;
-                        color: white;
-                        box-shadow: 0 2px 8px rgba(59,130,246,0.4);
-                        z-index: 2;
-                    ">
-                        🎯
-                    </div>
-                ` : ''}
             </div>
         `,
         iconSize: [size + 12, size + 12 + 22],
@@ -257,11 +214,6 @@ styleSheet.textContent = `
         0% { transform: scale(1); opacity: 0.8; }
         100% { transform: scale(1.8); opacity: 0; }
     }
-    @keyframes glow-pulse {
-        0% { opacity: 0.6; transform: scale(1); }
-        50% { opacity: 1; transform: scale(1.05); }
-        100% { opacity: 0.6; transform: scale(1); }
-    }
     @keyframes label-glow {
         0% { box-shadow: 0 2px 8px rgba(59,130,246,0.3); }
         50% { box-shadow: 0 2px 16px rgba(59,130,246,0.7); }
@@ -269,9 +221,6 @@ styleSheet.textContent = `
     }
     .custom-vehicle-icon:hover {
         filter: brightness(1.1);
-    }
-    .focus-glow {
-        animation: glow-pulse 2s ease-in-out infinite;
     }
 `;
 document.head.appendChild(styleSheet);
@@ -283,31 +232,26 @@ document.head.appendChild(styleSheet);
 const MAP_TILES = {
     street: {
         name: 'Street Map',
-        icon: '🗺️',
         url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
     },
     satellite: {
         name: 'Satellite',
-        icon: '🛰️',
         url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
         attribution: '&copy; <a href="https://www.esri.com/">Esri</a>',
     },
     hybrid: {
         name: 'Hybrid',
-        icon: '🌍',
         url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
         attribution: '&copy; <a href="https://www.esri.com/">Esri</a>',
     },
     terrain: {
         name: 'Terrain',
-        icon: '⛰️',
         url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
         attribution: '&copy; <a href="https://opentopomap.org/">OpenTopoMap</a>',
     },
     dark: {
         name: 'Dark Mode',
-        icon: '🌙',
         url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>, &copy; CartoDB',
     },
@@ -389,7 +333,7 @@ const StatsCard = ({ title, value, icon: Icon, color, subtitle }) => (
 );
 
 // ============================================
-// POPUP CONTENT COMPONENT
+// POPUP CONTENT COMPONENT (fuel removed)
 // ============================================
 
 const TripPopupContent = ({ trip, onViewTrip, onCenter, onFocus }) => {
@@ -483,7 +427,6 @@ const LoadingSkeleton = () => (
                 </div>
             </div>
             <div className="flex items-center gap-2">
-                <SkeletonCard className="h-8 w-24" />
                 <SkeletonCard className="h-8 w-24" />
                 <SkeletonCard className="h-8 w-24" />
             </div>
@@ -688,7 +631,6 @@ const LiveTracking = () => {
                 const pending = pendingPingsRef.current[serverTrip.trip_id];
                 if (pending && !serverTrip.current_location) {
                     delete pendingPingsRef.current[serverTrip.trip_id];
-                    console.log('✅ Applying pending ping for trip', serverTrip.trip_id);
                     return {
                         ...serverTrip,
                         current_location: {
@@ -709,10 +651,6 @@ const LiveTracking = () => {
                     };
                 }
 
-                if (serverTrip.current_location) {
-                    return serverTrip;
-                }
-
                 return serverTrip;
             });
         });
@@ -722,13 +660,8 @@ const LiveTracking = () => {
     }, [activeTrips]);
 
     useEffect(() => {
-        if (hasSetupRef.current) {
-            console.log('⏭️ WS already set up — skipping');
-            return;
-        }
-
+        if (hasSetupRef.current) return;
         hasSetupRef.current = true;
-        console.log('🗺️ Setting up GSO live tracking WebSocket...');
 
         const channel = echo.channel('gso-live-tracking');
         setIsWsConnected(true);
@@ -736,13 +669,8 @@ const LiveTracking = () => {
         channel.listen('.location.updated', (data) => {
             if (!isMountedRef.current) return;
 
-            console.log('📍 Real-time location update:', data);
-
             const accuracy = data.accuracy_meters || 0;
-            if (accuracy > 30) {
-                console.log(`⚠️ Skipping ping (accuracy ${accuracy}m > 30m)`);
-                return;
-            }
+            if (accuracy > 30) return;
 
             const existingTrip = tripsDataRef.current.find(t => t.trip_id === data.trip_id);
             if (existingTrip?.current_location) {
@@ -753,10 +681,7 @@ const LiveTracking = () => {
                     data.longitude
                 );
                 const speed = data.speed_kmh || 0;
-                if (distMeters < 15 && speed < 2) {
-                    console.log(`⚠️ Skipping jitter (moved ${distMeters.toFixed(1)}m @ ${speed}km/h)`);
-                    return;
-                }
+                if (distMeters < 15 && speed < 2) return;
             }
 
             pingCounterRef.current += 1;
@@ -764,7 +689,6 @@ const LiveTracking = () => {
 
             const tripExists = tripsDataRef.current.some(t => t.trip_id === data.trip_id);
             if (!tripExists) {
-                console.log('🆕 New trip detected:', data.trip_id, '— caching ping + refetching...');
                 pendingPingsRef.current[data.trip_id] = data;
                 queryClient.invalidateQueries({ queryKey: ['gps-active-trips-live'] });
                 return;
@@ -833,7 +757,6 @@ const LiveTracking = () => {
 
         channel.listen('.trip.completed', (data) => {
             if (!isMountedRef.current) return;
-            console.log('🏁 Trip completed (LiveTracking local removal):', data);
 
             setTripsData(prev => {
                 if (!Array.isArray(prev)) return [];
@@ -850,13 +773,11 @@ const LiveTracking = () => {
 
         channel.listen('.trip.started', (data) => {
             if (!isMountedRef.current) return;
-            console.log('🚗 Trip started (LiveTracking):', data);
             queryClient.invalidateQueries({ queryKey: ['gps-active-trips-live'] });
         });
 
         channel.subscribed(() => {
             if (!isMountedRef.current) return;
-            console.log('✅ Subscribed to gso-live-tracking');
             setIsWsConnected(true);
         });
 
@@ -870,12 +791,10 @@ const LiveTracking = () => {
             const connection = echo.connector.pusher.connection;
             connection.bind('connected', () => {
                 if (!isMountedRef.current) return;
-                console.log('✅ WebSocket connected');
                 setIsWsConnected(true);
             });
             connection.bind('disconnected', () => {
                 if (!isMountedRef.current) return;
-                console.log('🔌 WebSocket disconnected');
                 setIsWsConnected(false);
             });
         }
@@ -886,10 +805,7 @@ const LiveTracking = () => {
                 channel.stopListening('.location.updated');
                 channel.stopListening('.trip.completed');
                 channel.stopListening('.trip.started');
-                // echo.leave('gso-live-tracking');
-            } catch (e) {
-                // Ignore cleanup errors
-            }
+            } catch (e) {}
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
@@ -901,9 +817,6 @@ const LiveTracking = () => {
     }, [tripsData]);
 
     const activeCount = tripsWithLocation.length;
-
-    const connectionStatus = isConnected ? "🟢 Live" : "🔴 Offline";
-    const isRealTime = isConnected;
 
     const stats = useMemo(() => [
         {
@@ -962,13 +875,11 @@ const LiveTracking = () => {
     };
 
     const handleFocus = (trip) => {
-        console.log('🎯 Focusing on trip:', trip?.ticket_number);
         setFocusedTrip(trip);
         setFocusModalOpen(true);
     };
 
     const handleCloseModal = () => {
-        console.log('🔒 Closing focus modal');
         setFocusModalOpen(false);
         setTimeout(() => {
             setFocusedTrip(null);
@@ -1106,22 +1017,6 @@ const LiveTracking = () => {
                                     {isWsConnected ? 'Connected' : 'Disconnected'}
                                 </span>
                             </span>
-                            {hasActiveTrips && (
-                                <>
-                                    <span className="text-slate-400 text-[10px]">
-                                        Pings: {pingCount}
-                                    </span>
-                                    <span className="ml-2 text-xs opacity-70">{connectionStatus}</span>
-                                    <span className="text-xs text-emerald-400 animate-pulse">
-                                        ● Auto-refresh
-                                    </span>
-                                </>
-                            )}
-                            {!hasActiveTrips && (
-                                <span className="text-xs text-slate-400">
-                                    ⏸️ Waiting for trips
-                                </span>
-                            )}
                             {isFetching && hasActiveTrips && (
                                 <span className="flex items-center gap-1 text-slate-400">
                                     <RefreshCw className="h-3 w-3 animate-spin" />
@@ -1158,7 +1053,6 @@ const LiveTracking = () => {
                                                     : "hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300"
                                             )}
                                         >
-                                            <span>{config.icon}</span>
                                             <span>{config.name}</span>
                                             {isActive && (
                                                 <Check className="h-4 w-4 ml-auto text-blue-600" />
@@ -1284,12 +1178,6 @@ const LiveTracking = () => {
                                         <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">
                                             Vehicles with GPS tracking will appear here
                                         </p>
-                                        <div className="mt-3 flex items-center justify-center gap-2">
-                                            <div className={`w-2 h-2 rounded-full ${hasActiveTrips ? 'bg-green-500 animate-pulse' : 'bg-slate-400'}`} />
-                                            <span className={`text-xs ${hasActiveTrips ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}`}>
-                                                {hasActiveTrips ? 'Receiving GPS pings' : 'Waiting for GPS pings'}
-                                            </span>
-                                        </div>
                                     </div>
                                 </div>
                             )}
@@ -1304,9 +1192,6 @@ const LiveTracking = () => {
                             <h2 className="font-semibold text-slate-800 dark:text-white flex items-center gap-2">
                                 <Car className="h-4 w-4 text-blue-500" />
                                 Active Vehicles
-                                <span className={`text-xs font-normal ml-2 ${hasActiveTrips ? 'text-emerald-500' : 'text-slate-400'}`}>
-                                    {hasActiveTrips ? '● Live' : '○ No active'}
-                                </span>
                             </h2>
                             {tripsWithLocation.length > 0 && (
                                 <button
@@ -1318,7 +1203,7 @@ const LiveTracking = () => {
                                 </button>
                             )}
                         </div>
-                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                             {hasActiveTrips ? 'Click a vehicle to focus on map' : 'No active trips at the moment'}
                         </p>
                     </div>
@@ -1413,25 +1298,11 @@ const LiveTracking = () => {
                                             <div className="mt-2 text-xs text-blue-600 dark:text-blue-400 flex items-center gap-2 bg-blue-50/50 dark:bg-blue-950/20 rounded-lg px-2 py-1">
                                                 <Navigation className="h-3 w-3" />
                                                 {current_location.latitude.toFixed(5)}, {current_location.longitude.toFixed(5)}
-                                                <span className="text-emerald-500 text-[10px] font-medium ml-auto">● Live</span>
                                             </div>
                                         )}
                                     </div>
                                 );
                             })
-                        )}
-                    </div>
-
-                    <div className="p-3 border-t border-slate-200/60 dark:border-slate-800/60 text-[10px] text-slate-400 dark:text-slate-500 flex items-center justify-between">
-                        <span className="flex items-center gap-1">
-                            <span className={`h-1.5 w-1.5 rounded-full ${hasActiveTrips ? 'bg-green-500 animate-pulse' : 'bg-slate-400'}`} />
-                            {hasActiveTrips ? 'Real-time via WebSocket' : 'Waiting for active trips'}
-                        </span>
-                        {hasActiveTrips && (
-                            <span className="flex items-center gap-1">
-                                <Activity className="h-3 w-3" />
-                                <span>Ping: 3s</span>
-                            </span>
                         )}
                     </div>
                 </div>
