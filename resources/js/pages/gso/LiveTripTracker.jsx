@@ -28,7 +28,6 @@ import {
   Minus,
   Gauge,
   Navigation,
-  Activity,
 } from 'lucide-react';
 
 // Fix Leaflet icons
@@ -52,7 +51,7 @@ trackerStyleSheet.textContent = `
 document.head.appendChild(trackerStyleSheet);
 
 // ============================================
-// VEHICLE ICON
+// VEHICLE ICON — no emoji
 // ============================================
 
 const createVehicleIcon = (status, isSelected, isOnline = true, isFocused = false) => {
@@ -68,27 +67,43 @@ const createVehicleIcon = (status, isSelected, isOnline = true, isFocused = fals
     returned_for_revision: '#ef4444',
   };
   const color = colors[status] || '#6b7280';
-  const size = isFocused ? 40 : (isSelected ? 34 : 30);
+  const size = isFocused ? 44 : (isSelected ? 38 : 32);
 
   return L.divIcon({
     className: 'custom-vehicle-icon',
     html: `
       <div style="
         position: relative;
-        width: ${size + 8}px;
-        height: ${size + 8}px;
+        width: ${size + 12}px;
+        height: ${size + 12}px;
         cursor: pointer;
         transition: all 0.3s ease;
       ">
         ${isFocused ? `
           <div style="
             position: absolute;
-            inset: -6px;
+            inset: -8px;
             border-radius: 50%;
             background: rgba(59, 130, 246, 0.15);
-            border: 2.5px solid rgba(59, 130, 246, 0.5);
+            border: 3px solid rgba(59, 130, 246, 0.5);
             animation: pulse-ring 1.5s ease-out infinite;
-            box-shadow: 0 0 30px rgba(59, 130, 246, 0.3);
+            box-shadow: 0 0 40px rgba(59, 130, 246, 0.3);
+          "></div>
+          <div style="
+            position: absolute;
+            inset: -4px;
+            border-radius: 50%;
+            background: rgba(59, 130, 246, 0.05);
+            border: 2px solid rgba(59, 130, 246, 0.2);
+          "></div>
+        ` : isSelected ? `
+          <div style="
+            position: absolute;
+            inset: -4px;
+            border-radius: 50%;
+            background: rgba(59, 130, 246, 0.15);
+            border: 2px solid rgba(59, 130, 246, 0.3);
+            animation: pulse-ring 2s ease-out infinite;
           "></div>
         ` : ''}
 
@@ -96,15 +111,15 @@ const createVehicleIcon = (status, isSelected, isOnline = true, isFocused = fals
           position: absolute;
           top: 50%;
           left: 50%;
-          transform: translate(-50%, -50%);
+          transform: translate(-50%, -50%) ${isFocused ? 'scale(1.15)' : isSelected ? 'scale(1.08)' : 'scale(1)'};
           width: ${size}px;
           height: ${size}px;
           background: ${color};
-          border-radius: 10px;
-          border: ${isFocused ? '2.5px solid #3b82f6' : '2px solid white'};
+          border-radius: 12px;
+          border: ${isFocused ? '3px solid #3b82f6' : '2px solid white'};
           box-shadow: ${isFocused
-            ? '0 4px 20px rgba(59,130,246,0.6)'
-            : '0 3px 10px rgba(0,0,0,0.25)'};
+            ? '0 4px 24px rgba(59,130,246,0.6), 0 0 60px rgba(59,130,246,0.15)'
+            : '0 4px 12px rgba(0,0,0,0.25)'};
           display: flex;
           align-items: center;
           justify-content: center;
@@ -122,11 +137,15 @@ const createVehicleIcon = (status, isSelected, isOnline = true, isFocused = fals
         </div>
       </div>
     `,
-    iconSize: [size + 8, size + 8],
-    iconAnchor: [(size + 8) / 2, (size + 8) / 2],
-    popupAnchor: [0, -(size + 8) / 2 - 5],
+    iconSize: [size + 12, size + 12],
+    iconAnchor: [(size + 12) / 2, (size + 12) / 2],
+    popupAnchor: [0, -(size + 12) / 2 - 5],
   });
 };
+
+// ============================================
+// HELPER FUNCTIONS
+// ============================================
 
 const formatTime = (dateString) => {
   if (!dateString) return 'N/A';
@@ -157,18 +176,11 @@ const LiveTripTracker = ({ trip, onClose, isOpen, allTrips }) => {
   const intervalRef = useRef(null);
   const [followMode, setFollowMode] = useState(true);
 
-  const followModeRef = useRef(true);
-  const mapZoomRef = useRef(15);
-
-  useEffect(() => { followModeRef.current = followMode; }, [followMode]);
-  useEffect(() => { mapZoomRef.current = mapZoom; }, [mapZoom]);
-
-  // ============================================
-  // FETCH TRIP STATS
-  // ============================================
-
   const fetchTripStats = useCallback(async () => {
-    if (!trip?.trip_id) return;
+    if (!trip?.trip_id) {
+      console.warn('⚠️ No trip ID provided to fetchTripStats');
+      return;
+    }
 
     try {
       const response = await gpsAPI.getTripStats(trip.trip_id);
@@ -177,12 +189,14 @@ const LiveTripTracker = ({ trip, onClose, isOpen, allTrips }) => {
       if (data) {
         setTripStats(data);
 
-        if (data.latest_location && followModeRef.current) {
+        if (data.latest_location && followMode) {
           const { latitude, longitude } = data.latest_location;
           setMapCenter([latitude, longitude]);
+
           if (mapRef.current) {
-            mapRef.current.setView([latitude, longitude], mapZoomRef.current);
+            mapRef.current.setView([latitude, longitude], mapZoom);
           }
+
           if (markerRef.current) {
             markerRef.current.setLatLng([latitude, longitude]);
           }
@@ -194,11 +208,7 @@ const LiveTripTracker = ({ trip, onClose, isOpen, allTrips }) => {
     } finally {
       setLoading(false);
     }
-  }, [trip?.trip_id]);
-
-  // ============================================
-  // EFFECT 1 — Polling interval
-  // ============================================
+  }, [trip, followMode, mapZoom]);
 
   useEffect(() => {
     if (!trip?.trip_id || !isOpen) return;
@@ -211,41 +221,24 @@ const LiveTripTracker = ({ trip, onClose, isOpen, allTrips }) => {
       }
     }, 3000);
 
-    return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
-    };
-  }, [trip?.trip_id, isOpen, isTracking, fetchTripStats]);
-
-  // ============================================
-  // EFFECT 2 — WebSocket subscription
-  // ============================================
-
-  useEffect(() => {
-    if (!trip?.trip_id || !isOpen) return;
-
     let channel = null;
-
-    const locationHandler = (data) => {
-      if (data.trip_id !== trip.trip_id) return;
-
-      if (markerRef.current && data.latitude && data.longitude) {
-        markerRef.current.setLatLng([data.latitude, data.longitude]);
-      }
-
-      if (followModeRef.current && mapRef.current && data.latitude && data.longitude) {
-        mapRef.current.setView([data.latitude, data.longitude], mapZoomRef.current);
-      }
-
-      fetchTripStats();
-    };
-
     try {
       if (echo.connector && echo.connector.pusher) {
         channel = echo.channel('gso-live-tracking');
-        channel.listen('.location.updated', locationHandler);
+
+        channel.listen('.location.updated', (data) => {
+          if (data.trip_id === trip.trip_id) {
+            if (markerRef.current && data.latitude && data.longitude) {
+              markerRef.current.setLatLng([data.latitude, data.longitude]);
+            }
+
+            if (followMode && mapRef.current && data.latitude && data.longitude) {
+              mapRef.current.setView([data.latitude, data.longitude], mapZoom);
+            }
+
+            fetchTripStats();
+          }
+        });
 
         channel.subscribed(() => {
           console.log('✅ LiveTripTracker subscribed to gso-live-tracking');
@@ -256,63 +249,28 @@ const LiveTripTracker = ({ trip, onClose, isOpen, allTrips }) => {
     }
 
     return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+
       if (channel) {
         try {
-          channel.stopListening('.location.updated', locationHandler);
-        } catch (e) {
-          console.warn('⚠️ WebSocket cleanup error:', e);
-        }
+          channel.stopListening('.location.updated');
+        } catch (e) {}
       }
     };
-  }, [trip?.trip_id, isOpen, fetchTripStats]);
-
-  // ============================================
-  // EFFECT 3 — Follow mode recenters map
-  // ============================================
-
-  useEffect(() => {
-    if (!followMode) return;
-    if (!tripStats?.latest_location) return;
-
-    const { latitude, longitude } = tripStats.latest_location;
-    if (!latitude || !longitude) return;
-
-    setMapCenter([latitude, longitude]);
-    if (mapRef.current) {
-      mapRef.current.setView([latitude, longitude], mapZoomRef.current);
-    }
-  }, [followMode, tripStats?.latest_location?.latitude, tripStats?.latest_location?.longitude]);
-
-  // ============================================
-  // HANDLERS
-  // ============================================
+  }, [trip, isOpen, isTracking, followMode, fetchTripStats, mapZoom]);
 
   const toggleFollow = () => {
-    setFollowMode(prev => {
-      const next = !prev;
-      if (next && tripStats?.latest_location) {
-        const { latitude, longitude } = tripStats.latest_location;
-        setMapCenter([latitude, longitude]);
-        if (mapRef.current) {
-          mapRef.current.setView([latitude, longitude], mapZoomRef.current);
-        }
+    setFollowMode(!followMode);
+    if (!followMode && tripStats?.latest_location) {
+      const { latitude, longitude } = tripStats.latest_location;
+      setMapCenter([latitude, longitude]);
+      if (mapRef.current) {
+        mapRef.current.setView([latitude, longitude], mapZoom);
       }
-      return next;
-    });
-  };
-
-  const handleZoomIn = () => {
-    const newZoom = mapZoom === 18 ? 14 : mapZoom + 1;
-    setMapZoom(newZoom);
-    mapZoomRef.current = newZoom;
-    if (mapRef.current) mapRef.current.setZoom(newZoom);
-  };
-
-  const handleZoomOut = () => {
-    const newZoom = mapZoom === 4 ? 14 : mapZoom - 1;
-    setMapZoom(newZoom);
-    mapZoomRef.current = newZoom;
-    if (mapRef.current) mapRef.current.setZoom(newZoom);
+    }
   };
 
   if (!isOpen || !trip) return null;
@@ -344,7 +302,6 @@ const LiveTripTracker = ({ trip, onClose, isOpen, allTrips }) => {
           <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">
             Waiting for first GPS ping...
           </p>
-          <p className="text-xs text-blue-500 mt-2">● Live tracking starting...</p>
           <button
             onClick={fetchTripStats}
             className="mt-3 text-sm text-blue-600 hover:text-blue-700 underline"
@@ -357,7 +314,7 @@ const LiveTripTracker = ({ trip, onClose, isOpen, allTrips }) => {
   }
 
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-w-5xl w-full max-h-[80vh] overflow-hidden border border-slate-200/60 dark:border-slate-700/60">
+    <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-w-5xl w-full max-h-[90vh] overflow-hidden border border-slate-200/60 dark:border-slate-700/60">
       {/* ============ Header ============ */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200/60 dark:border-slate-700/60 bg-gradient-to-r from-slate-50 to-white dark:from-slate-900 dark:to-slate-800">
         <div className="flex items-center gap-2.5 min-w-0">
@@ -417,7 +374,7 @@ const LiveTripTracker = ({ trip, onClose, isOpen, allTrips }) => {
         </div>
       </div>
 
-      {/* ============ Stats Row (compact, no fuel) ============ */}
+      {/* ============ Stats Row (no fuel) ============ */}
       <div className="grid grid-cols-3 gap-2 px-3 py-2.5 bg-slate-50/50 dark:bg-slate-800/30 border-b border-slate-200/60 dark:border-slate-700/60">
         <div className="bg-white dark:bg-slate-800 rounded-lg px-2.5 py-1.5 shadow-sm border border-slate-200/60 dark:border-slate-700/60">
           <p className="text-[9px] text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1 font-semibold">
@@ -448,7 +405,7 @@ const LiveTripTracker = ({ trip, onClose, isOpen, allTrips }) => {
         </div>
       </div>
 
-      {/* ============ Map (smaller height) ============ */}
+      {/* ============ Map ============ */}
       <div className="relative h-[340px] md:h-[420px]">
         <MapContainer
           ref={mapRef}
@@ -573,14 +530,22 @@ const LiveTripTracker = ({ trip, onClose, isOpen, allTrips }) => {
             <Crosshair className="h-4 w-4" />
           </button>
           <button
-            onClick={handleZoomIn}
+            onClick={() => {
+              const newZoom = mapZoom === 18 ? 14 : mapZoom + 1;
+              setMapZoom(newZoom);
+              if (mapRef.current) mapRef.current.setZoom(newZoom);
+            }}
             className="bg-white dark:bg-slate-800 rounded-lg shadow-lg p-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors border border-slate-200/60 dark:border-slate-700/60"
             title="Zoom in"
           >
             <Plus className="h-4 w-4 text-slate-600 dark:text-slate-300" />
           </button>
           <button
-            onClick={handleZoomOut}
+            onClick={() => {
+              const newZoom = mapZoom === 4 ? 14 : mapZoom - 1;
+              setMapZoom(newZoom);
+              if (mapRef.current) mapRef.current.setZoom(newZoom);
+            }}
             className="bg-white dark:bg-slate-800 rounded-lg shadow-lg p-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors border border-slate-200/60 dark:border-slate-700/60"
             title="Zoom out"
           >
@@ -600,6 +565,14 @@ const LiveTripTracker = ({ trip, onClose, isOpen, allTrips }) => {
           <span className="text-slate-500">{tripStats?.ping_count || 0} pings</span>
           <span className="text-slate-300 dark:text-slate-600">·</span>
           <span className="text-slate-500">{followMode ? 'Following' : 'Free'}</span>
+        </div>
+
+        {/* Trip Info Overlay */}
+        <div className="absolute bottom-3 right-3 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm rounded-lg shadow-lg px-2.5 py-1.5 text-[11px] z-[1000] border border-slate-200/60 dark:border-slate-700/60">
+          <span className="font-semibold text-slate-700 dark:text-slate-300">
+            Trip {trip?.ticket_number}
+          </span>
+          <span className="ml-2 text-emerald-500">● Live</span>
         </div>
       </div>
 
