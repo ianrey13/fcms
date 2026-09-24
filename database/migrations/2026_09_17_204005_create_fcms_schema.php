@@ -51,7 +51,7 @@ return new class extends Migration
             $table->string('password_hash', 255)->nullable();            
             $table->enum('role', ['gso_office', 'mayors_office', 'driver', 'budget_office']);
             $table->boolean('can_drive')->default(false);
-           $table->string('push_token', 255)->nullable()    ;
+           $table->string('push_token', 255)->nullable();
 $table->string('push_token_platform', 20)->nullable();
 $table->timestamp('push_token_updated_at')->nullable();
             $table->enum('status', ['active', 'inactive'])->default('active');
