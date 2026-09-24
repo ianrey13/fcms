@@ -86,8 +86,6 @@ class DatabaseSeeder extends Seeder
                 'password_hash'         => Hash::make($adminPassword),
                 'role'                  => 'gso_office',
                 'can_drive'             => 0,
-                'esignature_path'       => null,
-                'esignature_hash'       => null,
                 'status'                => 'active',
                 'created_at'            => now(),
                 'updated_at'            => now(),
