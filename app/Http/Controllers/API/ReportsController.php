@@ -603,9 +603,9 @@ public function getBudgetReport(Request $request)
     }
 
     // ============================================================
-    // 5. RECONCILIATION REPORT  ✅ FIXED — distance-based, matches frontend
-    // ============================================================
-   public function getReconciliationReport(Request $request)
+// 5. RECONCILIATION REPORT  
+// ============================================================
+public function getReconciliationReport(Request $request)
 {
     try {
         $startDate = $request->get('start_date');
@@ -618,6 +618,7 @@ public function getBudgetReport(Request $request)
             'vehicle',
             'gasSlip',
             'gasSlip.fuelReceipt',
+            'tripHistory',
         ])
         ->whereHas('gasSlip')
         ->whereHas('gasSlip.fuelReceipt');
@@ -657,7 +658,35 @@ public function getBudgetReport(Request $request)
             }
 
             // ============================================
-            // ✅ NEW: AMOUNT reconciliation
+            // ✅ TRIP TIMES — read from trip_history, NOT fuel_receipt.
+            //    fuel_receipt.trip_started_at / trip_ended_at are
+            //    overwritten on every startTrip/completeTrip, so they
+            //    only reflect the LAST segment. trip_history preserves
+            //    each segment, so the first segment's started_at and
+            //    the last segment's ended_at give the true trip window.
+            // ============================================
+            $segments = $trip->tripHistory;
+
+            $firstStartedAt = $segments
+                ->whereNotNull('started_at')
+                ->sortBy('started_at')
+                ->first()?->started_at;
+
+            $lastEndedAt = $segments
+                ->whereNotNull('ended_at')
+                ->sortByDesc('ended_at')
+                ->first()?->ended_at;
+
+            // Fallback to fuel_receipt if trip_history is empty (edge case)
+            if (!$firstStartedAt) {
+                $firstStartedAt = $trip->gasSlip?->fuelReceipt?->trip_started_at;
+            }
+            if (!$lastEndedAt) {
+                $lastEndedAt = $trip->gasSlip?->fuelReceipt?->trip_ended_at;
+            }
+
+            // ============================================
+            // AMOUNT reconciliation
             // ============================================
             $amountReleased = (float) ($trip->gasSlip?->amount_released ?? 0);
             $actualAmount   = $trip->gasSlip?->fuelReceipt?->amount_on_receipt;
@@ -681,20 +710,25 @@ public function getBudgetReport(Request $request)
                 'plate_number' => $trip->vehicle?->plate_number ?? 'N/A',
                 'driver_name' => $trip->driver?->user?->full_name ?? 'N/A',
 
-                 'trip_started_at' => $trip->gasSlip?->fuelReceipt?->trip_started_at?->toIso8601String(),
-                'trip_ended_at'   => $trip->gasSlip?->fuelReceipt?->trip_ended_at?->toIso8601String(),
-                // ✅ Amount fields (NEW)
+                // ✅ Now reads from trip_history
+                'trip_started_at' => $firstStartedAt?->toIso8601String(),
+                'trip_ended_at'   => $lastEndedAt?->toIso8601String(),
+
+                // ✅ NEW: trip segment count (useful for multi-trip display)
+                'segment_count' => $segments->count(),
+
+                // Amount fields
                 'amount_released' => $amountReleased,
                 'actual_amount' => $actualAmount !== null ? round((float) $actualAmount, 2) : null,
                 'amount_variance' => $amountVariance,
 
-                // Distance fields (existing)
+                // Distance fields
                 'expected_distance' => round($expectedDistance, 2),
                 'actual_distance' => round($actualDistance, 2),
                 'variance' => $variance,
                 'variance_status' => $varianceStatus,
 
-                // Fuel fields (existing)
+                // Fuel fields
                 'estimated_fuel' => round($estimatedFuel, 2),
                 'actual_fuel' => $actualFuel !== null ? round((float) $actualFuel, 2) : null,
                 'fuel_variance' => $fuelVariance,
@@ -702,7 +736,7 @@ public function getBudgetReport(Request $request)
                 // Meta
                 'status' => $trip->gasSlip?->reconciliation_status ?? 'pending',
                 'reconciled_by' => $trip->gasSlip?->reconciledBy?->full_name ?? 'N/A',
-                 'reconciled_at' => $trip->gasSlip?->reconciled_at?->toIso8601String(),
+                'reconciled_at' => $trip->gasSlip?->reconciled_at?->toIso8601String(),
             ];
         });
 
@@ -736,7 +770,6 @@ public function getBudgetReport(Request $request)
         ], 500);
     }
 }
-
     // ============================================================
     // 6. DEPARTMENT FUEL CONSUMPTION
     // ============================================================
