@@ -57,6 +57,7 @@ import {
     ChevronUp,
     ArrowUpRight,
     ArrowDownRight,
+    ArrowRight,
     Minus,
     Ban,
     AlertTriangle,
@@ -90,6 +91,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { toast } from "react-hot-toast";
+import { cn } from "@/lib/utils";
 
 // ============================================
 // ✅ LAZY CHART + PREFETCH HELPER
@@ -99,7 +101,6 @@ const TripTrendsChart = lazy(
     () => import("../../components/charts/TripTrendsChart"),
 );
 
-// ✅ Prefetch helper — call anywhere to warm the chunk
 const prefetchChart = () => {
     import("../../components/charts/TripTrendsChart");
 };
@@ -123,6 +124,9 @@ const extractArray = (response) => {
         "list",
         "tickets",
         "trips",
+        "logs",
+        "activities",
+        "activity_logs",
     ];
     for (const key of keys) {
         if (Array.isArray(response[key])) return response[key];
@@ -568,13 +572,7 @@ const TicketTable = ({
 };
 
 // ============================================
-// AUDIT LOG TABLE
-// ============================================
-
-
-
-// ============================================
-// ✅ CHART SKELETON FALLBACK (looks like a chart)
+// ✅ CHART SKELETON FALLBACK
 // ============================================
 
 const ChartFallback = () => (
@@ -593,6 +591,144 @@ const ChartFallback = () => (
 );
 
 // ============================================
+// ✅ TRIP HISTORY WIDGET — mirrors ActivityLogs.jsx format
+// ============================================
+
+const TripHistoryWidget = ({ isLoading }) => {
+    const { data: activityRaw, isLoading: activityLoading } = useOptimizedQuery({
+        queryKey: ["gso-activity-logs-trip-widget"],
+        queryFn: async () => {
+            try {
+                const res = await gsoAPI.getActivityLogs();
+                // Mirror ActivityLogs.jsx: expects { data: { logs: [...] } }
+                const logs = res?.data?.data?.logs || res?.data?.logs || [];
+                console.log("🔍 [TripHistoryWidget] logs count:", logs.length);
+                if (logs.length > 0) {
+                    console.log("🔍 [TripHistoryWidget] first log:", logs[0]);
+                }
+                return Array.isArray(logs) ? logs : [];
+            } catch (error) {
+                console.error("Error fetching activity logs:", error);
+                return [];
+            }
+        },
+        staleTime: 0,
+        refetchOnMount: true,
+        refetchOnReconnect: true,
+        refetchOnWindowFocus: false,
+        placeholderData: (prev) => prev,
+    });
+
+    const activityLogs = useSafeArray(activityRaw);
+
+    // Filter to trip_history entries only + take latest 5
+    const recent = useMemo(() => {
+        const trips = activityLogs.filter((log) => log?.source === "trip_history");
+        return trips.slice(0, 5);
+    }, [activityLogs]);
+
+    // Same message builder as ActivityLogs.jsx
+    const formatLogText = (log) => {
+        const userName = log.user_name || "Unknown User";
+        const tripNo = log.trip_number ?? "?";
+        const ticket = log.trip_ticket_number || "N/A";
+        const vehicle =
+            log.vehicle_plate && log.vehicle_plate !== "N/A"
+                ? ` (${log.vehicle_plate})`
+                : "";
+        const dest =
+            log.destination && log.destination !== "N/A"
+                ? ` (${log.destination})`
+                : "";
+
+        if (log.action === "started") {
+            return `Driver ${userName} started trip #${tripNo} on ticket ${ticket}${vehicle}${dest}`;
+        }
+        if (log.action === "completed") {
+            const dist =
+                log.distance_km != null && log.distance_km > 0
+                    ? ` — ${log.distance_km} km`
+                    : "";
+            return `Driver ${userName} completed trip #${tripNo} on ticket ${ticket}${vehicle}${dist}`;
+        }
+        return `Driver ${userName} trip #${tripNo} on ticket ${ticket}`;
+    };
+
+    const loading = isLoading || activityLoading;
+
+    return (
+        <Card className="dark:bg-slate-800/80 dark:border-slate-700">
+            <CardHeader className="border-b dark:border-slate-700 pb-4">
+                <CardTitle className="flex items-center gap-2 text-slate-800 dark:text-white">
+                    <History className="h-5 w-5 text-purple-500" />
+                    Trip History
+                </CardTitle>
+                <CardDescription className="dark:text-slate-400 mt-1">
+                    Latest 5 trip events across all departments
+                </CardDescription>
+            </CardHeader>
+            <CardContent className="pt-4">
+                {loading ? (
+                    <div className="flex justify-center py-10">
+                        <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
+                    </div>
+                ) : recent.length === 0 ? (
+                    <div className="py-10 text-center">
+                        <History className="h-10 w-10 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
+                        <p className="text-sm text-slate-500 dark:text-slate-400">
+                            No trip activity yet
+                        </p>
+                    </div>
+                ) : (
+                    <div className="divide-y divide-slate-100 dark:divide-slate-700/60">
+                        {recent.map((log, i) => (
+                            <div
+                                key={log.id || log.log_id || i}
+                                className="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0"
+                            >
+                                <div className="flex items-start gap-2 flex-1 min-w-0">
+                                    <Truck className="h-4 w-4 text-blue-500 mt-0.5 flex-shrink-0" />
+                                    <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
+                                        {formatLogText(log)}
+                                    </p>
+                                </div>
+                                <span className="text-xs text-slate-400 dark:text-slate-500 whitespace-nowrap flex-shrink-0">
+                                    {log.created_at
+                                        ? formatLogTimestamp(log.created_at)
+                                        : "N/A"}
+                                </span>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </CardContent>
+        </Card>
+    );
+};
+
+// ============================================
+// TIMESTAMP FORMATTER — "23/09/2026, 6:29 PM"
+// ============================================
+
+const formatLogTimestamp = (dateString) => {
+    if (!dateString) return "";
+    try {
+        const date = new Date(dateString);
+        const day = String(date.getDate()).padStart(2, "0");
+        const month = String(date.getMonth() + 1).padStart(2, "0");
+        const year = date.getFullYear();
+        const time = date.toLocaleTimeString("en-US", {
+            hour: "numeric",
+            minute: "2-digit",
+            hour12: true,
+        });
+        return `${day}/${month}/${year}, ${time}`;
+    } catch {
+        return "";
+    }
+};
+
+// ============================================
 // MAIN COMPONENT
 // ============================================
 
@@ -605,9 +741,9 @@ const GsoDashboard = () => {
     const [showValidateDialog, setShowValidateDialog] = useState(false);
     const [showCancelDialog, setShowCancelDialog] = useState(false);
     const [cancelReason, setCancelReason] = useState("");
-    const [activeTab, setActiveTab] = useState("pending");
+    const [activeTab, setActiveTab] = useState("all");
+    const [allTripsFilter, setAllTripsFilter] = useState("all");
     const [searchQuery, setSearchQuery] = useState("");
-    const [showAuditLog, setShowAuditLog] = useState(false);
     const [validationNote, setValidationNote] = useState("");
 
     const departmentName =
@@ -615,34 +751,20 @@ const GsoDashboard = () => {
             ?.replace("Philippine National Police - ", "")
             .replace("PNP - ", "") || "General Services Office";
 
-    // ============================================
-    // ✅ PREFETCH CHART CHUNK ON MOUNT
-    // ============================================
-
     useEffect(() => {
         prefetchChart();
     }, []);
-
-    // ============================================
-    // ✅ REFRESH FUNCTION (throttled)
-    // ============================================
 
     const fetchAllData = useCallback(() => {
         queryClient.invalidateQueries({ queryKey: ["gso-pending-mo"] });
         queryClient.invalidateQueries({ queryKey: ["gso-pending-validation"] });
         queryClient.invalidateQueries({ queryKey: ["gso-all-trips"] });
         queryClient.invalidateQueries({ queryKey: ["gso-cancelled-trips"] });
-        queryClient.invalidateQueries({ queryKey: ["audit-logs"] });
         queryClient.invalidateQueries({ queryKey: ["admin-users-stats"] });
         queryClient.invalidateQueries({ queryKey: ["admin-vehicles-stats"] });
-        queryClient.invalidateQueries({
-            queryKey: ["admin-departments-stats"],
-        });
+        queryClient.invalidateQueries({ queryKey: ["admin-departments-stats"] });
+        queryClient.invalidateQueries({ queryKey: ["gso-activity-logs-trip-widget"] });
     }, [queryClient]);
-
-    // ============================================
-    // ✅ AUTO-REFRESH
-    // ============================================
 
     useAutoRefresh(
         [
@@ -659,13 +781,8 @@ const GsoDashboard = () => {
         1000,
     );
 
-    // ============================================
-    // ✅ QUERIES
-    // ============================================
+    // ============ QUERIES ============
 
-   
-
-    // 2. PENDING MO
     const { data: pendingTicketsRaw, isLoading: pendingLoading } =
         useOptimizedQuery({
             queryKey: ["gso-pending-mo"],
@@ -679,15 +796,14 @@ const GsoDashboard = () => {
                     return [];
                 }
             },
-           staleTime: 0,
-        refetchOnMount: true,
-        refetchOnReconnect: true,
-        refetchOnWindowFocus: false,
-        placeholderData: (prev) => prev,
+            staleTime: 0,
+            refetchOnMount: true,
+            refetchOnReconnect: true,
+            refetchOnWindowFocus: false,
+            placeholderData: (prev) => prev,
         });
     const pendingTickets = useSafeArray(pendingTicketsRaw);
 
-    // 3. PENDING VALIDATION
     const { data: pendingValidationRaw, isLoading: validationLoading } =
         useOptimizedQuery({
             queryKey: ["gso-pending-validation"],
@@ -700,15 +816,14 @@ const GsoDashboard = () => {
                     return [];
                 }
             },
-           staleTime: 0,
-        refetchOnMount: true,
-        refetchOnReconnect: true,
-        refetchOnWindowFocus: false,
-        placeholderData: (prev) => prev,
+            staleTime: 0,
+            refetchOnMount: true,
+            refetchOnReconnect: true,
+            refetchOnWindowFocus: false,
+            placeholderData: (prev) => prev,
         });
     const pendingValidation = useSafeArray(pendingValidationRaw);
 
-    // 4. ALL TRIPS
     const { data: allTripsRaw, isLoading: allTripsLoading } = useOptimizedQuery(
         {
             queryKey: ["gso-all-trips"],
@@ -722,15 +837,14 @@ const GsoDashboard = () => {
                 }
             },
             staleTime: 0,
-        refetchOnMount: true,
-        refetchOnReconnect: true,
-        refetchOnWindowFocus: false,
-        placeholderData: (prev) => prev,
+            refetchOnMount: true,
+            refetchOnReconnect: true,
+            refetchOnWindowFocus: false,
+            placeholderData: (prev) => prev,
         },
     );
     const allTrips = useSafeArray(allTripsRaw);
 
-    // 5. CANCELLED TRIPS
     const { data: cancelledTripsRaw, isLoading: cancelledLoading } =
         useOptimizedQuery({
             queryKey: ["gso-cancelled-trips"],
@@ -745,15 +859,14 @@ const GsoDashboard = () => {
                     return [];
                 }
             },
-           staleTime: 0,
-        refetchOnMount: true,
-        refetchOnReconnect: true,
-        refetchOnWindowFocus: false,
-        placeholderData: (prev) => prev,
+            staleTime: 0,
+            refetchOnMount: true,
+            refetchOnReconnect: true,
+            refetchOnWindowFocus: false,
+            placeholderData: (prev) => prev,
         });
     const cancelledTrips = useSafeArray(cancelledTripsRaw);
 
-    // 6. USERS
     const { data: usersRaw } = useOptimizedQuery({
         queryKey: ["admin-users-stats"],
         queryFn: async () => {
@@ -772,7 +885,6 @@ const GsoDashboard = () => {
     });
     const users = useSafeArray(usersRaw);
 
-    // 7. VEHICLES
     const { data: vehiclesRaw } = useOptimizedQuery({
         queryKey: ["admin-vehicles-stats"],
         queryFn: async () => {
@@ -791,7 +903,6 @@ const GsoDashboard = () => {
     });
     const vehicles = useSafeArray(vehiclesRaw);
 
-    // 8. DEPARTMENTS (unused but kept for consistency)
     useOptimizedQuery({
         queryKey: ["admin-departments-stats"],
         queryFn: async () => {
@@ -802,7 +913,7 @@ const GsoDashboard = () => {
                 return [];
             }
         },
-       staleTime: 0,
+        staleTime: 0,
         refetchOnMount: true,
         refetchOnReconnect: true,
         refetchOnWindowFocus: false,
@@ -815,18 +926,16 @@ const GsoDashboard = () => {
             try {
                 const res = await gpsAPI.getActiveTrips();
                 const data = res.data?.data;
-                return Array.isArray(data) ? data : []; 
+                return Array.isArray(data) ? data : [];
             } catch (err) {
                 console.error(err);
-                return []; 
+                return [];
             }
         },
         refetchInterval: 30000,
     });
 
-    // ============================================
-    // MUTATIONS
-    // ============================================
+    // ============ MUTATIONS ============
 
     const validateMutation = useMutation({
         mutationFn: async ({ ticketId, data }) => {
@@ -873,14 +982,37 @@ const GsoDashboard = () => {
         },
     });
 
-    // ============================================
-    // ✅ COMPUTED STATS
-    // ============================================
+    // ============ MERGED ALL TRIPS ============
+
+    const mergedAllTrips = useMemo(() => {
+        const map = new Map();
+
+        const addAll = (arr) => {
+            (Array.isArray(arr) ? arr : []).forEach((t) => {
+                const id = getTicketId(t);
+                if (id != null && !map.has(id)) {
+                    map.set(id, t);
+                }
+            });
+        };
+
+        addAll(allTrips);
+        addAll(pendingTickets);
+        addAll(cancelledTrips);
+
+        return Array.from(map.values()).sort((a, b) => {
+            const da = new Date(a?.submitted_at || a?.trip_date || 0);
+            const db = new Date(b?.submitted_at || b?.trip_date || 0);
+            return db - da;
+        });
+    }, [allTrips, pendingTickets, cancelledTrips]);
+
+    // ============ STATS ============
 
     const stats = useMemo(() => {
         const safeUsers = Array.isArray(users) ? users : [];
         const safeVehicles = Array.isArray(vehicles) ? vehicles : [];
-        const safeTrips = Array.isArray(allTrips) ? allTrips : [];
+        const safeTrips = mergedAllTrips;
         const safePending = Array.isArray(pendingTickets) ? pendingTickets : [];
         const safeCancelled = Array.isArray(cancelledTrips)
             ? cancelledTrips
@@ -905,7 +1037,10 @@ const GsoDashboard = () => {
                 icon: Truck,
                 gradient: "from-blue-500 to-blue-600",
                 subtitle: `${closedTrips} completed`,
-                onClick: () => setActiveTab("all"),
+                onClick: () => {
+                    setActiveTab("all");
+                    setAllTripsFilter("all");
+                },
                 trend: safeTrips.length > 0 ? 12 : 0,
             },
             {
@@ -914,7 +1049,10 @@ const GsoDashboard = () => {
                 icon: Clock,
                 gradient: "from-yellow-500 to-yellow-600",
                 subtitle: "Awaiting fund release",
-                onClick: () => setActiveTab("pending"),
+                onClick: () => {
+                    setActiveTab("all");
+                    setAllTripsFilter("pending");
+                },
                 trend: safePending.length > 0 ? -8 : 0,
             },
             {
@@ -947,15 +1085,16 @@ const GsoDashboard = () => {
                 icon: Ban,
                 gradient: "from-red-500 to-rose-600",
                 subtitle: "Cancelled trips",
-                onClick: () => setActiveTab("cancelled"),
+                onClick: () => {
+                    setActiveTab("all");
+                    setAllTripsFilter("cancelled");
+                },
                 trend: safeCancelled.length > 0 ? 3 : 0,
             },
         ];
-    }, [allTrips, pendingTickets, users, vehicles, cancelledTrips, navigate]);
+    }, [mergedAllTrips, pendingTickets, users, vehicles, cancelledTrips, navigate]);
 
-    // ============================================
-    // FILTER FUNCTIONS
-    // ============================================
+    // ============ FILTERS ============
 
     const filterTickets = useCallback(
         (tickets) => {
@@ -979,29 +1118,68 @@ const GsoDashboard = () => {
         [searchQuery],
     );
 
-    const filteredPending = useMemo(
-        () => filterTickets(pendingTickets),
-        [pendingTickets, filterTickets],
-    );
-    const filteredAllTrips = useMemo(
-        () => filterTickets(allTrips),
-        [allTrips, filterTickets],
-    );
+    const filteredAllTrips = useMemo(() => {
+        let list = mergedAllTrips;
+
+        if (allTripsFilter === "pending") {
+            list = list.filter(
+                (t) =>
+                    t?.status === "pending_mayors_office" ||
+                    t?.status === "returned_for_revision",
+            );
+        } else if (allTripsFilter === "validation") {
+            list = list.filter(
+                (t) =>
+                    t?.status === "pending_gso_validation" ||
+                    t?.status === "completed",
+            );
+        } else if (allTripsFilter === "cancelled") {
+            list = list.filter((t) => t?.status === "cancelled");
+        } else if (allTripsFilter === "in_progress") {
+            list = list.filter(
+                (t) =>
+                    t?.status === "funds_issued" ||
+                    t?.status === "acknowledged" ||
+                    t?.status === "in_transit",
+            );
+        }
+
+        return filterTickets(list);
+    }, [mergedAllTrips, allTripsFilter, filterTickets]);
+
     const filteredValidation = useMemo(
         () => filterTickets(pendingValidation),
         [pendingValidation, filterTickets],
     );
-    const filteredCancelled = useMemo(
-        () => filterTickets(cancelledTrips),
-        [cancelledTrips, filterTickets],
-    );
 
-    // ============================================
-    // CHART DATA
-    // ============================================
+    const filterCounts = useMemo(() => {
+        const base = mergedAllTrips;
+        return {
+            all: base.length,
+            pending: base.filter(
+                (t) =>
+                    t?.status === "pending_mayors_office" ||
+                    t?.status === "returned_for_revision",
+            ).length,
+            in_progress: base.filter(
+                (t) =>
+                    t?.status === "funds_issued" ||
+                    t?.status === "acknowledged" ||
+                    t?.status === "in_transit",
+            ).length,
+            validation: base.filter(
+                (t) =>
+                    t?.status === "pending_gso_validation" ||
+                    t?.status === "completed",
+            ).length,
+            cancelled: base.filter((t) => t?.status === "cancelled").length,
+        };
+    }, [mergedAllTrips]);
+
+    // ============ CHART DATA ============
 
     const chartData = useMemo(() => {
-        const safeTrips = Array.isArray(allTrips) ? allTrips : [];
+        const safeTrips = mergedAllTrips;
         if (safeTrips.length === 0) {
             return [
                 { month: "Jan", trips: 0 },
@@ -1050,22 +1228,14 @@ const GsoDashboard = () => {
         return Array.from(monthlyMap.entries())
             .map(([month, trips]) => ({ month, trips }))
             .slice(-6);
-    }, [allTrips]);
-
-    // ============================================
-    // CONNECTION STATUS
-    // ============================================
+    }, [mergedAllTrips]);
 
     const connectionStatus = isConnected ? "🟢 Live" : "🔴 Offline";
     const isRealTime = isConnected;
 
-    // ============================================
-    // LOADING STATE
-    // ============================================
-
     const isLoading = pendingLoading || allTripsLoading || cancelledLoading;
 
-    if (isLoading && allTrips.length === 0) {
+    if (isLoading && mergedAllTrips.length === 0) {
         return (
             <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
                 <div className="p-4 md:p-6">
@@ -1075,9 +1245,17 @@ const GsoDashboard = () => {
         );
     }
 
-    // ============================================
-    // RENDER
-    // ============================================
+    // ============ FILTER PILLS CONFIG ============
+
+    const FILTER_PILLS = [
+        { key: "all", label: "All", count: filterCounts.all },
+        { key: "pending", label: "Pending MO", count: filterCounts.pending },
+        { key: "in_progress", label: "In Progress", count: filterCounts.in_progress },
+        { key: "validation", label: "Ready to Validate", count: filterCounts.validation },
+        { key: "cancelled", label: "Cancelled", count: filterCounts.cancelled },
+    ];
+
+    // ============ RENDER ============
 
     return (
         <div className="space-y-6 p-4 md:p-6 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 min-h-screen">
@@ -1142,7 +1320,7 @@ const GsoDashboard = () => {
                 ))}
             </div>
 
-            {/* Chart Section — ✅ Lazy + Prefetch on hover */}
+            {/* Chart Section */}
             <Card
                 className="dark:bg-slate-800/80 dark:border-slate-700"
                 onMouseEnter={prefetchChart}
@@ -1165,7 +1343,7 @@ const GsoDashboard = () => {
                         </div>
                         <Badge className="bg-blue-500/20 text-blue-600 dark:text-blue-400 border-blue-500/30">
                             <Activity className="h-3 w-3 mr-1" />
-                            {allTrips.length} total trips
+                            {mergedAllTrips.length} total trips
                         </Badge>
                     </div>
                 </CardHeader>
@@ -1178,7 +1356,8 @@ const GsoDashboard = () => {
                 </CardContent>
             </Card>
 
-            {/* Search Bar */}
+         
+            {/* ✅ Search Bar — above the tabs, filters both */}
             <div className="relative">
                 <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
                 <Input
@@ -1187,198 +1366,157 @@ const GsoDashboard = () => {
                     onChange={(e) => setSearchQuery(e.target.value)}
                     className="pl-10 bg-white dark:bg-slate-800 dark:border-slate-700 rounded-xl h-12 text-sm shadow-sm"
                 />
+                {searchQuery && (
+                    <button
+                        onClick={() => setSearchQuery("")}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                    >
+                        Clear
+                    </button>
+                )}
             </div>
 
-            {/* Tabs */}
-            <Tabs
-                value={activeTab}
-                onValueChange={setActiveTab}
-                className="w-full"
-            >
-                <TabsList className="grid w-full max-w-4xl grid-cols-4 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
-                    <TabsTrigger
-                        value="pending"
-                        className="rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900 data-[state=active]:shadow-sm transition-all duration-200"
-                    >
-                        <Clock className="h-4 w-4 mr-2" />
-                        Pending MO
-                        <Badge className="ml-2 bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 border-yellow-500/30 text-[10px]">
-                            {pendingTickets.length}
-                        </Badge>
-                    </TabsTrigger>
-                    <TabsTrigger
-                        value="all"
-                        className="rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900 data-[state=active]:shadow-sm transition-all duration-200"
-                    >
-                        <Truck className="h-4 w-4 mr-2" />
-                        All Trips
-                        <Badge className="ml-2 bg-blue-500/20 text-blue-600 dark:text-blue-400 border-blue-500/30 text-[10px]">
-                            {allTrips.length}
-                        </Badge>
-                    </TabsTrigger>
-                    <TabsTrigger
-                        value="validation"
-                        className="rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900 data-[state=active]:shadow-sm transition-all duration-200"
-                    >
-                        <FileCheck className="h-4 w-4 mr-2" />
-                        Validate
-                        <Badge className="ml-2 bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 border-indigo-500/30 text-[10px]">
-                            {pendingValidation.length}
-                        </Badge>
-                    </TabsTrigger>
-                    <TabsTrigger
-                        value="cancelled"
-                        className="rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900 data-[state=active]:shadow-sm transition-all duration-200"
-                    >
-                        <Ban className="h-4 w-4 mr-2" />
-                        Cancelled
-                        <Badge className="ml-2 bg-red-500/20 text-red-600 dark:text-red-400 border-red-500/30 text-[10px]">
-                            {cancelledTrips.length}
-                        </Badge>
-                    </TabsTrigger>
-                </TabsList>
+            {/* ✅ Tabs */}
+            <div data-tabs-section="true">
+                <Tabs
+                    value={activeTab}
+                    onValueChange={setActiveTab}
+                    className="w-full"
+                >
+                    <TabsList className="grid w-full max-w-2xl grid-cols-2 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
+                        <TabsTrigger
+                            value="all"
+                            className="rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900 data-[state=active]:shadow-sm transition-all duration-200"
+                        >
+                            <Truck className="h-4 w-4 mr-2" />
+                            All Trips
+                            <Badge className="ml-2 bg-blue-500/20 text-blue-600 dark:text-blue-400 border-blue-500/30 text-[10px]">
+                                {filteredAllTrips.length}
+                            </Badge>
+                        </TabsTrigger>
+                        <TabsTrigger
+                            value="validation"
+                            className="rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900 data-[state=active]:shadow-sm transition-all duration-200"
+                        >
+                            <FileCheck className="h-4 w-4 mr-2" />
+                            Validate
+                            <Badge className="ml-2 bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 border-indigo-500/30 text-[10px]">
+                                {filteredValidation.length}
+                            </Badge>
+                        </TabsTrigger>
+                    </TabsList>
 
-                {/* Pending MO Tab */}
-                <TabsContent value="pending" className="space-y-4 mt-6">
-                    <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-                        <CardHeader className="border-b dark:border-slate-700">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <CardTitle className="flex items-center gap-2 text-slate-800 dark:text-white">
-                                        <Clock className="h-5 w-5 text-yellow-500" />
-                                        Trip Tickets Awaiting Fund Release
-                                    </CardTitle>
-                                    <CardDescription className="dark:text-slate-400 mt-1">
-                                        These trips are pending approval from
-                                        Mayor's Office. You can cancel before
-                                        funds are issued.
-                                    </CardDescription>
+                    {/* ============ ALL TRIPS TAB ============ */}
+                    <TabsContent value="all" className="space-y-4 mt-6">
+                        <Card className="dark:bg-slate-800/80 dark:border-slate-700">
+                            <CardHeader className="border-b dark:border-slate-700">
+                                <div className="flex flex-col gap-4">
+                                    <div className="flex items-center justify-between">
+                                        <div>
+                                            <CardTitle className="flex items-center gap-2 text-slate-800 dark:text-white">
+                                                <Truck className="h-5 w-5 text-blue-500" />
+                                                All Trips
+                                            </CardTitle>
+                                            <CardDescription className="dark:text-slate-400 mt-1">
+                                                Combined view of pending, in-progress, completed, and cancelled trips
+                                            </CardDescription>
+                                        </div>
+                                        <Badge className="bg-blue-500/20 text-blue-600 dark:text-blue-400 border-blue-500/30">
+                                            {filteredAllTrips.length} tickets
+                                        </Badge>
+                                    </div>
+
+                                    {/* Filter pills */}
+                                    <div className="flex flex-wrap gap-2">
+                                        {FILTER_PILLS.map((pill) => {
+                                            const active = allTripsFilter === pill.key;
+                                            return (
+                                                <button
+                                                    key={pill.key}
+                                                    onClick={() => setAllTripsFilter(pill.key)}
+                                                    className={cn(
+                                                        "inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium transition-all border",
+                                                        active
+                                                            ? "bg-blue-600 text-white border-blue-600 shadow-sm"
+                                                            : "bg-slate-100 dark:bg-slate-800/60 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700/60"
+                                                    )}
+                                                >
+                                                    {pill.label}
+                                                    <span
+                                                        className={cn(
+                                                            "ml-1 rounded-full px-1.5 py-0.5 text-[10px] font-bold",
+                                                            active
+                                                                ? "bg-white/20 text-white"
+                                                                : "bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400"
+                                                        )}
+                                                    >
+                                                        {pill.count}
+                                                    </span>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
                                 </div>
-                                <Badge className="bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 border-yellow-500/30">
-                                    {filteredPending.length} tickets
-                                </Badge>
-                            </div>
-                        </CardHeader>
-                        <CardContent className="pt-6">
-                            <TicketTable
-                                tickets={filteredPending}
-                                onView={(id) => navigate(`/gso/tickets/${id}`)}
-                                onCancel={(ticket) => {
-                                    setSelectedTicket(ticket);
-                                    setCancelReason("");
-                                    setShowCancelDialog(true);
-                                }}
-                                showCancel={true}
-                                isLoading={pendingLoading}
-                                showActions={true}
-                                maxHeight="450px"
-                            />
-                        </CardContent>
-                    </Card>
-                </TabsContent>
+                            </CardHeader>
+                            <CardContent className="pt-6">
+                                <TicketTable
+                                    tickets={filteredAllTrips}
+                                    onView={(id) => navigate(`/gso/tickets/${id}`)}
+                                    onCancel={(ticket) => {
+                                        setSelectedTicket(ticket);
+                                        setCancelReason("");
+                                        setShowCancelDialog(true);
+                                    }}
+                                    showCancel={true}
+                                    isLoading={allTripsLoading || pendingLoading || cancelledLoading}
+                                    showActions={true}
+                                    maxHeight="320px"
+                                />
+                            </CardContent>
+                        </Card>
+                    </TabsContent>
 
-                {/* All Trips Tab */}
-                <TabsContent value="all" className="space-y-4 mt-6">
-                    <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-                        <CardHeader className="border-b dark:border-slate-700">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <CardTitle className="flex items-center gap-2 text-slate-800 dark:text-white">
-                                        <Truck className="h-5 w-5 text-blue-500" />
-                                        All Trip Tickets
-                                    </CardTitle>
-                                    <CardDescription className="dark:text-slate-400 mt-1">
-                                        Complete history of all trips
-                                    </CardDescription>
+                    {/* ============ VALIDATION TAB ============ */}
+                    <TabsContent value="validation" className="space-y-4 mt-6">
+                        <Card className="dark:bg-slate-800/80 dark:border-slate-700">
+                            <CardHeader className="border-b dark:border-slate-700">
+                                <div className="flex items-center justify-between">
+                                    <div>
+                                        <CardTitle className="flex items-center gap-2 text-slate-800 dark:text-white">
+                                            <FileCheck className="h-5 w-5 text-indigo-500" />
+                                            Ready for Validation
+                                        </CardTitle>
+                                        <CardDescription className="dark:text-slate-400 mt-1">
+                                            These trips are completed and need GSO validation to close
+                                        </CardDescription>
+                                    </div>
+                                    <Badge className="bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 border-indigo-500/30">
+                                        {filteredValidation.length} trips
+                                    </Badge>
                                 </div>
-                                <Badge className="bg-blue-500/20 text-blue-600 dark:text-blue-400 border-blue-500/30">
-                                    {filteredAllTrips.length} tickets
-                                </Badge>
-                            </div>
-                        </CardHeader>
-                        <CardContent className="pt-6">
-                            <TicketTable
-                                tickets={filteredAllTrips}
-                                onView={(id) => navigate(`/gso/tickets/${id}`)}
-                                isLoading={allTripsLoading}
-                                showActions={true}
-                                maxHeight="450px"
-                            />
-                        </CardContent>
-                    </Card>
-                </TabsContent>
+                            </CardHeader>
+                            <CardContent className="pt-6">
+                                <TicketTable
+                                    tickets={filteredValidation}
+                                    showValidate={true}
+                                    onView={(id) => navigate(`/gso/tickets/${id}`)}
+                                    onValidate={(ticket) => {
+                                        setSelectedTicket(ticket);
+                                        setShowValidateDialog(true);
+                                    }}
+                                    isLoading={validationLoading}
+                                    showActions={true}
+                                    maxHeight="320px"
+                                />
+                            </CardContent>
+                        </Card>
+                    </TabsContent>
+                </Tabs>
+            </div>
 
-                {/* Validation Tab */}
-                <TabsContent value="validation" className="space-y-4 mt-6">
-                    <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-                        <CardHeader className="border-b dark:border-slate-700">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <CardTitle className="flex items-center gap-2 text-slate-800 dark:text-white">
-                                        <FileCheck className="h-5 w-5 text-indigo-500" />
-                                        Ready for Validation
-                                    </CardTitle>
-                                    <CardDescription className="dark:text-slate-400 mt-1">
-                                        These trips are completed and need GSO
-                                        validation to close
-                                    </CardDescription>
-                                </div>
-                                <Badge className="bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 border-indigo-500/30">
-                                    {filteredValidation.length} trips
-                                </Badge>
-                            </div>
-                        </CardHeader>
-                        <CardContent className="pt-6">
-                            <TicketTable
-                                tickets={filteredValidation}
-                                showValidate={true}
-                               onView={(id) => navigate(`/gso/tickets/${id}`)}
-                                onValidate={(ticket) => {
-                                    setSelectedTicket(ticket);
-                                    setShowValidateDialog(true);
-                                }}
-                                isLoading={validationLoading}
-                                showActions={true}
-                                maxHeight="450px"
-                            />
-                        </CardContent>
-                    </Card>
-                </TabsContent>
+               {/* ✅ Trip History Widget — under the chart */}
+            <TripHistoryWidget isLoading={isLoading} />
 
-                {/* Cancelled Tab */}
-                <TabsContent value="cancelled" className="space-y-4 mt-6">
-                    <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-                        <CardHeader className="border-b dark:border-slate-700">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <CardTitle className="flex items-center gap-2 text-slate-800 dark:text-white">
-                                        <Ban className="h-5 w-5 text-red-500" />
-                                        Cancelled Trip Tickets
-                                    </CardTitle>
-                                    <CardDescription className="dark:text-slate-400 mt-1">
-                                        These trips have been cancelled. You can
-                                        create new tickets for these trips.
-                                    </CardDescription>
-                                </div>
-                                <Badge className="bg-red-500/20 text-red-600 dark:text-red-400 border-red-500/30">
-                                    {filteredCancelled.length} tickets
-                                </Badge>
-                            </div>
-                        </CardHeader>
-                        <CardContent className="pt-6">
-                            <TicketTable
-                                tickets={filteredCancelled}
-                               onView={(id) => navigate(`/gso/tickets/${id}`)}
-                                isLoading={cancelledLoading}
-                                showActions={true}
-                                maxHeight="450px"
-                            />
-                        </CardContent>
-                    </Card>
-                </TabsContent>
-            </Tabs>
-
-           
 
             {/* Cancel Dialog */}
             <Dialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
