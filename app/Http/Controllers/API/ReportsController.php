@@ -58,9 +58,12 @@ class ReportsController extends Controller
             });
         }
 
-        $fuelReceipts = $query->get();
-
-        $totalTrips = $fuelReceipts->unique('gas_slip.trip_ticket_id')->count();
+        $fuelReceipts = $query->get();$totalTrips = $fuelReceipts
+    ->unique(function ($receipt) {
+        return $receipt->gasSlip?->trip_ticket_id;
+    })
+    ->count();
+       
         $totalLiters = $fuelReceipts->sum('liters_availed');
         $totalCost = $fuelReceipts->sum('amount_on_receipt');
         $totalDistance = $this->calculateTotalDistance($fuelReceipts);
@@ -97,7 +100,7 @@ class ReportsController extends Controller
             $distance = $this->calculateTotalDistance($group);
             $liters = $group->sum('liters_availed');
             $cost = $group->sum('amount_on_receipt');
-            $trips = $group->unique('gas_slip.trip_ticket_id')->count();
+                       $trips = $group->unique(fn ($r) => $r->gasSlip?->trip_ticket_id)->count();
 
             return [
                 'vehicle_id' => $vehicle ? $vehicle->vehicle_id : null,
@@ -129,7 +132,7 @@ class ReportsController extends Controller
             $distance = $this->calculateTotalDistance($group);
             $liters = $group->sum('liters_availed');
             $cost = $group->sum('amount_on_receipt');
-            $trips = $group->unique('gas_slip.trip_ticket_id')->count();
+                      $trips = $group->unique(fn ($r) => $r->gasSlip?->trip_ticket_id)->count();
 
             return [
                 'department_id' => $department ? $department->department_id : null,
@@ -155,7 +158,7 @@ class ReportsController extends Controller
         })->map(function($group) {
             $distance = $this->calculateTotalDistance($group);
             $liters = $group->sum('liters_availed');
-            $trips = $group->unique('gas_slip.trip_ticket_id')->count();
+                       $trips = $group->unique(fn ($r) => $r->gasSlip?->trip_ticket_id)->count();
 
             return [
                 'period' => $group->first()->created_at ? Carbon::parse($group->first()->created_at)->format('M Y') : 'Unknown',
@@ -174,7 +177,9 @@ class ReportsController extends Controller
             'No Data' => 0,
         ];
 
-        foreach ($fuelReceipts->groupBy('gas_slip.trip_ticket_id') as $receipts) {
+               $groupedByTrip = $fuelReceipts->groupBy(fn ($r) => $r->gasSlip?->trip_ticket_id);
+
+        foreach ($groupedByTrip as $receipts) {
             $distance = $this->calculateTotalDistance($receipts);
             $liters = $receipts->sum('liters_availed');
             $rating = $this->getEfficiencyRating($liters, $distance);
@@ -2984,7 +2989,7 @@ private function buildBillingStatementPDFHTML($reportData)
     $html .= '</div>';
 
     foreach ($departments as $dept) {
-        $html .= '<div class="dept-header">FOR ' . e($dept['department_code']) . ' — ' . e($dept['department_name']) . '</div>';
+        $html .= '<div class="dept-header">' . e($dept['department_code']) . ' — ' . e($dept['department_name']) . '</div>';
         $html .= '<table><thead><tr>';
         $html .= '<th>NO.</th><th>CHARGE INVOICE NO.</th><th>PLATE NO.</th><th>DATE</th>';
         $html .= '<th>CONTROL NO.</th><th>LUBRICANT</th>';

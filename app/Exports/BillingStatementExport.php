@@ -34,7 +34,7 @@ class BillingStatementExport implements FromArray, WithTitle, WithEvents
 
         foreach ($departments as $dept) {
             // Department header row
-            $rows[] = ['FOR ' . $dept['department_code'] . ' — ' . $dept['department_name']];
+            $rows[] = [' ' . $dept['department_code'] . ' — ' . $dept['department_name']];
 
             // Column header row
             $rows[] = [

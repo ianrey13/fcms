@@ -1,16 +1,5 @@
 // src/pages/gso/GsoCreateTrip.jsx
-// ============================================
-// Multi-stop trip tickets (max 5 stops)
-// Distance = sum of all legs × 2 (round trip)
-// FIXED: Fuel price ALWAYS from backend (uses DB settings)
-// FIXED: Cache clears on vehicle change (fresh fuel fetch)
-// FIXED: Debounce + cache to prevent 429 rate limit
-// FIXED: Map restored with multi-stop route display
-// FIXED: Themed Trip Estimate card (dark mode ready)
-// FIXED: Plain object cache (no Map naming collision)
-// FIXED: Dark mode visibility + date picker icon
-// FIXED: Dedupe suggestions + destination string
-// ============================================
+
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
@@ -866,16 +855,22 @@ const GsoCreateTrip = () => {
         return mo?.department_id;
     }, [departments]);
 
-    const availableVehicles = useMemo(() => {
+        const availableVehicles = useMemo(() => {
         if (!formData.department_id) return [];
         const deptId = parseInt(formData.department_id);
         return vehicles.filter(v => {
+            // ✅ Exclude vehicles under maintenance
+            if (v.maintenance_flag === true) return false;
+
+            // ✅ Exclude inactive / unserviceable vehicles
+            if (v.status && v.status !== "active") return false;
+
+            // ✅ Match department or shared MO vehicles
             if (v.department_id === deptId) return true;
             if (sharedVehicleDeptId && v.department_id === sharedVehicleDeptId) return true;
             return false;
         });
     }, [vehicles, formData.department_id, sharedVehicleDeptId]);
-
     // ============================================
     // HANDLERS
     // ============================================
@@ -1261,9 +1256,13 @@ const GsoCreateTrip = () => {
                                         required
                                         error={errors.vehicle_id}
                                         touched={touched.vehicle_id}
-                                        helper={sharedVehicleDeptId && formData.department_id
-                                            ? "Mayor's Office vehicles are shared across all departments"
-                                            : null}
+                                                                               helper={
+                                            formData.department_id && availableVehicles.length === 0
+                                                ? "No active vehicles available for this department (some may be under maintenance or unserviceable)"
+                                                : sharedVehicleDeptId && formData.department_id
+                                                    ? "Mayor's Office vehicles are shared across all departments"
+                                                    : null
+                                        }
                                     >
                                         <Select
                                             value={formData.vehicle_id?.toString() || undefined}

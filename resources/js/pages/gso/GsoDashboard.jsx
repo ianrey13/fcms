@@ -224,6 +224,29 @@ const formatDateShort = (dateString) => {
     }
 };
 
+// ============================================
+// TIMESTAMP FORMATTER — "23/09/2026, 6:29 PM"
+// ⬆ MOVED ABOVE TripHistoryWidget so it's always in scope
+// ============================================
+
+const formatLogTimestamp = (dateString) => {
+    if (!dateString) return "";
+    try {
+        const date = new Date(dateString);
+        const day = String(date.getDate()).padStart(2, "0");
+        const month = String(date.getMonth() + 1).padStart(2, "0");
+        const year = date.getFullYear();
+        const time = date.toLocaleTimeString("en-US", {
+            hour: "numeric",
+            minute: "2-digit",
+            hour12: true,
+        });
+        return `${day}/${month}/${year}, ${time}`;
+    } catch {
+        return "";
+    }
+};
+
 const formatTime = (dateString) => {
     if (!dateString) return "Just now";
     const date = new Date(dateString);
@@ -591,7 +614,7 @@ const ChartFallback = () => (
 );
 
 // ============================================
-// ✅ TRIP HISTORY WIDGET — mirrors ActivityLogs.jsx format
+// ✅ TRIP HISTORY WIDGET — feed-style, mirrors ActivityLogs.jsx
 // ============================================
 
 const TripHistoryWidget = ({ isLoading }) => {
@@ -602,8 +625,12 @@ const TripHistoryWidget = ({ isLoading }) => {
                 const res = await gsoAPI.getActivityLogs();
                 // Mirror ActivityLogs.jsx: expects { data: { logs: [...] } }
                 const logs = res?.data?.data?.logs || res?.data?.logs || [];
-                console.log("🔍 [TripHistoryWidget] logs count:", logs.length);
+                console.log("🔍 [TripHistoryWidget] total logs:", logs.length);
                 if (logs.length > 0) {
+                    console.log(
+                        "🔍 [TripHistoryWidget] sources present:",
+                        [...new Set(logs.map((l) => l?.source))],
+                    );
                     console.log("🔍 [TripHistoryWidget] first log:", logs[0]);
                 }
                 return Array.isArray(logs) ? logs : [];
@@ -623,7 +650,12 @@ const TripHistoryWidget = ({ isLoading }) => {
 
     // Filter to trip_history entries only + take latest 5
     const recent = useMemo(() => {
-        const trips = activityLogs.filter((log) => log?.source === "trip_history");
+        const trips = activityLogs.filter(
+            (log) => log?.source === "trip_history",
+        );
+        console.log(
+            `🔍 [TripHistoryWidget] ${trips.length} trip_history entries`,
+        );
         return trips.slice(0, 5);
     }, [activityLogs]);
 
@@ -678,6 +710,9 @@ const TripHistoryWidget = ({ isLoading }) => {
                         <p className="text-sm text-slate-500 dark:text-slate-400">
                             No trip activity yet
                         </p>
+                        <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
+                            (Check browser console for raw log payload)
+                        </p>
                     </div>
                 ) : (
                     <div className="divide-y divide-slate-100 dark:divide-slate-700/60">
@@ -704,28 +739,6 @@ const TripHistoryWidget = ({ isLoading }) => {
             </CardContent>
         </Card>
     );
-};
-
-// ============================================
-// TIMESTAMP FORMATTER — "23/09/2026, 6:29 PM"
-// ============================================
-
-const formatLogTimestamp = (dateString) => {
-    if (!dateString) return "";
-    try {
-        const date = new Date(dateString);
-        const day = String(date.getDate()).padStart(2, "0");
-        const month = String(date.getMonth() + 1).padStart(2, "0");
-        const year = date.getFullYear();
-        const time = date.toLocaleTimeString("en-US", {
-            hour: "numeric",
-            minute: "2-digit",
-            hour12: true,
-        });
-        return `${day}/${month}/${year}, ${time}`;
-    } catch {
-        return "";
-    }
 };
 
 // ============================================
@@ -1356,7 +1369,6 @@ const GsoDashboard = () => {
                 </CardContent>
             </Card>
 
-         
             {/* ✅ Search Bar — above the tabs, filters both */}
             <div className="relative">
                 <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
@@ -1514,9 +1526,8 @@ const GsoDashboard = () => {
                 </Tabs>
             </div>
 
-               {/* ✅ Trip History Widget — under the chart */}
+            {/* ✅ Trip History Widget — below the tabs */}
             <TripHistoryWidget isLoading={isLoading} />
-
 
             {/* Cancel Dialog */}
             <Dialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>

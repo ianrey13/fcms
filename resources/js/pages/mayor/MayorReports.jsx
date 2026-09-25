@@ -1695,7 +1695,7 @@ const MayorReports = () => {
                                     >
                                         <div className="text-center border-y-2 border-slate-800 dark:border-slate-200 py-2">
                                             <h3 className="font-bold text-base tracking-wide text-slate-900 dark:text-white">
-                                                FOR {dept.department_code}
+                                               {dept.department_code}
                                             </h3>
                                             {dept.department_name &&
                                                 dept.department_name !==

@@ -122,11 +122,10 @@ const FuelConsumptionReport = ({
                         </Select>
                     </div>
 
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
                         <StatsCard title="Total Trips" value={summary.total_trips || 0} icon={Truck} color="from-blue-500 to-blue-600" />
                         <StatsCard title="Total Fuel" value={`${formatNumber(summary.total_fuel_liters || 0)} L`} icon={Fuel} color="from-emerald-500 to-emerald-600" />
                         <StatsCard title="Total Cost" value={formatCurrency(summary.total_fuel_cost || 0)} icon={DollarSign} color="from-purple-500 to-purple-600" />
-                        <StatsCard title="Avg Km/L" value={summary.average_km_per_liter || 0} icon={Gauge} color="from-orange-500 to-orange-600" />
                     </div>
 
                     <div className="overflow-x-auto max-h-[400px] overflow-y-auto border rounded-lg">
