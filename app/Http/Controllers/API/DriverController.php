@@ -31,13 +31,17 @@ class DriverController extends Controller
     {
         try {
             $departmentId = $request->get('department_id');
-            $query = Driver::with('user.department');
 
-            if ($departmentId) {
-                $query->whereHas('user', function ($q) use ($departmentId) {
-                    $q->where('department_id', $departmentId);
+            $query = Driver::with('user.department')
+                // ✅ Only active driver records
+                ->where('status', 'active')
+                // ✅ Only drivers whose user account is also active
+                ->whereHas('user', function ($q) use ($departmentId) {
+                    $q->where('status', 'active');
+                    if ($departmentId) {
+                        $q->where('department_id', $departmentId);
+                    }
                 });
-            }
 
             $drivers = $query->get()->map(function ($driver) {
                 return [
@@ -804,67 +808,68 @@ class DriverController extends Controller
             return response()->json(['success' => false, 'message' => 'Failed to fetch trips: ' . $e->getMessage()], 500);
         }
     }
-public function getActiveTrip(Request $request)
-{
-    try {
-        $user = $request->user();
-        $driver = Driver::where('user_id', $user->user_id)->first();
 
-        if (!$driver) {
-            return response()->json(['success' => false, 'message' => 'Driver record not found'], 404);
+    public function getActiveTrip(Request $request)
+    {
+        try {
+            $user = $request->user();
+            $driver = Driver::where('user_id', $user->user_id)->first();
+
+            if (!$driver) {
+                return response()->json(['success' => false, 'message' => 'Driver record not found'], 404);
+            }
+
+            // ✅ Priority order: in_transit → acknowledged → funds_issued → completed
+            // Only return trips that have a valid destination and vehicle
+            $activeTrip = TripTicket::with(['vehicle', 'department', 'gasSlip.fuelReceipt', 'driver.user'])
+                ->where('driver_id', $driver->driver_id)
+                ->whereIn('status', ['in_transit', 'acknowledged', 'funds_issued', 'completed', 'pending_gso_ticket'])
+                ->whereNotNull('destination')
+                ->whereNotNull('vehicle_id')
+                ->orderByRaw("FIELD(status, 'in_transit', 'acknowledged', 'funds_issued', 'pending_gso_ticket', 'completed')")
+                ->orderBy('updated_at', 'desc')
+                ->first();
+
+            if (!$activeTrip) {
+                return response()->json(['success' => true, 'data' => null, 'message' => 'No active trip']);
+            }
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'trip_ticket_id' => $activeTrip->trip_ticket_id,
+                    'trip_ticket_number' => $activeTrip->trip_ticket_number,
+                    'destination' => $activeTrip->destination,
+                    'purpose' => $activeTrip->purpose,
+                    'trip_date' => $activeTrip->trip_date,
+                    'status' => $activeTrip->status,
+                    'charge_to' => $activeTrip->charge_to,
+                    'amount_released' => $activeTrip->gasSlip ? (float) $activeTrip->gasSlip->amount_released : 0,
+                    'estimated_fuel_liters' => $activeTrip->estimated_fuel_liters,
+                    'estimated_distance_km' => $activeTrip->estimated_distance_km,
+                    'actual_distance_km' => $activeTrip->actual_distance_km,
+                    'actual_fuel_used' => $activeTrip->actual_fuel_used,
+                    'has_insufficient_budget' => (bool) ($activeTrip->has_insufficient_budget ?? false),
+                    'budget_shortage' => (float) ($activeTrip->budget_shortage ?? 0),
+                    'vehicle' => $activeTrip->vehicle ? [
+                        'vehicle_id' => $activeTrip->vehicle->vehicle_id,
+                        'plate_number' => $activeTrip->vehicle->plate_number,
+                        'vehicle_model' => $activeTrip->vehicle->vehicle_model,
+                        'fuel_type' => $activeTrip->vehicle->fuel_type,
+                    ] : null,
+                    'driver' => $activeTrip->driver && $activeTrip->driver->user ? [
+                        'full_name' => $activeTrip->driver->user->full_name,
+                    ] : null,
+                    'department_name' => $activeTrip->department ? $activeTrip->department->department_name : null,
+                ]
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Get active trip error: ' . $e->getMessage());
+            return response()->json(['success' => false, 'message' => 'Failed to fetch active trip: ' . $e->getMessage()], 500);
         }
-
-        // ✅ Priority order: in_transit → acknowledged → funds_issued → completed
-        // Only return trips that have a valid destination and vehicle
-        $activeTrip = TripTicket::with(['vehicle', 'department', 'gasSlip.fuelReceipt', 'driver.user'])
-            ->where('driver_id', $driver->driver_id)
-          ->whereIn('status', ['in_transit', 'acknowledged', 'funds_issued', 'completed', 'pending_gso_ticket'])
-            ->whereNotNull('destination')
-            ->whereNotNull('vehicle_id')
-           ->orderByRaw("FIELD(status, 'in_transit', 'acknowledged', 'funds_issued', 'pending_gso_ticket', 'completed')")
-            ->orderBy('updated_at', 'desc')
-            ->first();
-
-        if (!$activeTrip) {
-            return response()->json(['success' => true, 'data' => null, 'message' => 'No active trip']);
-        }
-
-        return response()->json([
-            'success' => true,
-            'data' => [
-                'trip_ticket_id' => $activeTrip->trip_ticket_id,
-                'trip_ticket_number' => $activeTrip->trip_ticket_number,
-                'destination' => $activeTrip->destination,
-                'purpose' => $activeTrip->purpose,
-                'trip_date' => $activeTrip->trip_date,
-                'status' => $activeTrip->status,
-                'charge_to' => $activeTrip->charge_to,
-                'amount_released' => $activeTrip->gasSlip ? (float) $activeTrip->gasSlip->amount_released : 0,
-                'estimated_fuel_liters' => $activeTrip->estimated_fuel_liters,
-                'estimated_distance_km' => $activeTrip->estimated_distance_km,
-                'actual_distance_km' => $activeTrip->actual_distance_km,
-                'actual_fuel_used' => $activeTrip->actual_fuel_used,
-                'has_insufficient_budget' => (bool) ($activeTrip->has_insufficient_budget ?? false),
-                'budget_shortage' => (float) ($activeTrip->budget_shortage ?? 0),
-                'vehicle' => $activeTrip->vehicle ? [
-                    'vehicle_id' => $activeTrip->vehicle->vehicle_id,
-                    'plate_number' => $activeTrip->vehicle->plate_number,
-                    'vehicle_model' => $activeTrip->vehicle->vehicle_model,
-                    'fuel_type' => $activeTrip->vehicle->fuel_type,
-                ] : null,
-                'driver' => $activeTrip->driver && $activeTrip->driver->user ? [
-                    'full_name' => $activeTrip->driver->user->full_name,
-                ] : null,
-                'department_name' => $activeTrip->department ? $activeTrip->department->department_name : null,
-            ]
-        ]);
-    } catch (\Exception $e) {
-        Log::error('Get active trip error: ' . $e->getMessage());
-        return response()->json(['success' => false, 'message' => 'Failed to fetch active trip: ' . $e->getMessage()], 500);
     }
-}
 
-        public function acknowledgeFunds(Request $request, $id)
+    public function acknowledgeFunds(Request $request, $id)
     {
         try {
             $user = $request->user();
@@ -883,7 +888,6 @@ public function getActiveTrip(Request $request)
             }
 
             // ✅ Idempotency: if the driver already acknowledged, don't re-process
-            // and don't re-send notifications (protects against double-tap races)
             $existingGasSlip = GasSlip::where('trip_ticket_id', $id)->first();
             if ($existingGasSlip && $existingGasSlip->acknowledged_at) {
                 return response()->json([
@@ -897,7 +901,7 @@ public function getActiveTrip(Request $request)
                 ]);
             }
 
-           if (!in_array($ticket->status, ['funds_issued', 'pending_gso_ticket'])) {
+            if (!in_array($ticket->status, ['funds_issued', 'pending_gso_ticket'])) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Cannot acknowledge. Current status: ' . $ticket->status . '. Required: funds_issued'
@@ -941,8 +945,7 @@ public function getActiveTrip(Request $request)
             }
 
             // ✅ PM RULE: Once the driver acknowledges, clear their own stale
-            // fund/trip notifications for this trip. They already acted on it,
-            // so keeping them in the unread badge is misleading.
+            // fund/trip notifications for this trip.
             Notification::where('recipient_user_id', $user->user_id)
                 ->where('entity_type', 'trip_ticket')
                 ->where('entity_id', $ticket->trip_ticket_id)
@@ -965,8 +968,7 @@ public function getActiveTrip(Request $request)
         }
     }
 
-
-       public function startTrip(Request $request, $id)
+    public function startTrip(Request $request, $id)
     {
         try {
             $user = $request->user();
@@ -1024,7 +1026,6 @@ public function getActiveTrip(Request $request)
                 $gasSlip->save();
                 Log::info("Auto-acknowledged gas slip for ticket {$ticket->trip_ticket_number} on startTrip");
 
-                // ✅ PM RULE: Clear driver's stale fund notifications on auto-acknowledge
                 Notification::where('recipient_user_id', $user->user_id)
                     ->where('entity_type', 'trip_ticket')
                     ->where('entity_id', $ticket->trip_ticket_id)
@@ -1089,9 +1090,6 @@ public function getActiveTrip(Request $request)
         }
     }
 
-    /**
-     * ✅ Complete trip — broadcasts TripCompleted so GSO frontend updates instantly
-     */
     public function completeTrip(Request $request, $id)
     {
         try {
@@ -1217,7 +1215,6 @@ public function getActiveTrip(Request $request)
 
             DB::commit();
 
-            // ✅ Broadcast trip completion so GSO Live Tracking removes the marker instantly
             try {
                 broadcast(new TripCompleted(
                     $ticket->trip_ticket_id,
@@ -1295,14 +1292,9 @@ public function getActiveTrip(Request $request)
         }
     }
 
-    /**
-     * ✅ UPDATED: Upload receipt — PHOTO ONLY
-     * Liters + amount are entered by GSO/MO during validation.
-     */
     public function uploadReceipt(Request $request, $id)
     {
         try {
-            // ✅ Only the photo is required now
             $validator = Validator::make($request->all(), [
                 'receipt' => 'required|image|mimes:jpeg,png,jpg|max:5120',
             ]);
@@ -1330,7 +1322,6 @@ public function getActiveTrip(Request $request)
                 return response()->json(['success' => false, 'message' => 'Trip ticket not found'], 404);
             }
 
-            // ✅ Block uploads for closed/cancelled/validated trips
             if (in_array($ticket->status, ['pending_gso_validation', 'closed', 'cancelled', 'rejected'])) {
                 return response()->json([
                     'success' => false,
@@ -1345,17 +1336,14 @@ public function getActiveTrip(Request $request)
                 return response()->json(['success' => false, 'message' => 'Gas slip not found'], 404);
             }
 
-            // ✅ Save photo only — no liters, no amount
             $file = $request->file('receipt');
             $extension = $file->getClientOriginalExtension() ?: 'jpg';
             $filename = 'receipt_' . $id . '_' . time() . '_' . Str::uuid() . '.' . $extension;
             $file->move(public_path('receipts'), $filename);
             $dbPath = 'receipts/' . $filename;
 
-            // Upsert fuel receipt
             $fuelReceipt = FuelReceipt::firstOrNew(['gas_slip_id' => $gasSlip->gas_slip_id]);
 
-            // ✅ Delete old photo if replacing
             if ($fuelReceipt->receipt_photo_path && $fuelReceipt->receipt_photo_path !== $dbPath) {
                 $oldPath = public_path($fuelReceipt->receipt_photo_path);
                 if (file_exists($oldPath)) {
@@ -1365,8 +1353,6 @@ public function getActiveTrip(Request $request)
 
             $fuelReceipt->receipt_photo_path = $dbPath;
             $fuelReceipt->receipt_uploaded_at = now();
-            // ✅ Do NOT touch liters_availed / amount_on_receipt / unit_price
-            // They will be filled in by GSO/MO during validation.
             $fuelReceipt->save();
 
             return response()->json([
@@ -1477,6 +1463,8 @@ public function getActiveTrip(Request $request)
 
             $drivers = User::where('role', 'driver')
                 ->where('status', 'active')
+                // ✅ Only users who have an active driver record
+                ->whereHas('driver', fn($q) => $q->where('status', 'active'))
                 ->with('driver')
                 ->when($departmentId, function ($query) use ($departmentId) {
                     $query->where('department_id', $departmentId);
