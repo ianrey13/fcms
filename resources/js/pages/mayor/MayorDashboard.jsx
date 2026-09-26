@@ -1,6 +1,6 @@
 // src/pages/mayor/MayorDashboard.jsx
 
-import React, { useMemo, useCallback } from "react";
+import React, { useMemo, useCallback, useState } from "react"; // ★ CHANGED: added useState
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
@@ -393,6 +393,9 @@ const MayorDashboard = () => {
     const { isConnected } = useRealtime();
     const queryClient = useQueryClient();
 
+    // ★ NEW: Department filter for the donut chart
+    const [donutDepartmentId, setDonutDepartmentId] = useState("all");
+
     const fetchAllData = useCallback(() => {
         queryClient.invalidateQueries({ queryKey: ["mayor-approved-tickets"] });
         queryClient.invalidateQueries({
@@ -510,18 +513,18 @@ const MayorDashboard = () => {
             department_id: dept.department_id,
             department_name: dept.department_name,
             allocated: parseFloat(
-                dept.allocated_amount ||
-                    dept.annual_amount ||
-                    dept.allocated ||
+                dept.allocated_amount ??
+                    dept.annual_amount ??
+                    dept.allocated ??
                     0,
             ),
             spent: parseFloat(
-                dept.spent_amount || dept.used_amount || dept.spent || 0,
+                dept.spent_amount ?? dept.used_amount ?? dept.spent ?? 0,
             ),
-            remaining: parseFloat(dept.remaining_amount || 0),
+            remaining: parseFloat(dept.remaining_amount ?? 0),
             has_budget: dept.has_budget || false,
             utilization: parseFloat(
-                dept.utilization_percentage || dept.utilization || 0,
+                dept.utilization_percentage ?? dept.utilization ?? 0,
             ),
             fiscal_year: dept.fiscal_year || activeFiscalYear,
         }));
@@ -531,6 +534,29 @@ const MayorDashboard = () => {
         return formatted;
     }, [budgetData, activeFiscalYear]);
 
+    // ★ NEW: Filtered subset for the donut chart
+    const donutDepartmentBudgets = useMemo(() => {
+        if (donutDepartmentId === "all") return departmentBudgets;
+        return departmentBudgets.filter(
+            (d) => String(d.department_id) === String(donutDepartmentId),
+        );
+    }, [departmentBudgets, donutDepartmentId]);
+
+    // ★ NEW: Totals scoped to the donut's filtered selection
+    const donutTotals = useMemo(() => {
+        const totalAllocated = donutDepartmentBudgets.reduce(
+            (s, d) => s + d.allocated,
+            0,
+        );
+        const totalUsed = donutDepartmentBudgets.reduce(
+            (s, d) => s + d.spent,
+            0,
+        );
+        const totalRemaining = Math.max(totalAllocated - totalUsed, 0);
+        return { totalAllocated, totalUsed, totalRemaining };
+    }, [donutDepartmentBudgets]);
+
+    // ★ CHANGED: renamed local var to avoid confusion with donutTotals
     const totals = useMemo(() => {
         const totalAllocated = departmentBudgets.reduce(
             (s, d) => s + d.allocated,
@@ -723,25 +749,64 @@ const MayorDashboard = () => {
                                     "dark:border-slate-700/50 dark:bg-slate-800/30",
                                 )}
                             >
-                                <div className="mb-5 flex items-center gap-3">
-                                    <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-100 dark:bg-blue-500/20">
-                                        <PieChart className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-                                    </span>
-                                    <div>
-                                        <h3 className="text-base font-semibold text-slate-900 dark:text-white">
-                                            Annual Budget Utilization
-                                        </h3>
-                                        <p className="text-xs text-slate-500 dark:text-slate-400">
-                                            FY {activeFiscalYear} · Total Budget
-                                            vs. Utilized vs. Remaining
-                                        </p>
+                                {/* ★ CHANGED: header now includes department filter */}
+                                <div className="mb-5 flex items-start justify-between gap-3">
+                                    <div className="flex items-center gap-3 min-w-0">
+                                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-100 dark:bg-blue-500/20">
+                                            <PieChart className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                                        </span>
+                                        <div className="min-w-0">
+                                            <h3 className="text-base font-semibold text-slate-900 dark:text-white truncate">
+                                                Annual Budget Utilization
+                                            </h3>
+                                            <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                                                FY {activeFiscalYear} ·{" "}
+                                                {donutDepartmentId === "all"
+                                                    ? "All departments"
+                                                    : departmentBudgets.find(
+                                                          (d) =>
+                                                              String(
+                                                                  d.department_id,
+                                                              ) ===
+                                                              String(
+                                                                  donutDepartmentId,
+                                                              ),
+                                                      )?.department_name ||
+                                                      "Department"}
+                                            </p>
+                                        </div>
                                     </div>
+                                    <select
+                                        value={donutDepartmentId}
+                                        onChange={(e) =>
+                                            setDonutDepartmentId(e.target.value)
+                                        }
+                                        className={cn(
+                                            "shrink-0 rounded-lg border px-2.5 py-1.5 text-xs font-medium",
+                                            "border-slate-200 bg-white text-slate-700",
+                                            "dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200",
+                                            "focus:outline-none focus:ring-2 focus:ring-blue-500/40",
+                                            "max-w-[160px] truncate",
+                                        )}
+                                    >
+                                        <option value="all">
+                                            All Departments
+                                        </option>
+                                        {departmentBudgets.map((d) => (
+                                            <option
+                                                key={d.department_id}
+                                                value={d.department_id}
+                                            >
+                                                {d.department_name}
+                                            </option>
+                                        ))}
+                                    </select>
                                 </div>
                                 <div className="flex-1 flex flex-col">
                                     <BudgetUtilizationDonut
-                                        total={totals.totalAllocated}
-                                        used={totals.totalUsed}
-                                        remaining={totals.totalRemaining}
+                                        total={donutTotals.totalAllocated}
+                                        used={donutTotals.totalUsed}
+                                        remaining={donutTotals.totalRemaining}
                                     />
                                 </div>
                             </div>
@@ -816,7 +881,7 @@ const MayorDashboard = () => {
                                                             >
                                                                 <td className="py-3.5 pr-4 text-slate-600 dark:text-slate-300 whitespace-nowrap">
                                                                     {formatDateShort(
-                                                                        ticket.trip_date ||
+                                                                        ticket.trip_date ??
                                                                             ticket.created_at,
                                                                     )}
                                                                 </td>
@@ -826,10 +891,10 @@ const MayorDashboard = () => {
                                                                 </td>
                                                                 <td className="py-3.5 pr-4 text-right text-slate-700 dark:text-slate-200 whitespace-nowrap">
                                                                     {formatCurrency(
-                                                                        ticket.amount_released ||
+                                                                        ticket.amount_released ??
                                                                             ticket
                                                                                 .gas_slip
-                                                                                ?.amount_released ||
+                                                                                ?.amount_released ??
                                                                             0,
                                                                     )}
                                                                 </td>
