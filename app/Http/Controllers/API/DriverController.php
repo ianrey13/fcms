@@ -818,10 +818,10 @@ public function getActiveTrip(Request $request)
         // Only return trips that have a valid destination and vehicle
         $activeTrip = TripTicket::with(['vehicle', 'department', 'gasSlip.fuelReceipt', 'driver.user'])
             ->where('driver_id', $driver->driver_id)
-            ->whereIn('status', ['in_transit', 'acknowledged', 'funds_issued', 'completed'])
+          ->whereIn('status', ['in_transit', 'acknowledged', 'funds_issued', 'completed', 'pending_gso_ticket'])
             ->whereNotNull('destination')
             ->whereNotNull('vehicle_id')
-            ->orderByRaw("FIELD(status, 'in_transit', 'acknowledged', 'funds_issued', 'completed')")
+           ->orderByRaw("FIELD(status, 'in_transit', 'acknowledged', 'funds_issued', 'pending_gso_ticket', 'completed')")
             ->orderBy('updated_at', 'desc')
             ->first();
 
@@ -897,7 +897,7 @@ public function getActiveTrip(Request $request)
                 ]);
             }
 
-            if ($ticket->status !== 'funds_issued') {
+           if (!in_array($ticket->status, ['funds_issued', 'pending_gso_ticket'])) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Cannot acknowledge. Current status: ' . $ticket->status . '. Required: funds_issued'
@@ -994,7 +994,7 @@ public function getActiveTrip(Request $request)
                 return response()->json(['success' => false, 'message' => 'Trip ticket not found'], 404);
             }
 
-            $allowedStatuses = ['acknowledged', 'funds_issued', 'completed'];
+            $allowedStatuses = ['acknowledged', 'funds_issued', 'completed', 'pending_gso_ticket'];
             if (!in_array($ticket->status, $allowedStatuses)) {
                 return response()->json([
                     'success' => false,

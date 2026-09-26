@@ -2,6 +2,7 @@
 
 namespace App\Models;
 use App\Traits\LogsActivity;
+use App\Models\TripTicket;
 
 use Illuminate\Database\Eloquent\Model;
 
@@ -14,6 +15,7 @@ class GasSlip extends Model
     public $timestamps = true;
     
     protected $fillable = [
+         'control_number',      
         'trip_ticket_id',
         'created_by',
         'amount_released',
@@ -91,4 +93,11 @@ class GasSlip extends Model
     {
         return $this->reconciliation_status === 'discrepancy';
     }
+
+    public function isPendingGsoTicket(): bool
+{
+    return $this->control_number !== null
+        && $this->tripTicket
+        && $this->tripTicket->status === TripTicket::STATUS_PENDING_GSO_TICKET;
+}
 }

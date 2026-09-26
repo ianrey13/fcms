@@ -11,9 +11,6 @@ return new class extends Migration
     {
         // ============================================================
         // 0. IDEMPOTENT CLEANUP
-        // MySQL DROP TABLES doesn't remove procedures/views/triggers,
-        // so we explicitly drop them here. This makes `migrate:fresh`
-        // safe to run repeatedly.
         // ============================================================
         DB::unprepared("DROP PROCEDURE IF EXISTS `proc_weekly_budget_reset`");
         DB::unprepared("DROP VIEW IF EXISTS `v_remaining_budget`");
@@ -48,12 +45,12 @@ return new class extends Migration
             $table->string('last_name', 50);
             $table->string('email', 150)->unique();
             $table->string('employee_number', 50)->nullable()->unique();
-            $table->string('password_hash', 255)->nullable();            
+            $table->string('password_hash', 255)->nullable();
             $table->enum('role', ['gso_office', 'mayors_office', 'driver', 'budget_office']);
             $table->boolean('can_drive')->default(false);
-           $table->string('push_token', 255)->nullable();
-$table->string('push_token_platform', 20)->nullable();
-$table->timestamp('push_token_updated_at')->nullable();
+            $table->string('push_token', 255)->nullable();
+            $table->string('push_token_platform', 20)->nullable();
+            $table->timestamp('push_token_updated_at')->nullable();
             $table->enum('status', ['active', 'inactive'])->default('active');
             $table->timestamp('created_at')->useCurrent();
             $table->timestamp('updated_at')->nullable();
@@ -114,7 +111,6 @@ $table->timestamp('push_token_updated_at')->nullable();
             $table->foreign('department_id')->references('department_id')->on('departments');
         });
 
-        // ✅ MERGED: dept_budget_policy now has dept_policy_id PK + composite unique on (department_id, fiscal_year)
         Schema::create('dept_budget_policy', function (Blueprint $table) {
             $table->bigIncrements('dept_policy_id');
             $table->unsignedBigInteger('department_id');
@@ -127,11 +123,11 @@ $table->timestamp('push_token_updated_at')->nullable();
             $table->foreign('department_id')->references('department_id')->on('departments');
         });
 
-        // ✅ MERGED: dept_budget_period now has fiscal_year + composite unique on (department_id, fiscal_year, week_start)
+        // ✅ fiscal_year is NOT NULL — prevents NULL-uniqueness bypass
         Schema::create('dept_budget_period', function (Blueprint $table) {
             $table->bigIncrements('period_id');
             $table->unsignedBigInteger('department_id');
-            $table->year('fiscal_year')->nullable();
+            $table->year('fiscal_year');
             $table->date('week_start');
             $table->date('week_end')->virtualAs('DATE_ADD(week_start, INTERVAL 4 DAY)');
             $table->decimal('allocated_amount', 12, 2)->default(0.00);
@@ -143,7 +139,6 @@ $table->timestamp('push_token_updated_at')->nullable();
 
             $table->unique(['department_id', 'fiscal_year', 'week_start'], 'dept_budget_period_dept_year_week_unique');
             $table->index(['department_id', 'status', 'week_start'], 'idx_budget_period_dept_status');
-            $table->index(['department_id', 'fiscal_year'], 'idx_budget_period_dept_year');
             $table->foreign('department_id')->references('department_id')->on('departments');
         });
 
@@ -184,8 +179,8 @@ $table->timestamp('push_token_updated_at')->nullable();
         });
 
         // ============================================================
-        // 3. VEHICLES — ✅ fuel_type includes diesel, regular, premium
-        //    (regular replaces the old 'gasoline' nomenclature)
+        // 3. VEHICLES
+        // ✅ Restored last_odometer_reading
         // ============================================================
         Schema::create('vehicles', function (Blueprint $table) {
             $table->bigIncrements('vehicle_id');
@@ -195,6 +190,7 @@ $table->timestamp('push_token_updated_at')->nullable();
             $table->enum('fuel_type', ['diesel', 'gasoline', 'premium']);
             $table->decimal('fuel_efficiency', 5, 2)->default(10.00);
             $table->decimal('current_fuel_balance', 10, 2)->default(0.00);
+            $table->decimal('last_odometer_reading', 10, 2)->nullable(); // ✅ RESTORED
             $table->decimal('fuel_capacity', 10, 2)->default(60.00);
             $table->enum('status', ['active', 'inactive'])->default('active');
             $table->boolean('maintenance_flag')->default(false);
@@ -207,6 +203,7 @@ $table->timestamp('push_token_updated_at')->nullable();
 
         // ============================================================
         // 4. TRIP TICKETS
+        // ✅ Added: source enum + pending_gso_ticket status
         // ============================================================
         Schema::create('trip_ticket', function (Blueprint $table) {
             $table->bigIncrements('trip_ticket_id');
@@ -217,18 +214,26 @@ $table->timestamp('push_token_updated_at')->nullable();
             $table->unsignedBigInteger('vehicle_id');
             $table->unsignedBigInteger('created_by_mo_user_id')->nullable();
             $table->boolean('submitted_by_staff')->default(true);
+
+            // ✅ NEW: source distinguishes staff / gso / mo_gas_slip origin
+            $table->enum('source', ['staff', 'gso', 'mo_gas_slip'])->default('staff');
+
             $table->timestamp('submitted_at')->useCurrent();
             $table->date('trip_date');
             $table->text('purpose');
             $table->string('destination', 255);
             $table->string('charge_to', 20);
             $table->string('passenger_name', 120)->nullable();
+
+            // ✅ NEW: pending_gso_ticket status
             $table->enum('status', [
                 'draft', 'pending_mayors_office', 'returned_for_revision',
                 'funds_issued', 'in_transit', 'pending_reconciliation',
                 'closed', 'rejected', 'cancelled', 'acknowledged',
                 'pending_gso_validation', 'completed',
+                'pending_gso_ticket',   // ✅ ADD
             ])->default('draft');
+
             $table->integer('trip_count')->default(0);
             $table->unsignedBigInteger('closed_by')->nullable();
             $table->unsignedBigInteger('cancelled_by')->nullable();
@@ -252,6 +257,7 @@ $table->timestamp('push_token_updated_at')->nullable();
             $table->index('status');
             $table->index(['status', 'submitted_at'], 'idx_tt_status_date');
             $table->index('charge_to');
+            $table->index('source');
 
             $table->foreign('department_id')->references('department_id')->on('departments');
             $table->foreign('submitted_by')->references('user_id')->on('users');
@@ -264,7 +270,6 @@ $table->timestamp('push_token_updated_at')->nullable();
             $table->foreign('charge_to')->references('department_code')->on('departments');
         });
 
-        // ✅ fuel_type enum updated to match vehicles
         Schema::create('trip_vehicle_snapshot', function (Blueprint $table) {
             $table->unsignedBigInteger('trip_ticket_id')->primary();
             $table->enum('vehicle_status', ['active', 'inactive']);
@@ -274,6 +279,7 @@ $table->timestamp('push_token_updated_at')->nullable();
             $table->foreign('trip_ticket_id')->references('trip_ticket_id')->on('trip_ticket');
         });
 
+        // trip_history unchanged — placeholder ticket exists from day one
         Schema::create('trip_history', function (Blueprint $table) {
             $table->bigIncrements('history_id');
             $table->unsignedBigInteger('trip_ticket_id');
@@ -295,10 +301,18 @@ $table->timestamp('push_token_updated_at')->nullable();
 
         // ============================================================
         // 5. GAS SLIPS, FUEL RECEIPTS, GPS, CROSS-DEPT
+        // ✅ Added: control_number, trip_ticket_id now nullable
         // ============================================================
         Schema::create('gas_slip', function (Blueprint $table) {
             $table->bigIncrements('gas_slip_id');
-            $table->unsignedBigInteger('trip_ticket_id')->unique();
+
+            // ✅ NEW: control_number for MO-created slips (matches TT number)
+            $table->string('control_number', 30)->nullable()->unique();
+
+            // ✅ trip_ticket_id now nullable — MO can create slip before placeholder exists
+            // (in practice we create placeholder first, but making it nullable is safer)
+            $table->unsignedBigInteger('trip_ticket_id')->nullable()->unique();
+
             $table->unsignedBigInteger('created_by');
             $table->decimal('amount_released', 10, 2);
             $table->boolean('is_cross_department')->default(false);
@@ -339,7 +353,6 @@ $table->timestamp('push_token_updated_at')->nullable();
             $table->string('receipt_photo_path', 500)->nullable();
             $table->timestamp('receipt_uploaded_at')->nullable();
 
-            // ✅ Merged: verification fields
             $table->enum('verification_status', ['pending', 'verified'])->default('pending');
             $table->timestamp('verified_at')->nullable();
             $table->unsignedBigInteger('verified_by')->nullable();
@@ -361,6 +374,7 @@ $table->timestamp('push_token_updated_at')->nullable();
             $table->index('verification_status', 'idx_fuel_receipt_verification_status');
         });
 
+        // gps_ping unchanged — placeholder approach keeps trip_ticket_id non-null
         Schema::create('gps_ping', function (Blueprint $table) {
             $table->bigIncrements('ping_id');
             $table->unsignedBigInteger('trip_ticket_id');
@@ -414,6 +428,7 @@ $table->timestamp('push_token_updated_at')->nullable();
             $table->foreign('user_id')->references('user_id')->on('users')->onDelete('set null');
         });
 
+        // ✅ Added: gas_slip_created + trip_created_from_gas_slip
         Schema::create('notifications', function (Blueprint $table) {
             $table->bigIncrements('notification_id');
             $table->unsignedBigInteger('recipient_user_id');
@@ -427,6 +442,8 @@ $table->timestamp('push_token_updated_at')->nullable();
                 'driver_acknowledged', 'gso_rejected', 'mo_rejected',
                 'cross_department_usage', 'trip_cancelled', 'trip_closed',
                 'trip_pending_validation', 'department_added',
+                'gas_slip_created',              // ✅ ADD
+                'trip_created_from_gas_slip',    // ✅ ADD
             ])->nullable();
             $table->enum('entity_type', [
                 'trip_ticket', 'gas_slip', 'fund_issuance',
@@ -558,15 +575,28 @@ $table->timestamp('push_token_updated_at')->nullable();
 
         // ============================================================
         // 8. STORED PROCEDURE
+        // ✅ Now sets fiscal_year on INSERT — prevents duplicate week rows across FYs
         // ============================================================
         DB::unprepared("
             CREATE PROCEDURE `proc_weekly_budget_reset` ()
             BEGIN
                 DECLARE v_week_start DATE;
                 DECLARE v_prev_week_start DATE;
+                DECLARE v_active_fy YEAR;
 
                 SET v_week_start = DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY);
                 SET v_prev_week_start = DATE_SUB(v_week_start, INTERVAL 7 DAY);
+
+                -- Resolve active fiscal year (fallback to current calendar year)
+                SELECT year INTO v_active_fy
+                FROM fiscal_years
+                WHERE is_active = 1
+                ORDER BY year DESC
+                LIMIT 1;
+
+                IF v_active_fy IS NULL THEN
+                    SET v_active_fy = YEAR(CURDATE());
+                END IF;
 
                 START TRANSACTION;
 
@@ -581,9 +611,11 @@ $table->timestamp('push_token_updated_at')->nullable();
                 WHERE p.week_start = v_prev_week_start
                   AND p.status = 'closed';
 
-                INSERT INTO dept_budget_period (department_id, week_start, allocated_amount, remaining_balance, status)
+                INSERT INTO dept_budget_period
+                    (department_id, fiscal_year, week_start, allocated_amount, remaining_balance, status)
                 SELECT
                     dbp.department_id,
+                    v_active_fy,
                     v_week_start,
                     dbp.default_weekly_allocation,
                     dbp.default_weekly_allocation,

@@ -499,6 +499,7 @@ class MayorsOfficeController extends Controller
 
             // Insert gas slip
             $gasSlipData = [
+                 'control_number' => $ticket->trip_ticket_number, 
                 'trip_ticket_id' => $id,
                 'created_by' => $user->user_id,
                 'amount_released' => $amountToRelease,
@@ -1829,4 +1830,491 @@ public function getWeeklyTracking(Request $request)
         ], 500);
     }
 }
+
+    // ============================================================
+    //  GAS SLIP — MO-CREATED (placeholder trip ticket)
+    // ============================================================
+
+    /**
+   
+     */
+    public function createGasSlip(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'control_number'   => 'required|string|max:30',
+            'department_id'    => 'required|exists:departments,department_id',
+            'driver_id'        => 'required|exists:drivers,driver_id',
+            'vehicle_id'       => 'required|exists:vehicles,vehicle_id',
+            'trip_date'        => 'required|date',
+            'destination'      => 'required|string|max:255',
+            'purpose'          => 'required|string',
+            'charge_to'        => 'required|string|max:20',
+            'passenger_name'   => 'nullable|string|max:120',
+            'amount_released'  => 'required|numeric|min:0.01',
+            'is_cross_department' => 'nullable|boolean',
+            'cross_department_reason' => 'nullable|string|max:255',
+            'charge_to_department_id' => 'nullable|exists:departments,department_id',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['success' => false, 'errors' => $validator->errors()], 422);
+        }
+
+        $user = $request->user();
+        if (!$user->isMayorsOffice()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        // ✅ Collision check across both tables
+        $collision = TripTicket::where('trip_ticket_number', $request->control_number)->exists()
+            || GasSlip::where('control_number', $request->control_number)->exists();
+
+        if ($collision) {
+            return response()->json([
+                'success' => false,
+                'message' => "Control number {$request->control_number} already exists.",
+            ], 422);
+        }
+
+        $activeYear = $this->budgetService->getActiveFiscalYear();
+        $amountToRelease = (float) $request->amount_released;
+        $chargeDepartmentId = $request->charge_to_department_id ?? $request->department_id;
+        $chargeDepartment = Department::find($chargeDepartmentId);
+
+        if (!$chargeDepartment) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Charge-to department not found.',
+            ], 422);
+        }
+
+        $isCrossDepartment = (bool) ($request->is_cross_department ?? false);
+        $crossDepartmentReason = $request->cross_department_reason ?? null;
+
+        if ($isCrossDepartment && $chargeDepartmentId == $request->department_id) {
+            return response()->json([
+                'success' => false,
+                'message' => '❌ Cross-Department selected but same department chosen.',
+            ], 422);
+        }
+
+        if ($isCrossDepartment && empty($crossDepartmentReason)) {
+            return response()->json([
+                'success' => false,
+                'message' => '❌ Please provide a reason for cross-department usage.',
+            ], 422);
+        }
+
+        // Pre-flight budget check (non-cross-department only)
+        if (!$isCrossDepartment) {
+            $annualRemaining = (float) $this->budgetService->getRemainingBudget($chargeDepartmentId);
+            if ($annualRemaining < $amountToRelease) {
+                $shortage = $amountToRelease - $annualRemaining;
+                return response()->json([
+                    'success' => false,
+                    'message' => "⚠️ Insufficient Annual Budget!\n\n" .
+                                 "Requested: ₱" . number_format($amountToRelease, 2) . "\n" .
+                                 "Annual Remaining: ₱" . number_format($annualRemaining, 2) . "\n" .
+                                 "Shortage: ₱" . number_format($shortage, 2),
+                    'budget_info' => [
+                        'annual_remaining' => $annualRemaining,
+                        'requested'        => $amountToRelease,
+                        'shortage'         => $shortage,
+                    ],
+                ], 422);
+            }
+        }
+
+        DB::beginTransaction();
+
+        try {
+            // ✅ 1. Create placeholder Trip Ticket
+            $tripTicket = TripTicket::create([
+                'trip_ticket_number'    => $request->control_number,
+                'source'                => 'mo_gas_slip',
+                'department_id'         => $request->department_id,
+                'driver_id'             => $request->driver_id,
+                'vehicle_id'            => $request->vehicle_id,
+                'submitted_by'          => $user->user_id,
+                'created_by_mo_user_id' => $user->user_id,
+                'submitted_by_staff'    => false,
+                'submitted_at'          => now(),
+                'trip_date'             => $request->trip_date,
+                'purpose'               => $request->purpose,
+                'destination'           => $request->destination,
+                'charge_to'             => $request->charge_to,
+                'passenger_name'        => $request->passenger_name ?? null,
+                'status' => TripTicket::STATUS_FUNDS_ISSUED,
+                'original_department_id' => $request->department_id,
+                'updated_at'            => now(),
+            ]);
+
+            // ✅ 2. Deduct budget
+            $budgetBefore = 0;
+            $budgetAfter = 0;
+            $periodId = null;
+
+            if (!$isCrossDepartment) {
+                $annualBudget = AnnualBudget::where('department_id', $chargeDepartmentId)
+                    ->where('fiscal_year', $activeYear)
+                    ->first();
+                $budgetBefore = $annualBudget ? (float) $annualBudget->used_amount : 0;
+
+                $this->budgetService->deductBudget(
+                    $chargeDepartmentId,
+                    $amountToRelease,
+                    false,
+                    null,
+                    null
+                );
+
+                $annualBudget = AnnualBudget::where('department_id', $chargeDepartmentId)
+                    ->where('fiscal_year', $activeYear)
+                    ->first();
+                $budgetAfter = $annualBudget ? (float) $annualBudget->used_amount : 0;
+
+                $periodId = $this->getOrCreatePeriodId($chargeDepartmentId);
+            } else {
+                $periodId = $this->getOrCreatePeriodId($chargeDepartmentId);
+            }
+
+            // ✅ 3. Create Gas Slip
+            $gasSlip = GasSlip::create([
+                'control_number'          => $request->control_number,
+                'trip_ticket_id'          => $tripTicket->trip_ticket_id,
+                'created_by'              => $user->user_id,
+                'amount_released'         => $amountToRelease,
+                'reconciliation_status'   => 'pending',
+                'is_cross_department'     => $isCrossDepartment ? 1 : 0,
+                'original_department_id'  => $isCrossDepartment ? $request->department_id : null,
+                'cross_department_reason' => $crossDepartmentReason,
+                'period_id'               => $periodId,
+                'budget_before'           => $budgetBefore,
+                'budget_after'            => $budgetAfter,
+                'created_at'              => now(),
+                'updated_at'              => now(),
+            ]);
+
+            // ✅ 4. Cross-department usage record
+            if ($isCrossDepartment) {
+                DB::table('cross_department_usage')->insert([
+                    'from_department_id' => $request->department_id,
+                    'to_department_id'   => $chargeDepartmentId,
+                    'gas_slip_id'        => $gasSlip->gas_slip_id,
+                    'amount'             => $amountToRelease,
+                    'reason'             => $crossDepartmentReason,
+                    'created_at'         => now(),
+                    'updated_at'         => now(),
+                ]);
+            }
+
+            // ✅ 5. Vehicle snapshot
+            $vehicle = Vehicle::find($request->vehicle_id);
+            if ($vehicle) {
+                TripTicketVehicleSnapshot::create([
+                    'trip_ticket_id'    => $tripTicket->trip_ticket_id,
+                    'vehicle_status'    => $vehicle->status,
+                    'fuel_type'         => is_string($vehicle->fuel_type) ? $vehicle->fuel_type : 'gasoline',
+                    'snapshot_taken_at' => now(),
+                ]);
+            }
+
+            DB::commit();
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('❌ Create Gas Slip error: ' . $e->getMessage());
+            Log::error($e->getTraceAsString());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to create Gas Slip: ' . $e->getMessage(),
+            ], 500);
+        }
+
+        // ✅ Notify driver + GSO
+        try {
+            $driver = Driver::find($request->driver_id);
+            if ($driver && $driver->user_id) {
+                NotificationHelper::send(
+                    $driver->user_id,
+                    'gas_slip_created',
+                    'gas_slip',
+                    $gasSlip->gas_slip_id,
+                    "Gas Slip {$gasSlip->control_number} issued: ₱" . number_format($amountToRelease, 2)
+                );
+            }
+
+            $gsoStaff = User::where('role', 'gso_office')->where('status', 'active')->get();
+            foreach ($gsoStaff as $gso) {
+                NotificationHelper::send(
+                    $gso->user_id,
+                    'gas_slip_created',
+                    'gas_slip',
+                    $gasSlip->gas_slip_id,
+                   "Trip Without Trip Ticket: Gas Slip {$gasSlip->control_number} issued — pending GSO Trip Ticket"
+                );
+            }
+        } catch (\Exception $e) {
+            Log::error('Gas Slip notifications failed: ' . $e->getMessage());
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Gas Slip created successfully',
+            'data' => [
+                'gas_slip_id'        => $gasSlip->gas_slip_id,
+                'control_number'     => $gasSlip->control_number,
+                'trip_ticket_id'     => $tripTicket->trip_ticket_id,
+                'trip_ticket_number' => $tripTicket->trip_ticket_number,
+                'amount_released'    => $amountToRelease,
+                'fiscal_year'        => $activeYear,
+                'status'             => $tripTicket->status,
+            ],
+        ]);
+    }
+
+    /**
+     * List Gas Slips pending GSO completion.
+     * GET /mayors-office/gas-slips/pending
+     */
+    public function getPendingGasSlips(Request $request)
+    {
+        $user = $request->user();
+        if (!$user->isMayorsOffice()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $gasSlips = GasSlip::with(['tripTicket.driver.user', 'tripTicket.vehicle', 'tripTicket.department', 'createdBy'])
+            ->whereNotNull('control_number')
+            ->whereHas('tripTicket', function ($q) {
+                $q->where('status', TripTicket::STATUS_PENDING_GSO_TICKET);
+            })
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->map(function ($gs) {
+                $tt = $gs->tripTicket;
+                return [
+                    'gas_slip_id'        => $gs->gas_slip_id,
+                    'control_number'     => $gs->control_number,
+                    'trip_ticket_id'     => $tt?->trip_ticket_id,
+                    'trip_ticket_number' => $tt?->trip_ticket_number,
+                    'amount_released'    => (float) $gs->amount_released,
+                    'destination'        => $tt?->destination,
+                    'purpose'            => $tt?->purpose,
+                    'trip_date'          => $tt?->trip_date,
+                    'driver_name'        => $tt?->driver?->user?->full_name,
+                    'vehicle'            => $tt?->vehicle ? [
+                        'plate_number'  => $tt->vehicle->plate_number,
+                        'vehicle_model' => $tt->vehicle->vehicle_model,
+                    ] : null,
+                    'department_name'    => $tt?->department?->department_name,
+                    'created_at'         => $gs->created_at,
+                    'status'             => $tt?->status,
+                ];
+            });
+
+        return response()->json([
+            'success' => true,
+            'data'    => $gasSlips,
+        ]);
+    }
+
+    /**
+     * MO cancels a Gas Slip (only before driver acknowledges).
+     * POST /mayors-office/gas-slips/{id}/cancel
+     */
+    public function cancelGasSlip(Request $request, $id)
+    {
+        $user = $request->user();
+        if (!$user->isMayorsOffice()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'reason' => 'required|string|min:5|max:500',
+        ]);
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        $gasSlip = GasSlip::find($id);
+        if (!$gasSlip) {
+            return response()->json(['success' => false, 'message' => 'Gas Slip not found'], 404);
+        }
+
+        if ($gasSlip->acknowledged_at) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Cannot cancel — driver has already acknowledged funds.',
+            ], 422);
+        }
+
+        DB::beginTransaction();
+        try {
+            if (!$gasSlip->is_cross_department && $gasSlip->amount_released > 0) {
+                $chargeDeptId = $gasSlip->tripTicket?->department_id;
+                if ($chargeDeptId) {
+                    $activeYear = $this->budgetService->getActiveFiscalYear();
+                    $annualBudget = AnnualBudget::where('department_id', $chargeDeptId)
+                        ->where('fiscal_year', $activeYear)
+                        ->first();
+                    if ($annualBudget) {
+                        $annualBudget->used_amount = max(
+                            0,
+                            (float) $annualBudget->used_amount - (float) $gasSlip->amount_released
+                        );
+                        $annualBudget->save();
+                    }
+                }
+            }
+
+            $tt = $gasSlip->tripTicket;
+            if ($tt) {
+                $tt->status = TripTicket::STATUS_CANCELLED;
+                $tt->cancellation_reason = $request->reason;
+                $tt->cancelled_at = now();
+                $tt->cancelled_by = $user->user_id;
+                $tt->save();
+            }
+
+            DB::commit();
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Cancel Gas Slip error: ' . $e->getMessage());
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+
+        try {
+            $driver = $gasSlip->tripTicket?->driver;
+            if ($driver && $driver->user_id) {
+                NotificationHelper::send(
+                    $driver->user_id,
+                    'trip_cancelled',
+                    'gas_slip',
+                    $gasSlip->gas_slip_id,
+                    "Gas Slip {$gasSlip->control_number} cancelled: {$request->reason}"
+                );
+            }
+        } catch (\Exception $e) {
+            Log::error('Cancel notification failed: ' . $e->getMessage());
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Gas Slip cancelled successfully',
+            'data' => [
+                'gas_slip_id'    => $gasSlip->gas_slip_id,
+                'control_number' => $gasSlip->control_number,
+            ],
+        ]);
+    }
+
+
+        // ============================================================
+    // ✅ MO-SCOPED LOOKUPS (for Gas Slip form)
+    // ============================================================
+
+    /**
+     * MO-scoped list of active drivers.
+     * GET /mayors-office/drivers/active
+     */
+    public function getActiveDrivers(Request $request)
+    {
+        $user = $request->user();
+        if (!$user->isMayorsOffice()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $drivers = Driver::with('user')
+            ->where('status', 'active')
+            ->whereHas('user', fn($q) => $q->where('status', 'active'))
+            ->get()
+            ->map(function ($driver) {
+                return [
+                    'driver_id'     => $driver->driver_id,
+                    'user_id'       => $driver->user_id,
+                    'full_name'     => $driver->user?->full_name ?? 'Unknown',
+                    'department_id' => $driver->user?->department_id,
+                ];
+            });
+
+        return response()->json(['success' => true, 'data' => $drivers]);
+    }
+
+    /**
+     * MO-scoped list of available vehicles.
+     * GET /mayors-office/vehicles/available
+     */
+    public function getAvailableVehicles(Request $request)
+    {
+        $user = $request->user();
+        if (!$user->isMayorsOffice()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $departmentId = $request->get('department_id');
+
+        $query = Vehicle::where('status', 'active')
+            ->where('maintenance_flag', false);
+
+        if ($departmentId) {
+            $query->where('department_id', $departmentId);
+        }
+
+        $vehicles = $query->get()->map(fn($v) => [
+            'vehicle_id'    => $v->vehicle_id,
+            'plate_number'  => $v->plate_number,
+            'vehicle_model' => $v->vehicle_model,
+            'fuel_type'     => $v->fuel_type,
+            'department_id' => $v->department_id,
+        ]);
+
+        return response()->json(['success' => true, 'data' => $vehicles]);
+    }
+
+
+
+        /**
+     * Peek at the next control number without reserving it.
+     * GET /mayors-office/gas-slips/next-control-number
+     */
+    public function getNextControlNumber(Request $request)
+    {
+        $user = $request->user();
+        if (!$user->isMayorsOffice()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => ['control_number' => $this->generateControlNumber()],
+        ]);
+    }
+
+    /**
+     * Generate the next available control number in YYYY-MM-NNN format.
+     * Shared sequence across trip_ticket + gas_slip, scoped to current month.
+     */
+    private function generateControlNumber(): string
+    {
+        $prefix = date('Y-m');
+
+        $lastTicketNum = TripTicket::where('trip_ticket_number', 'like', $prefix . '-%')
+            ->orderBy('trip_ticket_id', 'desc')
+            ->value('trip_ticket_number');
+
+        $lastControlNum = GasSlip::where('control_number', 'like', $prefix . '-%')
+            ->orderBy('gas_slip_id', 'desc')
+            ->value('control_number');
+
+        $lastSeq = 0;
+        foreach ([$lastTicketNum, $lastControlNum] as $n) {
+            if ($n && preg_match('/^' . preg_quote($prefix, '/') . '-(\d+)$/', $n, $m)) {
+                $seq = (int) $m[1];
+                if ($seq > $lastSeq) $lastSeq = $seq;
+            }
+        }
+
+        return $prefix . '-' . str_pad($lastSeq + 1, 3, '0', STR_PAD_LEFT);
+    }
+
 }

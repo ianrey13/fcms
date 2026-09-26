@@ -7,10 +7,7 @@ import { useAuth } from "../../contexts/AuthContext";
 import { useOptimizedQuery } from "../../hooks/useOptimizedQuery";
 import { useAutoRefresh } from "../../hooks/useAutoRefresh";
 import { useRealtime } from "../../contexts/RealtimeContext";
-import {
-    SkeletonPage,
-    SkeletonCard,
-} from "../../components/ui/SkeletonCard";
+import { SkeletonPage, SkeletonCard } from "../../components/ui/SkeletonCard";
 import api, { mayorsOfficeAPI } from "../../services/api";
 
 import {
@@ -26,6 +23,8 @@ import {
     History,
     Lock,
     DollarSign,
+    Fuel,
+    CheckCircle2
 } from "lucide-react";
 import {
     PieChart as RePieChart,
@@ -41,7 +40,7 @@ import { cn } from "@/lib/utils";
 
 const DONUT_COLORS = {
     remaining: "#10b981", // emerald
-    utilized: "#f59e0b",  // amber
+    utilized: "#f59e0b", // amber
 };
 
 // ============================================
@@ -52,21 +51,37 @@ const extractArray = (response) => {
     if (!response) return [];
     if (Array.isArray(response)) return response;
     if (Array.isArray(response.data)) return response.data;
-    if (response.data && Array.isArray(response.data.data)) return response.data.data;
+    if (response.data && Array.isArray(response.data.data))
+        return response.data.data;
 
-    const keys = ['items', 'results', 'records', 'rows', 'list', 'tickets', 'trips', 'departments', 'budgets'];
+    const keys = [
+        "items",
+        "results",
+        "records",
+        "rows",
+        "list",
+        "tickets",
+        "trips",
+        "departments",
+        "budgets",
+    ];
     for (const key of keys) {
         if (Array.isArray(response[key])) return response[key];
-        if (response.data && Array.isArray(response.data[key])) return response.data[key];
+        if (response.data && Array.isArray(response.data[key]))
+            return response.data[key];
     }
     if (response.data?.data?.data && Array.isArray(response.data.data.data)) {
         return response.data.data.data;
     }
-    console.warn('⚠️ extractArray (MayorDashboard): unexpected shape:', response);
+    console.warn(
+        "⚠️ extractArray (MayorDashboard): unexpected shape:",
+        response,
+    );
     return [];
 };
 
-const useSafeArray = (value) => useMemo(() => Array.isArray(value) ? value : [], [value]);
+const useSafeArray = (value) =>
+    useMemo(() => (Array.isArray(value) ? value : []), [value]);
 
 // ============================================
 // QUICK NAV PILL
@@ -78,7 +93,7 @@ const QuickNavPill = ({ label, icon: Icon, onClick }) => (
         className={cn(
             "group flex items-center justify-between gap-3 rounded-xl px-4 h-[58px] text-left transition-all duration-200 border",
             "border-slate-200 bg-white hover:bg-slate-50 hover:border-slate-300",
-            "dark:border-slate-700/60 dark:bg-slate-800/40 dark:hover:bg-slate-700/50 dark:hover:border-slate-600"
+            "dark:border-slate-700/60 dark:bg-slate-800/40 dark:hover:bg-slate-700/50 dark:hover:border-slate-600",
         )}
     >
         <span className="flex items-center gap-3 min-w-0">
@@ -86,7 +101,7 @@ const QuickNavPill = ({ label, icon: Icon, onClick }) => (
                 className={cn(
                     "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors",
                     "bg-slate-100 text-slate-600 group-hover:bg-slate-200 group-hover:text-slate-900",
-                    "dark:bg-slate-700/70 dark:text-slate-200 dark:group-hover:bg-slate-700 dark:group-hover:text-white"
+                    "dark:bg-slate-700/70 dark:text-slate-200 dark:group-hover:bg-slate-700 dark:group-hover:text-white",
                 )}
             >
                 <Icon className="h-4 w-4" />
@@ -108,7 +123,7 @@ const NoFiscalYearEmptyState = () => (
         className={cn(
             "rounded-2xl p-6 border",
             "border-slate-200 bg-white/80",
-            "dark:border-slate-700/50 dark:bg-slate-800/30"
+            "dark:border-slate-700/50 dark:bg-slate-800/30",
         )}
     >
         <div className="py-14 max-w-lg mx-auto text-center">
@@ -116,7 +131,7 @@ const NoFiscalYearEmptyState = () => (
                 className={cn(
                     "mx-auto w-20 h-20 rounded-2xl flex items-center justify-center mb-5 border",
                     "bg-gradient-to-br from-amber-100 to-amber-200 border-amber-200",
-                    "dark:from-amber-500/20 dark:to-amber-600/20 dark:border-amber-500/30"
+                    "dark:from-amber-500/20 dark:to-amber-600/20 dark:border-amber-500/30",
                 )}
             >
                 <Lock className="h-10 w-10 text-amber-600 dark:text-amber-400" />
@@ -125,27 +140,33 @@ const NoFiscalYearEmptyState = () => (
                 No Active Fiscal Year
             </h2>
             <p className="mt-3 text-slate-600 dark:text-slate-400 leading-relaxed">
-                Budget tracking is currently inactive. To view fund releases, budget utilization,
-                and department allocations, a fiscal year must first be activated.
+                Budget tracking is currently inactive. To view fund releases,
+                budget utilization, and department allocations, a fiscal year
+                must first be activated.
             </p>
             <div
                 className={cn(
                     "mt-6 rounded-xl p-4 text-left border",
                     "bg-slate-50 border-slate-200",
-                    "dark:bg-slate-900/60 dark:border-slate-700/50"
+                    "dark:bg-slate-900/60 dark:border-slate-700/50",
                 )}
             >
                 <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
                     What to do
                 </p>
                 <p className="text-sm text-slate-600 dark:text-slate-300">
-                    Ask the <strong className="text-slate-900 dark:text-white">General Services Office (GSO)</strong> to activate a fiscal year
-                    from the Fiscal Year Management page.
+                    Ask the{" "}
+                    <strong className="text-slate-900 dark:text-white">
+                        General Services Office (GSO)
+                    </strong>{" "}
+                    to activate a fiscal year from the Fiscal Year Management
+                    page.
                 </p>
             </div>
             <p className="mt-6 text-xs text-slate-400 dark:text-slate-500 flex items-center justify-center gap-1.5">
                 <AlertCircle className="h-3.5 w-3.5" />
-                This dashboard will populate automatically once a fiscal year is active.
+                This dashboard will populate automatically once a fiscal year is
+                active.
             </p>
         </div>
     </div>
@@ -222,12 +243,21 @@ const BudgetUtilizationDonut = ({ total, used, remaining }) => {
         }).format(Number(n) || 0);
 
     const usedPct = totalForChart > 0 ? (safeUsed / totalForChart) * 100 : 0;
-    const remainingPct = totalForChart > 0 ? (safeRemaining / totalForChart) * 100 : 0;
+    const remainingPct =
+        totalForChart > 0 ? (safeRemaining / totalForChart) * 100 : 0;
 
     const chartData = [
-        { name: "Remaining Balance", value: safeRemaining, color: DONUT_COLORS.remaining },
-        { name: "Utilized Amount",   value: safeUsed,      color: DONUT_COLORS.utilized },
-    ].filter(d => d.value > 0);
+        {
+            name: "Remaining Balance",
+            value: safeRemaining,
+            color: DONUT_COLORS.remaining,
+        },
+        {
+            name: "Utilized Amount",
+            value: safeUsed,
+            color: DONUT_COLORS.utilized,
+        },
+    ].filter((d) => d.value > 0);
 
     const hasData = chartData.length > 0;
 
@@ -314,7 +344,7 @@ const LegendRow = ({ color, label, value, pct, emphasize = false }) => (
                     "text-sm truncate",
                     emphasize
                         ? "font-medium text-slate-800 dark:text-slate-200"
-                        : "text-slate-500 dark:text-slate-400"
+                        : "text-slate-500 dark:text-slate-400",
                 )}
             >
                 {label}
@@ -326,7 +356,7 @@ const LegendRow = ({ color, label, value, pct, emphasize = false }) => (
                     "text-sm font-semibold",
                     emphasize
                         ? "text-blue-600 dark:text-blue-400"
-                        : "text-slate-900 dark:text-white"
+                        : "text-slate-900 dark:text-white",
                 )}
             >
                 {value}
@@ -365,9 +395,15 @@ const MayorDashboard = () => {
 
     const fetchAllData = useCallback(() => {
         queryClient.invalidateQueries({ queryKey: ["mayor-approved-tickets"] });
-        queryClient.invalidateQueries({ queryKey: ["mayor-department-budgets"] });
-        queryClient.invalidateQueries({ queryKey: ["mayor-active-fiscal-year"] });
-        queryClient.invalidateQueries({ queryKey: ["mo-activity-logs-dashboard"] });
+        queryClient.invalidateQueries({
+            queryKey: ["mayor-department-budgets"],
+        });
+        queryClient.invalidateQueries({
+            queryKey: ["mayor-active-fiscal-year"],
+        });
+        queryClient.invalidateQueries({
+            queryKey: ["mo-activity-logs-dashboard"],
+        });
     }, [queryClient]);
 
     useAutoRefresh(
@@ -380,46 +416,51 @@ const MayorDashboard = () => {
             "new-notification",
         ],
         fetchAllData,
-        1000
+        1000,
     );
 
     // ============ ACTIVE FISCAL YEAR ============
 
-    const { data: activeFiscalYearsRaw, isLoading: fiscalYearLoading } = useOptimizedQuery({
-        queryKey: ["mayor-active-fiscal-year"],
-        queryFn: async () => {
-            try {
-                const response = await api.get("/mayors-office/fiscal-years?is_active=1");
-                const arr = response.data?.data || [];
-                return Array.isArray(arr) ? arr : [];
-            } catch (error) {
-                console.error("Error fetching active fiscal year:", error);
-                return [];
-            }
-        },
-        staleTime: 5 * 60 * 1000,
-        refetchOnMount: 'always',
-    });
+    const { data: activeFiscalYearsRaw, isLoading: fiscalYearLoading } =
+        useOptimizedQuery({
+            queryKey: ["mayor-active-fiscal-year"],
+            queryFn: async () => {
+                try {
+                    const response = await api.get(
+                        "/mayors-office/fiscal-years?is_active=1",
+                    );
+                    const arr = response.data?.data || [];
+                    return Array.isArray(arr) ? arr : [];
+                } catch (error) {
+                    console.error("Error fetching active fiscal year:", error);
+                    return [];
+                }
+            },
+            staleTime: 5 * 60 * 1000,
+            refetchOnMount: "always",
+        });
 
     const activeFiscalYears = useSafeArray(activeFiscalYearsRaw);
-    const activeFiscalYear = activeFiscalYears[0]?.year ?? new Date().getFullYear();
+    const activeFiscalYear =
+        activeFiscalYears[0]?.year ?? new Date().getFullYear();
     const hasActiveFiscalYear = activeFiscalYears.length > 0;
 
     // ============ APPROVED / RELEASED ============
 
-    const { data: approvedResponse, isLoading: approvedLoading } = useOptimizedQuery({
-        queryKey: ["mayor-approved-tickets"],
-        queryFn: async () => {
-            try {
-                const response = await mayorsOfficeAPI.getApprovedTickets();
-                return { data: extractArray(response) };
-            } catch (error) {
-                console.error("Error fetching approved tickets:", error);
-                return { data: [] };
-            }
-        },
-        refetchOnMount: 'always',
-    });
+    const { data: approvedResponse, isLoading: approvedLoading } =
+        useOptimizedQuery({
+            queryKey: ["mayor-approved-tickets"],
+            queryFn: async () => {
+                try {
+                    const response = await mayorsOfficeAPI.getApprovedTickets();
+                    return { data: extractArray(response) };
+                } catch (error) {
+                    console.error("Error fetching approved tickets:", error);
+                    return { data: [] };
+                }
+            },
+            refetchOnMount: "always",
+        });
     const approvedTickets = useSafeArray(approvedResponse?.data);
 
     // ============ DEPARTMENT BUDGETS ============
@@ -428,35 +469,38 @@ const MayorDashboard = () => {
         queryKey: ["mayor-department-budgets"],
         queryFn: async () => {
             try {
-                const response = await mayorsOfficeAPI.getAllDepartmentsWithBudget();
+                const response =
+                    await mayorsOfficeAPI.getAllDepartmentsWithBudget();
                 return extractArray(response);
             } catch (error) {
                 console.error("Error fetching budgets:", error);
                 return [];
             }
         },
-        refetchOnMount: 'always',
+        refetchOnMount: "always",
     });
     const budgetData = useSafeArray(budgetRaw);
 
     // ============ MO ACTIVITY LOGS (for Budget History card) ============
 
-    const { data: activityRaw, isLoading: activityLoading } = useOptimizedQuery({
-        queryKey: ["mo-activity-logs-dashboard"],
-        queryFn: async () => {
-            try {
-                const res = await api.get("/mayors-office/activity-logs");
-                return res?.data?.data?.logs || res?.data?.logs || [];
-            } catch (error) {
-                console.error("Error fetching activity logs:", error);
-                return [];
-            }
+    const { data: activityRaw, isLoading: activityLoading } = useOptimizedQuery(
+        {
+            queryKey: ["mo-activity-logs-dashboard"],
+            queryFn: async () => {
+                try {
+                    const res = await api.get("/mayors-office/activity-logs");
+                    return res?.data?.data?.logs || res?.data?.logs || [];
+                } catch (error) {
+                    console.error("Error fetching activity logs:", error);
+                    return [];
+                }
+            },
+            staleTime: 0,
+            refetchOnMount: "always",
+            refetchOnReconnect: true,
+            refetchOnWindowFocus: false,
         },
-        staleTime: 0,
-        refetchOnMount: 'always',
-        refetchOnReconnect: true,
-        refetchOnWindowFocus: false,
-    });
+    );
     const activityLogs = useSafeArray(activityRaw);
 
     // ============ COMPUTED ============
@@ -465,22 +509,38 @@ const MayorDashboard = () => {
         const formatted = budgetData.map((dept) => ({
             department_id: dept.department_id,
             department_name: dept.department_name,
-            allocated: parseFloat(dept.allocated_amount || dept.annual_amount || dept.allocated || 0),
-            spent: parseFloat(dept.spent_amount || dept.used_amount || dept.spent || 0),
+            allocated: parseFloat(
+                dept.allocated_amount ||
+                    dept.annual_amount ||
+                    dept.allocated ||
+                    0,
+            ),
+            spent: parseFloat(
+                dept.spent_amount || dept.used_amount || dept.spent || 0,
+            ),
             remaining: parseFloat(dept.remaining_amount || 0),
             has_budget: dept.has_budget || false,
-            utilization: parseFloat(dept.utilization_percentage || dept.utilization || 0),
+            utilization: parseFloat(
+                dept.utilization_percentage || dept.utilization || 0,
+            ),
             fiscal_year: dept.fiscal_year || activeFiscalYear,
         }));
-        formatted.sort((a, b) => parseFloat(b.utilization) - parseFloat(a.utilization));
+        formatted.sort(
+            (a, b) => parseFloat(b.utilization) - parseFloat(a.utilization),
+        );
         return formatted;
     }, [budgetData, activeFiscalYear]);
 
     const totals = useMemo(() => {
-        const totalAllocated = departmentBudgets.reduce((s, d) => s + d.allocated, 0);
+        const totalAllocated = departmentBudgets.reduce(
+            (s, d) => s + d.allocated,
+            0,
+        );
         const totalUsed = departmentBudgets.reduce((s, d) => s + d.spent, 0);
         const totalRemaining = Math.max(totalAllocated - totalUsed, 0);
-        const deptsWithBudget = departmentBudgets.filter(d => d.has_budget).length;
+        const deptsWithBudget = departmentBudgets.filter(
+            (d) => d.has_budget,
+        ).length;
         return {
             totalAllocated,
             totalUsed,
@@ -489,7 +549,10 @@ const MayorDashboard = () => {
         };
     }, [departmentBudgets]);
 
-    const recentReleases = useMemo(() => approvedTickets.slice(0, 5), [approvedTickets]);
+    const recentReleases = useMemo(
+        () => approvedTickets.slice(0, 5),
+        [approvedTickets],
+    );
 
     // ============ BUDGET HISTORY — from /mayors-office/activity-logs ============
 
@@ -502,14 +565,20 @@ const MayorDashboard = () => {
 
     const formatDateShort = (dateString) => {
         if (!dateString) return "—";
-        return new Date(dateString).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" });
+        return new Date(dateString).toLocaleDateString("en-PH", {
+            month: "short",
+            day: "numeric",
+            year: "numeric",
+        });
     };
 
     const formatCurrency = (amount) => {
         const num = parseFloat(amount);
         if (isNaN(num)) return "₱0";
         return new Intl.NumberFormat("en-PH", {
-            style: "currency", currency: "PHP", minimumFractionDigits: 0,
+            style: "currency",
+            currency: "PHP",
+            minimumFractionDigits: 0,
         }).format(num);
     };
 
@@ -524,7 +593,11 @@ const MayorDashboard = () => {
 
     // ============ LOADING ============
 
-    const isLoading = approvedLoading || budgetLoading || fiscalYearLoading || activityLoading;
+    const isLoading =
+        approvedLoading ||
+        budgetLoading ||
+        fiscalYearLoading ||
+        activityLoading;
     const showFullSkeleton =
         isLoading &&
         approvedTickets.length === 0 &&
@@ -540,13 +613,12 @@ const MayorDashboard = () => {
     return (
         <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
             <div className="space-y-5 p-4 md:p-6">
-
                 {/* ===== Hero Header ===== */}
                 <div
                     className={cn(
                         "relative overflow-hidden rounded-2xl p-6 shadow-xl border",
                         "bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 border-slate-700/40",
-                        "dark:from-[#0d1b3e] dark:via-[#122252] dark:to-[#0d1b3e]"
+                        "dark:from-[#0d1b3e] dark:via-[#122252] dark:to-[#0d1b3e]",
                     )}
                 >
                     <div className="absolute -top-24 -right-24 h-56 w-56 rounded-full bg-blue-500/20 blur-3xl" />
@@ -564,14 +636,26 @@ const MayorDashboard = () => {
                         <p className="mt-1.5 text-sm text-slate-300 dark:text-slate-400">
                             {hasActiveFiscalYear ? (
                                 <>
-                                    Monitor fund releases and department budget utilization for{" "}
-                                    <strong className="text-white dark:text-slate-200">FY {activeFiscalYear}</strong>
-                                    <span className="ml-2 text-xs text-amber-400">● Active fiscal year</span>
+                                    Monitor fund releases and department budget
+                                    utilization for{" "}
+                                    <strong className="text-white dark:text-slate-200">
+                                        FY {activeFiscalYear}
+                                    </strong>
+                                    <span className="ml-2 text-xs text-amber-400">
+                                        ● Active fiscal year
+                                    </span>
                                 </>
                             ) : (
-                                <>Disbursing Officer dashboard — waiting for fiscal year activation</>
+                                <>
+                                    Disbursing Officer dashboard — waiting for
+                                    fiscal year activation
+                                </>
                             )}
-                            {isRealTime && <span className="ml-2 text-xs text-emerald-400 animate-pulse">● Auto-refresh</span>}
+                            {isRealTime && (
+                                <span className="ml-2 text-xs text-emerald-400 animate-pulse">
+                                    ● Auto-refresh
+                                </span>
+                            )}
                         </p>
                     </div>
                 </div>
@@ -588,23 +672,55 @@ const MayorDashboard = () => {
                                 Quick Navigation
                             </h2>
                             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-                                <QuickNavPill label="Budget Allocation" icon={Coins} onClick={() => navigate("/mo/budget-allocation")} />
-                                <QuickNavPill label="Disbursement Approval" icon={Clock} onClick={() => navigate("/mo/pending")} />
-                                <QuickNavPill label="Receipt Verification" icon={Receipt} onClick={() => navigate("/mo/receipt-verification")} />
-                                <QuickNavPill label="Reports" icon={BarChart3} onClick={() => navigate("/mo/reports")} />
-                                <QuickNavPill label="Activity Logs" icon={Activity} onClick={() => navigate("/mo/activity-logs")} />
+                                <QuickNavPill
+                                    label="Budget Allocation"
+                                    icon={Coins}
+                                    onClick={() =>
+                                        navigate("/mo/budget-allocation")
+                                    }
+                                />
+                                <QuickNavPill
+                                    label="Disbursement Approval"
+                                    icon={Clock}
+                                    onClick={() => navigate("/mo/pending")}
+                                />
+                                <QuickNavPill
+                                    label="Receipt Verification"
+                                    icon={Receipt}
+                                    onClick={() =>
+                                        navigate("/mo/receipt-verification")
+                                    }
+                                />
+                                <QuickNavPill
+                                    label="Reports"
+                                    icon={BarChart3}
+                                    onClick={() => navigate("/mo/reports")}
+                                />
+                                <QuickNavPill
+                                    label="Activity Logs"
+                                    icon={Activity}
+                                    onClick={() =>
+                                        navigate("/mo/activity-logs")
+                                    }
+                                />
+                                <QuickNavPill
+                                    icon={Fuel}
+                                    label="Create Gas Slip"
+                                    onClick={() =>
+                                        navigate("/mo/gas-slips/create")
+                                    }
+                                />
                             </div>
                         </div>
 
                         {/* ===== Charts + Tables Row ===== */}
                         <div className="grid grid-cols-1 gap-5 xl:grid-cols-2 items-stretch xl:min-h-[500px]">
-
                             {/* Donut Chart Card */}
                             <div
                                 className={cn(
                                     "rounded-2xl p-5 flex flex-col border shadow-sm",
                                     "border-slate-200 bg-white/80",
-                                    "dark:border-slate-700/50 dark:bg-slate-800/30"
+                                    "dark:border-slate-700/50 dark:bg-slate-800/30",
                                 )}
                             >
                                 <div className="mb-5 flex items-center gap-3">
@@ -616,7 +732,8 @@ const MayorDashboard = () => {
                                             Annual Budget Utilization
                                         </h3>
                                         <p className="text-xs text-slate-500 dark:text-slate-400">
-                                            FY {activeFiscalYear} · Total Budget vs. Utilized vs. Remaining
+                                            FY {activeFiscalYear} · Total Budget
+                                            vs. Utilized vs. Remaining
                                         </p>
                                     </div>
                                 </div>
@@ -631,13 +748,12 @@ const MayorDashboard = () => {
 
                             {/* Right column */}
                             <div className="flex flex-col gap-5 h-full">
-
                                 {/* Recent Fund Release */}
                                 <div
                                     className={cn(
                                         "rounded-2xl p-5 flex flex-col flex-1 border shadow-sm",
                                         "border-slate-200 bg-white/80",
-                                        "dark:border-slate-700/50 dark:bg-slate-800/30"
+                                        "dark:border-slate-700/50 dark:bg-slate-800/30",
                                     )}
                                 >
                                     <div className="mb-4 flex items-center justify-between">
@@ -650,51 +766,81 @@ const MayorDashboard = () => {
                                             </h3>
                                         </div>
                                         <button
-                                            onClick={() => navigate("/mo/approved")}
+                                            onClick={() =>
+                                                navigate("/mo/approved")
+                                            }
                                             className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
                                         >
-                                            View All <ArrowRight className="h-3 w-3" />
+                                            View All{" "}
+                                            <ArrowRight className="h-3 w-3" />
                                         </button>
                                     </div>
                                     <div className="overflow-x-auto flex-1">
                                         <table className="w-full text-sm">
                                             <thead>
                                                 <tr className="border-b text-left text-xs text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700/60">
-                                                    <th className="pb-2 pr-4 font-medium">Date</th>
-                                                    <th className="pb-2 pr-4 font-medium">Department</th>
-                                                    <th className="pb-2 pr-4 text-right font-medium">Amount</th>
-                                                    <th className="pb-2 text-right font-medium">Status</th>
+                                                    <th className="pb-2 pr-4 font-medium">
+                                                        Date
+                                                    </th>
+                                                    <th className="pb-2 pr-4 font-medium">
+                                                        Department
+                                                    </th>
+                                                    <th className="pb-2 pr-4 text-right font-medium">
+                                                        Amount
+                                                    </th>
+                                                    <th className="pb-2 text-right font-medium">
+                                                        Status
+                                                    </th>
                                                 </tr>
                                             </thead>
                                             <tbody>
                                                 {recentReleases.length === 0 ? (
                                                     <tr>
-                                                        <td colSpan={4} className="py-8 text-center text-slate-400 dark:text-slate-500">
-                                                            No funds released yet
+                                                        <td
+                                                            colSpan={4}
+                                                            className="py-8 text-center text-slate-400 dark:text-slate-500"
+                                                        >
+                                                            No funds released
+                                                            yet
                                                         </td>
                                                     </tr>
                                                 ) : (
-                                                    recentReleases.map((ticket) => (
-                                                        <tr
-                                                            key={ticket.id || ticket.trip_ticket_id}
-                                                            className="border-b last:border-0 border-slate-100 dark:border-slate-700/30 hover:bg-slate-50 dark:hover:bg-slate-700/20"
-                                                        >
-                                                            <td className="py-3.5 pr-4 text-slate-600 dark:text-slate-300 whitespace-nowrap">
-                                                                {formatDateShort(ticket.trip_date || ticket.created_at)}
-                                                            </td>
-                                                            <td className="py-3.5 pr-4 text-slate-700 dark:text-slate-200 truncate max-w-[180px]">
-                                                                {ticket.department_name || "—"}
-                                                            </td>
-                                                            <td className="py-3.5 pr-4 text-right text-slate-700 dark:text-slate-200 whitespace-nowrap">
-                                                                {formatCurrency(ticket.amount_released || ticket.gas_slip?.amount_released || 0)}
-                                                            </td>
-                                                            <td className="py-3.5 text-right">
-                                                                <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium border border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-400">
-                                                                    Released
-                                                                </span>
-                                                            </td>
-                                                        </tr>
-                                                    ))
+                                                    recentReleases.map(
+                                                        (ticket) => (
+                                                            <tr
+                                                                key={
+                                                                    ticket.id ||
+                                                                    ticket.trip_ticket_id
+                                                                }
+                                                                className="border-b last:border-0 border-slate-100 dark:border-slate-700/30 hover:bg-slate-50 dark:hover:bg-slate-700/20"
+                                                            >
+                                                                <td className="py-3.5 pr-4 text-slate-600 dark:text-slate-300 whitespace-nowrap">
+                                                                    {formatDateShort(
+                                                                        ticket.trip_date ||
+                                                                            ticket.created_at,
+                                                                    )}
+                                                                </td>
+                                                                <td className="py-3.5 pr-4 text-slate-700 dark:text-slate-200 truncate max-w-[180px]">
+                                                                    {ticket.department_name ||
+                                                                        "—"}
+                                                                </td>
+                                                                <td className="py-3.5 pr-4 text-right text-slate-700 dark:text-slate-200 whitespace-nowrap">
+                                                                    {formatCurrency(
+                                                                        ticket.amount_released ||
+                                                                            ticket
+                                                                                .gas_slip
+                                                                                ?.amount_released ||
+                                                                            0,
+                                                                    )}
+                                                                </td>
+                                                                <td className="py-3.5 text-right">
+                                                                    <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium border border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-400">
+                                                                        Released
+                                                                    </span>
+                                                                </td>
+                                                            </tr>
+                                                        ),
+                                                    )
                                                 )}
                                             </tbody>
                                         </table>
@@ -706,7 +852,7 @@ const MayorDashboard = () => {
                                     className={cn(
                                         "rounded-2xl p-5 flex flex-col flex-1 border shadow-sm",
                                         "border-slate-200 bg-white/80",
-                                        "dark:border-slate-700/50 dark:bg-slate-800/30"
+                                        "dark:border-slate-700/50 dark:bg-slate-800/30",
                                     )}
                                 >
                                     <div className="mb-4 flex items-center justify-between">
@@ -719,10 +865,13 @@ const MayorDashboard = () => {
                                             </h3>
                                         </div>
                                         <button
-                                            onClick={() => navigate("/mo/activity-logs")}
+                                            onClick={() =>
+                                                navigate("/mo/activity-logs")
+                                            }
                                             className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
                                         >
-                                            View Full History <ArrowRight className="h-3 w-3" />
+                                            View Full History{" "}
+                                            <ArrowRight className="h-3 w-3" />
                                         </button>
                                     </div>
 
@@ -744,12 +893,16 @@ const MayorDashboard = () => {
                                                         <div className="flex items-start gap-2 flex-1 min-w-0">
                                                             <DollarSign className="h-4 w-4 text-purple-500 mt-0.5 flex-shrink-0" />
                                                             <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
-                                                                {formatBudgetLogText(log)}
+                                                                {formatBudgetLogText(
+                                                                    log,
+                                                                )}
                                                             </p>
                                                         </div>
                                                         <span className="text-xs text-slate-400 dark:text-slate-500 whitespace-nowrap flex-shrink-0">
                                                             {log.created_at
-                                                                ? formatHistoryTimestamp(log.created_at)
+                                                                ? formatHistoryTimestamp(
+                                                                      log.created_at,
+                                                                  )
                                                                 : "N/A"}
                                                         </span>
                                                     </div>
@@ -765,11 +918,18 @@ const MayorDashboard = () => {
 
                 {/* ===== Footer ===== */}
                 <div className="text-center text-xs pt-2 border-t border-slate-200 dark:border-slate-700/50 text-slate-400 dark:text-slate-500">
-                    <p>FCMS - Mayor's Office Dashboard • Municipality of Laguindingan</p>
+                    <p>
+                        FCMS - Mayor's Office Dashboard • Municipality of
+                        Laguindingan
+                    </p>
                     <p className="mt-0.5">
                         FY {activeFiscalYear}
-                        {hasActiveFiscalYear ? ' (Active)' : ' (No active fiscal year)'}
-                        {' • '}{totals.departmentsWithBudget} departments with active budgets
+                        {hasActiveFiscalYear
+                            ? " (Active)"
+                            : " (No active fiscal year)"}
+                        {" • "}
+                        {totals.departmentsWithBudget} departments with active
+                        budgets
                     </p>
                 </div>
             </div>

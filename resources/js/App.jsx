@@ -47,6 +47,7 @@ const EditVehicle = lazy(() => import("./pages/gso/vehicles/EditVehicle"));
 
 // ============ MAYOR PAGES ============
 const MayorDashboard = lazy(() => import("./pages/mayor/MayorDashboard"));
+const CreateGasSlip = lazy(() => import("./pages/mayor/CreateGasSlip"));
 const MayorPending = lazy(() => import("./pages/mayor/MayorPending"));
 const MayorApproved = lazy(() => import("./pages/mayor/MayorApproved"));
 const MayorFundIssuance = lazy(() => import("./pages/mayor/MayorFundIssuance"));
@@ -437,6 +438,16 @@ function App() {
                             </ProtectedRoute>
                         }
                     />
+                    <Route
+    path="/mo/gas-slips/create"
+    element={
+        <ProtectedRoute allowedRoles={["mayors_office"]}>
+            <Layout>
+                <CreateGasSlip />
+            </Layout>
+        </ProtectedRoute>
+    }
+/>
                     <Route
                         path="/mo/pending"
                         element={

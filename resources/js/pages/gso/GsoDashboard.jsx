@@ -61,6 +61,7 @@ import {
     Minus,
     Ban,
     AlertTriangle,
+    Fuel,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -201,6 +202,11 @@ const getStatusConfig = (status) => {
             label: "Pending Recon",
             icon: Clock,
         },
+        pending_gso_ticket: {
+            color: "bg-amber-600",
+            label: "Pending GSO Ticket",
+            icon: Fuel,
+        },
     };
     return (
         configs[status] || {
@@ -226,7 +232,6 @@ const formatDateShort = (dateString) => {
 
 // ============================================
 // TIMESTAMP FORMATTER — "23/09/2026, 6:29 PM"
-// ⬆ MOVED ABOVE TripHistoryWidget so it's always in scope
 // ============================================
 
 const formatLogTimestamp = (dateString) => {
@@ -614,7 +619,7 @@ const ChartFallback = () => (
 );
 
 // ============================================
-// ✅ TRIP HISTORY WIDGET — feed-style, mirrors ActivityLogs.jsx
+// ✅ TRIP HISTORY WIDGET
 // ============================================
 
 const TripHistoryWidget = ({ isLoading }) => {
@@ -623,16 +628,7 @@ const TripHistoryWidget = ({ isLoading }) => {
         queryFn: async () => {
             try {
                 const res = await gsoAPI.getActivityLogs();
-                // Mirror ActivityLogs.jsx: expects { data: { logs: [...] } }
                 const logs = res?.data?.data?.logs || res?.data?.logs || [];
-                console.log("🔍 [TripHistoryWidget] total logs:", logs.length);
-                if (logs.length > 0) {
-                    console.log(
-                        "🔍 [TripHistoryWidget] sources present:",
-                        [...new Set(logs.map((l) => l?.source))],
-                    );
-                    console.log("🔍 [TripHistoryWidget] first log:", logs[0]);
-                }
                 return Array.isArray(logs) ? logs : [];
             } catch (error) {
                 console.error("Error fetching activity logs:", error);
@@ -648,18 +644,13 @@ const TripHistoryWidget = ({ isLoading }) => {
 
     const activityLogs = useSafeArray(activityRaw);
 
-    // Filter to trip_history entries only + take latest 5
     const recent = useMemo(() => {
         const trips = activityLogs.filter(
             (log) => log?.source === "trip_history",
         );
-        console.log(
-            `🔍 [TripHistoryWidget] ${trips.length} trip_history entries`,
-        );
         return trips.slice(0, 5);
     }, [activityLogs]);
 
-    // Same message builder as ActivityLogs.jsx
     const formatLogText = (log) => {
         const userName = log.user_name || "Unknown User";
         const tripNo = log.trip_number ?? "?";
@@ -710,9 +701,6 @@ const TripHistoryWidget = ({ isLoading }) => {
                         <p className="text-sm text-slate-500 dark:text-slate-400">
                             No trip activity yet
                         </p>
-                        <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
-                            (Check browser console for raw log payload)
-                        </p>
                     </div>
                 ) : (
                     <div className="divide-y divide-slate-100 dark:divide-slate-700/60">
@@ -759,6 +747,15 @@ const GsoDashboard = () => {
     const [searchQuery, setSearchQuery] = useState("");
     const [validationNote, setValidationNote] = useState("");
 
+    // ✅ Gas Slip modal state
+    const [gasSlipModalTicket, setGasSlipModalTicket] = useState(null);
+    const [gasSlipForm, setGasSlipForm] = useState({
+        estimated_distance_km: "",
+        estimated_fuel_liters: "",
+        passenger_name: "",
+        validation_note: "",
+    });
+
     const departmentName =
         user?.department_name
             ?.replace("Philippine National Police - ", "")
@@ -777,6 +774,7 @@ const GsoDashboard = () => {
         queryClient.invalidateQueries({ queryKey: ["admin-vehicles-stats"] });
         queryClient.invalidateQueries({ queryKey: ["admin-departments-stats"] });
         queryClient.invalidateQueries({ queryKey: ["gso-activity-logs-trip-widget"] });
+        queryClient.invalidateQueries({ queryKey: ["gso-pending-gas-slips"] });
     }, [queryClient]);
 
     useAutoRefresh(
@@ -789,6 +787,7 @@ const GsoDashboard = () => {
             "new-notification",
             "gso-trip-created",
             "trip-cancelled",
+            "gas-slip-created",
         ],
         fetchAllData,
         1000,
@@ -948,6 +947,27 @@ const GsoDashboard = () => {
         refetchInterval: 30000,
     });
 
+    // ✅ Pending Gas Slip tickets
+    const { data: pendingGasSlipsRaw, isLoading: gasSlipsLoading } =
+        useOptimizedQuery({
+            queryKey: ["gso-pending-gas-slips"],
+            queryFn: async () => {
+                try {
+                    const response = await gsoAPI.getPendingGasSlipTickets();
+                    return extractArray(response);
+                } catch (error) {
+                    console.error("Error fetching pending gas slips:", error);
+                    return [];
+                }
+            },
+            staleTime: 0,
+            refetchOnMount: true,
+            refetchOnReconnect: true,
+            refetchOnWindowFocus: false,
+            placeholderData: (prev) => prev,
+        });
+    const pendingGasSlips = useSafeArray(pendingGasSlipsRaw);
+
     // ============ MUTATIONS ============
 
     const validateMutation = useMutation({
@@ -991,6 +1011,34 @@ const GsoDashboard = () => {
         onError: (error) => {
             toast.error(
                 error?.response?.data?.message || "Failed to cancel trip",
+            );
+        },
+    });
+
+    // ✅ Gas Slip completion mutation
+    const completeGasSlipMutation = useMutation({
+        mutationFn: async ({ ticketId, payload }) => {
+            const res = await gsoAPI.completeGasSlipTicket(ticketId, payload);
+            return res.data;
+        },
+        onSuccess: (data) => {
+            toast.success(data.message || "Gas Slip ticket completed");
+            queryClient.invalidateQueries({
+                queryKey: ["gso-pending-gas-slips"],
+            });
+            queryClient.invalidateQueries({ queryKey: ["gso-all-trips"] });
+            setGasSlipModalTicket(null);
+            setGasSlipForm({
+                estimated_distance_km: "",
+                estimated_fuel_liters: "",
+                passenger_name: "",
+                validation_note: "",
+            });
+        },
+        onError: (error) => {
+            toast.error(
+                error?.response?.data?.message ||
+                    "Failed to complete Gas Slip ticket",
             );
         },
     });
@@ -1369,7 +1417,7 @@ const GsoDashboard = () => {
                 </CardContent>
             </Card>
 
-            {/* ✅ Search Bar — above the tabs, filters both */}
+            {/* Search Bar */}
             <div className="relative">
                 <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
                 <Input
@@ -1388,14 +1436,14 @@ const GsoDashboard = () => {
                 )}
             </div>
 
-            {/* ✅ Tabs */}
+            {/* Tabs */}
             <div data-tabs-section="true">
                 <Tabs
                     value={activeTab}
                     onValueChange={setActiveTab}
                     className="w-full"
                 >
-                    <TabsList className="grid w-full max-w-2xl grid-cols-2 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
+                    <TabsList className="grid w-full max-w-3xl grid-cols-3 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
                         <TabsTrigger
                             value="all"
                             className="rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900 data-[state=active]:shadow-sm transition-all duration-200"
@@ -1414,6 +1462,16 @@ const GsoDashboard = () => {
                             Validate
                             <Badge className="ml-2 bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 border-indigo-500/30 text-[10px]">
                                 {filteredValidation.length}
+                            </Badge>
+                        </TabsTrigger>
+                        <TabsTrigger
+                            value="gas-slips"
+                            className="rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900 data-[state=active]:shadow-sm transition-all duration-200"
+                        >
+                            <Fuel className="h-4 w-4 mr-2" />
+                            Pending Gas Slips
+                            <Badge className="ml-2 bg-amber-500/20 text-amber-600 dark:text-amber-400 border-amber-500/30 text-[10px]">
+                                {pendingGasSlips.length}
                             </Badge>
                         </TabsTrigger>
                     </TabsList>
@@ -1523,10 +1581,135 @@ const GsoDashboard = () => {
                             </CardContent>
                         </Card>
                     </TabsContent>
+
+                    {/* ============ GAS SLIPS TAB ============ */}
+                    <TabsContent value="gas-slips" className="space-y-4 mt-6">
+                        <Card className="dark:bg-slate-800/80 dark:border-slate-700">
+                            <CardHeader className="border-b dark:border-slate-700">
+                                <div className="flex items-center justify-between">
+                                    <div>
+                                        <CardTitle className="flex items-center gap-2 text-slate-800 dark:text-white">
+                                            <Fuel className="h-5 w-5 text-amber-500" />
+                                            Pending Gas Slip Tickets
+                                        </CardTitle>
+                                        <CardDescription className="dark:text-slate-400 mt-1">
+                                            MO-created Gas Slips awaiting GSO completion before drivers can proceed
+                                        </CardDescription>
+                                    </div>
+                                    <Badge className="bg-amber-500/20 text-amber-600 dark:text-amber-400 border-amber-500/30">
+                                        {pendingGasSlips.length} pending
+                                    </Badge>
+                                </div>
+                            </CardHeader>
+                            <CardContent className="pt-6">
+                                {gasSlipsLoading ? (
+                                    <div className="flex justify-center py-16">
+                                        <Loader2 className="h-8 w-8 animate-spin text-amber-500" />
+                                    </div>
+                                ) : pendingGasSlips.length === 0 ? (
+                                    <div className="text-center py-16">
+                                        <div className="w-16 h-16 bg-emerald-50 dark:bg-emerald-950/30 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                                            <CheckCircle className="h-8 w-8 text-emerald-500" />
+                                        </div>
+                                        <p className="text-slate-600 dark:text-slate-400 font-medium">
+                                            No pending Gas Slips
+                                        </p>
+                                        <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">
+                                            All MO-created Gas Slips have been processed.
+                                        </p>
+                                    </div>
+                                ) : (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                        {pendingGasSlips.map((gs) => (
+                                            <div
+                                                key={gs.trip_ticket_id}
+                                                className="bg-white dark:bg-slate-900/40 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition p-5 space-y-3"
+                                            >
+                                                <div className="flex items-start justify-between">
+                                                    <div>
+                                                        <div className="text-xs uppercase tracking-wide text-amber-600 font-semibold">
+                                                            Control No.
+                                                        </div>
+                                                        <div className="text-lg font-bold text-slate-900 dark:text-white">
+                                                            {gs.control_number || gs.trip_ticket_number}
+                                                        </div>
+                                                    </div>
+                                                    <div className="text-right">
+                                                        <div className="text-xs text-slate-500">
+                                                            Amount
+                                                        </div>
+                                                        <div className="text-base font-semibold text-emerald-600">
+                                                            ₱
+                                                            {Number(gs.amount_released).toLocaleString(
+                                                                "en-PH",
+                                                                { minimumFractionDigits: 2 },
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <div className="space-y-1.5 text-sm text-slate-600 dark:text-slate-400">
+                                                    <div className="flex items-center gap-2 truncate">
+                                                        <User className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                                                        <span className="truncate">
+                                                            {gs.driver?.full_name || "—"}
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex items-center gap-2 truncate">
+                                                        <Truck className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                                                        <span className="truncate">
+                                                            {gs.vehicle
+                                                                ? `${gs.vehicle.plate_number} — ${gs.vehicle.vehicle_model}`
+                                                                : "—"}
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex items-center gap-2 truncate">
+                                                        <Building2 className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                                                        <span className="truncate">
+                                                            {gs.department_name || "—"}
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex items-center gap-2 truncate">
+                                                        <MapPin className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                                                        <span className="truncate">
+                                                            {gs.destination || "—"}
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex items-center gap-2 truncate">
+                                                        <Calendar className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                                                        <span className="truncate">
+                                                            {formatDateShort(gs.trip_date)}
+                                                        </span>
+                                                    </div>
+                                                </div>
+
+                                                <Button
+                                                    onClick={() => {
+                                                        setGasSlipModalTicket(gs);
+                                                        setGasSlipForm({
+                                                            estimated_distance_km:
+                                                                gs.estimated_distance_km || "",
+                                                            estimated_fuel_liters:
+                                                                gs.estimated_fuel_liters || "",
+                                                            passenger_name: gs.passenger_name || "",
+                                                            validation_note: "",
+                                                        });
+                                                    }}
+                                                    className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+                                                >
+                                                    Complete Trip Ticket
+                                                </Button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </CardContent>
+                        </Card>
+                    </TabsContent>
                 </Tabs>
             </div>
 
-            {/* ✅ Trip History Widget — below the tabs */}
+            {/* Trip History Widget */}
             <TripHistoryWidget isLoading={isLoading} />
 
             {/* Cancel Dialog */}
@@ -1766,6 +1949,207 @@ const GsoDashboard = () => {
                                 <Check className="h-4 w-4 mr-2" />
                             )}
                             Close Trip
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* ============ GAS SLIP COMPLETE MODAL ============ */}
+            <Dialog
+                open={!!gasSlipModalTicket}
+                onOpenChange={(open) => {
+                    if (!open && !completeGasSlipMutation.isPending) {
+                        setGasSlipModalTicket(null);
+                    }
+                }}
+            >
+                <DialogContent className="sm:max-w-lg dark:bg-slate-800 dark:border-slate-700 max-h-[90vh] overflow-y-auto">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2 text-slate-800 dark:text-white">
+                            <div className="p-2 rounded-xl bg-amber-500/10">
+                                <Fuel className="h-5 w-5 text-amber-600" />
+                            </div>
+                            Complete Trip Ticket
+                        </DialogTitle>
+                        <DialogDescription className="dark:text-slate-400">
+                            Confirm this MO-created Gas Slip. Driver will be
+                            notified to acknowledge funds and start the trip.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-4 space-y-1.5 text-sm border border-slate-200 dark:border-slate-700">
+                        <div className="flex justify-between">
+                            <span className="text-slate-500 dark:text-slate-400">
+                                Control No.
+                            </span>
+                            <span className="font-mono font-semibold dark:text-white">
+                                {gasSlipModalTicket?.control_number}
+                            </span>
+                        </div>
+                        <div className="flex justify-between">
+                            <span className="text-slate-500 dark:text-slate-400">
+                                Driver
+                            </span>
+                            <span className="dark:text-white">
+                                {gasSlipModalTicket?.driver?.full_name || "—"}
+                            </span>
+                        </div>
+                        <div className="flex justify-between">
+                            <span className="text-slate-500 dark:text-slate-400">
+                                Vehicle
+                            </span>
+                            <span className="dark:text-white">
+                                {gasSlipModalTicket?.vehicle
+                                    ? `${gasSlipModalTicket.vehicle.plate_number} — ${gasSlipModalTicket.vehicle.vehicle_model}`
+                                    : "—"}
+                            </span>
+                        </div>
+                        <div className="flex justify-between">
+                            <span className="text-slate-500 dark:text-slate-400">
+                                Department
+                            </span>
+                            <span className="dark:text-white">
+                                {gasSlipModalTicket?.department_name || "—"}
+                            </span>
+                        </div>
+                        <div className="flex justify-between">
+                            <span className="text-slate-500 dark:text-slate-400">
+                                Destination
+                            </span>
+                            <span className="dark:text-white">
+                                {gasSlipModalTicket?.destination || "—"}
+                            </span>
+                        </div>
+                        <div className="flex justify-between">
+                            <span className="text-slate-500 dark:text-slate-400">
+                                Amount Released
+                            </span>
+                            <span className="font-semibold text-emerald-600">
+                                ₱
+                                {Number(
+                                    gasSlipModalTicket?.amount_released || 0,
+                                ).toLocaleString("en-PH", {
+                                    minimumFractionDigits: 2,
+                                })}
+                            </span>
+                        </div>
+                    </div>
+
+                    <div className="space-y-3">
+                        <div>
+                            <label className="text-xs font-medium text-slate-600 dark:text-slate-400">
+                                Estimated Distance (km) — optional
+                            </label>
+                            <Input
+                                type="number"
+                                step="0.01"
+                                value={gasSlipForm.estimated_distance_km}
+                                onChange={(e) =>
+                                    setGasSlipForm({
+                                        ...gasSlipForm,
+                                        estimated_distance_km: e.target.value,
+                                    })
+                                }
+                                className="mt-1 dark:bg-slate-900 dark:border-slate-700"
+                            />
+                        </div>
+                        <div>
+                            <label className="text-xs font-medium text-slate-600 dark:text-slate-400">
+                                Estimated Fuel (liters) — optional
+                            </label>
+                            <Input
+                                type="number"
+                                step="0.01"
+                                value={gasSlipForm.estimated_fuel_liters}
+                                onChange={(e) =>
+                                    setGasSlipForm({
+                                        ...gasSlipForm,
+                                        estimated_fuel_liters: e.target.value,
+                                    })
+                                }
+                                className="mt-1 dark:bg-slate-900 dark:border-slate-700"
+                            />
+                        </div>
+                        <div>
+                            <label className="text-xs font-medium text-slate-600 dark:text-slate-400">
+                                Passenger Name — optional
+                            </label>
+                            <Input
+                                value={gasSlipForm.passenger_name}
+                                onChange={(e) =>
+                                    setGasSlipForm({
+                                        ...gasSlipForm,
+                                        passenger_name: e.target.value,
+                                    })
+                                }
+                                className="mt-1 dark:bg-slate-900 dark:border-slate-700"
+                            />
+                        </div>
+                        <div>
+                            <label className="text-xs font-medium text-slate-600 dark:text-slate-400">
+                                Validation Note — optional
+                            </label>
+                            <Textarea
+                                rows={2}
+                                value={gasSlipForm.validation_note}
+                                onChange={(e) =>
+                                    setGasSlipForm({
+                                        ...gasSlipForm,
+                                        validation_note: e.target.value,
+                                    })
+                                }
+                                placeholder="Any notes for the audit trail"
+                                className="mt-1 resize-none dark:bg-slate-900 dark:border-slate-700"
+                            />
+                        </div>
+                    </div>
+
+                    <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-xl p-3 flex items-start gap-2">
+                        <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                        <p className="text-xs text-amber-800 dark:text-amber-300">
+                            Once completed, the Trip Ticket moves to{" "}
+                            <b>Funds Issued</b>. The driver can then acknowledge, start the
+                            trip, and upload the receipt.
+                        </p>
+                    </div>
+
+                    <DialogFooter className="gap-2">
+                        <Button
+                            variant="outline"
+                            onClick={() => setGasSlipModalTicket(null)}
+                            disabled={completeGasSlipMutation.isPending}
+                            className="dark:border-slate-700 dark:text-slate-300"
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            onClick={() => {
+                                if (!gasSlipModalTicket) return;
+                                completeGasSlipMutation.mutate({
+                                    ticketId: gasSlipModalTicket.trip_ticket_id,
+                                    payload: {
+                                        estimated_distance_km: gasSlipForm.estimated_distance_km
+                                            ? Number(gasSlipForm.estimated_distance_km)
+                                            : null,
+                                        estimated_fuel_liters: gasSlipForm.estimated_fuel_liters
+                                            ? Number(gasSlipForm.estimated_fuel_liters)
+                                            : null,
+                                        passenger_name:
+                                            gasSlipForm.passenger_name.trim() || null,
+                                        validation_note:
+                                            gasSlipForm.validation_note.trim() || null,
+                                    },
+                                });
+                            }}
+                            disabled={completeGasSlipMutation.isPending}
+                            className="bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-500/20"
+                        >
+                            {completeGasSlipMutation.isPending ? (
+                                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                            ) : (
+                                <Check className="h-4 w-4 mr-2" />
+                            )}
+                            Complete Trip Ticket
                         </Button>
                     </DialogFooter>
                 </DialogContent>

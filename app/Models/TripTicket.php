@@ -13,6 +13,7 @@ class TripTicket extends Model
     public $timestamps = false;
 
     protected $fillable = [
+        'source',
         'trip_ticket_number',
         'department_id',
         'driver_id',
@@ -62,6 +63,7 @@ class TripTicket extends Model
 
         'is_fuel_issued_without_trip' => 'boolean',
         'cancelled_at' => 'datetime',
+        'source' => 'string',
     ];
 
     // ============ STATUS CONSTANTS ============
@@ -76,6 +78,7 @@ class TripTicket extends Model
     public const STATUS_CANCELLED = 'cancelled';
     public const STATUS_ACKNOWLEDGED = 'acknowledged';
     public const STATUS_PENDING_GSO_VALIDATION = 'pending_gso_validation';
+    public const STATUS_PENDING_GSO_TICKET = 'pending_gso_ticket';
 
     // ============ RELATIONSHIPS ============
     public function department()
@@ -190,6 +193,7 @@ class TripTicket extends Model
             self::STATUS_REJECTED => 'Rejected',
             self::STATUS_CANCELLED => 'Cancelled',
             self::STATUS_ACKNOWLEDGED => 'Acknowledged',
+            self::STATUS_PENDING_GSO_TICKET => 'Pending GSO Ticket',
         ];
         return $labels[$this->status] ?? $this->status;
     }
@@ -207,6 +211,7 @@ class TripTicket extends Model
             self::STATUS_REJECTED => 'red',
             self::STATUS_CANCELLED => 'gray',
             self::STATUS_ACKNOWLEDGED => 'cyan',
+            self::STATUS_PENDING_GSO_TICKET => 'amber',
         ];
         return $colors[$this->status] ?? 'gray';
     }
@@ -305,4 +310,13 @@ class TripTicket extends Model
         $receipt = $this->gasSlip?->fuelReceipt;
         return $receipt && $receipt->hasFuelDetails();
     }
+    public function isMoGasSlipCreated(): bool
+{
+    return $this->source === 'mo_gas_slip';
+}
+
+public function isPendingGsoTicket(): bool
+{
+    return $this->status === self::STATUS_PENDING_GSO_TICKET;
+}
 }

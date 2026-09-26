@@ -119,6 +119,11 @@ getActivityLogs: (params) => cachedApi.get('/gso/activity-logs', { params }),
 
    getCancelledTrips: (params) => cachedApi.get("/gso/cancelled-trips", { params }),
   cancelTrip: (tripId, data) => uncachedApi.post(`/gso/trips/${tripId}/cancel`, data),
+
+
+  getPendingGasSlipTickets: (params) => cachedApi.get('/gso/pending-gas-slips', { params }),
+completeGasSlipTicket: (tripTicketId, data) =>
+  uncachedApi.post(`/gso/pending-gas-slips/${tripTicketId}/complete`, data),
 };
 
 // ============ MAYOR'S OFFICE API ============
@@ -217,6 +222,22 @@ export const mayorsOfficeAPI = {
 // weekly tracking dashboard
   getWeeklyTracking: (params) =>
     cachedApi.get("/mayors-office/weekly-tracking", { params }),
+
+
+    // MO-scoped lookups (for Gas Slip form)
+  getActiveDrivers: (params) =>
+    cachedApi.get("/mayors-office/drivers/active", { params }),
+  getAvailableVehicles: (params) =>
+    cachedApi.get("/mayors-office/vehicles/available", { params }),
+
+
+
+  
+// Gas Slips (MO-created)
+createGasSlip: (data) => uncachedApi.post('/mayors-office/gas-slips', data),
+getPendingGasSlips: (params) => cachedApi.get('/mayors-office/gas-slips/pending', { params }),
+cancelGasSlip: (id, data) => uncachedApi.post(`/mayors-office/gas-slips/${id}/cancel`, data),
+
 };
 
 // ============ DRIVER API ============
@@ -263,6 +284,7 @@ export const driverAPI = {
     cachedApi.get(`/gso/tickets/${tripId}/history`),
 
   getReceiptStatus: (id) => cachedApi.get(`/driver/trips/${id}/receipt`),
+
 };
 
 // ============ DEPARTMENT API ============

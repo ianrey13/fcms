@@ -231,6 +231,11 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         // ✅ Cancellation
         Route::get('/cancelled-trips', [GsoController::class, 'getCancelledTrips']);
         Route::post('/trips/{id}/cancel', [GsoController::class, 'cancelTrip']);
+
+
+        // Gas Slip placeholder tickets
+Route::get('pending-gas-slips', [GsoController::class, 'getPendingGasSlipTickets']);
+Route::post('pending-gas-slips/{tripTicketId}/complete', [GsoController::class, 'completeGasSlipTicket']);
     });
 
     // ============ MAYOR'S OFFICE ============
@@ -307,6 +312,18 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
 
         Route::get('cancelled-trips', [MayorsOfficeController::class, 'getCancelledTrips']);
         Route::post('tickets/{id}/cancel', [MayorsOfficeController::class, 'cancelTrip']);
+
+               // Gas Slips (MO-created)
+               Route::get('gas-slips/next-control-number', [MayorsOfficeController::class, 'getNextControlNumber']); // ← ADD
+        Route::post('gas-slips', [MayorsOfficeController::class, 'createGasSlip']);
+        Route::get('gas-slips/pending', [MayorsOfficeController::class, 'getPendingGasSlips']);
+        Route::post('gas-slips/{id}/cancel', [MayorsOfficeController::class, 'cancelGasSlip']);
+
+        // MO-scoped lookups (for Gas Slip form)
+        Route::get('drivers/active', [MayorsOfficeController::class, 'getActiveDrivers']);
+        Route::get('vehicles/available', [MayorsOfficeController::class, 'getAvailableVehicles']);
+
+
     });
 
     // ============ DRIVER ============

@@ -12,6 +12,7 @@ class DeptBudgetPeriod extends Model
     
     protected $fillable = [
         'department_id', 
+        'fiscal_year',        
         'week_start', 
         'allocated_amount', 
         'remaining_balance',  // ✅ ADD THIS
@@ -20,6 +21,7 @@ class DeptBudgetPeriod extends Model
     ];
     
     protected $casts = [
+         'fiscal_year'       => 'integer',   
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
         'closed_at' => 'datetime',

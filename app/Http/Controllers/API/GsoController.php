@@ -1377,4 +1377,186 @@ public function updateFuelReceiptLiters(Request $request, $id)
         ], 500);
     }
 }
+
+        /**
+     * Get MO-created Gas Slip tickets (any status except closed/cancelled/rejected).
+     * GSO sees these until the trip is closed.
+     * GET /gso/pending-gas-slips
+     */
+    public function getMoCreatedGasSlips(Request $request)
+    {
+        $user = $request->user();
+        if (!$user->isGsoOffice()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $tickets = TripTicket::with([
+            'driver.user',
+            'vehicle',
+            'department',
+            'gasSlip',
+            'createdByMO',
+        ])
+        ->where('source', 'mo_gas_slip')
+        ->whereNotIn('status', ['closed', 'cancelled', 'rejected'])
+        ->orderBy('submitted_at', 'desc')
+        ->get()
+        ->map(function ($tt) {
+            return [
+                'trip_ticket_id'     => $tt->trip_ticket_id,
+                'trip_ticket_number' => $tt->trip_ticket_number,
+                'control_number'     => $tt->gasSlip?->control_number,
+                'gas_slip_id'        => $tt->gasSlip?->gas_slip_id,
+                'amount_released'    => (float) ($tt->gasSlip?->amount_released ?? 0),
+                'trip_date'          => $tt->trip_date,
+                'destination'        => $tt->destination,
+                'purpose'            => $tt->purpose,
+                'charge_to'          => $tt->charge_to,
+                'passenger_name'     => $tt->passenger_name,
+                'status'             => $tt->status,
+                'driver'             => $tt->driver && $tt->driver->user ? [
+                    'driver_id' => $tt->driver->driver_id,
+                    'full_name' => $tt->driver->user->full_name,
+                ] : null,
+                'vehicle'            => $tt->vehicle ? [
+                    'vehicle_id'    => $tt->vehicle->vehicle_id,
+                    'plate_number'  => $tt->vehicle->plate_number,
+                    'vehicle_model' => $tt->vehicle->vehicle_model,
+                    'fuel_type'     => $tt->vehicle->fuel_type,
+                ] : null,
+                'department_name'    => $tt->department?->department_name,
+                'department_code'    => $tt->department?->department_code,
+                'created_by_mo'      => $tt->createdByMO?->full_name,
+                'created_at'         => $tt->submitted_at,
+                'is_pending_gso_ticket' => $tt->status === TripTicket::STATUS_PENDING_GSO_TICKET,
+            ];
+        });
+
+        return response()->json([
+            'success' => true,
+            'data'    => $tickets,
+            'meta'    => ['total' => $tickets->count()],
+        ]);
+    }
+
+      /**
+     * GSO completes a Gas Slip ticket.
+     * Idempotent — works whether the driver has acted or not.
+     * Only promotes status if still in pending_gso_ticket.
+     *
+     * POST /gso/pending-gas-slips/{tripTicketId}/complete
+     */
+    public function completeGasSlipTicket(Request $request, $tripTicketId)
+    {
+        $user = $request->user();
+        if (!$user->isGsoOffice()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'estimated_distance_km'  => 'nullable|numeric|min:0',
+            'estimated_fuel_liters'  => 'nullable|numeric|min:0',
+            'passenger_name'         => 'nullable|string|max:120',
+            'validation_note'        => 'nullable|string|max:500',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        $ticket = TripTicket::with(['gasSlip', 'vehicle', 'driver.user'])
+            ->where('trip_ticket_id', $tripTicketId)
+            ->where('source', 'mo_gas_slip')
+            ->whereNotIn('status', ['closed', 'cancelled', 'rejected'])
+            ->first();
+
+        if (!$ticket) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Gas Slip ticket not found or already closed',
+            ], 404);
+        }
+
+        DB::beginTransaction();
+
+        try {
+            if ($request->filled('estimated_distance_km')) {
+                $ticket->estimated_distance_km = $request->estimated_distance_km;
+            }
+            if ($request->filled('estimated_fuel_liters')) {
+                $ticket->estimated_fuel_liters = $request->estimated_fuel_liters;
+            }
+            if ($request->filled('passenger_name')) {
+                $ticket->passenger_name = $request->passenger_name;
+            }
+
+            // Only promote if still in placeholder state.
+            // Never clobber an advanced status (acknowledged / in_transit / completed).
+            $wasPlaceholder = $ticket->status === TripTicket::STATUS_PENDING_GSO_TICKET;
+            if ($wasPlaceholder) {
+                $ticket->status = TripTicket::STATUS_FUNDS_ISSUED;
+            }
+
+            $ticket->updated_at = now();
+            $ticket->save();
+
+            DB::table('audit_log')->insert([
+                'user_id'    => $user->user_id,
+                'action'     => 'gso_completed_gas_slip_ticket',
+                'table_name' => 'trip_ticket',
+                'record_id'  => $ticket->trip_ticket_id,
+                'old_values' => json_encode([
+                    'status' => $wasPlaceholder
+                        ? TripTicket::STATUS_PENDING_GSO_TICKET
+                        : $ticket->status,
+                ]),
+                'new_values' => json_encode([
+                    'status'          => $ticket->status,
+                    'validation_note' => $request->validation_note,
+                ]),
+                'ip_address' => $request->ip(),
+                'created_at' => now(),
+            ]);
+
+            DB::commit();
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Complete Gas Slip ticket error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to complete Gas Slip ticket: ' . $e->getMessage(),
+            ], 500);
+        }
+
+        // Only notify driver if we actually promoted from placeholder
+        if ($wasPlaceholder) {
+            try {
+                $driver = $ticket->driver;
+                if ($driver && $driver->user_id) {
+                    NotificationHelper::send(
+                        $driver->user_id,
+                        'fund_issued',
+                        'trip_ticket',
+                        $ticket->trip_ticket_id,
+                        "Gas Slip {$ticket->gasSlip?->control_number} is ready — Trip Ticket {$ticket->trip_ticket_number} approved by GSO"
+                    );
+                }
+            } catch (\Exception $e) {
+                Log::error('GSO completion notification failed: ' . $e->getMessage());
+            }
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Gas Slip ticket completed successfully',
+            'data' => [
+                'trip_ticket_id'     => $ticket->trip_ticket_id,
+                'trip_ticket_number' => $ticket->trip_ticket_number,
+                'control_number'     => $ticket->gasSlip?->control_number,
+                'status'             => $ticket->status,
+            ],
+        ]);
+    }
+
+
 }
