@@ -172,7 +172,7 @@ class TripTicketController extends Controller
         }
     }
 
-   /**
+      /**
      * GSO staff CREATE TRIP TICKET
      */
     public function gsoCreate(Request $request)
@@ -223,8 +223,6 @@ class TripTicketController extends Controller
                 return response()->json(['message' => 'Driver is not active'], 400);
             }
 
-           
-            
             $estimatedDistance = $request->estimated_distance_km
                 ?? $this->calculateDistanceFromConfig($request->destination);
 
@@ -234,25 +232,31 @@ class TripTicketController extends Controller
             $estimatedCost = $request->estimated_cost
                 ?? round($estimatedFuel * $this->getFuelPriceFromConfig($vehicle->fuel_type), 2);
 
-           
-
             $budgetInfo = $this->getDepartmentBudgetFromConfig($request->department_id);
             $hasInsufficientBudget = $budgetInfo['remaining'] < $estimatedCost;
             $budgetShortage = $hasInsufficientBudget ? round($estimatedCost - $budgetInfo['remaining'], 2) : 0;
 
+            // ✅ SHARED SEQUENCE with gas_slip.control_number
+            //    Prevents collisions between GSO-created tickets and MO-created Gas Slips.
             $yearMonth = date('Y-m');
-            $lastTicket = TripTicket::where('trip_ticket_number', 'like', $yearMonth . '-%')
-                ->orderBy('trip_ticket_id', 'desc')
-                ->first();
 
-            if ($lastTicket) {
-                preg_match('/' . $yearMonth . '-(\d+)/', $lastTicket->trip_ticket_number, $matches);
-                $seq = isset($matches[1]) ? intval($matches[1]) + 1 : 1;
-            } else {
-                $seq = 1;
+            $lastTicketNum = TripTicket::where('trip_ticket_number', 'like', $yearMonth . '-%')
+                ->orderBy('trip_ticket_id', 'desc')
+                ->value('trip_ticket_number');
+
+            $lastControlNum = GasSlip::where('control_number', 'like', $yearMonth . '-%')
+                ->orderBy('gas_slip_id', 'desc')
+                ->value('control_number');
+
+            $lastSeq = 0;
+            foreach ([$lastTicketNum, $lastControlNum] as $n) {
+                if ($n && preg_match('/^' . preg_quote($yearMonth, '/') . '-(\d+)$/', $n, $m)) {
+                    $seq = (int) $m[1];
+                    if ($seq > $lastSeq) $lastSeq = $seq;
+                }
             }
 
-            $ticketNumber = $yearMonth . '-' . str_pad($seq, 3, '0', STR_PAD_LEFT);
+            $ticketNumber = $yearMonth . '-' . str_pad($lastSeq + 1, 3, '0', STR_PAD_LEFT);
 
             DB::beginTransaction();
 
@@ -273,8 +277,8 @@ class TripTicketController extends Controller
                 'charge_to' => $request->charge_to,
                 'passenger_name' => $request->passenger_name ?? null,
                 'status' => TripTicket::STATUS_PENDING_MAYORS_OFFICE,
-                'estimated_distance_km' => $estimatedDistance,  
-                'estimated_fuel_liters' => $estimatedFuel,      
+                'estimated_distance_km' => $estimatedDistance,
+                'estimated_fuel_liters' => $estimatedFuel,
                 'has_insufficient_budget' => $hasInsufficientBudget,
                 'budget_shortage' => $budgetShortage,
                 'original_department_id' => $request->department_id,
@@ -302,9 +306,9 @@ class TripTicketController extends Controller
                     'trip_ticket_id' => $tripTicket->trip_ticket_id,
                     'trip_ticket_number' => $tripTicket->trip_ticket_number,
                     'status' => $tripTicket->status,
-                    'estimated_distance_km' => $estimatedDistance,  
-                    'estimated_fuel_liters' => $estimatedFuel,      
-                    'estimated_cost' => $estimatedCost,            
+                    'estimated_distance_km' => $estimatedDistance,
+                    'estimated_fuel_liters' => $estimatedFuel,
+                    'estimated_cost' => $estimatedCost,
                     'has_insufficient_budget' => $hasInsufficientBudget,
                     'budget_shortage' => $budgetShortage,
                 ]
