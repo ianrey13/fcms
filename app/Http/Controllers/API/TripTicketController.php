@@ -236,8 +236,7 @@ class TripTicketController extends Controller
             $hasInsufficientBudget = $budgetInfo['remaining'] < $estimatedCost;
             $budgetShortage = $hasInsufficientBudget ? round($estimatedCost - $budgetInfo['remaining'], 2) : 0;
 
-            // ✅ SHARED SEQUENCE with gas_slip.control_number
-            //    Prevents collisions between GSO-created tickets and MO-created Gas Slips.
+           
             $yearMonth = date('Y-m');
 
             $lastTicketNum = TripTicket::where('trip_ticket_number', 'like', $yearMonth . '-%')

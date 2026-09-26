@@ -282,7 +282,7 @@ class AnnualBudgetController extends Controller
                 $message = 'Annual budget created successfully';
             }
 
-            // ✅ Single upsert — scoped by (department_id, fiscal_year)
+            
             DeptBudgetPolicy::updateOrCreate(
                 [
                     'department_id' => $departmentId,

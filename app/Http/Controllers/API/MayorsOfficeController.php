@@ -701,7 +701,7 @@ class MayorsOfficeController extends Controller
     }
 
     /**
-     * ✅ Create a new budget period for a department — FY-aware
+     * Create a new budget period for a department — FY-aware
      */
     private function createBudgetPeriod($departmentId)
     {
@@ -720,7 +720,7 @@ class MayorsOfficeController extends Controller
 
         $period = DeptBudgetPeriod::create([
             'department_id'     => $departmentId,
-            'fiscal_year'       => $activeYear,   // ✅ NEW
+            'fiscal_year'       => $activeYear, 
             'week_start'        => $weekStart,
             'allocated_amount'  => $allocatedAmount,
             'remaining_balance' => $allocatedAmount,

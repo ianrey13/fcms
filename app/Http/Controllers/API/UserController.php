@@ -186,7 +186,7 @@ class UserController extends Controller
                 'password_changed_at' => now(),
             ]);
 
-            // Create driver record if role is driver
+           
             if ($request->role === 'driver') {
                 Driver::create([
                     'user_id' => $user->user_id,

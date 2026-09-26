@@ -1,16 +1,5 @@
 // src/pages/mayor/MayorPending.jsx
 // ============================================
-// ✅ MERGED: Pending Fund Release + Funds Released (Approved)
-// ✅ SHOWS: Requesting department's balance (from trip ticket)
-// ✅ CROSS-DEPARTMENT: Auto-selects Mayor's Office when enabled
-// ✅ LIVE BALANCE PREVIEW after amount entry
-// ✅ ADDED: MO Cancel feature (before funds released)
-// ✅ ADDED: Tab-based view (Pending / Released)
-// ✅ ADDED: Released tickets show View + Gas Slip instead of Release
-// ✅ FIXED: formatCurrency/formatDate/safeAmount moved outside component
-// ✅ UPDATED: Weekly suggested is auto-computed (annual / 52)
-// ✅ ADDED: "Amount Exceeded to Weekly Suggested" confirmation dialog
-// ============================================
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
@@ -513,6 +502,10 @@ const MayorPending = () => {
   const [showWeeklyWarning, setShowWeeklyWarning] = useState(false);
   const [pendingApprovePayload, setPendingApprovePayload] = useState(null);
 
+  // ✅ Refs to hold fetchers — avoids "cannot access before initialization"
+  const fetchTicketsRef = useRef(null);
+  const fetchReleasedTicketsRef = useRef(null);
+
   // ============================================
   // STATUSES THAT CAN BE CANCELLED BY MAYOR'S OFFICE
   // ============================================
@@ -527,7 +520,12 @@ const MayorPending = () => {
   const fetchAllData = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ["mayor-pending-tickets"] });
     queryClient.invalidateQueries({ queryKey: ["mayor-approved-tickets"] });
-  }, [queryClient]);
+
+    fetchTicketsRef.current?.();
+    if (activeTab === "released") {
+      fetchReleasedTicketsRef.current?.();
+    }
+  }, [queryClient, activeTab]);
 
   useAutoRefresh(
     [
@@ -539,6 +537,8 @@ const MayorPending = () => {
       "trip-completed",
       "trip-started",
       "new-notification",
+      "gas-slip-created",   // ✅ ADD
+      "funds-released",     // ✅ ADD
     ],
     fetchAllData
   );
@@ -561,6 +561,11 @@ const MayorPending = () => {
     }
   }, []);
 
+  // ✅ Assign fetchTickets to ref
+  useEffect(() => {
+    fetchTicketsRef.current = fetchTickets;
+  }, [fetchTickets]);
+
   // ============================================
   // FETCH RELEASED TICKETS
   // ============================================
@@ -577,6 +582,11 @@ const MayorPending = () => {
       setLoadingReleased(false);
     }
   }, []);
+
+  // ✅ Assign fetchReleasedTickets to ref
+  useEffect(() => {
+    fetchReleasedTicketsRef.current = fetchReleasedTickets;
+  }, [fetchReleasedTickets]);
 
   // ============================================
   // INITIAL LOAD
@@ -822,7 +832,6 @@ const MayorPending = () => {
 
       if (dept) {
         const annualAmount = parseFloat(dept.annual_amount || dept.allocated_amount || 0);
-        // ✅ Weekly suggested is always annual / 52
         const weeklySuggested = annualAmount > 0 ? annualAmount / 52 : 0;
         const weeklyUsed = parseFloat(dept.weekly_used || 0);
         const weeklyRemaining = weeklySuggested - weeklyUsed;
@@ -1046,7 +1055,6 @@ const MayorPending = () => {
     }
   };
 
-  // ✅ Split into "prepare" (validate + check weekly) and "submit" (actual API call)
   const handleApprove = () => {
     if (!selectedTicket) {
       toast.error("No ticket selected");
@@ -1065,8 +1073,6 @@ const MayorPending = () => {
 
     const amount = parseFloat(amountReleased) || 0;
 
-    // ✅ Compute whether this exceeds the weekly suggested for the charged dept
-    // Only warn for the charged department, cross-dept releases use MO's own weekly.
     const annualAmount = requestingDeptBalance?.allocated || 0;
     const weeklySuggested = annualAmount > 0 ? annualAmount / 52 : 0;
     const weeklyUsed = requestingDeptBalance?.weekly_used || 0;
@@ -1085,7 +1091,6 @@ const MayorPending = () => {
       cross_department_reason: crossDepartmentReason || null,
       force_approve: isForceApprove,
       force_approve_reason: forceApproveReason || null,
-      // ✅ Backend logs this; does not gate
       is_weekly_override: exceedsWeekly,
       weekly_override_reason: exceedsWeekly
         ? `Released ₱${amount.toFixed(2)} against suggested ₱${weeklySuggested.toFixed(2)} (weekly remaining: ₱${weeklyRemaining.toFixed(2)})`
@@ -1093,13 +1098,11 @@ const MayorPending = () => {
     };
 
     if (exceedsWeekly) {
-      // Show the confirmation dialog, don't call API yet
       setPendingApprovePayload(payload);
       setShowWeeklyWarning(true);
       return;
     }
 
-    // Not exceeding — proceed directly
     submitApprove(payload);
   };
 
@@ -1127,7 +1130,6 @@ const MayorPending = () => {
         if (toastIdRef.current) toast.dismiss(toastIdRef.current);
         toastIdRef.current = toast.success(successMessage);
 
-        // Reset everything
         setShowWeeklyWarning(false);
         setPendingApprovePayload(null);
         setShowApproveDialog(false);
@@ -1242,7 +1244,6 @@ const MayorPending = () => {
   const connectionStatus = isConnected ? "🟢 Live" : "🔴 Offline";
   const isRealTime = isConnected;
 
-  // ✅ Annual-only balance preview (weekly removed from display)
   const balanceAfterRelease = useMemo(() => {
     if (!requestingDeptBalance || !amountReleased) return null;
     const amount = parseFloat(amountReleased) || 0;
@@ -1838,7 +1839,6 @@ const MayorPending = () => {
             </DialogHeader>
 
             <div className="space-y-4">
-              {/* REQUESTING DEPARTMENT'S BALANCE — annual only */}
               <div className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30 rounded-xl p-4 border border-blue-200 dark:border-blue-800">
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
@@ -1865,7 +1865,6 @@ const MayorPending = () => {
 
                 {requestingDeptBalance ? (
                   <>
-                    {/* Annual remaining — the only gate */}
                     <div className="bg-white/70 dark:bg-slate-900/50 rounded-lg p-3">
                       <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">
                         Annual Remaining
@@ -1885,7 +1884,6 @@ const MayorPending = () => {
                       </p>
                     </div>
 
-                    {/* Weekly suggested info (read-only, non-gating) */}
                     <div className="mt-2 bg-purple-50/60 dark:bg-purple-950/20 rounded-lg p-3 border border-purple-200/60 dark:border-purple-800/60">
                       <div className="flex items-center justify-between text-xs">
                         <span className="flex items-center gap-1 text-purple-700 dark:text-purple-300 font-medium">
@@ -1913,7 +1911,6 @@ const MayorPending = () => {
                   </div>
                 )}
 
-                {/* LIVE BALANCE PREVIEW — annual only */}
                 {balanceAfterRelease && (
                   <div
                     className={cn(
@@ -1959,7 +1956,6 @@ const MayorPending = () => {
                 )}
               </div>
 
-              {/* Trip Date Validation */}
               {tripDateValidation && (
                 <div className="flex items-center gap-2">
                   {tripDateValidation.category === "today" && (
@@ -1986,7 +1982,6 @@ const MayorPending = () => {
                 </div>
               )}
 
-              {/* Force Approve */}
               {tripDateValidation && !tripDateValidation.canApprove && (
                 <div className="border-t dark:border-slate-700 pt-3 mt-1">
                   <div className="flex items-start gap-2">
@@ -2042,7 +2037,6 @@ const MayorPending = () => {
                 </div>
               )}
 
-              {/* Ticket Info */}
               <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-3 border border-slate-200 dark:border-slate-700">
                 <div className="grid grid-cols-2 gap-1.5 text-sm">
                   <div>
@@ -2072,7 +2066,6 @@ const MayorPending = () => {
                 </div>
               </div>
 
-              {/* Cross-Department */}
               <div className="border-t dark:border-slate-700 pt-3">
                 <div className="flex items-start gap-2">
                   <input
@@ -2147,7 +2140,6 @@ const MayorPending = () => {
                 </div>
               </div>
 
-              {/* Amount */}
               <FormField
                 label="Amount (₱)"
                 icon={DollarSign}
@@ -2172,33 +2164,6 @@ const MayorPending = () => {
                   className="mt-1 dark:bg-slate-900 dark:border-slate-700 dark:text-white font-mono text-lg"
                 />
               </FormField>
-
-              {/* {selectedTicket && getEstimatedCost(selectedTicket) > 0 && (
-                <div className="flex items-center gap-2 mt-1.5">
-                  <div className="flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
-                    <Calculator className="h-3.5 w-3.5 text-blue-400" />
-                    <span>Suggested:</span>
-                    <span className="font-semibold text-blue-600 dark:text-blue-400">
-                      {formatCurrency(getEstimatedCost(selectedTicket))}
-                    </span>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 px-2 text-xs text-blue-500 hover:text-blue-700 hover:bg-blue-50"
-                    onClick={() => {
-                      const estimated = getEstimatedCost(selectedTicket);
-                      if (estimated > 0) {
-                        setAmountReleased(estimated.toString());
-                        toast.success("Suggested amount applied");
-                      }
-                    }}
-                  >
-                    Apply
-                  </Button>
-                </div>
-              )} */}
             </div>
 
             <DialogFooter className="gap-3 pt-4 border-t dark:border-slate-700 mt-4">
@@ -2247,7 +2212,7 @@ const MayorPending = () => {
           </DialogContent>
         </Dialog>
 
-        {/* ✅ WEEKLY OVERRIDE WARNING DIALOG */}
+        {/* WEEKLY OVERRIDE WARNING DIALOG */}
         <Dialog open={showWeeklyWarning} onOpenChange={setShowWeeklyWarning}>
           <DialogContent className="max-w-md dark:bg-slate-800 dark:border-slate-700">
             <DialogHeader>

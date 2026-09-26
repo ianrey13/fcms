@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
@@ -11,9 +11,12 @@ import {
   FileText,
   Loader2,
   RefreshCw,
+  CheckCircle,
+  X,
 } from "lucide-react";
+import { debounce } from "lodash";
 
-import { mayorsOfficeAPI } from "../../services/api";
+import { mayorsOfficeAPI, locationAPI } from "../../services/api";
 
 const inputCls =
   "w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm";
@@ -27,6 +30,245 @@ const sectionTitleCls =
 const labelCls =
   "block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1.5";
 
+const SEARCH_DEBOUNCE_MS = 500;
+
+// ============================================
+// ✅ SINGLE-STOP DESTINATION PICKER
+// ============================================
+
+function SingleStopDestination({ value, onChange, error }) {
+  const [searchTerm, setSearchTerm] = useState(value?.address || "");
+  const [suggestions, setSuggestions] = useState([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [searching, setSearching] = useState(false);
+  const [selected, setSelected] = useState(
+    value?.lat && value?.lng ? value : null,
+  );
+
+  const wrapperRef = useRef(null);
+  const abortRef = useRef(null);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handleClick = (e) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target)) {
+        setShowSuggestions(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
+  // Debounced search
+  const searchDestinations = useCallback(
+    debounce(async (query) => {
+      if (query.length < 2) {
+        setSuggestions([]);
+        setShowSuggestions(false);
+        return;
+      }
+      setSearching(true);
+      if (abortRef.current) abortRef.current.abort();
+      abortRef.current = new AbortController();
+      try {
+        const response = await locationAPI.searchPlaces(query);
+        const data = response?.data;
+        if (data?.success !== false) {
+          let predictions = data.predictions || [];
+          if (predictions.length === 0 && data.data) predictions = data.data;
+
+          // Filter to valid coordinates
+          const filtered = predictions.filter((item) => {
+            const lat = parseFloat(item.lat);
+            const lng = parseFloat(item.lng);
+            return !isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0;
+          });
+
+          // Dedupe by description
+          const seen = new Set();
+          const deduped = (filtered.length > 0 ? filtered : predictions).filter(
+            (item) => {
+              const key = (item.description || "").toLowerCase().trim();
+              if (!key || seen.has(key)) return false;
+              seen.add(key);
+              return true;
+            },
+          );
+
+          setSuggestions(deduped);
+          setShowSuggestions(true);
+        }
+      } catch (err) {
+        if (err.name !== "AbortError") {
+          setSuggestions([]);
+          setShowSuggestions(false);
+        }
+      } finally {
+        setSearching(false);
+      }
+    }, SEARCH_DEBOUNCE_MS),
+    [],
+  );
+
+  const handleInputChange = (e) => {
+    const val = e.target.value;
+    setSearchTerm(val);
+    // Clear the selected location if the user edits the text
+    if (selected) {
+      setSelected(null);
+      onChange({ address: "", lat: null, lng: null, shortName: null });
+    }
+    if (val.length >= 2) {
+      searchDestinations(val);
+    } else {
+      setSuggestions([]);
+      setShowSuggestions(false);
+    }
+  };
+
+  const handleSelectSuggestion = (suggestion) => {
+    const fullDescription = suggestion.description;
+    const parts = fullDescription.split(",").map((p) => p.trim());
+    const shortName =
+      parts.length >= 2 ? `${parts[0]}, ${parts[1]}` : parts[0];
+
+    const newLat = parseFloat(suggestion.lat);
+    const newLng = parseFloat(suggestion.lng);
+
+    setSelected({
+      address: fullDescription,
+      lat: newLat,
+      lng: newLng,
+      shortName,
+    });
+    setSearchTerm(fullDescription);
+    onChange({
+      address: fullDescription,
+      lat: newLat,
+      lng: newLng,
+      shortName,
+    });
+    setShowSuggestions(false);
+    setSuggestions([]);
+  };
+
+  const handleClear = () => {
+    setSearchTerm("");
+    setSelected(null);
+    onChange({ address: "", lat: null, lng: null, shortName: null });
+    setSuggestions([]);
+    setShowSuggestions(false);
+  };
+
+  return (
+    <div className="relative" ref={wrapperRef}>
+      <div className="relative">
+        <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 pointer-events-none">
+          <MapPin className="h-4 w-4" />
+        </div>
+        <input
+          type="text"
+          value={searchTerm}
+          onChange={handleInputChange}
+          onFocus={() => {
+            if (suggestions.length > 0) setShowSuggestions(true);
+          }}
+          placeholder="Search destination — e.g. Cagayan de Oro City"
+          className={`${inputCls} pl-10 pr-10`}
+        />
+        {searching && (
+          <div className="absolute right-3 top-1/2 -translate-y-1/2">
+            <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
+          </div>
+        )}
+        {selected && !searching && (
+          <div className="absolute right-3 top-1/2 -translate-y-1/2">
+            <CheckCircle className="h-4 w-4 text-emerald-500" />
+          </div>
+        )}
+        {searchTerm && !selected && !searching && (
+          <button
+            type="button"
+            onClick={handleClear}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        )}
+      </div>
+
+      {selected && (
+        <div className="mt-2 flex items-center gap-2 p-2 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-lg">
+          <MapPin className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+          <span className="text-sm text-slate-800 dark:text-slate-200 truncate flex-1">
+            {selected.address}
+          </span>
+          <button
+            type="button"
+            onClick={handleClear}
+            className="text-xs text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 px-2 py-1 rounded-lg"
+          >
+            Change
+          </button>
+        </div>
+      )}
+
+      {error && <p className="text-xs text-red-500 mt-1">{error}</p>}
+
+      {showSuggestions && suggestions.length > 0 && (
+        <div className="absolute z-30 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-lg max-h-60 overflow-auto">
+          <div className="sticky top-0 bg-slate-50 dark:bg-slate-900 px-4 py-2 text-xs text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700 flex justify-between">
+            <span>{suggestions.length} results</span>
+            <span className="text-blue-500 dark:text-blue-400">
+              Select a location
+            </span>
+          </div>
+          {suggestions.map((suggestion, idx) => (
+            <div
+              key={idx}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                handleSelectSuggestion(suggestion);
+              }}
+              className="px-4 py-3 hover:bg-blue-50 dark:hover:bg-blue-950/30 cursor-pointer flex items-start gap-3 border-b border-slate-100 dark:border-slate-700 last:border-0"
+            >
+              <MapPin className="h-4 w-4 text-slate-400 dark:text-slate-500 mt-0.5 flex-shrink-0" />
+              <div className="min-w-0">
+                <p className="text-sm text-slate-900 dark:text-slate-100">
+                  {suggestion.description}
+                </p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  {suggestion.lat && suggestion.lng
+                    ? `${parseFloat(suggestion.lat).toFixed(4)}, ${parseFloat(
+                        suggestion.lng,
+                      ).toFixed(4)}`
+                    : "Click to select"}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {showSuggestions &&
+        searchTerm.length >= 2 &&
+        suggestions.length === 0 &&
+        !searching && (
+          <div className="absolute z-30 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-lg p-4 text-center">
+            <MapPin className="h-8 w-8 text-slate-300 dark:text-slate-600 mx-auto mb-2" />
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              No locations found
+            </p>
+          </div>
+        )}
+    </div>
+  );
+}
+
+// ============================================
+// MAIN COMPONENT
+// ============================================
+
 export default function CreateGasSlip() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -38,6 +280,7 @@ export default function CreateGasSlip() {
     vehicle_id: "",
     trip_date: format(new Date(), "yyyy-MM-dd"),
     destination: "",
+    destinationCoords: null,
     purpose: "",
     charge_to: "",
     passenger_name: "",
@@ -49,7 +292,9 @@ export default function CreateGasSlip() {
 
   const [errors, setErrors] = useState({});
 
-  // -------- Data fetches (MO-scoped) --------
+  const hasInitializedControlRef = useRef(false);
+
+  // -------- Data fetches --------
   const { data: departments = [] } = useQuery({
     queryKey: ["mo-departments-selector"],
     queryFn: async () => {
@@ -77,7 +322,7 @@ export default function CreateGasSlip() {
     enabled: !!form.department_id,
   });
 
-  // -------- Auto-generate control number on mount --------
+  // -------- Auto-generate control number --------
   const {
     data: nextControl,
     isLoading: controlLoading,
@@ -93,8 +338,9 @@ export default function CreateGasSlip() {
   });
 
   useEffect(() => {
-    if (nextControl && !form.control_number) {
+    if (nextControl && !hasInitializedControlRef.current) {
       setForm((f) => ({ ...f, control_number: nextControl }));
+      hasInitializedControlRef.current = true;
     }
   }, [nextControl]);
 
@@ -117,10 +363,16 @@ export default function CreateGasSlip() {
       toast.success(`Gas Slip ${data.control_number} created`);
       queryClient.invalidateQueries({ queryKey: ["mo-pending-gas-slips"] });
       queryClient.invalidateQueries({ queryKey: ["mayor-approved-tickets"] });
+      queryClient.invalidateQueries({ queryKey: ["mo-next-control-number"] });
       navigate("/mo/dashboard");
     },
     onError: (err) => {
-      toast.error(err?.response?.data?.message || "Failed to create Gas Slip");
+      const data = err?.response?.data;
+      const msg =
+        data?.message ||
+        (data?.errors && Object.values(data.errors)?.[0]?.[0]) ||
+        "Failed to create Gas Slip";
+      toast.error(msg);
     },
   });
 
@@ -231,7 +483,10 @@ export default function CreateGasSlip() {
                 />
                 <button
                   type="button"
-                  onClick={() => refetchControl()}
+                  onClick={() => {
+                    hasInitializedControlRef.current = false;
+                    refetchControl();
+                  }}
                   disabled={controlLoading}
                   title="Regenerate"
                   className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-50 transition"
@@ -303,15 +558,21 @@ export default function CreateGasSlip() {
               />
             </Field>
 
-            <Field label="Destination" error={errors.destination}>
-              <input
-                type="text"
-                value={form.destination}
-                onChange={(e) =>
-                  setForm({ ...form, destination: e.target.value })
+            <Field
+              label="Destination"
+              error={errors.destination}
+              hint="Search and pick a location"
+            >
+              <SingleStopDestination
+                value={form.destinationCoords}
+                onChange={(loc) =>
+                  setForm((f) => ({
+                    ...f,
+                    destination: loc.address || "",
+                    destinationCoords: loc.lat && loc.lng ? loc : null,
+                  }))
                 }
-                placeholder="e.g. Cagayan de Oro City"
-                className={inputCls}
+                error={errors.destination}
               />
             </Field>
 
