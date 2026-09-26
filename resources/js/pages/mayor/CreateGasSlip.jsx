@@ -48,7 +48,6 @@ function SingleStopDestination({ value, onChange, error }) {
   const wrapperRef = useRef(null);
   const abortRef = useRef(null);
 
-  // Close dropdown on outside click
   useEffect(() => {
     const handleClick = (e) => {
       if (wrapperRef.current && !wrapperRef.current.contains(e.target)) {
@@ -59,7 +58,6 @@ function SingleStopDestination({ value, onChange, error }) {
     return () => document.removeEventListener("mousedown", handleClick);
   }, []);
 
-  // Debounced search
   const searchDestinations = useCallback(
     debounce(async (query) => {
       if (query.length < 2) {
@@ -77,14 +75,12 @@ function SingleStopDestination({ value, onChange, error }) {
           let predictions = data.predictions || [];
           if (predictions.length === 0 && data.data) predictions = data.data;
 
-          // Filter to valid coordinates
           const filtered = predictions.filter((item) => {
             const lat = parseFloat(item.lat);
             const lng = parseFloat(item.lng);
             return !isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0;
           });
 
-          // Dedupe by description
           const seen = new Set();
           const deduped = (filtered.length > 0 ? filtered : predictions).filter(
             (item) => {
@@ -113,7 +109,6 @@ function SingleStopDestination({ value, onChange, error }) {
   const handleInputChange = (e) => {
     const val = e.target.value;
     setSearchTerm(val);
-    // Clear the selected location if the user edits the text
     if (selected) {
       setSelected(null);
       onChange({ address: "", lat: null, lng: null, shortName: null });
@@ -303,7 +298,8 @@ export default function CreateGasSlip() {
     },
   });
 
-  const { data: drivers = [] } = useQuery({
+  // ✅ Fetch ALL active drivers — filter client-side by selected department
+  const { data: allDrivers = [] } = useQuery({
     queryKey: ["mo-drivers-active"],
     queryFn: async () => {
       const res = await mayorsOfficeAPI.getActiveDrivers();
@@ -311,6 +307,13 @@ export default function CreateGasSlip() {
     },
   });
 
+  // ✅ Drivers filtered by selected department
+  const drivers = allDrivers.filter((d) => {
+    if (!form.department_id) return false; // hide until department selected
+    return String(d.department_id) === String(form.department_id);
+  });
+
+  // ✅ Vehicles filtered by selected department (backend already filters)
   const { data: vehicles = [] } = useQuery({
     queryKey: ["mo-vehicles-available", form.department_id],
     queryFn: async () => {
@@ -352,7 +355,8 @@ export default function CreateGasSlip() {
       ...f,
       department_id: deptId,
       charge_to: dept?.department_code || "",
-      vehicle_id: "",
+      driver_id: "",   // reset driver when department changes
+      vehicle_id: "",  // reset vehicle when department changes
     }));
   };
 
@@ -386,7 +390,6 @@ export default function CreateGasSlip() {
     if (!form.trip_date) e.trip_date = "Trip date is required";
     if (!form.destination.trim()) e.destination = "Destination is required";
     if (!form.purpose.trim()) e.purpose = "Purpose is required";
-    if (!form.charge_to.trim()) e.charge_to = "Charge to is required";
     if (!form.amount_released || Number(form.amount_released) <= 0)
       e.amount_released = "Amount must be greater than 0";
     if (form.is_cross_department && !form.cross_department_reason.trim())
@@ -471,16 +474,18 @@ export default function CreateGasSlip() {
               error={errors.control_number}
             >
               <div className="relative">
-                <input
-                  type="text"
-                  value={form.control_number}
-                  onChange={(e) =>
-                    setForm({ ...form, control_number: e.target.value })
-                  }
-                  placeholder={controlLoading ? "Generating…" : "2026-09-002"}
-                  className={`${inputCls} pr-10 font-mono`}
-                  disabled={controlLoading}
-                />
+                <div
+                  className={`${inputCls} pr-10 font-mono bg-slate-100 dark:bg-slate-800/60 text-slate-700 dark:text-slate-300 cursor-not-allowed select-none`}
+                >
+                  {controlLoading ? (
+                    <span className="text-slate-400 dark:text-slate-500">
+                      Generating…
+                    </span>
+                  ) : (
+                    form.control_number || "—"
+                  )}
+                </div>
+
                 <button
                   type="button"
                   onClick={() => {
@@ -488,8 +493,8 @@ export default function CreateGasSlip() {
                     refetchControl();
                   }}
                   disabled={controlLoading}
-                  title="Regenerate"
-                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-50 transition"
+                  title="Refresh control number"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-50 transition"
                 >
                   <RefreshCw
                     className={`w-3.5 h-3.5 ${controlLoading ? "animate-spin" : ""}`}
@@ -535,18 +540,6 @@ export default function CreateGasSlip() {
               </select>
             </Field>
 
-            <Field label="Charge To" error={errors.charge_to}>
-              <input
-                type="text"
-                value={form.charge_to}
-                onChange={(e) =>
-                  setForm({ ...form, charge_to: e.target.value })
-                }
-                placeholder="Auto-filled from department"
-                className={inputCls}
-              />
-            </Field>
-
             <Field label="Trip Date" error={errors.trip_date}>
               <input
                 type="date"
@@ -562,6 +555,7 @@ export default function CreateGasSlip() {
               label="Destination"
               error={errors.destination}
               hint="Search and pick a location"
+              className="md:col-span-2"
             >
               <SingleStopDestination
                 value={form.destinationCoords}
@@ -590,7 +584,7 @@ export default function CreateGasSlip() {
               />
             </Field>
 
-            <Field label="Passenger Name (optional)">
+            <Field label="Passenger Name (optional)" className="md:col-span-2">
               <input
                 type="text"
                 value={form.passenger_name}
@@ -610,15 +604,36 @@ export default function CreateGasSlip() {
             <Truck className="w-4 h-4" /> Driver & Vehicle
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Field label="Driver" error={errors.driver_id}>
+            <Field
+              label="Driver"
+              error={errors.driver_id}
+          hint={
+  !form.department_id
+    ? "Select a department first"
+    : vehicles.length === 0
+    ? "No active vehicles available"
+    : `${vehicles.length} vehicle${vehicles.length !== 1 ? "s" : ""} available${
+        vehicles.some((v) => v.is_shared)
+          ? " (includes MO shared)"
+          : ""
+      }`
+}
+            >
               <select
                 value={form.driver_id}
                 onChange={(e) =>
                   setForm({ ...form, driver_id: e.target.value })
                 }
                 className={inputCls}
+                disabled={!form.department_id || drivers.length === 0}
               >
-                <option value="">Select driver…</option>
+                <option value="">
+                  {!form.department_id
+                    ? "Select a department first"
+                    : drivers.length === 0
+                    ? "No drivers available"
+                    : "Select driver…"}
+                </option>
                 {drivers.map((d) => (
                   <option key={d.driver_id} value={d.driver_id}>
                     {d.full_name}
@@ -630,7 +645,13 @@ export default function CreateGasSlip() {
             <Field
               label="Vehicle"
               error={errors.vehicle_id}
-              hint="Available vehicles for selected department"
+              hint={
+                !form.department_id
+                  ? "Select a department first"
+                  : vehicles.length === 0
+                  ? "No active vehicles in this department"
+                  : `${vehicles.length} vehicle${vehicles.length !== 1 ? "s" : ""} available`
+              }
             >
               <select
                 value={form.vehicle_id}
@@ -638,18 +659,21 @@ export default function CreateGasSlip() {
                   setForm({ ...form, vehicle_id: e.target.value })
                 }
                 className={inputCls}
-                disabled={!form.department_id}
+                disabled={!form.department_id || vehicles.length === 0}
               >
                 <option value="">
-                  {form.department_id
-                    ? "Select vehicle…"
-                    : "Select a department first"}
+                  {!form.department_id
+                    ? "Select a department first"
+                    : vehicles.length === 0
+                    ? "No vehicles available"
+                    : "Select vehicle…"}
                 </option>
-                {vehicles.map((v) => (
-                  <option key={v.vehicle_id} value={v.vehicle_id}>
-                    {v.plate_number} — {v.vehicle_model}
-                  </option>
-                ))}
+              {vehicles.map((v) => (
+  <option key={v.vehicle_id} value={v.vehicle_id}>
+    {v.plate_number} — {v.vehicle_model}
+    {v.is_shared ? " (Shared MO)" : ""}
+  </option>
+))}
               </select>
             </Field>
           </div>
