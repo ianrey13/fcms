@@ -48,7 +48,7 @@ class DepartmentController extends Controller
                     'unique:departments,department_name',
                 ],
                 'department_code' => [
-                    'required', 'string', 'min:2', 'max:20',
+                    'required', 'string', 'min:2', 'max:10',
                     'regex:/^[A-Za-z0-9\-]+$/',
                     'unique:departments,department_code',
                 ],
@@ -58,7 +58,7 @@ class DepartmentController extends Controller
                 ],
             ], [
                 'department_name.regex' => 'Department name may only contain letters, numbers, spaces, and basic punctuation.',
-                'department_code.regex' => 'Department code may only contain letters, numbers, and hyphens.',
+               'department_code.regex' => 'Department code may only contain ALL CAPS letters and numbers (no spaces, hyphens, or symbols).',
                 'head_of_office.regex' => 'Head of office name may only contain letters, spaces, and basic punctuation.',
             ]);
 
@@ -155,11 +155,11 @@ class DepartmentController extends Controller
                     'regex:/^[A-Za-z0-9\s\.\-\'&,()\/]+$/',
                     'unique:departments,department_name,' . $id . ',department_id',
                 ],
-                'department_code' => [
-                    'required', 'string', 'min:2', 'max:20',
-                    'regex:/^[A-Za-z0-9\-]+$/',
-                    'unique:departments,department_code,' . $id . ',department_id',
-                ],
+              'department_code' => [
+    'required', 'string', 'min:2', 'max:10',
+    'regex:/^[A-Z0-9]+$/',
+    'unique:departments,department_code,' . $id . ',department_id',
+],
                 'head_of_office' => [
                     'nullable', 'string', 'min:3', 'max:150',
                     'regex:/^[A-Za-z\s\.\-\'\,]+$/',
