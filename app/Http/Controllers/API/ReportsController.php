@@ -341,7 +341,7 @@ public function getBudgetReport(Request $request)
             ->whereYear('p.week_start', $year)
             ->sum('gs.amount_released');
 
-        // 4. Periods — used computed from gas_slip directly (not weekly_budget_usage)
+        // 4. Periods — used computed from gas_slip directly
         $periodQuery = DB::table('dept_budget_period as p')
             ->where('p.department_id', $departmentId)
             ->whereYear('p.week_start', $year);
@@ -355,7 +355,10 @@ public function getBudgetReport(Request $request)
             ->select([
                 'p.period_id',
                 'p.week_start',
-                'p.week_end',
+                // ✅ Override DB's week_end (+4 days / Friday).
+                //    Business rule is Mon–Sun, so +6 days.
+                //    Do NOT select p.week_end — it's wrong in the schema.
+                DB::raw('DATE_ADD(p.week_start, INTERVAL 6 DAY) AS week_end'),
                 'p.status',
                 DB::raw("(
                     SELECT COALESCE(SUM(gs.amount_released), 0)
@@ -365,7 +368,7 @@ public function getBudgetReport(Request $request)
             ])
             ->get();
 
-        // 5. Simple carry-forward. Current annual_amount as opening.
+        // 5. Simple carry-forward
         $openingBalance = $annualAllocated;
         $rows = collect();
 
@@ -374,13 +377,14 @@ public function getBudgetReport(Request $request)
             $remaining = $openingBalance - $used;
 
             $rows->push([
-                'period_id'  => $p->period_id,
-                'week_start' => $p->week_start,
-                'week_end'   => $p->week_end,
-                'allocated'  => round($openingBalance, 2),
-                'used'       => round($used, 2),
-                'remaining'  => round($remaining, 2),
-                'status'     => $p->status,
+                'period_id'        => $p->period_id,
+                'week_start'       => $p->week_start,
+                'week_end'         => $p->week_end,
+                'allocated'        => round($openingBalance, 2),
+                'weekly_suggested' => $weeklySuggested,   // ✅ NEW
+                'used'             => round($used, 2),
+                'remaining'        => round($remaining, 2),
+                'status'           => $p->status,
             ]);
 
             $openingBalance = $remaining;
