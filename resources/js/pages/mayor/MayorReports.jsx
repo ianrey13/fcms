@@ -1076,13 +1076,15 @@ const MayorReports = () => {
                                 color="from-emerald-500 to-emerald-600"
                                 subtitle={`FY ${yearFilter}`}
                             />
-                           <StatsCard
-    title="Weekly Suggested"
-    value={formatCurrency(summary.weekly_suggested || 0)}
-    icon={CalendarRange}
-    color="from-purple-500 to-purple-600"
-    subtitle={`Annual ÷ 52 • FY ${yearFilter}`}
-/>
+                            <StatsCard
+                                title="Weekly Suggested"
+                                value={formatCurrency(
+                                    summary.weekly_suggested || 0,
+                                )}
+                                icon={CalendarRange}
+                                color="from-purple-500 to-purple-600"
+                                subtitle={`Annual ÷ 52 • FY ${yearFilter}`}
+                            />
                         </div>
                         <div className="overflow-x-auto max-h-[500px] overflow-y-auto border rounded-lg">
                             <Table>
@@ -1091,27 +1093,30 @@ const MayorReports = () => {
                                         <TableHead className="text-xs uppercase">
                                             Week (Date Range)
                                         </TableHead>
-                                       <TableHead className="text-xs uppercase text-right">
-    Budget (₱)
-</TableHead>
-<TableHead className="text-xs uppercase text-right">
-    Weekly Suggested (₱)
-</TableHead>
-<TableHead className="text-xs uppercase text-right">
-    Utilized (₱)
-</TableHead>
+                                        <TableHead className="text-xs uppercase text-right">
+                                            Budget (₱)
+                                        </TableHead>
+                                        <TableHead className="text-xs uppercase text-right">
+                                            Weekly Suggested (₱)
+                                        </TableHead>
+                                        <TableHead className="text-xs uppercase text-right">
+                                            Utilized (₱)
+                                        </TableHead>
+                                        <TableHead className="text-xs uppercase text-right">
+                                            Balance (₱)
+                                        </TableHead>
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
                                     {periods.length === 0 ? (
                                         <TableRow>
                                             <TableCell
-    colSpan="5"
-    className="text-center py-8 text-slate-500"
->
-    No weekly budget periods for
-    this department and period
-</TableCell>
+                                                colSpan="5"
+                                                className="text-center py-8 text-slate-500"
+                                            >
+                                                No weekly budget periods for
+                                                this department and period
+                                            </TableCell>
                                         </TableRow>
                                     ) : (
                                         <>
@@ -1136,19 +1141,22 @@ const MayorReports = () => {
                                                               )
                                                             : "—"}
                                                     </TableCell>
-                                                   <TableCell className="text-right">
-    {formatCurrency(
-        p.allocated || 0,
-    )}
-</TableCell>
-<TableCell className="text-right text-slate-500">
-    {formatCurrency(p.weekly_suggested || 0)}
-</TableCell>
-<TableCell className="text-right">
-    {formatCurrency(
-        p.used || 0,
-    )}
-</TableCell>
+                                                    <TableCell className="text-right">
+                                                        {formatCurrency(
+                                                            p.allocated || 0,
+                                                        )}
+                                                    </TableCell>
+                                                    <TableCell className="text-right text-slate-500">
+                                                        {formatCurrency(
+                                                            p.weekly_suggested ||
+                                                                0,
+                                                        )}
+                                                    </TableCell>
+                                                    <TableCell className="text-right">
+                                                        {formatCurrency(
+                                                            p.used || 0,
+                                                        )}
+                                                    </TableCell>
                                                     <TableCell
                                                         className={`text-right font-medium ${(p.remaining || 0) < 0 ? "text-red-600" : "text-emerald-600"}`}
                                                     >
@@ -1162,25 +1170,28 @@ const MayorReports = () => {
                                                 <TableCell className="text-right">
                                                     TOTAL
                                                 </TableCell>
-                                              <TableCell className="text-right">
-    {formatCurrency(
-        periods[0]?.allocated ||
-            0,
-    )}
-</TableCell>
-<TableCell className="text-right text-slate-500">
-    {formatCurrency(summary.weekly_suggested || 0)}
-</TableCell>
-<TableCell className="text-right">
-    {formatCurrency(
-        periods.reduce(
-            (sum, p) =>
-                sum +
-                (p.used || 0),
-            0,
-        ),
-    )}
-</TableCell>
+                                                <TableCell className="text-right">
+                                                    {formatCurrency(
+                                                        periods[0]?.allocated ||
+                                                            0,
+                                                    )}
+                                                </TableCell>
+                                                <TableCell className="text-right text-slate-500">
+                                                    {formatCurrency(
+                                                        summary.weekly_suggested ||
+                                                            0,
+                                                    )}
+                                                </TableCell>
+                                                <TableCell className="text-right">
+                                                    {formatCurrency(
+                                                        periods.reduce(
+                                                            (sum, p) =>
+                                                                sum +
+                                                                (p.used || 0),
+                                                            0,
+                                                        ),
+                                                    )}
+                                                </TableCell>
                                                 <TableCell className="text-right text-emerald-700">
                                                     {formatCurrency(
                                                         periods[
