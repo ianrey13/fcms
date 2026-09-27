@@ -246,6 +246,10 @@ createGasSlip: (data) => uncachedApi.post('/mayors-office/gas-slips', data),
 getPendingGasSlips: (params) => cachedApi.get('/mayors-office/gas-slips/pending', { params }),
 cancelGasSlip: (id, data) => uncachedApi.post(`/mayors-office/gas-slips/${id}/cancel`, data),
 
+
+getDepartmentBudgetSummary: (departmentId) =>
+    cachedApi.get(`/mayors-office/departments/${departmentId}/budget-summary`),
+
 };
 
 // ============ DRIVER API ============

@@ -324,6 +324,8 @@ Route::post('pending-gas-slips/{tripTicketId}/complete', [GsoController::class, 
         Route::get('drivers/active', [MayorsOfficeController::class, 'getActiveDrivers']);
         Route::get('vehicles/available', [MayorsOfficeController::class, 'getAvailableVehicles']);
 
+        //budget summary for the modal of fund release
+        Route::get('departments/{id}/budget-summary', [MayorsOfficeController::class, 'getDepartmentBudgetSummary']);
 
     });
 

@@ -2357,4 +2357,76 @@ public function getWeeklyTracking(Request $request)
         return $prefix . '-' . str_pad($lastSeq + 1, 3, '0', STR_PAD_LEFT);
     }
 
+
+
+    /**
+ * ✅ MO scoped — fetch department balance + weekly suggested + weekly used
+ * for the Release Funds dialog.
+ * GET /mayors-office/departments/{id}/budget-summary
+ */
+public function getDepartmentBudgetSummary(Request $request, $departmentId)
+{
+    try {
+        $user = $request->user();
+        if (!$user->isMayorsOffice()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $department = Department::find($departmentId);
+        if (!$department) {
+            return response()->json(['success' => false, 'message' => 'Department not found'], 404);
+        }
+
+        $activeYear = $this->budgetService->getActiveFiscalYear();
+
+        // ── Annual
+        $annual = AnnualBudget::where('department_id', $departmentId)
+            ->where('fiscal_year', $activeYear)
+            ->first();
+
+        $annualAmount = $annual ? (float) $annual->annual_amount : 0.0;
+        $usedAmount   = $annual ? (float) $annual->used_amount : 0.0;
+        $remaining    = $annualAmount - $usedAmount;
+
+        // ── Weekly
+        $weeklySuggested = $annualAmount > 0 ? round($annualAmount / 52, 2) : 0.0;
+        $weeklyUsed      = $this->getWeeklyUsedAmount($departmentId);
+        $weeklyRemaining = $weeklySuggested - $weeklyUsed;
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'department_id'     => $department->department_id,
+                'department_name'   => $department->department_name,
+                'department_code'   => $department->department_code,
+                'fiscal_year'       => $activeYear,
+
+                // Annual
+                'allocated'         => round($annualAmount, 2),
+                'used_amount'       => round($usedAmount, 2),
+                'remaining_amount'  => round($remaining, 2),
+
+                // Weekly (soft guideline)
+                'weekly_suggested'  => round($weeklySuggested, 2),
+                'weekly_used'       => round($weeklyUsed, 2),
+                'weekly_remaining'  => round($weeklyRemaining, 2),
+                'weekly_exceeded'   => $weeklySuggested > 0 && $weeklyUsed > $weeklySuggested,
+
+                // Convenience — same shape as getAllDepartmentsWithBudget entries
+                'annual_amount'     => round($annualAmount, 2),
+                'has_budget'        => $annual !== null,
+                'utilization_percentage' => $annualAmount > 0
+                    ? round(($usedAmount / $annualAmount) * 100, 2)
+                    : 0,
+            ],
+        ]);
+    } catch (\Exception $e) {
+        Log::error('MO get department budget summary error: ' . $e->getMessage());
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to fetch budget summary: ' . $e->getMessage(),
+        ], 500);
+    }
+}
+
 }

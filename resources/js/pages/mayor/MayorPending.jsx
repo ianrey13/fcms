@@ -804,60 +804,38 @@ const MayorPending = () => {
 
   const fetchDepartmentBalance = useCallback(async (departmentId) => {
     if (!departmentId) {
-      setRequestingDeptBalance(null);
-      return;
+        setRequestingDeptBalance(null);
+        return;
     }
 
     setLoadingBalance(true);
     try {
-      let dept = null;
+        const response = await mayorsOfficeAPI.getDepartmentBudgetSummary(departmentId);
+        const d = response.data?.data;
 
-      try {
-        const budgetResponse = await mayorsOfficeAPI.getAnnualBudgets({
-          department_id: departmentId,
-        });
-        const budgets = budgetResponse.data?.data || budgetResponse.data || [];
-        dept = Array.isArray(budgets)
-          ? budgets.find((d) => String(d.department_id) === String(departmentId))
-          : null;
-      } catch (e) {
-        console.warn("getAnnualBudgets failed, trying getAllDepartmentsWithBudget");
-      }
-
-      if (!dept) {
-        const response = await mayorsOfficeAPI.getAllDepartmentsWithBudget();
-        const depts = response.data?.data || response.data || [];
-        dept = depts.find((d) => String(d.department_id) === String(departmentId));
-      }
-
-      if (dept) {
-        const annualAmount = parseFloat(dept.annual_amount || dept.allocated_amount || 0);
-        const weeklySuggested = annualAmount > 0 ? annualAmount / 52 : 0;
-        const weeklyUsed = parseFloat(dept.weekly_used || 0);
-        const weeklyRemaining = weeklySuggested - weeklyUsed;
-
-        setRequestingDeptBalance({
-          department_id: dept.department_id,
-          department_name: dept.department_name,
-          department_code: dept.department_code,
-          allocated: annualAmount,
-          spent: parseFloat(dept.used_amount || dept.spent_amount || 0),
-          remaining: parseFloat(dept.remaining_amount || 0),
-          weekly_suggested: weeklySuggested,
-          weekly_used: weeklyUsed,
-          weekly_remaining: weeklyRemaining,
-          utilization: parseFloat(dept.utilization_percentage || dept.utilization || 0),
-        });
-      } else {
-        setRequestingDeptBalance(null);
-      }
+        if (d) {
+            setRequestingDeptBalance({
+                department_id:    d.department_id,
+                department_name:  d.department_name,
+                department_code:  d.department_code,
+                allocated:        d.allocated        ?? 0,
+                spent:            d.used_amount      ?? 0,
+                remaining:        d.remaining_amount ?? 0,
+                weekly_suggested: d.weekly_suggested ?? 0,
+                weekly_used:      d.weekly_used      ?? 0,
+                weekly_remaining: d.weekly_remaining ?? 0,
+                utilization:      d.utilization_percentage ?? 0,
+            });
+        } else {
+            setRequestingDeptBalance(null);
+        }
     } catch (error) {
-      console.error("Failed to fetch department balance:", error);
-      setRequestingDeptBalance(null);
+        console.error("Failed to fetch department balance:", error);
+        setRequestingDeptBalance(null);
     } finally {
-      setLoadingBalance(false);
+        setLoadingBalance(false);
     }
-  }, []);
+}, []);
 
   const fetchAllDepartments = useCallback(async () => {
     try {
