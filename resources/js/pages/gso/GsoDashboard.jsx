@@ -947,26 +947,26 @@ const GsoDashboard = () => {
         refetchInterval: 30000,
     });
 
-    // ✅ Pending Gas Slip tickets
-    const { data: pendingGasSlipsRaw, isLoading: gasSlipsLoading } =
-        useOptimizedQuery({
-            queryKey: ["gso-pending-gas-slips"],
-            queryFn: async () => {
-                try {
-                    const response = await gsoAPI.getPendingGasSlipTickets();
-                    return extractArray(response);
-                } catch (error) {
-                    console.error("Error fetching pending gas slips:", error);
-                    return [];
-                }
-            },
-            staleTime: 0,
-            refetchOnMount: true,
-            refetchOnReconnect: true,
-            refetchOnWindowFocus: false,
-            placeholderData: (prev) => prev,
-        });
-    const pendingGasSlips = useSafeArray(pendingGasSlipsRaw);
+    // // ✅ Pending Gas Slip tickets
+    // const { data: pendingGasSlipsRaw, isLoading: gasSlipsLoading } =
+    //     useOptimizedQuery({
+    //         queryKey: ["gso-pending-gas-slips"],
+    //         queryFn: async () => {
+    //             try {
+    //                 const response = await gsoAPI.getPendingGasSlipTickets();
+    //                 return extractArray(response);
+    //             } catch (error) {
+    //                 console.error("Error fetching pending gas slips:", error);
+    //                 return [];
+    //             }
+    //         },
+    //         staleTime: 0,
+    //         refetchOnMount: true,
+    //         refetchOnReconnect: true,
+    //         refetchOnWindowFocus: false,
+    //         placeholderData: (prev) => prev,
+    //     });
+    // const pendingGasSlips = useSafeArray(pendingGasSlipsRaw);
 
     // ============ MUTATIONS ============
 
@@ -1464,16 +1464,7 @@ const GsoDashboard = () => {
                                 {filteredValidation.length}
                             </Badge>
                         </TabsTrigger>
-                        <TabsTrigger
-                            value="gas-slips"
-                            className="rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900 data-[state=active]:shadow-sm transition-all duration-200"
-                        >
-                            <Fuel className="h-4 w-4 mr-2" />
-                            Pending Gas Slips
-                            <Badge className="ml-2 bg-amber-500/20 text-amber-600 dark:text-amber-400 border-amber-500/30 text-[10px]">
-                                {pendingGasSlips.length}
-                            </Badge>
-                        </TabsTrigger>
+                   
                     </TabsList>
 
                     {/* ============ ALL TRIPS TAB ============ */}
@@ -1582,130 +1573,7 @@ const GsoDashboard = () => {
                         </Card>
                     </TabsContent>
 
-                    {/* ============ GAS SLIPS TAB ============ */}
-                    <TabsContent value="gas-slips" className="space-y-4 mt-6">
-                        <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-                            <CardHeader className="border-b dark:border-slate-700">
-                                <div className="flex items-center justify-between">
-                                    <div>
-                                        <CardTitle className="flex items-center gap-2 text-slate-800 dark:text-white">
-                                            <Fuel className="h-5 w-5 text-amber-500" />
-                                            Pending Gas Slip Tickets
-                                        </CardTitle>
-                                        <CardDescription className="dark:text-slate-400 mt-1">
-                                            MO-created Gas Slips awaiting GSO completion before drivers can proceed
-                                        </CardDescription>
-                                    </div>
-                                    <Badge className="bg-amber-500/20 text-amber-600 dark:text-amber-400 border-amber-500/30">
-                                        {pendingGasSlips.length} pending
-                                    </Badge>
-                                </div>
-                            </CardHeader>
-                            <CardContent className="pt-6">
-                                {gasSlipsLoading ? (
-                                    <div className="flex justify-center py-16">
-                                        <Loader2 className="h-8 w-8 animate-spin text-amber-500" />
-                                    </div>
-                                ) : pendingGasSlips.length === 0 ? (
-                                    <div className="text-center py-16">
-                                        <div className="w-16 h-16 bg-emerald-50 dark:bg-emerald-950/30 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                                            <CheckCircle className="h-8 w-8 text-emerald-500" />
-                                        </div>
-                                        <p className="text-slate-600 dark:text-slate-400 font-medium">
-                                            No pending Gas Slips
-                                        </p>
-                                        <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">
-                                            All MO-created Gas Slips have been processed.
-                                        </p>
-                                    </div>
-                                ) : (
-                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                        {pendingGasSlips.map((gs) => (
-                                            <div
-                                                key={gs.trip_ticket_id}
-                                                className="bg-white dark:bg-slate-900/40 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition p-5 space-y-3"
-                                            >
-                                                <div className="flex items-start justify-between">
-                                                    <div>
-                                                        <div className="text-xs uppercase tracking-wide text-amber-600 font-semibold">
-                                                            Control No.
-                                                        </div>
-                                                        <div className="text-lg font-bold text-slate-900 dark:text-white">
-                                                            {gs.control_number || gs.trip_ticket_number}
-                                                        </div>
-                                                    </div>
-                                                    <div className="text-right">
-                                                        <div className="text-xs text-slate-500">
-                                                            Amount
-                                                        </div>
-                                                        <div className="text-base font-semibold text-emerald-600">
-                                                            ₱
-                                                            {Number(gs.amount_released).toLocaleString(
-                                                                "en-PH",
-                                                                { minimumFractionDigits: 2 },
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                </div>
-
-                                                <div className="space-y-1.5 text-sm text-slate-600 dark:text-slate-400">
-                                                    <div className="flex items-center gap-2 truncate">
-                                                        <User className="w-4 h-4 text-slate-400 flex-shrink-0" />
-                                                        <span className="truncate">
-                                                            {gs.driver?.full_name || "—"}
-                                                        </span>
-                                                    </div>
-                                                    <div className="flex items-center gap-2 truncate">
-                                                        <Truck className="w-4 h-4 text-slate-400 flex-shrink-0" />
-                                                        <span className="truncate">
-                                                            {gs.vehicle
-                                                                ? `${gs.vehicle.plate_number} — ${gs.vehicle.vehicle_model}`
-                                                                : "—"}
-                                                        </span>
-                                                    </div>
-                                                    <div className="flex items-center gap-2 truncate">
-                                                        <Building2 className="w-4 h-4 text-slate-400 flex-shrink-0" />
-                                                        <span className="truncate">
-                                                            {gs.department_name || "—"}
-                                                        </span>
-                                                    </div>
-                                                    <div className="flex items-center gap-2 truncate">
-                                                        <MapPin className="w-4 h-4 text-slate-400 flex-shrink-0" />
-                                                        <span className="truncate">
-                                                            {gs.destination || "—"}
-                                                        </span>
-                                                    </div>
-                                                    <div className="flex items-center gap-2 truncate">
-                                                        <Calendar className="w-4 h-4 text-slate-400 flex-shrink-0" />
-                                                        <span className="truncate">
-                                                            {formatDateShort(gs.trip_date)}
-                                                        </span>
-                                                    </div>
-                                                </div>
-
-                                                <Button
-                                                    onClick={() => {
-                                                        setGasSlipModalTicket(gs);
-                                                        setGasSlipForm({
-                                                            estimated_distance_km:
-                                                                gs.estimated_distance_km || "",
-                                                            estimated_fuel_liters:
-                                                                gs.estimated_fuel_liters || "",
-                                                            passenger_name: gs.passenger_name || "",
-                                                            validation_note: "",
-                                                        });
-                                                    }}
-                                                    className="w-full bg-blue-600 hover:bg-blue-700 text-white"
-                                                >
-                                                    Complete Trip Ticket
-                                                </Button>
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-                            </CardContent>
-                        </Card>
-                    </TabsContent>
+                  
                 </Tabs>
             </div>
 
