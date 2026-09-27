@@ -10,9 +10,18 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Users,
   Edit,
-  Trash2,
   Search,
   RefreshCw,
   UserPlus,
@@ -35,6 +44,8 @@ import {
   Eye,
   EyeOff,
   AlertTriangle,
+  UserX,          // ★ NEW: replaces Trash2
+  Ban,            // ★ NEW: for the confirm dialog icon
   X,
 } from "lucide-react";
 import { useUsers, useDeleteUser, useToggleUserStatus } from "../../../hooks/useUserManagement";
@@ -65,7 +76,7 @@ const StatsCard = ({ title, value, icon: Icon, color, subtitle }) => (
 );
 
 // ============================================
-// ROLE BADGE COMPONENT (Updated - No "Staff")
+// ROLE BADGE COMPONENT
 // ============================================
 
 const RoleBadge = ({ role }) => {
@@ -86,7 +97,7 @@ const RoleBadge = ({ role }) => {
       label: "Driver",
     },
   };
-  const config = configs[role] || { 
+  const config = configs[role] || {
     color: "bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300",
     icon: User,
     label: role || "Unknown",
@@ -128,20 +139,24 @@ const UserManagement = () => {
   const [roleFilter, setRoleFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [showFilters, setShowFilters] = useState(false);
-  
+
+  // ★ NEW: Deactivation confirmation modal state
+  const [deactivateConfirm, setDeactivateConfirm] = useState({
+    open: false,
+    userId: null,
+    userName: "",
+  });
+
   const { data: users = [], isLoading, refetch } = useUsers();
   const deleteUser = useDeleteUser();
   const toggleStatus = useToggleUserStatus();
 
   // ============================================
-  // ✅ AUTO-REFRESH - No manual refresh needed
+  // AUTO-REFRESH
   // ============================================
 
   useAutoRefresh(
-    [
-      "gso-trip-updated",
-      "new-notification",
-    ],
+    ["gso-trip-updated", "new-notification"],
     () => {
       queryClient.invalidateQueries({ queryKey: ["users"] });
     }
@@ -154,8 +169,8 @@ const UserManagement = () => {
     const inactive = users.filter(u => u.status === "inactive").length;
     const drivers = users.filter(u => u.role === "driver").length;
     const gso = users.filter(u => u.role === "gso_office").length;
-    const disbursing  = users.filter(u => u.role === "mayors_office").length;
-    
+    const disbursing = users.filter(u => u.role === "mayors_office").length;
+
     return [
       {
         title: "Total Users",
@@ -180,10 +195,10 @@ const UserManagement = () => {
       },
       {
         title: "GSO Staff",
-        value: gso + disbursing ,
+        value: gso + disbursing,
         icon: Shield,
         color: "from-purple-500 to-purple-600",
-        subtitle: `${gso} GSO • ${disbursing } Disbursing Officer`,
+        subtitle: `${gso} GSO • ${disbursing} Disbursing Officer`,
       },
     ];
   }, [users]);
@@ -191,8 +206,7 @@ const UserManagement = () => {
   // ============ FILTERS ============
   const filteredUsers = useMemo(() => {
     let filtered = users;
-    
-    // Search filter
+
     if (searchTerm) {
       const search = searchTerm.toLowerCase();
       filtered = filtered.filter((user) =>
@@ -203,45 +217,47 @@ const UserManagement = () => {
         user.department_name?.toLowerCase().includes(search)
       );
     }
-    
-    // Role filter - ✅ Only 3 roles: gso_office, mayors_office, driver
+
     if (roleFilter !== "all") {
       filtered = filtered.filter((user) => user.role === roleFilter);
     }
-    
-    // Status filter
+
     if (statusFilter !== "all") {
       filtered = filtered.filter((user) => user.status === statusFilter);
     }
-    
+
     return filtered;
   }, [users, searchTerm, roleFilter, statusFilter]);
 
   // ============ HANDLERS ============
-  const handleToggleStatus = (userId, currentStatus) => {
-    const newStatus = currentStatus === "active" ? "inactive" : "active";
-    toggleStatus.mutate(
-      { userId, status: newStatus },
-      {
-        onSuccess: () => {
-          toast.success(`User ${newStatus === "active" ? "activated" : "deactivated"}!`);
-          queryClient.invalidateQueries({ queryKey: ["users"] });
-        },
-        onError: () => toast.error("Failed to update status"),
-      }
-    );
+
+  // ★ NEW: Opens the confirmation modal instead of window.confirm
+  const handleDelete = (id, name) => {
+    setDeactivateConfirm({
+      open: true,
+      userId: id,
+      userName: name,
+    });
   };
 
-  const handleDelete = (id, name) => {
-    if (window.confirm(`Are you sure you want to deactivate "${name}"?`)) {
-      deleteUser.mutate(id, {
-        onSuccess: () => {
-          toast.success("User deactivated!");
-          queryClient.invalidateQueries({ queryKey: ["users"] });
-        },
-        onError: () => toast.error("Failed to deactivate user"),
-      });
-    }
+  // ★ NEW: Fires the actual deactivation
+  const confirmDeactivate = () => {
+    const { userId, userName } = deactivateConfirm;
+
+    deleteUser.mutate(userId, {
+      onSuccess: () => {
+        toast.success(`${userName} has been deactivated.`);
+        queryClient.invalidateQueries({ queryKey: ["users"] });
+        setDeactivateConfirm({ open: false, userId: null, userName: "" });
+      },
+      onError: (error) => {
+        const message =
+          error?.response?.data?.message ||
+          "Failed to deactivate user. Please try again.";
+        toast.error(message);
+        setDeactivateConfirm({ open: false, userId: null, userName: "" });
+      },
+    });
   };
 
   const clearFilters = () => {
@@ -252,7 +268,6 @@ const UserManagement = () => {
 
   const hasActiveFilters = searchTerm || roleFilter !== "all" || statusFilter !== "all";
 
-  // Connection status
   const connectionStatus = isConnected ? "🟢 Live" : "🔴 Offline";
   const isRealTime = isConnected;
 
@@ -355,7 +370,6 @@ const UserManagement = () => {
                       <ChevronDown className="h-4 w-4 ml-2" />
                     )}
                   </Button>
-                  {/* ❌ REFRESH BUTTON REMOVED - Auto-refresh handles everything */}
                 </div>
               </div>
 
@@ -439,13 +453,13 @@ const UserManagement = () => {
                 </div>
                 <p className="text-slate-600 dark:text-slate-400 font-medium text-lg">No users found</p>
                 <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">
-                  {users.length === 0 
+                  {users.length === 0
                     ? 'Create your first user to get started'
                     : 'Try adjusting your search or filters'}
                 </p>
                 {users.length === 0 && (
-                  <Button 
-                    onClick={() => navigate("/admin/users/add")} 
+                  <Button
+                    onClick={() => navigate("/admin/users/add")}
                     className="mt-4 bg-gradient-to-r from-blue-600 to-blue-500 shadow-lg shadow-blue-500/20"
                   >
                     <UserPlus className="h-4 w-4 mr-2" />
@@ -470,7 +484,6 @@ const UserManagement = () => {
                       <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
                         User
                       </th>
-                     
                       <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
                         Email
                       </th>
@@ -490,8 +503,8 @@ const UserManagement = () => {
                   </thead>
                   <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
                     {filteredUsers.map((user) => (
-                      <tr 
-                        key={user.user_id} 
+                      <tr
+                        key={user.user_id}
                         className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors group"
                       >
                         <td className="px-4 py-3">
@@ -513,7 +526,6 @@ const UserManagement = () => {
                             </div>
                           </div>
                         </td>
-                       
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-1.5">
                             <Mail className="h-3.5 w-3.5 text-slate-400" />
@@ -534,14 +546,12 @@ const UserManagement = () => {
                           <RoleBadge role={user.role} />
                         </td>
                         <td className="px-4 py-3">
-                          <button
-                            onClick={() => handleToggleStatus(user.user_id, user.status)}
+                          <span
                             className={cn(
-                              "px-3 py-1.5 rounded-lg text-xs font-medium inline-flex items-center gap-1.5 transition-all duration-200",
-                              "hover:scale-105 active:scale-95",
+                              "px-3 py-1.5 rounded-lg text-xs font-medium inline-flex items-center gap-1.5",
                               user.status === "active"
-                                ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:hover:bg-emerald-900/50"
-                                : "bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50"
+                                ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+                                : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
                             )}
                           >
                             {user.status === "active" ? (
@@ -550,7 +560,7 @@ const UserManagement = () => {
                               <XCircle className="h-3 w-3" />
                             )}
                             {user.status === "active" ? "Active" : "Inactive"}
-                          </button>
+                          </span>
                         </td>
                         <td className="px-4 py-3 text-right">
                           <div className="flex items-center justify-end gap-1">
@@ -563,7 +573,7 @@ const UserManagement = () => {
                             >
                               <Edit className="h-4 w-4" />
                             </Button>
-                            {user.user_id !== currentUser?.user_id && (
+                            {user.user_id !== currentUser?.user_id && user.status === "active" && (
                               <Button
                                 variant="ghost"
                                 size="sm"
@@ -571,7 +581,7 @@ const UserManagement = () => {
                                 className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:text-red-300 dark:hover:bg-red-950/30 h-9 w-9 p-0 rounded-lg transition-all duration-200 group-hover:scale-110"
                                 title="Deactivate User"
                               >
-                                <Trash2 className="h-4 w-4" />
+                                <UserX className="h-4 w-4" />
                               </Button>
                             )}
                           </div>
@@ -591,6 +601,66 @@ const UserManagement = () => {
           <p className="mt-0.5">{users.length} total users • {users.filter(u => u.status === "active").length} active</p>
         </div>
       </div>
+
+      {/* ★ NEW: Deactivation Confirmation Dialog */}
+      <AlertDialog
+        open={deactivateConfirm.open}
+        onOpenChange={(open) =>
+          setDeactivateConfirm((prev) => ({ ...prev, open }))
+        }
+      >
+        <AlertDialogContent className="dark:bg-slate-800 dark:border-slate-700">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-slate-900 dark:text-white">
+              <div className="p-2 rounded-xl bg-red-500/10">
+                <UserX className="h-5 w-5 text-red-600 dark:text-red-400" />
+              </div>
+              Deactivate User?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-slate-600 dark:text-slate-400 pt-2">
+              You are about to deactivate{" "}
+              <strong className="text-slate-900 dark:text-white">
+                {deactivateConfirm.userName}
+              </strong>
+              .
+              <br /><br />
+              A deactivated user:
+              <ul className="list-disc list-inside mt-2 space-y-1 text-sm">
+                <li>Cannot log in to the system</li>
+                <li>Will be hidden from active user lists</li>
+                <li>Can be reactivated later by editing the account</li>
+              </ul>
+              <br />
+              This does <strong>not</strong> delete their records or history.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              disabled={deleteUser.isPending}
+              className="dark:border-slate-700 dark:text-slate-300"
+            >
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDeactivate}
+              disabled={deleteUser.isPending}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              {deleteUser.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  Deactivating...
+                </>
+              ) : (
+                <>
+                  <UserX className="h-4 w-4 mr-2" />
+                  Deactivate User
+                </>
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

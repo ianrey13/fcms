@@ -133,6 +133,8 @@ const VehicleManagement = () => {
   const [showFilters, setShowFilters] = useState(false);
 
   // ✅ Modal state for status change confirmation
+  //    Kept in place — not currently wired to any click handler, but
+  //    available for the Edit page or a future "Change Status" action.
   const [confirmDialog, setConfirmDialog] = useState({
     open: false,
     vehicleId: null,
@@ -237,10 +239,10 @@ const VehicleManagement = () => {
   };
 
   const getFuelTypeColor = (fuelType) => {
-  if (fuelType === "diesel") return "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300";
-  if (fuelType === "premium") return "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300";
-  return "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300"; // regular
-};
+    if (fuelType === "diesel") return "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300";
+    if (fuelType === "premium") return "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300";
+    return "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300";
+  };
 
   // ============ FILTERS ============
   const filteredVehicles = useMemo(() => {
@@ -273,8 +275,10 @@ const VehicleManagement = () => {
   }, [vehicles, searchTerm, statusFilter, fuelFilter, departments]);
 
   // ============ HANDLERS ============
+  // ⚠️ handleToggleStatus is currently unused — kept for the Edit page
+  //    or a future "Change Status" action. Do not delete without checking
+  //    other callers first.
   const handleToggleStatus = (id, currentStatus, maintenanceFlag, vehicleLabel) => {
-    // Cycle through statuses: Serviceable -> Under Maintenance -> Unserviceable -> Serviceable
     let newStatus = "active";
     let newMaintenanceFlag = false;
     let action = "";
@@ -282,21 +286,18 @@ const VehicleManagement = () => {
     let actionColor = "";
 
     if (currentStatus === "active" && !maintenanceFlag) {
-      // Serviceable -> Under Maintenance
       newStatus = "active";
       newMaintenanceFlag = true;
       action = "put under maintenance";
       actionIcon = Wrench;
       actionColor = "text-yellow-600 bg-yellow-100 dark:bg-yellow-900/30 dark:text-yellow-400";
     } else if (currentStatus === "active" && maintenanceFlag) {
-      // Under Maintenance -> Unserviceable
       newStatus = "inactive";
       newMaintenanceFlag = false;
       action = "mark as unserviceable";
       actionIcon = XCircle;
       actionColor = "text-red-600 bg-red-100 dark:bg-red-900/30 dark:text-red-400";
     } else if (currentStatus === "inactive") {
-      // Unserviceable -> Serviceable
       newStatus = "active";
       newMaintenanceFlag = false;
       action = "reactivate";
@@ -304,7 +305,6 @@ const VehicleManagement = () => {
       actionColor = "text-emerald-600 bg-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-400";
     }
 
-    // Open confirmation modal instead of window.confirm
     setConfirmDialog({
       open: true,
       vehicleId: id,
@@ -340,18 +340,18 @@ const VehicleManagement = () => {
           setConfirmDialog(prev => ({ ...prev, open: false }));
         },
         onError: (error) => {
-  const backendMessage = error.response?.data?.message;
-  const validationErrors = error.response?.data?.errors;
+          const backendMessage = error.response?.data?.message;
+          const validationErrors = error.response?.data?.errors;
 
-  if (validationErrors) {
-    const firstError = Object.values(validationErrors)[0];
-    toast.error(Array.isArray(firstError) ? firstError[0] : firstError, { duration: 5000 });
-  } else if (backendMessage) {
-    toast.error(backendMessage, { duration: 5000 });
-  } else {
-    toast.error(`Failed to ${action} vehicle`);
-  }
-},
+          if (validationErrors) {
+            const firstError = Object.values(validationErrors)[0];
+            toast.error(Array.isArray(firstError) ? firstError[0] : firstError, { duration: 5000 });
+          } else if (backendMessage) {
+            toast.error(backendMessage, { duration: 5000 });
+          } else {
+            toast.error(`Failed to ${action} vehicle`);
+          }
+        },
       }
     );
   };
@@ -378,7 +378,6 @@ const VehicleManagement = () => {
     );
   }
 
-  // Modal content config
   const ActionIcon = confirmDialog.actionIcon;
 
   return (
@@ -493,10 +492,10 @@ const VehicleManagement = () => {
                       onChange={(e) => setFuelFilter(e.target.value)}
                       className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm dark:text-white"
                     >
-                     <option value="all">All Fuel Types</option>
-<option value="diesel">Diesel</option>
-<option value="regular">Regular</option>
-<option value="premium">Premium</option>
+                      <option value="all">All Fuel Types</option>
+                      <option value="diesel">Diesel</option>
+                      <option value="regular">Regular</option>
+                      <option value="premium">Premium</option>
                     </select>
                   </div>
                   <div className="flex items-end">
@@ -646,20 +645,12 @@ const VehicleManagement = () => {
                               {vehicle.fuel_type || "N/A"}
                             </Badge>
                           </td>
+                          {/* ★ CHANGED: status is now read-only — not clickable */}
                           <td className="px-4 py-3">
-                            <button
-                              onClick={() =>
-                                handleToggleStatus(
-                                  vehicle.vehicle_id,
-                                  vehicle.status,
-                                  vehicle.maintenance_flag,
-                                  `${vehicle.vehicle_model} (${vehicle.plate_number})`
-                                )
-                              }
-                              className="hover:scale-105 active:scale-95 transition-all duration-200"
-                            >
-                              <StatusBadge status={vehicle.status} maintenanceFlag={vehicle.maintenance_flag} />
-                            </button>
+                            <StatusBadge
+                              status={vehicle.status}
+                              maintenanceFlag={vehicle.maintenance_flag}
+                            />
                           </td>
                           <td className="px-4 py-3 text-right">
                             <div className="flex items-center justify-end gap-1">
@@ -696,7 +687,7 @@ const VehicleManagement = () => {
         </div>
       </div>
 
-      {/* ✅ Confirmation Modal */}
+      {/* ✅ Confirmation Modal — kept in place, currently unused by any trigger */}
       <Dialog open={confirmDialog.open} onOpenChange={(open) => setConfirmDialog(prev => ({ ...prev, open }))}>
         <DialogContent className="sm:max-w-md dark:bg-slate-800 dark:border-slate-700">
           <DialogHeader>
@@ -740,7 +731,7 @@ const VehicleManagement = () => {
           <div className="flex items-start gap-2 p-3 rounded-lg bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800">
             <AlertCircle className="h-4 w-4 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
             <p className="text-xs text-blue-700 dark:text-blue-300">
-              This action will change the vehicle's operational status. You can reverse it by clicking the status badge again.
+              This action will change the vehicle's operational status.
             </p>
           </div>
 
