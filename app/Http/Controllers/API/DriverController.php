@@ -870,103 +870,120 @@ class DriverController extends Controller
     }
 
     public function acknowledgeFunds(Request $request, $id)
-    {
-        try {
-            $user = $request->user();
-            $driver = Driver::where('user_id', $user->user_id)->first();
+{
+    try {
+        $user = $request->user();
+        $driver = Driver::where('user_id', $user->user_id)->first();
 
-            if (!$driver) {
-                return response()->json(['success' => false, 'message' => 'Driver record not found'], 404);
-            }
+        if (!$driver) {
+            return response()->json(['success' => false, 'message' => 'Driver record not found'], 404);
+        }
 
-            $ticket = TripTicket::where('trip_ticket_id', $id)
-                ->where('driver_id', $driver->driver_id)
-                ->first();
+        $ticket = TripTicket::where('trip_ticket_id', $id)
+            ->where('driver_id', $driver->driver_id)
+            ->first();
 
-            if (!$ticket) {
-                return response()->json(['success' => false, 'message' => 'Trip ticket not found'], 404);
-            }
+        if (!$ticket) {
+            return response()->json(['success' => false, 'message' => 'Trip ticket not found'], 404);
+        }
 
-            // ✅ Idempotency: if the driver already acknowledged, don't re-process
-            $existingGasSlip = GasSlip::where('trip_ticket_id', $id)->first();
-            if ($existingGasSlip && $existingGasSlip->acknowledged_at) {
-                return response()->json([
-                    'success' => true,
-                    'message' => 'Funds already acknowledged',
-                    'data' => [
-                        'trip_ticket_id' => $ticket->trip_ticket_id,
-                        'status' => $ticket->status,
-                        'acknowledged_at' => $existingGasSlip->acknowledged_at,
-                    ],
-                ]);
-            }
+       
+        $driverInTransit = TripTicket::where('driver_id', $driver->driver_id)
+            ->where('status', 'in_transit')
+            ->where('trip_ticket_id', '!=', $id)
+            ->first();
 
-            if (!in_array($ticket->status, ['funds_issued', 'pending_gso_ticket'])) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Cannot acknowledge. Current status: ' . $ticket->status . '. Required: funds_issued'
-                ], 400);
-            }
+        if ($driverInTransit) {
+            return response()->json([
+                'success' => false,
+                'message' => "You're currently on trip #{$driverInTransit->trip_ticket_number}. Complete it before acknowledging funds for another trip.",
+                'data' => [
+                    'blocking_trip_id'     => $driverInTransit->trip_ticket_id,
+                    'blocking_trip_number' => $driverInTransit->trip_ticket_number,
+                ],
+            ], 422);
+        }
 
-            DB::beginTransaction();
-
-            $ticket->status = 'acknowledged';
-            $ticket->save();
-
-            $gasSlip = GasSlip::where('trip_ticket_id', $id)->first();
-            if ($gasSlip) {
-                $gasSlip->acknowledged_by = $user->user_id;
-                $gasSlip->acknowledged_at = now();
-                $gasSlip->save();
-            }
-
-            DB::commit();
-
-            $gsoStaff = User::where('role', 'gso_office')->where('status', 'active')->get();
-            foreach ($gsoStaff as $gso) {
-                NotificationHelper::send(
-                    $gso->user_id,
-                    'driver_acknowledged',
-                    'trip_ticket',
-                    $ticket->trip_ticket_id,
-                    "Driver {$user->full_name} acknowledged funds for trip {$ticket->trip_ticket_number}"
-                );
-            }
-
-            $moStaff = User::where('role', 'mayors_office')->where('status', 'active')->get();
-            foreach ($moStaff as $mo) {
-                NotificationHelper::send(
-                    $mo->user_id,
-                    'driver_acknowledged',
-                    'trip_ticket',
-                    $ticket->trip_ticket_id,
-                    "Driver {$user->full_name} acknowledged funds for trip {$ticket->trip_ticket_number}"
-                );
-            }
-
-            // ✅ PM RULE: Once the driver acknowledges, clear their own stale
-            // fund/trip notifications for this trip.
-            Notification::where('recipient_user_id', $user->user_id)
-                ->where('entity_type', 'trip_ticket')
-                ->where('entity_id', $ticket->trip_ticket_id)
-                ->whereIn('notification_type', ['trip_created', 'fund_released', 'fund_issued'])
-                ->where('is_read', false)
-                ->update(['is_read' => true, 'read_at' => now()]);
-
+        // ✅ Idempotency: if the driver already acknowledged, don't re-process
+        $existingGasSlip = GasSlip::where('trip_ticket_id', $id)->first();
+        if ($existingGasSlip && $existingGasSlip->acknowledged_at) {
             return response()->json([
                 'success' => true,
-                'message' => 'Gas slip acknowledged successfully',
+                'message' => 'Funds already acknowledged',
                 'data' => [
                     'trip_ticket_id' => $ticket->trip_ticket_id,
-                    'status' => $ticket->status
-                ]
+                    'status' => $ticket->status,
+                    'acknowledged_at' => $existingGasSlip->acknowledged_at,
+                ],
             ]);
-        } catch (\Exception $e) {
-            DB::rollBack();
-            Log::error('Acknowledge funds error: ' . $e->getMessage());
-            return response()->json(['success' => false, 'message' => 'Failed to acknowledge: ' . $e->getMessage()], 500);
         }
+
+        if (!in_array($ticket->status, ['funds_issued', 'pending_gso_ticket'])) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Cannot acknowledge. Current status: ' . $ticket->status . '. Required: funds_issued'
+            ], 400);
+        }
+
+        DB::beginTransaction();
+
+        $ticket->status = 'acknowledged';
+        $ticket->save();
+
+        $gasSlip = GasSlip::where('trip_ticket_id', $id)->first();
+        if ($gasSlip) {
+            $gasSlip->acknowledged_by = $user->user_id;
+            $gasSlip->acknowledged_at = now();
+            $gasSlip->save();
+        }
+
+        DB::commit();
+
+        $gsoStaff = User::where('role', 'gso_office')->where('status', 'active')->get();
+        foreach ($gsoStaff as $gso) {
+            NotificationHelper::send(
+                $gso->user_id,
+                'driver_acknowledged',
+                'trip_ticket',
+                $ticket->trip_ticket_id,
+                "Driver {$user->full_name} acknowledged funds for trip {$ticket->trip_ticket_number}"
+            );
+        }
+
+        $moStaff = User::where('role', 'mayors_office')->where('status', 'active')->get();
+        foreach ($moStaff as $mo) {
+            NotificationHelper::send(
+                $mo->user_id,
+                'driver_acknowledged',
+                'trip_ticket',
+                $ticket->trip_ticket_id,
+                "Driver {$user->full_name} acknowledged funds for trip {$ticket->trip_ticket_number}"
+            );
+        }
+
+        // ✅ PM RULE: Once the driver acknowledges, clear their own stale
+        // fund/trip notifications for this trip.
+        Notification::where('recipient_user_id', $user->user_id)
+            ->where('entity_type', 'trip_ticket')
+            ->where('entity_id', $ticket->trip_ticket_id)
+            ->whereIn('notification_type', ['trip_created', 'fund_released', 'fund_issued'])
+            ->where('is_read', false)
+            ->update(['is_read' => true, 'read_at' => now()]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Gas slip acknowledged successfully',
+            'data' => [
+                'trip_ticket_id' => $ticket->trip_ticket_id,
+                'status' => $ticket->status
+            ]
+        ]);
+    } catch (\Exception $e) {
+        DB::rollBack();
+        Log::error('Acknowledge funds error: ' . $e->getMessage());
+        return response()->json(['success' => false, 'message' => 'Failed to acknowledge: ' . $e->getMessage()], 500);
     }
+}
 
     public function startTrip(Request $request, $id)
     {
