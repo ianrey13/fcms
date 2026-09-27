@@ -61,7 +61,7 @@ return new class extends Migration
             $table->unsignedBigInteger('deactivated_by')->nullable();
             $table->string('deactivation_reason', 255)->nullable();
             $table->timestamp('password_changed_at')->nullable();
-
+            $table->boolean('must_change_password')->default(false);
             $table->foreign('department_id')->references('department_id')->on('departments');
             $table->foreign('deactivated_by')->references('user_id')->on('users')->onDelete('set null');
             $table->index('role');
@@ -227,10 +227,18 @@ return new class extends Migration
 
             // ✅ NEW: pending_gso_ticket status
             $table->enum('status', [
-                'draft', 'pending_mayors_office', 'returned_for_revision',
-                'funds_issued', 'in_transit', 'pending_reconciliation',
-                'closed', 'rejected', 'cancelled', 'acknowledged',
-                'pending_gso_validation', 'completed',
+                'draft',
+                'pending_mayors_office',
+                'returned_for_revision',
+                'funds_issued',
+                'in_transit',
+                'pending_reconciliation',
+                'closed',
+                'rejected',
+                'cancelled',
+                'acknowledged',
+                'pending_gso_validation',
+                'completed',
                 'pending_gso_ticket',   // ✅ ADD
             ])->default('draft');
 
@@ -433,21 +441,44 @@ return new class extends Migration
             $table->bigIncrements('notification_id');
             $table->unsignedBigInteger('recipient_user_id');
             $table->enum('notification_type', [
-                'trip_submitted', 'forwarded_to_mo', 'batch_forwarded_to_mo',
-                'mo_approved', 'fund_issued', 'fund_released', 'trip_started',
-                'trip_completed', 'reconciliation_closed', 'duplicate_receipt_flag',
-                'signature_integrity_violation', 'budget_low_warning',
-                'fund_return_pending', 'budget_assistance_request', 'trip_created',
-                'trip_assigned', 'receipt_uploaded', 'test', 'trip_reconciled',
-                'driver_acknowledged', 'gso_rejected', 'mo_rejected',
-                'cross_department_usage', 'trip_cancelled', 'trip_closed',
-                'trip_pending_validation', 'department_added',
+                'trip_submitted',
+                'forwarded_to_mo',
+                'batch_forwarded_to_mo',
+                'mo_approved',
+                'fund_issued',
+                'fund_released',
+                'trip_started',
+                'trip_completed',
+                'reconciliation_closed',
+                'duplicate_receipt_flag',
+                'signature_integrity_violation',
+                'budget_low_warning',
+                'fund_return_pending',
+                'budget_assistance_request',
+                'trip_created',
+                'trip_assigned',
+                'receipt_uploaded',
+                'test',
+                'trip_reconciled',
+                'driver_acknowledged',
+                'gso_rejected',
+                'mo_rejected',
+                'cross_department_usage',
+                'trip_cancelled',
+                'trip_closed',
+                'trip_pending_validation',
+                'department_added',
                 'gas_slip_created',              // ✅ ADD
                 'trip_created_from_gas_slip',    // ✅ ADD
             ])->nullable();
             $table->enum('entity_type', [
-                'trip_ticket', 'gas_slip', 'fund_issuance',
-                'trip_ticket_esignature', 'mo_request', 'test', 'department',
+                'trip_ticket',
+                'gas_slip',
+                'fund_issuance',
+                'trip_ticket_esignature',
+                'mo_request',
+                'test',
+                'department',
             ]);
             $table->integer('entity_id');
             $table->string('message', 500);

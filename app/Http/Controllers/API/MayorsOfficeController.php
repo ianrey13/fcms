@@ -1530,7 +1530,7 @@ class MayorsOfficeController extends Controller
      * ✅ Cancel a trip ticket (Mayor's Office)
      * Only allows cancellation before funds are released
      */
-    public function cancelTrip(Request $request, $id)
+        public function cancelTrip(Request $request, $id)
     {
         try {
             $user = $request->user();
@@ -1544,12 +1544,16 @@ class MayorsOfficeController extends Controller
             ]);
 
             if ($validator->fails()) {
-                return response()->json(['errors' => $validator->errors()], 422);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Please enter a cancellation reason (at least 5 characters).',
+                    'errors' => $validator->errors(),
+                ], 422);
             }
 
             $cancellableStatuses = [
-                TripTicket::STATUS_PENDING_MAYORS_OFFICE,
-                TripTicket::STATUS_RETURNED_FOR_REVISION,
+                'pending_mayors_office',
+                'returned_for_revision',
             ];
 
             $ticket = TripTicket::where('trip_ticket_id', $id)
@@ -1557,9 +1561,20 @@ class MayorsOfficeController extends Controller
                 ->first();
 
             if (!$ticket) {
+                $existing = TripTicket::find($id);
+
+                if (!$existing) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Ticket not found. Please refresh the page.'
+                    ], 404);
+                }
+
+                $statusLabel = str_replace('_', ' ', $existing->status);
+
                 return response()->json([
                     'success' => false,
-                    'message' => 'Ticket cannot be cancelled. Only tickets pending approval or returned for revision can be cancelled.'
+                    'message' => "This ticket can no longer be cancelled. Its current status is \"{$statusLabel}\". Only tickets that are still waiting for approval or have been returned for revision can be cancelled. Please refresh the page to see the latest status."
                 ], 422);
             }
 
@@ -1567,13 +1582,13 @@ class MayorsOfficeController extends Controller
             if ($existingGasSlip) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Cannot cancel ticket. Funds have already been released for this trip.'
+                    'message' => 'This ticket cannot be cancelled because funds have already been released. Please contact the GSO if you need to reverse this action.'
                 ], 422);
             }
 
             DB::beginTransaction();
 
-            $ticket->status = TripTicket::STATUS_CANCELLED;
+            $ticket->status = 'cancelled';
             $ticket->cancellation_reason = $request->reason;
             $ticket->cancelled_at = now();
             $ticket->cancelled_by = $user->user_id;
@@ -1581,32 +1596,41 @@ class MayorsOfficeController extends Controller
 
             DB::commit();
 
+            // ── Post-commit side effects ──
+            // Best-effort. Failures are logged, never fail the request.
+
+            // 1. Broadcast
             try {
                 broadcast(new \App\Events\TripTicketCancelled($ticket, $request->reason, $user));
                 Log::info('📡 MO Broadcasted TripTicketCancelled for trip: ' . $ticket->trip_ticket_number);
-            } catch (\Exception $e) {
+            } catch (\Throwable $e) {
                 Log::error('Failed to broadcast cancellation: ' . $e->getMessage());
             }
 
-            if ($ticket->submitted_by) {
-                NotificationHelper::send(
-                    $ticket->submitted_by,
-                    'trip_cancelled',
-                    'trip_ticket',
-                    $ticket->trip_ticket_id,
-                    "Trip {$ticket->trip_ticket_number} has been cancelled by Mayor's Office: {$request->reason}"
-                );
-            }
+            // 2. Notify submitter + GSO staff
+            try {
+                if ($ticket->submitted_by) {
+                    NotificationHelper::send(
+                        $ticket->submitted_by,
+                        'trip_cancelled',
+                        'trip_ticket',
+                        $ticket->trip_ticket_id,
+                        "Trip {$ticket->trip_ticket_number} has been cancelled by Mayor's Office: {$request->reason}"
+                    );
+                }
 
-            $gsoStaff = User::where('role', 'gso_office')->where('status', 'active')->get();
-            foreach ($gsoStaff as $gso) {
-                NotificationHelper::send(
-                    $gso->user_id,
-                    'trip_cancelled',
-                    'trip_ticket',
-                    $ticket->trip_ticket_id,
-                    "Trip {$ticket->trip_ticket_number} has been cancelled by Mayor's Office"
-                );
+                $gsoStaff = User::where('role', 'gso_office')->where('status', 'active')->get();
+                foreach ($gsoStaff as $gso) {
+                    NotificationHelper::send(
+                        $gso->user_id,
+                        'trip_cancelled',
+                        'trip_ticket',
+                        $ticket->trip_ticket_id,
+                        "Trip {$ticket->trip_ticket_number} has been cancelled by Mayor's Office"
+                    );
+                }
+            } catch (\Throwable $e) {
+                Log::error('Failed to notify cancellation: ' . $e->getMessage());
             }
 
             Log::info('Trip cancelled by Mayor\'s Office', [
@@ -1617,7 +1641,7 @@ class MayorsOfficeController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => 'Trip ticket cancelled successfully.',
+                'message' => "Ticket {$ticket->trip_ticket_number} has been cancelled. The department can now create a new ticket.",
                 'data' => [
                     'trip_ticket_id' => $ticket->trip_ticket_id,
                     'trip_ticket_number' => $ticket->trip_ticket_number,
@@ -1627,12 +1651,13 @@ class MayorsOfficeController extends Controller
                 ]
             ]);
 
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             DB::rollBack();
             Log::error('MO cancel trip error: ' . $e->getMessage());
+            Log::error($e->getTraceAsString());
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to cancel trip: ' . $e->getMessage()
+                'message' => 'Something went wrong while cancelling the ticket. Please try again or contact support if the problem continues.'
             ], 500);
         }
     }
