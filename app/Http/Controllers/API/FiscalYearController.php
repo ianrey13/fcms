@@ -19,13 +19,13 @@ class FiscalYearController extends Controller
     {
         try {
             $query = FiscalYear::with('creator');
-            
+
             if ($request->has('is_active')) {
                 $query->where('is_active', $request->is_active);
             }
-            
+
             $years = $query->orderBy('year', 'desc')->get();
-            
+
             return response()->json([
                 'success' => true,
                 'data' => $years,
@@ -37,7 +37,7 @@ class FiscalYearController extends Controller
             ], 500);
         }
     }
-    
+
     /**
      * Store a new fiscal year
      */
@@ -47,7 +47,7 @@ class FiscalYearController extends Controller
             $validator = Validator::make($request->all(), [
                 'year' => 'required|integer|min:2000|max:2100|unique:fiscal_years,year',
             ]);
-            
+
             if ($validator->fails()) {
                 return response()->json([
                     'success' => false,
@@ -55,25 +55,25 @@ class FiscalYearController extends Controller
                     'errors' => $validator->errors()
                 ], 422);
             }
-            
+
             // ✅ Deactivate all other fiscal years
             FiscalYear::where('is_active', true)->update(['is_active' => false]);
-            
+
             $fiscalYear = FiscalYear::create([
                 'year' => $request->year,
                 'is_active' => true,
                 'created_by' => auth()->id(),
             ]);
-            
-            // ✅ Load weekly ceilings for this fiscal year
-            $this->loadWeeklyCeilingsForFiscalYear($request->year);
-            
+
+            // ★ REMOVED: loadWeeklyCeilingsForFiscalYear() call —
+            //   toggling a fiscal year should never rewrite dept_budget_policy rows.
+
             return response()->json([
                 'success' => true,
                 'message' => 'Fiscal year added and activated successfully',
                 'data' => $fiscalYear,
             ]);
-            
+
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
@@ -81,10 +81,9 @@ class FiscalYearController extends Controller
             ], 500);
         }
     }
-    
+
     /**
      * Toggle fiscal year status
-     * ✅ When activating, load the weekly ceilings for that fiscal year
      */
     public function toggleStatus($id)
     {
@@ -105,10 +104,9 @@ class FiscalYearController extends Controller
                 $fiscalYear->is_active = true;
                 $fiscalYear->save();
 
-                // ✅ Load weekly ceilings for this fiscal year
-                $this->loadWeeklyCeilingsForFiscalYear($fiscalYear->year);
+                // ★ REMOVED: loadWeeklyCeilingsForFiscalYear() call.
 
-                $message = 'Fiscal year activated and weekly ceilings loaded';
+                $message = 'Fiscal year activated';
             }
 
             DB::commit();
@@ -130,47 +128,13 @@ class FiscalYearController extends Controller
     }
 
     /**
-     * ✅ Load weekly ceilings for a specific fiscal year
-     */
-    private function loadWeeklyCeilingsForFiscalYear($year)
-    {
-        // Get all policies for this fiscal year
-        $policies = DeptBudgetPolicy::where('fiscal_year', $year)->get();
-
-        Log::info('📊 Loading weekly ceilings for fiscal year: ' . $year, [
-            'departments_found' => $policies->count(),
-        ]);
-
-        foreach ($policies as $policy) {
-            // ✅ Update the main policy (for backward compatibility)
-            DeptBudgetPolicy::updateOrCreate(
-                [
-                    'department_id' => $policy->department_id,
-                ],
-                [
-                    'default_weekly_allocation' => $policy->default_weekly_allocation,
-                    'fiscal_year' => $year,  // ✅ Store with fiscal year
-                    'updated_at' => now(),
-                ]
-            );
-
-            Log::info('✅ Updated weekly ceiling for department: ' . $policy->department_id, [
-                'weekly_allocation' => $policy->default_weekly_allocation,
-            ]);
-        }
-
-        return $policies->count();
-    }
-   
-
-    /**
      * Get active fiscal year
      */
     public function getActive(Request $request)
     {
         try {
             $active = FiscalYear::where('is_active', true)->first();
-            
+
             return response()->json([
                 'success' => true,
                 'data' => $active,
