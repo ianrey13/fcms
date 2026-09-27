@@ -592,18 +592,30 @@ const MayorDashboard = () => {
             departmentsWithBudget: deptsWithBudget,
         };
     }, [departmentBudgets]);
-
-    const recentReleases = useMemo(
-        () => approvedTickets.slice(0, 5),
-        [approvedTickets],
-    );
+    // ★ Filter to the ACTIVE fiscal year, then take the 5 most recent
+    const recentReleases = useMemo(() => {
+        return approvedTickets
+            .filter((t) => {
+                const dateStr = t.trip_date ?? t.created_at;
+                if (!dateStr) return false;
+                return new Date(dateStr).getFullYear() === activeFiscalYear;
+            })
+            .slice(0, 5);
+    }, [approvedTickets, activeFiscalYear]);
 
     // ============ BUDGET HISTORY ============
 
+      // ★ Filter to the ACTIVE fiscal year, then take the 5 most recent
     const budgetHistory = useMemo(() => {
-        const budgetLogs = activityLogs.filter((l) => l?.source === "budget");
-        return budgetLogs.slice(0, 5);
-    }, [activityLogs]);
+        return activityLogs
+            .filter((l) => {
+                if (l?.source !== "budget") return false;
+                const dateStr = l.created_at ?? l.actioned_at ?? l.updated_at;
+                if (!dateStr) return false;
+                return new Date(dateStr).getFullYear() === activeFiscalYear;
+            })
+            .slice(0, 5);
+    }, [activityLogs, activeFiscalYear]);
 
     // ============ HELPERS ============
 
