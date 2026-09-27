@@ -1,11 +1,8 @@
 // src/pages/gso/users/EditUser.jsx
 // ============================================
-// ENHANCED: Improved validation with field highlighting
-// No duplicate toasts - single toast with all errors
-// Auto-focus first error field
-// + Title Case name formatting
-// + AlertDialog confirmation before update
+// ENHANCED: validation + Title Case name formatting + AlertDialog confirmation
 // + FIX: password no longer required on edit
+// ✅ Active/Inactive status selector
 // ============================================
 
 import React, { useState, useEffect, useRef } from "react";
@@ -38,12 +35,14 @@ import {
   Eye,
   EyeOff,
   CheckCircle,
+  XCircle,      // ★ NEW
   AlertCircle,
   Info,
   Save,
   X,
   Zap,
   Users,
+  Power,        // ★ NEW
 } from "lucide-react";
 import { useUsers, useUpdateUser, useDepartments } from "../../../hooks/useUserManagement";
 import { toast } from "react-hot-toast";
@@ -448,6 +447,7 @@ const EditUser = () => {
     can_drive: false,
     password: "",
     password_confirmation: "",
+    status: "active",   // ★ NEW
   });
   const [errors, setErrors] = useState({});
   const [touched, setTouched] = useState({});
@@ -469,6 +469,7 @@ const EditUser = () => {
           can_drive: user.can_drive || false,
           password: "",
           password_confirmation: "",
+          status: user.status || "active",   // ★ NEW
         };
         setFormData(data);
         setOriginalData(data);
@@ -493,7 +494,7 @@ const EditUser = () => {
   }, [formData.department_id, departments]);
 
   // ============================================
-  // ✅ ENHANCED VALIDATION - Single toast with all errors
+  // ✅ ENHANCED VALIDATION
   // ============================================
 
   const validate = () => {
@@ -501,7 +502,6 @@ const EditUser = () => {
     const newTouched = {};
     const NAME_REGEX = /^[A-Za-z\s\.\-\'\,]+$/;
 
-    // Email validation
     if (!formData.email?.trim()) {
       newErrors.email = "Email is required";
       newTouched.email = true;
@@ -510,7 +510,6 @@ const EditUser = () => {
       newTouched.email = true;
     }
 
-    // First Name validation
     const firstName = formData.first_name?.trim() || "";
     if (!firstName) {
       newErrors.first_name = "First name is required";
@@ -526,7 +525,6 @@ const EditUser = () => {
       newTouched.first_name = true;
     }
 
-    // Last Name validation
     const lastName = formData.last_name?.trim() || "";
     if (!lastName) {
       newErrors.last_name = "Last name is required";
@@ -542,7 +540,6 @@ const EditUser = () => {
       newTouched.last_name = true;
     }
 
-    // Middle Name validation (optional)
     const middleName = formData.middle_name?.trim() || "";
     if (middleName && middleName.length > 50) {
       newErrors.middle_name = "Middle name must be 50 characters or less";
@@ -552,13 +549,11 @@ const EditUser = () => {
       newTouched.middle_name = true;
     }
 
-    // Department validation
     if (!formData.department_id) {
       newErrors.department_id = "Department is required";
       newTouched.department_id = true;
     }
 
-    // Role validation
     if (!formData.role) {
       newErrors.role = "Role is required";
       newTouched.role = true;
@@ -571,7 +566,6 @@ const EditUser = () => {
       }
     }
 
-    // ✅ FIXED: Password validation — only if user typed something (blank = keep current)
     if (formData.password) {
       if (formData.password.length < 8) {
         newErrors.password = "Password must be at least 8 characters";
@@ -645,7 +639,7 @@ const EditUser = () => {
   };
 
   // ============================================
-  // ✅ SUBMIT — validate, format names, then confirm
+  // ✅ SUBMIT
   // ============================================
 
   const handleSubmitClick = (e) => {
@@ -663,9 +657,9 @@ const EditUser = () => {
       first_name: formatProperName(formData.first_name),
       last_name: formatProperName(formData.last_name),
       middle_name: formatProperName(formData.middle_name) || null,
+      status: formData.status,   // ★ NEW — sent to backend
     };
 
-    // Only include password if user typed one
     if (!payload.password) {
       delete payload.password;
       delete payload.password_confirmation;
@@ -869,7 +863,7 @@ const EditUser = () => {
                 />
               </FormField>
 
-              {/* Role - Dynamic based on department */}
+              {/* Role */}
               <FormField
                 label="User Role"
                 icon={Shield}
@@ -888,6 +882,49 @@ const EditUser = () => {
                   departments={departments}
                 />
               </FormField>
+
+              {/* ★ NEW: Account Status Selector */}
+              <div className="space-y-1.5">
+                <Label className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300">
+                  <Power className="h-4 w-4 text-slate-400" />
+                  Account Status
+                  <span className="text-red-500">*</span>
+                </Label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleChange("status", "active")}
+                    className={cn(
+                      "flex items-center justify-center gap-2 px-4 py-3 rounded-xl border-2 transition-all duration-200",
+                      formData.status === "active"
+                        ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400"
+                        : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 hover:border-emerald-300 dark:hover:border-emerald-700"
+                    )}
+                  >
+                    <CheckCircle className="h-4 w-4" />
+                    <span className="text-sm font-medium">Active</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleChange("status", "inactive")}
+                    className={cn(
+                      "flex items-center justify-center gap-2 px-4 py-3 rounded-xl border-2 transition-all duration-200",
+                      formData.status === "inactive"
+                        ? "border-red-500 bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-400"
+                        : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 hover:border-red-300 dark:hover:border-red-700"
+                    )}
+                  >
+                    <XCircle className="h-4 w-4" />
+                    <span className="text-sm font-medium">Inactive</span>
+                  </button>
+                </div>
+                <p className="text-xs text-slate-400 dark:text-slate-500 flex items-center gap-1 mt-1">
+                  <Info className="h-3 w-3" />
+                  {formData.status === "active"
+                    ? "User can log in and access the system."
+                    : "User cannot log in. Their records and history are preserved."}
+                </p>
+              </div>
 
               {/* Password Section */}
               <div className="bg-amber-50/50 dark:bg-amber-950/20 rounded-xl p-4 border border-amber-200 dark:border-amber-800">
@@ -960,7 +997,6 @@ const EditUser = () => {
                 </FormField>
               </div>
 
-              {/* Password Strength Indicator */}
               {formData.password && formData.password.length > 0 && (
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
@@ -1056,6 +1092,18 @@ const EditUser = () => {
                       : pendingPayload?.role === "mayors_office" ? "Disbursing Officer"
                       : pendingPayload?.role === "driver" ? "Driver"
                       : "—"}
+                  </span>
+
+                  <span className="text-slate-500">Status:</span>
+                  <span
+                    className={cn(
+                      "col-span-2 font-medium",
+                      pendingPayload?.status === "active"
+                        ? "text-emerald-600 dark:text-emerald-400"
+                        : "text-red-600 dark:text-red-400"
+                    )}
+                  >
+                    {pendingPayload?.status === "active" ? "Active" : "Inactive"}
                   </span>
 
                   {pendingPayload?.password && (
