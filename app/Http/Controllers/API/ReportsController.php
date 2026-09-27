@@ -651,29 +651,27 @@ public function getReconciliationReport(Request $request)
             // ============================================
             $expectedDistance = (float) ($trip->estimated_distance_km ?? 0);
 
-            $actualDistance = (float) (
-                $trip->actual_distance_km
-                ?? $trip->gasSlip?->fuelReceipt?->gps_distance_km
-                ?? 0
-            );
+         $actualDistanceRaw = $trip->actual_distance_km
+    ?? $trip->gasSlip?->fuelReceipt?->gps_distance_km;
 
-            $variance = round($expectedDistance - $actualDistance, 2);
+$actualDistance = $actualDistanceRaw !== null ? (float) $actualDistanceRaw : null;
 
-            $varianceStatus = 'normal';
-            if (abs($variance) > 2) {
-                $varianceStatus = 'high_discrepancy';
-            } elseif (abs($variance) > 0.5) {
-                $varianceStatus = 'minor_discrepancy';
-            }
+// ✅ Variance is null when we have no actual to compare against
+$variance = $actualDistance !== null
+    ? round($expectedDistance - $actualDistance, 2)
+    : null;
 
-            // ============================================
-            // ✅ TRIP TIMES — read from trip_history, NOT fuel_receipt.
-            //    fuel_receipt.trip_started_at / trip_ended_at are
-            //    overwritten on every startTrip/completeTrip, so they
-            //    only reflect the LAST segment. trip_history preserves
-            //    each segment, so the first segment's started_at and
-            //    the last segment's ended_at give the true trip window.
-            // ============================================
+$varianceStatus = 'no_data';
+if ($variance !== null) {
+    $varianceStatus = 'normal';
+    if (abs($variance) > 2) {
+        $varianceStatus = 'high_discrepancy';
+    } elseif (abs($variance) > 0.5) {
+        $varianceStatus = 'minor_discrepancy';
+    }
+}
+
+           
             $segments = $trip->tripHistory;
 
             $firstStartedAt = $segments
@@ -733,7 +731,7 @@ public function getReconciliationReport(Request $request)
 
                 // Distance fields
                 'expected_distance' => round($expectedDistance, 2),
-                'actual_distance' => round($actualDistance, 2),
+               'actual_distance' => $actualDistance !== null ? round($actualDistance, 2) : null, 
                 'variance' => $variance,
                 'variance_status' => $varianceStatus,
 
@@ -749,14 +747,19 @@ public function getReconciliationReport(Request $request)
             ];
         });
 
-        $summary = [
-            'total_reconciliations' => $reconciliations->count(),
-            'total_verified' => $reconciliations->filter(fn($r) => $r['status'] === 'verified')->count(),
-            'total_discrepancy' => $reconciliations->filter(fn($r) => $r['status'] === 'discrepancy')->count(),
-            'total_amount_released' => round($reconciliations->sum('amount_released'), 2),
-            'total_actual_amount' => round($reconciliations->sum(fn($r) => $r['actual_amount'] ?? 0), 2),
-            'total_amount_variance' => round($reconciliations->sum(fn($r) => $r['amount_variance'] ?? 0), 2),
-        ];
+       $summary = [
+    'total_reconciliations' => $reconciliations->count(),
+    'total_verified' => $reconciliations->filter(fn($r) => $r['status'] === 'verified')->count(),
+    // ✅ Discrepancy = any row with a real (non-null) variance over threshold
+    'total_discrepancy' => $reconciliations->filter(function ($r) {
+        if ($r['variance'] !== null && abs($r['variance']) > 0.5) return true;
+        if ($r['amount_variance'] !== null && abs($r['amount_variance']) > 0.01) return true;
+        return false;
+    })->count(),
+    'total_amount_released' => round($reconciliations->sum('amount_released'), 2),
+    'total_actual_amount' => round($reconciliations->sum(fn($r) => $r['actual_amount'] ?? 0), 2),
+    'total_amount_variance' => round($reconciliations->sum(fn($r) => $r['amount_variance'] ?? 0), 2),
+];
 
         return response()->json([
             'success' => true,

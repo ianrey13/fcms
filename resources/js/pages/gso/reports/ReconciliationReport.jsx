@@ -72,7 +72,7 @@ const ReconciliationReport = ({
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
                         <StatsCard title="Total" value={summary.total_reconciliations || 0} icon={FileCheck} color="from-blue-500 to-blue-600" />
                         <StatsCard title="Verified" value={summary.total_verified || 0} icon={CheckCircle} color="from-emerald-500 to-emerald-600" />
-                        <StatsCard title="Discrepancy" value={summary.total_discrepancy || 0} icon={AlertCircle} color="from-red-500 to-red-600" />
+                        <StatsCard title="Discrepancy" value={discrepancyCount} color="from-red-500 to-red-600" />
                         <StatsCard title="Total Released" value={formatCurrency(summary.total_amount_released || 0)} icon={DollarSign} color="from-purple-500 to-purple-600" />
                     </div>
 
@@ -107,13 +107,19 @@ const ReconciliationReport = ({
                                                     {r.expected_distance != null ? `${r.expected_distance} km` : 'N/A'}
                                                 </TableCell>
                                                 <TableCell className="text-right">
-                                                    {r.actual_distance != null && r.actual_distance > 0
-                                                        ? `${r.actual_distance} km`
-                                                        : 'N/A'}
-                                                </TableCell>
-                                                <TableCell className={`text-right font-medium ${hasVariance ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
-                                                    {r.variance != null ? `${r.variance} km` : '0.00 km'}
-                                                </TableCell>
+    {r.actual_distance != null && r.actual_distance > 0
+        ? `${r.actual_distance} km`
+        : <span className="text-slate-400 dark:text-slate-500 italic">No GPS</span>}
+</TableCell>
+<TableCell className={`text-right font-medium ${
+    r.variance == null
+        ? 'text-slate-400 dark:text-slate-500'
+        : hasVariance
+            ? 'text-red-600 dark:text-red-400'
+            : 'text-emerald-600 dark:text-emerald-400'
+}`}>
+    {r.variance != null ? `${r.variance} km` : '—'}
+</TableCell>
                                             </TableRow>
                                         );
                                     })

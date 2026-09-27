@@ -188,7 +188,7 @@ const StatsCard = ({ title, value, icon: Icon, color, subtitle }) => (
     <div className="bg-white dark:bg-slate-800/80 rounded-xl p-4 border border-slate-200/60 dark:border-slate-700/60 hover:shadow-lg transition-all duration-300">
         <div className="flex items-center justify-between">
             <div>
-                <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                <p className="text-xs font-medium text-slate-500 dark:text-slate-300 uppercase tracking-wider">
                     {title}
                 </p>
                 <p className="text-xl font-bold text-slate-900 dark:text-white mt-1">
@@ -1222,6 +1222,10 @@ const MayorReports = () => {
         ? reconciliationData.reconciliations
         : [];
     const summary = reconciliationData?.summary || {};
+    const discrepancyCount = reconciliations.filter(r =>
+    (r.amount_variance != null && Math.abs(r.amount_variance) > 0.01) ||
+    (r.variance != null && Math.abs(r.variance) > 0.5)
+).length;
     const periodText = monthLabel(rcMonth, yearFilter);
 
     return (
@@ -1386,7 +1390,7 @@ const MayorReports = () => {
                         />
                         <StatsCard
                             title="Discrepancy"
-                            value={summary.total_discrepancy || 0}
+                             value={discrepancyCount}   
                             icon={AlertCircle}
                             color="from-red-500 to-red-600"
                             subtitle="Needs attention"
