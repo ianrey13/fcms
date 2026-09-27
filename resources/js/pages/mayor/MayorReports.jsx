@@ -538,65 +538,89 @@ const MayorReports = () => {
     };
 
     const handleExport = async (
-        format,
+        formatType,          // ✅ renamed from `format` — stops shadowing date-fns `format`
         reportType,
         params,
         rangeOverride,
     ) => {
         try {
             setExportLoading(true);
-            toast.loading(`Exporting ${format.toUpperCase()} report...`);
+            toast.loading(`Exporting ${formatType.toUpperCase()} report...`);
 
             let response;
             let fileName;
             if (rangeOverride) {
                 fileName = `${reportType}_${rangeOverride.startDate}_to_${rangeOverride.endDate}`;
             } else {
+                // ✅ date-fns format works now — no shadowing
                 fileName = `${reportType}_${format(new Date(), "yyyy-MM-dd")}`;
             }
 
             switch (reportType) {
                 case "fuel_receipt":
                     response = await reportsAPI.exportFuelReceiptReport(
-                        format,
+                        formatType,
                         params,
                     );
                     break;
                 case "reconciliation":
                     response = await reportsAPI.exportReconciliation(
-                        format,
+                        formatType,
                         params,
                     );
                     break;
                 case "budget":
                     response = await reportsAPI.exportBudgetReport(
-                        format,
+                        formatType,
                         params,
                     );
                     break;
                 case "billing_statement":
                     response = await reportsAPI.exportBillingStatement(
-                        format,
+                        formatType,
                         params,
                     );
                     break;
                 default:
                     response = await reportsAPI.exportFuelReceiptReport(
-                        format,
+                        formatType,
                         params,
                     );
             }
 
-            const extension = format === "pdf" ? "pdf" : "xlsx";
-            saveAs(response.data, `${fileName}.${extension}`);
+            const extension = formatType === "pdf" ? "pdf" : "xlsx";
+
+            // ✅ Blob fallback — ensures saveAs gets a Blob even if axios
+            //    doesn't honor responseType for any reason
+            let blob = response.data;
+            if (!(blob instanceof Blob)) {
+                blob = new Blob([blob], { type: "application/octet-stream" });
+            }
+
+            saveAs(blob, `${fileName}.${extension}`);
             toast.dismiss();
-            toast.success(`${format.toUpperCase()} exported successfully`);
+            toast.success(`${formatType.toUpperCase()} exported successfully`);
         } catch (error) {
             toast.dismiss();
             console.error("Export error:", error);
-            toast.error(
-                error.response?.data?.message || "Failed to export report",
-            );
+
+            // ✅ Blob-aware error extraction — surfaces the real backend error
+            let msg = "Failed to export report";
+            const data = error.response?.data;
+
+            if (data instanceof Blob) {
+                try {
+                    const text = await data.text();
+                    const parsed = JSON.parse(text);
+                    msg = parsed.message || msg;
+                } catch {
+                    // not JSON, ignore
+                }
+            } else if (data?.message) {
+                msg = data.message;
+            }
+
+            toast.error(msg);
         } finally {
             setExportLoading(false);
         }
@@ -1301,7 +1325,7 @@ const MayorReports = () => {
                                                     rcDepartment !== "all"
                                                         ? rcDepartment
                                                         : undefined,
-                                                mode: "cash",  
+                                                mode: "cash",
                                             },
                                             rcDateRange,
                                         );
@@ -1329,7 +1353,7 @@ const MayorReports = () => {
                                                     rcDepartment !== "all"
                                                         ? rcDepartment
                                                         : undefined,
-                                                mode: "cash",  // ✅ MO exports cash only
+                                                mode: "cash",
                                             },
                                             rcDateRange,
                                         );
@@ -1390,7 +1414,7 @@ const MayorReports = () => {
                         />
                         <StatsCard
                             title="Discrepancy"
-                             value={discrepancyCount}   
+                             value={discrepancyCount}
                             icon={AlertCircle}
                             color="from-red-500 to-red-600"
                             subtitle="Needs attention"
@@ -1547,7 +1571,7 @@ const MayorReports = () => {
                                         <SelectValue placeholder="All Departments" />
                                     </SelectTrigger>
                                     <SelectContent>
-                                       
+
                                         {departments.map((d) => (
                                             <SelectItem
                                                 key={d.department_id}

@@ -36,18 +36,30 @@ class BudgetUtilizationExport implements
         $periods    = $this->data['periods'] ?? [];
         $filters    = $this->data['filters'] ?? [];
 
-        // ---- Header block ----
-        $rows[] = ['BUDGET UTILIZATION REPORT'];
-        $rows[] = ['Laguindingan Municipality - FCMS'];
-        $rows[] = ['Department: ' . ($department['department_name'] ?? 'Unknown')
-                 . ' (' . ($department['department_code'] ?? 'N/A') . ')'];
-        $rows[] = ['Fiscal Year: ' . ($filters['year'] ?? date('Y'))
-                 . '   |   Month: ' . ($filters['month'] ?? 'All Months')];
-        $rows[] = ['Generated: ' . now()->format('F d, Y h:i A')];
-        $rows[] = array_fill(0, 4, '');   // spacer
+        // ✅ Month label — backend sends null when no month filter
+        $monthRaw  = $filters['month'] ?? null;
+        $monthText = $monthRaw
+            ? \Carbon\Carbon::create()->month((int) $monthRaw)->format('F')
+            : 'All Months';
+
+        // ✅ Pad every header row to 4 columns so mergeCells() has real targets
+        $rows[] = ['BUDGET UTILIZATION REPORT', '', '', ''];
+        $rows[] = ['Laguindingan Municipality - FCMS', '', '', ''];
+        $rows[] = [
+            'Department: ' . ($department['department_name'] ?? 'Unknown')
+                . ' (' . ($department['department_code'] ?? 'N/A') . ')',
+            '', '', ''
+        ];
+        $rows[] = [
+            'Fiscal Year: ' . ($filters['year'] ?? date('Y'))
+                . '   |   Month: ' . $monthText,
+            '', '', ''
+        ];
+        $rows[] = ['Generated: ' . now()->format('F d, Y h:i A'), '', '', ''];
+        $rows[] = ['', '', '', ''];
 
         // ---- Summary block ----
-        $rows[] = ['SUMMARY'];
+        $rows[] = ['SUMMARY', '', '', ''];
         $rows[] = ['Annual Allocated', 'Annual Utilized', 'Annual Remaining', 'Weeks in View'];
         $rows[] = [
             (float) ($summary['total_allocated'] ?? 0),
@@ -55,9 +67,9 @@ class BudgetUtilizationExport implements
             (float) ($summary['total_remaining'] ?? 0),
             (int)   ($summary['total_weeks'] ?? 0),
         ];
-        $rows[] = array_fill(0, 4, '');   // spacer
+        $rows[] = ['', '', '', ''];
 
-        // ---- Detail table ----
+        // ---- Detail table header ----
         $rows[] = ['WEEK (DATE RANGE)', 'BUDGET (₱)', 'UTILIZED (₱)', 'BALANCE (₱)'];
 
         foreach ($periods as $p) {
@@ -113,6 +125,12 @@ class BudgetUtilizationExport implements
             AfterSheet::class => function (AfterSheet $event) {
                 $sheet = $event->sheet->getDelegate();
 
+                // ✅ Guard: bail out if the sheet is empty or malformed
+                $highestRow = $sheet->getHighestRow();
+                if ($highestRow < 5) {
+                    return;
+                }
+
                 // ---- Header block styling ----
                 $sheet->mergeCells('A1:D1');
                 $sheet->mergeCells('A2:D2');
@@ -124,39 +142,40 @@ class BudgetUtilizationExport implements
                 $sheet->getStyle('A1:D5')->getAlignment()->setVertical(Alignment::VERTICAL_CENTER);
 
                 $sheet->getStyle('A1:D1')->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('DBEAFE');
-                $sheet->getStyle('A2:D2')->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('F3F4F6');
-                $sheet->getStyle('A3:D3')->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('F3F4F6');
-                $sheet->getStyle('A4:D4')->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('F3F4F6');
-                $sheet->getStyle('A5:D5')->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('F3F4F6');
+                foreach (['A2:D2', 'A3:D3', 'A4:D4', 'A5:D5'] as $range) {
+                    $sheet->getStyle($range)->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('F3F4F6');
+                }
 
-                // ---- Summary block (row 7-9) ----
-                $sheet->mergeCells('A7:D7');
-                $sheet->getStyle('A7')->getFont()->setBold(true)->setSize(11);
-                $sheet->getStyle('A7')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT);
+                // ---- Summary block (rows 7-9) ----
+                if ($highestRow >= 9) {
+                    $sheet->mergeCells('A7:D7');
+                    $sheet->getStyle('A7')->getFont()->setBold(true)->setSize(11);
+                    $sheet->getStyle('A7')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT);
 
-                $sheet->getStyle('A8:D8')
-                    ->getFont()->setBold(true)->getColor()->setARGB('FFFFFFFF');
-                $sheet->getStyle('A8:D8')
-                    ->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('2563EB');
-                $sheet->getStyle('A8:D8')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+                    $sheet->getStyle('A8:D8')
+                        ->getFont()->setBold(true)->getColor()->setARGB('FFFFFFFF');
+                    $sheet->getStyle('A8:D8')
+                        ->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('2563EB');
+                    $sheet->getStyle('A8:D8')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
 
-                $sheet->getStyle('A9:D9')->getFont()->setBold(true);
-                $sheet->getStyle('A9:D9')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
-                $sheet->getStyle('B9:C9')->getNumberFormat()->setFormatCode('#,##0.00');
-                $sheet->getStyle('A9:D9')
-                    ->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('E0F2FE');
+                    $sheet->getStyle('A9:D9')->getFont()->setBold(true);
+                    $sheet->getStyle('A9:D9')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+                    $sheet->getStyle('B9:C9')->getNumberFormat()->setFormatCode('#,##0.00');
+                    $sheet->getStyle('A9:D9')
+                        ->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('E0F2FE');
+                }
 
                 // ---- Detail table header (row 11) ----
-                $sheet->getStyle('A11:D11')
-                    ->getFont()->setBold(true)->getColor()->setARGB('FFFFFFFF');
-                $sheet->getStyle('A11:D11')
-                    ->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('2563EB');
-                $sheet->getStyle('A11:D11')
-                    ->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+                if ($highestRow >= 11) {
+                    $sheet->getStyle('A11:D11')
+                        ->getFont()->setBold(true)->getColor()->setARGB('FFFFFFFF');
+                    $sheet->getStyle('A11:D11')
+                        ->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('2563EB');
+                    $sheet->getStyle('A11:D11')
+                        ->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+                }
 
                 // ---- Detail rows + TOTAL row ----
-                $highestRow = $sheet->getHighestRow();
-
                 if ($highestRow > 11) {
                     $sheet->getStyle('A12:D' . $highestRow)
                         ->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN);
