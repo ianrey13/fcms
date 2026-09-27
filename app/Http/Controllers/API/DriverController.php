@@ -1027,7 +1027,7 @@ class DriverController extends Controller
             }
 
             $otherActive = TripTicket::where('driver_id', $driver->driver_id)
-                ->where('status', 'in_transit')
+                ->whereIn('status', ['in_transit', 'acknowledged', 'funds_issued'])
                 ->where('trip_ticket_id', '!=', $id)
                 ->exists();
 

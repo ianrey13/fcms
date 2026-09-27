@@ -176,151 +176,178 @@ class TripTicketController extends Controller
      * GSO staff CREATE TRIP TICKET
      */
     public function gsoCreate(Request $request)
-    {
-        try {
-            $user = $request->user();
+{
+    try {
+        $user = $request->user();
 
-            if (!$user->isGsoOffice()) {
-                return response()->json(['message' => 'Only GSO Office can create trip tickets'], 403);
-            }
+        if (!$user->isGsoOffice()) {
+            return response()->json(['message' => 'Only GSO Office can create trip tickets'], 403);
+        }
 
-            $validator = Validator::make($request->all(), [
-                'department_id' => 'required|exists:departments,department_id',
-                'driver_id' => 'required|exists:drivers,driver_id',
-                'vehicle_id' => 'required|exists:vehicles,vehicle_id',
-                'trip_date' => 'required|date|after_or_equal:today',
-                'destination' => 'required|string|max:255',
-                'purpose' => 'required|string',
-                'charge_to' => 'required|string|max:20',
-                'passenger_name' => 'nullable|string|max:120',
-                'requested_by_driver_id' => 'nullable|exists:users,user_id',
-                'estimated_distance_km' => 'nullable|numeric|min:0',
-                'estimated_fuel_liters' => 'nullable|numeric|min:0',
-                'estimated_cost' => 'nullable|numeric|min:0',
-            ]);
+        $validator = Validator::make($request->all(), [
+            'department_id' => 'required|exists:departments,department_id',
+            'driver_id' => 'required|exists:drivers,driver_id',
+            'vehicle_id' => 'required|exists:vehicles,vehicle_id',
+            'trip_date' => 'required|date|after_or_equal:today',
+            'destination' => 'required|string|max:255',
+            'purpose' => 'required|string',
+            'charge_to' => 'required|string|max:20',
+            'passenger_name' => 'nullable|string|max:120',
+            'requested_by_driver_id' => 'nullable|exists:users,user_id',
+            'estimated_distance_km' => 'nullable|numeric|min:0',
+            'estimated_fuel_liters' => 'nullable|numeric|min:0',
+            'estimated_cost' => 'nullable|numeric|min:0',
+        ]);
 
-            if ($validator->fails()) {
-                return response()->json(['errors' => $validator->errors()], 422);
-            }
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
 
-            //  CHECK VEHICLE AVAILABILITY
-            $vehicleCheck = $this->validateVehicleAvailability($request->vehicle_id);
-            if (!$vehicleCheck['available']) {
-                return response()->json([
-                    'success' => false,
-                    'message' => $vehicleCheck['message'],
-                    'data' => $vehicleCheck['data'] ?? null
-                ], 422);
-            }
-
-            $vehicle = Vehicle::find($request->vehicle_id);
-            if (!$vehicle || $vehicle->status !== 'active') {
-                return response()->json(['message' => 'Vehicle is not available'], 400);
-            }
-
-            $driver = Driver::find($request->driver_id);
-            if (!$driver || $driver->status !== 'active') {
-                return response()->json(['message' => 'Driver is not active'], 400);
-            }
-
-            $estimatedDistance = $request->estimated_distance_km
-                ?? $this->calculateDistanceFromConfig($request->destination);
-
-            $estimatedFuel = $request->estimated_fuel_liters
-                ?? $this->calculateEstimatedFuelFromConfig($vehicle, $estimatedDistance);
-
-            $estimatedCost = $request->estimated_cost
-                ?? round($estimatedFuel * $this->getFuelPriceFromConfig($vehicle->fuel_type), 2);
-
-            $budgetInfo = $this->getDepartmentBudgetFromConfig($request->department_id);
-            $hasInsufficientBudget = $budgetInfo['remaining'] < $estimatedCost;
-            $budgetShortage = $hasInsufficientBudget ? round($estimatedCost - $budgetInfo['remaining'], 2) : 0;
-
-           
-            $yearMonth = date('Y-m');
-
-            $lastTicketNum = TripTicket::where('trip_ticket_number', 'like', $yearMonth . '-%')
-                ->orderBy('trip_ticket_id', 'desc')
-                ->value('trip_ticket_number');
-
-            $lastControlNum = GasSlip::where('control_number', 'like', $yearMonth . '-%')
-                ->orderBy('gas_slip_id', 'desc')
-                ->value('control_number');
-
-            $lastSeq = 0;
-            foreach ([$lastTicketNum, $lastControlNum] as $n) {
-                if ($n && preg_match('/^' . preg_quote($yearMonth, '/') . '-(\d+)$/', $n, $m)) {
-                    $seq = (int) $m[1];
-                    if ($seq > $lastSeq) $lastSeq = $seq;
-                }
-            }
-
-            $ticketNumber = $yearMonth . '-' . str_pad($lastSeq + 1, 3, '0', STR_PAD_LEFT);
-
-            DB::beginTransaction();
-
-            $submittedBy = $request->requested_by_driver_id ?? $user->user_id;
-            $submittedByDriver = $request->requested_by_driver_id ? true : false;
-
-            $tripTicket = TripTicket::create([
-                'trip_ticket_number' => $ticketNumber,
-                'department_id' => $request->department_id,
-                'driver_id' => $request->driver_id,
-                'vehicle_id' => $request->vehicle_id,
-                'submitted_by' => $submittedBy,
-                'submitted_by_staff' => $submittedByDriver,
-                'submitted_at' => now(),
-                'trip_date' => $request->trip_date,
-                'purpose' => $request->purpose,
-                'destination' => $request->destination,
-                'charge_to' => $request->charge_to,
-                'passenger_name' => $request->passenger_name ?? null,
-                'status' => TripTicket::STATUS_PENDING_MAYORS_OFFICE,
-                'estimated_distance_km' => $estimatedDistance,
-                'estimated_fuel_liters' => $estimatedFuel,
-                'has_insufficient_budget' => $hasInsufficientBudget,
-                'budget_shortage' => $budgetShortage,
-                'original_department_id' => $request->department_id,
-            ]);
-
-            TripTicketVehicleSnapshot::create([
-                'trip_ticket_id' => $tripTicket->trip_ticket_id,
-                'vehicle_status' => $vehicle->status,
-                'fuel_type' => is_string($vehicle->fuel_type) ? $vehicle->fuel_type : 'gasoline',
-                'snapshot_taken_at' => now(),
-            ]);
-
-            DB::commit();
-
-            $this->sendMONotification($tripTicket);
-
-            if ($request->requested_by_driver_id) {
-                $this->sendDriverNotification($tripTicket);
-            }
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Trip ticket created successfully and sent to Mayor\'s Office',
-                'data' => [
-                    'trip_ticket_id' => $tripTicket->trip_ticket_id,
-                    'trip_ticket_number' => $tripTicket->trip_ticket_number,
-                    'status' => $tripTicket->status,
-                    'estimated_distance_km' => $estimatedDistance,
-                    'estimated_fuel_liters' => $estimatedFuel,
-                    'estimated_cost' => $estimatedCost,
-                    'has_insufficient_budget' => $hasInsufficientBudget,
-                    'budget_shortage' => $budgetShortage,
-                ]
-            ], 201);
-        } catch (\Exception $e) {
-            DB::rollBack();
-            Log::error('GSO Create error: ' . $e->getMessage());
+        //  CHECK VEHICLE AVAILABILITY
+        $vehicleCheck = $this->validateVehicleAvailability($request->vehicle_id);
+        if (!$vehicleCheck['available']) {
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to create trip ticket: ' . $e->getMessage()
-            ], 500);
+                'message' => $vehicleCheck['message'],
+                'data' => $vehicleCheck['data'] ?? null
+            ], 422);
         }
+
+        $vehicle = Vehicle::find($request->vehicle_id);
+        if (!$vehicle || $vehicle->status !== 'active') {
+            return response()->json(['message' => 'Vehicle is not available'], 400);
+        }
+
+        $driver = Driver::find($request->driver_id);
+        if (!$driver || $driver->status !== 'active') {
+            return response()->json(['message' => 'Driver is not active'], 400);
+        }
+
+        // ✅ Block if driver already has an active trip.
+        //    Statuses that count as "active": funds_issued, acknowledged, in_transit,
+        //    pending_gso_ticket, pending_gso_validation.
+        //    Driver must have the previous trip CLOSED by GSO before getting a new one.
+        $driverActiveTrip = TripTicket::where('driver_id', $request->driver_id)
+            ->whereIn('status', [
+                'funds_issued',
+                'acknowledged',
+                'in_transit',
+                'pending_gso_ticket',
+                'pending_gso_validation',
+            ])
+            ->orderBy('updated_at', 'desc')
+            ->first();
+
+        if ($driverActiveTrip) {
+            $statusLabel = str_replace('_', ' ', $driverActiveTrip->status);
+            return response()->json([
+                'success' => false,
+                'message' => "This driver already has an active trip (#{$driverActiveTrip->trip_ticket_number}, status: {$statusLabel}). It must be closed by GSO before assigning a new trip.",
+                'data' => [
+                    'active_trip_id'     => $driverActiveTrip->trip_ticket_id,
+                    'active_trip_number' => $driverActiveTrip->trip_ticket_number,
+                    'active_trip_status' => $driverActiveTrip->status,
+                ],
+            ], 422);
+        }
+
+        $estimatedDistance = $request->estimated_distance_km
+            ?? $this->calculateDistanceFromConfig($request->destination);
+
+        $estimatedFuel = $request->estimated_fuel_liters
+            ?? $this->calculateEstimatedFuelFromConfig($vehicle, $estimatedDistance);
+
+        $estimatedCost = $request->estimated_cost
+            ?? round($estimatedFuel * $this->getFuelPriceFromConfig($vehicle->fuel_type), 2);
+
+        $budgetInfo = $this->getDepartmentBudgetFromConfig($request->department_id);
+        $hasInsufficientBudget = $budgetInfo['remaining'] < $estimatedCost;
+        $budgetShortage = $hasInsufficientBudget ? round($estimatedCost - $budgetInfo['remaining'], 2) : 0;
+
+        $yearMonth = date('Y-m');
+
+        $lastTicketNum = TripTicket::where('trip_ticket_number', 'like', $yearMonth . '-%')
+            ->orderBy('trip_ticket_id', 'desc')
+            ->value('trip_ticket_number');
+
+        $lastControlNum = GasSlip::where('control_number', 'like', $yearMonth . '-%')
+            ->orderBy('gas_slip_id', 'desc')
+            ->value('control_number');
+
+        $lastSeq = 0;
+        foreach ([$lastTicketNum, $lastControlNum] as $n) {
+            if ($n && preg_match('/^' . preg_quote($yearMonth, '/') . '-(\d+)$/', $n, $m)) {
+                $seq = (int) $m[1];
+                if ($seq > $lastSeq) $lastSeq = $seq;
+            }
+        }
+
+        $ticketNumber = $yearMonth . '-' . str_pad($lastSeq + 1, 3, '0', STR_PAD_LEFT);
+
+        DB::beginTransaction();
+
+        $submittedBy = $request->requested_by_driver_id ?? $user->user_id;
+        $submittedByDriver = $request->requested_by_driver_id ? true : false;
+
+        $tripTicket = TripTicket::create([
+            'trip_ticket_number' => $ticketNumber,
+            'department_id' => $request->department_id,
+            'driver_id' => $request->driver_id,
+            'vehicle_id' => $request->vehicle_id,
+            'submitted_by' => $submittedBy,
+            'submitted_by_staff' => $submittedByDriver,
+            'submitted_at' => now(),
+            'trip_date' => $request->trip_date,
+            'purpose' => $request->purpose,
+            'destination' => $request->destination,
+            'charge_to' => $request->charge_to,
+            'passenger_name' => $request->passenger_name ?? null,
+            'status' => TripTicket::STATUS_PENDING_MAYORS_OFFICE,
+            'estimated_distance_km' => $estimatedDistance,
+            'estimated_fuel_liters' => $estimatedFuel,
+            'has_insufficient_budget' => $hasInsufficientBudget,
+            'budget_shortage' => $budgetShortage,
+            'original_department_id' => $request->department_id,
+        ]);
+
+        TripTicketVehicleSnapshot::create([
+            'trip_ticket_id' => $tripTicket->trip_ticket_id,
+            'vehicle_status' => $vehicle->status,
+            'fuel_type' => is_string($vehicle->fuel_type) ? $vehicle->fuel_type : 'gasoline',
+            'snapshot_taken_at' => now(),
+        ]);
+
+        DB::commit();
+
+        $this->sendMONotification($tripTicket);
+
+        if ($request->requested_by_driver_id) {
+            $this->sendDriverNotification($tripTicket);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Trip ticket created successfully and sent to Mayor\'s Office',
+            'data' => [
+                'trip_ticket_id' => $tripTicket->trip_ticket_id,
+                'trip_ticket_number' => $tripTicket->trip_ticket_number,
+                'status' => $tripTicket->status,
+                'estimated_distance_km' => $estimatedDistance,
+                'estimated_fuel_liters' => $estimatedFuel,
+                'estimated_cost' => $estimatedCost,
+                'has_insufficient_budget' => $hasInsufficientBudget,
+                'budget_shortage' => $budgetShortage,
+            ]
+        ], 201);
+    } catch (\Exception $e) {
+        DB::rollBack();
+        Log::error('GSO Create error: ' . $e->getMessage());
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to create trip ticket: ' . $e->getMessage()
+        ], 500);
     }
+}
 
     /**
      * ✅ Check if vehicle is available for trip
