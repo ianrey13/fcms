@@ -1,10 +1,7 @@
 // src/pages/mayor/departments/EditDepartment.jsx
 // ============================================
-// ENHANCED: Improved validation with field highlighting
-// No duplicate toasts - single toast with all errors
-// Auto-focus first error field
-// ✅ Title Case formatting for department_name + head_of_office
-// ✅ AlertDialog confirmation before update
+// ENHANCED: validation + Title Case formatting + AlertDialog confirmation
+// ✅ Active/Inactive status selector
 // ============================================
 
 import React, { useState, useEffect, useRef } from "react";
@@ -31,11 +28,13 @@ import {
   User,
   Loader2,
   CheckCircle,
+  XCircle,
   AlertCircle,
   Info,
   Zap,
   Save,
-  X
+  X,
+  Power,
 } from "lucide-react";
 import { useDepartments, useUpdateDepartment } from "../../../hooks/useDepartmentManagement";
 import { toast } from "react-hot-toast";
@@ -67,7 +66,7 @@ const formatProperName = (value, { keepPeriods = false } = {}) => {
 };
 
 // ============================================
-// ✅ ENHANCED: Form Field with error highlighting
+// ✅ Form Field with error highlighting
 // ============================================
 
 const FormField = ({
@@ -156,6 +155,7 @@ const EditDepartment = () => {
     department_name: "",
     department_code: "",
     head_of_office: "",
+    is_active: true,
   });
   const [errors, setErrors] = useState({});
   const [touched, setTouched] = useState({});
@@ -171,6 +171,7 @@ const EditDepartment = () => {
           department_name: dept.department_name || "",
           department_code: dept.department_code || "",
           head_of_office: dept.head_of_office || "",
+          is_active: dept.is_active ?? true,
         };
         setFormData(data);
         setOriginalData(data);
@@ -183,14 +184,13 @@ const EditDepartment = () => {
   }, [departments, id, navigate]);
 
   // ============================================
-  // ✅ ENHANCED VALIDATION - Single toast with all errors
+  // ✅ ENHANCED VALIDATION
   // ============================================
 
   const validate = () => {
     const newErrors = {};
     const newTouched = {};
 
-    // Department Name validation
     if (!formData.department_name.trim()) {
       newErrors.department_name = "Department name is required";
       newTouched.department_name = true;
@@ -208,7 +208,6 @@ const EditDepartment = () => {
       newTouched.department_name = true;
     }
 
-    // Department Code validation
     if (!formData.department_code.trim()) {
       newErrors.department_code = "Department code is required";
       newTouched.department_code = true;
@@ -223,7 +222,6 @@ const EditDepartment = () => {
       newTouched.department_code = true;
     }
 
-    // Head of Office validation
     if (formData.head_of_office && formData.head_of_office.trim().length > 150) {
       newErrors.head_of_office = "Head of office name is too long (max 150 characters)";
       newTouched.head_of_office = true;
@@ -318,6 +316,7 @@ const EditDepartment = () => {
           department_name: finalName,
           department_code: formData.department_code.trim().toUpperCase(),
           head_of_office: finalHead || null,
+          is_active: formData.is_active,
         },
       },
       {
@@ -473,6 +472,49 @@ const EditDepartment = () => {
                 />
               </FormField>
 
+              {/* Status Selector */}
+              <div className="space-y-1.5">
+                <Label className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300">
+                  <Power className="h-4 w-4 text-slate-400" />
+                  Status
+                  <span className="text-red-500">*</span>
+                </Label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleChange("is_active", true)}
+                    className={cn(
+                      "flex items-center justify-center gap-2 px-4 py-3 rounded-lg border-2 transition-all duration-200",
+                      formData.is_active
+                        ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400"
+                        : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 hover:border-emerald-300 dark:hover:border-emerald-700"
+                    )}
+                  >
+                    <CheckCircle className="h-4 w-4" />
+                    <span className="text-sm font-medium">Active</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleChange("is_active", false)}
+                    className={cn(
+                      "flex items-center justify-center gap-2 px-4 py-3 rounded-lg border-2 transition-all duration-200",
+                      !formData.is_active
+                        ? "border-red-500 bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-400"
+                        : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 hover:border-red-300 dark:hover:border-red-700"
+                    )}
+                  >
+                    <XCircle className="h-4 w-4" />
+                    <span className="text-sm font-medium">Inactive</span>
+                  </button>
+                </div>
+                <p className="text-xs text-slate-400 dark:text-slate-500 flex items-center gap-1 mt-1">
+                  <Info className="h-3 w-3" />
+                  {formData.is_active
+                    ? "Active departments can be assigned to trips and receive budgets."
+                    : "Inactive departments are hidden from trip creation and budget allocation."}
+                </p>
+              </div>
+
               {/* Action Buttons */}
               <div className="flex gap-3 pt-4 border-t border-slate-200/60 dark:border-slate-700/60">
                 <Button
@@ -542,6 +584,17 @@ const EditDepartment = () => {
                   </strong>
                 </>
               )}
+              <br />
+              Status:{' '}
+              <strong
+                className={cn(
+                  formData.is_active
+                    ? "text-emerald-600 dark:text-emerald-400"
+                    : "text-red-600 dark:text-red-400"
+                )}
+              >
+                {formData.is_active ? "Active" : "Inactive"}
+              </strong>
               <br /><br />
               Continue?
             </AlertDialogDescription>
