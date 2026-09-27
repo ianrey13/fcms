@@ -7,8 +7,33 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { format } from 'date-fns';
-import StatsCard from './StatsCard';
 import { formatCurrency } from './_helpers';
+
+// ✅ Inline StatsCard (dark-mode aware) — replaces missing ./StatsCard
+const StatsCard = ({ title, value, icon: Icon, color, subtitle }) => (
+    <div className="bg-white dark:bg-slate-800/80 rounded-xl p-4 border border-slate-200/60 dark:border-slate-700/60 hover:shadow-lg transition-all duration-300">
+        <div className="flex items-center justify-between">
+            <div>
+                <p className="text-xs font-medium text-slate-500 dark:text-slate-300 uppercase tracking-wider">
+                    {title}
+                </p>
+                <p className="text-xl font-bold text-slate-900 dark:text-white mt-1">
+                    {value}
+                </p>
+                {subtitle && (
+                    <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">
+                        {subtitle}
+                    </p>
+                )}
+            </div>
+            {Icon && (
+                <div className={`p-2.5 rounded-xl bg-gradient-to-br ${color} shadow-lg`}>
+                    <Icon className="h-5 w-5 text-white" />
+                </div>
+            )}
+        </div>
+    </div>
+);
 
 const ReconciliationReport = ({
     data, expanded, onToggle, onExport, exportLoading,
@@ -16,6 +41,12 @@ const ReconciliationReport = ({
 }) => {
     const reconciliations = data?.reconciliations || [];
     const summary = data?.summary || {};
+
+    // ✅ Discrepancy count — any row with a real (non-null) variance over threshold
+    const discrepancyCount = reconciliations.filter((r) =>
+        (r.variance != null && Math.abs(r.variance) > 0.5) ||
+        (r.amount_variance != null && Math.abs(r.amount_variance) > 0.01)
+    ).length;
 
     const formatDateTime = (value) => {
         if (!value) return 'N/A';
@@ -72,7 +103,7 @@ const ReconciliationReport = ({
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
                         <StatsCard title="Total" value={summary.total_reconciliations || 0} icon={FileCheck} color="from-blue-500 to-blue-600" />
                         <StatsCard title="Verified" value={summary.total_verified || 0} icon={CheckCircle} color="from-emerald-500 to-emerald-600" />
-                        <StatsCard title="Discrepancy" value={discrepancyCount} color="from-red-500 to-red-600" />
+                        <StatsCard title="Discrepancy" value={discrepancyCount} icon={AlertCircle} color="from-red-500 to-red-600" />
                         <StatsCard title="Total Released" value={formatCurrency(summary.total_amount_released || 0)} icon={DollarSign} color="from-purple-500 to-purple-600" />
                     </div>
 
@@ -107,19 +138,19 @@ const ReconciliationReport = ({
                                                     {r.expected_distance != null ? `${r.expected_distance} km` : 'N/A'}
                                                 </TableCell>
                                                 <TableCell className="text-right">
-    {r.actual_distance != null && r.actual_distance > 0
-        ? `${r.actual_distance} km`
-        : <span className="text-slate-400 dark:text-slate-500 italic">No GPS</span>}
-</TableCell>
-<TableCell className={`text-right font-medium ${
-    r.variance == null
-        ? 'text-slate-400 dark:text-slate-500'
-        : hasVariance
-            ? 'text-red-600 dark:text-red-400'
-            : 'text-emerald-600 dark:text-emerald-400'
-}`}>
-    {r.variance != null ? `${r.variance} km` : '—'}
-</TableCell>
+                                                    {r.actual_distance != null && r.actual_distance > 0
+                                                        ? `${r.actual_distance} km`
+                                                        : <span className="text-slate-400 dark:text-slate-500 italic">No GPS</span>}
+                                                </TableCell>
+                                                <TableCell className={`text-right font-medium ${
+                                                    r.variance == null
+                                                        ? 'text-slate-400 dark:text-slate-500'
+                                                        : hasVariance
+                                                            ? 'text-red-600 dark:text-red-400'
+                                                            : 'text-emerald-600 dark:text-emerald-400'
+                                                }`}>
+                                                    {r.variance != null ? `${r.variance} km` : '—'}
+                                                </TableCell>
                                             </TableRow>
                                         );
                                     })
