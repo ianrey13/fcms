@@ -439,7 +439,7 @@ public function getBudgetReport(Request $request)
             $endDate      = $request->get('end_date');
             $departmentId = $request->get('department_id');
             $vehicleId    = $request->get('vehicle_id');
-            $statusFilter = $request->get('status'); // ✅ NEW: pending | verified (from frontend dropdown)
+            $statusFilter = $request->get('status'); 
 
             $query = FuelReceipt::with([
                 'gasSlip.tripTicket.department',
@@ -501,7 +501,7 @@ public function getBudgetReport(Request $request)
                 $statusMap = [
                     'closed'                 => 'Closed',
                     'completed'              => 'Completed',
-                    'pending_mayors_office'  => 'Pending MO',
+                    'pending_mayors_office'  => 'Submitted',
                     'funds_issued'           => 'Funds Issued',
                     'in_transit'             => 'In Transit',
                     'acknowledged'           => 'Acknowledged',

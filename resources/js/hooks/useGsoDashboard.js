@@ -176,7 +176,7 @@ export const useRefreshGsoDashboard = () => {
 export const getGsoStatusConfig = (status) => {
   const config = {
     // ✅ New statuses for simplified workflow
-    pending_mayors_office: { color: 'bg-yellow-500', label: 'Pending MO', icon: 'Clock' },
+    pending_mayors_office: { color: 'bg-yellow-500', label: 'Submitted', icon: 'Clock' },
     funds_issued: { color: 'bg-blue-500', label: 'Funds Issued', icon: 'DollarSign' },
     acknowledged: { color: 'bg-cyan-500', label: 'Acknowledged', icon: 'CheckCircle' },
     in_transit: { color: 'bg-indigo-500', label: 'In Transit', icon: 'Truck' },

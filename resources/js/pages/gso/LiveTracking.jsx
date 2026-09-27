@@ -282,7 +282,7 @@ const getStatusLabel = (status) => {
         in_transit: 'In Transit',
         funds_issued: 'Funds Issued',
         acknowledged: 'Acknowledged',
-        pending_mayors_office: 'Pending MO',
+        pending_mayors_office: 'Submitted',
         pending_reconciliation: 'Pending Recon',
         completed: 'Completed',
         pending_gso_validation: 'Pending Validation',

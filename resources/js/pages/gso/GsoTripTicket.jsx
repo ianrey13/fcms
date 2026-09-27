@@ -516,10 +516,14 @@ const GsoTripTicket = ({ ticket: propTicket, onClose }) => {
             Print Ticket
           </Button>
         </div>
-        <Button variant="outline" onClick={handleClose}>
-          <X className="h-4 w-4 mr-2" />
-          Close
-        </Button>
+       <Button
+  variant="outline"
+  onClick={handleClose}
+  className="dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700 dark:hover:text-white"
+>
+  <X className="h-4 w-4 mr-2" />
+  Close
+</Button>
       </div>
 
       {/* Printable Slip */}

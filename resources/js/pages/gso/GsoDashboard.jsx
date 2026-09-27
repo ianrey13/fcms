@@ -160,7 +160,7 @@ const getStatusConfig = (status) => {
     const configs = {
         pending_mayors_office: {
             color: "bg-yellow-500",
-            label: "Pending MO",
+            label: "Submitted",
             icon: Clock,
         },
         funds_issued: {
@@ -1105,7 +1105,7 @@ const GsoDashboard = () => {
                 trend: safeTrips.length > 0 ? 12 : 0,
             },
             {
-                title: "Pending MO",
+                title: "Submitted",
                 value: safePending.length,
                 icon: Clock,
                 gradient: "from-yellow-500 to-yellow-600",
@@ -1310,7 +1310,7 @@ const GsoDashboard = () => {
 
     const FILTER_PILLS = [
         { key: "all", label: "All", count: filterCounts.all },
-        { key: "pending", label: "Pending MO", count: filterCounts.pending },
+        { key: "pending", label: "Submitted", count: filterCounts.pending },
         { key: "in_progress", label: "In Progress", count: filterCounts.in_progress },
         { key: "validation", label: "Ready to Validate", count: filterCounts.validation },
         { key: "cancelled", label: "Cancelled", count: filterCounts.cancelled },

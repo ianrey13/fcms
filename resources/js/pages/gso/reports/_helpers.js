@@ -13,7 +13,7 @@ export const COLORS = [
 
 export const STATUS_OPTIONS = [
     { value: 'all', label: 'All Status' },
-    { value: 'pending_mayors_office', label: 'Pending MO' },
+    { value: 'pending_mayors_office', label: 'Submitted' },
     { value: 'funds_issued', label: 'Funds Issued' },
     { value: 'acknowledged', label: 'Acknowledged' },
     { value: 'in_transit', label: 'In Transit' },
@@ -60,7 +60,7 @@ export const formatNumber = (num) => {
 
 export const getStatusBadge = (status) => {
     const map = {
-        'pending_mayors_office': { label: 'Pending MO', color: 'bg-yellow-500' },
+        'pending_mayors_office': { label: 'Submitted', color: 'bg-yellow-500' },
         'funds_issued': { label: 'Funds Issued', color: 'bg-blue-500' },
         'acknowledged': { label: 'Acknowledged', color: 'bg-cyan-500' },
         'in_transit': { label: 'In Transit', color: 'bg-purple-500' },
