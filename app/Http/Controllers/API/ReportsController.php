@@ -1831,32 +1831,57 @@ public function getMoActivityLogs(Request $request)
         }
     }
 
-    public function exportReconciliation(Request $request, $format)
-    {
-        try {
-            $response = $this->getReconciliationReport($request);
-            $data = $response->getData(true);
+   public function exportReconciliation(Request $request, $format)
+{
+    try {
+        $response = $this->getReconciliationReport($request);
+        $data = $response->getData(true);
 
-            if (!$data['success']) {
-                return response()->json(['success' => false, 'message' => 'Failed'], 500);
-            }
-
-            $reportData = $data['data'];
-            $filename = 'reconciliation_report_' . date('Y-m-d');
-            $filters = ['start_date' => $request->get('start_date'), 'end_date' => $request->get('end_date')];
-
-            if ($format === 'excel' || $format === 'xlsx') {
-                return Excel::download(new \App\Exports\ReconciliationExport($reportData), $filename . '.xlsx');
-            } elseif ($format === 'pdf') {
-                return $this->streamPdf(PdfReportService::reconciliation($reportData, $filters), $filename);
-            } else {
-                return $this->returnAsCSV($this->buildReconciliationCSV($reportData), $filename . '.csv');
-            }
-        } catch (\Exception $e) {
-            Log::error('Export reconciliation error: ' . $e->getMessage());
-            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        if (!$data['success']) {
+            return response()->json(['success' => false, 'message' => 'Failed'], 500);
         }
+
+        $reportData = $data['data'];
+
+        // ✅ NEW: 'trip' | 'cash' | 'both' — controls column set + filename
+        $mode = $request->get('mode', 'both');
+        if (!in_array($mode, ['trip', 'cash', 'both'], true)) {
+            $mode = 'both';
+        }
+
+        $modeLabel = match ($mode) {
+            'trip' => 'trip_reconciliation',
+            'cash' => 'cash_reconciliation',
+            default => 'reconciliation_report',
+        };
+        $filename = $modeLabel . '_' . date('Y-m-d');
+
+        $filters = [
+            'start_date' => $request->get('start_date'),
+            'end_date'   => $request->get('end_date'),
+        ];
+
+        if ($format === 'excel' || $format === 'xlsx') {
+            return Excel::download(
+                new \App\Exports\ReconciliationExport($reportData, $mode),
+                $filename . '.xlsx'
+            );
+       } elseif ($format === 'pdf') {
+    return $this->streamPdf(
+        PdfReportService::reconciliation($reportData, $filters, $mode),
+        $filename
+    );
+        } else {
+            return $this->returnAsCSV(
+                $this->buildReconciliationCSV($reportData, $mode),
+                $filename . '.csv'
+            );
+        }
+    } catch (\Exception $e) {
+        Log::error('Export reconciliation error: ' . $e->getMessage());
+        return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
     }
+}
 
     public function exportDriverEfficiency(Request $request, $format)
     {
@@ -2354,16 +2379,20 @@ public function getMoActivityLogs(Request $request)
         return implode("\n", $lines);
     }
 
-    private function buildReconciliationCSV($reportData)
-    {
-        $lines = ["\xEF\xBB\xBF", 'RECONCILIATION REPORT', 'Generated: ' . now()->format('Y-m-d H:i:s'), '',
-            'Ticket No.,Vehicle,Driver,Expected Distance,Actual Distance,Variance,Expected Fuel,Actual Fuel,Fuel Variance'];
+   private function buildReconciliationCSV($reportData, $mode = 'both')
+{
+    // ── TRIP MODE ───────────────────────────────────────
+    if ($mode === 'trip') {
+        $lines = ["\xEF\xBB\xBF", 'TRIP RECONCILIATION REPORT', 'Generated: ' . now()->format('Y-m-d H:i:s'), '',
+            'Ticket No.,Vehicle,Driver,Trip Start,Trip End,Expected Distance (km),Actual Distance (km),Distance Variance (km),Expected Fuel (L),Actual Fuel (L),Fuel Variance (L)'];
 
         foreach ($reportData['reconciliations'] ?? [] as $r) {
             $lines[] = implode(',', [
                 '"' . ($r['ticket_number'] ?? 'N/A') . '"',
                 '"' . ($r['plate_number'] ?? 'N/A') . '"',
                 '"' . ($r['driver_name'] ?? 'N/A') . '"',
+                '"' . ($r['trip_started_at'] ?? 'N/A') . '"',
+                '"' . ($r['trip_ended_at'] ?? 'N/A') . '"',
                 $r['expected_distance'] ?? 0,
                 $r['actual_distance'] ?? 0,
                 $r['variance'] ?? 0,
@@ -2374,6 +2403,46 @@ public function getMoActivityLogs(Request $request)
         }
         return implode("\n", $lines);
     }
+
+    // ── CASH MODE ───────────────────────────────────────
+    if ($mode === 'cash') {
+        $lines = ["\xEF\xBB\xBF", 'CASH RECONCILIATION REPORT', 'Generated: ' . now()->format('Y-m-d H:i:s'), '',
+            'Ticket No.,Vehicle,Driver,Amount Released (₱),Actual Amount Paid (₱),Amount Variance (₱),Status'];
+
+        foreach ($reportData['reconciliations'] ?? [] as $r) {
+            $status = $r['status'] ?? 'pending';
+            $lines[] = implode(',', [
+                '"' . ($r['ticket_number'] ?? 'N/A') . '"',
+                '"' . ($r['plate_number'] ?? 'N/A') . '"',
+                '"' . ($r['driver_name'] ?? 'N/A') . '"',
+                $r['amount_released'] ?? 0,
+                $r['actual_amount'] !== null ? $r['actual_amount'] : 'Not verified',
+                $r['amount_variance'] !== null ? $r['amount_variance'] : '—',
+                '"' . ucfirst(str_replace('_', ' ', $status)) . '"',
+            ]);
+        }
+        return implode("\n", $lines);
+    }
+
+    // ── BOTH / LEGACY ───────────────────────────────────
+    $lines = ["\xEF\xBB\xBF", 'RECONCILIATION REPORT', 'Generated: ' . now()->format('Y-m-d H:i:s'), '',
+        'Ticket No.,Vehicle,Driver,Expected Distance,Actual Distance,Variance,Expected Fuel,Actual Fuel,Fuel Variance'];
+
+    foreach ($reportData['reconciliations'] ?? [] as $r) {
+        $lines[] = implode(',', [
+            '"' . ($r['ticket_number'] ?? 'N/A') . '"',
+            '"' . ($r['plate_number'] ?? 'N/A') . '"',
+            '"' . ($r['driver_name'] ?? 'N/A') . '"',
+            $r['expected_distance'] ?? 0,
+            $r['actual_distance'] ?? 0,
+            $r['variance'] ?? 0,
+            $r['estimated_fuel'] ?? 0,
+            $r['actual_fuel'] ?? '',
+            $r['fuel_variance'] ?? '',
+        ]);
+    }
+    return implode("\n", $lines);
+}
 
     private function buildDriverEfficiencyCSV($reportData)
     {

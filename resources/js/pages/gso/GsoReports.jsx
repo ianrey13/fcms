@@ -1,8 +1,6 @@
 // src/pages/gso/GsoReports.jsx
 // ============================================
-// ✅ REFACTORED: Lean shell that orchestrates 10 lazy-loaded reports
-// ✅ Each report is a separate chunk — only loads when expanded
-// ✅ Initial page load: ~15 KB (was 66 KB)
+
 // ============================================
 
 import React, { useState, useMemo, useCallback, lazy, Suspense } from 'react';
@@ -443,7 +441,7 @@ const { data: fuelData, isLoading: fuelLoading } = useOptimizedQuery({
             switch (reportType) {
                 case 'fuel_consumption': response = await reportsAPI.exportFuelConsumptionReport(format, baseParams); break;
                 case 'fuel_receipt': response = await reportsAPI.exportFuelReceiptReport(format, baseParams); break;
-                case 'reconciliation': response = await reportsAPI.exportReconciliation(format, baseParams); break;
+               case 'reconciliation': response = await reportsAPI.exportReconciliation(format, { ...baseParams, mode: 'trip' }); break;
                 case 'driver_efficiency': response = await reportsAPI.exportDriverEfficiency(format, baseParams); break;
                 case 'gps_activity': response = await reportsAPI.exportGPSVehicleActivity(format, baseParams); break;
                 case 'audit_trail': response = await reportsAPI.exportAuditTrail(format, baseParams); break;

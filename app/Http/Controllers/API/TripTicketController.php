@@ -175,7 +175,7 @@ class TripTicketController extends Controller
       /**
      * GSO staff CREATE TRIP TICKET
      */
-    public function gsoCreate(Request $request)
+  public function gsoCreate(Request $request)
 {
     try {
         $user = $request->user();
@@ -203,13 +203,36 @@ class TripTicketController extends Controller
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        //  CHECK VEHICLE AVAILABILITY
-        $vehicleCheck = $this->validateVehicleAvailability($request->vehicle_id);
-        if (!$vehicleCheck['available']) {
+       //block if intransit
+        $vehicleInTransit = TripTicket::where('vehicle_id', $request->vehicle_id)
+            ->where('status', 'in_transit')
+            ->first();
+
+        if ($vehicleInTransit) {
             return response()->json([
                 'success' => false,
-                'message' => $vehicleCheck['message'],
-                'data' => $vehicleCheck['data'] ?? null
+                'message' => 'Vehicle is currently in transit',
+                'data' => [
+                    'blocking_trip_id'     => $vehicleInTransit->trip_ticket_id,
+                    'blocking_trip_number' => $vehicleInTransit->trip_ticket_number,
+                ],
+            ], 422);
+        }
+
+      
+        //    in_transit trip before being assigned a new ticket.
+        $driverInTransit = TripTicket::where('driver_id', $request->driver_id)
+            ->where('status', 'in_transit')
+            ->first();
+
+        if ($driverInTransit) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Driver is currently in transit',
+                'data' => [
+                    'blocking_trip_id'     => $driverInTransit->trip_ticket_id,
+                    'blocking_trip_number' => $driverInTransit->trip_ticket_number,
+                ],
             ], 422);
         }
 
@@ -221,34 +244,6 @@ class TripTicketController extends Controller
         $driver = Driver::find($request->driver_id);
         if (!$driver || $driver->status !== 'active') {
             return response()->json(['message' => 'Driver is not active'], 400);
-        }
-
-        // ✅ Block if driver already has an active trip.
-        //    Statuses that count as "active": funds_issued, acknowledged, in_transit,
-        //    pending_gso_ticket, pending_gso_validation.
-        //    Driver must have the previous trip CLOSED by GSO before getting a new one.
-        $driverActiveTrip = TripTicket::where('driver_id', $request->driver_id)
-            ->whereIn('status', [
-                'funds_issued',
-                'acknowledged',
-                'in_transit',
-                'pending_gso_ticket',
-                'pending_gso_validation',
-            ])
-            ->orderBy('updated_at', 'desc')
-            ->first();
-
-        if ($driverActiveTrip) {
-            $statusLabel = str_replace('_', ' ', $driverActiveTrip->status);
-            return response()->json([
-                'success' => false,
-                'message' => "This driver already has an active trip (#{$driverActiveTrip->trip_ticket_number}, status: {$statusLabel}). It must be closed by GSO before assigning a new trip.",
-                'data' => [
-                    'active_trip_id'     => $driverActiveTrip->trip_ticket_id,
-                    'active_trip_number' => $driverActiveTrip->trip_ticket_number,
-                    'active_trip_status' => $driverActiveTrip->status,
-                ],
-            ], 422);
         }
 
         $estimatedDistance = $request->estimated_distance_km

@@ -269,41 +269,133 @@ class PdfReportService
     // ============================================================
     // RECONCILIATION
     // ============================================================
-    public static function reconciliation(array $data, array $filters): string
-    {
-        $reconciliations = $data['reconciliations'] ?? [];
-        $headers = ['TT Number', 'Vehicle', 'Driver', 'Amount Released', 'Estimated Fuel', 'Actual Fuel', 'Variance', 'Status'];
+   // ============================================================
+// RECONCILIATION — mode-aware (trip | cash | both)
+// ============================================================
+public static function reconciliation(array $data, array $filters, string $mode = 'both'): string
+{
+    $reconciliations = $data['reconciliations'] ?? [];
+    $period = 'Period: ' . ($filters['start_date'] ?? 'N/A') . ' to ' . ($filters['end_date'] ?? 'N/A');
+
+    // ── TRIP MODE ────────────────────────────────────────
+    if ($mode === 'trip') {
+        $headers = ['TT Number', 'Vehicle', 'Driver', 'Trip Start', 'Trip End', 'Expected (km)', 'Actual (km)', 'Variance (km)'];
         $rows = [];
-        $totalAmount = 0; $totalEstimated = 0; $totalActual = 0;
+        $totalExpected = 0; $totalActual = 0; $totalVariance = 0;
 
         foreach ($reconciliations as $r) {
-            $amount = (float) ($r['amount_released'] ?? 0);
-            $est = (float) ($r['estimated_fuel'] ?? 0);
-            $act = (float) ($r['actual_fuel'] ?? 0);
+            $exp = (float) ($r['expected_distance'] ?? 0);
+            $act = (float) ($r['actual_distance'] ?? 0);
             $var = (float) ($r['variance'] ?? 0);
 
-            $totalAmount += $amount;
-            $totalEstimated += $est;
+            $totalExpected += $exp;
             $totalActual += $act;
+            $totalVariance += $var;
 
             $varColor = abs($var) > 2 ? 'text-danger' : 'text-success';
+
+            $started = !empty($r['trip_started_at'])
+                ? Carbon::parse($r['trip_started_at'])->format('m/d/Y H:i')
+                : 'N/A';
+            $ended = !empty($r['trip_ended_at'])
+                ? Carbon::parse($r['trip_ended_at'])->format('m/d/Y H:i')
+                : 'N/A';
 
             $rows[] = [
                 e($r['ticket_number'] ?? 'N/A'),
                 e($r['plate_number'] ?? 'N/A'),
                 e($r['driver_name'] ?? 'N/A'),
-                '₱' . number_format($amount, 2),
-                number_format($est, 2),
+                $started,
+                $ended,
+                number_format($exp, 2),
                 number_format($act, 2),
                 '<span class="' . $varColor . '">' . number_format($var, 2) . '</span>',
-                e(ucfirst($r['status'] ?? 'pending')),
             ];
         }
 
-        $totalRow = ['TOTAL', '', '', '₱' . number_format($totalAmount, 2), number_format($totalEstimated, 2), number_format($totalActual, 2), '', ''];
-        $period = 'Period: ' . ($filters['start_date'] ?? 'N/A') . ' to ' . ($filters['end_date'] ?? 'N/A');
-        return self::wrap('Trip and Fuel Reconciliation Report', self::table($headers, $rows, $totalRow), $period);
+        $totalRow = [
+            'TOTAL', '', '', '', '',
+            number_format($totalExpected, 2),
+            number_format($totalActual, 2),
+            number_format($totalVariance, 2),
+        ];
+
+        return self::wrap('Trip Reconciliation Report', self::table($headers, $rows, $totalRow), $period);
     }
+
+    // ── CASH MODE ────────────────────────────────────────
+    if ($mode === 'cash') {
+        $headers = ['TT Number', 'Vehicle', 'Driver', 'Released (₱)', 'Actual (₱)', 'Variance (₱)', 'Status'];
+        $rows = [];
+        $totalReleased = 0; $totalActual = 0; $totalVariance = 0;
+
+        foreach ($reconciliations as $r) {
+            $released = (float) ($r['amount_released'] ?? 0);
+            $actual = $r['actual_amount'] !== null ? (float) $r['actual_amount'] : null;
+            $variance = $r['amount_variance'] !== null ? (float) $r['amount_variance'] : null;
+
+            $totalReleased += $released;
+            if ($actual !== null) $totalActual += $actual;
+            if ($variance !== null) $totalVariance += $variance;
+
+            $varColor = $variance !== null && abs($variance) > 100 ? 'text-danger' : 'text-success';
+
+            $rows[] = [
+                e($r['ticket_number'] ?? 'N/A'),
+                e($r['plate_number'] ?? 'N/A'),
+                e($r['driver_name'] ?? 'N/A'),
+                '₱' . number_format($released, 2),
+                $actual !== null ? '₱' . number_format($actual, 2) : '<span class="text-danger">Not verified</span>',
+                $variance !== null
+                    ? '<span class="' . $varColor . '">₱' . number_format($variance, 2) . '</span>'
+                    : '—',
+                e(ucfirst(str_replace('_', ' ', $r['status'] ?? 'pending'))),
+            ];
+        }
+
+        $totalRow = [
+            'TOTAL', '', '',
+            '₱' . number_format($totalReleased, 2),
+            '₱' . number_format($totalActual, 2),
+            '₱' . number_format($totalVariance, 2),
+            '',
+        ];
+
+        return self::wrap('Cash Reconciliation Report', self::table($headers, $rows, $totalRow), $period);
+    }
+
+    // ── BOTH / LEGACY ────────────────────────────────────
+    $headers = ['TT Number', 'Vehicle', 'Driver', 'Amount Released', 'Estimated Fuel', 'Actual Fuel', 'Variance', 'Status'];
+    $rows = [];
+    $totalAmount = 0; $totalEstimated = 0; $totalActual = 0;
+
+    foreach ($reconciliations as $r) {
+        $amount = (float) ($r['amount_released'] ?? 0);
+        $est = (float) ($r['estimated_fuel'] ?? 0);
+        $act = (float) ($r['actual_fuel'] ?? 0);
+        $var = (float) ($r['variance'] ?? 0);
+
+        $totalAmount += $amount;
+        $totalEstimated += $est;
+        $totalActual += $act;
+
+        $varColor = abs($var) > 2 ? 'text-danger' : 'text-success';
+
+        $rows[] = [
+            e($r['ticket_number'] ?? 'N/A'),
+            e($r['plate_number'] ?? 'N/A'),
+            e($r['driver_name'] ?? 'N/A'),
+            '₱' . number_format($amount, 2),
+            number_format($est, 2),
+            number_format($act, 2),
+            '<span class="' . $varColor . '">' . number_format($var, 2) . '</span>',
+            e(ucfirst($r['status'] ?? 'pending')),
+        ];
+    }
+
+    $totalRow = ['TOTAL', '', '', '₱' . number_format($totalAmount, 2), number_format($totalEstimated, 2), number_format($totalActual, 2), '', ''];
+    return self::wrap('Trip and Fuel Reconciliation Report', self::table($headers, $rows, $totalRow), $period);
+}
 
     // ============================================================
     // DRIVER EFFICIENCY
