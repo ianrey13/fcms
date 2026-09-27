@@ -62,6 +62,7 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         Route::post('logout', [AuthController::class, 'logout']);
         Route::post('change-password', [AuthController::class, 'changePassword']);
         Route::post('update-profile', [AuthController::class, 'updateProfile']);
+        Route::post('change-first-password', [AuthController::class, 'changeFirstPassword']); 
     });
     // ============ PUSH TOKENS ============
     Route::post('push-token', [PushTokenController::class, 'store']);

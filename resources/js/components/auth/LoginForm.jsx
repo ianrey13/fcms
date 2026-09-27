@@ -6,14 +6,14 @@ import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Alert, AlertDescription } from '../ui/alert';
-import { 
-  Loader2, 
-  Mail, 
-  Lock, 
-  Eye, 
-  EyeOff, 
-  KeyRound, 
-  ShieldCheck, 
+import {
+  Loader2,
+  Mail,
+  Lock,
+  Eye,
+  EyeOff,
+  KeyRound,
+  ShieldCheck,
   AlertCircle,
   CheckCircle,
   Fingerprint,
@@ -32,7 +32,7 @@ const LoginForm = () => {
   const [touched, setTouched] = useState({ email: false, password: false });
   const [capsLockOn, setCapsLockOn] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
-  
+
   const { login } = useAuth();
   const navigate = useNavigate();
 
@@ -85,19 +85,19 @@ const LoginForm = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    
+
     setTouched({ email: true, password: true });
-    
+
     if (!email || !password) {
       setError('Please fill in all fields');
       return;
     }
-    
+
     if (!isEmailValid(email)) {
       setError('Please enter a valid email address');
       return;
     }
-    
+
     if (!isPasswordValid(password)) {
       setError('Password must be at least 6 characters');
       return;
@@ -107,14 +107,20 @@ const LoginForm = () => {
 
     try {
       const result = await login(email, password);
-      
+
       if (result.success && result.user) {
         if (rememberMe) {
           localStorage.setItem('remembered_email', email);
         } else {
           localStorage.removeItem('remembered_email');
         }
-        
+
+        // ★ NEW: force first-login password change
+        if (result.user.must_change_password) {
+          navigate('/force-change-password', { replace: true });
+          return;
+        }
+
         const roleRoutes = {
           'superadmin': '/admin/dashboard',
           'gso_office': '/gso/dashboard',
@@ -124,7 +130,7 @@ const LoginForm = () => {
           'dept_office': '/department/dashboard',
           'driver': '/driver/dashboard',
         };
-        
+
         const dashboardPath = roleRoutes[result.user.role] || '/dashboard';
         navigate(dashboardPath);
       } else {
@@ -182,8 +188,8 @@ const LoginForm = () => {
             onBlur={() => handleFieldBlur('email')}
             onFocus={() => setIsFocused(true)}
             className={`pl-10 h-11 rounded-xl transition-all duration-200 bg-white dark:bg-slate-800 border-2 ${
-              getEmailError() && touched.email 
-                ? 'border-red-400 focus:ring-2 focus:ring-red-400' 
+              getEmailError() && touched.email
+                ? 'border-red-400 focus:ring-2 focus:ring-red-400'
                 : getEmailError() === '' && touched.email && email
                 ? 'border-emerald-400 focus:ring-2 focus:ring-emerald-400'
                 : 'border-slate-200 dark:border-slate-700 focus:border-blue-400 focus:ring-2 focus:ring-blue-400'
@@ -219,8 +225,8 @@ const LoginForm = () => {
             <Lock className="h-4 w-4 text-slate-400" />
             Password
           </Label>
-          <a 
-            href="/forgot-password" 
+          <a
+            href="/forgot-password"
             className="text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 hover:underline transition-colors font-medium"
           >
             Forgot password?
@@ -243,8 +249,8 @@ const LoginForm = () => {
               }
             }}
             className={`pl-10 pr-10 h-11 rounded-xl transition-all duration-200 bg-white dark:bg-slate-800 border-2 ${
-              getPasswordError() && touched.password 
-                ? 'border-red-400 focus:ring-2 focus:ring-red-400' 
+              getPasswordError() && touched.password
+                ? 'border-red-400 focus:ring-2 focus:ring-red-400'
                 : getPasswordError() === '' && touched.password && password
                 ? 'border-emerald-400 focus:ring-2 focus:ring-emerald-400'
                 : 'border-slate-200 dark:border-slate-700 focus:border-blue-400 focus:ring-2 focus:ring-blue-400'
@@ -265,7 +271,7 @@ const LoginForm = () => {
             )}
           </button>
         </div>
-        
+
         {/* Caps Lock Warning */}
         {capsLockOn && (
           <p className="text-xs text-amber-600 dark:text-amber-400 mt-1 flex items-center gap-1 animate-fade-in">
@@ -273,7 +279,7 @@ const LoginForm = () => {
             Caps Lock is on
           </p>
         )}
-        
+
         {getPasswordError() && touched.password && (
           <p className="text-xs text-red-500 dark:text-red-400 mt-1 flex items-center gap-1 animate-fade-in">
             <AlertCircle className="h-3 w-3" />
@@ -283,7 +289,7 @@ const LoginForm = () => {
         {touched.password && password && !getPasswordError() && (
           <div className="mt-1 flex items-center gap-2">
             <div className="flex-1 h-1 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
-              <div 
+              <div
                 className={`h-full rounded-full transition-all duration-500 ${
                   password.length < 4 ? 'bg-red-500 w-1/4' :
                   password.length < 8 ? 'bg-yellow-500 w-1/2' :
@@ -329,8 +335,8 @@ const LoginForm = () => {
       </div>
 
       {/* Submit Button */}
-      <Button 
-        type="submit" 
+      <Button
+        type="submit"
         className="w-full h-11 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-bold rounded-xl shadow-lg shadow-blue-500/20 transition-all duration-200 transform hover:scale-[1.02] active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:scale-100"
         disabled={loading || !isFormValid}
       >
@@ -346,8 +352,6 @@ const LoginForm = () => {
           </>
         )}
       </Button>
-
-      
 
       {/* Security Footer */}
       <div className="flex items-center justify-center gap-4 pt-2 border-t border-slate-100 dark:border-slate-800">

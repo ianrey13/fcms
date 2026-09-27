@@ -30,7 +30,7 @@ class User extends Authenticatable
         'password_hash', 'role', 'can_drive', 
         'status', 'last_login_at', 'failed_login_attempts', 'locked_until',
         'account_locked_until', 'deactivated_at', 'deactivated_by',
-        'deactivation_reason', 'password_changed_at'
+        'deactivation_reason', 'password_changed_at', 'must_change_password', 
     ];
     
     protected $hidden = ['password_hash'];
@@ -45,6 +45,7 @@ class User extends Authenticatable
         'account_locked_until' => 'datetime',
         'can_drive' => 'boolean',
         'failed_login_attempts' => 'integer',
+        'must_change_password' => 'boolean',
     ];
     
     // ============ AUTO-GENERATE EMPLOYEE NUMBER ============

@@ -66,24 +66,24 @@ class AuthController extends Controller
         if (!Hash::check($request->password, $user->password_hash)) {
             // Increment failed login attempts
             $user->failed_login_attempts = $user->failed_login_attempts + 1;
-            
+
             // Lock account after 5 failed attempts
             if ($user->failed_login_attempts >= 5) {
                 $user->account_locked_until = now()->addMinutes(30);
                 $user->save();
-                
+
                 return response()->json([
                     'success' => false,
                     'message' => 'Too many failed attempts. Account locked for 30 minutes.'
                 ], 401);
             }
-            
+
             $user->save();
 
             Log::info('🔐 Attempting to log login for user: ' . $user->user_id);
             AuditHelper::logLogin($user);
             Log::info('✅ Login logged for user: ' . $user->user_id);
-            
+
             return response()->json([
                 'success' => false,
                 'message' => 'Invalid credentials'
@@ -96,7 +96,7 @@ class AuthController extends Controller
         $user->last_login_at = now();
         $user->save();
 
-        //Log login activity 
+        //Log login activity
         AuditHelper::logLogin($user);
 
         // ✅ ============================================================
@@ -132,6 +132,7 @@ class AuthController extends Controller
                     'status' => $user->status,
                     'head_active_status' => $user->head_active_status,
                     'last_login_at' => $user->last_login_at,
+                    'must_change_password' => (bool) $user->must_change_password,   // ★ NEW
                 ],
                 'token' => $token,
                 'token_type' => 'Bearer'
@@ -148,13 +149,13 @@ class AuthController extends Controller
             $today = Carbon::now();
             $currentWeek = $today->weekOfYear;
             $currentYear = $today->year;
-            
+
             // ✅ Check if reset was already done this week
             $resetDone = DB::table('weekly_budget_usage')
                 ->where('week_number', $currentWeek)
                 ->where('year', $currentYear)
                 ->exists();
-            
+
             // ✅ If not reset yet, run the reset
             if (!$resetDone) {
                 Log::info('🔄 Weekly budget reset triggered by Mayor\'s Office login', [
@@ -163,10 +164,10 @@ class AuthController extends Controller
                     'week' => $currentWeek,
                     'year' => $currentYear,
                 ]);
-                
+
                 // ✅ Call the stored procedure
                 DB::statement('CALL proc_weekly_budget_reset();');
-                
+
                 // ✅ Log the reset in budget history
                 DB::table('budget_history')->insert([
                     'department_id' => 0,
@@ -180,7 +181,7 @@ class AuthController extends Controller
                     'user_name' => $user->full_name,
                     'created_at' => now(),
                 ]);
-                
+
                 Log::info('✅ Weekly budget reset completed (login trigger)', [
                     'user_id' => $user->user_id,
                     'week' => $currentWeek,
@@ -203,7 +204,7 @@ class AuthController extends Controller
     public function me(Request $request)
     {
         $user = $request->user();
-        
+
         return response()->json([
             'success' => true,
             'data' => [
@@ -222,6 +223,7 @@ class AuthController extends Controller
                 'head_active_status' => $user->head_active_status,
                 'last_login_at' => $user->last_login_at,
                 'created_at' => $user->created_at,
+                'must_change_password' => (bool) $user->must_change_password,   // ★ NEW
             ]
         ]);
     }
@@ -232,7 +234,7 @@ class AuthController extends Controller
     public function logout(Request $request)
     {
         $user = $request->user();
-        
+
         AuditHelper::logLogout($user);
 
         // Revoke current access token
@@ -250,7 +252,7 @@ class AuthController extends Controller
     public function logoutAllDevices(Request $request)
     {
         $user = $request->user();
-        
+
         AuditHelper::log(
             'logout_all',
             'users',
@@ -269,87 +271,126 @@ class AuthController extends Controller
     }
 
     /**
-     * Change password
-     */
-    public function changePassword(Request $request)
-    {
-        $validator = Validator::make($request->all(), [
-            'current_password' => 'required|string',
-            'new_password' => 'required|string|min:8|confirmed',
-        ]);
+ * Change password (regular, for already-logged-in users)
+ * No password_history check — trail is in audit_log.
+ */
+public function changePassword(Request $request)
+{
+    $validator = Validator::make($request->all(), [
+        'current_password' => 'required|string',
+        'new_password' => 'required|string|min:8|confirmed',
+    ]);
 
-        if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Validation failed',
-                'errors' => $validator->errors()
-            ], 422);
-        }
+    if ($validator->fails()) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Validation failed',
+            'errors' => $validator->errors()
+        ], 422);
+    }
 
-        $user = $request->user();
+    $user = $request->user();
 
-        // Verify current password
-        if (!Hash::check($request->current_password, $user->password_hash)) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Current password is incorrect'
-            ], 401);
-        }
+    // Verify current password
+    if (!Hash::check($request->current_password, $user->password_hash)) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Current password is incorrect'
+        ], 401);
+    }
 
-        // Prevent reusing last 5 passwords
-        $recentPasswords = DB::table('password_history')
-            ->where('user_id', $user->user_id)
-            ->orderBy('created_at', 'desc')
-            ->limit(5)
-            ->get();
+    DB::beginTransaction();
 
-        foreach ($recentPasswords as $oldPassword) {
-            if (Hash::check($request->new_password, $oldPassword->password_hash)) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Cannot reuse one of your last 5 passwords'
-                ], 422);
-            }
-        }
-
-        // Update password
-        $oldHash = $user->password_hash;
+    try {
         $user->password_hash = Hash::make($request->new_password);
         $user->password_changed_at = now();
         $user->save();
 
-        // Save to password history
-        DB::table('password_history')->insert([
-            'user_id' => $user->user_id,
-            'password_hash' => $oldHash,
-            'created_at' => now()
-        ]);
-
-        // Delete old password history (keep last 10)
-        $oldRecords = DB::table('password_history')
-            ->where('user_id', $user->user_id)
-            ->orderBy('created_at', 'desc')
-            ->skip(10)
-            ->take(100)
-            ->get();
-
-        foreach ($oldRecords as $record) {
-            DB::table('password_history')->where('history_id', $record->history_id)->delete();
-        }
-
-        AuditHelper::log(
-            'password_changed',
-            'users',
-            $user->user_id,
-            null,
-            ['email' => $user->email]
-        );
-
+        DB::commit();
+    } catch (\Exception $e) {
+        DB::rollBack();
+        Log::error('Change password error: ' . $e->getMessage());
         return response()->json([
-            'success' => true,
-            'message' => 'Password changed successfully. Please login again.'
-        ]);
+            'success' => false,
+            'message' => 'Failed to change password: ' . $e->getMessage(),
+        ], 500);
     }
+
+    AuditHelper::log(
+        'password_changed',
+        'users',
+        $user->user_id,
+        null,
+        ['email' => $user->email]
+    );
+
+    return response()->json([
+        'success' => true,
+        'message' => 'Password changed successfully. Please login again.'
+    ]);
+}
+
+   /**
+ * ★ NEW: First-login password change
+ * No current_password required — only available while must_change_password = true
+ * No password_history check — the trail is in audit_log.
+ */
+public function changeFirstPassword(Request $request)
+{
+    $validator = Validator::make($request->all(), [
+        'new_password' => 'required|string|min:8|confirmed',
+    ]);
+
+    if ($validator->fails()) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Validation failed',
+            'errors' => $validator->errors()
+        ], 422);
+    }
+
+    $user = $request->user();
+
+    // Guard: only allow this while the flag is true
+    if (!$user->must_change_password) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Password already changed. Use the regular change password endpoint.',
+        ], 403);
+    }
+
+    DB::beginTransaction();
+
+    try {
+        $user->password_hash = Hash::make($request->new_password);
+        $user->password_changed_at = now();
+        $user->must_change_password = false;
+        $user->save();
+
+        DB::commit();
+    } catch (\Exception $e) {
+        DB::rollBack();
+        Log::error('Change first password error: ' . $e->getMessage());
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to change password: ' . $e->getMessage(),
+        ], 500);
+    }
+
+    // Audit trail — visible in GSO Activity Log
+    AuditHelper::log(
+        'first_password_changed',
+        'users',
+        $user->user_id,
+        null,
+        ['email' => $user->email, 'action' => 'First login password change']
+    );
+
+    return response()->json([
+        'success' => true,
+        'message' => 'Password changed successfully.',
+    ]);
+}
 
     /**
      * Update authenticated user's profile
@@ -358,14 +399,14 @@ class AuthController extends Controller
     {
         try {
             $user = $request->user();
-            
+
             $validator = Validator::make($request->all(), [
                 'first_name' => 'sometimes|required|string|max:50',
                 'last_name' => 'sometimes|required|string|max:50',
                 'middle_name' => 'nullable|string|max:50',
                 'email' => 'sometimes|required|email|unique:users,email,' . $user->user_id . ',user_id',
             ]);
-            
+
             if ($validator->fails()) {
                 return response()->json([
                     'success' => false,
@@ -373,14 +414,14 @@ class AuthController extends Controller
                     'errors' => $validator->errors()
                 ], 422);
             }
-            
+
             $oldValues = [
                 'first_name' => $user->first_name,
                 'last_name' => $user->last_name,
                 'middle_name' => $user->middle_name,
                 'email' => $user->email,
             ];
-            
+
             if ($request->has('first_name')) {
                 $user->first_name = $request->first_name;
             }
@@ -393,9 +434,9 @@ class AuthController extends Controller
             if ($request->has('email')) {
                 $user->email = $request->email;
             }
-            
+
             $user->save();
-            
+
             AuditHelper::log(
                 'profile_updated',
                 'users',
@@ -408,9 +449,9 @@ class AuthController extends Controller
                     'email' => $user->email,
                 ]
             );
-            
+
             Log::info('Profile updated', ['user_id' => $user->user_id]);
-            
+
             return response()->json([
                 'success' => true,
                 'message' => 'Profile updated successfully',
@@ -426,7 +467,7 @@ class AuthController extends Controller
                     'department_name' => $user->department?->department_name,
                 ]
             ]);
-            
+
         } catch (\Exception $e) {
             Log::error('Update profile error: ' . $e->getMessage());
             return response()->json([
@@ -456,7 +497,7 @@ class AuthController extends Controller
         $user = User::where('email', $request->email)->first();
 
         $token = Str::random(64);
-        
+
         DB::table('password_reset_tokens')->updateOrInsert(
             ['email' => $request->email],
             ['token' => $token, 'created_at' => now()]
@@ -545,9 +586,9 @@ class AuthController extends Controller
     public function refreshToken(Request $request)
     {
         $user = $request->user();
-        
+
         $request->user()->currentAccessToken()->delete();
-        
+
         $deviceName = $request->device_name ?? 'web';
         $newToken = $user->createToken($deviceName)->plainTextToken;
 
@@ -569,7 +610,7 @@ class AuthController extends Controller
             'gso_staff' => 'GSO Staff',
             'driver' => 'Driver',
         ];
-        
+
         return $labels[$role] ?? ucfirst($role);
     }
 }

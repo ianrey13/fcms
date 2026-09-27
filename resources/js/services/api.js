@@ -17,6 +17,13 @@ export const authAPI = {
       new_password_confirmation: newPassword,
     }),
 
+      changeFirstPassword: (newPassword) =>
+    uncachedApi.post("/auth/change-first-password", {
+      new_password: newPassword,
+      new_password_confirmation: newPassword,
+    }),
+
+
   forgotPassword: (email) => uncachedApi.post("/auth/forgot-password", { email }),
 
   resetPassword: (email, token, password) =>
@@ -229,14 +236,12 @@ export const mayorsOfficeAPI = {
     cachedApi.get("/mayors-office/drivers/active", { params }),
   getAvailableVehicles: (params) =>
     cachedApi.get("/mayors-office/vehicles/available", { params }),
-  getNextControlNumber: () => cachedApi.get('/mayors-office/gas-slips/next-control-number'),
 
 
 
   
 // Gas Slips (MO-created)
-// Gas Slips (MO-created)
-getNextControlNumber: () => cachedApi.get('/mayors-office/gas-slips/next-control-number'),   
+ getNextControlNumber: () => cachedApi.get('/mayors-office/gas-slips/next-control-number'),
 createGasSlip: (data) => uncachedApi.post('/mayors-office/gas-slips', data),
 getPendingGasSlips: (params) => cachedApi.get('/mayors-office/gas-slips/pending', { params }),
 cancelGasSlip: (id, data) => uncachedApi.post(`/mayors-office/gas-slips/${id}/cancel`, data),

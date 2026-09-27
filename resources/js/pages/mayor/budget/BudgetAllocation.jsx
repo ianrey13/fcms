@@ -1,15 +1,5 @@
 // src/pages/mayor/budget/BudgetAllocation.jsx
 // ============================================
-// ENHANCED: Auto-refresh with real-time updates
-// REMOVED: Manual refresh button
-// REMOVED: Add Budget button (kept inside dialog)
-// KEPT: Bulk Edit functionality
-// ✅ UPDATED: Weekly ceiling is now auto-computed (annual / 52)
-// ✅ REMOVED: Weekly Ceiling dialog + Clock action button
-// ✅ Action buttons:
-//     - has_budget = false  → Pencil (Set Annual) only
-//     - has_budget = true   → Plus (Add Additional) only
-// ============================================
 
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useQueryClient, useMutation } from "@tanstack/react-query";
@@ -139,7 +129,7 @@ const DepartmentTooltip = ({ code, name }) => {
 };
 
 // ============================================
-// Form Field with error highlighting
+// Form Field
 // ============================================
 
 const FormField = ({
@@ -191,7 +181,7 @@ const FormField = ({
 };
 
 // ============================================
-// FILTER SECTION COMPONENT
+// FILTER SECTION
 // ============================================
 
 const FilterSection = ({ filters, setFilters, departments, isFilterOpen, setIsFilterOpen }) => {
@@ -311,7 +301,9 @@ const BudgetAllocation = () => {
     const { isConnected } = useRealtime();
     const toastIdRef = useRef(null);
 
-    const [selectedYear, setSelectedYear] = useState(2026);
+    // ★ FIX: start as null — let fiscal years query decide
+    const [selectedYear, setSelectedYear] = useState(null);
+
     const [editingBudget, setEditingBudget] = useState(null);
     const [showEditDialog, setShowEditDialog] = useState(false);
     const [showViewDialog, setShowViewDialog] = useState(false);
@@ -329,7 +321,6 @@ const BudgetAllocation = () => {
     const [bulkData, setBulkData] = useState({});
     const [isFilterOpen, setIsFilterOpen] = useState(false);
 
-    // Form validation states
     const [editErrors, setEditErrors] = useState({});
     const [editTouched, setEditTouched] = useState({});
     const [addErrors, setAddErrors] = useState({});
@@ -363,6 +354,7 @@ const BudgetAllocation = () => {
     // OPTIMIZED QUERIES
     // ============================================
 
+    // Query 1: active fiscal years
     const { data: yearsData, isLoading: yearsLoading } = useOptimizedQuery({
         queryKey: ["fiscal-years-active"],
         queryFn: async () => {
@@ -378,17 +370,20 @@ const BudgetAllocation = () => {
         keepPreviousData: true,
     });
 
+    // ★ FIX: resolve the year once we know the valid years
     useEffect(() => {
-        if (yearsData && yearsData.length > 0) {
-            const has2026 = yearsData.some((y) => y.year === 2026);
-            if (has2026) {
-                setSelectedYear(2026);
-            } else if (yearsData[0]?.year) {
-                setSelectedYear(yearsData[0].year);
-            }
-        }
-    }, [yearsData]);
+        if (!yearsData || yearsData.length === 0) return;
 
+        const validYears = yearsData.map((y) =>
+            typeof y === "object" ? Number(y.year) : Number(y)
+        );
+
+        if (selectedYear && validYears.includes(selectedYear)) return;
+
+        setSelectedYear(validYears.includes(2026) ? 2026 : validYears[0]);
+    }, [yearsData, selectedYear]);
+
+    // Query 2: budgets for the selected year
     const {
         data: budgetData,
         isLoading,
@@ -406,8 +401,9 @@ const BudgetAllocation = () => {
                 throw error;
             }
         },
-        enabled: !!selectedYear,
+        enabled: !!selectedYear,   // ★ don't fetch until year is known
         staleTime: 2 * 60 * 1000,
+        refetchOnMount: false,
         keepPreviousData: true,
         retry: 1,
     });
@@ -509,8 +505,44 @@ const BudgetAllocation = () => {
         return [];
     })();
 
-    const summary = budgetData?.summary || {};
-    const fiscalYear = budgetData?.fiscal_year || {};
+    // ★ FIX: shape-tolerant summary — handles top-level, nested, and
+    //        derives from budgets list as a fallback.
+    const summary = useMemo(() => {
+        if (!budgetData) return {};
+
+        if (budgetData.summary && typeof budgetData.summary === "object") {
+            return budgetData.summary;
+        }
+        if (budgetData.data?.summary && typeof budgetData.data.summary === "object") {
+            return budgetData.data.summary;
+        }
+
+        // Fallback: derive from list
+        const list = budgets;
+        const total_allocated = list.reduce(
+            (s, b) => s + parseFloat(b.annual_amount || b.allocated_amount || 0),
+            0
+        );
+        const total_used = list.reduce(
+            (s, b) => s + parseFloat(b.used_amount || b.spent_amount || 0),
+            0
+        );
+        const departments_with_budget = list.filter((b) => b.has_budget).length;
+
+        return {
+            total_allocated,
+            total_used,
+            total_remaining: total_allocated - total_used,
+            departments_with_budget,
+            total_departments: list.length,
+            departments_without_budget: list.length - departments_with_budget,
+        };
+    }, [budgetData, budgets]);
+
+    const fiscalYear = useMemo(() => {
+        if (!budgetData) return {};
+        return budgetData.fiscal_year || budgetData.data?.fiscal_year || {};
+    }, [budgetData]);
 
     const formatCurrency = (amount) => {
         if (!amount || amount === 0) return "₱0.00";
@@ -782,6 +814,7 @@ const BudgetAllocation = () => {
     // ============================================
     // LOADING & ERROR STATES
     // ============================================
+    // ★ ALL hooks above this line. Safe to early-return now.
 
     if (budgetError) {
         return (
@@ -797,7 +830,8 @@ const BudgetAllocation = () => {
         );
     }
 
-    if (yearsLoading || isLoading) {
+    // ★ FIX: wait for year resolution AND budget data
+    if (yearsLoading || !selectedYear || isLoading || !budgetData) {
         return (
             <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
                 <div className="p-4 md:p-6">
@@ -899,7 +933,7 @@ const BudgetAllocation = () => {
                             <div className="flex flex-wrap gap-2">
                                 {yearsData?.length > 0 ? (
                                     yearsData.map((year) => {
-                                        const yearValue = typeof year === "object" ? year.year : year;
+                                        const yearValue = typeof year === "object" ? Number(year.year) : Number(year);
                                         const isActive = typeof year === "object" ? year.is_active : true;
                                         const key = typeof year === "object" ? year.fiscal_year_id || yearValue : yearValue;
 
@@ -977,9 +1011,9 @@ const BudgetAllocation = () => {
                     setIsFilterOpen={setIsFilterOpen}
                 />
 
-                {/* Budget Table Container */}
+                {/* Budget Table */}
                 <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xl shadow-black/5">
-                    <div className="border-b border-slate-200/60 dark:border-slate-700/60 px-6 py-4 flex-shrink-0">
+                    <div className="border-b border-slate-200/60 dark:border-slate-700/60 px-6 py-4">
                         <div className="flex items-center justify-between">
                             <div>
                                 <h3 className="flex items-center gap-2 text-slate-800 dark:text-white font-semibold">
@@ -1006,109 +1040,6 @@ const BudgetAllocation = () => {
                         </div>
                     </div>
 
-                    {/* TABLE HEADER */}
-                    <div
-                        className="sticky top-0 z-40 bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700"
-                        style={{
-                            position: 'sticky',
-                            top: 0,
-                            zIndex: 40
-                        }}
-                    >
-                        <Table>
-                            <TableHeader className="bg-slate-50 dark:bg-slate-900/50">
-                                <TableRow className="bg-slate-50 dark:bg-slate-900/50">
-                                    <TableHead
-                                        className="
-                                            sticky left-0 z-50
-                                            bg-slate-50 dark:bg-slate-900/50
-                                            font-semibold
-                                            text-slate-600 dark:text-slate-400
-                                            text-xs uppercase tracking-wider
-                                            min-w-[131.5px]
-                                            border-r border-slate-200 dark:border-slate-700
-                                        "
-                                    >
-                                        <span className="flex items-center gap-1">
-                                            <Building2 className="h-3 w-5" />
-                                            Code
-                                        </span>
-                                    </TableHead>
-                                    <TableHead
-                                        className="
-                                            text-right
-                                            font-semibold
-                                            text-slate-600 dark:text-slate-400
-                                            text-xs uppercase tracking-wider
-                                            min-w-[120px]
-                                        "
-                                    >
-                                        Annual Budget
-                                    </TableHead>
-                                    <TableHead
-                                        className="
-                                            text-right
-                                            font-semibold
-                                            text-slate-600 dark:text-slate-400
-                                            text-xs uppercase tracking-wider
-                                            min-w-[120px]
-                                        "
-                                    >
-                                        Weekly Suggested
-                                    </TableHead>
-                                    <TableHead
-                                        className="
-                                            text-right
-                                            font-semibold
-                                            text-slate-600 dark:text-slate-400
-                                            text-xs uppercase tracking-wider
-                                            min-w-[100px]
-                                        "
-                                    >
-                                        Used
-                                    </TableHead>
-                                    <TableHead
-                                        className="
-                                            text-right
-                                            font-semibold
-                                            text-slate-600 dark:text-slate-400
-                                            text-xs uppercase tracking-wider
-                                            min-w-[110px]
-                                        "
-                                    >
-                                        Remaining
-                                    </TableHead>
-                                    <TableHead
-                                        className="
-                                            text-center
-                                            font-semibold
-                                            text-slate-600 dark:text-slate-400
-                                            text-xs uppercase tracking-wider
-                                            min-w-[90px]
-                                        "
-                                    >
-                                        Status
-                                    </TableHead>
-                                    <TableHead
-                                        className="
-                                            sticky right-0 z-50
-                                            bg-slate-50 dark:bg-slate-900/50
-                                            text-right
-                                            font-semibold
-                                            text-slate-600 dark:text-slate-400
-                                            text-xs uppercase tracking-wider
-                                            min-w-[160px]
-                                            border-l border-slate-200 dark:border-slate-700
-                                        "
-                                    >
-                                        Actions
-                                    </TableHead>
-                                </TableRow>
-                            </TableHeader>
-                        </Table>
-                    </div>
-
-                    {/* Scrollable Table Body Container */}
                     {filteredBudgets.length === 0 ? (
                         <div className="text-center py-16">
                             <div className="w-20 h-20 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto mb-4">
@@ -1131,20 +1062,66 @@ const BudgetAllocation = () => {
                             )}
                         </div>
                     ) : (
-                        <div
-                            className="overflow-auto"
-                            style={{
-                                maxHeight: "500px",
-                            }}
-                        >
+                        <div className="overflow-auto" style={{ maxHeight: "500px" }}>
                             <Table className="w-full">
+                                <TableHeader
+                                    className="sticky top-0 z-40 bg-slate-50 dark:bg-slate-900/95 backdrop-blur"
+                                    style={{ position: 'sticky', top: 0 }}
+                                >
+                                    <TableRow className="bg-slate-50 dark:bg-slate-900/95">
+                                        <TableHead
+                                            className="
+                                                sticky left-0 z-50
+                                                bg-slate-50 dark:bg-slate-900/95
+                                                font-semibold
+                                                text-slate-600 dark:text-slate-400
+                                                text-xs uppercase tracking-wider
+                                                min-w-[131.5px]
+                                                border-r border-slate-200 dark:border-slate-700
+                                            "
+                                        >
+                                            <span className="flex items-center gap-1">
+                                                <Building2 className="h-3 w-5" />
+                                                Code
+                                            </span>
+                                        </TableHead>
+                                        <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider min-w-[120px]">
+                                            Annual Budget
+                                        </TableHead>
+                                        <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider min-w-[120px]">
+                                            Weekly Suggested
+                                        </TableHead>
+                                        <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider min-w-[100px]">
+                                            Used
+                                        </TableHead>
+                                        <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider min-w-[110px]">
+                                            Remaining
+                                        </TableHead>
+                                        <TableHead className="text-center font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider min-w-[90px]">
+                                            Status
+                                        </TableHead>
+                                        <TableHead
+                                            className="
+                                                sticky right-0 z-50
+                                                bg-slate-50 dark:bg-slate-900/95
+                                                text-right
+                                                font-semibold
+                                                text-slate-600 dark:text-slate-400
+                                                text-xs uppercase tracking-wider
+                                                min-w-[160px]
+                                                border-l border-slate-200 dark:border-slate-700
+                                            "
+                                        >
+                                            Actions
+                                        </TableHead>
+                                    </TableRow>
+                                </TableHeader>
                                 <TableBody>
                                     {filteredBudgets.map((budget) => {
                                         const isEditing =
                                             isBulkMode && bulkData[budget.department_id];
 
                                         const isNew = !budget.has_budget;
-
                                         const suggested = weeklySuggested(budget.annual_amount);
 
                                         return (
@@ -1180,9 +1157,7 @@ const BudgetAllocation = () => {
                                                             min="0"
                                                             value={
                                                                 isEditing
-                                                                    ? bulkData[
-                                                                        budget.department_id
-                                                                    ]?.annual_amount
+                                                                    ? bulkData[budget.department_id]?.annual_amount
                                                                     : ""
                                                             }
                                                             onChange={(e) =>
@@ -1197,9 +1172,7 @@ const BudgetAllocation = () => {
                                                         />
                                                     ) : (
                                                         <span className="font-medium text-blue-600 dark:text-blue-400">
-                                                            {formatCurrency(
-                                                                budget.annual_amount
-                                                            )}
+                                                            {formatCurrency(budget.annual_amount)}
                                                         </span>
                                                     )}
                                                 </TableCell>
@@ -1215,9 +1188,7 @@ const BudgetAllocation = () => {
 
                                                 <TableCell className="text-right">
                                                     <span className="font-medium text-yellow-600 dark:text-yellow-400">
-                                                        {formatCurrency(
-                                                            budget.used_amount || 0
-                                                        )}
+                                                        {formatCurrency(budget.used_amount || 0)}
                                                     </span>
                                                 </TableCell>
 
@@ -1228,9 +1199,7 @@ const BudgetAllocation = () => {
                                                             ? "text-red-600 dark:text-red-400"
                                                             : "text-emerald-600 dark:text-emerald-400"
                                                     )}>
-                                                        {formatCurrency(
-                                                            budget.remaining_amount || 0
-                                                        )}
+                                                        {formatCurrency(budget.remaining_amount || 0)}
                                                     </span>
                                                 </TableCell>
 
@@ -1247,13 +1216,10 @@ const BudgetAllocation = () => {
                                                     "
                                                 >
                                                     <div className="flex items-center justify-end gap-1 min-w-[120px]">
-                                                        {/* View — always visible */}
                                                         <Button
                                                             variant="ghost"
                                                             size="sm"
-                                                            onClick={() =>
-                                                                handleView(budget)
-                                                            }
+                                                            onClick={() => handleView(budget)}
                                                             className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:text-blue-300 dark:hover:bg-blue-950/30 h-9 w-9 p-0 rounded-lg transition-all duration-200"
                                                             title="View Details"
                                                         >
@@ -1262,7 +1228,6 @@ const BudgetAllocation = () => {
 
                                                         {!isBulkMode && (
                                                             <>
-                                                                {/* No budget yet → Pencil (Set Annual Budget) */}
                                                                 {!budget.has_budget && (
                                                                     <Button
                                                                         variant="ghost"
@@ -1275,7 +1240,6 @@ const BudgetAllocation = () => {
                                                                     </Button>
                                                                 )}
 
-                                                                {/* Has budget → Plus (Add Additional Budget) */}
                                                                 {budget.has_budget && (
                                                                     <Button
                                                                         variant="ghost"

@@ -996,13 +996,34 @@ class DriverController extends Controller
                 return response()->json(['success' => false, 'message' => 'Trip ticket not found'], 404);
             }
 
-            $allowedStatuses = ['acknowledged', 'funds_issued', 'completed', 'pending_gso_ticket'];
+            // ✅ One trip per ticket — 'completed' is NOT a valid start state
+            $allowedStatuses = ['acknowledged', 'funds_issued', 'pending_gso_ticket'];
             if (!in_array($ticket->status, $allowedStatuses)) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Cannot start trip. Current status: ' . $ticket->status .
                                 '. Allowed: ' . implode(', ', $allowedStatuses)
                 ], 400);
+            }
+
+            // ✅ Hard guard: reject if this ticket has already been used
+            $alreadyCompleted = TripHistory::where('trip_ticket_id', $ticket->trip_ticket_id)
+                ->where('status', 'completed')
+                ->exists();
+
+            if ($alreadyCompleted) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'This trip ticket has already been completed. Create a new trip ticket for a new trip.',
+                ], 422);
+            }
+
+            // ✅ Defensive: trip_count should never exceed 1 for a single-trip ticket
+            if (($ticket->trip_count ?? 0) >= 1) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Trip ticket already used. Only one trip is allowed per ticket.',
+                ], 422);
             }
 
             $otherActive = TripTicket::where('driver_id', $driver->driver_id)
@@ -1198,17 +1219,11 @@ class DriverController extends Controller
 
             $deletedPings = GpsPing::where('trip_ticket_id', $id)->delete();
 
-            $isDone = $request->is_done ?? false;
-
-            if ($isDone) {
-                $ticket->status = 'pending_gso_validation';
-                $message = 'Trip completed! Awaiting GSO validation.';
-                $notifyGSO = true;
-            } else {
-                $ticket->status = 'completed';
-                $message = 'Trip completed for today! You can start again tomorrow.';
-                $notifyGSO = false;
-            }
+            // ✅ One trip per ticket — completion always ends the ticket
+            $ticket->status = 'pending_gso_validation';
+            $message = 'Trip completed! Awaiting GSO validation.';
+            $notifyGSO = true;
+            $isDone = true; // kept for response payload compatibility
 
             $ticket->syncActuals();
             $ticket->save();
@@ -1240,8 +1255,8 @@ class DriverController extends Controller
                     'pings_count' => $pingCount,
                     'pings_deleted' => $deletedPings,
                     'computed_distance_km' => $finalDistance,
-                    'is_complete' => $isDone,
-                    'can_restart_tomorrow' => !$isDone,
+                    'is_complete' => true,
+                    'can_restart_tomorrow' => false,
                     'actual_distance_km' => $ticket->actual_distance_km,
                     'actual_fuel_used' => $ticket->actual_fuel_used,
                     'end_lat' => $request->latitude,

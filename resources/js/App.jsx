@@ -2,13 +2,16 @@
 import React, { lazy, Suspense } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import { useAuth } from "./contexts/AuthContext";
-import { RealtimeProvider } from "./contexts/RealtimeContext"; // ✅ Import RealtimeProvider
+import { RealtimeProvider } from "./contexts/RealtimeContext";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
 import Layout from "./components/layout/Layout";
 
 // ============ PUBLIC PAGES ============
 import Login from "./pages/Login";
 import Unauthorized from "./pages/Unauthorized";
+
+// ============ AUTH FLOW ============
+const ForceChangePassword = lazy(() => import("./pages/ForceChangePassword"));   // ★ NEW
 
 // ============ GSO PAGES (LAZY LOADED) ============
 const GsoDashboard = lazy(() => import("./pages/gso/GsoDashboard"));
@@ -63,7 +66,6 @@ const MoActivityLogs = lazy(() => import("./pages/mayor/ActivityLogs"));
 // ============ MAYOR BUDGET PAGES ============
 const BudgetAllocation = lazy(() => import("./pages/mayor/budget/BudgetAllocation"));
 
-
 // ============ MAYOR REPORT PAGES ============
 const MayorWeeklyMonitoring = lazy(() => import("./pages/mayor/reports/WeeklyMonitoring"));
 const MayorFuelWithoutTripReport = lazy(() => import("./pages/mayor/reports/FuelWithoutTripReport"));
@@ -86,9 +88,7 @@ const PageLoader = () => (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
         <div className="text-center">
             <div className="relative">
-                {/* Spinner with gradient */}
                 <div className="w-16 h-16 rounded-full border-4 border-slate-200 dark:border-slate-700 border-t-blue-600 dark:border-t-blue-400 animate-spin" />
-                {/* Pulsing dot in center */}
                 <div className="absolute inset-0 flex items-center justify-center">
                     <div className="w-3 h-3 rounded-full bg-blue-600 dark:bg-blue-400 animate-pulse" />
                 </div>
@@ -106,11 +106,26 @@ const PageLoader = () => (
 function App() {
     return (
         <Suspense fallback={<PageLoader />}>
-            <RealtimeProvider> {/* ✅ Wrap all routes with RealtimeProvider */}
+            <RealtimeProvider>
                 <Routes>
-                    {/* Public Route */}
+                    {/* ============================================================ */}
+                    {/* ============ PUBLIC ROUTES ============ */}
+                    {/* ============================================================ */}
+
                     <Route path="/login" element={<Login />} />
                     <Route path="/" element={<Navigate to="/login" replace />} />
+
+                    {/* ★ NEW: Force password change on first login.
+                        ProtectedRoute allows it (any authenticated user),
+                        and the ProtectedRoute gate redirects here if the flag is set. */}
+                    <Route
+                        path="/force-change-password"
+                        element={
+                            <ProtectedRoute>
+                                <ForceChangePassword />
+                            </ProtectedRoute>
+                        }
+                    />
 
                     {/* ============================================================ */}
                     {/* ============ GSO ROUTES ============ */}
@@ -253,16 +268,16 @@ function App() {
                     />
 
                     {/* ============ GSO Activity Log ============ */}
-                   <Route
-    path="/gso/activity-logs"
-    element={
-        <ProtectedRoute allowedRoles={["gso_office"]}>
-            <Layout>
-                <GsoActivityLogs />
-            </Layout>
-        </ProtectedRoute>
-    }
-/>
+                    <Route
+                        path="/gso/activity-logs"
+                        element={
+                            <ProtectedRoute allowedRoles={["gso_office"]}>
+                                <Layout>
+                                    <GsoActivityLogs />
+                                </Layout>
+                            </ProtectedRoute>
+                        }
+                    />
 
                     {/* ============================================================ */}
                     {/* ============ GSO ADMIN ROUTES ============ */}
@@ -439,15 +454,15 @@ function App() {
                         }
                     />
                     <Route
-    path="/mo/gas-slips/create"
-    element={
-        <ProtectedRoute allowedRoles={["mayors_office"]}>
-            <Layout>
-                <CreateGasSlip />
-            </Layout>
-        </ProtectedRoute>
-    }
-/>
+                        path="/mo/gas-slips/create"
+                        element={
+                            <ProtectedRoute allowedRoles={["mayors_office"]}>
+                                <Layout>
+                                    <CreateGasSlip />
+                                </Layout>
+                            </ProtectedRoute>
+                        }
+                    />
                     <Route
                         path="/mo/pending"
                         element={
@@ -508,8 +523,6 @@ function App() {
                             </ProtectedRoute>
                         }
                     />
-                  
-                   
                     <Route
                         path="/mo/reports"
                         element={
@@ -562,16 +575,16 @@ function App() {
                     />
 
                     {/* ============ MAYOR Activity Log ============ */}
-           <Route
-    path="/mo/activity-logs"
-    element={
-        <ProtectedRoute allowedRoles={["mayors_office"]}>
-            <Layout>
-                <MoActivityLogs />
-            </Layout>
-        </ProtectedRoute>
-    }
-/>
+                    <Route
+                        path="/mo/activity-logs"
+                        element={
+                            <ProtectedRoute allowedRoles={["mayors_office"]}>
+                                <Layout>
+                                    <MoActivityLogs />
+                                </Layout>
+                            </ProtectedRoute>
+                        }
+                    />
 
                     {/* ============================================================ */}
                     {/* ============ MAYOR REPORT ROUTES ============ */}
@@ -630,7 +643,7 @@ function App() {
                     <Route path="/unauthorized" element={<Unauthorized />} />
                     <Route path="*" element={<Navigate to="/login" replace />} />
                 </Routes>
-            </RealtimeProvider> {/* ✅ Close RealtimeProvider */}
+            </RealtimeProvider>
         </Suspense>
     );
 }

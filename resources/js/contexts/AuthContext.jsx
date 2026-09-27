@@ -1,5 +1,5 @@
 // src/contexts/AuthContext.jsx
-import React, { createContext, useState, useContext, useEffect } from 'react';
+import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
 import { authAPI } from '../services/api';
 
 const AuthContext = createContext({});
@@ -28,13 +28,14 @@ export const AuthProvider = ({ children }) => {
     // Check if user is logged in on mount
     const storedUser = localStorage.getItem('fcms_user');
     const storedToken = localStorage.getItem('fcms_token');
-    
+
     if (storedToken && storedUser) {
       setToken(storedToken);
       try {
         const parsedUser = JSON.parse(storedUser);
         console.log('Loaded user:', parsedUser);
         console.log('User role:', parsedUser?.role);
+        console.log('Must change password:', parsedUser?.must_change_password);
         setUser(parsedUser);
       } catch (e) {
         console.error('Failed to parse stored user:', e);
@@ -48,14 +49,15 @@ export const AuthProvider = ({ children }) => {
   const login = async (email, password) => {
     try {
       const response = await authAPI.login(email, password, 'web');
-      
+
       console.log('Login response:', response.data);
-      
+
       if (response.data && response.data.success && response.data.data) {
         const { user: userData, token: accessToken, token_type } = response.data.data;
-        
+
         console.log('User role from API:', userData?.role);
-        
+        console.log('Must change password from API:', userData?.must_change_password);
+
         // Format token
         let fullToken = accessToken;
         if (token_type === 'Bearer' && !accessToken.startsWith('Bearer ')) {
@@ -63,19 +65,19 @@ export const AuthProvider = ({ children }) => {
         } else if (!accessToken.startsWith('Bearer ') && !accessToken.startsWith('bearer ')) {
           fullToken = `Bearer ${accessToken}`;
         }
-        
+
         localStorage.setItem('fcms_token', fullToken);
         localStorage.setItem('fcms_user', JSON.stringify(userData));
-        
+
         setToken(fullToken);
         setUser(userData);
-        
+
         return { success: true, user: userData };
       } else {
         console.error('Unexpected response structure:', response.data);
-        return { 
-          success: false, 
-          message: response.data?.message || 'Invalid response from server' 
+        return {
+          success: false,
+          message: response.data?.message || 'Invalid response from server'
         };
       }
     } catch (error) {
@@ -102,6 +104,24 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  // ★ NEW: Refresh the current user from the server
+  // Used after first-login password change to clear `must_change_password` in memory
+  const refreshUser = useCallback(async () => {
+    try {
+      const response = await authAPI.getMe();
+      if (response.data?.success && response.data.data) {
+        const freshUser = response.data.data;
+        localStorage.setItem('fcms_user', JSON.stringify(freshUser));
+        setUser(freshUser);
+        return freshUser;
+      }
+      return null;
+    } catch (error) {
+      console.error('Refresh user error:', error);
+      return null;
+    }
+  }, []);
+
   const changePassword = async (currentPassword, newPassword) => {
     try {
       const response = await authAPI.changePassword(currentPassword, newPassword);
@@ -122,7 +142,7 @@ export const AuthProvider = ({ children }) => {
         return '/gso/dashboard';
       case USER_ROLES.MAYORS_OFFICE:
         return '/mo/dashboard';
-  
+
       case USER_ROLES.DRIVER:
         return '/driver/dashboard';
       default:
@@ -138,8 +158,11 @@ export const AuthProvider = ({ children }) => {
     login,
     logout,
     changePassword,
+    refreshUser,   // ★ NEW
     getDashboardRoute,
     isAuthenticated: !!user,
+    // ★ NEW: convenience flag
+    mustChangePassword: !!user?.must_change_password,
     // Role check helpers
     isGsoOffice: user?.role === USER_ROLES.GSO_OFFICE,
     isMayorsOffice: user?.role === USER_ROLES.MAYORS_OFFICE,

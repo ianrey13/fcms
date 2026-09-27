@@ -37,7 +37,8 @@ import {
   MapPin,
   X,
 } from "lucide-react";
-import { useDepartments, useDeleteDepartment, useToggleDepartmentStatus } from "../../../hooks/useDepartmentManagement";
+// ★ CHANGED: removed useToggleDepartmentStatus
+import { useDepartments, useDeleteDepartment } from "../../../hooks/useDepartmentManagement";
 import { toast } from "react-hot-toast";
 import { cn } from "@/lib/utils";
 
@@ -90,13 +91,13 @@ const DepartmentManagement = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [showFilters, setShowFilters] = useState(false);
-  
+
   const { data: departments = [], isLoading, refetch } = useDepartments();
   const deleteDepartment = useDeleteDepartment();
-  const toggleStatus = useToggleDepartmentStatus();
+  // ★ CHANGED: toggleStatus hook removed — departments can no longer be toggled
 
   // ============================================
-  // ✅ AUTO-REFRESH - No manual refresh needed
+  // AUTO-REFRESH
   // ============================================
 
   useAutoRefresh(
@@ -114,7 +115,7 @@ const DepartmentManagement = () => {
     const total = departments.length;
     const active = departments.filter(d => d.is_active).length;
     const inactive = departments.filter(d => !d.is_active).length;
-    
+
     return [
       {
         title: "Total Departments",
@@ -143,8 +144,7 @@ const DepartmentManagement = () => {
   // ============ FILTERS ============
   const filteredDepartments = useMemo(() => {
     let filtered = departments;
-    
-    // Search filter
+
     if (searchTerm) {
       const search = searchTerm.toLowerCase();
       filtered = filtered.filter((dept) =>
@@ -154,35 +154,18 @@ const DepartmentManagement = () => {
         dept.email?.toLowerCase().includes(search)
       );
     }
-    
-    // Status filter
+
     if (statusFilter !== "all") {
       filtered = filtered.filter((dept) =>
         statusFilter === "active" ? dept.is_active : !dept.is_active
       );
     }
-    
+
     return filtered;
   }, [departments, searchTerm, statusFilter]);
 
   // ============ HANDLERS ============
-  const handleToggleStatus = (id, currentStatus) => {
-    const newStatus = currentStatus === "active" ? "inactive" : "active";
-    const action = newStatus === "active" ? "activate" : "deactivate";
-    
-    if (window.confirm(`Are you sure you want to ${action} this department?`)) {
-      toggleStatus.mutate(
-        { id, status: newStatus },
-        {
-          onSuccess: () => {
-            toast.success(`Department ${action}d successfully!`);
-            queryClient.invalidateQueries({ queryKey: ["departments"] });
-          },
-          onError: () => toast.error(`Failed to ${action} department`),
-        }
-      );
-    }
-  };
+  // ★ CHANGED: handleToggleStatus removed
 
   const handleAddClick = () => {
     navigate("/admin/departments/add");
@@ -199,7 +182,6 @@ const DepartmentManagement = () => {
 
   const hasActiveFilters = searchTerm || statusFilter !== "all";
 
-  // Connection status
   const connectionStatus = isConnected ? "🟢 Live" : "🔴 Offline";
   const isRealTime = isConnected;
 
@@ -302,7 +284,6 @@ const DepartmentManagement = () => {
                       <ChevronDown className="h-4 w-4 ml-2" />
                     )}
                   </Button>
-                  {/* ❌ REFRESH BUTTON REMOVED - Auto-refresh handles everything */}
                 </div>
               </div>
 
@@ -373,13 +354,13 @@ const DepartmentManagement = () => {
                 </div>
                 <p className="text-slate-600 dark:text-slate-400 font-medium text-lg">No departments found</p>
                 <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">
-                  {departments.length === 0 
+                  {departments.length === 0
                     ? 'Create your first department to get started'
                     : 'Try adjusting your search or filters'}
                 </p>
                 {departments.length === 0 && (
-                  <Button 
-                    onClick={handleAddClick} 
+                  <Button
+                    onClick={handleAddClick}
                     className="mt-4 bg-gradient-to-r from-blue-600 to-blue-500 shadow-lg shadow-blue-500/20"
                   >
                     <Plus className="h-4 w-4 mr-2" />
@@ -420,8 +401,8 @@ const DepartmentManagement = () => {
                   </thead>
                   <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
                     {filteredDepartments.map((dept) => (
-                      <tr 
-                        key={dept.department_id} 
+                      <tr
+                        key={dept.department_id}
                         className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors group"
                       >
                         <td className="px-4 py-3">
@@ -447,8 +428,8 @@ const DepartmentManagement = () => {
                             <User className="h-4 w-4 text-slate-400" />
                             <span className={cn(
                               "font-medium",
-                              dept.head_of_office 
-                                ? "text-slate-700 dark:text-slate-300" 
+                              dept.head_of_office
+                                ? "text-slate-700 dark:text-slate-300"
                                 : "text-slate-400 dark:text-slate-500 italic"
                             )}>
                               {dept.head_of_office || "Not set"}
@@ -456,14 +437,13 @@ const DepartmentManagement = () => {
                           </div>
                         </td>
                         <td className="px-4 py-3">
-                          <button
-                            onClick={() => handleToggleStatus(dept.department_id, dept.is_active ? "active" : "inactive")}
+                          {/* ★ CHANGED: read-only status badge — no toggle */}
+                          <span
                             className={cn(
-                              "px-3 py-1.5 rounded-lg text-xs font-medium inline-flex items-center gap-1.5 transition-all duration-200",
-                              "hover:scale-105 active:scale-95",
+                              "px-3 py-1.5 rounded-lg text-xs font-medium inline-flex items-center gap-1.5",
                               dept.is_active
-                                ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:hover:bg-emerald-900/50"
-                                : "bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50"
+                                ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+                                : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
                             )}
                           >
                             {dept.is_active ? (
@@ -472,7 +452,7 @@ const DepartmentManagement = () => {
                               <XCircle className="h-3 w-3" />
                             )}
                             {dept.is_active ? "Active" : "Inactive"}
-                          </button>
+                          </span>
                         </td>
                         <td className="px-4 py-3 text-right">
                           <div className="flex items-center justify-end gap-1">

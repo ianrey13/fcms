@@ -51,7 +51,7 @@ class UserController extends Controller
             $formattedUsers = $users->map(function($user) {
                 // $hasSignature = !empty($user->esignature_path) && $user->esignature_path !== null;
                 $canDrive = $user->can_drive ?? false;
-                
+
                 return [
                     'user_id' => $user->user_id,
                     'employee_number' => $user->employee_number,
@@ -69,6 +69,7 @@ class UserController extends Controller
                     'can_drive' => $canDrive,
                     'last_login_at' => $user->last_login_at,
                     'created_at' => $user->created_at,
+                    'must_change_password' => (bool) $user->must_change_password,   // ★ NEW
                     // 'has_signature' => $hasSignature,
                     // 'signature_url' => $hasSignature ? Storage::url($user->esignature_path) : null,
                 ];
@@ -94,7 +95,7 @@ class UserController extends Controller
     private function getAvailableRoles($departmentId)
     {
         $department = Department::find($departmentId);
-        
+
         if (!$department) {
             return ['driver'];
         }
@@ -105,7 +106,7 @@ class UserController extends Controller
         if ($code === 'GSO') {
             return ['gso_office', 'driver'];
         }
-        
+
         // ✅ Mayor's Office → Disbursing Officer + Driver
         if ($code === 'MO') {
             return ['mayors_office', 'driver'];
@@ -127,6 +128,7 @@ class UserController extends Controller
     /**
      * Create a new user
      * ✅ Added role validation based on department
+     * ✅ Sets must_change_password = true
      */
     public function store(Request $request)
     {
@@ -157,7 +159,7 @@ class UserController extends Controller
                 $allowedLabels = array_map(function($r) {
                     return $this->getRoleLabel($r);
                 }, $allowed);
-                
+
                 return response()->json([
                     'success' => false,
                     'message' => 'Invalid role for selected department',
@@ -184,9 +186,10 @@ class UserController extends Controller
                 'can_drive' => $request->can_drive ?? false,
                 'status' => 'active',
                 'password_changed_at' => now(),
+                'must_change_password' => true,   // ★ NEW — force change on first login
             ]);
 
-           
+            // Create driver record if role is driver
             if ($request->role === 'driver') {
                 Driver::create([
                     'user_id' => $user->user_id,
@@ -228,7 +231,7 @@ class UserController extends Controller
     {
         try {
             $user = User::with('department')->findOrFail($id);
-            
+
             // $hasSignature = !empty($user->esignature_path) && $user->esignature_path !== null;
             $canDrive = $user->can_drive ?? false;
 
@@ -253,6 +256,7 @@ class UserController extends Controller
                     'created_at' => $user->created_at,
                     'password_expires_at' => $user->password_expires_at,
                     'account_locked_until' => $user->account_locked_until,
+                    'must_change_password' => (bool) $user->must_change_password,   // ★ NEW
                     // 'has_signature' => $hasSignature,
                     // 'signature_url' => $hasSignature ? Storage::url($user->esignature_path) : null,
                     // ✅ Add available roles for this user's department
@@ -308,7 +312,7 @@ class UserController extends Controller
                 $allowedLabels = array_map(function($r) {
                     return $this->getRoleLabel($r);
                 }, $allowed);
-                
+
                 return response()->json([
                     'success' => false,
                     'message' => 'Invalid role for selected department',
@@ -341,7 +345,7 @@ class UserController extends Controller
             }
             if ($request->has('role')) {
                 $user->role = $request->role;
-                
+
                 // Handle driver record
                 if ($request->role === 'driver') {
                     Driver::firstOrCreate(
@@ -445,7 +449,7 @@ class UserController extends Controller
             }
 
             $user->status = $request->status;
-            
+
             if ($request->status === 'inactive') {
                 $user->deactivated_at = now();
                 $user->deactivated_by = auth()->id();
@@ -456,7 +460,7 @@ class UserController extends Controller
                 $user->failed_login_attempts = 0;
                 $user->account_locked_until = null;
             }
-            
+
             $user->save();
 
             return response()->json([
@@ -475,26 +479,28 @@ class UserController extends Controller
 
     /**
      * Reset user password
+     * ✅ Sets must_change_password = true (force change on next login)
      */
     public function resetPassword($id)
     {
         try {
             $user = User::findOrFail($id);
-            
+
             $tempPassword = Str::random(10);
-            
+
             $user->password_hash = Hash::make($tempPassword);
             $user->password_changed_at = now();
+            $user->must_change_password = true;   // ★ NEW — force change on next login
             $user->save();
-            
+
             $user->tokens()->delete();
-            
+
             return response()->json([
                 'success' => true,
                 'message' => 'Password reset successfully',
                 'temporary_password' => $tempPassword
             ]);
-            
+
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
@@ -550,7 +556,7 @@ class UserController extends Controller
         try {
             $user = auth()->user();
             $departmentId = $request->get('department_id', $user->department_id);
-            
+
             $drivers = User::where('role', 'driver')
                 ->where('department_id', $departmentId)
                 ->where('status', 'active')
@@ -570,7 +576,7 @@ class UserController extends Controller
                         'can_drive' => $user->can_drive,
                     ];
                 });
-            
+
             return response()->json([
                 'success' => true,
                 'data' => $drivers
@@ -595,168 +601,9 @@ class UserController extends Controller
             'mayors_office' => "Disbursing Officer",
             'driver' => 'Driver',
         ];
-        
+
         return $labels[$role] ?? ucfirst($role);
     }
-
-    // /**
-    //  * Upload e-signature for a user
-    //  */
-    // public function uploadSignature(Request $request, $id)
-    // {
-    //     try {
-    //         $user = $request->user();
-            
-    //         if (!$user->isGsoOffice()) {
-    //             return response()->json(['message' => 'Unauthorized. Only GSO Office can upload signatures.'], 403);
-    //         }
-            
-    //         $targetUser = User::findOrFail($id);
-            
-    //         $validator = Validator::make($request->all(), [
-    //             'signature' => 'required|image|mimes:jpeg,png,jpg|max:2048',
-    //         ]);
-            
-    //         if ($validator->fails()) {
-    //             return response()->json(['errors' => $validator->errors()], 422);
-    //         }
-            
-    //         $file = $request->file('signature');
-    //         $filename = 'signature_' . $id . '_' . time() . '.' . $file->getClientOriginalExtension();
-    //         $path = $file->storeAs('signatures', $filename, 'public');
-            
-    //         $targetUser->esignature_path = $path;
-    //         $targetUser->esignature_hash = hash('sha256', file_get_contents($file->getRealPath()));
-    //         $targetUser->save();
-            
-    //         return response()->json([
-    //             'success' => true,
-    //             'message' => 'Signature uploaded successfully',
-    //             'data' => [
-    //                 'signature_url' => Storage::url($path),
-    //             ]
-    //         ]);
-            
-    //     } catch (\Exception $e) {
-    //         Log::error('Upload signature error: ' . $e->getMessage());
-    //         return response()->json([
-    //             'success' => false,
-    //             'message' => 'Failed to upload signature: ' . $e->getMessage()
-    //         ], 500);
-    //     }
-    // }
-    
-    /**
-     * Get user's active signature
-     */
-    // public function getSignature($id)
-    // {
-    //     try {
-    //         $user = auth()->user();
-            
-    //         if (!$user->isGsoOffice()) {
-    //             return response()->json([
-    //                 'success' => false,
-    //                 'message' => 'Unauthorized. Only GSO Office can view signatures.'
-    //             ], 403);
-    //         }
-            
-    //         $targetUser = User::findOrFail($id);
-            
-    //         if (empty($targetUser->esignature_path)) {
-    //             return response()->json([
-    //                 'success' => false,
-    //                 'message' => 'No signature found for this user'
-    //             ], 404);
-    //         }
-            
-    //         return response()->json([
-    //             'success' => true,
-    //             'data' => [
-    //                 'signature_url' => Storage::url($targetUser->esignature_path),
-    //             ]
-    //         ]);
-            
-    //     } catch (\Exception $e) {
-    //         Log::error('Get signature error: ' . $e->getMessage());
-    //         return response()->json([
-    //             'success' => false,
-    //             'message' => 'Failed to get signature'
-    //         ], 500);
-    //     }
-    // }
-    
-    // /**
-    //  * Delete user's signature
-    //  */
-    // public function deleteSignature(Request $request, $id)
-    // {
-    //     try {
-    //         $user = $request->user();
-            
-    //         if (!$user->isGsoOffice()) {
-    //             return response()->json(['message' => 'Unauthorized. Only GSO Office can delete signatures.'], 403);
-    //         }
-            
-    //         $targetUser = User::findOrFail($id);
-            
-    //         $targetUser->esignature_path = null;
-    //         $targetUser->esignature_hash = null;
-    //         $targetUser->save();
-            
-    //         return response()->json([
-    //             'success' => true,
-    //             'message' => 'Signature deleted successfully'
-    //         ]);
-            
-    //     } catch (\Exception $e) {
-    //         Log::error('Delete signature error: ' . $e->getMessage());
-    //         return response()->json([
-    //             'success' => false,
-    //             'message' => 'Failed to delete signature'
-    //         ], 500);
-    //     }
-    // }
-
-    /**
-     * Get user's active signature for GSO
-     */
-    // public function getSignatureForGso($id)
-    // {
-    //     try {
-    //         $user = auth()->user();
-            
-    //         if (!$user->isGsoOffice()) {
-    //             return response()->json([
-    //                 'success' => false,
-    //                 'message' => 'Unauthorized'
-    //             ], 403);
-    //         }
-            
-    //         $targetUser = User::findOrFail($id);
-            
-    //         if (empty($targetUser->esignature_path)) {
-    //             return response()->json([
-    //                 'success' => false,
-    //                 'message' => 'No signature found for this user'
-    //             ], 404);
-    //         }
-            
-    //         return response()->json([
-    //             'success' => true,
-    //             'data' => [
-    //                 'signature_url' => Storage::url($targetUser->esignature_path),
-    //             ]
-    //         ]);
-            
-    //     } catch (\Exception $e) {
-    //         Log::error('Get signature for GSO error: ' . $e->getMessage());
-    //         return response()->json([
-    //             'success' => false,
-    //             'message' => 'Failed to get signature'
-    //         ], 500);
-    //     }
-    // }
 
     /**
      * ✅ Get available roles for a department (for frontend)
@@ -765,7 +612,7 @@ class UserController extends Controller
     {
         try {
             $roles = $this->getAvailableRoles($departmentId);
-            
+
             $roleLabels = array_map(function($role) {
                 return [
                     'value' => $role,

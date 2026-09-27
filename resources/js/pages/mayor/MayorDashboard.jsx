@@ -1,6 +1,6 @@
 // src/pages/mayor/MayorDashboard.jsx
 
-import React, { useMemo, useCallback, useState } from "react"; // ★ CHANGED: added useState
+import React, { useMemo, useCallback, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
@@ -35,12 +35,24 @@ import {
 import { cn } from "@/lib/utils";
 
 // ============================================
+// ★ PM DEMAND RULE
+// ============================================
+// When the ACTIVE fiscal year has NO `annual_budgets` rows
+// (i.e. MO hasn't configured budgets for that year yet), the
+// following dashboard cards must show an empty state:
+//   - Recent Fund Release
+//   - Budget History
+// The donut chart already handles this via "No budget data yet".
+// Data may still exist from previous FYs — this rule is scoped
+// to the ACTIVE FY only. DO NOT remove this guard.
+
+// ============================================
 // CONSTANTS
 // ============================================
 
 const DONUT_COLORS = {
-    remaining: "#10b981", // emerald
-    utilized: "#f59e0b", // amber
+    remaining: "#10b981",
+    utilized: "#f59e0b",
 };
 
 // ============================================
@@ -173,7 +185,7 @@ const NoFiscalYearEmptyState = () => (
 );
 
 // ============================================
-// HISTORY TIMESTAMP — "23/09/2026, 6:29 PM"
+// HISTORY TIMESTAMP
 // ============================================
 
 const formatHistoryTimestamp = (dateString) => {
@@ -195,7 +207,7 @@ const formatHistoryTimestamp = (dateString) => {
 };
 
 // ============================================
-// BUDGET LOG MESSAGE — mirrors mo/ActivityLogs.jsx
+// BUDGET LOG MESSAGE
 // ============================================
 
 const formatBudgetLogText = (log) => {
@@ -226,7 +238,7 @@ const formatBudgetLogText = (log) => {
 };
 
 // ============================================
-// DONUT CHART (recharts, ~290px)
+// DONUT CHART
 // ============================================
 
 const BudgetUtilizationDonut = ({ total, used, remaining }) => {
@@ -393,7 +405,7 @@ const MayorDashboard = () => {
     const { isConnected } = useRealtime();
     const queryClient = useQueryClient();
 
-    // ★ NEW: Department filter for the donut chart
+    // ★ Department filter for the donut chart
     const [donutDepartmentId, setDonutDepartmentId] = useState("all");
 
     const fetchAllData = useCallback(() => {
@@ -534,7 +546,14 @@ const MayorDashboard = () => {
         return formatted;
     }, [budgetData, activeFiscalYear]);
 
-    // ★ NEW: Filtered subset for the donut chart
+    // ★ PM DEMAND: does the active FY have ANY budget set?
+    //    If false → Recent Fund Release + Budget History show empty states.
+    const hasBudgetForActiveFy = useMemo(
+        () => departmentBudgets.some((d) => d.has_budget),
+        [departmentBudgets],
+    );
+
+    // ★ Filtered subset for the donut chart
     const donutDepartmentBudgets = useMemo(() => {
         if (donutDepartmentId === "all") return departmentBudgets;
         return departmentBudgets.filter(
@@ -542,7 +561,7 @@ const MayorDashboard = () => {
         );
     }, [departmentBudgets, donutDepartmentId]);
 
-    // ★ NEW: Totals scoped to the donut's filtered selection
+    // ★ Totals scoped to the donut's filtered selection
     const donutTotals = useMemo(() => {
         const totalAllocated = donutDepartmentBudgets.reduce(
             (s, d) => s + d.allocated,
@@ -556,7 +575,6 @@ const MayorDashboard = () => {
         return { totalAllocated, totalUsed, totalRemaining };
     }, [donutDepartmentBudgets]);
 
-    // ★ CHANGED: renamed local var to avoid confusion with donutTotals
     const totals = useMemo(() => {
         const totalAllocated = departmentBudgets.reduce(
             (s, d) => s + d.allocated,
@@ -580,7 +598,7 @@ const MayorDashboard = () => {
         [approvedTickets],
     );
 
-    // ============ BUDGET HISTORY — from /mayors-office/activity-logs ============
+    // ============ BUDGET HISTORY ============
 
     const budgetHistory = useMemo(() => {
         const budgetLogs = activityLogs.filter((l) => l?.source === "budget");
@@ -749,7 +767,6 @@ const MayorDashboard = () => {
                                     "dark:border-slate-700/50 dark:bg-slate-800/30",
                                 )}
                             >
-                                {/* ★ CHANGED: header now includes department filter */}
                                 <div className="mb-5 flex items-start justify-between gap-3">
                                     <div className="flex items-center gap-3 min-w-0">
                                         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-100 dark:bg-blue-500/20">
@@ -830,11 +847,18 @@ const MayorDashboard = () => {
                                                 Recent Fund Release
                                             </h3>
                                         </div>
+                                        {/* ★ PM DEMAND: disable View All when no FY budget */}
                                         <button
                                             onClick={() =>
                                                 navigate("/mo/approved")
                                             }
-                                            className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                                            disabled={!hasBudgetForActiveFy}
+                                            className={cn(
+                                                "flex items-center gap-1 text-xs",
+                                                hasBudgetForActiveFy
+                                                    ? "text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                                                    : "text-slate-300 dark:text-slate-600 cursor-not-allowed",
+                                            )}
                                         >
                                             View All{" "}
                                             <ArrowRight className="h-3 w-3" />
@@ -859,14 +883,17 @@ const MayorDashboard = () => {
                                                 </tr>
                                             </thead>
                                             <tbody>
-                                                {recentReleases.length === 0 ? (
+                                                {/* ★ PM DEMAND: hide list when no FY budget */}
+                                                {!hasBudgetForActiveFy ||
+                                                recentReleases.length === 0 ? (
                                                     <tr>
                                                         <td
                                                             colSpan={4}
                                                             className="py-8 text-center text-slate-400 dark:text-slate-500"
                                                         >
-                                                            No funds released
-                                                            yet
+                                                            {!hasBudgetForActiveFy
+                                                                ? "No budget set for this fiscal year yet"
+                                                                : "No funds released yet"}
                                                         </td>
                                                     </tr>
                                                 ) : (
@@ -929,11 +956,18 @@ const MayorDashboard = () => {
                                                 Budget History
                                             </h3>
                                         </div>
+                                        {/* ★ PM DEMAND: disable View Full History when no FY budget */}
                                         <button
                                             onClick={() =>
                                                 navigate("/mo/activity-logs")
                                             }
-                                            className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                                            disabled={!hasBudgetForActiveFy}
+                                            className={cn(
+                                                "flex items-center gap-1 text-xs",
+                                                hasBudgetForActiveFy
+                                                    ? "text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                                                    : "text-slate-300 dark:text-slate-600 cursor-not-allowed",
+                                            )}
                                         >
                                             View Full History{" "}
                                             <ArrowRight className="h-3 w-3" />
@@ -941,11 +975,15 @@ const MayorDashboard = () => {
                                     </div>
 
                                     <div className="flex-1">
-                                        {budgetHistory.length === 0 ? (
+                                        {/* ★ PM DEMAND: hide list when no FY budget */}
+                                        {!hasBudgetForActiveFy ||
+                                        budgetHistory.length === 0 ? (
                                             <div className="py-10 text-center">
                                                 <History className="h-10 w-10 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
                                                 <p className="text-sm text-slate-500 dark:text-slate-400">
-                                                    No budget activity yet
+                                                    {!hasBudgetForActiveFy
+                                                        ? "No budget set for this fiscal year yet"
+                                                        : "No budget activity yet"}
                                                 </p>
                                             </div>
                                         ) : (

@@ -22,6 +22,12 @@ const Login = () => {
 
   useEffect(() => {
     if (isAuthenticated && user) {
+      // ★ NEW: if the flag is set, force the change screen
+      if (user.must_change_password) {
+        navigate('/force-change-password', { replace: true });
+        return;
+      }
+
       const roleRoutes = {
         'gso_office': '/gso/dashboard',
         'mayors_office': '/mo/dashboard',
@@ -58,10 +64,10 @@ const Login = () => {
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-cyan-500/10 rounded-full blur-3xl" />
         <div className="absolute top-20 left-1/4 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl animate-pulse delay-700" />
         <div className="absolute bottom-20 right-1/4 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl animate-pulse delay-1200" />
-        
+
         {/* Grid Pattern */}
         <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.03)_1px,transparent_1px)] bg-[size:50px_50px]" />
-        
+
         {/* Animated Particles */}
         <div className="absolute top-1/4 left-10 w-1 h-1 bg-blue-400 rounded-full animate-ping" />
         <div className="absolute bottom-1/3 right-20 w-1.5 h-1.5 bg-purple-400 rounded-full animate-ping delay-300" />
@@ -92,7 +98,7 @@ const Login = () => {
       <Card className="w-full max-w-md shadow-2xl border-0 relative z-10 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm overflow-hidden animate-fade-in-up">
         {/* Top Accent Bar */}
         <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-blue-500 via-purple-500 to-blue-600 animate-pulse" />
-        
+
         {/* Corner Decorations */}
         <div className="absolute top-0 left-0 w-20 h-20 bg-gradient-to-br from-blue-500/10 to-transparent rounded-bl-3xl" />
         <div className="absolute top-0 right-0 w-20 h-20 bg-gradient-to-bl from-purple-500/10 to-transparent rounded-br-3xl" />
@@ -115,7 +121,7 @@ const Login = () => {
               </div>
             </div>
           </div>
-          
+
           {/* Title */}
           <CardTitle className="text-3xl font-bold tracking-tight">
             <span className="bg-gradient-to-r from-slate-800 to-slate-600 dark:from-white dark:to-slate-300 bg-clip-text text-transparent">
@@ -123,11 +129,11 @@ const Login = () => {
             </span>
             <span className="text-xs font-normal text-slate-400 dark:text-slate-500 ml-1">v2.0</span>
           </CardTitle>
-          
+
           <CardDescription className="text-slate-500 dark:text-slate-400 text-sm font-medium">
             Fuel Consumption Monitoring System
           </CardDescription>
-          
+
           {/* Divider */}
           <div className="flex items-center justify-center gap-3 mt-3">
             <div className="h-px w-12 bg-gradient-to-r from-transparent to-slate-300 dark:to-slate-700" />
@@ -153,7 +159,7 @@ const Login = () => {
             </div>
           </div>
         </CardHeader>
-        
+
         {/* ============================================================ */}
         {/* FORM */}
         {/* ============================================================ */}
