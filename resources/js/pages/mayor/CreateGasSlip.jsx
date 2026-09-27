@@ -690,8 +690,7 @@ export default function CreateGasSlip() {
               }
               className="rounded border-slate-300 dark:border-slate-600"
             />
-            Cross-department fuel usage (for recording only — no budget
-            transfer)
+            Cross-department
           </label>
 
           {form.is_cross_department && (

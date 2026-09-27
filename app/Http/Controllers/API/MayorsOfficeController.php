@@ -614,13 +614,13 @@ class MayorsOfficeController extends Controller
             Log::error('⚠️ Fund issued notification failed: ' . $e->getMessage());
         }
 
-        $responseMessage = $isMoFundedTicket
-            ? "✅ Funds released successfully (MO Funded - No department budget deduction)"
-            : ($isCrossDepartment
-                ? "✅ Funds released successfully (Cross-Department Usage - For recording only)"
-                : "✅ Funds released successfully from {$chargeDepartment->department_name} budget\n" .
-                  "Annual Remaining: ₱" . number_format($newAnnualRemaining, 2) . "\n" .
-                  "Total Used: ₱" . number_format($usedAmount, 2));
+       $responseMessage = $isMoFundedTicket
+    ? "Funds released successfully (MO Funded - No department budget deduction)"
+    : ($isCrossDepartment
+        ? "Fund Released Successfully"
+        : "Funds released successfully from {$chargeDepartment->department_name} budget\n" .
+          "Annual Remaining: ₱" . number_format($newAnnualRemaining, 2) . "\n" .
+          "Total Used: ₱" . number_format($usedAmount, 2));
 
         return response()->json([
             'success' => true,
@@ -1046,12 +1046,16 @@ class MayorsOfficeController extends Controller
                 'data'       => $request->all(),
             ]);
 
-            $validator = Validator::make($request->all(), [
-                'invoice_number'    => 'nullable|string|max:50',
-                'amount_on_receipt' => 'required|numeric|min:0',
-                'liters_availed'    => 'nullable|numeric|min:0',
-                'unit_price'        => 'nullable|numeric|min:0',
-            ]);
+           $validator = Validator::make($request->all(), [
+    'invoice_number'    => 'required|string|max:50',
+    'amount_on_receipt' => 'required|numeric|min:0',
+    'liters_availed'    => 'nullable|numeric|min:0',
+    'unit_price'        => 'required|numeric|min:0.01',
+], [
+    'invoice_number.required' => 'Please enter the invoice number from the receipt.',
+    'unit_price.required'     => 'Please enter the unit price.',
+    'unit_price.min'          => 'Unit price must be greater than zero.',
+]);
 
             if ($validator->fails()) {
                 return response()->json([

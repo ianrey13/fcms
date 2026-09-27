@@ -408,7 +408,7 @@ const MayorReceiptVerification = () => {
       unit_price: receipt.unit_price || "",
       amount_on_receipt: receipt.amount || "",
     });
-    setIsEditing(false);
+    setIsEditing(receipt.status !== "verified");
     setShowReceiptModal(true);
   };
 
@@ -429,13 +429,27 @@ const MayorReceiptVerification = () => {
 
   // ✅ Step 1: validate, open confirmation
   const handleVerifyClick = () => {
-    const amount = parseFloat(editData.amount_on_receipt) || 0;
-
-    if (!editData.amount_on_receipt || amount <= 0) {
-      toast.error("Please enter a valid amount");
+    // ✅ Required: Invoice Number
+    if (!editData.invoice_number || !editData.invoice_number.trim()) {
+      toast.error("Please enter the invoice number from the receipt.");
       return;
     }
 
+    // ✅ Required: Amount on Receipt
+    const amount = parseFloat(editData.amount_on_receipt) || 0;
+    if (!editData.amount_on_receipt || amount <= 0) {
+      toast.error("Please enter a valid amount on receipt.");
+      return;
+    }
+
+    // ✅ Required: Unit Price
+    const unitPrice = parseFloat(editData.unit_price) || 0;
+    if (!editData.unit_price || unitPrice <= 0) {
+      toast.error("Please enter the unit price.");
+      return;
+    }
+
+    // Cap check
     const released = parseFloat(selectedReceipt?.amount_released) || 0;
     if (released > 0 && amount > released) {
       toast.error(
@@ -445,7 +459,7 @@ const MayorReceiptVerification = () => {
     }
 
     setShowConfirmVerify(true);
-  };
+};
 
   // ✅ Step 2: confirm → fire mutation
   const handleConfirmVerify = () => {
@@ -907,8 +921,9 @@ const MayorReceiptVerification = () => {
                     <thead className="bg-slate-50 dark:bg-slate-900/50">
                       <tr>
                         <th className="px-3 py-2 text-left text-[11px] font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
-                          Charge Invoice No.
-                        </th>
+  Charge Invoice No.
+  {isEditing && !isVerifiedView && <span className="text-red-500 ml-0.5">*</span>}
+</th>
                         <th className="px-3 py-2 text-left text-[11px] font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
                           Plate No.
                         </th>
@@ -922,9 +937,10 @@ const MayorReceiptVerification = () => {
                           Lubricant
                         </th>
                        
-                        <th className="px-3 py-2 text-right text-[11px] font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
-                          Unit Price
-                        </th>
+                       <th className="px-3 py-2 text-right text-[11px] font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
+  Unit Price
+  {isEditing && !isVerifiedView && <span className="text-red-500 ml-0.5">*</span>}
+</th>
                       </tr>
                     </thead>
                     <tbody className="bg-white dark:bg-slate-800">
@@ -1036,10 +1052,10 @@ const MayorReceiptVerification = () => {
                 {isEditing && !isVerifiedView && (
                   <div className="text-xs text-slate-600 dark:text-slate-300 bg-blue-50 dark:bg-blue-950/30 p-3 rounded-lg border border-blue-200 dark:border-blue-800">
                     <Info className="h-4 w-4 inline mr-1 text-blue-500 dark:text-blue-400" />
-                    Enter the <strong>Charge Invoice No.</strong>, <strong>Unit Price</strong>, and{' '}
-                    <strong>Amount on Receipt</strong> (from the physical receipt).
-                    Amount must not exceed the <strong>Amount Released</strong> of{' '}
-                    <strong>{formatCurrency(selectedReceipt.amount_released)}</strong>.
+<strong>All three fields are required:</strong> Charge Invoice No., Unit Price,
+and Amount on Receipt (from the physical receipt).
+Amount must not exceed the <strong>Amount Released</strong> of{' '}
+<strong>{formatCurrency(selectedReceipt.amount_released)}</strong>.
                   </div>
                 )}
 
