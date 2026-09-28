@@ -135,6 +135,17 @@ class FallbackLocationService
                 'region' => 'Laguindingan, Misamis Oriental',
                 'aliases' => ['liberty barangay hall'],
             ],
+             'laguindingan airport' => [
+                'name' => 'Liberty, Laguindingan',
+                'distance_km' => 4.7,
+                'lat' => 8.610260789398502, 
+                'lng' =>  124.45795811031401,
+               
+                'type' => 'barangay',
+                'priority' => 1,
+                'region' => 'Laguindingan, Misamis Oriental',
+                'aliases' => ['Laguindingan Airport'],
+            ],
 
             // ==================== MISAMIS ORIENTAL ====================
             'alubijid' => [
@@ -230,7 +241,7 @@ class FallbackLocationService
 
             // ==================== CAGAYAN DE ORO ====================
             'cdo_city_hall' => [
-                'name' => 'Cagayan de Oro City Hall',
+                'name' => 'Cagayan de Oro City',
                 'distance_km' => 29.0,
                 'lat' => 8.481725211952732,
                 'lng' => 124.64077461100696,
