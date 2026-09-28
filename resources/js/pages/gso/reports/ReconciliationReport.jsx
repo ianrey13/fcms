@@ -109,7 +109,7 @@ const ReconciliationReport = ({
                 <div className="flex items-center justify-between flex-wrap gap-2">
                     <div className="flex items-center gap-2">
                         <Activity className="h-5 w-5 text-amber-500" />
-                        <CardTitle className="text-slate-800 dark:text-white">Trip Anomalies Report</CardTitle>
+                        <CardTitle className="text-slate-800 dark:text-white">Trip Reconciliation Report</CardTitle>
                         <Badge className="bg-amber-500/20 text-amber-700 dark:text-amber-400 ml-2">
                             {headerLabel}: {renderBadgeCount()}
                         </Badge>

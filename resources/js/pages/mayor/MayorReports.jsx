@@ -1282,7 +1282,7 @@ const { data: reconciliationData, isLoading: reconciliationLoading } =
                         <div className="flex items-center gap-2">
                             <FileCheck className="h-5 w-5 text-indigo-500" />
                             <CardTitle className="text-slate-800 dark:text-white">
-                                Cash Discrepancy Report
+                                Cash Reconciliation Report
                             </CardTitle>
                             <Badge className="bg-indigo-500/20 text-indigo-600 ml-2">
                                 {badgeLabel}: {badgeCount}
