@@ -120,12 +120,13 @@ const RECEIPT_STATUS_OPTIONS = [
     { value: "rejected", label: "Rejected" },
 ];
 
+
 const RECONCILIATION_THRESHOLD_OPTIONS = [
     { value: "all", label: "All" },
-    { value: "1", label: "> 1 km" },
-    { value: "2", label: "> 2 km" },
-    { value: "5", label: "> 5 km" },
-    { value: "10", label: "> 10 km" },
+    { value: "1", label: "> ₱1" },
+    { value: "10", label: "> ₱10" },
+    { value: "100", label: "> ₱100" },
+    { value: "1000", label: "> ₱1,000" },
 ];
 
 const MONTH_OPTIONS = [
@@ -488,18 +489,20 @@ const MayorReports = () => {
                 const res = await reportsAPI.getReconciliation(params);
                 const data = res?.data?.data ?? res?.data ?? {};
                 const reconciliations = extractArray(data);
-                const filteredReconciliations =
-                    reconciliationThreshold !== "all"
-                        ? reconciliations.filter(
-                              (r) =>
-                                  Math.abs(r.variance || 0) >=
-                                  parseFloat(reconciliationThreshold),
-                          )
-                        : reconciliations;
-                return {
-                    reconciliations: filteredReconciliations,
-                    summary: data?.summary || {},
-                };
+// ✅ MO filters by AMOUNT variance (₱), not distance variance (km)
+const filteredReconciliations =
+    reconciliationThreshold !== "all"
+        ? reconciliations.filter(
+              (r) =>
+                  r.amount_variance != null &&
+                  Math.abs(r.amount_variance) >=
+                  parseFloat(reconciliationThreshold),
+          )
+        : reconciliations;
+return {
+    reconciliations: filteredReconciliations,
+    summary: data?.summary || {},
+};
             },
             enabled: expandedSections.reconciliation,
             staleTime: CACHE_5MIN,
