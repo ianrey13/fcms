@@ -115,15 +115,16 @@ const getReceiptImageUrls = (receipt) => {
     return [...new Set(urlsList)];
 };
 
-const getStatusConfig = (status) => {
-    const configs = {
-        pending: { color: 'bg-yellow-500', label: 'Pending Verification', icon: Clock },
-        verified: { color: 'bg-green-500', label: 'Verified', icon: CheckCircle },
-        discrepancy: { color: 'bg-red-500', label: 'Discrepancy Found', icon: AlertTriangle },
-        approved: { color: 'bg-emerald-500', label: 'Approved', icon: CheckCircle },
-        rejected: { color: 'bg-rose-500', label: 'Rejected', icon: XCircle },
-    };
-    return configs[status] || configs.pending;
+// ✅ Simple two-state status: Pending / Verified
+// Option Y — verified if EITHER DO or GSO has done their part
+const getReceiptStatus = (receipt) => {
+    const doOk  = receipt?.do_verification_status === 'verified';
+    const gsoOk = receipt?.gso_validation_status === 'verified';
+
+    if (doOk || gsoOk) {
+        return { color: 'bg-emerald-500', label: 'Verified', icon: CheckCircle };
+    }
+    return { color: 'bg-yellow-500', label: 'Pending', icon: Clock };
 };
 
 const formatDate = (date) => {
@@ -147,16 +148,21 @@ const formatTimeAgo = (date) => {
     return formatDateShort(date);
 };
 
+// ✅ ReceiptImage — resets only when the receipt ID changes
 const ReceiptImage = ({ receipt }) => {
     const [imageError, setImageError] = useState(false);
     const [currentUrlIndex, setCurrentUrlIndex] = useState(0);
     const [imageLoaded, setImageLoaded] = useState(false);
+
     const urls = React.useMemo(() => getReceiptImageUrls(receipt), [receipt]);
+    const receiptId = receipt?.id || receipt?.fuel_receipt_id;
+
     React.useEffect(() => {
         setImageError(false);
         setCurrentUrlIndex(0);
         setImageLoaded(false);
-    }, [receipt]);
+    }, [receiptId]);
+
     if (urls.length === 0) {
         return (
             <div className="border rounded-xl p-8 text-center bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700">
@@ -202,8 +208,8 @@ const ReceiptImage = ({ receipt }) => {
     );
 };
 
-const StatusBadge = ({ status }) => {
-    const config = getStatusConfig(status);
+const ReceiptStatusBadge = ({ receipt }) => {
+    const config = getReceiptStatus(receipt);
     const Icon = config.icon;
     return (
         <Badge className={`${config.color} text-white flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-medium`}>
@@ -263,6 +269,7 @@ const FuelReceipts = () => {
     const [modalLiters, setModalLiters] = useState('');
     const [isSavingModal, setIsSavingModal] = useState(false);
     const [litersError, setLitersError] = useState('');
+    const [justSaved, setJustSaved] = useState(false);
 
     const [showConfirmSave, setShowConfirmSave] = useState(false);
 
@@ -305,13 +312,48 @@ const FuelReceipts = () => {
     const connectionStatus = isConnected ? "🟢 Live" : "🔴 Offline";
     const isRealTime = isConnected;
 
+    // ✅ Option Y — verified if EITHER side is done
+    const isVerified = (r) => {
+        const doOk  = r?.do_verification_status === 'verified';
+        const gsoOk = r?.gso_validation_status === 'verified';
+        return doOk || gsoOk;
+    };
+
     const stats = useMemo(() => {
         const safeReceipts = Array.isArray(receipts) ? receipts : [];
         return [
-            { title: 'Total Receipts', value: safeReceipts.length, icon: Receipt, color: 'from-blue-500 to-blue-600', subtitle: `${filteredReceipts.length} shown`, trend: safeReceipts.length > 0 ? 8 : 0 },
-            { title: 'Pending', value: safeReceipts.filter(r => (r?.status || r?.reconciliation_status) === 'pending').length, icon: Clock, color: 'from-yellow-500 to-yellow-600', subtitle: 'Awaiting verification', trend: 0 },
-            { title: 'Verified', value: safeReceipts.filter(r => ['verified','approved'].includes(r?.status || r?.reconciliation_status)).length, icon: CheckCircle, color: 'from-green-500 to-emerald-600', subtitle: 'Approved receipts', trend: 0 },
-            { title: 'Discrepancy', value: safeReceipts.filter(r => ['discrepancy','rejected'].includes(r?.status || r?.reconciliation_status)).length, icon: AlertTriangle, color: 'from-red-500 to-rose-600', subtitle: 'Needs attention', trend: 0 },
+            {
+                title: 'Total Receipts',
+                value: safeReceipts.length,
+                icon: Receipt,
+                color: 'from-blue-500 to-blue-600',
+                subtitle: `${filteredReceipts.length} shown`,
+                trend: safeReceipts.length > 0 ? 8 : 0,
+            },
+            {
+                title: 'Pending',
+                value: safeReceipts.filter(r => !isVerified(r)).length,
+                icon: Clock,
+                color: 'from-yellow-500 to-yellow-600',
+                subtitle: 'Awaiting verification',
+                trend: 0,
+            },
+            {
+                title: 'Verified',
+                value: safeReceipts.filter(r => isVerified(r)).length,
+                icon: CheckCircle,
+                color: 'from-emerald-500 to-emerald-600',
+                subtitle: 'Approved receipts',
+                trend: 0,
+            },
+            {
+                title: 'With Photos',
+                value: safeReceipts.filter(r => r?.receipt_url).length,
+                icon: ImageIcon,
+                color: 'from-purple-500 to-purple-600',
+                subtitle: 'Receipts attached',
+                trend: 0,
+            },
         ];
     }, [receipts, filteredReceipts]);
 
@@ -320,6 +362,7 @@ const FuelReceipts = () => {
         const existingLiters = parseFloat(receipt.liters || receipt.liters_availed || 0);
         setModalLiters(existingLiters > 0 ? String(existingLiters) : '');
         setLitersError('');
+        setJustSaved(false);
         setShowReceiptDialog(true);
     }, []);
 
@@ -328,13 +371,15 @@ const FuelReceipts = () => {
         const existingLiters = parseFloat(selectedReceipt.liters || selectedReceipt.liters_availed || 0);
         setModalLiters(existingLiters > 0 ? String(existingLiters) : '');
         setLitersError('');
+        setJustSaved(false);
     }, [selectedReceipt]);
 
     const handleLitersChange = useCallback((raw) => {
         const cleaned = sanitizeDecimalInput(raw, 2);
         setModalLiters(cleaned);
         if (litersError) setLitersError('');
-    }, [litersError]);
+        if (justSaved) setJustSaved(false);
+    }, [litersError, justSaved]);
 
     const validateAll = useCallback(() => {
         const litersErr = (!modalLiters || parseFloat(modalLiters) <= 0)
@@ -351,8 +396,7 @@ const FuelReceipts = () => {
             toast.error('Please fix the highlighted field before saving.');
             return;
         }
-        setShowReceiptDialog(false);
-        setTimeout(() => setShowConfirmSave(true), 150);
+        setShowConfirmSave(true);
     }, [validateAll]);
 
     const handleConfirmSave = useCallback(async () => {
@@ -362,7 +406,6 @@ const FuelReceipts = () => {
 
         setIsSavingModal(true);
         try {
-            // ✅ Only liters — backend does NOT recompute unit_price
             const res = await gsoAPI.updateFuelReceiptLiters(id, liters);
             const updated = res?.data?.data || {};
 
@@ -375,26 +418,26 @@ const FuelReceipts = () => {
                             ...r,
                             liters: updated.liters_availed ?? liters,
                             unit_price: updated.unit_price ?? r.unit_price,
+                            gso_validation_status: updated.gso_validation_status ?? 'verified',
                         };
                     }
                     return r;
                 });
             });
 
-            setSelectedReceipt(prev => prev ? {
-                ...prev,
-                liters: updated.liters_availed ?? liters,
-                unit_price: updated.unit_price ?? prev.unit_price,
-            } : prev);
+            if (selectedReceipt) {
+                selectedReceipt.liters = updated.liters_availed ?? liters;
+                selectedReceipt.unit_price = updated.unit_price ?? selectedReceipt.unit_price;
+                selectedReceipt.gso_validation_status = updated.gso_validation_status ?? 'verified';
+            }
 
             toast.success('Liters saved');
             setShowConfirmSave(false);
-            setTimeout(() => setShowReceiptDialog(true), 150);
+            setJustSaved(true);
         } catch (err) {
             console.error('Save receipt error:', err);
             toast.error(err?.response?.data?.message || 'Failed to save liters');
             setShowConfirmSave(false);
-            setTimeout(() => setShowReceiptDialog(true), 150);
         } finally {
             setIsSavingModal(false);
         }
@@ -402,17 +445,18 @@ const FuelReceipts = () => {
 
     const handleCancelConfirmSave = useCallback(() => {
         setShowConfirmSave(false);
-        setTimeout(() => setShowReceiptDialog(true), 150);
     }, []);
 
     const handleCloseReceiptDialog = useCallback((open) => {
         setShowReceiptDialog(open);
         if (!open) {
-            setTimeout(() => { setLitersError(''); }, 200);
+            setTimeout(() => { setLitersError(''); setJustSaved(false); }, 200);
         }
     }, []);
 
     if (isLoading && !receiptsResponse) return <LoadingSkeleton />;
+
+    const inputLocked = isSavingModal || justSaved || showConfirmSave;
 
     return (
         <div className="space-y-6 p-4 md:p-6 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 min-h-screen">
@@ -512,7 +556,7 @@ const FuelReceipts = () => {
                                                 <span className="text-xs text-slate-500 dark:text-slate-400">{formatDateShort(receipt.trip_date)}</span>
                                             </td>
                                             <td className="px-4 py-3">
-                                                <StatusBadge status={receipt.status || receipt.reconciliation_status || 'pending'} />
+                                                <ReceiptStatusBadge receipt={receipt} />
                                             </td>
                                             <td className="px-4 py-3 text-center">
                                                 <Button variant="outline" size="sm" onClick={() => handleOpenModal(receipt)}
@@ -551,10 +595,8 @@ const FuelReceipts = () => {
 
                             <div className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700">
                                 <div className="flex-1">
-                                    <p className="text-xs text-slate-500 dark:text-slate-400">Current Status</p>
-                                    <div className="mt-1">
-                                        <StatusBadge status={selectedReceipt.status || selectedReceipt.reconciliation_status || 'pending'} />
-                                    </div>
+                                    <p className="text-xs text-slate-500 dark:text-slate-400 mb-1.5">Status</p>
+                                    <ReceiptStatusBadge receipt={selectedReceipt} />
                                 </div>
                                 <div className="text-right">
                                     <p className="text-xs text-slate-500 dark:text-slate-400">Uploaded</p>
@@ -585,18 +627,21 @@ const FuelReceipts = () => {
                                     </p>
                                 </div>
 
-                                {/* ✅ LITERS only — editable */}
                                 <div className={cn(
                                     "p-3 rounded-xl border md:col-span-2",
                                     litersError
                                         ? "bg-red-50 dark:bg-red-950/30 border-red-300 dark:border-red-800"
-                                        : "bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800"
+                                        : justSaved
+                                            ? "bg-emerald-50 dark:bg-emerald-950/30 border-emerald-300 dark:border-emerald-800"
+                                            : "bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800"
                                 )}>
                                     <p className={cn(
                                         "text-xs font-semibold mb-2",
                                         litersError
                                             ? "text-red-600 dark:text-red-400"
-                                            : "text-blue-600 dark:text-blue-400"
+                                            : justSaved
+                                                ? "text-emerald-600 dark:text-emerald-400"
+                                                : "text-blue-600 dark:text-blue-400"
                                     )}>
                                         Fuel Loaded (Liters) *
                                     </p>
@@ -608,12 +653,14 @@ const FuelReceipts = () => {
                                             inputMode="decimal"
                                             autoComplete="off"
                                             value={modalLiters}
-                                            disabled={isSavingModal}
+                                            disabled={inputLocked}
+                                            readOnly={inputLocked}
                                             onChange={(e) => handleLitersChange(e.target.value)}
                                             placeholder="0.00"
                                             aria-invalid={!!litersError}
                                             className={cn(
-                                                "h-9 w-32 px-3 text-sm font-semibold rounded-lg bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2",
+                                                "h-9 w-32 px-3 text-sm font-semibold rounded-lg bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 transition-opacity",
+                                                inputLocked && "opacity-50 cursor-not-allowed",
                                                 litersError
                                                     ? "border border-red-500 focus:ring-red-500 dark:border-red-500"
                                                     : "border border-blue-300 dark:border-blue-700 focus:ring-blue-500"
@@ -622,7 +669,12 @@ const FuelReceipts = () => {
                                         <span className="text-xs text-slate-600 dark:text-slate-300 font-medium">L</span>
                                     </div>
 
-                                    {litersError ? (
+                                    {justSaved ? (
+                                        <p className="mt-1.5 text-[11px] text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                                            <CheckCircle className="h-3 w-3 flex-shrink-0" />
+                                            Saved. Click Reset or Close to edit.
+                                        </p>
+                                    ) : litersError ? (
                                         <p className="mt-1.5 text-[11px] text-red-600 dark:text-red-400 flex items-center gap-1">
                                             <AlertCircle className="h-3 w-3 flex-shrink-0" />{litersError}
                                         </p>
@@ -651,40 +703,40 @@ const FuelReceipts = () => {
                                     className="dark:border-slate-700 dark:text-slate-300">
                                     Close
                                 </Button>
-                                <Button onClick={handleSaveClick} disabled={isSavingModal}
+                                <Button onClick={handleSaveClick} disabled={isSavingModal || justSaved || showConfirmSave}
                                     className="bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-50">
                                     {isSavingModal ? (<><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving...</>) : (<><Save className="h-4 w-4 mr-2" />Save Liters</>)}
                                 </Button>
                             </div>
                         </div>
                     )}
+
+                    <AlertDialog open={showConfirmSave} onOpenChange={(open) => { if (!open) handleCancelConfirmSave(); }}>
+                        <AlertDialogContent onInteractOutside={(e) => e.preventDefault()}>
+                            <AlertDialogHeader>
+                                <AlertDialogTitle className="flex items-center gap-2">
+                                    <Fuel className="h-5 w-5 text-blue-500" />Confirm Fuel Loaded
+                                </AlertDialogTitle>
+                                <AlertDialogDescription>
+                                    You are about to save{' '}
+                                    <strong className="text-slate-900 dark:text-white">{modalLiters} L</strong>{' '}
+                                    of fuel loaded for ticket{' '}
+                                    <strong>{selectedReceipt?.ticket_number || selectedReceipt?.trip_ticket_number || 'N/A'}</strong>.
+                                    <br /><br />
+                                    Continue?
+                                </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                                <AlertDialogCancel onClick={handleCancelConfirmSave}>Cancel</AlertDialogCancel>
+                                <AlertDialogAction onClick={handleConfirmSave} disabled={isSavingModal}
+                                    className="bg-emerald-600 hover:bg-emerald-700 text-white">
+                                    {isSavingModal ? (<><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving...</>) : (<><Save className="h-4 w-4 mr-2" />Confirm Save</>)}
+                                </AlertDialogAction>
+                            </AlertDialogFooter>
+                        </AlertDialogContent>
+                    </AlertDialog>
                 </DialogContent>
             </Dialog>
-
-            <AlertDialog open={showConfirmSave} onOpenChange={(open) => { if (!open) handleCancelConfirmSave(); }}>
-                <AlertDialogContent onInteractOutside={(e) => e.preventDefault()}>
-                    <AlertDialogHeader>
-                        <AlertDialogTitle className="flex items-center gap-2">
-                            <Fuel className="h-5 w-5 text-blue-500" />Confirm Fuel Loaded
-                        </AlertDialogTitle>
-                        <AlertDialogDescription>
-                            You are about to save{' '}
-                            <strong className="text-slate-900 dark:text-white">{modalLiters} L</strong>{' '}
-                            of fuel loaded for ticket{' '}
-                            <strong>{selectedReceipt?.ticket_number || selectedReceipt?.trip_ticket_number || 'N/A'}</strong>.
-                            <br /><br />
-                            Continue?
-                        </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                        <AlertDialogCancel onClick={handleCancelConfirmSave}>Cancel</AlertDialogCancel>
-                        <AlertDialogAction onClick={handleConfirmSave} disabled={isSavingModal}
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white">
-                            {isSavingModal ? (<><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving...</>) : (<><Save className="h-4 w-4 mr-2" />Confirm Save</>)}
-                        </AlertDialogAction>
-                    </AlertDialogFooter>
-                </AlertDialogContent>
-            </AlertDialog>
         </div>
     );
 };

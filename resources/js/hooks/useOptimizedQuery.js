@@ -6,10 +6,10 @@ export const useOptimizedQuery = ({
   queryKey,
   queryFn,
   enabled = true,
-  staleTime = 0,                            // ✅ default to always-fresh
-  gcTime = 30 * 60 * 1000,                  // ✅ v5 name (was cacheTime)
+  staleTime = 0,                           
+  gcTime = 30 * 60 * 1000,                
   refetchOnWindowFocus = false,
-  refetchOnMount = true,                    // ✅ refetch on mount by default
+  refetchOnMount = true,                    
   retry,
   retryDelay,
   placeholderData = (previousData) => previousData,

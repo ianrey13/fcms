@@ -1240,7 +1240,7 @@ public function getFuelReceipts(Request $request)
         }
 
         // Optional filters
-        $status       = $request->get('status');        // pending | verified | discrepancy
+        $status       = $request->get('status');
         $departmentId = $request->get('department_id');
         $search       = $request->get('search');
 
@@ -1274,8 +1274,16 @@ public function getFuelReceipts(Request $request)
                 'fr.gps_distance_km',
                 'fr.invoice_number',
                 'fr.unit_price',
+
+                // ✅ DO verification (from fuel_receipt)
+                'fr.verification_status as do_verification_status',
+                'fr.verified_at as do_verified_at',
+
+                // ✅ GSO validation — derived from liters_availed
+                DB::raw("CASE WHEN fr.liters_availed IS NOT NULL AND fr.liters_availed > 0 THEN 'verified' ELSE 'pending' END as gso_validation_status"),
+
                 'gs.amount_released',
-                'gs.reconciliation_status as status',
+                'gs.reconciliation_status as trip_status',
                 'gs.reconciliation_note',
                 DB::raw("CONCAT(u_driver.first_name, ' ', u_driver.last_name) as driver_name")
             );
@@ -1298,7 +1306,7 @@ public function getFuelReceipts(Request $request)
 
         $receipts = $query->orderBy('fr.receipt_uploaded_at', 'desc')->get();
 
-        //  Fix receipt URL path (public/receipts/, not storage/)
+        // Fix receipt URL path (public/receipts/, not storage/)
         $receipts = $receipts->map(function ($r) {
             if ($r->receipt_url && !str_starts_with($r->receipt_url, 'http')) {
                 $r->receipt_url = asset($r->receipt_url);
@@ -1322,7 +1330,6 @@ public function getFuelReceipts(Request $request)
         ], 500);
     }
 }
-
 /**
  *  GSO edits liters on an existing fuel receipt
 
