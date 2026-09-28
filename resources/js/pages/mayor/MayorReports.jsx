@@ -1,15 +1,6 @@
 // src/pages/mayor/MayorReports.jsx
 // ============================================
-// DISBURSING OFFICER (MAYOR'S OFFICE) REPORTS
-// 4 Reports:
-// 1. Fuel Receipt Report
-// 2. Budget Utilization Report
-// 3. Reconciliation Report
-// 4. Billing Statement of Fuel (uses 2 date pickers — not month)
-//
-// ✅ Each card has INDEPENDENT filters
-// ✅ Billing Statement: Start Date + End Date (Popover + Calendar)
-// ✅ Year fixed to current year internally for the other three cards
+
 // ============================================
 
 import React, { useState, useMemo, useCallback } from "react";
@@ -121,12 +112,11 @@ const RECEIPT_STATUS_OPTIONS = [
 ];
 
 
-const RECONCILIATION_THRESHOLD_OPTIONS = [
-    { value: "all", label: "All" },
-    { value: "1", label: "> ₱1" },
-    { value: "10", label: "> ₱10" },
-    { value: "100", label: "> ₱100" },
-    { value: "1000", label: "> ₱1,000" },
+const CASH_VIEW_OPTIONS = [
+    { value: "all",           label: "All" },
+    { value: "discrepancies", label: "Discrepancies" },
+    { value: "clean",         label: "Clean" },
+    { value: "unverified",    label: "Unverified" },
 ];
 
 const MONTH_OPTIONS = [
@@ -341,8 +331,9 @@ const MayorReports = () => {
     // ---- Reconciliation ----
     const [rcDepartment, setRcDepartment] = useState("all");
     const [rcMonth, setRcMonth] = useState(currentMonth);
-    const [reconciliationThreshold, setReconciliationThreshold] =
-        useState("all");
+    const [rcViewFilter, setRcViewFilter] = useState("discrepancies"); 
+    // const [reconciliationThreshold, setReconciliationThreshold] =
+    //     useState("all");
 
     // ---- Billing Statement (DATE PICKERS) ----
     const [bsDepartment, setBsDepartment] = useState("all");
@@ -471,42 +462,33 @@ const MayorReports = () => {
     });
 
     // 3. RECONCILIATION
-    const { data: reconciliationData, isLoading: reconciliationLoading } =
-        useQuery({
-            queryKey: [
-                "mayor-reconciliation",
-                rcDateRange,
-                rcDepartment,
-                reconciliationThreshold,
-            ],
-            queryFn: async () => {
-                const params = {
-                    start_date: rcDateRange.startDate,
-                    end_date: rcDateRange.endDate,
-                    department_id:
-                        rcDepartment !== "all" ? rcDepartment : undefined,
-                };
-                const res = await reportsAPI.getReconciliation(params);
-                const data = res?.data?.data ?? res?.data ?? {};
-                const reconciliations = extractArray(data);
-// ✅ MO filters by AMOUNT variance (₱), not distance variance (km)
-const filteredReconciliations =
-    reconciliationThreshold !== "all"
-        ? reconciliations.filter(
-              (r) =>
-                  r.amount_variance != null &&
-                  Math.abs(r.amount_variance) >=
-                  parseFloat(reconciliationThreshold),
-          )
-        : reconciliations;
-return {
-    reconciliations: filteredReconciliations,
-    summary: data?.summary || {},
-};
-            },
-            enabled: expandedSections.reconciliation,
-            staleTime: CACHE_5MIN,
-        });
+    // 
+const { data: reconciliationData, isLoading: reconciliationLoading } =
+    useQuery({
+        queryKey: [
+            "mayor-reconciliation",
+            rcDateRange,
+            rcDepartment,
+             rcViewFilter,
+        ],
+        queryFn: async () => {
+            const params = {
+                start_date: rcDateRange.startDate,
+                end_date: rcDateRange.endDate,
+                department_id:
+                    rcDepartment !== "all" ? rcDepartment : undefined,
+            };
+            const res = await reportsAPI.getReconciliation(params);
+            const data = res?.data?.data ?? res?.data ?? {};
+            const reconciliations = extractArray(data);
+            return {
+                reconciliations,
+                summary: data?.summary || {},
+            };
+        },
+        enabled: expandedSections.reconciliation,
+        staleTime: CACHE_5MIN,
+    });
 
     // 4. BILLING STATEMENT (only fires when both dates picked)
     const { data: billingData, isLoading: billingLoading } = useQuery({
@@ -1238,296 +1220,283 @@ return {
         );
     };
 
-    // ============================================================
-    // RECONCILIATION
+          // ============================================================
+    // CASH DISCREPANCY (DO)
     // ============================================================
 
     const renderReconciliation = () => {
-    const reconciliations = Array.isArray(
-        reconciliationData?.reconciliations,
-    )
-        ? reconciliationData.reconciliations
-        : [];
-    const summary = reconciliationData?.summary || {};
-    const discrepancyCount = reconciliations.filter(r =>
-    (r.amount_variance != null && Math.abs(r.amount_variance) > 0.01) ||
-    (r.variance != null && Math.abs(r.variance) > 0.5)
-).length;
-    const periodText = monthLabel(rcMonth, yearFilter);
+        const reconciliations = Array.isArray(reconciliationData?.reconciliations)
+            ? reconciliationData.reconciliations
+            : [];
+        const summary = reconciliationData?.summary || {};
 
-    return (
-        <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-            <CardHeader
-                className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors rounded-t-2xl"
-                onClick={() => toggleSection("reconciliation")}
-            >
-                <div className="flex items-center justify-between flex-wrap gap-2">
-                    <div className="flex items-center gap-2">
-                        <FileCheck className="h-5 w-5 text-indigo-500" />
-                        <CardTitle className="text-slate-800 dark:text-white">
-                            Cash Reconciliation Report
-                        </CardTitle>
-                        <Badge className="bg-indigo-500/20 text-indigo-600 ml-2">
-                            {reconciliations.length} trips
-                        </Badge>
-                    </div>
-                    <div className="flex items-center gap-2 flex-wrap">
-                        {expandedSections.reconciliation && (
-                            <>
-                                <InlineFilters
-                                    departmentFilter={rcDepartment}
-                                    setDepartmentFilter={setRcDepartment}
-                                    monthFilter={rcMonth}
-                                    setMonthFilter={setRcMonth}
-                                    departments={departments}
-                                    onInteract={(e) =>
-                                        e.stopPropagation()
-                                    }
-                                />
-                                <Select
-                                    value={reconciliationThreshold}
-                                    onValueChange={
-                                        setReconciliationThreshold
-                                    }
-                                >
-                                    <SelectTrigger
-                                        className="w-[130px] h-8 text-xs"
-                                        onClick={(e) =>
-                                            e.stopPropagation()
-                                        }
+        // Buckets
+        const discrepancies = reconciliations.filter(
+            (r) => r.amount_variance != null && Math.abs(r.amount_variance) > 0
+        );
+        const clean = reconciliations.filter(
+            (r) => r.amount_variance != null && Math.abs(r.amount_variance) === 0
+        );
+        const unverified = reconciliations.filter(
+            (r) => r.amount_variance == null
+        );
+
+        // Rows to display based on active filter
+        const displayed = (() => {
+            switch (rcViewFilter) {
+                case "discrepancies": return discrepancies;
+                case "clean":         return clean;
+                case "unverified":    return unverified;
+                case "all":
+                default:              return reconciliations;
+            }
+        })();
+
+        // Counts — prefer backend summary, fall back to client-side
+        const scannedCount     = summary.cash_scanned          ?? reconciliations.length;
+        const discrepancyCount = summary.cash_discrepancy_count ?? discrepancies.length;
+        const cleanCount       = summary.cash_clean_count      ?? clean.length;
+        const unverifiedCount  = summary.cash_unverified_count ?? unverified.length;
+        const totalVariance    = summary.total_amount_variance ?? discrepancies.reduce((sum, r) => sum + (r.amount_variance || 0), 0);
+
+        const periodText = monthLabel(rcMonth, yearFilter);
+
+        // Badge count reflects the currently-active filter
+        const badgeCount = (() => {
+            switch (rcViewFilter) {
+                case "discrepancies": return discrepancyCount;
+                case "clean":         return cleanCount;
+                case "unverified":    return unverifiedCount;
+                default:              return scannedCount;
+            }
+        })();
+        const badgeLabel = CASH_VIEW_OPTIONS.find(o => o.value === rcViewFilter)?.label || "All";
+
+        return (
+            <Card className="dark:bg-slate-800/80 dark:border-slate-700">
+                <CardHeader
+                    className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors rounded-t-2xl"
+                    onClick={() => toggleSection("reconciliation")}
+                >
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                        <div className="flex items-center gap-2">
+                            <FileCheck className="h-5 w-5 text-indigo-500" />
+                            <CardTitle className="text-slate-800 dark:text-white">
+                                Cash Discrepancy Report
+                            </CardTitle>
+                            <Badge className="bg-indigo-500/20 text-indigo-600 ml-2">
+                                {badgeLabel}: {badgeCount}
+                            </Badge>
+                        </div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                            {expandedSections.reconciliation && (
+                                <>
+                                    <Select
+                                        value={rcViewFilter}
+                                        onValueChange={setRcViewFilter}
                                     >
-                                        <SelectValue placeholder="Threshold" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {RECONCILIATION_THRESHOLD_OPTIONS.map(
-                                            (opt) => (
-                                                <SelectItem
-                                                    key={opt.value}
-                                                    value={opt.value}
-                                                >
+                                        <SelectTrigger
+                                            className="w-[170px] h-8 text-xs"
+                                            onClick={(e) => e.stopPropagation()}
+                                        >
+                                            <SelectValue placeholder="View" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {CASH_VIEW_OPTIONS.map((opt) => (
+                                                <SelectItem key={opt.value} value={opt.value}>
                                                     {opt.label}
                                                 </SelectItem>
-                                            ),
-                                        )}
-                                    </SelectContent>
-                                </Select>
-                                <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleExport(
-                                            "excel",
-                                            "reconciliation",
-                                            {
-                                                start_date:
-                                                    rcDateRange.startDate,
-                                                end_date:
-                                                    rcDateRange.endDate,
-                                                department_id:
-                                                    rcDepartment !== "all"
-                                                        ? rcDepartment
-                                                        : undefined,
-                                                mode: "cash",
-                                            },
-                                            rcDateRange,
-                                        );
-                                    }}
-                                    disabled={exportLoading}
-                                    className="h-8 px-2 text-xs"
-                                >
-                                    <FileSpreadsheet className="h-3.5 w-3.5 mr-1" />
-                                    Excel
-                                </Button>
-                                <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleExport(
-                                            "pdf",
-                                            "reconciliation",
-                                            {
-                                                start_date:
-                                                    rcDateRange.startDate,
-                                                end_date:
-                                                    rcDateRange.endDate,
-                                                department_id:
-                                                    rcDepartment !== "all"
-                                                        ? rcDepartment
-                                                        : undefined,
-                                                mode: "cash",
-                                            },
-                                            rcDateRange,
-                                        );
-                                    }}
-                                    disabled={exportLoading}
-                                    className="h-8 px-2 text-xs"
-                                >
-                                    <FileText className="h-3.5 w-3.5 mr-1" />
-                                    PDF
-                                </Button>
-                                <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        window.print();
-                                    }}
-                                    className="h-8 px-2 text-xs"
-                                >
-                                    <Printer className="h-3.5 w-3.5 mr-1" />
-                                    Print
-                                </Button>
-                            </>
-                        )}
-                        <Badge variant="secondary">
-                            {expandedSections.reconciliation
-                                ? "Hide"
-                                : "Show"}
-                        </Badge>
-                        {expandedSections.reconciliation ? (
-                            <ChevronUp className="h-4 w-4" />
-                        ) : (
-                            <ChevronDown className="h-4 w-4" />
-                        )}
-                    </div>
-                </div>
-                <CardDescription>
-                    For budget verification — {periodText}
-                </CardDescription>
-            </CardHeader>
-
-            {expandedSections.reconciliation && (
-                <CardContent>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                        <StatsCard
-                            title="Total Trips"
-                            value={summary.total_reconciliations || 0}
-                            icon={FileCheck}
-                            color="from-blue-500 to-blue-600"
-                            subtitle="Reconciled records"
-                        />
-                        <StatsCard
-                            title="Verified"
-                            value={summary.total_verified || 0}
-                            icon={CheckCircle}
-                            color="from-emerald-500 to-emerald-600"
-                            subtitle="Amounts matched"
-                        />
-                        <StatsCard
-                            title="Discrepancy"
-                             value={discrepancyCount}
-                            icon={AlertCircle}
-                            color="from-red-500 to-red-600"
-                            subtitle="Needs attention"
-                        />
-                        <StatsCard
-                            title="Total Released"
-                            value={formatCurrency(
-                                summary.total_amount_released || 0,
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                    <InlineFilters
+                                        departmentFilter={rcDepartment}
+                                        setDepartmentFilter={setRcDepartment}
+                                        monthFilter={rcMonth}
+                                        setMonthFilter={setRcMonth}
+                                        departments={departments}
+                                        onInteract={(e) => e.stopPropagation()}
+                                    />
+                                    <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleExport(
+                                                "excel",
+                                                "reconciliation",
+                                                {
+                                                    start_date: rcDateRange.startDate,
+                                                    end_date: rcDateRange.endDate,
+                                                    department_id: rcDepartment !== "all" ? rcDepartment : undefined,
+                                                    mode: "cash",
+                                                },
+                                                rcDateRange,
+                                            );
+                                        }}
+                                        disabled={exportLoading}
+                                        className="h-8 px-2 text-xs"
+                                    >
+                                        <FileSpreadsheet className="h-3.5 w-3.5 mr-1" />
+                                        Excel
+                                    </Button>
+                                    <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleExport(
+                                                "pdf",
+                                                "reconciliation",
+                                                {
+                                                    start_date: rcDateRange.startDate,
+                                                    end_date: rcDateRange.endDate,
+                                                    department_id: rcDepartment !== "all" ? rcDepartment : undefined,
+                                                    mode: "cash",
+                                                },
+                                                rcDateRange,
+                                            );
+                                        }}
+                                        disabled={exportLoading}
+                                        className="h-8 px-2 text-xs"
+                                    >
+                                        <FileText className="h-3.5 w-3.5 mr-1" />
+                                        PDF
+                                    </Button>
+                                    <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            window.print();
+                                        }}
+                                        className="h-8 px-2 text-xs"
+                                    >
+                                        <Printer className="h-3.5 w-3.5 mr-1" />
+                                        Print
+                                    </Button>
+                                </>
                             )}
-                            icon={PhilippinePeso}
-                            color="from-purple-500 to-purple-600"
-                            subtitle="Total funds issued"
-                        />
+                            <Badge variant="secondary">
+                                {expandedSections.reconciliation ? "Hide" : "Show"}
+                            </Badge>
+                            {expandedSections.reconciliation ? (
+                                <ChevronUp className="h-4 w-4" />
+                            ) : (
+                                <ChevronDown className="h-4 w-4" />
+                            )}
+                        </div>
                     </div>
-                    <div className="overflow-x-auto max-h-[400px] overflow-y-auto border rounded-lg">
-                        <Table>
-                            <TableHeader className="sticky top-0 z-10 bg-slate-100 dark:bg-slate-800">
-                                <TableRow>
-                                    <TableHead className="text-xs uppercase">
-                                        Trip Ticket No.
-                                    </TableHead>
-                                    <TableHead className="text-xs uppercase">
-                                        Vehicle
-                                    </TableHead>
-                                    <TableHead className="text-xs uppercase">
-                                        Driver
-                                    </TableHead>
-                                    <TableHead className="text-xs uppercase text-right">
-                                        Amount Released
-                                    </TableHead>
-                                    <TableHead className="text-xs uppercase text-right">
-                                        Actual Amount Paid
-                                    </TableHead>
-                                    <TableHead className="text-xs uppercase text-right">
-                                        Amount Variance
-                                    </TableHead>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {reconciliations.length === 0 ? (
+                    <CardDescription>
+                        Trips with any cash variance (₱0.01 or more) — {periodText}
+                    </CardDescription>
+                </CardHeader>
+
+                {expandedSections.reconciliation && (
+                    <CardContent>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                            <StatsCard
+                                title="Trips Scanned"
+                                value={scannedCount}
+                                icon={FileCheck}
+                                color="from-blue-500 to-blue-600"
+                                subtitle="Reconciled records"
+                            />
+                            <StatsCard
+                                title="Discrepancies"
+                                value={discrepancyCount}
+                                icon={AlertCircle}
+                                color="from-red-500 to-red-600"
+                                subtitle="Any peso variance"
+                            />
+                            <StatsCard
+                                title="Total Variance"
+                                value={formatCurrency(totalVariance)}
+                                icon={PhilippinePeso}
+                                color="from-amber-500 to-amber-600"
+                                subtitle="Sum of all variances"
+                            />
+                            <StatsCard
+                                title="Clean"
+                                value={cleanCount}
+                                icon={CheckCircle}
+                                color="from-emerald-500 to-emerald-600"
+                                subtitle={`${unverifiedCount} unverified`}
+                            />
+                        </div>
+
+                        <div className="overflow-x-auto max-h-[400px] overflow-y-auto border rounded-lg">
+                            <Table>
+                                <TableHeader className="sticky top-0 z-10 bg-slate-100 dark:bg-slate-800">
                                     <TableRow>
-                                        <TableCell
-                                            colSpan="6"
-                                            className="text-center py-8 text-slate-500"
-                                        >
-                                            No reconciliation data available
-                                        </TableCell>
+                                        <TableHead className="text-xs uppercase">Trip Ticket No.</TableHead>
+                                        <TableHead className="text-xs uppercase">Vehicle</TableHead>
+                                        <TableHead className="text-xs uppercase">Driver</TableHead>
+                                        <TableHead className="text-right text-xs uppercase">Amount Released</TableHead>
+                                        <TableHead className="text-right text-xs uppercase">Actual Amount Paid</TableHead>
+                                        <TableHead className="text-right text-xs uppercase">Variance</TableHead>
                                     </TableRow>
-                                ) : (
-                                    reconciliations.map((r, i) => {
-                                        const amountVarianceColor =
-                                            r.amount_variance !== null &&
-                                            Math.abs(r.amount_variance) > 100
-                                                ? "text-red-600"
-                                                : "";
-                                        return (
-                                            <TableRow key={i}>
-                                                <TableCell className="font-mono font-medium">
-                                                    {r.ticket_number}
-                                                </TableCell>
-                                                <TableCell>
-                                                    {r.plate_number}
-                                                </TableCell>
-                                                <TableCell>
-                                                    {r.driver_name}
-                                                </TableCell>
-                                                <TableCell className="text-right">
-                                                    {formatCurrency(
-                                                        r.amount_released ||
-                                                            0,
-                                                    )}
-                                                </TableCell>
-                                                <TableCell className="text-right">
-                                                    {r.actual_amount !==
-                                                        null &&
-                                                    r.actual_amount !==
-                                                        undefined ? (
-                                                        formatCurrency(
-                                                            r.actual_amount,
-                                                        )
-                                                    ) : (
-                                                        <span className="text-slate-400 text-xs">
-                                                            Not verified
-                                                        </span>
-                                                    )}
-                                                </TableCell>
-                                                <TableCell
-                                                    className={`text-right font-medium ${amountVarianceColor}`}
-                                                >
-                                                    {r.amount_variance !==
-                                                        null &&
-                                                    r.amount_variance !==
-                                                        undefined
-                                                        ? formatCurrency(
-                                                              r.amount_variance,
-                                                          )
-                                                        : "—"}
-                                                </TableCell>
-                                            </TableRow>
-                                        );
-                                    })
-                                )}
-                            </TableBody>
-                        </Table>
-                    </div>
-                </CardContent>
-            )}
-        </Card>
-    );
-};
+                                </TableHeader>
+                                <TableBody>
+                                    {displayed.length === 0 ? (
+                                        <TableRow>
+                                            <TableCell colSpan="6" className="text-center py-8 text-slate-500">
+                                                {rcViewFilter === "discrepancies"
+                                                    ? "No cash discrepancies — all verified receipts match the amount released"
+                                                    : rcViewFilter === "clean"
+                                                        ? "No clean rows for this period"
+                                                        : rcViewFilter === "unverified"
+                                                            ? "No unverified trips for this period"
+                                                            : "No reconciliation data available"}
+                                            </TableCell>
+                                        </TableRow>
+                                    ) : (
+                                        displayed.map((r, i) => {
+                                            const v = r.amount_variance || 0;
+                                            const isUnverified = r.amount_variance == null;
+                                            return (
+                                                <TableRow key={i}>
+                                                    <TableCell className="font-mono font-medium">
+                                                        {r.ticket_number}
+                                                    </TableCell>
+                                                    <TableCell>{r.plate_number}</TableCell>
+                                                    <TableCell>{r.driver_name}</TableCell>
+                                                    <TableCell className="text-right">
+                                                        {formatCurrency(r.amount_released || 0)}
+                                                    </TableCell>
+                                                    <TableCell className="text-right">
+                                                        {r.actual_amount != null
+                                                            ? formatCurrency(r.actual_amount)
+                                                            : <span className="text-slate-400 text-xs">Not verified</span>}
+                                                    </TableCell>
+                                                    <TableCell className={`text-right font-medium ${
+                                                        isUnverified
+                                                            ? 'text-slate-400 dark:text-slate-500'
+                                                            : Math.abs(v) > 100
+                                                                ? 'text-red-600 dark:text-red-400'
+                                                                : 'text-amber-600 dark:text-amber-400'
+                                                    }`}>
+                                                        {isUnverified ? '—' : formatCurrency(v)}
+                                                    </TableCell>
+                                                </TableRow>
+                                            );
+                                        })
+                                    )}
+                                </TableBody>
+                            </Table>
+                        </div>
+
+                        {unverifiedCount > 0 && rcViewFilter !== "unverified" && (
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-3 flex items-center gap-1">
+                                <AlertCircle className="h-3 w-3" />
+                                {unverifiedCount} trip{unverifiedCount !== 1 ? 's' : ''} not yet verified by MO — no variance can be computed until the receipt is verified.
+                            </p>
+                        )}
+                    </CardContent>
+                )}
+            </Card>
+        );
+    };
 
     // ============================================================
     // BILLING STATEMENT

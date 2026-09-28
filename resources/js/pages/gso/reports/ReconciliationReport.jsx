@@ -1,15 +1,23 @@
 // src/pages/gso/reports/ReconciliationReport.jsx
-import React from 'react';
-import { FileCheck, CheckCircle, AlertCircle, DollarSign, FileSpreadsheet, File, Printer, ChevronDown, ChevronUp } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { FileCheck, CheckCircle, AlertCircle, FileSpreadsheet, File, Printer, ChevronDown, ChevronUp, AlertTriangle, Activity } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { format } from 'date-fns';
-import { formatCurrency } from './_helpers';
 
-// ✅ Inline StatsCard (dark-mode aware) — replaces missing ./StatsCard
+// Anomaly threshold — distance variance of 1 km or more
+const ANOMALY_THRESHOLD_KM = 1;
+
+const VIEW_OPTIONS = [
+    { value: 'all',              label: 'All' },
+    { value: 'anomalies',        label: 'Anomalies' },
+    { value: 'within_tolerance', label: 'Within Tolerance' },
+    { value: 'no_gps',           label: 'No GPS' },
+];
+
 const StatsCard = ({ title, value, icon: Icon, color, subtitle }) => (
     <div className="bg-white dark:bg-slate-800/80 rounded-xl p-4 border border-slate-200/60 dark:border-slate-700/60 hover:shadow-lg transition-all duration-300">
         <div className="flex items-center justify-between">
@@ -37,16 +45,43 @@ const StatsCard = ({ title, value, icon: Icon, color, subtitle }) => (
 
 const ReconciliationReport = ({
     data, expanded, onToggle, onExport, exportLoading,
-    threshold, onThresholdChange,
 }) => {
+    // ✅ Client-side view filter — defaults to Anomalies
+    const [viewFilter, setViewFilter] = useState('anomalies');
+
     const reconciliations = data?.reconciliations || [];
     const summary = data?.summary || {};
 
-    // ✅ Discrepancy count — any row with a real (non-null) variance over threshold
-    const discrepancyCount = reconciliations.filter((r) =>
-        (r.variance != null && Math.abs(r.variance) > 0.5) ||
-        (r.amount_variance != null && Math.abs(r.amount_variance) > 0.01)
-    ).length;
+    // Buckets
+    const anomalies = useMemo(
+        () => reconciliations.filter((r) => r.variance != null && Math.abs(r.variance) >= ANOMALY_THRESHOLD_KM),
+        [reconciliations]
+    );
+    const withinTolerance = useMemo(
+        () => reconciliations.filter((r) => r.variance != null && Math.abs(r.variance) < ANOMALY_THRESHOLD_KM),
+        [reconciliations]
+    );
+    const noGps = useMemo(
+        () => reconciliations.filter((r) => r.variance == null),
+        [reconciliations]
+    );
+
+    // Rows to display based on active filter
+    const displayed = useMemo(() => {
+        switch (viewFilter) {
+            case 'anomalies':        return anomalies;
+            case 'within_tolerance': return withinTolerance;
+            case 'no_gps':           return noGps;
+            case 'all':
+            default:                 return reconciliations;
+        }
+    }, [viewFilter, reconciliations, anomalies, withinTolerance, noGps]);
+
+    // Counts — prefer backend summary, fall back to client-side
+    const scannedCount         = summary.trip_scanned          ?? reconciliations.length;
+    const withinToleranceCount = summary.trip_within_tolerance ?? withinTolerance.length;
+    const anomalyCount         = summary.trip_anomaly_count    ?? anomalies.length;
+    const noGpsCount           = summary.trip_no_gps_count     ?? noGps.length;
 
     const formatDateTime = (value) => {
         if (!value) return 'N/A';
@@ -57,37 +92,59 @@ const ReconciliationReport = ({
         }
     };
 
+    const renderBadgeCount = () => {
+        switch (viewFilter) {
+            case 'anomalies':        return anomalyCount;
+            case 'within_tolerance': return withinToleranceCount;
+            case 'no_gps':           return noGpsCount;
+            default:                 return scannedCount;
+        }
+    };
+
+    const headerLabel = VIEW_OPTIONS.find(o => o.value === viewFilter)?.label || 'All';
+
     return (
         <Card className="dark:bg-slate-800/80 dark:border-slate-700">
             <CardHeader className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded-t-2xl" onClick={onToggle}>
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between flex-wrap gap-2">
                     <div className="flex items-center gap-2">
-                        <FileCheck className="h-5 w-5 text-indigo-500" />
-                        <CardTitle className="text-slate-800 dark:text-white">Trip Reconciliation Report</CardTitle>
-                        <Badge className="bg-indigo-500/20 text-indigo-600 ml-2">{reconciliations.length} trips</Badge>
+                        <Activity className="h-5 w-5 text-amber-500" />
+                        <CardTitle className="text-slate-800 dark:text-white">Trip Anomalies Report</CardTitle>
+                        <Badge className="bg-amber-500/20 text-amber-700 dark:text-amber-400 ml-2">
+                            {headerLabel}: {renderBadgeCount()}
+                        </Badge>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                         {expanded && (
                             <>
-                                <Select value={threshold} onValueChange={onThresholdChange}>
-                                    <SelectTrigger className="w-[130px] h-8 text-xs" onClick={(e) => e.stopPropagation()}>
-                                        <SelectValue placeholder="Threshold" />
+                                <Select value={viewFilter} onValueChange={setViewFilter}>
+                                    <SelectTrigger
+                                        className="w-[170px] h-8 text-xs"
+                                        onClick={(e) => e.stopPropagation()}
+                                    >
+                                        <SelectValue placeholder="View" />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        <SelectItem value="all">All</SelectItem>
-                                        <SelectItem value="1">1 km</SelectItem>
-                                        <SelectItem value="2">2 km</SelectItem>
-                                        <SelectItem value="5">5 km</SelectItem>
-                                        <SelectItem value="10">10 km</SelectItem>
+                                        {VIEW_OPTIONS.map((opt) => (
+                                            <SelectItem key={opt.value} value={opt.value}>
+                                                {opt.label}
+                                            </SelectItem>
+                                        ))}
                                     </SelectContent>
                                 </Select>
-                                <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); onExport('reconciliation', 'excel'); }} disabled={exportLoading} className="h-8 px-2 text-xs">
+                                <Button size="sm" variant="outline"
+                                    onClick={(e) => { e.stopPropagation(); onExport('reconciliation', 'excel'); }}
+                                    disabled={exportLoading} className="h-8 px-2 text-xs">
                                     <FileSpreadsheet className="h-3.5 w-3.5 mr-1" /> Excel
                                 </Button>
-                                <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); onExport('reconciliation', 'pdf'); }} disabled={exportLoading} className="h-8 px-2 text-xs">
+                                <Button size="sm" variant="outline"
+                                    onClick={(e) => { e.stopPropagation(); onExport('reconciliation', 'pdf'); }}
+                                    disabled={exportLoading} className="h-8 px-2 text-xs">
                                     <File className="h-3.5 w-3.5 mr-1" /> PDF
                                 </Button>
-                                <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); window.print(); }} className="h-8 px-2 text-xs">
+                                <Button size="sm" variant="outline"
+                                    onClick={(e) => { e.stopPropagation(); window.print(); }}
+                                    className="h-8 px-2 text-xs">
                                     <Printer className="h-3.5 w-3.5 mr-1" /> Print
                                 </Button>
                             </>
@@ -96,15 +153,17 @@ const ReconciliationReport = ({
                         {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                     </div>
                 </div>
-                <CardDescription>Viewable by Disbursing Officer for budget verification</CardDescription>
+                <CardDescription>
+                    Trips with distance variance of {ANOMALY_THRESHOLD_KM} km or more
+                </CardDescription>
             </CardHeader>
             {expanded && (
                 <CardContent>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                        <StatsCard title="Total" value={summary.total_reconciliations || 0} icon={FileCheck} color="from-blue-500 to-blue-600" />
-                        <StatsCard title="Verified" value={summary.total_verified || 0} icon={CheckCircle} color="from-emerald-500 to-emerald-600" />
-                        <StatsCard title="Discrepancy" value={discrepancyCount} icon={AlertCircle} color="from-red-500 to-red-600" />
-                        <StatsCard title="Total Released" value={formatCurrency(summary.total_amount_released || 0)} icon={DollarSign} color="from-purple-500 to-purple-600" />
+                        <StatsCard title="Trips Scanned" value={scannedCount} icon={FileCheck} color="from-blue-500 to-blue-600" />
+                        <StatsCard title="Within Tolerance" value={withinToleranceCount} icon={CheckCircle} color="from-emerald-500 to-emerald-600" subtitle={`< ${ANOMALY_THRESHOLD_KM} km variance`} />
+                        <StatsCard title="Anomalies" value={anomalyCount} icon={AlertTriangle} color="from-red-500 to-red-600" subtitle={`≥ ${ANOMALY_THRESHOLD_KM} km variance`} />
+                        <StatsCard title="No GPS Data" value={noGpsCount} icon={AlertCircle} color="from-slate-500 to-slate-600" subtitle="Cannot compute" />
                     </div>
 
                     <div className="overflow-x-auto max-h-[400px] overflow-y-auto border rounded-lg">
@@ -116,17 +175,27 @@ const ReconciliationReport = ({
                                     <TableHead className="text-xs uppercase">Driver</TableHead>
                                     <TableHead className="text-xs uppercase">Trip Start</TableHead>
                                     <TableHead className="text-xs uppercase">Trip End</TableHead>
-                                    <TableHead className="text-right text-xs uppercase">Expected Distance</TableHead>
-                                    <TableHead className="text-right text-xs uppercase">Actual Distance</TableHead>
-                                    <TableHead className="text-right text-xs uppercase">Distance Variance</TableHead>
+                                    <TableHead className="text-right text-xs uppercase">Expected (km)</TableHead>
+                                    <TableHead className="text-right text-xs uppercase">Actual (km)</TableHead>
+                                    <TableHead className="text-right text-xs uppercase">Variance (km)</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
-                                {reconciliations.length === 0 ? (
-                                    <TableRow><TableCell colSpan="8" className="text-center py-8 text-slate-500 dark:text-slate-400">No reconciliation data available</TableCell></TableRow>
+                                {displayed.length === 0 ? (
+                                    <TableRow>
+                                        <TableCell colSpan="8" className="text-center py-8 text-slate-500 dark:text-slate-400">
+                                            {viewFilter === 'anomalies'
+                                                ? `No trip anomalies — all trips are within ±${ANOMALY_THRESHOLD_KM} km tolerance`
+                                                : viewFilter === 'within_tolerance'
+                                                    ? 'No trips within tolerance for this period'
+                                                    : viewFilter === 'no_gps'
+                                                        ? 'No trips missing GPS data'
+                                                        : 'No reconciliation data available'}
+                                        </TableCell>
+                                    </TableRow>
                                 ) : (
-                                    reconciliations.map((r, i) => {
-                                        const hasVariance = r.variance != null && Math.abs(r.variance) > 0.5;
+                                    displayed.map((r, i) => {
+                                        const hasVariance = r.variance != null && Math.abs(r.variance) >= ANOMALY_THRESHOLD_KM;
                                         return (
                                             <TableRow key={i} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
                                                 <TableCell className="font-mono font-medium">{r.ticket_number}</TableCell>
@@ -140,7 +209,7 @@ const ReconciliationReport = ({
                                                 <TableCell className="text-right">
                                                     {r.actual_distance != null && r.actual_distance > 0
                                                         ? `${r.actual_distance} km`
-                                                        : <span className="text-slate-400 dark:text-slate-500 italic">No GPS</span>}
+                                                        : <span className="text-slate-400 italic">No GPS</span>}
                                                 </TableCell>
                                                 <TableCell className={`text-right font-medium ${
                                                     r.variance == null

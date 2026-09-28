@@ -617,8 +617,8 @@ public function getBudgetReport(Request $request)
 public function getReconciliationReport(Request $request)
 {
     try {
-        $startDate = $request->get('start_date');
-        $endDate = $request->get('end_date');
+        $startDate    = $request->get('start_date');
+        $endDate      = $request->get('end_date');
         $departmentId = $request->get('department_id');
 
         $query = TripTicket::with([
@@ -651,27 +651,26 @@ public function getReconciliationReport(Request $request)
             // ============================================
             $expectedDistance = (float) ($trip->estimated_distance_km ?? 0);
 
-         $actualDistanceRaw = $trip->actual_distance_km
-    ?? $trip->gasSlip?->fuelReceipt?->gps_distance_km;
+            $actualDistanceRaw = $trip->actual_distance_km
+                ?? $trip->gasSlip?->fuelReceipt?->gps_distance_km;
 
-$actualDistance = $actualDistanceRaw !== null ? (float) $actualDistanceRaw : null;
+            $actualDistance = $actualDistanceRaw !== null ? (float) $actualDistanceRaw : null;
 
-// ✅ Variance is null when we have no actual to compare against
-$variance = $actualDistance !== null
-    ? round($expectedDistance - $actualDistance, 2)
-    : null;
+            // ✅ Variance is null when we have no actual to compare against
+            $variance = $actualDistance !== null
+                ? round($expectedDistance - $actualDistance, 2)
+                : null;
 
-$varianceStatus = 'no_data';
-if ($variance !== null) {
-    $varianceStatus = 'normal';
-    if (abs($variance) > 2) {
-        $varianceStatus = 'high_discrepancy';
-    } elseif (abs($variance) > 0.5) {
-        $varianceStatus = 'minor_discrepancy';
-    }
-}
+            $varianceStatus = 'no_data';
+            if ($variance !== null) {
+                $varianceStatus = 'normal';
+                if (abs($variance) > 2) {
+                    $varianceStatus = 'high_discrepancy';
+                } elseif (abs($variance) > 0.5) {
+                    $varianceStatus = 'minor_discrepancy';
+                }
+            }
 
-           
             $segments = $trip->tripHistory;
 
             $firstStartedAt = $segments
@@ -684,7 +683,6 @@ if ($variance !== null) {
                 ->sortByDesc('ended_at')
                 ->first()?->ended_at;
 
-            // Fallback to fuel_receipt if trip_history is empty (edge case)
             if (!$firstStartedAt) {
                 $firstStartedAt = $trip->gasSlip?->fuelReceipt?->trip_started_at;
             }
@@ -706,70 +704,105 @@ if ($variance !== null) {
             // FUEL (secondary, may be NULL until MO verifies)
             // ============================================
             $estimatedFuel = (float) ($trip->estimated_fuel_liters ?? 0);
-            $actualFuel = $trip->gasSlip?->fuelReceipt?->liters_availed;
-            $fuelVariance = $actualFuel !== null
+            $actualFuel    = $trip->gasSlip?->fuelReceipt?->liters_availed;
+            $fuelVariance  = $actualFuel !== null
                 ? round($estimatedFuel - (float) $actualFuel, 2)
                 : null;
 
             return [
-                'ticket_number' => $trip->trip_ticket_number,
+                'ticket_number'   => $trip->trip_ticket_number,
                 'department_name' => $trip->department?->department_name ?? 'N/A',
-                'plate_number' => $trip->vehicle?->plate_number ?? 'N/A',
-                'driver_name' => $trip->driver?->user?->full_name ?? 'N/A',
+                'plate_number'    => $trip->vehicle?->plate_number ?? 'N/A',
+                'driver_name'     => $trip->driver?->user?->full_name ?? 'N/A',
 
-                // ✅ Now reads from trip_history
                 'trip_started_at' => $firstStartedAt?->toIso8601String(),
                 'trip_ended_at'   => $lastEndedAt?->toIso8601String(),
 
-                // ✅ NEW: trip segment count (useful for multi-trip display)
                 'segment_count' => $segments->count(),
 
                 // Amount fields
                 'amount_released' => $amountReleased,
-                'actual_amount' => $actualAmount !== null ? round((float) $actualAmount, 2) : null,
+                'actual_amount'   => $actualAmount !== null ? round((float) $actualAmount, 2) : null,
                 'amount_variance' => $amountVariance,
 
                 // Distance fields
                 'expected_distance' => round($expectedDistance, 2),
-               'actual_distance' => $actualDistance !== null ? round($actualDistance, 2) : null, 
-                'variance' => $variance,
-                'variance_status' => $varianceStatus,
+                'actual_distance'   => $actualDistance !== null ? round($actualDistance, 2) : null,
+                'variance'          => $variance,
+                'variance_status'   => $varianceStatus,
 
                 // Fuel fields
                 'estimated_fuel' => round($estimatedFuel, 2),
-                'actual_fuel' => $actualFuel !== null ? round((float) $actualFuel, 2) : null,
-                'fuel_variance' => $fuelVariance,
+                'actual_fuel'    => $actualFuel !== null ? round((float) $actualFuel, 2) : null,
+                'fuel_variance'  => $fuelVariance,
 
                 // Meta
-                'status' => $trip->gasSlip?->reconciliation_status ?? 'pending',
+                'status'        => $trip->gasSlip?->reconciliation_status ?? 'pending',
                 'reconciled_by' => $trip->gasSlip?->reconciledBy?->full_name ?? 'N/A',
                 'reconciled_at' => $trip->gasSlip?->reconciled_at?->toIso8601String(),
             ];
         });
 
-       $summary = [
-    'total_reconciliations' => $reconciliations->count(),
-    'total_verified' => $reconciliations->filter(fn($r) => $r['status'] === 'verified')->count(),
-    // ✅ Discrepancy = any row with a real (non-null) variance over threshold
-    'total_discrepancy' => $reconciliations->filter(function ($r) {
-        if ($r['variance'] !== null && abs($r['variance']) > 0.5) return true;
-        if ($r['amount_variance'] !== null && abs($r['amount_variance']) > 0.01) return true;
-        return false;
-    })->count(),
-    'total_amount_released' => round($reconciliations->sum('amount_released'), 2),
-    'total_actual_amount' => round($reconciliations->sum(fn($r) => $r['actual_amount'] ?? 0), 2),
-    'total_amount_variance' => round($reconciliations->sum(fn($r) => $r['amount_variance'] ?? 0), 2),
-];
+        // ============================================================
+        // SUMMARY — split into Cash Discrepancy (DO) + Trip Anomalies (GSO)
+        // ============================================================
+
+        // ---------- Cash side (DO) ----------
+        $cashDiscrepancies = $reconciliations->filter(fn($r) =>
+            $r['amount_variance'] !== null && abs($r['amount_variance']) > 0
+        );
+        $cashClean = $reconciliations->filter(fn($r) =>
+            $r['amount_variance'] !== null && abs($r['amount_variance']) == 0
+        );
+        $cashUnverified = $reconciliations->filter(fn($r) =>
+            $r['amount_variance'] === null
+        );
+
+        // ---------- Trip side (GSO) ----------
+        // Anomaly = distance variance of 1 km or more (magnitude only)
+        $tripAnomalies = $reconciliations->filter(fn($r) =>
+            $r['variance'] !== null && abs($r['variance']) >= 1
+        );
+        $tripWithinTolerance = $reconciliations->filter(fn($r) =>
+            $r['variance'] !== null && abs($r['variance']) < 1
+        );
+        $tripNoGps = $reconciliations->filter(fn($r) =>
+            $r['variance'] === null
+        );
+
+        $summary = [
+            // ---------- Shared ----------
+            'total_reconciliations' => $reconciliations->count(),
+            'total_verified'        => $reconciliations->filter(fn($r) => $r['status'] === 'verified')->count(),
+
+            // ---------- Cash Discrepancy (DO) ----------
+            'cash_scanned'            => $reconciliations->count(),
+            'cash_discrepancy_count'  => $cashDiscrepancies->count(),
+            'cash_clean_count'        => $cashClean->count(),
+            'cash_unverified_count'   => $cashUnverified->count(),
+            'total_amount_released'   => round($reconciliations->sum('amount_released'), 2),
+            'total_actual_amount'     => round($reconciliations->sum(fn($r) => $r['actual_amount'] ?? 0), 2),
+            'total_amount_variance'   => round($reconciliations->sum(fn($r) => $r['amount_variance'] ?? 0), 2),
+
+            // ---------- Trip Anomalies (GSO) ----------
+            'trip_scanned'           => $reconciliations->count(),
+            'trip_anomaly_count'     => $tripAnomalies->count(),
+            'trip_within_tolerance'  => $tripWithinTolerance->count(),
+            'trip_no_gps_count'      => $tripNoGps->count(),
+
+            // ---------- Legacy (keep for old callers) ----------
+            'total_discrepancy' => $cashDiscrepancies->count() + $tripAnomalies->count(),
+        ];
 
         return response()->json([
             'success' => true,
             'data' => [
                 'reconciliations' => $reconciliations,
-                'summary' => $summary,
+                'summary'         => $summary,
             ],
             'filters' => [
-                'start_date' => $startDate,
-                'end_date' => $endDate,
+                'start_date'    => $startDate,
+                'end_date'      => $endDate,
                 'department_id' => $departmentId,
             ]
         ]);
