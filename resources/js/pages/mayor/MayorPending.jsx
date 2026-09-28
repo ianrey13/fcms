@@ -447,7 +447,7 @@ const MayorPending = () => {
   const toastIdRef = useRef(null);
 
   // ============================================
-  // ✅ TAB STATE
+  //  TAB STATE
   // ============================================
   const [activeTab, setActiveTab] = useState("pending");
 
@@ -498,11 +498,11 @@ const MayorPending = () => {
   const [releasedTickets, setReleasedTickets] = useState([]);
   const [loadingReleased, setLoadingReleased] = useState(false);
 
-  // ✅ Weekly override warning state
+  //  Weekly override warning state
   const [showWeeklyWarning, setShowWeeklyWarning] = useState(false);
   const [pendingApprovePayload, setPendingApprovePayload] = useState(null);
 
-  // ✅ Refs to hold fetchers — avoids "cannot access before initialization"
+  //  Refs to hold fetchers — avoids "cannot access before initialization"
   const fetchTicketsRef = useRef(null);
   const fetchReleasedTicketsRef = useRef(null);
 
@@ -537,8 +537,8 @@ const MayorPending = () => {
       "trip-completed",
       "trip-started",
       "new-notification",
-      "gas-slip-created",   // ✅ ADD
-      "funds-released",     // ✅ ADD
+      "gas-slip-created",   
+      "funds-released",     
     ],
     fetchAllData
   );
@@ -561,7 +561,7 @@ const MayorPending = () => {
     }
   }, []);
 
-  // ✅ Assign fetchTickets to ref
+  //  Assign fetchTickets to ref
   useEffect(() => {
     fetchTicketsRef.current = fetchTickets;
   }, [fetchTickets]);
@@ -583,7 +583,7 @@ const MayorPending = () => {
     }
   }, []);
 
-  // ✅ Assign fetchReleasedTickets to ref
+  //  Assign fetchReleasedTickets to ref
   useEffect(() => {
     fetchReleasedTicketsRef.current = fetchReleasedTickets;
   }, [fetchReleasedTickets]);
@@ -1103,7 +1103,7 @@ const MayorPending = () => {
             "Reason: " +
             forceApproveReason +
             "\n\n" +
-            "✅ This action has been recorded in the audit log.";
+            " This action has been recorded in the audit log.";
         }
         if (toastIdRef.current) toast.dismiss(toastIdRef.current);
         toastIdRef.current = toast.success(successMessage);

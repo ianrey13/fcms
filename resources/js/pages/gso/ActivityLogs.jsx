@@ -32,14 +32,14 @@ const ActivityLogs = () => {
 
     const allLogs = data?.logs || [];
 
-    // ✅ Counts per filter
+    //  Counts per filter
     const counts = useMemo(() => ({
         all: allLogs.length,
         audit: allLogs.filter(l => l.source === 'audit').length,
         trip_history: allLogs.filter(l => l.source === 'trip_history').length,
     }), [allLogs]);
 
-    // ✅ Filtered list
+    //  Filtered list
     const logs = useMemo(() => {
         if (filter === 'all') return allLogs;
         return allLogs.filter(l => l.source === filter);

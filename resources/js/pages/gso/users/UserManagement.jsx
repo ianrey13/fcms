@@ -573,17 +573,7 @@ const UserManagement = () => {
                             >
                               <Edit className="h-4 w-4" />
                             </Button>
-                            {user.user_id !== currentUser?.user_id && user.status === "active" && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleDelete(user.user_id, `${user.first_name} ${user.last_name}`)}
-                                className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:text-red-300 dark:hover:bg-red-950/30 h-9 w-9 p-0 rounded-lg transition-all duration-200 group-hover:scale-110"
-                                title="Deactivate User"
-                              >
-                                <UserX className="h-4 w-4" />
-                              </Button>
-                            )}
+                           
                           </div>
                         </td>
                       </tr>

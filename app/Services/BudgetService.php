@@ -79,10 +79,7 @@ $year = $year ?? $this->getActiveFiscalYear();
     }
 
     /**
-     * Deduct from budget (when gas slip is created)
-     *
-     * ✅ NO transaction here — caller is responsible for wrapping this in a
-     * DB::transaction() so that the whole fund-release flow is atomic.
+     
      */
     public function deductBudget($departmentId, $amount, $isCrossDepartment = false, $originalDepartmentId = null, $reason = null)
     {
@@ -100,11 +97,11 @@ $year = $this->getActiveFiscalYear();
             throw new \Exception("Insufficient budget for department ID: {$departmentId}");
         }
 
-        // ✅ ALWAYS deduct from annual budget
+        //  ALWAYS deduct from annual budget
         $budget->used_amount += $amount;
         $budget->save();
 
-        // ✅ ALWAYS record weekly usage
+        //  ALWAYS record weekly usage
         $this->recordWeeklyUsage($departmentId, $amount);
 
         return true;
@@ -159,10 +156,9 @@ $year = $this->getActiveFiscalYear();
     }
 
     /**
-     * ✅ Record weekly usage (with weekly allocation)
+     *  Record weekly usage (with weekly allocation)
      *
-     * Uses ->copy() so Carbon's startOfWeek()/endOfWeek() mutations don't
-     * leak between the two calls.
+     * 
      */
     private function recordWeeklyUsage($departmentId, $amount)
     {
@@ -171,15 +167,15 @@ $year = $this->getActiveFiscalYear();
         $weekNumber = $now->weekOfYear;
         $year = $now->year;
 
-        // ✅ Get weekly allocation from policy
+        //  Get weekly allocation from policy
         $policy = DeptBudgetPolicy::where('department_id', $departmentId)->first();
         $weeklyAllocation = $policy ? $policy->default_weekly_allocation : 0;
 
-        // ✅ Compute week boundaries without mutating $now
+        //  Compute week boundaries without mutating $now
         $weekStart = $now->copy()->startOfWeek()->toDateString();
         $weekEnd   = $now->copy()->endOfWeek()->toDateString();
 
-        // ✅ Get or create weekly usage
+        // Get or create weekly usage
         $usage = WeeklyBudgetUsage::firstOrCreate(
             [
                 'department_id' => $departmentId,
@@ -194,16 +190,16 @@ $year = $this->getActiveFiscalYear();
             ]
         );
 
-        // ✅ Update allocation if policy changed
+        //  Update allocation if policy changed
         if ($usage->weekly_allocation != $weeklyAllocation && $weeklyAllocation > 0) {
             $usage->weekly_allocation = $weeklyAllocation;
         }
 
-        // ✅ Add to amount used
+        //  Add to amount used
         $usage->amount_used += $amount;
         $usage->save();
 
-        Log::info('📝 Weekly usage recorded', [
+        Log::info(' Weekly usage recorded', [
             'department_id' => $departmentId,
             'week' => $weekNumber,
             'allocation' => $usage->weekly_allocation,
@@ -244,13 +240,13 @@ $year = $this->getActiveFiscalYear();
         DB::beginTransaction();
 
         try {
-            // ✅ 1. Ibalik ang sobra sa annual budget
+            //  1. Ibalik ang sobra sa annual budget
             DB::table('annual_budgets')
                 ->where('department_id', $departmentId)
                 ->where('fiscal_year', $year)
                 ->increment('annual_amount', $surplus);
 
-            // ✅ 2. Log sa surplus table
+            //  2. Log sa surplus table
             DB::table('weekly_budget_surplus')->insert([
                 'department_id' => $departmentId,
                 'week_number' => $weekNumber,
@@ -262,7 +258,7 @@ $year = $this->getActiveFiscalYear();
                 'updated_at' => now(),
             ]);
 
-            // ✅ 3. Log to budget history
+            //  3. Log to budget history
             $department = DB::table('departments')
                 ->where('department_id', $departmentId)
                 ->first();
@@ -286,7 +282,7 @@ $year = $this->getActiveFiscalYear();
                 'success' => true,
                 'surplus' => $surplus,
                 'action' => 'returned_to_annual',
-                'message' => "✅ ₱" . number_format($surplus, 2) . " surplus returned to annual budget"
+                'message' => " ₱" . number_format($surplus, 2) . " surplus returned to annual budget"
             ];
 
         } catch (\Exception $e) {
@@ -345,7 +341,7 @@ $year = $year ?? $this->getActiveFiscalYear();
     public function getWeeklyAllocation($departmentId, $fiscalYear = null)
     {
 $fiscalYear = $fiscalYear ?? $this->getActiveFiscalYear();
-        // ✅ Get policy for specific fiscal year
+        //  Get policy for specific fiscal year
         $policy = DeptBudgetPolicy::where('department_id', $departmentId)
             ->where('fiscal_year', $fiscalYear)
             ->first();
@@ -362,7 +358,7 @@ $fiscalYear = $fiscalYear ?? $this->getActiveFiscalYear();
     }
 
     /**
-     * ✅ Get weekly usage for current week
+     *  Get weekly usage for current week
      */
     public function getCurrentWeekUsage($departmentId)
     {
@@ -380,7 +376,7 @@ $fiscalYear = $fiscalYear ?? $this->getActiveFiscalYear();
     }
 
     /**
-     * ✅ Get weekly remaining for current week
+     *  Get weekly remaining for current week
      */
     public function getWeeklyRemaining($departmentId)
     {
@@ -394,7 +390,7 @@ $fiscalYear = $fiscalYear ?? $this->getActiveFiscalYear();
     }
 
 /**
- * ✅ Get the raw annual amount for a department (current fiscal year)
+ *  Get the raw annual amount for a department (current fiscal year)
  */
 public function getAnnualAmount($departmentId, $year = null)
 {
@@ -407,7 +403,7 @@ $year = $year ?? $this->getActiveFiscalYear();
 }
 
     /**
-     * ✅ Resolve the currently active fiscal year.
+     *  Resolve the currently active fiscal year.
      *    Prefers fiscal_years.is_active=1, falls back to calendar year.
      */
     public function getActiveFiscalYear(): int

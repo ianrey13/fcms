@@ -20,7 +20,7 @@ class FuelReceiptController extends Controller
      */
     public function uploadReceipt(Request $request, $gasSlipId)
     {
-        // ✅ Removed odometer_* and has_movement_flag — not DB columns anymore
+        //  Removed odometer_* and has_movement_flag — not DB columns anymore
         $validator = Validator::make($request->all(), [
             'receipt_photo'      => 'required|image|max:5120',
             'liters_availed'     => 'required|numeric|min:0.01',
@@ -48,7 +48,7 @@ class FuelReceiptController extends Controller
             return response()->json(['message' => 'Trip is not in progress'], 400);
         }
 
-        // ✅ Cap check: amount ≤ released
+        //  Cap check: amount ≤ released
         if ($request->amount_on_receipt > $gasSlip->amount_released) {
             return response()->json([
                 'success' => false,
@@ -63,7 +63,7 @@ class FuelReceiptController extends Controller
         DB::beginTransaction();
 
         try {
-            // ✅ Save to public/receipts/ (matches GSO + MO + driver upload)
+            // Save to public/receipts/ (matches GSO + MO + driver upload)
             $file = $request->file('receipt_photo');
             $filename = 'receipt_' . time() . '_' . $gasSlipId . '.' . $file->getClientOriginalExtension();
             $file->move(public_path('receipts'), $filename);
@@ -83,7 +83,7 @@ class FuelReceiptController extends Controller
                 ]
             );
 
-            // ✅ Sync actuals on parent trip
+            //  Sync actuals on parent trip
             $tripTicket->syncActuals()->save();
 
             DB::commit();
@@ -109,7 +109,7 @@ class FuelReceiptController extends Controller
      */
     public function update(Request $request, $gasSlipId)
     {
-        // ✅ Removed odometer_* — not DB columns anymore
+        //  Removed odometer_* — not DB columns anymore
         $validator = Validator::make($request->all(), [
             'liters_availed'     => 'sometimes|numeric|min:0.01',
             'amount_on_receipt'  => 'sometimes|numeric|min:0.01',
@@ -142,7 +142,7 @@ class FuelReceiptController extends Controller
             'invoice_number',
         ]));
 
-        // ✅ Sync actuals on parent trip
+        //  Sync actuals on parent trip
         $tripTicket->syncActuals()->save();
 
         return response()->json([
@@ -165,7 +165,7 @@ class FuelReceiptController extends Controller
             return response()->json(['message' => 'Fuel receipt not found'], 404);
         }
 
-        // ✅ Removed v_fuel_receipt_computed — view doesn't exist
+        //  Removed v_fuel_receipt_computed — view doesn't exist
         // Compute efficiency inline instead
         $fuelReceipt->computed_metrics = [
             'liters_availed'    => $fuelReceipt->liters_availed,
@@ -180,7 +180,7 @@ class FuelReceiptController extends Controller
                 : null,
         ];
 
-        // ✅ Fix receipt URL path (public/receipts/, not storage/)
+        //  Fix receipt URL path (public/receipts/, not storage/)
         if ($fuelReceipt->receipt_photo_path && !str_starts_with($fuelReceipt->receipt_photo_path, 'http')) {
             $fuelReceipt->receipt_photo_url = asset($fuelReceipt->receipt_photo_path);
         }

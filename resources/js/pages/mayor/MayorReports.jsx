@@ -523,7 +523,7 @@ const { data: reconciliationData, isLoading: reconciliationLoading } =
     };
 
     const handleExport = async (
-        formatType,          // ✅ renamed from `format` — stops shadowing date-fns `format`
+        formatType,          
         reportType,
         params,
         rangeOverride,
@@ -575,8 +575,8 @@ const { data: reconciliationData, isLoading: reconciliationLoading } =
 
             const extension = formatType === "pdf" ? "pdf" : "xlsx";
 
-            // ✅ Blob fallback — ensures saveAs gets a Blob even if axios
-            //    doesn't honor responseType for any reason
+           
+          
             let blob = response.data;
             if (!(blob instanceof Blob)) {
                 blob = new Blob([blob], { type: "application/octet-stream" });
@@ -589,7 +589,7 @@ const { data: reconciliationData, isLoading: reconciliationLoading } =
             toast.dismiss();
             console.error("Export error:", error);
 
-            // ✅ Blob-aware error extraction — surfaces the real backend error
+           
             let msg = "Failed to export report";
             const data = error.response?.data;
 
@@ -1694,7 +1694,7 @@ const { data: reconciliationData, isLoading: reconciliationLoading } =
                     ) : (
                         <div className="space-y-10">
                             {deptList.map((dept, deptIdx) => {
-                                // ✅ Amounts come from backend subtotals
+                                //  Amounts come from backend subtotals
                                 const sub = dept.subtotals || {};
                                 const knownAmount =
                                     (sub.premium_amount || 0) +
@@ -1725,7 +1725,7 @@ const { data: reconciliationData, isLoading: reconciliationLoading } =
                                                 )}
                                         </div>
 
-                                        {/* ✅ Unclassified warning */}
+                                        {/* Unclassified warning */}
                                         {hasUnclassified && (
                                             <div className="flex items-start gap-2 p-2 rounded-md bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800">
                                                 <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
@@ -1779,7 +1779,7 @@ const { data: reconciliationData, isLoading: reconciliationLoading } =
                                                     AMOUNT
                                                 </div>
 
-                                                {/* ✅ Amounts from backend */}
+                                                {/*  Amounts from backend */}
                                                 <div className="px-3 py-1.5 text-right border-t border-r border-slate-800 dark:border-slate-200">
                                                     {formatCurrency(sub.premium_amount || 0)}
                                                 </div>

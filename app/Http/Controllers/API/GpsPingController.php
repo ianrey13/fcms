@@ -240,9 +240,7 @@ class GpsPingController extends Controller
                 ]);
             }
 
-            // ✅ FIX: pull pings into a local variable.
-            // `$request->pings` is a magic property — iterating/ending/modifying it
-            // directly throws "Indirect modification of overloaded property ... has no effect".
+          
             $pings = $request->input('pings', []);
 
             $createdPings = [];
@@ -272,7 +270,7 @@ class GpsPingController extends Controller
             DB::commit();
 
             if (!empty($pings)) {
-                $lastPing = end($pings); // ✅ use local var, not $request->pings
+                $lastPing = end($pings); //use local var, not $request->pings
                 $lastAccuracy = (float) ($lastPing['accuracy_meters'] ?? 0);
                 if ($lastAccuracy <= self::ACCURACY_THRESHOLD) {
                     try {
@@ -548,7 +546,7 @@ class GpsPingController extends Controller
 
             DB::beginTransaction();
 
-            // ✅ Use segment-aware filter
+            //  Use segment-aware filter
             $pings = $this->getPingsForSegment($trip->trip_ticket_id);
             $finalDistance = $this->filterAndSumDistance($pings);
             $pingCount = $pings->count();
@@ -1532,7 +1530,7 @@ class GpsPingController extends Controller
                 ->orderBy('recorded_at', 'desc')
                 ->first();
 
-            // ✅ Use segment-aware ping list
+            //  Use segment-aware ping list
             $pings = $this->getPingsForSegment($tripId);
 
             $totalDistance = $this->filterAndSumDistance($pings);

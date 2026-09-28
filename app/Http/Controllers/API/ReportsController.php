@@ -68,7 +68,7 @@ class ReportsController extends Controller
         $totalCost = $fuelReceipts->sum('amount_on_receipt');
         $totalDistance = $this->calculateTotalDistance($fuelReceipts);
 
-        // ✅ NEW: fuel-type breakdown for split Diesel/Gasoline columns
+        
         $dieselReceipts = $fuelReceipts->filter(fn($r) =>
             ($r->gasSlip?->tripTicket?->vehicle?->fuel_type) === 'diesel'
         );
@@ -85,7 +85,7 @@ class ReportsController extends Controller
             'average_liters_per_trip' => $totalTrips > 0 ? round($totalLiters / $totalTrips, 2) : 0,
             'average_cost_per_trip' => $totalTrips > 0 ? round($totalCost / $totalTrips, 2) : 0,
             'average_cost_per_km' => $totalDistance > 0 ? round($totalCost / $totalDistance, 2) : 0,
-            // ✅ NEW
+            
             'diesel_liters' => round($dieselReceipts->sum('liters_availed'), 2),
             'diesel_cost' => round($dieselReceipts->sum('amount_on_receipt'), 2),
             'gasoline_liters' => round($gasolineReceipts->sum('liters_availed'), 2),
@@ -355,9 +355,7 @@ public function getBudgetReport(Request $request)
             ->select([
                 'p.period_id',
                 'p.week_start',
-                // ✅ Override DB's week_end (+4 days / Friday).
-                //    Business rule is Mon–Sun, so +6 days.
-                //    Do NOT select p.week_end — it's wrong in the schema.
+               
                 DB::raw('DATE_ADD(p.week_start, INTERVAL 6 DAY) AS week_end'),
                 'p.status',
                 DB::raw("(
@@ -381,7 +379,7 @@ public function getBudgetReport(Request $request)
                 'week_start'       => $p->week_start,
                 'week_end'         => $p->week_end,
                 'allocated'        => round($openingBalance, 2),
-                'weekly_suggested' => $weeklySuggested,   // ✅ NEW
+                'weekly_suggested' => $weeklySuggested,   
                 'used'             => round($used, 2),
                 'remaining'        => round($remaining, 2),
                 'status'           => $p->status,
@@ -445,7 +443,7 @@ public function getBudgetReport(Request $request)
                 'gasSlip.tripTicket.department',
                 'gasSlip.tripTicket.vehicle',
                 'gasSlip.tripTicket.driver.user',
-                'verifiedBy',   // ✅ NEW
+                'verifiedBy',  
             ]);
 
             if ($startDate && $endDate) {
@@ -467,8 +465,7 @@ public function getBudgetReport(Request $request)
                 });
             }
 
-            // ✅ NEW: server-side status filter (frontend can also filter, but this keeps
-            // counts in the summary accurate when a filter is applied)
+          
             if ($statusFilter && $statusFilter !== 'all') {
                 $query->where('verification_status', strtolower($statusFilter));
             }
@@ -557,7 +554,7 @@ public function getBudgetReport(Request $request)
                     // ---- Trip status (unrelated to receipt verification) ----
                     'status' => $statusLabel,
 
-                    // ---- ✅ NEW: Receipt verification (the field that matters now) ----
+                    // ---- Receipt verification (the field that matters now) ----
                     'receipt_status'        => $receipt->verification_status ?? 'pending',
                     'verified_at'           => $receipt->verified_at,
                     'verified_by'           => $receipt->verifiedBy?->full_name,
@@ -580,7 +577,7 @@ public function getBudgetReport(Request $request)
                 'avg_unit_price'    => $receipts->count() > 0 && $receipts->sum('liters_availed') > 0
                     ? round($receipts->sum('amount_on_receipt') / $receipts->sum('liters_availed'), 2)
                     : 0,
-                // ✅ NEW: status breakdown (only meaningful when not filtered)
+                // status breakdown (only meaningful when not filtered)
                 'pending_count'     => $receipts->where('verification_status', 'pending')->count(),
                 'verified_count'    => $receipts->where('verification_status', 'verified')->count(),
             ];
@@ -656,7 +653,7 @@ public function getReconciliationReport(Request $request)
 
             $actualDistance = $actualDistanceRaw !== null ? (float) $actualDistanceRaw : null;
 
-            // ✅ Variance is null when we have no actual to compare against
+            // Variance is null when we have no actual to compare against
             $variance = $actualDistance !== null
                 ? round($expectedDistance - $actualDistance, 2)
                 : null;
@@ -1068,7 +1065,7 @@ public function getReconciliationReport(Request $request)
     }
 
     // ============================================================
-    // 9. GPS VEHICLE ACTIVITY  ✅ FIXED — proper null handling + 3-tier fallback
+    // 9. GPS VEHICLE ACTIVITY
     // ============================================================
     public function getGPSVehicleActivity(Request $request)
     {
@@ -1100,7 +1097,7 @@ public function getReconciliationReport(Request $request)
             $trips = $query->get();
 
             $activityData = $trips->map(function($trip) {
-                // ✅ GPS Distance — prefer trip_ticket.actual_distance_km
+               
                 $gpsDistance = $trip->actual_distance_km;
 
                 if ($gpsDistance === null || $gpsDistance == 0) {
@@ -1879,7 +1876,7 @@ public function getMoActivityLogs(Request $request)
 
         $reportData = $data['data'];
 
-        // ✅ NEW: 'trip' | 'cash' | 'both' — controls column set + filename
+     
         $mode = $request->get('mode', 'both');
         if (!in_array($mode, ['trip', 'cash', 'both'], true)) {
             $mode = 'both';
@@ -2014,7 +2011,7 @@ public function getMoActivityLogs(Request $request)
     $logs    = $reportData['recent_logs'] ?? [];
     $filters = $reportData['filters'] ?? [];
 
-    // ✅ Totals now track three fuel categories separately
+   
     $totals = [
         'diesel_liters'  => 0,
         'regular_liters' => 0,
@@ -2094,7 +2091,6 @@ public function getMoActivityLogs(Request $request)
     $html .= '<th rowspan="2" style="vertical-align: bottom;">Date</th>';
     $html .= '<th rowspan="2" style="vertical-align: bottom;">Vehicle</th>';
     $html .= '<th rowspan="2" style="vertical-align: bottom;">Driver</th>';
-    // ✅ Now spans 3 columns
     $html .= '<th colspan="3">Fuel Type (L)</th>';
     $html .= '<th rowspan="2" style="vertical-align: bottom;">Qty (L)</th>';
     $html .= '<th rowspan="2" style="vertical-align: bottom;">Amount (₱)</th>';
@@ -2110,7 +2106,7 @@ public function getMoActivityLogs(Request $request)
     $html .= '</thead><tbody>';
 
     if (empty($logs)) {
-        // ✅ colSpan 10 → 11
+      
         $html .= '<tr><td colspan="11" class="text-center" style="padding: 20px; color: #94a3b8;">No fuel consumption data available</td></tr>';
     } else {
         foreach ($logs as $log) {
@@ -2118,9 +2114,9 @@ public function getMoActivityLogs(Request $request)
             $amount = (float) ($log['amount_on_receipt'] ?? 0);
             $type   = strtolower($log['fuel_type'] ?? '');
 
-            // ✅ Three-way classification
+           
             $isDiesel  = $type === 'diesel';
-            $isRegular = in_array($type, ['regular', 'gasoline']); // legacy 'gasoline' → Regular
+            $isRegular = in_array($type, ['regular', 'gasoline']); 
             $isPremium = $type === 'premium';
 
             $totals['liters'] += $liters;
@@ -2150,7 +2146,6 @@ public function getMoActivityLogs(Request $request)
             $html .= '<td class="text-center">' . e($date) . '</td>';
             $html .= '<td class="text-left">' . $vehicleCell . '</td>';
             $html .= '<td class="text-left">' . e($log['driver'] ?? 'N/A') . '</td>';
-            // ✅ Three fuel cells
             $html .= '<td class="text-center">' . ($isDiesel  ? number_format($liters, 2) : '0') . '</td>';
             $html .= '<td class="text-center">' . ($isRegular ? number_format($liters, 2) : '0') . '</td>';
             $html .= '<td class="text-center">' . ($isPremium ? number_format($liters, 2) : '0') . '</td>';
@@ -2165,7 +2160,7 @@ public function getMoActivityLogs(Request $request)
         // ---- TOTAL row ----
         $html .= '<tr class="total-row">';
         $html .= '<td colspan="3" class="text-right">TOTAL</td>';
-        // ✅ Three fuel totals
+      
         $html .= '<td class="text-center">' . number_format($totals['diesel_liters'], 2) . '</td>';
         $html .= '<td class="text-center">' . number_format($totals['regular_liters'], 2) . '</td>';
         $html .= '<td class="text-center">' . number_format($totals['premium_liters'], 2) . '</td>';
@@ -2954,7 +2949,7 @@ public function getBillingStatementReport(Request $request)
                 $subtotals['total_liters'] += $liters;
                 $subtotals['total_amount'] += $amount;
 
-                // ✅ Display label — DB 'regular' renders as 'GASOLINE' in the UI
+              
                 $fuelDisplay = match ($fuelType) {
                     'regular', 'gasoline' => 'GASOLINE',
                     'diesel'              => 'DIESEL',
@@ -3139,7 +3134,7 @@ private function buildBillingStatementPDFHTML($reportData)
     $html .= '<div class="grand-total"><table><tr>';
     $html .= '<td class="text-center">Premium: ' . number_format($gt['premium_liters'], 2) . ' L</td>';
     $html .= '<td class="text-center">Diesel: ' . number_format($gt['diesel_liters'], 2) . ' L</td>';
-    // ✅ Was 'Regular:' — renamed for consistency with matrix + subtotal row
+   
     $html .= '<td class="text-center">Gasoline: ' . number_format($gt['regular_liters'], 2) . ' L</td>';
     $html .= '<td class="text-center">Total Quantity: ' . number_format($gt['total_liters'], 2) . ' L</td>';
     $html .= '<td class="text-center">Total Amount: ₱' . number_format($gt['total_amount'], 2) . '</td>';

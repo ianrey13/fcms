@@ -4,11 +4,11 @@ namespace App\Events;
 
 use Illuminate\Broadcasting\Channel;
 use Illuminate\Broadcasting\InteractsWithSockets;
-use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;  // ✅ Changed from ShouldBroadcast
+use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;  
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
-class DriverLocationUpdated implements ShouldBroadcastNow  // ✅ Changed
+class DriverLocationUpdated implements ShouldBroadcastNow  
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 

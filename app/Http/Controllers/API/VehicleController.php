@@ -44,7 +44,7 @@ class VehicleController extends Controller
 
             $vehicles = $query->orderBy('created_at', 'desc')->get();
 
-            // ✅ Add availability status to each vehicle
+          
             $vehiclesWithStatus = $vehicles->map(function($vehicle) {
                 $availability = $vehicle->getAvailabilityStatus();
                 return [
@@ -359,7 +359,7 @@ class VehicleController extends Controller
 
             $vehicle = Vehicle::findOrFail($id);
             
-            // ✅ Check if trying to set maintenance on a vehicle with active trip
+            //  Check if trying to set maintenance on a vehicle with active trip
             if ($request->maintenance_flag && $vehicle->hasActiveTrip()) {
                 $activeTrip = $vehicle->getActiveTrip();
                 return response()->json([
@@ -395,7 +395,7 @@ class VehicleController extends Controller
     }
 
     /**
-     * ✅ Get available vehicles (not in active trips)
+     * Get available vehicles (not in active trips)
      * This is the main method for 1 Vehicle = 1 Trip policy
      */
     public function getAvailableVehicles(Request $request)
@@ -405,12 +405,12 @@ class VehicleController extends Controller
             $departmentId = $request->get('department_id', $user->department_id ?? null);
             $includeAll = $request->get('include_all', false);
             
-            // ✅ Get vehicle IDs that are currently in active trips
+            //  Get vehicle IDs that are currently in active trips
             $activeTripVehicleIds = TripTicket::whereIn('status', Vehicle::getActiveTripStatuses())
                 ->pluck('vehicle_id')
                 ->toArray();
             
-            // ✅ Query vehicles that are NOT in active trips
+            //  Query vehicles that are NOT in active trips
             $query = Vehicle::where('status', 'active')
                 ->where('maintenance_flag', false);
             
@@ -419,7 +419,7 @@ class VehicleController extends Controller
                 $query->where('department_id', $departmentId);
             }
             
-            // ✅ Exclude vehicles in active trips
+            //  Exclude vehicles in active trips
             if (!empty($activeTripVehicleIds)) {
                 $query->whereNotIn('vehicle_id', $activeTripVehicleIds);
             }
@@ -443,7 +443,7 @@ class VehicleController extends Controller
                     ];
                 });
             
-            // ✅ Get vehicles in active trips (for reference)
+            //  Get vehicles in active trips
             $activeVehicles = [];
             if (!empty($activeTripVehicleIds)) {
                 $activeVehicles = Vehicle::whereIn('vehicle_id', $activeTripVehicleIds)
@@ -585,18 +585,5 @@ class VehicleController extends Controller
         }
     }
 
-    // /**
-    //  * ✅ DEPRECATED: Update odometer status
-    //  */
-    // public function updateOdometerStatus(Request $request, $id)
-    // {
-    //     return response()->json([
-    //         'success' => false,
-    //         'message' => 'Odometer tracking has been deprecated. This feature is no longer available.',
-    //         'data' => [
-    //             'vehicle_id' => $id,
-    //             'recommendation' => 'Use GPS tracking for distance measurement instead.',
-    //         ]
-    //     ], 410);
-    // }
+  
 }

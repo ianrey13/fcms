@@ -49,7 +49,7 @@ class MayorsOfficeController extends Controller
         $annualBudgetSummary = $this->getAnnualBudgetSummary();
 
         $stats = [
-            // ✅ NEW — active fiscal year for the frontend
+           
             'active_fiscal_year' => $this->budgetService->getActiveFiscalYear(),
 
             'pending_fund_release' => TripTicket::where('status', 'pending_mayors_office')->count(),
@@ -140,7 +140,7 @@ class MayorsOfficeController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        // ✅ Active fiscal year — used for FY-scoped counts
+       
         $activeYear = $this->budgetService->getActiveFiscalYear();
 
         // ── 1. FY-scoped query ─────────────────────────────────
@@ -209,7 +209,7 @@ class MayorsOfficeController extends Controller
         return response()->json([
             'success' => true,
             'data' => $tickets,
-            // ✅ NEW — meta for stat cards
+            
             'meta' => [
                 'fiscal_year'     => $activeYear,
                 'fy_count'        => $tickets->count(),
@@ -226,7 +226,7 @@ class MayorsOfficeController extends Controller
 }
 
     /**
-     * ✅ Get weekly suggested — always annual / 52
+     *  Get weekly suggested — always annual / 52
      */
     private function getWeeklySuggested($departmentId): float
     {
@@ -235,11 +235,11 @@ class MayorsOfficeController extends Controller
     }
 
     /**
-     * ✅ Get weekly used amount (tracked only) — FY-aware
+     *  Get weekly used amount (tracked only) — FY-aware
      */
     private function getWeeklyUsedAmount($departmentId): float
     {
-        // ✅ Active fiscal year — NOT calendar year
+        //  Active fiscal year — NOT calendar year
         $year = $this->budgetService->getActiveFiscalYear();
         // Week number still uses the calendar week (weeks don't reset per FY)
         $currentWeek = date('W');
@@ -254,7 +254,7 @@ class MayorsOfficeController extends Controller
     }
 
     /**
-     * ✅ Get weekly remaining budget for a department (informational)
+     *  Get weekly remaining budget for a department (informational)
      */
     private function getWeeklyRemainingBudget($departmentId): float
     {
@@ -273,7 +273,7 @@ class MayorsOfficeController extends Controller
                 return response()->json(['message' => 'Unauthorized'], 403);
             }
 
-            // ✅ Active fiscal year (still used for meta / stat cards)
+            //  Active fiscal year (still used for meta / stat cards)
             $activeYear = $this->budgetService->getActiveFiscalYear();
 
             // ── 1. Query ALL released tickets — no FY filter ────────
@@ -425,7 +425,7 @@ class MayorsOfficeController extends Controller
             ], 422);
         }
 
-        // ✅ Active fiscal year (resolved once, used throughout)
+        // Active fiscal year (resolved once, used throughout)
         $activeYear = $this->budgetService->getActiveFiscalYear();
 
         $budgetBefore = 0;
@@ -446,7 +446,7 @@ class MayorsOfficeController extends Controller
             ? ($request->weekly_override_reason ?: 'User confirmed weekly override on release dialog')
             : null;
 
-        // ✅ Pre-flight annual check
+        //  Pre-flight annual check
         if (!$isMoFundedTicket) {
             $annualRemaining = (float) $this->budgetService->getRemainingBudget($chargeDepartmentId);
 
@@ -473,7 +473,7 @@ class MayorsOfficeController extends Controller
             $periodId = null;
 
             if (!$isMoFundedTicket) {
-                // ✅ Capture used_amount BEFORE — FY-aware
+                //  Capture used_amount BEFORE — FY-aware
                 $annualBudget = AnnualBudget::where('department_id', $chargeDepartmentId)
                     ->where('fiscal_year', $activeYear)
                     ->first();
@@ -488,7 +488,7 @@ class MayorsOfficeController extends Controller
                     $crossDepartmentReason
                 );
 
-                // ✅ Capture used_amount AFTER — FY-aware
+                //  Capture used_amount AFTER — FY-aware
                 $annualBudget = AnnualBudget::where('department_id', $chargeDepartmentId)
                     ->where('fiscal_year', $activeYear)
                     ->first();
@@ -532,7 +532,7 @@ class MayorsOfficeController extends Controller
                 throw new \Exception('GasSlip creation failed - no ID returned');
             }
 
-            Log::info('✅ GasSlip created - ID: ' . $gasSlipId . ' for trip: ' . $id);
+            Log::info(' GasSlip created - ID: ' . $gasSlipId . ' for trip: ' . $id);
 
             if ($isCrossDepartment) {
                 DB::table('cross_department_usage')->insert([
@@ -545,7 +545,7 @@ class MayorsOfficeController extends Controller
                     'updated_at' => now(),
                 ]);
 
-                Log::info('✅ CrossDepartmentUsage created for gas_slip_id: ' . $gasSlipId);
+                Log::info(' CrossDepartmentUsage created for gas_slip_id: ' . $gasSlipId);
             }
 
             $ticket->has_insufficient_budget = false;
@@ -649,13 +649,13 @@ class MayorsOfficeController extends Controller
                 'weekly_remaining_after' => $newWeeklyRemaining,
                 'weekly_override' => $isWeeklyOverride,
                 'weekly_override_reason' => $weeklyOverrideReason,
-                'fiscal_year' => $activeYear,     // ✅ NEW — tell the frontend which FY was affected
+                'fiscal_year' => $activeYear,     
             ]
         ]);
     }
 
     /**
-     * ✅ Deduct from weekly budget (legacy — kept for backward compat)
+     *  Deduct from weekly budget (legacy — kept for backward compat)
      */
     private function deductWeeklyBudget($departmentId, $amount)
     {
@@ -701,7 +701,7 @@ class MayorsOfficeController extends Controller
     }
 
     /**
-     * ✅ Create a new budget period for a department — FY-aware
+     *  Create a new budget period for a department — FY-aware
      */
     private function createBudgetPeriod($departmentId)
     {
@@ -720,7 +720,7 @@ class MayorsOfficeController extends Controller
 
         $period = DeptBudgetPeriod::create([
             'department_id'     => $departmentId,
-            'fiscal_year'       => $activeYear,   // ✅ NEW
+            'fiscal_year'       => $activeYear,   
             'week_start'        => $weekStart,
             'allocated_amount'  => $allocatedAmount,
             'remaining_balance' => $allocatedAmount,
@@ -1348,8 +1348,8 @@ class MayorsOfficeController extends Controller
 
                         'has_budget' => true,
                         'budget_type' => 'annual',
-                        'fiscal_year' => $year,                     // ✅ active FY
-                        'budget_fiscal_year' => $budget->fiscal_year, // ✅ row's actual FY
+                        'fiscal_year' => $year,                     
+                        'budget_fiscal_year' => $budget->fiscal_year, 
                         'utilization_percentage' => $budget->utilization_percentage,
                         'utilization' => $budget->utilization_percentage,
                         'status' => $budget->status,
@@ -1400,7 +1400,7 @@ class MayorsOfficeController extends Controller
                     'total_remaining' => $totalAllocated - $totalUsed,
                     'total_departments' => $departmentsWithBudget->count(),
                     'departments_with_budget' => $departmentsWithBudget->filter(fn($d) => $d['has_budget'])->count(),
-                    'fiscal_year' => $year,   // ✅ NEW
+                    'fiscal_year' => $year,   
                 ]
             ]);
 
@@ -1440,7 +1440,7 @@ class MayorsOfficeController extends Controller
     }
 
     /**
-     * ✅ Get or create active budget period for a department — FY-aware
+     *  Get or create active budget period for a department — FY-aware
      */
     private function getOrCreatePeriodId($departmentId)
 {
@@ -1479,7 +1479,7 @@ class MayorsOfficeController extends Controller
 }
 
     /**
-     * ✅ Get cancelled trips for Mayor's Office
+     *  Get cancelled trips for Mayor's Office
      */
     public function getCancelledTrips(Request $request)
     {
@@ -1531,7 +1531,7 @@ class MayorsOfficeController extends Controller
     }
 
     /**
-     * ✅ Cancel a trip ticket (Mayor's Office)
+     *  Cancel a trip ticket (Mayor's Office)
      * Only allows cancellation before funds are released
      */
         public function cancelTrip(Request $request, $id)
@@ -1753,11 +1753,11 @@ public function getWeeklyTracking(Request $request)
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        // ✅ Resolve fiscal year
+        //  Resolve fiscal year
         $activeFy = \App\Models\FiscalYear::where('is_active', true)->first();
         $fiscalYear = (int) $request->get('fiscal_year', $activeFy?->year ?? date('Y'));
 
-        // ✅ Resolve target week
+        //  Resolve target week
         $weekStart = $request->get('week_start');
         if (!$weekStart) {
             // Default to the current week's Monday
@@ -1766,7 +1766,7 @@ public function getWeeklyTracking(Request $request)
         $weekStartDate = Carbon::parse($weekStart)->startOfWeek(Carbon::MONDAY)->toDateString();
         $weekEndDate   = Carbon::parse($weekStart)->endOfWeek(Carbon::SUNDAY)->toDateString();
 
-        // ✅ Fetch periods for that week + fiscal year, plus each dept's used amount
+        //  Fetch periods for that week + fiscal year, plus each dept's used amount
         $periods = DB::table('dept_budget_period as p')
             ->leftJoin('departments as d', 'p.department_id', '=', 'd.department_id')
             ->where(function ($q) use ($fiscalYear) {
@@ -1798,7 +1798,7 @@ public function getWeeklyTracking(Request $request)
             ])
             ->get();
 
-        // ✅ Compute per-row utilization + status
+        //  Compute per-row utilization + status
         $rows = $periods->map(function ($row) {
             $allocated = (float) $row->allocated_amount;
             $used      = (float) $row->actual_used;
@@ -1832,7 +1832,7 @@ public function getWeeklyTracking(Request $request)
             ];
         });
 
-        // ✅ Totals
+        //  Totals
         $summary = [
             'fiscal_year'      => $fiscalYear,
             'week_start'       => $weekStartDate,
@@ -1894,7 +1894,7 @@ public function getWeeklyTracking(Request $request)
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        // ✅ Collision check across both tables
+        //  Collision check across both tables
         $collision = TripTicket::where('trip_ticket_number', $request->control_number)->exists()
             || GasSlip::where('control_number', $request->control_number)->exists();
 
@@ -1957,7 +1957,7 @@ public function getWeeklyTracking(Request $request)
         DB::beginTransaction();
 
         try {
-            // ✅ 1. Create placeholder Trip Ticket
+            //  1. Create placeholder Trip Ticket
             $tripTicket = TripTicket::create([
                 'trip_ticket_number'    => $request->control_number,
                 'source'                => 'mo_gas_slip',
@@ -1978,7 +1978,7 @@ public function getWeeklyTracking(Request $request)
                 'updated_at'            => now(),
             ]);
 
-            // ✅ 2. Deduct budget
+            //  2. Deduct budget
             $budgetBefore = 0;
             $budgetAfter = 0;
             $periodId = null;
@@ -2007,7 +2007,7 @@ public function getWeeklyTracking(Request $request)
                 $periodId = $this->getOrCreatePeriodId($chargeDepartmentId);
             }
 
-            // ✅ 3. Create Gas Slip
+            //  3. Create Gas Slip
             $gasSlip = GasSlip::create([
                 'control_number'          => $request->control_number,
                 'trip_ticket_id'          => $tripTicket->trip_ticket_id,
@@ -2024,7 +2024,7 @@ public function getWeeklyTracking(Request $request)
                 'updated_at'              => now(),
             ]);
 
-            // ✅ 4. Cross-department usage record
+            //  4. Cross-department usage record
             if ($isCrossDepartment) {
                 DB::table('cross_department_usage')->insert([
                     'from_department_id' => $request->department_id,
@@ -2037,7 +2037,7 @@ public function getWeeklyTracking(Request $request)
                 ]);
             }
 
-            // ✅ 5. Vehicle snapshot
+            //  5. Vehicle snapshot
             $vehicle = Vehicle::find($request->vehicle_id);
             if ($vehicle) {
                 TripTicketVehicleSnapshot::create([
@@ -2059,7 +2059,7 @@ public function getWeeklyTracking(Request $request)
             ], 500);
         }
 
-        // ✅ Notify driver + GSO
+        //  Notify driver + GSO
         try {
             $driver = Driver::find($request->driver_id);
             if ($driver && $driver->user_id) {
@@ -2239,7 +2239,7 @@ public function getWeeklyTracking(Request $request)
 
 
         // ============================================================
-    // ✅ MO-SCOPED LOOKUPS (for Gas Slip form)
+    //  MO-SCOPED LOOKUPS (for Gas Slip form)
     // ============================================================
 
     /**
@@ -2282,7 +2282,7 @@ public function getWeeklyTracking(Request $request)
 
         $departmentId = $request->get('department_id');
 
-        // ✅ Find MO department ID (shared vehicles owner)
+        //  Find MO department ID (shared vehicles owner)
         $moDeptId = Department::where('department_code', 'MO')->value('department_id');
 
         $query = Vehicle::where('status', 'active')
@@ -2364,9 +2364,9 @@ public function getWeeklyTracking(Request $request)
 
 
     /**
- * ✅ MO scoped — fetch department balance + weekly suggested + weekly used
+ *  MO scoped — fetch department balance + weekly suggested + weekly used
  * for the Release Funds dialog.
- * GET /mayors-office/departments/{id}/budget-summary
+ * 
  */
 public function getDepartmentBudgetSummary(Request $request, $departmentId)
 {

@@ -78,7 +78,7 @@ class BudgetPolicyController extends Controller
             
             $previousAmount = $existingPolicy ? $existingPolicy->default_weekly_allocation : 0;
             
-            // ✅ Insert or Update Policy
+            //  Insert or Update Policy
             if ($existingPolicy) {
                 DB::table('dept_budget_policy')
                     ->where('department_id', $departmentId)
@@ -94,13 +94,13 @@ class BudgetPolicyController extends Controller
                     'updated_at' => now()
                 ]);
             }
-            
-            // ✅ Get department name for history
+        
+            //  Get department name for history
             $department = DB::table('departments')
                 ->where('department_id', $departmentId)
                 ->first();
             
-            // ✅ Log to budget history
+            // Log to budget history
             DB::table('budget_history')->insert([
                 'department_id' => $departmentId,
                 'department_name' => $department->department_name ?? 'Unknown',
@@ -114,7 +114,7 @@ class BudgetPolicyController extends Controller
                 'created_at' => now(),
             ]);
             
-            // ✅ Check if a budget period exists for this week
+            // Check if a budget period exists for this week
             $weekStart = now()->startOfWeek()->toDateString();
             
             $existingPeriod = DB::table('dept_budget_period')
@@ -196,7 +196,7 @@ class BudgetPolicyController extends Controller
     }
     
     /**
-     * ✅ UPDATED: Add to existing budget (instead of replace)
+     *  Add to existing budget
      */
     public function update(Request $request, $departmentId)
     {
@@ -221,7 +221,7 @@ class BudgetPolicyController extends Controller
             
             DB::beginTransaction();
             
-            // ✅ Get current policy
+            //  Get current policy
             $policy = DB::table('dept_budget_policy')
                 ->where('department_id', $departmentId)
                 ->first();
@@ -235,7 +235,7 @@ class BudgetPolicyController extends Controller
             
             $previousAmount = $policy->default_weekly_allocation;
             
-            // ✅ Calculate new amount
+            //  Calculate new amount
             $addAmount = $request->add_amount ?? 0;
             $newAllocation = $previousAmount + $addAmount;
             
@@ -244,8 +244,8 @@ class BudgetPolicyController extends Controller
                 $newAllocation = $request->default_weekly_allocation;
                 $addAmount = $newAllocation - $previousAmount;
             }
-            
-            // ✅ Update policy
+        
+            //  Update policy
             DB::table('dept_budget_policy')
                 ->where('department_id', $departmentId)
                 ->update([
@@ -253,12 +253,12 @@ class BudgetPolicyController extends Controller
                     'updated_at' => now(),
                 ]);
             
-            // ✅ Get department name for history
+            //  Get department name for history
             $department = DB::table('departments')
                 ->where('department_id', $departmentId)
                 ->first();
             
-            // ✅ Log to budget history
+            //  Log to budget history
             DB::table('budget_history')->insert([
                 'department_id' => $departmentId,
                 'department_name' => $department->department_name ?? 'Unknown',
@@ -272,7 +272,7 @@ class BudgetPolicyController extends Controller
                 'created_at' => now(),
             ]);
             
-            // ✅ Update active budget period for this week
+            // Update active budget period for this week
             $weekStart = now()->startOfWeek()->toDateString();
             
             $existingPeriod = DB::table('dept_budget_period')
@@ -431,7 +431,7 @@ class BudgetPolicyController extends Controller
     }
     
     /**
-     * ✅ NEW: Get budget summary with remaining amounts
+     * Get budget summary with remaining amounts
      */
     public function getBudgetSummary()
     {

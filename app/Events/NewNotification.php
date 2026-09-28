@@ -4,12 +4,12 @@ namespace App\Events;
 
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Broadcasting\InteractsWithSockets;
-use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;  // ✅ Changed from ShouldBroadcast
+use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;  
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 
-class NewNotification implements ShouldBroadcastNow  // ✅ Changed
+class NewNotification implements ShouldBroadcastNow  
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
@@ -32,7 +32,7 @@ class NewNotification implements ShouldBroadcastNow  // ✅ Changed
     }
 
     /**
-     * ✅ Using notifications.{userId} channel (matches channels.php)
+     *  Using notifications.{userId} channel (matches channels.php)
      */
     public function broadcastOn()
     {

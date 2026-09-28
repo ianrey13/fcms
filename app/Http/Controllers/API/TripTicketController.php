@@ -44,7 +44,7 @@ class TripTicketController extends Controller
                 TripTicket::STATUS_RETURNED_FOR_REVISION,
                 TripTicket::STATUS_FUNDS_ISSUED,
                 TripTicket::STATUS_IN_TRANSIT,
-                TripTicket::STATUS_PENDING_GSO_VALIDATION,  // ✅ ADD THIS
+                TripTicket::STATUS_PENDING_GSO_VALIDATION,  
 
                 TripTicket::STATUS_CLOSED,
                 TripTicket::STATUS_REJECTED,
@@ -107,7 +107,7 @@ class TripTicketController extends Controller
 
     /**
      * Display a specific trip ticket
-     * ✅ Added head_of_office to department response
+     * Added head_of_office to department response
      */
     public function show($id)
     {
@@ -203,12 +203,7 @@ class TripTicketController extends Controller
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        // ================================================================
-        // ✅ BLOCK: One active ticket per driver or vehicle.
-        // A ticket is "active" from creation until it's closed, cancelled,
-        // or rejected. This prevents double-booking the same driver or
-        // vehicle while a previous ticket is still in flight.
-        // ================================================================
+      
         $blockingStatuses = [
             'draft',
             'pending_mayors_office',
@@ -221,7 +216,7 @@ class TripTicketController extends Controller
             'pending_reconciliation',
         ];
 
-        // ✅ Vehicle block
+       
         $vehicleBlocked = TripTicket::where('vehicle_id', $request->vehicle_id)
             ->whereIn('status', $blockingStatuses)
             ->first();
@@ -238,7 +233,7 @@ class TripTicketController extends Controller
             ], 422);
         }
 
-        // ✅ Driver block
+       
         $driverBlocked = TripTicket::where('driver_id', $request->driver_id)
             ->whereIn('status', $blockingStatuses)
             ->first();
@@ -364,7 +359,7 @@ class TripTicketController extends Controller
 }
 
     /**
-     * ✅ Check if vehicle is available for trip
+     *  Check if vehicle is available for trip
      */
     private function validateVehicleAvailability($vehicleId, $excludeTripId = null)
     {
@@ -402,7 +397,7 @@ class TripTicketController extends Controller
     }
 
     /**
-     * ✅ Get available vehicles for trip creation
+     * Get available vehicles for trip creation
      */
     public function getAvailableVehicles(Request $request)
     {
@@ -492,7 +487,7 @@ class TripTicketController extends Controller
                     'created_at' => now(),
                 ]);
 
-                Log::info('✅ Notification created for MO staff: ' . $staff->user_id . ' (ID: ' . $notification->notification_id . ')');
+                Log::info(' Notification created for MO staff: ' . $staff->user_id . ' (ID: ' . $notification->notification_id . ')');
 
                 broadcast(new \App\Events\NewNotification(
                     $staff->user_id,
@@ -525,7 +520,7 @@ class TripTicketController extends Controller
                 'created_at' => now(),
             ]);
 
-            Log::info('✅ Driver notification created (ID: ' . $notification->notification_id . ')');
+            Log::info(' Driver notification created (ID: ' . $notification->notification_id . ')');
 
             broadcast(new \App\Events\NewNotification(
                 $tripTicket->submitted_by,

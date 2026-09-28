@@ -47,7 +47,7 @@ class DepartmentController extends Controller
                     'string',
                     'min:3',
                     'max:150',
-                    // ✅ Allow ñ/Ñ for Filipino names
+                    //  Allow ñ/Ñ for Filipino names
                     'regex:/^[A-Za-zñÑ0-9\s\.\-\'&,()\/]+$/',
                     'unique:departments,department_name',
                 ],
@@ -56,7 +56,7 @@ class DepartmentController extends Controller
                     'string',
                     'min:2',
                     'max:10',
-                    // ✅ Allow spaces in code (e.g., "MO LTE")
+                    //  Allow spaces in code (e.g., "MO LTE")
                     'regex:/^[A-Z0-9\s]+$/',
                     'unique:departments,department_code',
                 ],
@@ -65,7 +65,7 @@ class DepartmentController extends Controller
                     'string',
                     'min:3',
                     'max:150',
-                    // ✅ Allow ñ/Ñ
+                    //  Allow ñ/Ñ
                     'regex:/^[A-Za-zñÑ\s\.\-\'\,]+$/',
                 ],
             ], [
@@ -83,7 +83,7 @@ class DepartmentController extends Controller
             }
 
             $name = trim($request->department_name);
-            // ✅ Collapse multiple spaces to one, then uppercase
+            //  Collapse multiple spaces to one, then uppercase
             $code = strtoupper(trim(preg_replace('/\s+/', ' ', $request->department_code)));
             $head = $request->head_of_office ? trim($request->head_of_office) : null;
 
@@ -167,7 +167,7 @@ class DepartmentController extends Controller
                     'string',
                     'min:3',
                     'max:150',
-                    // ✅ Allow ñ/Ñ
+                    //  Allow ñ/Ñ
                     'regex:/^[A-Za-zñÑ0-9\s\.\-\'&,()\/]+$/',
                     'unique:departments,department_name,' . $id . ',department_id',
                 ],
@@ -176,7 +176,7 @@ class DepartmentController extends Controller
                     'string',
                     'min:2',
                     'max:10',
-                    // ✅ Allow spaces in code
+                    //  Allow spaces in code
                     'regex:/^[A-Z0-9\s]+$/',
                     'unique:departments,department_code,' . $id . ',department_id',
                 ],
@@ -185,7 +185,7 @@ class DepartmentController extends Controller
                     'string',
                     'min:3',
                     'max:150',
-                    // ✅ Allow ñ/Ñ
+                    //  Allow ñ/Ñ
                     'regex:/^[A-Za-zñÑ\s\.\-\'\,]+$/',
                 ],
                 'is_active' => 'sometimes|boolean',
@@ -204,7 +204,7 @@ class DepartmentController extends Controller
             }
 
             $name = trim($request->department_name);
-            // ✅ Collapse multiple spaces to one, then uppercase
+            //  Collapse multiple spaces to one, then uppercase
             $code = strtoupper(trim(preg_replace('/\s+/', ' ', $request->department_code)));
             $head = $request->head_of_office ? trim($request->head_of_office) : null;
 

@@ -13,7 +13,7 @@ use PhpOffice\PhpSpreadsheet\Style\Fill;
 class BillingStatementExport implements FromArray, WithTitle, WithEvents
 {
     protected $data;
-    protected $subtotalRows = [];   // ✅ track row numbers for merges
+    protected $subtotalRows = [];   
 
     public function __construct($data)
     {
@@ -30,7 +30,7 @@ class BillingStatementExport implements FromArray, WithTitle, WithEvents
         $rows[] = ['BILLING STATEMENT OF FUEL'];
         $rows[] = [$this->data['period_label'] ?? ''];
         $rows[] = ['Generated: ' . now()->format('F d, Y h:i A')];
-        $rows[] = array_fill(0, 9, '');     // row 4 — spacer
+        $rows[] = array_fill(0, 9, '');    
 
         foreach ($departments as $dept) {
             // Department header row
@@ -70,14 +70,14 @@ class BillingStatementExport implements FromArray, WithTitle, WithEvents
             $this->subtotalRows[] = count($rows) + 1;
 
             $rows[] = [
-                '', '', '', '', '',      // A–E blank (will be merged)
-                $subtotalLabel,           // F — the combined fuel breakdown
-                (float) $st['total_liters'],   // G — quantity
-                '',                        // H — unit price blank
-                (float) $st['total_amount'],   // I — amount
+                '', '', '', '', '',      
+                $subtotalLabel,           
+                (float) $st['total_liters'],  
+                '',                        
+                (float) $st['total_amount'],  
             ];
 
-            $rows[] = array_fill(0, 9, '');   // spacer between departments
+            $rows[] = array_fill(0, 9, '');   
         }
 
         // Grand total row — mark for styling
@@ -117,7 +117,7 @@ class BillingStatementExport implements FromArray, WithTitle, WithEvents
                 $sheet->getColumnDimension('C')->setWidth(14);
                 $sheet->getColumnDimension('D')->setWidth(12);
                 $sheet->getColumnDimension('E')->setWidth(18);
-                $sheet->getColumnDimension('F')->setWidth(42);  // ✅ wider for subtotal label
+                $sheet->getColumnDimension('F')->setWidth(42); 
                 $sheet->getColumnDimension('G')->setWidth(12);
                 $sheet->getColumnDimension('H')->setWidth(14);
                 $sheet->getColumnDimension('I')->setWidth(16);

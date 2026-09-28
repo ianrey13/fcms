@@ -90,7 +90,7 @@ class UserController extends Controller
     }
 
     /**
-     * ✅ Get available roles based on department
+     *  Get available roles based on department
      */
     private function getAvailableRoles($departmentId)
     {
@@ -102,22 +102,22 @@ class UserController extends Controller
 
         $code = strtoupper($department->department_code);
 
-        // ✅ GSO Department → GSO Staff + Driver
+        // GSO Department → GSO Staff + Driver
         if ($code === 'GSO') {
             return ['gso_office', 'driver'];
         }
 
-        // ✅ Mayor's Office → Disbursing Officer + Driver
+        //  Mayor's Office → Disbursing Officer + Driver
         if ($code === 'MO') {
             return ['mayors_office', 'driver'];
         }
 
-        // ✅ Other Departments → Driver only
+        // Other Departments → Driver only
         return ['driver'];
     }
 
     /**
-     * ✅ Validate role based on department
+     *  Validate role based on department
      */
     private function validateRoleForDepartment($departmentId, $role)
     {
@@ -127,8 +127,7 @@ class UserController extends Controller
 
     /**
      * Create a new user
-     * ✅ Added role validation based on department
-     * ✅ Sets must_change_password = true
+     
      */
     public function store(Request $request)
     {
@@ -153,7 +152,7 @@ class UserController extends Controller
                 ], 422);
             }
 
-            // ✅ Validate role based on department
+            // Validate role based on department
             if (!$this->validateRoleForDepartment($request->department_id, $request->role)) {
                 $allowed = $this->getAvailableRoles($request->department_id);
                 $allowedLabels = array_map(function($r) {
@@ -257,9 +256,7 @@ class UserController extends Controller
                     'password_expires_at' => $user->password_expires_at,
                     'account_locked_until' => $user->account_locked_until,
                     'must_change_password' => (bool) $user->must_change_password,   // ★ NEW
-                    // 'has_signature' => $hasSignature,
-                    // 'signature_url' => $hasSignature ? Storage::url($user->esignature_path) : null,
-                    // ✅ Add available roles for this user's department
+                  
                     'available_roles' => $this->getAvailableRoles($user->department_id),
                 ]
             ]);
@@ -273,7 +270,7 @@ class UserController extends Controller
 
     /**
      * Update a user
-     * ✅ Added role validation based on department
+     *  Added role validation based on department
      */
     public function update(Request $request, $id)
     {
@@ -306,7 +303,7 @@ class UserController extends Controller
             $departmentId = $request->has('department_id') ? $request->department_id : $user->department_id;
             $role = $request->has('role') ? $request->role : $user->role;
 
-            // ✅ Validate role based on department (if either changed)
+            //  Validate role based on department (if either changed)
             if (!$this->validateRoleForDepartment($departmentId, $role)) {
                 $allowed = $this->getAvailableRoles($departmentId);
                 $allowedLabels = array_map(function($r) {
@@ -479,7 +476,7 @@ class UserController extends Controller
 
     /**
      * Reset user password
-     * ✅ Sets must_change_password = true (force change on next login)
+     * Sets must_change_password = true (force change on next login)
      */
     public function resetPassword($id)
     {
@@ -592,7 +589,7 @@ class UserController extends Controller
 
     /**
      * Get role label
-     * ✅ Updated for new roles
+     *  Updated for new roles
      */
     private function getRoleLabel($role)
     {
@@ -606,7 +603,7 @@ class UserController extends Controller
     }
 
     /**
-     * ✅ Get available roles for a department (for frontend)
+     *  Get available roles for a department (for frontend)
      */
     public function getAvailableRolesForDepartment($departmentId)
     {

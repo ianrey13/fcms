@@ -555,7 +555,7 @@ class GsoController extends Controller
     }
 
     /**
-     * ✅ Get a single fuel receipt with details (SINGLE VERSION — duplicate removed)
+     *  Get a single fuel receipt with details (SINGLE VERSION — duplicate removed)
      */
     public function getFuelReceipt(Request $request, $id)
     {
@@ -614,7 +614,7 @@ class GsoController extends Controller
                 ], 404);
             }
 
-            // ✅ Receipts live in public/receipts/ — use asset($path)
+            //  Receipts live in public/receipts/ — use asset($path)
             if ($receipt->receipt_url && !str_starts_with($receipt->receipt_url, 'http')) {
                 $receipt->receipt_url = asset($receipt->receipt_url);
             }
@@ -662,7 +662,7 @@ class GsoController extends Controller
                 return response()->json(['message' => 'Gas slip not found for this trip'], 404);
             }
 
-            // ✅ Cap check: amount ≤ released
+            // Cap check: amount ≤ released
             if ($request->amount_on_receipt > $gasSlip->amount_released) {
                 return response()->json([
                     'success' => false,
@@ -783,7 +783,7 @@ class GsoController extends Controller
 
     /**
      * GSO validates and CLOSES the trip (final step)
-     * ✅ Only Approve/Close - No Reject option
+     *  Only Approve/Close - No Reject option
      */
     public function validateTrip(Request $request, $id)
     {
@@ -1042,7 +1042,7 @@ class GsoController extends Controller
     }
 
     /**
-     * ✅ Get cancelled trips for GSO
+     *  Get cancelled trips for GSO
      */
     public function getCancelledTrips(Request $request)
     {
@@ -1097,7 +1097,7 @@ class GsoController extends Controller
     }
 
         /**
-     * ✅ Cancel a trip ticket (only before funds released)
+     *  Cancel a trip ticket (only before funds released)
      */
     public function cancelTrip(Request $request, $id)
     {
@@ -1228,7 +1228,7 @@ class GsoController extends Controller
     }
 
     /**
- * ✅ Get all fuel receipts (list for GSO admin view)
+ *  Get all fuel receipts (list for GSO admin view)
  * GET /api/admin/fuel-receipts
  */
 public function getFuelReceipts(Request $request)
@@ -1298,7 +1298,7 @@ public function getFuelReceipts(Request $request)
 
         $receipts = $query->orderBy('fr.receipt_uploaded_at', 'desc')->get();
 
-        // ✅ Fix receipt URL path (public/receipts/, not storage/)
+        //  Fix receipt URL path (public/receipts/, not storage/)
         $receipts = $receipts->map(function ($r) {
             if ($r->receipt_url && !str_starts_with($r->receipt_url, 'http')) {
                 $r->receipt_url = asset($r->receipt_url);
@@ -1350,7 +1350,7 @@ public function updateFuelReceiptLiters(Request $request, $id)
         $oldLiters    = (float) $receipt->liters_availed;
         $oldUnitPrice = (float) $receipt->unit_price;
 
-        // ✅ Only update liters. Unit price stays exactly as it is.
+        //  Only update liters. Unit price stays exactly as it is.
         $receipt->liters_availed = $request->liters_availed;
         $receipt->updated_at     = now();
         $receipt->save();

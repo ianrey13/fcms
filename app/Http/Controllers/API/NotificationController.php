@@ -56,7 +56,7 @@ class NotificationController extends Controller
                 ->where('is_read', false)
                 ->count();
             
-            // ✅ FIX: Return in a consistent format that works for both web and mobile
+          
             return response()->json([
                 'success' => true,
                 'data' => [
@@ -94,7 +94,7 @@ class NotificationController extends Controller
             $notification->read_at = now();
             $notification->save();
             
-            // ✅ Get updated unread count
+           
             $unreadCount = Notification::where('recipient_user_id', $user->user_id)
                 ->where('is_read', false)
                 ->count();
@@ -185,13 +185,13 @@ class NotificationController extends Controller
                 'type' => $notification->notification_type
             ]);
 
-            // ✅ Broadcast via Reverb
+          
             broadcast(new NewNotification(
                 $notification->recipient_user_id,
                 $notification->toArray()
             ));
 
-            Log::info('✅ Notification broadcasted via Reverb', [
+            Log::info(' Notification broadcasted via Reverb', [
                 'notification_id' => $notification->notification_id
             ]);
 
@@ -246,13 +246,13 @@ class NotificationController extends Controller
                 'user_id' => $user->user_id
             ]);
 
-            // ✅ Broadcast via Reverb
+           
             broadcast(new NewNotification(
                 $user->user_id,
                 $notification->toArray()
             ));
 
-            Log::info('✅ Test notification broadcasted via Reverb', [
+            Log::info(' Test notification broadcasted via Reverb', [
                 'notification_id' => $notification->notification_id,
                 'channel' => 'notifications.' . $user->user_id
             ]);

@@ -33,321 +33,7 @@ class BudgetPolicyController extends Controller
         }
     }
     
-    // /**
-    //  * Create a new budget policy
-    //  */
-    // public function store(Request $request)
-    // {
-    //     Log::info('=== BudgetPolicyController::store called ===');
-    //     Log::info('Request data:', $request->all());
-        
-    //     $validator = Validator::make($request->all(), [
-    //         'department_id' => 'required|exists:departments,department_id',
-    //         'default_weekly_allocation' => 'required|numeric|min:0'
-    //     ]);
-        
-    //     if ($validator->fails()) {
-    //         Log::error('Validation failed:', $validator->errors()->toArray());
-    //         return response()->json(['errors' => $validator->errors()], 422);
-    //     }
-        
-    //     $user = $request->user();
-        
-    //     if ($user->role !== 'mayors_office' && $user->role !== 'gso_office') {
-    //         Log::warning('Unauthorized attempt', ['role' => $user->role]);
-    //         return response()->json(['message' => 'Unauthorized'], 403);
-    //     }
-        
-    //     DB::beginTransaction();
-        
-    //     try {
-    //         $departmentId = $request->department_id;
-    //         $allocation = $request->default_weekly_allocation;
-            
-    //         // Get existing policy
-    //         $existingPolicy = DB::table('dept_budget_policy')
-    //             ->where('department_id', $departmentId)
-    //             ->first();
-            
-    //         $previousAmount = $existingPolicy ? $existingPolicy->default_weekly_allocation : 0;
-            
-    //         // Insert or Update Policy
-    //         if ($existingPolicy) {
-    //             DB::table('dept_budget_policy')
-    //                 ->where('department_id', $departmentId)
-    //                 ->update([
-    //                     'default_weekly_allocation' => $allocation,
-    //                     'updated_at' => now()
-    //                 ]);
-    //         } else {
-    //             DB::table('dept_budget_policy')->insert([
-    //                 'department_id' => $departmentId,
-    //                 'default_weekly_allocation' => $allocation,
-    //                 'created_at' => now(),
-    //                 'updated_at' => now()
-    //             ]);
-    //         }
-            
-    //         // Get department name
-    //         $department = DB::table('departments')
-    //             ->where('department_id', $departmentId)
-    //             ->first();
-            
-    //         // Log to budget history
-    //         DB::table('budget_history')->insert([
-    //             'department_id' => $departmentId,
-    //             'department_name' => $department->department_name ?? 'Unknown',
-    //             'action' => 'created',
-    //             'previous_amount' => $previousAmount,
-    //             'added_amount' => $allocation,
-    //             'new_amount' => $allocation,
-    //             'reason' => $request->reason ?? 'Initial budget allocation',
-    //             'user_id' => $user->user_id,
-    //             'user_name' => $user->full_name ?? $user->email,
-    //             'created_at' => now(),
-    //         ]);
-            
-    //         // Check if a budget period exists for this week
-    //         $weekStart = now()->startOfWeek()->toDateString();
-            
-    //         $existingPeriod = DB::table('dept_budget_period')
-    //             ->where('department_id', $departmentId)
-    //             ->where('week_start', $weekStart)
-    //             ->first();
-            
-    //         if ($existingPeriod) {
-    //             DB::table('dept_budget_period')
-    //                 ->where('period_id', $existingPeriod->period_id)
-    //                 ->update([
-    //                     'allocated_amount' => $allocation,
-    //                     'status' => 'active',
-    //                     'closed_at' => null,
-    //                     'updated_at' => now()
-    //                 ]);
-    //         } else {
-    //             DB::table('dept_budget_period')->insert([
-    //                 'department_id' => $departmentId,
-    //                 'week_start' => $weekStart,
-    //                 'allocated_amount' => $allocation,
-    //                 'status' => 'active',
-    //                 'created_at' => now()
-    //             ]);
-    //         }
-            
-    //         DB::commit();
-            
-    //         return response()->json([
-    //             'success' => true,
-    //             'message' => 'Budget policy created successfully',
-    //             'data' => [
-    //                 'department_id' => $departmentId,
-    //                 'allocated_amount' => $allocation,
-    //                 'week_start' => $weekStart,
-    //                 'previous_amount' => $previousAmount,
-    //             ]
-    //         ], 201);
-            
-    //     } catch (\Exception $e) {
-    //         DB::rollBack();
-    //         Log::error('❌ Failed to create policy: ' . $e->getMessage());
-    //         return response()->json([
-    //             'success' => false,
-    //             'message' => 'Failed to create policy: ' . $e->getMessage()
-    //         ], 500);
-    //     }
-    // }
-
-    // ============================================================
-    // ✅ ANNUAL BUDGET METHODS
-    // ============================================================
-
-   /**
- * Create an annual budget
- */
-// public function createAnnualBudget(Request $request)
-// {
-//     Log::info('=== BudgetPolicyController::createAnnualBudget called ===');
-//     Log::info('Request data:', $request->all());
-
-//     $validator = Validator::make($request->all(), [
-//         'department_id' => 'required|exists:departments,department_id',
-//         'annual_budget' => 'required|numeric|min:0.01',
-//         'fiscal_year' => 'nullable|integer|min:2000',
-//         'reason' => 'nullable|string|max:255',
-//     ]);
-
-//     if ($validator->fails()) {
-//         Log::error('Validation failed:', $validator->errors()->toArray());
-//         return response()->json(['errors' => $validator->errors()], 422);
-//     }
-
-//     $user = $request->user();
-
-//     if ($user->role !== 'mayors_office' && $user->role !== 'gso_office') {
-//         Log::warning('Unauthorized attempt', ['role' => $user->role]);
-//         return response()->json(['message' => 'Unauthorized'], 403);
-//     }
-
-//     DB::beginTransaction();
-
-//     try {
-//         $departmentId = $request->department_id;
-//         $annualBudget = $request->annual_budget;
-//         $fiscalYear = $request->fiscal_year ?? date('Y');
-//         $weeklyAllocation = $annualBudget / 52;
-
-//         // ✅ 1. Insert or Update Annual Budget
-//         $existingAnnual = DB::table('annual_budgets')
-//             ->where('department_id', $departmentId)
-//             ->where('fiscal_year', $fiscalYear)
-//             ->first();
-
-//         if ($existingAnnual) {
-//             DB::table('annual_budgets')
-//                 ->where('budget_id', $existingAnnual->budget_id)
-//                 ->update([
-//                     'annual_amount' => $annualBudget,
-//                     'used_amount' => 0,
-//                     'status' => 'active',
-//                     'updated_at' => now()
-//                 ]);
-//         } else {
-//             DB::table('annual_budgets')->insert([
-//                 'department_id' => $departmentId,
-//                 'fiscal_year' => $fiscalYear,
-//                 'annual_amount' => $annualBudget,
-//                 'used_amount' => 0,
-//                 'status' => 'active',
-//                 'created_at' => now(),
-//                 'updated_at' => now()
-//             ]);
-//         }
-
-//         // ✅ 2. Get existing policy
-//         $existingPolicy = DB::table('dept_budget_policy')
-//             ->where('department_id', $departmentId)
-//             ->first();
-
-//         $previousAmount = $existingPolicy ? $existingPolicy->default_weekly_allocation : 0;
-
-//         // ✅ 3. Insert or Update Policy (for backward compatibility)
-//         if ($existingPolicy) {
-//             DB::table('dept_budget_policy')
-//                 ->where('department_id', $departmentId)
-//                 ->update([
-//                     'default_weekly_allocation' => $weeklyAllocation,
-//                     'updated_at' => now()
-//                 ]);
-//         } else {
-//             DB::table('dept_budget_policy')->insert([
-//                 'department_id' => $departmentId,
-//                 'default_weekly_allocation' => $weeklyAllocation,
-//                 'created_at' => now(),
-//                 'updated_at' => now()
-//             ]);
-//         }
-
-//         // ✅ 4. Insert or Update Weekly Budget Usage (for current week)
-//         $weekNumber = date('W');
-//         $year = date('Y');
-//         $weekStart = now()->startOfWeek()->toDateString();
-//         $weekEnd = now()->endOfWeek()->toDateString();
-
-//         $existingWeekly = DB::table('weekly_budget_usage')
-//             ->where('department_id', $departmentId)
-//             ->where('week_number', $weekNumber)
-//             ->where('year', $year)
-//             ->first();
-
-//         if ($existingWeekly) {
-//             DB::table('weekly_budget_usage')
-//                 ->where('usage_id', $existingWeekly->usage_id)
-//                 ->update([
-//                     'weekly_allocation' => $weeklyAllocation,
-//                     'updated_at' => now()
-//                 ]);
-//         } else {
-//             DB::table('weekly_budget_usage')->insert([
-//                 'department_id' => $departmentId,
-//                 'week_number' => $weekNumber,
-//                 'year' => $year,
-//                 'week_start' => $weekStart,
-//                 'week_end' => $weekEnd,
-//                 'weekly_allocation' => $weeklyAllocation,
-//                 'amount_used' => 0,
-//                 'created_at' => now(),
-//                 'updated_at' => now()
-//             ]);
-//         }
-
-//         // ✅ 5. Update dept_budget_period (using UPDATE OR INSERT to avoid duplicate)
-//         $existingPeriod = DB::table('dept_budget_period')
-//             ->where('department_id', $departmentId)
-//             ->where('week_start', $weekStart)
-//             ->first();
-
-//         if ($existingPeriod) {
-//             // ✅ Update existing period
-//             DB::table('dept_budget_period')
-//                 ->where('period_id', $existingPeriod->period_id)
-//                 ->update([
-//                     'allocated_amount' => $weeklyAllocation,
-//                     'status' => 'active',
-//                     'closed_at' => null,
-//                     'updated_at' => now()
-//                 ]);
-//         } else {
-//             // ✅ Insert new period
-//             DB::table('dept_budget_period')->insert([
-//                 'department_id' => $departmentId,
-//                 'week_start' => $weekStart,
-//                 'allocated_amount' => $weeklyAllocation,
-//                 'status' => 'active',
-//                 'created_at' => now()
-//             ]);
-//         }
-
-//         // ✅ 6. Log to history
-//         $department = DB::table('departments')
-//             ->where('department_id', $departmentId)
-//             ->first();
-
-//         DB::table('budget_history')->insert([
-//             'department_id' => $departmentId,
-//             'department_name' => $department->department_name ?? 'Unknown',
-//             'action' => 'annual_created',
-//             'previous_amount' => $previousAmount,
-//             'added_amount' => $weeklyAllocation,
-//             'new_amount' => $weeklyAllocation,
-//             'reason' => $request->reason ?? 'Annual budget created: ₱' . number_format($annualBudget, 2) . ' (FY ' . $fiscalYear . ')',
-//             'user_id' => $user->user_id,
-//             'user_name' => $user->full_name ?? $user->email,
-//             'created_at' => now(),
-//         ]);
-
-//         DB::commit();
-
-//         return response()->json([
-//             'success' => true,
-//             'message' => 'Annual budget created successfully!',
-//             'data' => [
-//                 'department_id' => $departmentId,
-//                 'annual_budget' => $annualBudget,
-//                 'weekly_allocation' => $weeklyAllocation,
-//                 'fiscal_year' => $fiscalYear,
-//             ]
-//         ], 201);
-
-//     } catch (\Exception $e) {
-//         DB::rollBack();
-//         Log::error('❌ Failed to create annual budget: ' . $e->getMessage());
-//         Log::error('❌ Stack trace: ' . $e->getTraceAsString());
-//         return response()->json([
-//             'success' => false,
-//             'message' => 'Failed to create annual budget: ' . $e->getMessage()
-//         ], 500);
-//     }
-// }
+    
 
 
     /**
@@ -421,127 +107,10 @@ class BudgetPolicyController extends Controller
         }
     }
 
+   
     /**
-     * Update annual budget
-     */
-    // public function updateAnnualBudget(Request $request, $departmentId)
-    // {
-    //     try {
-    //         $validator = Validator::make($request->all(), [
-    //             'annual_budget' => 'required|numeric|min:0.01',
-    //             'fiscal_year' => 'nullable|integer|min:2000',
-    //             'reason' => 'nullable|string|max:255',
-    //         ]);
-
-    //         if ($validator->fails()) {
-    //             return response()->json(['errors' => $validator->errors()], 422);
-    //         }
-
-    //         $user = $request->user();
-
-    //         if ($user->role !== 'mayors_office' && $user->role !== 'gso_office') {
-    //             return response()->json(['message' => 'Unauthorized'], 403);
-    //         }
-
-    //         DB::beginTransaction();
-
-    //         $annualBudget = $request->annual_budget;
-    //         $fiscalYear = $request->fiscal_year ?? date('Y');
-    //         $weeklyAllocation = $annualBudget / 52;
-
-    //         // Update annual budget
-    //         $existingAnnual = DB::table('annual_budgets')
-    //             ->where('department_id', $departmentId)
-    //             ->where('fiscal_year', $fiscalYear)
-    //             ->first();
-
-    //         $previousAmount = $existingAnnual ? $existingAnnual->annual_amount : 0;
-
-    //         if ($existingAnnual) {
-    //             DB::table('annual_budgets')
-    //                 ->where('annual_budget_id', $existingAnnual->annual_budget_id)
-    //                 ->update([
-    //                     'annual_amount' => $annualBudget,
-    //                     'updated_at' => now()
-    //                 ]);
-    //         } else {
-    //             DB::table('annual_budgets')->insert([
-    //                 'department_id' => $departmentId,
-    //                 'fiscal_year' => $fiscalYear,
-    //                 'annual_amount' => $annualBudget,
-    //                 'used_amount' => 0,
-    //                 'status' => 'active',
-    //                 'created_at' => now(),
-    //                 'updated_at' => now()
-    //             ]);
-    //         }
-
-    //         // Update policy weekly allocation
-    //         $policy = DB::table('dept_budget_policy')
-    //             ->where('department_id', $departmentId)
-    //             ->first();
-
-    //         if ($policy) {
-    //             DB::table('dept_budget_policy')
-    //                 ->where('department_id', $departmentId)
-    //                 ->update([
-    //                     'default_weekly_allocation' => $weeklyAllocation,
-    //                     'updated_at' => now()
-    //                 ]);
-    //         } else {
-    //             DB::table('dept_budget_policy')->insert([
-    //                 'department_id' => $departmentId,
-    //                 'default_weekly_allocation' => $weeklyAllocation,
-    //                 'created_at' => now(),
-    //                 'updated_at' => now()
-    //             ]);
-    //         }
-
-    //         // Get department name
-    //         $department = DB::table('departments')
-    //             ->where('department_id', $departmentId)
-    //             ->first();
-
-    //         // Log to budget history
-    //         DB::table('budget_history')->insert([
-    //             'department_id' => $departmentId,
-    //             'department_name' => $department->department_name ?? 'Unknown',
-    //             'action' => 'annual_updated',
-    //             'previous_amount' => $previousAmount,
-    //             'added_amount' => $annualBudget - $previousAmount,
-    //             'new_amount' => $annualBudget,
-    //             'reason' => $request->reason ?? 'Annual budget updated',
-    //             'user_id' => $user->user_id,
-    //             'user_name' => $user->full_name ?? $user->email,
-    //             'created_at' => now(),
-    //         ]);
-
-    //         DB::commit();
-
-    //         return response()->json([
-    //             'success' => true,
-    //             'message' => 'Annual budget updated successfully!',
-    //             'data' => [
-    //                 'department_id' => $departmentId,
-    //                 'annual_budget' => $annualBudget,
-    //                 'weekly_allocation' => $weeklyAllocation,
-    //                 'fiscal_year' => $fiscalYear,
-    //             ]
-    //         ]);
-
-    //     } catch (\Exception $e) {
-    //         DB::rollBack();
-    //         Log::error('Update annual budget error: ' . $e->getMessage());
-    //         return response()->json([
-    //             'success' => false,
-    //             'message' => 'Failed to update annual budget: ' . $e->getMessage()
-    //         ], 500);
-    //     }
-    // }
-
-    /**
-     * ✅ FIXED: Update budget - Adds to ANNUAL BUDGET (Primary)
-     * When you add ₱200, it adds to annual budget, then recalculates weekly
+     *  Update budget
+     *
      */
      public function update(Request $request, $departmentId)
     {
@@ -566,7 +135,7 @@ class BudgetPolicyController extends Controller
             $currentYear = date('Y');
             $addAmount = $request->add_amount;
             
-            // ✅ 1. Get annual budget
+            // 1. Get annual budget
             $annualBudget = DB::table('annual_budgets')
                 ->where('department_id', $departmentId)
                 ->where('fiscal_year', $currentYear)
@@ -582,7 +151,7 @@ class BudgetPolicyController extends Controller
             $previousAnnual = (float) $annualBudget->annual_amount;
             $newAnnual = $previousAnnual + $addAmount;
             
-            // ✅ 2. Update annual budget
+            //  2. Update annual budget
             DB::table('annual_budgets')
                 ->where('budget_id', $annualBudget->budget_id)
                 ->update([
@@ -590,10 +159,10 @@ class BudgetPolicyController extends Controller
                     'updated_at' => now()
                 ]);
             
-            // ✅ 3. Recalculate weekly allocation (Annual / 52)
+            //  3. Recalculate weekly allocation (Annual / 52)
             $newWeeklyAllocation = $newAnnual / 52;
             
-            // ✅ 4. Update weekly policy
+            //  4. Update weekly policy
             $existingPolicy = DB::table('dept_budget_policy')
                 ->where('department_id', $departmentId)
                 ->first();
@@ -607,7 +176,7 @@ class BudgetPolicyController extends Controller
                     ]);
             }
             
-            // ✅ 5. Update current week allocation
+            //  5. Update current week allocation
             $weekNumber = date('W');
             $currentWeek = DB::table('weekly_budget_usage')
                 ->where('department_id', $departmentId)
@@ -624,7 +193,7 @@ class BudgetPolicyController extends Controller
                     ]);
             }
             
-            // ✅ 6. Update active period
+            //  6. Update active period
             $weekStart = now()->startOfWeek()->toDateString();
             $existingPeriod = DB::table('dept_budget_period')
                 ->where('department_id', $departmentId)
@@ -640,7 +209,7 @@ class BudgetPolicyController extends Controller
                     ]);
             }
             
-            // ✅ 7. Log to budget history
+            //  7. Log to budget history
             $department = DB::table('departments')
                 ->where('department_id', $departmentId)
                 ->first();
@@ -662,7 +231,7 @@ class BudgetPolicyController extends Controller
             
             return response()->json([
                 'success' => true,
-                'message' => "✅ ₱" . number_format($addAmount, 2) . " added to annual budget!\nNew Annual: ₱" . number_format($newAnnual, 2) . "\nNew Weekly: ₱" . number_format($newWeeklyAllocation, 2),
+                'message' => " ₱" . number_format($addAmount, 2) . " added to annual budget!\nNew Annual: ₱" . number_format($newAnnual, 2) . "\nNew Weekly: ₱" . number_format($newWeeklyAllocation, 2),
                 'data' => [
                     'department_id' => $departmentId,
                     'previous_annual' => $previousAnnual,
@@ -1157,30 +726,30 @@ class BudgetPolicyController extends Controller
             ->get();
         
         foreach ($departments as $dept) {
-            // ✅ Kuhaon ang annual budget
+            //  Kuhaon ang annual budget
             $annualBudget = DB::table('annual_budgets')
                 ->where('department_id', $dept->department_id)
                 ->where('fiscal_year', date('Y'))
                 ->first();
             
-            // ✅ Kuhaon ang current week usage
+            //  Kuhaon ang current week usage
             $currentWeek = DB::table('weekly_budget_usage')
                 ->where('department_id', $dept->department_id)
                 ->where('week_number', date('W'))
                 ->where('year', date('Y'))
                 ->first();
             
-            // ✅ Kuhaon ang policy (fallback)
+            //  Kuhaon ang policy (fallback)
             $policy = DB::table('dept_budget_policy')
                 ->where('department_id', $dept->department_id)
                 ->first();
             
-            // ✅ Annual Budget Values
+            //  Annual Budget Values
             $annualAmount = $annualBudget ? (float) $annualBudget->annual_amount : 0;
             $usedAmount = $annualBudget ? (float) $annualBudget->used_amount : 0;
             $remainingAmount = $annualBudget ? (float) $annualBudget->remaining_amount : 0;
             
-            // ✅ Weekly Values
+            //  Weekly Values
             $weeklyAllocation = 0;
             $weeklyUsed = 0;
             
@@ -1191,19 +760,19 @@ class BudgetPolicyController extends Controller
                 $weeklyAllocation = (float) $policy->default_weekly_allocation;
             }
             
-            // ✅ Return sa frontend ang CORRECT field names
+            //  Return sa frontend ang CORRECT field names
             $result[] = [
                 'department_id' => $dept->department_id,
                 'department_name' => $dept->department_name,
                 'department_code' => $dept->department_code,
-                // ✅ ANNUAL BUDGET (Primary)
+                //  ANNUAL BUDGET (Primary)
                 'annual_amount' => $annualAmount,           // ← IMPORTANTE!
                 'used_amount' => $usedAmount,               // ← IMPORTANTE!
                 'remaining_amount' => $remainingAmount,      // ← IMPORTANTE!
-                // ✅ WEEKLY ALLOCATION
+                //  WEEKLY ALLOCATION
                 'weekly_allocation' => $weeklyAllocation,
                 'weekly_used' => $weeklyUsed,
-                // ✅ Other fields
+                //  Other fields
                 'has_budget' => ($annualBudget || $policy) ? true : false,
                 'status' => $annualBudget ? $annualBudget->status : 'inactive',
                 'fiscal_year' => date('Y'),
@@ -1226,7 +795,7 @@ class BudgetPolicyController extends Controller
 }
 
 /**
- * ✅ FIXED: Update Weekly Allocation - Log weekly amounts, not annual
+ *  Update Weekly Allocation - Log weekly amounts, not annual
  */
 public function updateWeeklyAllocation(Request $request, $departmentId)
 {
@@ -1254,7 +823,7 @@ public function updateWeeklyAllocation(Request $request, $departmentId)
         $weekStart = now()->startOfWeek()->toDateString();
         $weekEnd = now()->endOfWeek()->toDateString();
         
-        // ✅ 1. Get annual budget
+        //  1. Get annual budget
         $annualBudget = DB::table('annual_budgets')
             ->where('department_id', $departmentId)
             ->where('fiscal_year', $currentYear)
@@ -1270,7 +839,7 @@ public function updateWeeklyAllocation(Request $request, $departmentId)
         $currentAnnual = (float) $annualBudget->annual_amount;
         $currentUsed = (float) $annualBudget->used_amount;
         
-        // ✅ Get total weekly allocations for this year
+        //  Get total weekly allocations for this year
         $totalWeeklyAllocated = DB::table('weekly_budget_usage')
             ->where('department_id', $departmentId)
             ->where('year', $currentYear)
@@ -1278,7 +847,7 @@ public function updateWeeklyAllocation(Request $request, $departmentId)
             
         $availableAmount = $currentAnnual - $currentUsed - $totalWeeklyAllocated;
         
-        // ✅ 2. Check if weekly allocation exceeds available amount
+        //  2. Check if weekly allocation exceeds available amount
         if ($newWeeklyAmount > $availableAmount) {
             return response()->json([
                 'success' => false,
@@ -1290,7 +859,7 @@ public function updateWeeklyAllocation(Request $request, $departmentId)
             ], 422);
         }
         
-        // ✅ 3. Get existing weekly allocation for this week
+        //  3. Get existing weekly allocation for this week
         $existingWeekly = DB::table('weekly_budget_usage')
             ->where('department_id', $departmentId)
             ->where('week_number', $weekNumber)
@@ -1300,7 +869,7 @@ public function updateWeeklyAllocation(Request $request, $departmentId)
         $oldWeeklyAmount = $existingWeekly ? (float) $existingWeekly->weekly_allocation : 0;
         $annualDeduction = $newWeeklyAmount - $oldWeeklyAmount;
         
-        // ✅ 4. Update or create weekly usage
+        //  4. Update or create weekly usage
         if ($existingWeekly) {
             DB::table('weekly_budget_usage')
                 ->where('usage_id', $existingWeekly->usage_id)
@@ -1322,17 +891,17 @@ public function updateWeeklyAllocation(Request $request, $departmentId)
             ]);
         }
         
-        // ✅ 5. Update annual budget (deduct difference)
+        //  5. Update annual budget (deduct difference)
         DB::table('annual_budgets')
             ->where('budget_id', $annualBudget->budget_id)
             ->decrement('annual_amount', $annualDeduction);
         
-        // ✅ Get updated annual budget
+        //  Get updated annual budget
         $updatedAnnual = DB::table('annual_budgets')
             ->where('budget_id', $annualBudget->budget_id)
             ->first();
         
-        // ✅ 6. Update policy
+        //  6. Update policy
         DB::table('dept_budget_policy')
             ->updateOrInsert(
                 ['department_id' => $departmentId],
@@ -1342,7 +911,7 @@ public function updateWeeklyAllocation(Request $request, $departmentId)
                 ]
             );
         
-        // ✅ 7. Update budget period
+        //  7. Update budget period
         $existingPeriod = DB::table('dept_budget_period')
             ->where('department_id', $departmentId)
             ->where('week_start', $weekStart)
@@ -1365,7 +934,7 @@ public function updateWeeklyAllocation(Request $request, $departmentId)
             ]);
         }
         
-        // ✅ 8. ✅ FIXED: Log to history - Use WEEKLY amounts, NOT annual
+        //  8. Log to history - Use WEEKLY amounts, NOT annual
         $department = DB::table('departments')
             ->where('department_id', $departmentId)
             ->first();
@@ -1387,7 +956,7 @@ public function updateWeeklyAllocation(Request $request, $departmentId)
         
         return response()->json([
             'success' => true,
-            'message' => "✅ Weekly allocation set for Week {$weekNumber}\n" .
+            'message' => " Weekly allocation set for Week {$weekNumber}\n" .
                         "Amount: ₱" . number_format($newWeeklyAmount, 2) . "\n" .
                         "Annual budget adjustment: ₱" . number_format($annualDeduction, 2) . "\n" .
                         "Remaining Annual: ₱" . number_format($updatedAnnual->annual_amount, 2),
@@ -1413,7 +982,7 @@ public function updateWeeklyAllocation(Request $request, $departmentId)
 }
 
 /**
- * ✅ NEW: Process weekly surplus for a department
+ * Process weekly surplus for a department
  */
 public function processSurplus(Request $request, $departmentId)
 {
@@ -1457,13 +1026,13 @@ public function processSurplus(Request $request, $departmentId)
         DB::beginTransaction();
         
         try {
-            // ✅ 1. Return surplus to annual budget
+            //  Return surplus to annual budget
             DB::table('annual_budgets')
                 ->where('department_id', $departmentId)
                 ->where('fiscal_year', $year)
                 ->increment('annual_amount', $surplus);
             
-            // ✅ 2. Log to surplus table
+            //  Log to surplus table
             DB::table('weekly_budget_surplus')->insert([
                 'department_id' => $departmentId,
                 'week_number' => $weekNumber,
@@ -1475,7 +1044,7 @@ public function processSurplus(Request $request, $departmentId)
                 'updated_at' => now(),
             ]);
             
-            // ✅ 3. Log to budget history
+            // Log to budget history
             $department = DB::table('departments')
                 ->where('department_id', $departmentId)
                 ->first();
@@ -1499,7 +1068,7 @@ public function processSurplus(Request $request, $departmentId)
                 'success' => true,
                 'surplus' => $surplus,
                 'action' => 'returned_to_annual',
-                'message' => "✅ ₱" . number_format($surplus, 2) . " surplus returned to annual budget"
+                'message' => " ₱" . number_format($surplus, 2) . " surplus returned to annual budget"
             ]);
             
         } catch (\Exception $e) {
@@ -1521,7 +1090,7 @@ public function processSurplus(Request $request, $departmentId)
 }
 
 /**
- * ✅ NEW: Get surplus history
+ *  NEW: Get surplus history
  */
 public function getSurplusHistory(Request $request)
 {

@@ -56,7 +56,7 @@ class FiscalYearController extends Controller
                 ], 422);
             }
 
-            // ✅ Deactivate all other fiscal years
+            //  Deactivate all other fiscal years
             FiscalYear::where('is_active', true)->update(['is_active' => false]);
 
             $fiscalYear = FiscalYear::create([
@@ -98,7 +98,7 @@ class FiscalYearController extends Controller
                 $fiscalYear->save();
                 $message = 'Fiscal year deactivated';
             } else {
-                // ✅ Activate - deactivate all others first
+                // Activate - deactivate all others first
                 FiscalYear::where('is_active', true)->update(['is_active' => false]);
 
                 $fiscalYear->is_active = true;

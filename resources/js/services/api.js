@@ -631,12 +631,12 @@ export const locationAPI = {
     params: { address },
   }),
   
-  // ✅ Reverse geocode (if needed)
+  //  Reverse geocode 
   reverseGeocode: (params) => cachedApi.get('/location/reverse', {
     params,
   }),
   
-  // ✅ Trip estimate (combines distance + fuel calculation)
+  //  Trip estimate (combines distance + fuel calculation)
   calculateTripEstimate: (params) => cachedApi.get('/location/trip-estimate', {
     params,
   }),

@@ -99,9 +99,9 @@ class AuthController extends Controller
         //Log login activity
         AuditHelper::logLogin($user);
 
-        // ✅ ============================================================
-        // ✅ NEW: Check and reset weekly budget if Mayor's Office user
-        // ✅ ============================================================
+        //  ============================================================
+        //  Check and reset weekly budget if Mayor's Office user
+        // ============================================================
         if ($user->role === 'mayors_office') {
             $this->checkAndResetWeeklyBudget($user);
         }
@@ -150,13 +150,13 @@ class AuthController extends Controller
             $currentWeek = $today->weekOfYear;
             $currentYear = $today->year;
 
-            // ✅ Check if reset was already done this week
+            //  Check if reset was already done this week
             $resetDone = DB::table('weekly_budget_usage')
                 ->where('week_number', $currentWeek)
                 ->where('year', $currentYear)
                 ->exists();
 
-            // ✅ If not reset yet, run the reset
+            //  If not reset yet, run the reset
             if (!$resetDone) {
                 Log::info('🔄 Weekly budget reset triggered by Mayor\'s Office login', [
                     'user_id' => $user->user_id,
@@ -165,10 +165,10 @@ class AuthController extends Controller
                     'year' => $currentYear,
                 ]);
 
-                // ✅ Call the stored procedure
+                //  Call the stored procedure
                 DB::statement('CALL proc_weekly_budget_reset();');
 
-                // ✅ Log the reset in budget history
+                //  Log the reset in budget history
                 DB::table('budget_history')->insert([
                     'department_id' => 0,
                     'department_name' => 'ALL DEPARTMENTS',
@@ -182,12 +182,12 @@ class AuthController extends Controller
                     'created_at' => now(),
                 ]);
 
-                Log::info('✅ Weekly budget reset completed (login trigger)', [
+                Log::info(' Weekly budget reset completed (login trigger)', [
                     'user_id' => $user->user_id,
                     'week' => $currentWeek,
                 ]);
             } else {
-                Log::info('ℹ️ Weekly budget already reset for this week', [
+                Log::info(' Weekly budget already reset for this week', [
                     'user_id' => $user->user_id,
                     'week' => $currentWeek,
                 ]);

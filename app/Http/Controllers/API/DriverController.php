@@ -33,9 +33,9 @@ class DriverController extends Controller
             $departmentId = $request->get('department_id');
 
             $query = Driver::with('user.department')
-                // ✅ Only active driver records
+                //  Only active driver records
                 ->where('status', 'active')
-                // ✅ Only drivers whose user account is also active
+                //  Only drivers whose user account is also active
                 ->whereHas('user', function ($q) use ($departmentId) {
                     $q->where('status', 'active');
                     if ($departmentId) {
@@ -672,7 +672,7 @@ class DriverController extends Controller
                 return response()->json(['success' => false, 'message' => 'Please upload receipt first before acknowledging'], 422);
             }
 
-            // ✅ REMOVED: 0-liters check (driver no longer enters liters)
+           
 
             $gasSlip->acknowledged_by = $user->user_id;
             $gasSlip->acknowledged_at = now();
@@ -819,7 +819,7 @@ class DriverController extends Controller
                 return response()->json(['success' => false, 'message' => 'Driver record not found'], 404);
             }
 
-            // ✅ Priority order: in_transit → acknowledged → funds_issued → completed
+            //  Priority order: in_transit → acknowledged → funds_issued → completed
             // Only return trips that have a valid destination and vehicle
             $activeTrip = TripTicket::with(['vehicle', 'department', 'gasSlip.fuelReceipt', 'driver.user'])
                 ->where('driver_id', $driver->driver_id)
@@ -904,7 +904,7 @@ class DriverController extends Controller
             ], 422);
         }
 
-        // ✅ Idempotency: if the driver already acknowledged, don't re-process
+        // Idempotency: if the driver already acknowledged, don't re-process
         $existingGasSlip = GasSlip::where('trip_ticket_id', $id)->first();
         if ($existingGasSlip && $existingGasSlip->acknowledged_at) {
             return response()->json([
@@ -961,7 +961,7 @@ class DriverController extends Controller
             );
         }
 
-        // ✅ PM RULE: Once the driver acknowledges, clear their own stale
+        //  PM RULE: Once the driver acknowledges, clear their own stale
         // fund/trip notifications for this trip.
         Notification::where('recipient_user_id', $user->user_id)
             ->where('entity_type', 'trip_ticket')
@@ -1013,7 +1013,7 @@ class DriverController extends Controller
                 return response()->json(['success' => false, 'message' => 'Trip ticket not found'], 404);
             }
 
-            // ✅ One trip per ticket — 'completed' is NOT a valid start state
+            //  One trip per ticket — 'completed' is NOT a valid start state
             $allowedStatuses = ['acknowledged', 'funds_issued', 'pending_gso_ticket'];
             if (!in_array($ticket->status, $allowedStatuses)) {
                 return response()->json([
@@ -1023,7 +1023,7 @@ class DriverController extends Controller
                 ], 400);
             }
 
-            // ✅ Hard guard: reject if this ticket has already been used
+            //  Hard guard: reject if this ticket has already been used
             $alreadyCompleted = TripHistory::where('trip_ticket_id', $ticket->trip_ticket_id)
                 ->where('status', 'completed')
                 ->exists();
@@ -1035,7 +1035,7 @@ class DriverController extends Controller
                 ], 422);
             }
 
-            // ✅ Defensive: trip_count should never exceed 1 for a single-trip ticket
+            //  Defensive: trip_count should never exceed 1 for a single-trip ticket
             if (($ticket->trip_count ?? 0) >= 1) {
                 return response()->json([
                     'success' => false,
@@ -1174,7 +1174,7 @@ class DriverController extends Controller
 
             DB::beginTransaction();
 
-            // ✅ Compute distance server-side from GPS pings BEFORE deleting
+            //  Compute distance server-side from GPS pings BEFORE deleting
             $pings = GpsPing::where('trip_ticket_id', $id)
                 ->orderBy('recorded_at', 'asc')
                 ->get(['latitude', 'longitude']);
@@ -1236,7 +1236,7 @@ class DriverController extends Controller
 
             $deletedPings = GpsPing::where('trip_ticket_id', $id)->delete();
 
-            // ✅ One trip per ticket — completion always ends the ticket
+            //  One trip per ticket — completion always ends the ticket
             $ticket->status = 'pending_gso_validation';
             $message = 'Trip completed! Awaiting GSO validation.';
             $notifyGSO = true;
@@ -1495,7 +1495,7 @@ class DriverController extends Controller
 
             $drivers = User::where('role', 'driver')
                 ->where('status', 'active')
-                // ✅ Only users who have an active driver record
+                //  Only users who have an active driver record
                 ->whereHas('driver', fn($q) => $q->where('status', 'active'))
                 ->with('driver')
                 ->when($departmentId, function ($query) use ($departmentId) {

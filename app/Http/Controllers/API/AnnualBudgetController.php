@@ -17,7 +17,7 @@ use Illuminate\Support\Carbon;
 class AnnualBudgetController extends Controller
 {
     /**
-     * ✅ Compute the auto weekly suggested amount for a given annual budget.
+     *
      * Formula: annual_amount / 52, rounded to 2 decimals.
      */
     private function computeWeeklySuggested($annualAmount): float
@@ -229,8 +229,8 @@ class AnnualBudgetController extends Controller
     }
 
     /**
-     * ✅ CREATE or UPDATE annual budget (MO only)
-     * ✅ weekly_ceiling is no longer accepted from the client — always auto-derived.
+     * CREATE or UPDATE annual budget (MO only)
+     *  weekly_ceiling is no longer accepted from the client — always auto-derived.
      */
     public function store(Request $request)
     {
@@ -293,7 +293,7 @@ class AnnualBudgetController extends Controller
                 ]
             );
 
-            // ✅ Update weekly_budget_usage table (tracking only)
+            // Update weekly_budget_usage table (tracking only)
             $currentWeek = date('W');
             $currentYear = date('Y');
             $weekStart = Carbon::now()->startOfWeek()->toDateString();
@@ -370,7 +370,7 @@ class AnnualBudgetController extends Controller
     }
 
     /**
-     * ✅ ADD additional budget to an existing annual budget (MO only)
+     * ADD additional budget to an existing annual budget (MO only)
      */
     public function addBudget(Request $request)
     {
@@ -409,7 +409,7 @@ class AnnualBudgetController extends Controller
             $budget->weekly_ceiling = $this->computeWeeklySuggested($newAmount);
             $budget->save();
 
-            // ✅ Upsert scoped by (department_id, fiscal_year)
+            // Upsert scoped by (department_id, fiscal_year)
             DeptBudgetPolicy::updateOrCreate(
                 [
                     'department_id' => $request->department_id,
@@ -459,7 +459,7 @@ class AnnualBudgetController extends Controller
     }
 
     /**
-     * ✅ UPDATE annual budget (MO only)
+     * UPDATE annual budget (MO only)
      */
     public function update(Request $request, $id)
     {
@@ -490,7 +490,7 @@ class AnnualBudgetController extends Controller
 
             $budget->save();
 
-            // ✅ Upsert scoped by (department_id, fiscal_year)
+            // Upsert scoped by (department_id, fiscal_year)
             DeptBudgetPolicy::updateOrCreate(
                 [
                     'department_id' => $budget->department_id,
@@ -528,7 +528,7 @@ class AnnualBudgetController extends Controller
     }
 
     /**
-     * ✅ BULK UPDATE annual budgets (MO only)
+     * BULK UPDATE annual budgets (MO only)
      */
     public function bulkUpdate(Request $request)
     {
@@ -570,7 +570,7 @@ class AnnualBudgetController extends Controller
                     ]
                 );
 
-                // ✅ Upsert scoped by (department_id, fiscal_year)
+                // Upsert scoped by (department_id, fiscal_year)
                 DeptBudgetPolicy::updateOrCreate(
                     [
                         'department_id' => $departmentId,
