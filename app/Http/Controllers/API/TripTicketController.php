@@ -175,7 +175,7 @@ class TripTicketController extends Controller
       /**
      * GSO staff CREATE TRIP TICKET
      */
-  public function gsoCreate(Request $request)
+ public function gsoCreate(Request $request)
 {
     try {
         $user = $request->user();
@@ -203,35 +203,54 @@ class TripTicketController extends Controller
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-       //block if intransit
-        $vehicleInTransit = TripTicket::where('vehicle_id', $request->vehicle_id)
-            ->where('status', 'in_transit')
+        // ================================================================
+        // ✅ BLOCK: One active ticket per driver or vehicle.
+        // A ticket is "active" from creation until it's closed, cancelled,
+        // or rejected. This prevents double-booking the same driver or
+        // vehicle while a previous ticket is still in flight.
+        // ================================================================
+        $blockingStatuses = [
+            'draft',
+            'pending_mayors_office',
+            'returned_for_revision',
+            'funds_issued',
+            'acknowledged',
+            'in_transit',
+            'completed',
+            'pending_gso_validation',
+            'pending_reconciliation',
+        ];
+
+        // ✅ Vehicle block
+        $vehicleBlocked = TripTicket::where('vehicle_id', $request->vehicle_id)
+            ->whereIn('status', $blockingStatuses)
             ->first();
 
-        if ($vehicleInTransit) {
+        if ($vehicleBlocked) {
             return response()->json([
                 'success' => false,
-                'message' => 'Vehicle is currently in transit',
+                'message' => "Vehicle is already on ticket {$vehicleBlocked->trip_ticket_number} (status: {$vehicleBlocked->status}). Complete, cancel, or reject that ticket first.",
                 'data' => [
-                    'blocking_trip_id'     => $vehicleInTransit->trip_ticket_id,
-                    'blocking_trip_number' => $vehicleInTransit->trip_ticket_number,
+                    'blocking_trip_id'     => $vehicleBlocked->trip_ticket_id,
+                    'blocking_trip_number' => $vehicleBlocked->trip_ticket_number,
+                    'blocking_trip_status' => $vehicleBlocked->status,
                 ],
             ], 422);
         }
 
-      
-        //    in_transit trip before being assigned a new ticket.
-        $driverInTransit = TripTicket::where('driver_id', $request->driver_id)
-            ->where('status', 'in_transit')
+        // ✅ Driver block
+        $driverBlocked = TripTicket::where('driver_id', $request->driver_id)
+            ->whereIn('status', $blockingStatuses)
             ->first();
 
-        if ($driverInTransit) {
+        if ($driverBlocked) {
             return response()->json([
                 'success' => false,
-                'message' => 'Driver is currently in transit',
+                'message' => "Driver is already on ticket {$driverBlocked->trip_ticket_number} (status: {$driverBlocked->status}). Complete, cancel, or reject that ticket first.",
                 'data' => [
-                    'blocking_trip_id'     => $driverInTransit->trip_ticket_id,
-                    'blocking_trip_number' => $driverInTransit->trip_ticket_number,
+                    'blocking_trip_id'     => $driverBlocked->trip_ticket_id,
+                    'blocking_trip_number' => $driverBlocked->trip_ticket_number,
+                    'blocking_trip_status' => $driverBlocked->status,
                 ],
             ], 422);
         }

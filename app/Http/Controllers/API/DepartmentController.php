@@ -38,7 +38,7 @@ class DepartmentController extends Controller
     /**
      * Store a newly created department.
      */
-    public function store(Request $request)
+        public function store(Request $request)
     {
         try {
             $validator = Validator::make($request->all(), [
@@ -47,7 +47,8 @@ class DepartmentController extends Controller
                     'string',
                     'min:3',
                     'max:150',
-                    'regex:/^[A-Za-z0-9\s\.\-\'&,()\/]+$/',
+                    // ✅ Allow ñ/Ñ for Filipino names
+                    'regex:/^[A-Za-zñÑ0-9\s\.\-\'&,()\/]+$/',
                     'unique:departments,department_name',
                 ],
                 'department_code' => [
@@ -55,7 +56,8 @@ class DepartmentController extends Controller
                     'string',
                     'min:2',
                     'max:10',
-                    'regex:/^[A-Za-z0-9\-]+$/',
+                    // ✅ Allow spaces in code (e.g., "MO LTE")
+                    'regex:/^[A-Z0-9\s]+$/',
                     'unique:departments,department_code',
                 ],
                 'head_of_office' => [
@@ -63,11 +65,12 @@ class DepartmentController extends Controller
                     'string',
                     'min:3',
                     'max:150',
-                    'regex:/^[A-Za-z\s\.\-\'\,]+$/',
+                    // ✅ Allow ñ/Ñ
+                    'regex:/^[A-Za-zñÑ\s\.\-\'\,]+$/',
                 ],
             ], [
                 'department_name.regex' => 'Department name may only contain letters, numbers, spaces, and basic punctuation.',
-                'department_code.regex' => 'Department code may only contain ALL CAPS letters and numbers (no spaces, hyphens, or symbols).',
+                'department_code.regex' => 'Department code may only contain ALL CAPS letters, numbers, and spaces.',
                 'head_of_office.regex' => 'Head of office name may only contain letters, spaces, and basic punctuation.',
             ]);
 
@@ -80,7 +83,8 @@ class DepartmentController extends Controller
             }
 
             $name = trim($request->department_name);
-            $code = strtoupper(trim($request->department_code));
+            // ✅ Collapse multiple spaces to one, then uppercase
+            $code = strtoupper(trim(preg_replace('/\s+/', ' ', $request->department_code)));
             $head = $request->head_of_office ? trim($request->head_of_office) : null;
 
             if ($name === '' || $code === '') {
@@ -150,9 +154,9 @@ class DepartmentController extends Controller
 
     /**
      * Update the specified department.
-     * ✅ Now accepts is_active (status toggle from Edit page).
+     *
      */
-    public function update(Request $request, $id)
+       public function update(Request $request, $id)
     {
         try {
             $department = Department::findOrFail($id);
@@ -163,7 +167,8 @@ class DepartmentController extends Controller
                     'string',
                     'min:3',
                     'max:150',
-                    'regex:/^[A-Za-z0-9\s\.\-\'&,()\/]+$/',
+                    // ✅ Allow ñ/Ñ
+                    'regex:/^[A-Za-zñÑ0-9\s\.\-\'&,()\/]+$/',
                     'unique:departments,department_name,' . $id . ',department_id',
                 ],
                 'department_code' => [
@@ -171,7 +176,8 @@ class DepartmentController extends Controller
                     'string',
                     'min:2',
                     'max:10',
-                    'regex:/^[A-Z0-9]+$/',
+                    // ✅ Allow spaces in code
+                    'regex:/^[A-Z0-9\s]+$/',
                     'unique:departments,department_code,' . $id . ',department_id',
                 ],
                 'head_of_office' => [
@@ -179,12 +185,13 @@ class DepartmentController extends Controller
                     'string',
                     'min:3',
                     'max:150',
-                    'regex:/^[A-Za-z\s\.\-\'\,]+$/',
+                    // ✅ Allow ñ/Ñ
+                    'regex:/^[A-Za-zñÑ\s\.\-\'\,]+$/',
                 ],
-                'is_active' => 'sometimes|boolean',   // ★ NEW
+                'is_active' => 'sometimes|boolean',
             ], [
                 'department_name.regex' => 'Department name may only contain letters, numbers, spaces, and basic punctuation.',
-                'department_code.regex' => 'Department code may only contain letters, numbers, and hyphens.',
+                'department_code.regex' => 'Department code may only contain ALL CAPS letters, numbers, and spaces.',
                 'head_of_office.regex' => 'Head of office name may only contain letters, spaces, and basic punctuation.',
             ]);
 
@@ -197,7 +204,8 @@ class DepartmentController extends Controller
             }
 
             $name = trim($request->department_name);
-            $code = strtoupper(trim($request->department_code));
+            // ✅ Collapse multiple spaces to one, then uppercase
+            $code = strtoupper(trim(preg_replace('/\s+/', ' ', $request->department_code)));
             $head = $request->head_of_office ? trim($request->head_of_office) : null;
 
             if ($name === '' || $code === '') {
@@ -217,7 +225,7 @@ class DepartmentController extends Controller
                 'head_of_office' => $head,
                 'is_active' => $request->has('is_active')
                     ? (bool) $request->is_active
-                    : $department->is_active,   // ★ NEW — only flip when sent
+                    : $department->is_active,
             ]);
 
             return response()->json([

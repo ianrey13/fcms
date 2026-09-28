@@ -12,7 +12,9 @@ class FallbackLocationService
     {
         $this->locations = [
 
-            // ==================== ORIGIN ====================
+            // ================================================================
+            // ORIGIN — Laguindingan reference points (distance = 0)
+            // ================================================================
             'laguindingan_municipal_hall' => [
                 'name' => 'Laguindingan Municipal Hall',
                 'distance_km' => 0,
@@ -31,70 +33,12 @@ class FallbackLocationService
                 'type' => 'municipality',
                 'priority' => 1,
                 'region' => 'Misamis Oriental',
-                'aliases' => ['laguindingan poblacion', 'poblacion'],
+                'aliases' => ['laguindingan poblacion'],
             ],
 
-            // ==================== LAGUINDINGAN BARANGAYS ====================
-            'sinai' => [
-                'name' => 'Sinai, Laguindingan',
-                'distance_km' => 2.1,
-                'lat' => 8.579140064923502,
-                'lng' => 124.42623233979945,
-                'type' => 'barangay',
-                'priority' => 1,
-                'region' => 'Laguindingan, Misamis Oriental',
-                'aliases' => ['sinai barangay hall', 'sinai hall'],
-            ],
-            'sambulawan' => [
-                'name' => 'Sambulawan, Laguindingan',
-                'distance_km' => 3.5,
-                'lat' => 8.588882207574162,
-                'lng' => 124.4198079407003,
-                'type' => 'barangay',
-                'priority' => 1,
-                'region' => 'Laguindingan, Misamis Oriental',
-                'aliases' => ['sambulawan barangay hall'],
-            ],
-            'mauswagon' => [
-                'name' => 'Mauswagon, Laguindingan',
-                'distance_km' => 5.3,
-                'lat' => 8.600695995707298,
-                'lng' => 124.41404409447382,
-                'type' => 'barangay',
-                'priority' => 1,
-                'region' => 'Laguindingan, Misamis Oriental',
-                'aliases' => ['mauswagon barangay hall'],
-            ],
-            'kibaghot' => [
-                'name' => 'Kibaghot, Laguindingan',
-                'distance_km' => 2.4,
-                'lat' => 8.590476453445167,
-                'lng' => 124.45143455712116,
-                'type' => 'barangay',
-                'priority' => 1,
-                'region' => 'Laguindingan, Misamis Oriental',
-                'aliases' => ['kibagot', 'kibaghot barangay hall', 'kibagot barangay hall'],
-            ],
-            'tubajon' => [
-                'name' => 'Tubajon, Laguindingan',
-                'distance_km' => 11.4,
-                'lat' => 8.621431183919565,
-                'lng' => 124.4619632769859,
-                'type' => 'barangay',
-                'priority' => 1,
-                'region' => 'Laguindingan, Misamis Oriental',
-                'aliases' => ['tubajon barangay hall'],
-            ],
-            'moog' => [
-                'name' => 'Moog, Laguindingan',
-                'distance_km' => 5.8,
-                'lat' => 8.60794417988988,
-                'lng' => 124.4693180377182,
-                'type' => 'barangay',
-                'priority' => 1,
-                'region' => 'Laguindingan, Misamis Oriental',
-                'aliases' => ['mooog', 'moog barangay hall'],
-            ],
+            // ================================================================
+            // LAGUINDINGAN BARANGAYS (11)
+            // ================================================================
             'aromahon' => [
                 'name' => 'Aromahon, Laguindingan',
                 'distance_km' => 2.3,
@@ -104,16 +48,6 @@ class FallbackLocationService
                 'priority' => 1,
                 'region' => 'Laguindingan, Misamis Oriental',
                 'aliases' => ['aromahon barangay hall'],
-            ],
-            'lapad' => [
-                'name' => 'Lapad, Laguindingan',
-                'distance_km' => 3.1,
-                'lat' => 8.552553257537511,
-                'lng' => 124.43029849640729,
-                'type' => 'barangay',
-                'priority' => 1,
-                'region' => 'Laguindingan, Misamis Oriental',
-                'aliases' => ['lapad barangay hall'],
             ],
             'gasi' => [
                 'name' => 'Gasi, Laguindingan',
@@ -125,6 +59,26 @@ class FallbackLocationService
                 'region' => 'Laguindingan, Misamis Oriental',
                 'aliases' => ['gasi barangay hall'],
             ],
+            'kibaghot' => [
+                'name' => 'Kibaghot, Laguindingan',
+                'distance_km' => 2.4,
+                'lat' => 8.590476453445167,
+                'lng' => 124.45143455712116,
+                'type' => 'barangay',
+                'priority' => 1,
+                'region' => 'Laguindingan, Misamis Oriental',
+                'aliases' => ['kibagot', 'kibaghot barangay hall', 'kibagot barangay hall'],
+            ],
+            'lapad' => [
+                'name' => 'Lapad, Laguindingan',
+                'distance_km' => 3.1,
+                'lat' => 8.552553257537511,
+                'lng' => 124.43029849640729,
+                'type' => 'barangay',
+                'priority' => 1,
+                'region' => 'Laguindingan, Misamis Oriental',
+                'aliases' => ['lapad barangay hall'],
+            ],
             'liberty' => [
                 'name' => 'Liberty, Laguindingan',
                 'distance_km' => 4.7,
@@ -135,19 +89,128 @@ class FallbackLocationService
                 'region' => 'Laguindingan, Misamis Oriental',
                 'aliases' => ['liberty barangay hall'],
             ],
-             'laguindingan airport' => [
-                'name' => 'Liberty, Laguindingan',
-                'distance_km' => 4.7,
-                'lat' => 8.610260789398502, 
-                'lng' =>  124.45795811031401,
-               
+            'mauswagon' => [
+                'name' => 'Mauswagon, Laguindingan',
+                'distance_km' => 5.3,
+                'lat' => 8.600695995707298,
+                'lng' => 124.41404409447382,
                 'type' => 'barangay',
                 'priority' => 1,
                 'region' => 'Laguindingan, Misamis Oriental',
-                'aliases' => ['Laguindingan Airport'],
+                'aliases' => ['mauswagon barangay hall'],
+            ],
+            'moog' => [
+                'name' => 'Moog, Laguindingan',
+                'distance_km' => 5.8,
+                'lat' => 8.60794417988988,
+                'lng' => 124.4693180377182,
+                'type' => 'barangay',
+                'priority' => 1,
+                'region' => 'Laguindingan, Misamis Oriental',
+                'aliases' => ['mooog', 'moog barangay hall'],
+            ],
+            'poblacion' => [
+                'name' => 'Poblacion, Laguindingan',
+                'distance_km' => 0.5,
+                'lat' => 8.5755,
+                'lng' => 124.4440,
+                'type' => 'barangay',
+                'priority' => 1,
+                'region' => 'Laguindingan, Misamis Oriental',
+                'aliases' => ['poblacion laguindingan', 'poblacion barangay hall'],
+            ],
+            'sambulawan' => [
+                'name' => 'Sambulawan, Laguindingan',
+                'distance_km' => 3.5,
+                'lat' => 8.588882207574162,
+                'lng' => 124.4198079407003,
+                'type' => 'barangay',
+                'priority' => 1,
+                'region' => 'Laguindingan, Misamis Oriental',
+                'aliases' => ['sambulawan barangay hall'],
+            ],
+            'sinai' => [
+                'name' => 'Sinai, Laguindingan',
+                'distance_km' => 2.1,
+                'lat' => 8.579140064923502,
+                'lng' => 124.42623233979945,
+                'type' => 'barangay',
+                'priority' => 1,
+                'region' => 'Laguindingan, Misamis Oriental',
+                'aliases' => ['sinai barangay hall', 'sinai hall'],
+            ],
+            'tubajon' => [
+                'name' => 'Tubajon, Laguindingan',
+                'distance_km' => 11.4,
+                'lat' => 8.621431183919565,
+                'lng' => 124.4619632769859,
+                'type' => 'barangay',
+                'priority' => 1,
+                'region' => 'Laguindingan, Misamis Oriental',
+                'aliases' => ['tubajon barangay hall'],
             ],
 
-            // ==================== MISAMIS ORIENTAL ====================
+            // ================================================================
+            // LAGUINDINGAN LANDMARKS
+            // ================================================================
+            'gk_heights' => [
+                'name' => 'GK Heights',
+                'distance_km' => 5.0,        // ⚠️ PLACEHOLDER — verify against Google Maps
+                'lat' => 8.6100,             // ⚠️ PLACEHOLDER — verify against Google Maps
+                'lng' => 124.4500,           // ⚠️ PLACEHOLDER — verify against Google Maps
+                'type' => 'landmark',
+                'priority' => 1,
+                'region' => 'Laguindingan, Misamis Oriental',
+                'aliases' => ['gk heights', 'gk', 'gk subdivision'],
+            ],
+            'laguindingan_airport' => [
+                'name' => 'Laguindingan Airport',
+                'distance_km' => 4.9,
+                'lat' => 8.610260789398502,
+                'lng' => 124.45795811031401,
+                'type' => 'landmark',
+                'priority' => 1,
+                'region' => 'Laguindingan, Misamis Oriental',
+                'aliases' => ['airport', 'laguindingan airport terminal'],
+            ],
+
+            // ================================================================
+            // GROUP ENTRIES — selectable, return max-group distance (Tubajon = 11.4 km)
+            // ================================================================
+            'all_barangay' => [
+                'name' => 'All Barangay',
+                'distance_km' => 11.4,
+                'lat' => 8.621431183919565,
+                'lng' => 124.4619632769859,
+                'type' => 'group',
+                'priority' => 2,
+                'region' => 'Laguindingan, Misamis Oriental',
+                'aliases' => ['all barangay', 'all barangays'],
+            ],
+            'coastal_barangay' => [
+                'name' => 'Coastal Barangay',
+                'distance_km' => 11.4,
+                'lat' => 8.621427701784217,
+                'lng' => 124.46134992481697,
+                'type' => 'group',
+                'priority' => 2,
+                'region' => 'Laguindingan, Misamis Oriental',
+                'aliases' => ['coastal barangay'],
+            ],
+            'aor_laguindingan' => [
+                'name' => 'AOR Laguindingan',
+                'distance_km' => 11.4,
+                'lat' => 8.624609137625352,
+                'lng' => 124.46365073632487,
+                'type' => 'group',
+                'priority' => 2,
+                'region' => 'Laguindingan, Misamis Oriental',
+                'aliases' => ['aor', 'area of responsibility', 'laguindingan aor'],
+            ],
+
+            // ================================================================
+            // MISAMIS ORIENTAL — NEARBY MUNICIPALITIES
+            // ================================================================
             'alubijid' => [
                 'name' => 'Alubijid',
                 'distance_km' => 3.6,
@@ -157,26 +220,6 @@ class FallbackLocationService
                 'priority' => 2,
                 'region' => 'Misamis Oriental',
                 'aliases' => ['alubijid municipal hall'],
-            ],
-            'el_salvador' => [
-                'name' => 'El Salvador City',
-                'distance_km' => 10.1,
-                'lat' => 8.562529843533776,
-                'lng' => 124.52683585497097,
-                'type' => 'city',
-                'priority' => 2,
-                'region' => 'Misamis Oriental',
-                'aliases' => ['elsalvador', 'el salvador', 'el salvador city hall'],
-            ],
-            'opol' => [
-                'name' => 'Opol',
-                'distance_km' => 18.1,
-                'lat' => 8.524410195364489,
-                'lng' => 124.57426905264148,
-                'type' => 'municipality',
-                'priority' => 2,
-                'region' => 'Misamis Oriental',
-                'aliases' => ['opol municipal hall'],
             ],
             'gitagum' => [
                 'name' => 'Gitagum',
@@ -188,6 +231,16 @@ class FallbackLocationService
                 'region' => 'Misamis Oriental',
                 'aliases' => ['gitagum municipal hall'],
             ],
+            'el_salvador' => [
+                'name' => 'El Salvador City',
+                'distance_km' => 10.1,
+                'lat' => 8.562529843533776,
+                'lng' => 124.52683585497097,
+                'type' => 'city',
+                'priority' => 2,
+                'region' => 'Misamis Oriental',
+                'aliases' => ['elsalvador', 'el salvador', 'el salvador city hall'],
+            ],
             'libertad_mo' => [
                 'name' => 'Libertad',
                 'distance_km' => 13.5,
@@ -197,6 +250,16 @@ class FallbackLocationService
                 'priority' => 2,
                 'region' => 'Misamis Oriental',
                 'aliases' => ['libertad municipal hall', 'libertad misamis oriental'],
+            ],
+            'opol' => [
+                'name' => 'Opol',
+                'distance_km' => 18.1,
+                'lat' => 8.524410195364489,
+                'lng' => 124.57426905264148,
+                'type' => 'municipality',
+                'priority' => 2,
+                'region' => 'Misamis Oriental',
+                'aliases' => ['opol municipal hall'],
             ],
             'initao' => [
                 'name' => 'Initao',
@@ -239,37 +302,9 @@ class FallbackLocationService
                 'aliases' => ['lugait municipal hall'],
             ],
 
-            // ==================== CAGAYAN DE ORO ====================
-            'cdo_city_hall' => [
-                'name' => 'Cagayan de Oro City',
-                'distance_km' => 29.0,
-                'lat' => 8.481725211952732,
-                'lng' => 124.64077461100696,
-                'type' => 'landmark',
-                'priority' => 2,
-                'region' => 'Cagayan de Oro, Misamis Oriental',
-                'aliases' => ['cdo city hall', 'cagayan de oro city hall'],
-            ],
-            'cdo_provincial_capitol' => [
-                'name' => 'Provincial Capitol',
-                'distance_km' => 29.4,
-                'lat' => 8.484947954002099,
-                'lng' => 124.64840582748698,
-                'type' => 'landmark',
-                'priority' => 2,
-                'region' => 'Cagayan de Oro, Misamis Oriental',
-                'aliases' => ['capitol', 'misamis oriental capitol'],
-            ],
-            'nmmc' => [
-                'name' => 'Northern Mindanao Medical Center',
-                'distance_km' => 29.2,
-                'lat' => 8.486057186358508,
-                'lng' => 124.64994047759362,
-                'type' => 'landmark',
-                'priority' => 2,
-                'region' => 'Cagayan de Oro, Misamis Oriental',
-                'aliases' => ['nmmc', 'nmmc cdo'],
-            ],
+            // ================================================================
+            // CAGAYAN DE ORO — LANDMARKS
+            // ================================================================
             'polymedic' => [
                 'name' => 'Cagayan de Oro Polymedic Medical Plaza',
                 'distance_km' => 25.5,
@@ -279,6 +314,16 @@ class FallbackLocationService
                 'priority' => 2,
                 'region' => 'Cagayan de Oro, Misamis Oriental',
                 'aliases' => ['polymedic', 'polymedic hospital'],
+            ],
+            'cdo_city_hall' => [
+                'name' => 'Cagayan de Oro City',
+                'distance_km' => 29.0,
+                'lat' => 8.481725211952732,
+                'lng' => 124.64077461100696,
+                'type' => 'landmark',
+                'priority' => 2,
+                'region' => 'Cagayan de Oro, Misamis Oriental',
+                'aliases' => ['cdo city hall', 'cagayan de oro city hall'],
             ],
             'doctors_sabal' => [
                 'name' => "Doctors' Sabal Hospital",
@@ -290,73 +335,125 @@ class FallbackLocationService
                 'region' => 'Cagayan de Oro, Misamis Oriental',
                 'aliases' => ['doctors sabal', 'sabal hospital'],
             ],
+            'nmmc' => [
+                'name' => 'Northern Mindanao Medical Center',
+                'distance_km' => 29.2,
+                'lat' => 8.486057186358508,
+                'lng' => 124.64994047759362,
+                'type' => 'landmark',
+                'priority' => 2,
+                'region' => 'Cagayan de Oro, Misamis Oriental',
+                'aliases' => ['nmmc', 'nmmc cdo'],
+            ],
+            'cdo_provincial_capitol' => [
+                'name' => 'Provincial Capitol',
+                'distance_km' => 29.4,
+                'lat' => 8.484947954002099,
+                'lng' => 124.64840582748698,
+                'type' => 'landmark',
+                'priority' => 2,
+                'region' => 'Cagayan de Oro, Misamis Oriental',
+                'aliases' => ['capitol', 'misamis oriental capitol'],
+            ],
 
-            // ==================== REGION 10 ====================
+            // ================================================================
+            // REGION 10 — CITIES
+            // ================================================================
+            'gingoog' => [
+                'name' => 'Gingoog City',
+                'distance_km' => 60.0,
+                'lat' => 8.8167,
+                'lng' => 125.1000,
+                'type' => 'city',
+                'priority' => 3,
+                'region' => 'Misamis Oriental',
+                'aliases' => ['gingoog city hall'],
+            ],
             'iligan' => [
                 'name' => 'Iligan City',
                 'distance_km' => 88.5,
-                'lat' => 8.2280, 'lng' => 124.2383,
-                'type' => 'city', 'priority' => 3, 'region' => 'Lanao del Norte',
+                'lat' => 8.2280,
+                'lng' => 124.2383,
+                'type' => 'city',
+                'priority' => 3,
+                'region' => 'Lanao del Norte',
                 'aliases' => ['iligan city hall'],
             ],
             'ozamiz' => [
                 'name' => 'Ozamiz City',
                 'distance_km' => 118.0,
-                'lat' => 8.1455, 'lng' => 123.8445,
-                'type' => 'city', 'priority' => 3, 'region' => 'Misamis Occidental',
+                'lat' => 8.1455,
+                'lng' => 123.8445,
+                'type' => 'city',
+                'priority' => 3,
+                'region' => 'Misamis Occidental',
                 'aliases' => ['ozamiz city hall'],
             ],
             'malaybalay' => [
                 'name' => 'Malaybalay City',
                 'distance_km' => 123.0,
-                'lat' => 8.1567, 'lng' => 125.1331,
-                'type' => 'city', 'priority' => 3, 'region' => 'Bukidnon',
+                'lat' => 8.1567,
+                'lng' => 125.1331,
+                'type' => 'city',
+                'priority' => 3,
+                'region' => 'Bukidnon',
                 'aliases' => ['malaybalay city hall'],
             ],
             'valencia' => [
                 'name' => 'Valencia City',
                 'distance_km' => 154.0,
-                'lat' => 7.9044, 'lng' => 125.0928,
-                'type' => 'city', 'priority' => 3, 'region' => 'Bukidnon',
+                'lat' => 7.9044,
+                'lng' => 125.0928,
+                'type' => 'city',
+                'priority' => 3,
+                'region' => 'Bukidnon',
                 'aliases' => ['valencia city hall'],
             ],
-            'gingoog' => [
-                'name' => 'Gingoog City',
-                'distance_km' => 60.0,
-                'lat' => 8.8167, 'lng' => 125.1000,
-                'type' => 'city', 'priority' => 3, 'region' => 'Misamis Oriental',
-                'aliases' => ['gingoog city hall'],
-            ],
 
-            // ==================== MINDANAO ====================
-            'davao' => [
-                'name' => 'Davao City',
-                'distance_km' => 317.0,
-                'lat' => 7.1907, 'lng' => 125.4553,
-                'type' => 'city', 'priority' => 4, 'region' => 'Davao',
-                'aliases' => ['davao city hall'],
-            ],
+            // ================================================================
+            // MINDANAO — MAJOR CITIES
+            // ================================================================
             'butuan' => [
                 'name' => 'Butuan City',
                 'distance_km' => 202.0,
-                'lat' => 8.9475, 'lng' => 125.5437,
-                'type' => 'city', 'priority' => 4, 'region' => 'Agusan del Norte',
+                'lat' => 8.9475,
+                'lng' => 125.5437,
+                'type' => 'city',
+                'priority' => 4,
+                'region' => 'Agusan del Norte',
                 'aliases' => ['butuan city hall'],
             ],
-            'zamboanga' => [
-                'name' => 'Zamboanga City',
-                'distance_km' => 465.0,
-                'lat' => 6.9127, 'lng' => 122.0680,
-                'type' => 'city', 'priority' => 4, 'region' => 'Zamboanga',
-                'aliases' => ['zamboanga city hall'],
+            'davao' => [
+                'name' => 'Davao City',
+                'distance_km' => 317.0,
+                'lat' => 7.1907,
+                'lng' => 125.4553,
+                'type' => 'city',
+                'priority' => 4,
+                'region' => 'Davao',
+                'aliases' => ['davao city hall'],
             ],
             'surigao' => [
                 'name' => 'Surigao City',
                 'distance_km' => 322.0,
-                'lat' => 9.7836, 'lng' => 125.4955,
-                'type' => 'city', 'priority' => 4, 'region' => 'Surigao del Norte',
+                'lat' => 9.7836,
+                'lng' => 125.4955,
+                'type' => 'city',
+                'priority' => 4,
+                'region' => 'Surigao del Norte',
                 'aliases' => ['surigao city hall'],
             ],
+            'zamboanga' => [
+                'name' => 'Zamboanga City',
+                'distance_km' => 465.0,
+                'lat' => 6.9127,
+                'lng' => 122.0680,
+                'type' => 'city',
+                'priority' => 4,
+                'region' => 'Zamboanga',
+                'aliases' => ['zamboanga city hall'],
+            ],
+
         ];
     }
 
@@ -396,24 +493,27 @@ class FallbackLocationService
             $name = $location['name'];
             $description = $name;
             $nameLower = strtolower($name);
+            $type = $location['type'] ?? 'location';
 
-            if ($location['type'] === 'barangay') {
+            if ($type === 'group') {
+                $description = $name;
+            } elseif ($type === 'barangay') {
                 if (strpos($nameLower, 'laguindingan') !== false) {
                     $description = $name . ', Misamis Oriental';
                 } else {
                     $description = $name . ', Laguindingan, Misamis Oriental';
                 }
-            } elseif ($location['type'] === 'municipality') {
+            } elseif ($type === 'municipality') {
                 if (strpos($nameLower, 'misamis oriental') === false) {
                     $description = $name . ', Misamis Oriental';
                 }
-            } elseif ($location['type'] === 'landmark') {
+            } elseif ($type === 'landmark') {
                 if (strpos($nameLower, 'cagayan de oro') !== false || strpos($nameLower, 'misamis oriental') !== false) {
                     $description = $name;
                 } else {
                     $description = $name . ', Misamis Oriental';
                 }
-            } elseif ($location['type'] === 'city') {
+            } elseif ($type === 'city') {
                 if (strpos($nameLower, 'philippines') === false) {
                     $description = $name . ', Philippines';
                 }
@@ -424,7 +524,7 @@ class FallbackLocationService
                 'place_id' => 'fallback_' . $key,
                 'lat' => (float) $lat,
                 'lng' => (float) $lng,
-                'type' => $location['type'] ?? 'location',
+                'type' => $type,
                 'distance_km' => (float) ($location['distance_km'] ?? 0),
                 'priority' => $location['priority'] ?? 5,
                 'region' => $location['region'] ?? 'Unknown',
@@ -449,7 +549,7 @@ class FallbackLocationService
     }
 
     /**
-     * ✅ FIXED: Use hard-coded distances when available, haversine as last resort
+     * Calculate distance — uses hard-coded distances when available, haversine as last resort
      */
     public function calculateDistance($origin, $destination)
     {
@@ -462,17 +562,17 @@ class FallbackLocationService
         $distanceKm = 0.0;
         $source = '';
 
-        // ✅ BEST: origin is Laguindingan AND destination has known distance
+        // BEST: origin is Laguindingan AND destination has known distance
         if ($this->isOriginLaguindingan($originData) && ($destData['distance_km'] ?? 0) > 0) {
             $distanceKm = (float) $destData['distance_km'];
             $source = 'known_from_laguindingan';
         }
-        // ✅ GOOD: both have known distances → difference
+        // GOOD: both have known distances → difference
         elseif (($destData['distance_km'] ?? 0) > 0 && ($originData['distance_km'] ?? 0) > 0) {
             $distanceKm = abs((float) $destData['distance_km'] - (float) $originData['distance_km']);
             $source = 'known_difference';
         }
-        // ⚠️ FALLBACK: haversine with road factor
+        // FALLBACK: haversine with road factor
         else {
             $straightKm = $this->haversineDistance(
                 $originData['lat'], $originData['lng'],
@@ -480,6 +580,12 @@ class FallbackLocationService
             );
             $distanceKm = $straightKm * 1.25;
             $source = 'haversine_road_factor';
+
+            Log::warning('FallbackLocationService: haversine fallback used', [
+                'origin' => $originData['name'] ?? $origin,
+                'destination' => $destData['name'] ?? $destination,
+                'straight_km' => round($straightKm, 2),
+            ]);
         }
 
         if ($distanceKm < 0.1) {
@@ -497,7 +603,7 @@ class FallbackLocationService
     }
 
     /**
-     * ✅ NEW: Speed estimation by destination type
+     * Speed estimation by destination type
      */
     private function estimateDuration($distanceKm, $destination)
     {
@@ -509,6 +615,7 @@ class FallbackLocationService
             'city'         => 25,
             'landmark'     => 25,
             'origin'       => 30,
+            'group'        => 30,
             default        => 35,
         };
 
@@ -516,7 +623,7 @@ class FallbackLocationService
     }
 
     /**
-     * ✅ NEW: Check if the location is Laguindingan (reference origin)
+     * Check if the location is Laguindingan (reference origin)
      */
     private function isOriginLaguindingan($location)
     {
@@ -616,14 +723,14 @@ class FallbackLocationService
         if (!$result['success']) return $result;
 
         $efficiency = 10;
-        $fuelType = 'regular';
+        $fuelType = 'gasoline';
 
         if ($vehicleId) {
             try {
                 $vehicle = \App\Models\Vehicle::find($vehicleId);
                 if ($vehicle) {
                     $efficiency = $vehicle->fuel_efficiency ?? 10;
-                    $fuelType = $vehicle->fuel_type ?? 'regular';
+                    $fuelType = $vehicle->fuel_type ?? 'gasoline';
                 }
             } catch (\Exception $e) {
                 Log::error('Error getting vehicle: ' . $e->getMessage());
@@ -663,12 +770,11 @@ class FallbackLocationService
     private function getFuelPrice($fuelType = null)
     {
         $map = [
-            'diesel' => 'diesel_price_per_liter',
-            'premium' => 'premium_price_per_liter',
-            'regular' => 'regular_price_per_liter',
+            'diesel'   => 'diesel_price_per_liter',
+            'premium'  => 'premium_price_per_liter',
             'gasoline' => 'regular_price_per_liter',
         ];
-        $key = $map[strtolower($fuelType)] ?? 'regular_price_per_liter';
+        $key = $map[strtolower($fuelType ?? '')] ?? 'regular_price_per_liter';
         try {
             $setting = \App\Models\SystemSetting::where('setting_key', $key)->first();
             return $setting ? (float) $setting->setting_value : 75.00;

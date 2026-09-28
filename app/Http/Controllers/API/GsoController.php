@@ -1324,8 +1324,8 @@ public function getFuelReceipts(Request $request)
 }
 
 /**
- * ✅ GSO edits liters on an existing fuel receipt
- * PUT /api/admin/fuel-receipts/{id}/liters
+ *  GSO edits liters on an existing fuel receipt
+
  */
 public function updateFuelReceiptLiters(Request $request, $id)
 {
@@ -1345,26 +1345,17 @@ public function updateFuelReceiptLiters(Request $request, $id)
 
         $receipt = FuelReceipt::findOrFail($id);
 
-        // ✅ Cap check: cannot exceed gas_slip.amount_released? (optional)
-        // Not capping on liters — GSO can enter actual pump reading.
-
         DB::beginTransaction();
 
-        $oldLiters = (float) $receipt->liters_availed;
+        $oldLiters    = (float) $receipt->liters_availed;
+        $oldUnitPrice = (float) $receipt->unit_price;
+
+        // ✅ Only update liters. Unit price stays exactly as it is.
         $receipt->liters_availed = $request->liters_availed;
-
-        // ✅ Recompute unit_price if amount is present
-        if ($receipt->amount_on_receipt && $request->liters_availed > 0) {
-            $receipt->unit_price = round(
-                $receipt->amount_on_receipt / $request->liters_availed,
-                2
-            );
-        }
-
-        $receipt->updated_at = now();
+        $receipt->updated_at     = now();
         $receipt->save();
 
-        // ✅ Sync trip actuals (this recalculates actual_fuel_used on the parent trip)
+        // Sync trip actuals
         $trip = $receipt->gasSlip?->tripTicket;
         if ($trip) {
             $trip->syncActuals()->save();
@@ -1372,10 +1363,11 @@ public function updateFuelReceiptLiters(Request $request, $id)
 
         DB::commit();
 
-        Log::info('GSO updated fuel receipt liters', [
+        Log::info('GSO updated fuel receipt liters (unit_price untouched)', [
             'fuel_receipt_id' => $id,
             'old_liters'      => $oldLiters,
             'new_liters'      => $request->liters_availed,
+            'unit_price'      => $receipt->unit_price,
             'updated_by'      => $user->user_id,
         ]);
 

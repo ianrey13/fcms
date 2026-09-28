@@ -5,6 +5,9 @@
 // Auto-focus first error field
 // ✅ Title Case formatting for department_name + head_of_office
 // ✅ AlertDialog confirmation before create
+// ✅ Department code now allows spaces (e.g., "MO LTE")
+// ✅ Apostrophe no longer triggers false capitalization ("Mayor's Office")
+// ✅ ñ/Ñ preserved for Filipino names (Santo Niño)
 // ============================================
 
 import React, { useState, useRef } from "react";
@@ -71,7 +74,10 @@ const SMALL_WORDS = new Set([
 const formatProperName = (value, { keepPeriods = false } = {}) => {
     if (!value) return "";
 
-    const allowed = keepPeriods ? /[^A-Za-z\s.'\-]/g : /[^A-Za-z\s'\-]/g;
+    // ✅ Include ñ/Ñ for Filipino names
+    const allowed = keepPeriods
+        ? /[^A-Za-zñÑ\s.'\-]/g
+        : /[^A-Za-zñÑ\s'\-]/g;
 
     const words = String(value)
         .replace(allowed, "")
@@ -102,15 +108,16 @@ const formatProperName = (value, { keepPeriods = false } = {}) => {
                 return lower;
             }
 
-            // Title Case with hyphen/apostrophe support
+            // ✅ Capitalize after hyphen or word start ONLY (not after apostrophe)
             return lower.replace(
-                /(^|[\-'])([a-z])/g,
-                (_, p, c) => p + c.toUpperCase(),
+                /(^|-)([a-zñ])/g,
+                (_, prefix, char) => prefix + char.toUpperCase(),
             );
         })
         .filter(Boolean)
         .join(" ");
 };
+
 // ============================================
 // ✅ ENHANCED: Form Field with error highlighting
 // ============================================
@@ -206,26 +213,31 @@ const AddDepartment = () => {
             newErrors.department_name =
                 "Department name cannot contain numbers";
             newTouched.department_name = true;
-        } else if (/[^A-Za-z\s'\-]/.test(formData.department_name)) {
+        } else if (/[^A-Za-zñÑ\s'\-]/.test(formData.department_name)) {
             newErrors.department_name =
                 "Department name can only contain letters, spaces, apostrophes, and hyphens";
             newTouched.department_name = true;
         }
 
-        // Department Code validation
-       if (!formData.department_code.trim()) {
-  newErrors.department_code = "Department code is required";
-  newTouched.department_code = true;
-} else if (formData.department_code.trim().length < 2) {
-  newErrors.department_code = "Code must be at least 2 characters";
-  newTouched.department_code = true;
-} else if (formData.department_code.trim().length > 10) {
-  newErrors.department_code = "Code must be 10 characters or less";
-  newTouched.department_code = true;
-} else if (!/^[A-Z0-9]+$/.test(formData.department_code.trim().toUpperCase())) {
-  newErrors.department_code = "Code can only contain letters and numbers (ALL CAPS). No spaces, hyphens, or symbols.";
-  newTouched.department_code = true;
-}
+        // Department Code validation — ✅ allows spaces now
+        const trimmedCode = formData.department_code.trim();
+        if (!trimmedCode) {
+            newErrors.department_code = "Department code is required";
+            newTouched.department_code = true;
+        } else if (trimmedCode.length < 2) {
+            newErrors.department_code = "Code must be at least 2 characters";
+            newTouched.department_code = true;
+        } else if (trimmedCode.length > 10) {
+            newErrors.department_code = "Code must be 10 characters or less";
+            newTouched.department_code = true;
+        } else if (!/^[A-Z0-9\s]+$/.test(trimmedCode.toUpperCase())) {
+            newErrors.department_code =
+                "Code can only contain letters, numbers, and spaces (ALL CAPS). No hyphens or symbols.";
+            newTouched.department_code = true;
+        } else if (!/\S/.test(trimmedCode)) {
+            newErrors.department_code = "Code cannot be only spaces";
+            newTouched.department_code = true;
+        }
 
         // Head of Office validation
         if (
@@ -244,7 +256,7 @@ const AddDepartment = () => {
             newTouched.head_of_office = true;
         } else if (
             formData.head_of_office &&
-            /[^A-Za-z\s.'\-]/.test(formData.head_of_office)
+            /[^A-Za-zñÑ\s.'\-]/.test(formData.head_of_office)
         ) {
             newErrors.head_of_office =
                 "Head of office can only contain letters, spaces, periods, apostrophes, and hyphens";
@@ -344,7 +356,11 @@ const AddDepartment = () => {
         createDepartment.mutate(
             {
                 department_name: finalName,
-                department_code: formData.department_code.trim().toUpperCase(),
+                // ✅ Collapse multiple spaces, trim, uppercase
+                department_code: formData.department_code
+                    .trim()
+                    .replace(/\s+/g, " ")
+                    .toUpperCase(),
                 head_of_office: finalHead || null,
             },
             {
@@ -451,19 +467,20 @@ const AddDepartment = () => {
                                 required
                                 error={errors.department_code}
                                 touched={touched.department_code}
-                               helper="Max 10 characters, ALL CAPS letters and numbers only. Example: ICTOFFICE, MDRRMO, GSO."
+                                helper="Max 10 characters, ALL CAPS letters, numbers, and spaces. Example: MO LTE, ICTOFFICE, MDRRMO."
                             >
                                 <Input
                                     id="department_code"
                                     name="department_code"
-                                    placeholder="e.g., ICTOFFICE"
+                                    placeholder="e.g., MO LTE"
                                     value={formData.department_code}
                                     onChange={(e) =>
                                         handleChange(
                                             "department_code",
                                             e.target.value
                                                 .toUpperCase()
-                                                .replace(/[^A-Z0-9]/g, "")
+                                                .replace(/[^A-Z0-9\s]/g, "")
+                                                .replace(/\s+/g, " ")
                                                 .slice(0, 10),
                                         )
                                     }

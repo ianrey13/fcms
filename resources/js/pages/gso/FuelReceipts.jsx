@@ -35,8 +35,8 @@ import {
     Truck,
     Fuel,
     AlertTriangle,
+    AlertCircle,
     Clock,
-    Gauge,
     Zap,
     CheckCircle,
     XCircle,
@@ -45,7 +45,6 @@ import {
     Minus,
     X,
     Save,
-    Pencil,
 } from "lucide-react";
 import {
     Dialog,
@@ -56,68 +55,34 @@ import {
 } from "@/components/ui/dialog";
 import { format } from "date-fns";
 import { toast } from "react-hot-toast";
-
-// ============================================
-// ✅ HELPER: Robust array extraction from any API response shape
-// ============================================
+import { cn } from "@/lib/utils";
 
 const extractReceiptsArray = (response) => {
     if (!response) return [];
     if (Array.isArray(response)) return response;
-
-    const possibleKeys = [
-        'receipts',
-        'data',
-        'items',
-        'results',
-        'records',
-        'fuel_receipts',
-        'fuelReceipts',
-        'rows',
-        'list',
-        'payload',
-    ];
-
+    const possibleKeys = ['receipts','data','items','results','records','fuel_receipts','fuelReceipts','rows','list','payload'];
     for (const key of possibleKeys) {
-        if (Array.isArray(response[key])) {
-            return response[key];
-        }
+        if (Array.isArray(response[key])) return response[key];
     }
-
     if (response.data && typeof response.data === 'object') {
         for (const key of possibleKeys) {
-            if (Array.isArray(response.data[key])) {
-                return response.data[key];
-            }
+            if (Array.isArray(response.data[key])) return response.data[key];
         }
     }
-
     if (typeof response === 'object') {
-        if (
-            response.id ||
-            response.fuel_receipt_id ||
-            response.ticket_number ||
-            response.trip_ticket_number
-        ) {
+        if (response.id || response.fuel_receipt_id || response.ticket_number || response.trip_ticket_number) {
             return [response];
         }
     }
-
     return [];
 };
-
-// ============================================
-// HELPER FUNCTIONS
-// ============================================
 
 const sanitizeDecimalInput = (value, maxDecimals = 2) => {
     if (value === null || value === undefined) return '';
     let cleaned = String(value).replace(/[^0-9.]/g, '');
     const firstDot = cleaned.indexOf('.');
     if (firstDot !== -1) {
-        cleaned =
-            cleaned.slice(0, firstDot + 1) +
-            cleaned.slice(firstDot + 1).replace(/\./g, '');
+        cleaned = cleaned.slice(0, firstDot + 1) + cleaned.slice(firstDot + 1).replace(/\./g, '');
     }
     const parts = cleaned.split('.');
     if (parts.length === 2 && parts[1].length > maxDecimals) {
@@ -129,10 +94,8 @@ const sanitizeDecimalInput = (value, maxDecimals = 2) => {
 const getReceiptImageUrls = (receipt) => {
     let url = receipt?.receipt_url || receipt?.receipt_photo_path || null;
     if (!url) return [];
-
     const baseUrl = window.location.origin;
     const urlsList = [];
-
     if (url.startsWith('http://') || url.startsWith('https://')) {
         urlsList.push(url);
         const filename = url.split('/').pop();
@@ -142,21 +105,13 @@ const getReceiptImageUrls = (receipt) => {
         }
         return [...new Set(urlsList)];
     }
-
     const filename = url.split('/').pop();
     if (!filename) return [];
-
     urlsList.push(`${baseUrl}/receipts/${filename}`);
     urlsList.push(`${baseUrl}/storage/receipts/${filename}`);
-
-    if (url.startsWith('/')) {
-        urlsList.push(`${baseUrl}${url}`);
-    } else if (!url.startsWith('receipts/') && !url.startsWith('storage/')) {
-        urlsList.push(`${baseUrl}/${url}`);
-    } else if (url.startsWith('receipts/')) {
-        urlsList.push(`${baseUrl}/${url}`);
-    }
-
+    if (url.startsWith('/')) urlsList.push(`${baseUrl}${url}`);
+    else if (!url.startsWith('receipts/') && !url.startsWith('storage/')) urlsList.push(`${baseUrl}/${url}`);
+    else if (url.startsWith('receipts/')) urlsList.push(`${baseUrl}/${url}`);
     return [...new Set(urlsList)];
 };
 
@@ -175,20 +130,16 @@ const formatDate = (date) => {
     if (!date) return "N/A";
     return format(new Date(date), "MMM dd, yyyy hh:mm a");
 };
-
 const formatDateShort = (date) => {
     if (!date) return "N/A";
     return format(new Date(date), "MMM dd, yyyy");
 };
-
 const formatTimeAgo = (date) => {
     if (!date) return "N/A";
-    const now = new Date();
-    const diff = now - new Date(date);
+    const diff = new Date() - new Date(date);
     const mins = Math.floor(diff / 60000);
     const hours = Math.floor(diff / 3600000);
     const days = Math.floor(diff / 86400000);
-
     if (mins < 1) return "Just now";
     if (mins < 60) return `${mins}m ago`;
     if (hours < 24) return `${hours}h ago`;
@@ -196,23 +147,16 @@ const formatTimeAgo = (date) => {
     return formatDateShort(date);
 };
 
-// ============================================
-// RECEIPT IMAGE COMPONENT
-// ============================================
-
 const ReceiptImage = ({ receipt }) => {
     const [imageError, setImageError] = useState(false);
     const [currentUrlIndex, setCurrentUrlIndex] = useState(0);
     const [imageLoaded, setImageLoaded] = useState(false);
-
     const urls = React.useMemo(() => getReceiptImageUrls(receipt), [receipt]);
-
     React.useEffect(() => {
         setImageError(false);
         setCurrentUrlIndex(0);
         setImageLoaded(false);
     }, [receipt]);
-
     if (urls.length === 0) {
         return (
             <div className="border rounded-xl p-8 text-center bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700">
@@ -224,18 +168,12 @@ const ReceiptImage = ({ receipt }) => {
             </div>
         );
     }
-
     const currentUrl = urls[currentUrlIndex];
     const hasMoreUrls = currentUrlIndex < urls.length - 1;
-
     const handleImageError = () => {
-        if (hasMoreUrls) {
-            setCurrentUrlIndex(prev => prev + 1);
-        } else {
-            setImageError(true);
-        }
+        if (hasMoreUrls) setCurrentUrlIndex(prev => prev + 1);
+        else setImageError(true);
     };
-
     if (imageError) {
         return (
             <div className="border rounded-xl p-8 text-center bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700">
@@ -243,26 +181,13 @@ const ReceiptImage = ({ receipt }) => {
                     <AlertTriangle className="h-8 w-8 text-red-500" />
                 </div>
                 <p className="text-red-600 dark:text-red-400 font-medium">Cannot load receipt image</p>
-                <p className="text-xs text-slate-400 dark:text-slate-500 mt-1 break-all">
-                    Tried: {urls.join(' → ')}
-                </p>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
-                    DB Path: {receipt.receipt_photo_path || receipt.receipt_url || 'No path'}
-                </p>
-                <button
-                    onClick={() => {
-                        setImageError(false);
-                        setCurrentUrlIndex(0);
-                        setImageLoaded(false);
-                    }}
-                    className="mt-3 text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 underline"
-                >
+                <button onClick={() => { setImageError(false); setCurrentUrlIndex(0); setImageLoaded(false); }}
+                    className="mt-3 text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 underline">
                     Retry
                 </button>
             </div>
         );
     }
-
     return (
         <div className="relative border rounded-xl overflow-hidden bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700">
             {!imageLoaded && (
@@ -270,46 +195,22 @@ const ReceiptImage = ({ receipt }) => {
                     <Loader2 className="h-8 w-8 text-blue-500 animate-spin" />
                 </div>
             )}
-            <img
-                src={currentUrl}
-                alt="Fuel Receipt"
-                className={`w-full max-h-80 object-contain transition-all duration-300 hover:scale-105 ${
-                    imageLoaded ? 'opacity-100' : 'opacity-0'
-                }`}
-                onError={handleImageError}
-                onLoad={() => setImageLoaded(true)}
-                loading="lazy"
-            />
-            {urls.length > 1 && !imageError && (
-                <div className="absolute bottom-2 right-2 bg-black/50 backdrop-blur-sm text-white text-[10px] px-2 py-1 rounded-lg">
-                    Trying {currentUrlIndex + 1}/{urls.length}
-                </div>
-            )}
-            <div className="absolute top-2 right-2 bg-black/50 backdrop-blur-sm text-white text-[10px] px-2 py-1 rounded-lg">
-                Click to expand
-            </div>
+            <img src={currentUrl} alt="Fuel Receipt"
+                className={`w-full max-h-80 object-contain transition-all duration-300 ${imageLoaded ? 'opacity-100' : 'opacity-0'}`}
+                onError={handleImageError} onLoad={() => setImageLoaded(true)} loading="lazy" />
         </div>
     );
 };
-
-// ============================================
-// STATUS BADGE COMPONENT
-// ============================================
 
 const StatusBadge = ({ status }) => {
     const config = getStatusConfig(status);
     const Icon = config.icon;
     return (
         <Badge className={`${config.color} text-white flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-medium`}>
-            <Icon className="h-3 w-3" />
-            {config.label}
+            <Icon className="h-3 w-3" />{config.label}
         </Badge>
     );
 };
-
-// ============================================
-// STATS CARD COMPONENT
-// ============================================
 
 const StatsCard = ({ title, value, icon: Icon, color, subtitle, trend }) => {
     const getTrendIcon = () => {
@@ -318,16 +219,13 @@ const StatsCard = ({ title, value, icon: Icon, color, subtitle, trend }) => {
         if (trend < 0) return <TrendingDown className="h-3 w-3 text-red-500" />;
         return <Minus className="h-3 w-3 text-slate-400" />;
     };
-
     return (
         <div className="bg-white dark:bg-slate-800/80 rounded-xl p-4 border border-slate-200/60 dark:border-slate-700/60">
             <div className="flex items-start justify-between">
                 <div>
                     <p className="text-xs text-slate-500 dark:text-slate-400 font-medium uppercase tracking-wider">{title}</p>
                     <p className="text-2xl font-bold text-slate-900 dark:text-white mt-1">{value}</p>
-                    {subtitle && (
-                        <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">{subtitle}</p>
-                    )}
+                    {subtitle && <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">{subtitle}</p>}
                 </div>
                 <div className={`p-2.5 rounded-xl bg-gradient-to-br ${color} shadow-lg`}>
                     <Icon className="h-5 w-5 text-white" />
@@ -346,24 +244,14 @@ const StatsCard = ({ title, value, icon: Icon, color, subtitle, trend }) => {
     );
 };
 
-// ============================================
-// LOADING SKELETON
-// ============================================
-
 const LoadingSkeleton = () => (
     <div className="space-y-6 p-4 md:p-6 min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
         <SkeletonPage />
         <SkeletonStats count={4} cols={4} />
-        <div className="relative">
-            <SkeletonCard className="h-12" />
-        </div>
+        <div className="relative"><SkeletonCard className="h-12" /></div>
         <SkeletonTable rows={5} cols={6} />
     </div>
 );
-
-// ============================================
-// MAIN COMPONENT
-// ============================================
 
 const FuelReceipts = () => {
     const queryClient = useQueryClient();
@@ -372,34 +260,16 @@ const FuelReceipts = () => {
     const [selectedReceipt, setSelectedReceipt] = useState(null);
     const [showReceiptDialog, setShowReceiptDialog] = useState(false);
 
-    // ✅ modal-only liters editing
     const [modalLiters, setModalLiters] = useState('');
     const [isSavingModal, setIsSavingModal] = useState(false);
-    const [isEditingLiters, setIsEditingLiters] = useState(false);
+    const [litersError, setLitersError] = useState('');
 
-    // ✅ confirmation dialog for saving liters
     const [showConfirmSave, setShowConfirmSave] = useState(false);
 
-    // ============================================
-    // ✅ AUTO-REFRESH
-    // ============================================
-
     useAutoRefresh(
-        [
-            "gso-trip-updated",
-            "gso-trip-status-changed",
-            "new-notification",
-            "trip-completed",
-            "gso-funds-released",
-        ],
-        () => {
-            queryClient.invalidateQueries({ queryKey: ["gso-fuel-receipts"] });
-        }
+        ["gso-trip-updated","gso-trip-status-changed","new-notification","trip-completed","gso-funds-released"],
+        () => { queryClient.invalidateQueries({ queryKey: ["gso-fuel-receipts"] }); }
     );
-
-    // ============================================
-    // ✅ OPTIMIZED QUERY
-    // ============================================
 
     const { data: receiptsResponse, isLoading } = useOptimizedQuery({
         queryKey: ["gso-fuel-receipts"],
@@ -438,96 +308,62 @@ const FuelReceipts = () => {
     const stats = useMemo(() => {
         const safeReceipts = Array.isArray(receipts) ? receipts : [];
         return [
-            {
-                title: 'Total Receipts',
-                value: safeReceipts.length,
-                icon: Receipt,
-                color: 'from-blue-500 to-blue-600',
-                subtitle: `${filteredReceipts.length} shown`,
-                trend: safeReceipts.length > 0 ? 8 : 0,
-            },
-            {
-                title: 'Pending',
-                value: safeReceipts.filter(r => r?.status === 'pending').length,
-                icon: Clock,
-                color: 'from-yellow-500 to-yellow-600',
-                subtitle: 'Awaiting verification',
-                trend: 0,
-            },
-            {
-                title: 'Verified',
-                value: safeReceipts.filter(r => r?.status === 'verified' || r?.status === 'approved').length,
-                icon: CheckCircle,
-                color: 'from-green-500 to-emerald-600',
-                subtitle: 'Approved receipts',
-                trend: 0,
-            },
-            {
-                title: 'Discrepancy',
-                value: safeReceipts.filter(r => r?.status === 'discrepancy' || r?.status === 'rejected').length,
-                icon: AlertTriangle,
-                color: 'from-red-500 to-rose-600',
-                subtitle: 'Needs attention',
-                trend: 0,
-            },
+            { title: 'Total Receipts', value: safeReceipts.length, icon: Receipt, color: 'from-blue-500 to-blue-600', subtitle: `${filteredReceipts.length} shown`, trend: safeReceipts.length > 0 ? 8 : 0 },
+            { title: 'Pending', value: safeReceipts.filter(r => (r?.status || r?.reconciliation_status) === 'pending').length, icon: Clock, color: 'from-yellow-500 to-yellow-600', subtitle: 'Awaiting verification', trend: 0 },
+            { title: 'Verified', value: safeReceipts.filter(r => ['verified','approved'].includes(r?.status || r?.reconciliation_status)).length, icon: CheckCircle, color: 'from-green-500 to-emerald-600', subtitle: 'Approved receipts', trend: 0 },
+            { title: 'Discrepancy', value: safeReceipts.filter(r => ['discrepancy','rejected'].includes(r?.status || r?.reconciliation_status)).length, icon: AlertTriangle, color: 'from-red-500 to-rose-600', subtitle: 'Needs attention', trend: 0 },
         ];
     }, [receipts, filteredReceipts]);
 
-    // ============================================
-    // ✅ OPEN MODAL
-    // ============================================
-
     const handleOpenModal = useCallback((receipt) => {
         setSelectedReceipt(receipt);
-        const existing = parseFloat(receipt.liters || receipt.liters_availed || 0);
-        const hasLiters = existing > 0;
-
-        setModalLiters(hasLiters ? String(existing) : '');
-        setIsEditingLiters(!hasLiters);
+        const existingLiters = parseFloat(receipt.liters || receipt.liters_availed || 0);
+        setModalLiters(existingLiters > 0 ? String(existingLiters) : '');
+        setLitersError('');
         setShowReceiptDialog(true);
     }, []);
 
-    // ============================================
-    // ✅ TOGGLE EDIT MODE
-    // ============================================
-
-    const handleStartEdit = useCallback(() => {
-        if (!selectedReceipt) return;
-        const existing = parseFloat(selectedReceipt.liters || selectedReceipt.liters_availed || 0);
-        setModalLiters(existing > 0 ? String(existing) : '');
-        setIsEditingLiters(true);
-    }, [selectedReceipt]);
-
     const handleCancelEdit = useCallback(() => {
         if (!selectedReceipt) return;
-        const existing = parseFloat(selectedReceipt.liters || selectedReceipt.liters_availed || 0);
-        setModalLiters(existing > 0 ? String(existing) : '');
-        setIsEditingLiters(false);
+        const existingLiters = parseFloat(selectedReceipt.liters || selectedReceipt.liters_availed || 0);
+        setModalLiters(existingLiters > 0 ? String(existingLiters) : '');
+        setLitersError('');
     }, [selectedReceipt]);
 
-    // ============================================
-    // ✅ SAVE LITERS — now with confirmation
-    // ============================================
+    const handleLitersChange = useCallback((raw) => {
+        const cleaned = sanitizeDecimalInput(raw, 2);
+        setModalLiters(cleaned);
+        if (litersError) setLitersError('');
+    }, [litersError]);
 
-    const handleSaveClick = useCallback(() => {
-        const parsed = parseFloat(modalLiters);
-        if (modalLiters === '' || isNaN(parsed) || parsed <= 0) {
-            toast.error('Please enter a valid liters value (positive number)');
-            return;
-        }
-        setShowConfirmSave(true);
+    const validateAll = useCallback(() => {
+        const litersErr = (!modalLiters || parseFloat(modalLiters) <= 0)
+            ? 'Liters is required and must be greater than 0.'
+            : parseFloat(modalLiters) > 1000
+                ? 'Liters looks too high (max 1000 L).'
+                : '';
+        setLitersError(litersErr);
+        return !litersErr;
     }, [modalLiters]);
 
-    const handleConfirmSaveLiters = useCallback(async () => {
-        setShowConfirmSave(false);
-        if (!selectedReceipt) return;
+    const handleSaveClick = useCallback(() => {
+        if (!validateAll()) {
+            toast.error('Please fix the highlighted field before saving.');
+            return;
+        }
+        setShowReceiptDialog(false);
+        setTimeout(() => setShowConfirmSave(true), 150);
+    }, [validateAll]);
 
+    const handleConfirmSave = useCallback(async () => {
+        if (!selectedReceipt) return;
         const id = selectedReceipt.id || selectedReceipt.fuel_receipt_id;
-        const parsed = parseFloat(modalLiters);
+        const liters = parseFloat(modalLiters);
 
         setIsSavingModal(true);
         try {
-            const res = await gsoAPI.updateFuelReceiptLiters(id, parsed);
+            // ✅ Only liters — backend does NOT recompute unit_price
+            const res = await gsoAPI.updateFuelReceiptLiters(id, liters);
             const updated = res?.data?.data || {};
 
             queryClient.setQueryData(['gso-fuel-receipts'], (old) => {
@@ -537,7 +373,7 @@ const FuelReceipts = () => {
                     if (rid === id) {
                         return {
                             ...r,
-                            liters: updated.liters_availed ?? parsed,
+                            liters: updated.liters_availed ?? liters,
                             unit_price: updated.unit_price ?? r.unit_price,
                         };
                     }
@@ -547,62 +383,56 @@ const FuelReceipts = () => {
 
             setSelectedReceipt(prev => prev ? {
                 ...prev,
-                liters: updated.liters_availed ?? parsed,
+                liters: updated.liters_availed ?? liters,
                 unit_price: updated.unit_price ?? prev.unit_price,
             } : prev);
 
-            setModalLiters(String(updated.liters_availed ?? parsed));
-            setIsEditingLiters(false);
             toast.success('Liters saved');
+            setShowConfirmSave(false);
+            setTimeout(() => setShowReceiptDialog(true), 150);
         } catch (err) {
-            console.error('Save liters error:', err);
+            console.error('Save receipt error:', err);
             toast.error(err?.response?.data?.message || 'Failed to save liters');
+            setShowConfirmSave(false);
+            setTimeout(() => setShowReceiptDialog(true), 150);
         } finally {
             setIsSavingModal(false);
         }
     }, [selectedReceipt, modalLiters, queryClient]);
 
-    // ============================================
-    // LOADING STATE
-    // ============================================
+    const handleCancelConfirmSave = useCallback(() => {
+        setShowConfirmSave(false);
+        setTimeout(() => setShowReceiptDialog(true), 150);
+    }, []);
 
-    if (isLoading && !receiptsResponse) {
-        return <LoadingSkeleton />;
-    }
+    const handleCloseReceiptDialog = useCallback((open) => {
+        setShowReceiptDialog(open);
+        if (!open) {
+            setTimeout(() => { setLitersError(''); }, 200);
+        }
+    }, []);
 
-    // ============================================
-    // RENDER
-    // ============================================
+    if (isLoading && !receiptsResponse) return <LoadingSkeleton />;
 
     return (
         <div className="space-y-6 p-4 md:p-6 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 min-h-screen">
-            {/* Header */}
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                 <div>
                     <h1 className="text-2xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 bg-clip-text text-transparent flex items-center gap-2">
-                        <Receipt className="h-6 w-6 text-blue-600" />
-                        Fuel Receipts
+                        <Receipt className="h-6 w-6 text-blue-600" />Fuel Receipts
                     </h1>
                     <p className="text-slate-500 dark:text-slate-400 text-sm">
                         View and manage driver uploaded fuel receipts
                         <span className="ml-2 text-xs opacity-70">{connectionStatus}</span>
-                        {isRealTime && (
-                            <span className="ml-2 text-xs text-emerald-400 animate-pulse">
-                                ● Auto-refresh
-                            </span>
-                        )}
+                        {isRealTime && <span className="ml-2 text-xs text-emerald-400 animate-pulse">● Auto-refresh</span>}
                     </p>
                 </div>
             </div>
 
-            {/* Stats Cards */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                {stats.map((stat, index) => (
-                    <StatsCard key={index} {...stat} />
-                ))}
+                {stats.map((stat, index) => <StatsCard key={index} {...stat} />)}
             </div>
 
-            {/* Search */}
             <div className="relative">
                 <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
                 <Input
@@ -612,38 +442,27 @@ const FuelReceipts = () => {
                     className="pl-11 h-12 bg-white dark:bg-slate-800 dark:border-slate-700 rounded-xl shadow-sm text-slate-800 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500"
                 />
                 {searchTerm && (
-                    <button
-                        onClick={() => setSearchTerm("")}
-                        className="absolute right-4 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                    >
+                    <button onClick={() => setSearchTerm("")} className="absolute right-4 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-slate-600">
                         <X className="h-4 w-4" />
                     </button>
                 )}
             </div>
 
-            {/* Receipts Table */}
             <Card className="dark:bg-slate-800/80 dark:border-slate-700 shadow-xl shadow-black/5">
                 <CardHeader className="border-b border-slate-200/60 dark:border-slate-700/60">
                     <div className="flex items-center justify-between">
                         <div>
                             <CardTitle className="flex items-center gap-2 text-slate-800 dark:text-white">
-                                <Receipt className="h-5 w-5 text-blue-500" />
-                                All Fuel Receipts
+                                <Receipt className="h-5 w-5 text-blue-500" />All Fuel Receipts
                             </CardTitle>
                             <CardDescription className="dark:text-slate-400">
                                 {filteredReceipts.length} receipt(s) found
                                 {filteredReceipts.length !== receipts.length && ` (filtered from ${receipts.length} total)`}
-                                {isRealTime && (
-                                    <span className="ml-2 text-xs text-emerald-500 animate-pulse">
-                                        ● Live updates
-                                    </span>
-                                )}
                             </CardDescription>
                         </div>
                         {filteredReceipts.length > 0 && (
                             <Badge className="bg-blue-500/20 text-blue-600 dark:text-blue-400 border-blue-500/30">
-                                <Zap className="h-3 w-3 mr-1" />
-                                {filteredReceipts.length} records
+                                <Zap className="h-3 w-3 mr-1" />{filteredReceipts.length} records
                             </Badge>
                         )}
                     </div>
@@ -654,46 +473,24 @@ const FuelReceipts = () => {
                             <div className="w-20 h-20 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto mb-4">
                                 <Receipt className="h-10 w-10 text-slate-400 dark:text-slate-500" />
                             </div>
-                            <p className="text-slate-600 dark:text-slate-400 font-medium text-lg">
-                                No fuel receipts found
-                            </p>
-                            <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">
-                                {receipts.length === 0
-                                    ? 'Drivers will upload receipts here after fuel purchases'
-                                    : 'Try adjusting your search terms'}
-                            </p>
+                            <p className="text-slate-600 dark:text-slate-400 font-medium text-lg">No fuel receipts found</p>
                         </div>
                     ) : (
                         <div className="overflow-x-auto">
                             <table className="w-full">
                                 <thead className="bg-slate-50 dark:bg-slate-900/50">
                                     <tr>
-                                        <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                                            Ticket #
-                                        </th>
-                                        <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                                            Vehicle
-                                        </th>
-                                        <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                                            Driver
-                                        </th>
-                                        <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                                            Trip Date
-                                        </th>
-                                        <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                                            Status
-                                        </th>
-                                        <th className="px-4 py-3 text-center text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                                            Action
-                                        </th>
+                                        <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Ticket #</th>
+                                        <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Vehicle</th>
+                                        <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Driver</th>
+                                        <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Trip Date</th>
+                                        <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Status</th>
+                                        <th className="px-4 py-3 text-center text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Action</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
                                     {filteredReceipts.map((receipt) => (
-                                        <tr
-                                            key={receipt.id || receipt.fuel_receipt_id}
-                                            className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors"
-                                        >
+                                        <tr key={receipt.id || receipt.fuel_receipt_id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
                                             <td className="px-4 py-3">
                                                 <span className="font-mono font-semibold text-slate-800 dark:text-white">
                                                     {receipt.ticket_number || receipt.trip_ticket_number || 'N/A'}
@@ -701,37 +498,25 @@ const FuelReceipts = () => {
                                             </td>
                                             <td className="px-4 py-3">
                                                 <div className="flex flex-col">
-                                                    <span className="font-medium text-slate-700 dark:text-slate-300">
-                                                        {receipt.plate_number || 'N/A'}
-                                                    </span>
-                                                    <span className="text-xs text-slate-500 dark:text-slate-400">
-                                                        {receipt.vehicle_model || 'N/A'}
-                                                    </span>
+                                                    <span className="font-medium text-slate-700 dark:text-slate-300">{receipt.plate_number || 'N/A'}</span>
+                                                    <span className="text-xs text-slate-500 dark:text-slate-400">{receipt.vehicle_model || 'N/A'}</span>
                                                 </div>
                                             </td>
                                             <td className="px-4 py-3">
                                                 <div className="flex items-center gap-2">
                                                     <User className="h-3.5 w-3.5 text-slate-400" />
-                                                    <span className="text-slate-700 dark:text-slate-300">
-                                                        {receipt.driver_name || 'N/A'}
-                                                    </span>
+                                                    <span className="text-slate-700 dark:text-slate-300">{receipt.driver_name || 'N/A'}</span>
                                                 </div>
                                             </td>
                                             <td className="px-4 py-3">
-                                                <span className="text-xs text-slate-500 dark:text-slate-400">
-                                                    {formatDateShort(receipt.trip_date)}
-                                                </span>
+                                                <span className="text-xs text-slate-500 dark:text-slate-400">{formatDateShort(receipt.trip_date)}</span>
                                             </td>
                                             <td className="px-4 py-3">
                                                 <StatusBadge status={receipt.status || receipt.reconciliation_status || 'pending'} />
                                             </td>
                                             <td className="px-4 py-3 text-center">
-                                                <Button
-                                                    variant="outline"
-                                                    size="sm"
-                                                    onClick={() => handleOpenModal(receipt)}
-                                                    className="h-8 px-3 text-xs dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
-                                                >
+                                                <Button variant="outline" size="sm" onClick={() => handleOpenModal(receipt)}
+                                                    className="h-8 px-3 text-xs dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700">
                                                     View
                                                 </Button>
                                             </td>
@@ -744,18 +529,15 @@ const FuelReceipts = () => {
                 </CardContent>
             </Card>
 
-            {/* Receipt Detail Dialog */}
-            <Dialog open={showReceiptDialog} onOpenChange={setShowReceiptDialog}>
-                <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto dark:bg-slate-800 dark:border-slate-700">
+            <Dialog open={showReceiptDialog} onOpenChange={handleCloseReceiptDialog}>
+                <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto dark:bg-slate-800 dark:border-slate-700" onInteractOutside={(e) => e.preventDefault()}>
                     <DialogHeader>
                         <div className="flex items-center gap-3">
                             <div className="p-2.5 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 shadow-lg shadow-blue-500/20">
                                 <Receipt className="h-5 w-5 text-white" />
                             </div>
                             <div>
-                                <DialogTitle className="text-slate-800 dark:text-white">
-                                    Fuel Receipt Details
-                                </DialogTitle>
+                                <DialogTitle className="text-slate-800 dark:text-white">Fuel Receipt Details</DialogTitle>
                                 <DialogDescription className="dark:text-slate-400">
                                     {selectedReceipt?.ticket_number || selectedReceipt?.trip_ticket_number} • {formatDate(selectedReceipt?.uploaded_at)}
                                 </DialogDescription>
@@ -765,10 +547,8 @@ const FuelReceipts = () => {
 
                     {selectedReceipt && (
                         <div className="space-y-6">
-                            {/* Receipt Image */}
                             <ReceiptImage receipt={selectedReceipt} />
 
-                            {/* Status Bar */}
                             <div className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700">
                                 <div className="flex-1">
                                     <p className="text-xs text-slate-500 dark:text-slate-400">Current Status</p>
@@ -778,13 +558,10 @@ const FuelReceipts = () => {
                                 </div>
                                 <div className="text-right">
                                     <p className="text-xs text-slate-500 dark:text-slate-400">Uploaded</p>
-                                    <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                                        {formatTimeAgo(selectedReceipt.uploaded_at)}
-                                    </p>
+                                    <p className="text-sm font-medium text-slate-700 dark:text-slate-300">{formatTimeAgo(selectedReceipt.uploaded_at)}</p>
                                 </div>
                             </div>
 
-                            {/* Receipt Info Grid */}
                             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                                 <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700">
                                     <p className="text-xs text-slate-500 dark:text-slate-400">Ticket Number</p>
@@ -798,9 +575,7 @@ const FuelReceipts = () => {
                                         <Truck className="h-3.5 w-3.5 text-slate-400" />
                                         {selectedReceipt.plate_number || 'N/A'}
                                     </p>
-                                    <p className="text-xs text-slate-500 dark:text-slate-400">
-                                        {selectedReceipt.vehicle_model || 'N/A'}
-                                    </p>
+                                    <p className="text-xs text-slate-500 dark:text-slate-400">{selectedReceipt.vehicle_model || 'N/A'}</p>
                                 </div>
                                 <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700">
                                     <p className="text-xs text-slate-500 dark:text-slate-400">Driver</p>
@@ -810,82 +585,52 @@ const FuelReceipts = () => {
                                     </p>
                                 </div>
 
-                                {/* ✅ LITERS — read-only by default, Edit button reveals input */}
-                                <div className="p-3 rounded-xl bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 md:col-span-2">
-                                    <div className="flex items-center justify-between">
-                                        <p className="text-xs text-blue-600 dark:text-blue-400 font-semibold">
-                                            Fuel Loaded (Liters) *
-                                        </p>
-                                        {!isEditingLiters && (
-                                            <Button
-                                                size="sm"
-                                                variant="ghost"
-                                                onClick={handleStartEdit}
-                                                className="h-6 px-2 text-[10px] text-blue-600 hover:text-blue-700 hover:bg-blue-100 dark:text-blue-400 dark:hover:bg-blue-900/40"
-                                            >
-                                                <Pencil className="h-3 w-3 mr-1" />
-                                                Edit
-                                            </Button>
-                                        )}
-                                    </div>
-
-                                    <div className="flex items-center gap-2 mt-1.5">
-                                        <Fuel className="h-3.5 w-3.5 text-blue-500" />
-
-                                        {isEditingLiters ? (
-                                            <>
-                                                <input
-                                                    type="text"
-                                                    inputMode="decimal"
-                                                    autoComplete="off"
-                                                    autoFocus
-                                                    value={modalLiters}
-                                                    disabled={isSavingModal}
-                                                    onChange={(e) => {
-                                                        const cleaned = sanitizeDecimalInput(e.target.value, 2);
-                                                        setModalLiters(cleaned);
-                                                    }}
-                                                    onKeyDown={(e) => {
-                                                        if (e.key === 'Enter') {
-                                                            e.preventDefault();
-                                                            handleSaveClick();
-                                                        }
-                                                        if (e.key === 'Escape') {
-                                                            e.preventDefault();
-                                                            handleCancelEdit();
-                                                        }
-                                                    }}
-                                                    placeholder="0.00"
-                                                    className="h-9 w-28 px-3 text-sm font-semibold rounded-lg border border-blue-300 dark:border-blue-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                                />
-                                                <span className="text-xs text-slate-600 dark:text-slate-300 font-medium">L</span>
-
-                                                <Button
-                                                    size="sm"
-                                                    variant="outline"
-                                                    onClick={handleCancelEdit}
-                                                    disabled={isSavingModal}
-                                                    className="h-8 px-2 text-xs dark:border-slate-600 dark:text-slate-300"
-                                                >
-                                                    Cancel
-                                                </Button>
-                                            </>
-                                        ) : (
-                                            <>
-                                                <span className="text-base font-semibold text-slate-900 dark:text-white">
-                                                    {modalLiters ? `${modalLiters} L` : '— not set —'}
-                                                </span>
-                                            </>
-                                        )}
-                                    </div>
-
-                                    <p className="text-[10px] text-blue-500 dark:text-blue-400 mt-1">
-                                        {isEditingLiters
-                                            ? 'Numbers only • Press Enter to save or Esc to cancel'
-                                            : modalLiters
-                                                ? 'Click Edit to change'
-                                                : 'Click Edit to enter liters'}
+                                {/* ✅ LITERS only — editable */}
+                                <div className={cn(
+                                    "p-3 rounded-xl border md:col-span-2",
+                                    litersError
+                                        ? "bg-red-50 dark:bg-red-950/30 border-red-300 dark:border-red-800"
+                                        : "bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800"
+                                )}>
+                                    <p className={cn(
+                                        "text-xs font-semibold mb-2",
+                                        litersError
+                                            ? "text-red-600 dark:text-red-400"
+                                            : "text-blue-600 dark:text-blue-400"
+                                    )}>
+                                        Fuel Loaded (Liters) *
                                     </p>
+
+                                    <div className="flex items-center gap-2">
+                                        <Fuel className="h-4 w-4 text-blue-500" />
+                                        <input
+                                            type="text"
+                                            inputMode="decimal"
+                                            autoComplete="off"
+                                            value={modalLiters}
+                                            disabled={isSavingModal}
+                                            onChange={(e) => handleLitersChange(e.target.value)}
+                                            placeholder="0.00"
+                                            aria-invalid={!!litersError}
+                                            className={cn(
+                                                "h-9 w-32 px-3 text-sm font-semibold rounded-lg bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2",
+                                                litersError
+                                                    ? "border border-red-500 focus:ring-red-500 dark:border-red-500"
+                                                    : "border border-blue-300 dark:border-blue-700 focus:ring-blue-500"
+                                            )}
+                                        />
+                                        <span className="text-xs text-slate-600 dark:text-slate-300 font-medium">L</span>
+                                    </div>
+
+                                    {litersError ? (
+                                        <p className="mt-1.5 text-[11px] text-red-600 dark:text-red-400 flex items-center gap-1">
+                                            <AlertCircle className="h-3 w-3 flex-shrink-0" />{litersError}
+                                        </p>
+                                    ) : (
+                                        <p className="text-[10px] text-blue-500 dark:text-blue-400 mt-1.5">
+                                            Enter the liters from the physical receipt.
+                                        </p>
+                                    )}
                                 </div>
 
                                 <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700">
@@ -897,86 +642,45 @@ const FuelReceipts = () => {
                                 </div>
                             </div>
 
-                            {/* Distance Details */}
-                            {selectedReceipt.gps_distance_km && (
-                                <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700">
-                                    <h4 className="font-semibold text-slate-700 dark:text-slate-300 mb-3 flex items-center gap-2">
-                                        <Gauge className="h-4 w-4 text-blue-500" />
-                                        Distance Details
-                                    </h4>
-                                    <div className="grid grid-cols-3 gap-3">
-                                        <div>
-                                            <p className="text-xs text-slate-500 dark:text-slate-400">GPS Distance</p>
-                                            <p className="font-medium text-slate-700 dark:text-slate-300 mt-0.5">
-                                                {selectedReceipt.gps_distance_km} km
-                                            </p>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* Action Buttons */}
                             <div className="flex justify-end gap-3 pt-4 border-t border-slate-200 dark:border-slate-700">
-                                <Button
-                                    variant="outline"
-                                    onClick={() => setShowReceiptDialog(false)}
-                                    className="dark:border-slate-700 dark:text-slate-300"
-                                >
+                                <Button variant="outline" onClick={() => handleCancelEdit()} disabled={isSavingModal}
+                                    className="dark:border-slate-700 dark:text-slate-300">
+                                    Reset
+                                </Button>
+                                <Button variant="outline" onClick={() => handleCloseReceiptDialog(false)} disabled={isSavingModal}
+                                    className="dark:border-slate-700 dark:text-slate-300">
                                     Close
                                 </Button>
-                                {isEditingLiters && (
-                                    <Button
-                                        onClick={handleSaveClick}
-                                        disabled={isSavingModal || modalLiters === ''}
-                                        className="bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-50"
-                                    >
-                                        {isSavingModal ? (
-                                            <>
-                                                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                                                Saving...
-                                            </>
-                                        ) : (
-                                            <>
-                                                <Save className="h-4 w-4 mr-2" />
-                                                Save Liters
-                                            </>
-                                        )}
-                                    </Button>
-                                )}
+                                <Button onClick={handleSaveClick} disabled={isSavingModal}
+                                    className="bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-50">
+                                    {isSavingModal ? (<><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving...</>) : (<><Save className="h-4 w-4 mr-2" />Save Liters</>)}
+                                </Button>
                             </div>
                         </div>
                     )}
                 </DialogContent>
             </Dialog>
 
-            {/* ✅ CONFIRMATION: Save Liters */}
-            <AlertDialog open={showConfirmSave} onOpenChange={setShowConfirmSave}>
-                <AlertDialogContent>
+            <AlertDialog open={showConfirmSave} onOpenChange={(open) => { if (!open) handleCancelConfirmSave(); }}>
+                <AlertDialogContent onInteractOutside={(e) => e.preventDefault()}>
                     <AlertDialogHeader>
                         <AlertDialogTitle className="flex items-center gap-2">
-                            <Fuel className="h-5 w-5 text-blue-500" />
-                            Confirm Fuel Loaded
+                            <Fuel className="h-5 w-5 text-blue-500" />Confirm Fuel Loaded
                         </AlertDialogTitle>
                         <AlertDialogDescription>
                             You are about to save{' '}
-                            <strong className="text-slate-900 dark:text-white">
-                                {modalLiters} L
-                            </strong>{' '}
+                            <strong className="text-slate-900 dark:text-white">{modalLiters} L</strong>{' '}
                             of fuel loaded for ticket{' '}
-                            <strong className="text-slate-900 dark:text-white">
-                                {selectedReceipt?.ticket_number || selectedReceipt?.trip_ticket_number || 'N/A'}
-                            </strong>
-                            . This will update the receipt record. Continue?
+                            <strong>{selectedReceipt?.ticket_number || selectedReceipt?.trip_ticket_number || 'N/A'}</strong>.
+                            <br /><br />
+                            Continue?
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction
-                            onClick={handleConfirmSaveLiters}
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white"
-                        >
-                            <Save className="h-4 w-4 mr-2" />
-                            Confirm Save
+                        <AlertDialogCancel onClick={handleCancelConfirmSave}>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={handleConfirmSave} disabled={isSavingModal}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white">
+                            {isSavingModal ? (<><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving...</>) : (<><Save className="h-4 w-4 mr-2" />Confirm Save</>)}
                         </AlertDialogAction>
                     </AlertDialogFooter>
                 </AlertDialogContent>

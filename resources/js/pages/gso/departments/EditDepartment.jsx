@@ -2,6 +2,9 @@
 // ============================================
 // ENHANCED: validation + Title Case formatting + AlertDialog confirmation
 // ✅ Active/Inactive status selector
+// ✅ Department code now allows spaces (e.g., "MO LTE")
+// ✅ Apostrophe no longer triggers false capitalization ("Mayor's Office")
+// ✅ ñ/Ñ preserved for Filipino names (Santo Niño)
 // ============================================
 
 import React, { useState, useEffect, useRef } from "react";
@@ -74,7 +77,10 @@ const SMALL_WORDS = new Set([
 const formatProperName = (value, { keepPeriods = false } = {}) => {
     if (!value) return "";
 
-    const allowed = keepPeriods ? /[^A-Za-z\s.'\-]/g : /[^A-Za-z\s'\-]/g;
+    // ✅ Include ñ/Ñ for Filipino names
+    const allowed = keepPeriods
+        ? /[^A-Za-zñÑ\s.'\-]/g
+        : /[^A-Za-zñÑ\s'\-]/g;
 
     const words = String(value)
         .replace(allowed, "")
@@ -105,10 +111,10 @@ const formatProperName = (value, { keepPeriods = false } = {}) => {
                 return lower;
             }
 
-            // Title Case with hyphen/apostrophe support
+            // ✅ Capitalize after hyphen or word start ONLY (not after apostrophe)
             return lower.replace(
-                /(^|[\-'])([a-z])/g,
-                (_, p, c) => p + c.toUpperCase(),
+                /(^|-)([a-zñ])/g,
+                (_, prefix, char) => prefix + char.toUpperCase(),
             );
         })
         .filter(Boolean)
@@ -259,28 +265,31 @@ const EditDepartment = () => {
             newErrors.department_name =
                 "Department name cannot contain numbers";
             newTouched.department_name = true;
-        } else if (/[^A-Za-z\s'\-]/.test(formData.department_name)) {
+        } else if (/[^A-Za-zñÑ\s'\-]/.test(formData.department_name)) {
             newErrors.department_name =
                 "Department name can only contain letters, spaces, apostrophes, and hyphens";
             newTouched.department_name = true;
         }
 
-       if (!formData.department_code.trim()) {
-    newErrors.department_code = "Department code is required";
-    newTouched.department_code = true;
-} else if (formData.department_code.trim().length < 2) {
-    newErrors.department_code = "Code must be at least 2 characters";
-    newTouched.department_code = true;
-} else if (formData.department_code.trim().length > 10) {
-    newErrors.department_code = "Code must be 10 characters or less";
-    newTouched.department_code = true;
-} else if (
-    !/^[A-Z0-9]+$/.test(formData.department_code.trim().toUpperCase())
-) {
-    newErrors.department_code =
-        "Code can only contain letters and numbers (ALL CAPS). No spaces, hyphens, or symbols.";
-    newTouched.department_code = true;
-}
+        // ✅ Code validation — allows spaces
+        const trimmedCode = formData.department_code.trim();
+        if (!trimmedCode) {
+            newErrors.department_code = "Department code is required";
+            newTouched.department_code = true;
+        } else if (trimmedCode.length < 2) {
+            newErrors.department_code = "Code must be at least 2 characters";
+            newTouched.department_code = true;
+        } else if (trimmedCode.length > 10) {
+            newErrors.department_code = "Code must be 10 characters or less";
+            newTouched.department_code = true;
+        } else if (!/^[A-Z0-9\s]+$/.test(trimmedCode.toUpperCase())) {
+            newErrors.department_code =
+                "Code can only contain letters, numbers, and spaces (ALL CAPS). No hyphens or symbols.";
+            newTouched.department_code = true;
+        } else if (!/\S/.test(trimmedCode)) {
+            newErrors.department_code = "Code cannot be only spaces";
+            newTouched.department_code = true;
+        }
 
         if (
             formData.head_of_office &&
@@ -298,7 +307,7 @@ const EditDepartment = () => {
             newTouched.head_of_office = true;
         } else if (
             formData.head_of_office &&
-            /[^A-Za-z\s.'\-]/.test(formData.head_of_office)
+            /[^A-Za-zñÑ\s.'\-]/.test(formData.head_of_office)
         ) {
             newErrors.head_of_office =
                 "Head of office can only contain letters, spaces, periods, apostrophes, and hyphens";
@@ -399,8 +408,10 @@ const EditDepartment = () => {
                 departmentId: parseInt(id),
                 departmentData: {
                     department_name: finalName,
+                    // ✅ Collapse multiple spaces, then uppercase
                     department_code: formData.department_code
                         .trim()
+                        .replace(/\s+/g, " ")
                         .toUpperCase(),
                     head_of_office: finalHead || null,
                     is_active: formData.is_active,
@@ -523,26 +534,27 @@ const EditDepartment = () => {
                                 required
                                 error={errors.department_code}
                                 touched={touched.department_code}
-                               helper="Max 10 characters, ALL CAPS letters and numbers only. Example: ICTOFFICE, MDRRMO, GSO."
+                                helper="Max 10 characters, ALL CAPS letters, numbers, and spaces. Example: MO LTE, ICTOFFICE, MDRRMO."
                             >
                                 <Input
                                     id="department_code"
                                     name="department_code"
-                                    placeholder="e.g., ENGR"
+                                    placeholder="e.g., MO LTE"
                                     value={formData.department_code}
                                     onChange={(e) =>
                                         handleChange(
                                             "department_code",
                                             e.target.value
                                                 .toUpperCase()
-                                                .replace(/[^A-Z0-9]/g, ""),
+                                                .replace(/[^A-Z0-9\s]/g, "")
+                                                .replace(/\s+/g, " "),
                                         )
                                     }
                                     onBlur={() => handleBlur("department_code")}
                                     className="font-mono uppercase bg-white dark:bg-slate-900 dark:border-slate-700"
-                                   maxLength={10}
-autoComplete="off"
-spellCheck={false}
+                                    maxLength={10}
+                                    autoComplete="off"
+                                    spellCheck={false}
                                 />
                             </FormField>
 
@@ -711,7 +723,10 @@ spellCheck={false}
                             <br />
                             Code:{" "}
                             <strong className="text-slate-900 dark:text-white font-mono">
-                                {formData.department_code.trim().toUpperCase()}
+                                {formData.department_code
+                                    .trim()
+                                    .replace(/\s+/g, " ")
+                                    .toUpperCase()}
                             </strong>
                             <br />
                             Name:{" "}
