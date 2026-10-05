@@ -106,8 +106,7 @@ class TripTicketController extends Controller
     }
 
     /**
-     * Display a specific trip ticket
-     * Added head_of_office to department response
+     * Display a specific trip ticketQAdded head_of_office to department response
      */
     public function show($id)
     {
@@ -175,7 +174,7 @@ class TripTicketController extends Controller
       /**
      * GSO staff CREATE TRIP TICKET
      */
- public function gsoCreate(Request $request)
+public function gsoCreate(Request $request)
 {
     try {
         $user = $request->user();
@@ -203,7 +202,6 @@ class TripTicketController extends Controller
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-      
         $blockingStatuses = [
             'draft',
             'pending_mayors_office',
@@ -216,7 +214,6 @@ class TripTicketController extends Controller
             'pending_reconciliation',
         ];
 
-       
         $vehicleBlocked = TripTicket::where('vehicle_id', $request->vehicle_id)
             ->whereIn('status', $blockingStatuses)
             ->first();
@@ -233,7 +230,6 @@ class TripTicketController extends Controller
             ], 422);
         }
 
-       
         $driverBlocked = TripTicket::where('driver_id', $request->driver_id)
             ->whereIn('status', $blockingStatuses)
             ->first();
@@ -273,25 +269,40 @@ class TripTicketController extends Controller
         $hasInsufficientBudget = $budgetInfo['remaining'] < $estimatedCost;
         $budgetShortage = $hasInsufficientBudget ? round($estimatedCost - $budgetInfo['remaining'], 2) : 0;
 
+      
+       
         $yearMonth = date('Y-m');
 
-        $lastTicketNum = TripTicket::where('trip_ticket_number', 'like', $yearMonth . '-%')
+        $maxSeq = 0;
+        $tailPattern = '/^\d{4}-\d{2}-(\d+)$/';
+
+        // Recent tickets
+        TripTicket::whereNotNull('trip_ticket_number')
             ->orderBy('trip_ticket_id', 'desc')
-            ->value('trip_ticket_number');
+            ->limit(100)
+            ->pluck('trip_ticket_number')
+            ->each(function ($num) use (&$maxSeq, $tailPattern) {
+                if ($num && preg_match($tailPattern, $num, $m)) {
+                    $seq = (int) $m[1];
+                    if ($seq > $maxSeq) $maxSeq = $seq;
+                }
+            });
 
-        $lastControlNum = GasSlip::where('control_number', 'like', $yearMonth . '-%')
+        // Recent control numbers (GasSlip shares the same sequence space)
+        GasSlip::whereNotNull('control_number')
             ->orderBy('gas_slip_id', 'desc')
-            ->value('control_number');
+            ->limit(100)
+            ->pluck('control_number')
+            ->each(function ($num) use (&$maxSeq, $tailPattern) {
+                if ($num && preg_match($tailPattern, $num, $m)) {
+                    $seq = (int) $m[1];
+                    if ($seq > $maxSeq) $maxSeq = $seq;
+                }
+            });
 
-        $lastSeq = 0;
-        foreach ([$lastTicketNum, $lastControlNum] as $n) {
-            if ($n && preg_match('/^' . preg_quote($yearMonth, '/') . '-(\d+)$/', $n, $m)) {
-                $seq = (int) $m[1];
-                if ($seq > $lastSeq) $lastSeq = $seq;
-            }
-        }
-
-        $ticketNumber = $yearMonth . '-' . str_pad($lastSeq + 1, 3, '0', STR_PAD_LEFT);
+        // Format: YYYY-MM-NNN — sequence continues globally, month is just a prefix.
+        // str_pad handles numbers > 999 naturally (e.g. 1000 → "1000").
+        $ticketNumber = $yearMonth . '-' . str_pad((string) ($maxSeq + 1), 3, '0', STR_PAD_LEFT);
 
         DB::beginTransaction();
 
