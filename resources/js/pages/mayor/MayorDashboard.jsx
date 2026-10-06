@@ -253,16 +253,14 @@ const formatBudgetLogText = (log) => {
     }
 };
 
+
 // ============================================
-// ★ NEW: DEPARTMENT BUDGET BREAKDOWN
-//  - "Bar" view: grouped bars per department (Allocated / Used / Remaining)
-//  - "Pie" view: one pie showing each department's utilization %
-//  - "Table" view: fallback accessible view
+// ★ DEPARTMENT BUDGET ALLOCATION PIE
+//  Each department = one slice, sized by annual_amount
+//  Reference: classic pie + legend (like Monopoly/Candyland style)
 // ============================================
 
-const DepartmentBudgetBreakdown = ({ departments, totals }) => {
-    const [viewMode, setViewMode] = useState("bar"); // 'bar' | 'pie' | 'table'
-
+const DepartmentBudgetBreakdown = ({ departments, totals, fiscalYear }) => {
     const fmt = (n) =>
         new Intl.NumberFormat("en-PH", {
             style: "currency",
@@ -270,84 +268,55 @@ const DepartmentBudgetBreakdown = ({ departments, totals }) => {
             minimumFractionDigits: 0,
         }).format(Number(n) || 0);
 
-    const fmtShort = (n) => {
+    const fmtCompact = (n) => {
         const num = Number(n) || 0;
-        if (Math.abs(num) >= 1_000_000) return `₱${(num / 1_000_000).toFixed(1)}M`;
+        if (Math.abs(num) >= 1_000_000) return `₱${(num / 1_000_000).toFixed(2)}M`;
         if (Math.abs(num) >= 1_000) return `₱${(num / 1_000).toFixed(0)}k`;
         return `₱${num.toFixed(0)}`;
     };
 
-    // Only departments that actually have a budget
+    // Only departments that actually have a budget > 0
     const withBudget = useMemo(
-        () => departments.filter((d) => d.has_budget && d.allocated > 0),
+        () =>
+            departments
+                .filter((d) => d.has_budget && d.allocated > 0)
+                .sort((a, b) => b.allocated - a.allocated),
         [departments],
     );
 
-    // Bar chart data
-    const barData = useMemo(
-        () =>
-            withBudget.map((d) => ({
-                name: d.department_name,
-                Allocated: Math.max(d.allocated, 0),
-                Used: Math.max(d.spent, 0),
-                Remaining: Math.max(d.remaining, 0),
-            })),
+    const totalAllocated = useMemo(
+        () => withBudget.reduce((s, d) => s + d.allocated, 0),
         [withBudget],
     );
 
-    // Pie chart data — one slice per department, sized by used amount
+    // Pie data — one slice per department
     const pieData = useMemo(
         () =>
-            withBudget
-                .filter((d) => d.spent > 0)
-                .map((d, i) => ({
-                    name: d.department_name,
-                    value: d.spent,
-                    allocated: d.allocated,
-                    utilization: d.utilization,
-                    color: DEPARTMENT_PALETTE[i % DEPARTMENT_PALETTE.length],
-                })),
-        [withBudget],
+            withBudget.map((d, i) => ({
+                name: d.department_name,
+                value: d.allocated,
+                percentage:
+                    totalAllocated > 0 ? (d.allocated / totalAllocated) * 100 : 0,
+                color: DEPARTMENT_PALETTE[i % DEPARTMENT_PALETTE.length],
+            })),
+        [withBudget, totalAllocated],
     );
 
-    const hasData = withBudget.length > 0;
-
-    if (!hasData) {
+    if (pieData.length === 0) {
         return (
             <div className="h-full flex flex-col items-center justify-center text-center py-16">
                 <PieChart className="h-12 w-12 text-slate-300 dark:text-slate-600" />
                 <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">
-                    No budget data yet
+                    No budget allocation yet
                 </p>
                 <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
-                    Departments will appear here once budgets are set
+                    Set annual budgets to see the department breakdown
                 </p>
             </div>
         );
     }
 
-    // Custom tooltip for bar chart
-    const BarTooltip = ({ active, payload, label }) => {
-        if (!active || !payload?.length) return null;
-        return (
-            <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-lg dark:border-slate-700 dark:bg-slate-800">
-                <p className="mb-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200">
-                    {label}
-                </p>
-                {payload.map((p) => (
-                    <p
-                        key={p.dataKey}
-                        className="text-xs"
-                        style={{ color: p.color }}
-                    >
-                        {p.dataKey}: <strong>{fmt(p.value)}</strong>
-                    </p>
-                ))}
-            </div>
-        );
-    };
-
-    // Custom tooltip for pie chart
+    // Custom tooltip
     const PieTooltip = ({ active, payload }) => {
         if (!active || !payload?.length) return null;
         const d = payload[0].payload;
@@ -357,13 +326,10 @@ const DepartmentBudgetBreakdown = ({ departments, totals }) => {
                     {d.name}
                 </p>
                 <p className="text-xs text-slate-600 dark:text-slate-400">
-                    Utilized: <strong>{fmt(d.value)}</strong>
+                    Annual Budget: <strong>{fmt(d.value)}</strong>
                 </p>
                 <p className="text-xs text-slate-600 dark:text-slate-400">
-                    Allocated: <strong>{fmt(d.allocated)}</strong>
-                </p>
-                <p className="text-xs text-slate-600 dark:text-slate-400">
-                    Utilization: <strong>{d.utilization.toFixed(1)}%</strong>
+                    Share: <strong>{d.percentage.toFixed(1)}%</strong>
                 </p>
             </div>
         );
@@ -371,79 +337,10 @@ const DepartmentBudgetBreakdown = ({ departments, totals }) => {
 
     return (
         <div className="flex flex-col h-full">
-            {/* View toggle */}
-            <div className="mb-4 flex items-center justify-end gap-1.5">
-                {[
-                    { key: "bar", label: "Bar" },
-                    { key: "pie", label: "Pie" },
-                    { key: "table", label: "Table" },
-                ].map((opt) => (
-                    <button
-                        key={opt.key}
-                        onClick={() => setViewMode(opt.key)}
-                        className={cn(
-                            "rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
-                            viewMode === opt.key
-                                ? "bg-blue-600 text-white shadow-sm"
-                                : "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-700/60 dark:text-slate-300 dark:hover:bg-slate-700",
-                        )}
-                    >
-                        {opt.label}
-                    </button>
-                ))}
-            </div>
-
-            {/* Chart area */}
-            <div className="flex-1 min-h-[300px]">
-                {viewMode === "bar" && (
-                    <ResponsiveContainer width="100%" height="100%">
-                        <BarChart
-                            data={barData}
-                            margin={{ top: 10, right: 10, bottom: 40, left: 0 }}
-                        >
-                            <CartesianGrid
-                                strokeDasharray="3 3"
-                                stroke="rgba(148,163,184,0.2)"
-                                vertical={false}
-                            />
-                            <XAxis
-                                dataKey="name"
-                                tick={{ fontSize: 10, fill: "#94a3b8" }}
-                                interval={0}
-                                angle={-35}
-                                textAnchor="end"
-                                height={60}
-                            />
-                            <YAxis
-                                tick={{ fontSize: 10, fill: "#94a3b8" }}
-                                tickFormatter={fmtShort}
-                                width={55}
-                            />
-                            <Tooltip content={<BarTooltip />} />
-                            <Legend
-                                wrapperStyle={{ fontSize: 11, paddingTop: 4 }}
-                                iconSize={10}
-                            />
-                            <Bar
-                                dataKey="Allocated"
-                                fill="#3b82f6"
-                                radius={[3, 3, 0, 0]}
-                            />
-                            <Bar
-                                dataKey="Used"
-                                fill="#f59e0b"
-                                radius={[3, 3, 0, 0]}
-                            />
-                            <Bar
-                                dataKey="Remaining"
-                                fill="#10b981"
-                                radius={[3, 3, 0, 0]}
-                            />
-                        </BarChart>
-                    </ResponsiveContainer>
-                )}
-
-                {viewMode === "pie" && (
+            {/* Chart + legend side by side */}
+            <div className="flex-1 flex flex-col md:flex-row items-center gap-4 min-h-[340px]">
+                {/* Pie */}
+                <div className="relative w-full md:w-[58%] h-[280px] md:h-full md:min-h-[320px]">
                     <ResponsiveContainer width="100%" height="100%">
                         <RePieChart>
                             <Pie
@@ -452,11 +349,15 @@ const DepartmentBudgetBreakdown = ({ departments, totals }) => {
                                 nameKey="name"
                                 cx="50%"
                                 cy="50%"
-                                outerRadius={110}
-                                label={(entry) =>
-                                    `${entry.name}: ${entry.utilization.toFixed(0)}%`
+                                outerRadius="88%"
+                                label={({ percentage }) =>
+                                    percentage >= 5
+                                        ? `${percentage.toFixed(0)}%`
+                                        : ""
                                 }
-                                labelLine={{ stroke: "#94a3b8", strokeWidth: 1 }}
+                                labelLine={false}
+                                stroke="#fff"
+                                strokeWidth={2}
                             >
                                 {pieData.map((entry, i) => (
                                     <Cell key={i} fill={entry.color} />
@@ -465,101 +366,49 @@ const DepartmentBudgetBreakdown = ({ departments, totals }) => {
                             <Tooltip content={<PieTooltip />} />
                         </RePieChart>
                     </ResponsiveContainer>
-                )}
 
-                {viewMode === "table" && (
-                    <div className="overflow-auto max-h-[420px]">
-                        <table className="w-full text-xs">
-                            <thead className="sticky top-0 bg-white dark:bg-slate-800">
-                                <tr className="border-b border-slate-200 dark:border-slate-700">
-                                    <th className="py-2 px-2 text-left font-semibold text-slate-600 dark:text-slate-300">
-                                        Department
-                                    </th>
-                                    <th className="py-2 px-2 text-right font-semibold text-slate-600 dark:text-slate-300">
-                                        Allocated
-                                    </th>
-                                    <th className="py-2 px-2 text-right font-semibold text-slate-600 dark:text-slate-300">
-                                        Used
-                                    </th>
-                                    <th className="py-2 px-2 text-right font-semibold text-slate-600 dark:text-slate-300">
-                                        Remaining
-                                    </th>
-                                    <th className="py-2 px-2 text-right font-semibold text-slate-600 dark:text-slate-300">
-                                        Util %
-                                    </th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {withBudget.map((d, i) => (
-                                    <tr
-                                        key={d.department_id}
-                                        className="border-b border-slate-100 dark:border-slate-700/40 hover:bg-slate-50 dark:hover:bg-slate-700/20"
-                                    >
-                                        <td className="py-2 px-2 text-slate-700 dark:text-slate-200 truncate max-w-[160px]">
-                                            {d.department_name}
-                                        </td>
-                                        <td className="py-2 px-2 text-right text-slate-700 dark:text-slate-300 whitespace-nowrap">
-                                            {fmt(d.allocated)}
-                                        </td>
-                                        <td className="py-2 px-2 text-right text-amber-600 dark:text-amber-400 whitespace-nowrap">
-                                            {fmt(d.spent)}
-                                        </td>
-                                        <td className="py-2 px-2 text-right text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
-                                            {fmt(d.remaining)}
-                                        </td>
-                                        <td className="py-2 px-2 text-right whitespace-nowrap">
-                                            <span
-                                                className={cn(
-                                                    "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold",
-                                                    d.utilization >= 90
-                                                        ? "bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-400"
-                                                        : d.utilization >= 70
-                                                          ? "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400"
-                                                          : "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400",
-                                                )}
-                                            >
-                                                {d.utilization.toFixed(1)}%
-                                            </span>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
+                    {/* Center total */}
+                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                        <p className="text-base font-bold text-slate-900 dark:text-white leading-tight">
+                            {fmtCompact(totalAllocated)}
+                        </p>
+                        <p className="text-[9px] uppercase tracking-wider text-slate-500 dark:text-slate-400 mt-0.5">
+                            Total FY {fiscalYear}
+                        </p>
                     </div>
-                )}
-            </div>
+                </div>
 
-            {/* Summary row */}
-            <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-700/60 grid grid-cols-3 gap-3">
-                <div>
-                    <p className="text-[10px] uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                        Total Allocated
-                    </p>
-                    <p className="text-sm font-bold text-blue-600 dark:text-blue-400">
-                        {fmt(totals.totalAllocated)}
-                    </p>
-                </div>
-                <div>
-                    <p className="text-[10px] uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                        Total Utilized
-                    </p>
-                    <p className="text-sm font-bold text-amber-600 dark:text-amber-400">
-                        {fmt(totals.totalUsed)}
-                    </p>
-                </div>
-                <div>
-                    <p className="text-[10px] uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                        Total Remaining
-                    </p>
-                    <p className="text-sm font-bold text-emerald-600 dark:text-emerald-400">
-                        {fmt(totals.totalRemaining)}
-                    </p>
+                {/* Legend */}
+                <div className="w-full md:w-[42%] md:max-h-[320px] md:overflow-y-auto pr-1">
+                    <ul className="space-y-2">
+                        {pieData.map((d, i) => (
+                            <li
+                                key={i}
+                                className="flex items-start gap-2.5 text-xs"
+                            >
+                                <span
+                                    className="mt-0.5 h-3 w-3 rounded-sm shrink-0"
+                                    style={{ backgroundColor: d.color }}
+                                />
+                                <div className="min-w-0 flex-1">
+                                    <p className="font-medium text-slate-700 dark:text-slate-200 truncate leading-tight">
+                                        {d.name}
+                                    </p>
+                                    <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-tight mt-0.5">
+                                        {fmt(d.value)} ·{" "}
+                                        <span className="font-semibold text-slate-600 dark:text-slate-300">
+                                            {d.percentage.toFixed(1)}%
+                                        </span>
+                                    </p>
+                                </div>
+                            </li>
+                        ))}
+                    </ul>
                 </div>
             </div>
         </div>
     );
 };
-
 // ============================================
 // LOADING SKELETON (unchanged)
 // ============================================
@@ -936,7 +785,7 @@ const MayorDashboard = () => {
                                         </span>
                                         <div className="min-w-0">
                                             <h3 className="text-base font-semibold text-slate-900 dark:text-white truncate">
-                                                Budget by Department
+Annual Budget Allocation
                                             </h3>
                                             <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
                                                 FY {activeFiscalYear} ·{" "}
@@ -950,6 +799,7 @@ const MayorDashboard = () => {
                                     <DepartmentBudgetBreakdown
                                         departments={departmentBudgets}
                                         totals={totals}
+                                        fiscalYear={activeFiscalYear}  
                                     />
                                 </div>
                             </div>
