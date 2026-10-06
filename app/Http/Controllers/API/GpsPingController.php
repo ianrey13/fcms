@@ -16,17 +16,18 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
+use App\Traits\FiltersGpsDistance;
 
 class GpsPingController extends Controller
 {
-    // ============================================================
-    // FILTER CONSTANTS — tune these for your vehicle fleet
-    // ============================================================
-    private const MIN_SEGMENT_KM   = 0.010;   
-    private const MAX_SEGMENT_KM   = 5.0;     
-    private const MAX_SPEED_KMH    = 120;     
-    private const MAX_GAP_SECONDS  = 300;     
-    private const ACCURACY_THRESHOLD = 30;    
+    use FiltersGpsDistance;
+
+    /**
+     * Accuracy threshold for a ping to be considered reliable.
+     * Pings with accuracy worse than this are flagged is_low_accuracy=true
+     * and excluded from distance calculations + live broadcasts.
+     */
+    private const ACCURACY_THRESHOLD = 30;
 
     /**
      * Store a single GPS ping
@@ -95,7 +96,7 @@ class GpsPingController extends Controller
                     ->first();
 
                 if ($lastAccuratePing) {
-                    $distMeters = $this->haversineKm(
+                    $distMeters = $this->haversineGpsKm(
                         (float) $lastAccuratePing->latitude,
                         (float) $lastAccuratePing->longitude,
                         (float) $request->latitude,
@@ -183,9 +184,6 @@ class GpsPingController extends Controller
     /**
      * Store batch GPS pings (offline sync)
      */
-       /**
-     * Store batch GPS pings (offline sync)
-     */
     public function storeBatch(Request $request)
     {
         try {
@@ -240,7 +238,6 @@ class GpsPingController extends Controller
                 ]);
             }
 
-          
             $pings = $request->input('pings', []);
 
             $createdPings = [];
@@ -270,7 +267,7 @@ class GpsPingController extends Controller
             DB::commit();
 
             if (!empty($pings)) {
-                $lastPing = end($pings); //use local var, not $request->pings
+                $lastPing = end($pings);
                 $lastAccuracy = (float) ($lastPing['accuracy_meters'] ?? 0);
                 if ($lastAccuracy <= self::ACCURACY_THRESHOLD) {
                     try {
@@ -546,7 +543,7 @@ class GpsPingController extends Controller
 
             DB::beginTransaction();
 
-            //  Use segment-aware filter
+            // Use segment-aware filter
             $pings = $this->getPingsForSegment($trip->trip_ticket_id);
             $finalDistance = $this->filterAndSumDistance($pings);
             $pingCount = $pings->count();
@@ -575,7 +572,9 @@ class GpsPingController extends Controller
                 $fuelReceipt->save();
             }
 
-            GpsPing::where('trip_ticket_id', $trip->trip_ticket_id)->delete();
+            // ⚠️ Pings are NOT deleted here.
+            // The driver's completeTrip() re-computes distance from these pings.
+            // Deletion happens when GSO closes the trip (GsoController::validateTrip).
 
             $isDone = $request->is_done ?? true;
 
@@ -759,7 +758,7 @@ class GpsPingController extends Controller
                 $startLng = $startPing->start_lng;
             }
 
-            $distanceFromStart = $this->haversineDistance(
+            $distanceFromStart = $this->haversineGpsKm(
                 $startLat, $startLng,
                 $request->latitude, $request->longitude
             );
@@ -1393,13 +1392,6 @@ class GpsPingController extends Controller
 
     /**
      * Get pings for the CURRENT trip segment only.
-     *
-     * Trip segments are marked by TripHistory rows. When the driver
-     * completes a trip and starts again, a new TripHistory row is created.
-     * This method:
-     *   1. Finds the latest 'in_progress' TripHistory (current segment)
-     *   2. If none, finds the latest 'completed' one (fallback for review)
-     *   3. Returns pings recorded on/after that segment's start time
      */
     private function getPingsForSegment($tripId)
     {
@@ -1419,91 +1411,11 @@ class GpsPingController extends Controller
     }
 
     /**
-     * Calculate total distance with full filter set:
-     *   - Skip consecutive pings < 10m apart (GPS jitter)
-     *   - Skip jumps > 5km (teleport / signal loss)
-     *   - Skip segments implying > 120 km/h
-     *   - Skip time gaps > 5 min
-     *   - Skip duplicates (same recorded_at)
+     * Delegate to the trait's filter (shared with DriverController).
      */
     private function filterAndSumDistance($pings): float
     {
-        if (!$pings || $pings->count() < 2) {
-            return 0.0;
-        }
-
-        $total = 0.0;
-        $prev = null;
-
-        foreach ($pings as $ping) {
-            if ($prev === null) {
-                $prev = $ping;
-                continue;
-            }
-
-            // Duplicate timestamps → skip
-            $gap = $prev->recorded_at->diffInSeconds($ping->recorded_at);
-            if ($gap <= 0) {
-                continue;
-            }
-
-            $segKm = $this->haversineDistance(
-                (float) $prev->latitude,
-                (float) $prev->longitude,
-                (float) $ping->latitude,
-                (float) $ping->longitude
-            );
-
-            // Too small — jitter
-            if ($segKm < self::MIN_SEGMENT_KM) {
-                continue;
-            }
-
-            // Too large — teleport
-            if ($segKm > self::MAX_SEGMENT_KM) {
-                $prev = $ping;
-                continue;
-            }
-
-            // Implausible speed
-            $impliedKmh = ($segKm / $gap) * 3600;
-            if ($impliedKmh > self::MAX_SPEED_KMH) {
-                $prev = $ping;
-                continue;
-            }
-
-            // Time gap too long — assume separate segment
-            if ($gap > self::MAX_GAP_SECONDS) {
-                $prev = $ping;
-                continue;
-            }
-
-            $total += $segKm;
-            $prev = $ping;
-        }
-
-        return round($total, 2);
-    }
-
-    private function haversineDistance($lat1, $lon1, $lat2, $lon2)
-    {
-        $earthRadius = 6371;
-
-        $dLat = deg2rad($lat2 - $lat1);
-        $dLon = deg2rad($lon2 - $lon1);
-
-        $a = sin($dLat / 2) * sin($dLat / 2) +
-             cos(deg2rad($lat1)) * cos(deg2rad($lat2)) *
-             sin($dLon / 2) * sin($dLon / 2);
-
-        $c = 2 * atan2(sqrt($a), sqrt(1 - $a));
-
-        return $earthRadius * $c;
-    }
-
-    private function haversineKm(float $lat1, float $lon1, float $lat2, float $lon2): float
-    {
-        return $this->haversineDistance($lat1, $lon1, $lat2, $lon2);
+        return $this->filterAndSumGpsDistance(collect($pings));
     }
 
     /**
@@ -1530,7 +1442,6 @@ class GpsPingController extends Controller
                 ->orderBy('recorded_at', 'desc')
                 ->first();
 
-            //  Use segment-aware ping list
             $pings = $this->getPingsForSegment($tripId);
 
             $totalDistance = $this->filterAndSumDistance($pings);

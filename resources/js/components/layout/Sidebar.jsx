@@ -341,6 +341,12 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
                             icon: Clock,
                         },
 
+                         {
+        name: "History",
+        href: "/mo/history",
+        icon: History,
+    },
+
                         {
                             name: "Receipt Verification",
                             href: "/mo/receipt-verification",

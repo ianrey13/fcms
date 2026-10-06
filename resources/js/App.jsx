@@ -62,6 +62,7 @@ const BudgetPolicies = lazy(() => import("./pages/mayor/BudgetPolicies"));
 const MayorReceiptVerification = lazy(() => import("./pages/mayor/MayorReceiptVerification"));
 const MayorTripTicket = lazy(() => import("./pages/mayor/MayorTripTicket"));
 const MoActivityLogs = lazy(() => import("./pages/mayor/ActivityLogs"));
+const MayorHistory = lazy(() => import("./pages/mayor/MayorHistory")); 
 
 // ============ MAYOR BUDGET PAGES ============
 const BudgetAllocation = lazy(() => import("./pages/mayor/budget/BudgetAllocation"));
@@ -543,6 +544,16 @@ function App() {
                             </ProtectedRoute>
                         }
                     />
+                    <Route
+    path="/mo/history"
+    element={
+        <ProtectedRoute allowedRoles={["mayors_office"]}>
+            <Layout>
+                <MayorHistory />
+            </Layout>
+        </ProtectedRoute>
+    }
+/>
                     <Route
                         path="/mayor/trip-ticket/:id"
                         element={

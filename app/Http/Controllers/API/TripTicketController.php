@@ -174,201 +174,209 @@ class TripTicketController extends Controller
       /**
      * GSO staff CREATE TRIP TICKET
      */
-public function gsoCreate(Request $request)
-{
-    try {
-        $user = $request->user();
+    public function gsoCreate(Request $request)
+    {
+        try {
+            $user = $request->user();
 
-        if (!$user->isGsoOffice()) {
-            return response()->json(['message' => 'Only GSO Office can create trip tickets'], 403);
-        }
+            if (!$user->isGsoOffice()) {
+                return response()->json(['message' => 'Only GSO Office can create trip tickets'], 403);
+            }
 
-        $validator = Validator::make($request->all(), [
-            'department_id' => 'required|exists:departments,department_id',
-            'driver_id' => 'required|exists:drivers,driver_id',
-            'vehicle_id' => 'required|exists:vehicles,vehicle_id',
-            'trip_date' => 'required|date|after_or_equal:today',
-            'destination' => 'required|string|max:255',
-            'purpose' => 'required|string',
-            'charge_to' => 'required|string|max:20',
-            'passenger_name' => 'nullable|string|max:120',
-            'requested_by_driver_id' => 'nullable|exists:users,user_id',
-            'estimated_distance_km' => 'nullable|numeric|min:0',
-            'estimated_fuel_liters' => 'nullable|numeric|min:0',
-            'estimated_cost' => 'nullable|numeric|min:0',
-        ]);
+            $validator = Validator::make($request->all(), [
+                'department_id' => 'required|exists:departments,department_id',
+                'driver_id' => 'required|exists:drivers,driver_id',
+                'vehicle_id' => 'required|exists:vehicles,vehicle_id',
+                'trip_date' => 'required|date|after_or_equal:today',
+                'destination' => 'required|string|max:255',
+                'purpose' => 'required|string',
+                'charge_to' => 'required|string|max:20',
+                'passenger_name' => 'nullable|string|max:120',
+                'requested_by_driver_id' => 'nullable|exists:users,user_id',
+                'estimated_distance_km' => 'nullable|numeric|min:0',
+                'estimated_fuel_liters' => 'nullable|numeric|min:0',
+                'estimated_cost' => 'nullable|numeric|min:0',
+            ]);
 
-        if ($validator->fails()) {
-            return response()->json(['errors' => $validator->errors()], 422);
-        }
+            if ($validator->fails()) {
+                return response()->json(['errors' => $validator->errors()], 422);
+            }
 
-        $blockingStatuses = [
-            'draft',
-            'pending_mayors_office',
-            'returned_for_revision',
-            'funds_issued',
-            'acknowledged',
-            'in_transit',
-            'completed',
-            'pending_gso_validation',
-            'pending_reconciliation',
-        ];
+            $blockingStatuses = [
+                'draft',
+                'pending_mayors_office',
+                'returned_for_revision',
+                'funds_issued',
+                'acknowledged',
+                'in_transit',
+                'completed',
+                'pending_gso_validation',
+                'pending_reconciliation',
+            ];
 
-        $vehicleBlocked = TripTicket::where('vehicle_id', $request->vehicle_id)
-            ->whereIn('status', $blockingStatuses)
-            ->first();
+            $vehicleBlocked = TripTicket::where('vehicle_id', $request->vehicle_id)
+                ->whereIn('status', $blockingStatuses)
+                ->first();
 
-        if ($vehicleBlocked) {
-            return response()->json([
-                'success' => false,
-                'message' => "Vehicle is already on ticket {$vehicleBlocked->trip_ticket_number} (status: {$vehicleBlocked->status}). Complete, cancel, or reject that ticket first.",
-                'data' => [
-                    'blocking_trip_id'     => $vehicleBlocked->trip_ticket_id,
-                    'blocking_trip_number' => $vehicleBlocked->trip_ticket_number,
-                    'blocking_trip_status' => $vehicleBlocked->status,
-                ],
-            ], 422);
-        }
+            if ($vehicleBlocked) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Vehicle is already on ticket {$vehicleBlocked->trip_ticket_number} (status: {$vehicleBlocked->status}). Complete, cancel, or reject that ticket first.",
+                    'data' => [
+                        'blocking_trip_id'     => $vehicleBlocked->trip_ticket_id,
+                        'blocking_trip_number' => $vehicleBlocked->trip_ticket_number,
+                        'blocking_trip_status' => $vehicleBlocked->status,
+                    ],
+                ], 422);
+            }
 
-        $driverBlocked = TripTicket::where('driver_id', $request->driver_id)
-            ->whereIn('status', $blockingStatuses)
-            ->first();
+            $driverBlocked = TripTicket::where('driver_id', $request->driver_id)
+                ->whereIn('status', $blockingStatuses)
+                ->first();
 
-        if ($driverBlocked) {
-            return response()->json([
-                'success' => false,
-                'message' => "Driver is already on ticket {$driverBlocked->trip_ticket_number} (status: {$driverBlocked->status}). Complete, cancel, or reject that ticket first.",
-                'data' => [
-                    'blocking_trip_id'     => $driverBlocked->trip_ticket_id,
-                    'blocking_trip_number' => $driverBlocked->trip_ticket_number,
-                    'blocking_trip_status' => $driverBlocked->status,
-                ],
-            ], 422);
-        }
+            if ($driverBlocked) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Driver is already on ticket {$driverBlocked->trip_ticket_number} (status: {$driverBlocked->status}). Complete, cancel, or reject that ticket first.",
+                    'data' => [
+                        'blocking_trip_id'     => $driverBlocked->trip_ticket_id,
+                        'blocking_trip_number' => $driverBlocked->trip_ticket_number,
+                        'blocking_trip_status' => $driverBlocked->status,
+                    ],
+                ], 422);
+            }
 
-        $vehicle = Vehicle::find($request->vehicle_id);
-        if (!$vehicle || $vehicle->status !== 'active') {
-            return response()->json(['message' => 'Vehicle is not available'], 400);
-        }
+            $vehicle = Vehicle::find($request->vehicle_id);
+            if (!$vehicle || $vehicle->status !== 'active') {
+                return response()->json(['message' => 'Vehicle is not available'], 400);
+            }
 
-        $driver = Driver::find($request->driver_id);
-        if (!$driver || $driver->status !== 'active') {
-            return response()->json(['message' => 'Driver is not active'], 400);
-        }
+            $driver = Driver::find($request->driver_id);
+            if (!$driver || $driver->status !== 'active') {
+                return response()->json(['message' => 'Driver is not active'], 400);
+            }
 
-        $estimatedDistance = $request->estimated_distance_km
-            ?? $this->calculateDistanceFromConfig($request->destination);
+            $estimatedDistance = $request->estimated_distance_km
+                ?? $this->calculateDistanceFromConfig($request->destination);
 
-        $estimatedFuel = $request->estimated_fuel_liters
-            ?? $this->calculateEstimatedFuelFromConfig($vehicle, $estimatedDistance);
+            $estimatedFuel = $request->estimated_fuel_liters
+                ?? $this->calculateEstimatedFuelFromConfig($vehicle, $estimatedDistance);
 
-        $estimatedCost = $request->estimated_cost
-            ?? round($estimatedFuel * $this->getFuelPriceFromConfig($vehicle->fuel_type), 2);
+            $estimatedCost = $request->estimated_cost
+                ?? round($estimatedFuel * $this->getFuelPriceFromConfig($vehicle->fuel_type), 2);
 
-        $budgetInfo = $this->getDepartmentBudgetFromConfig($request->department_id);
-        $hasInsufficientBudget = $budgetInfo['remaining'] < $estimatedCost;
-        $budgetShortage = $hasInsufficientBudget ? round($estimatedCost - $budgetInfo['remaining'], 2) : 0;
+            $budgetInfo = $this->getDepartmentBudgetFromConfig($request->department_id);
+            $hasInsufficientBudget = $budgetInfo['remaining'] < $estimatedCost;
+            $budgetShortage = $hasInsufficientBudget ? round($estimatedCost - $budgetInfo['remaining'], 2) : 0;
 
-      
-       
-        $yearMonth = date('Y-m');
+            // ════════════════════════════════════════════════════════════════
+            // TICKET NUMBER SCHEME
+            //   • Continue across months within the same year:  2026-09-101 → 2026-10-102
+            //   • Reset to 001 on year change:                  2026-12-500 → 2027-01-001
+            //   • Sequence space shared with GasSlip.control_number
+            // ════════════════════════════════════════════════════════════════
+            $yearMonth   = date('Y-m');
+            $currentYear = date('Y');
 
-        $maxSeq = 0;
-        $tailPattern = '/^\d{4}-\d{2}-(\d+)$/';
+            // Highest sequence within the CURRENT YEAR ONLY, across both tables.
+            // limit(500) gives comfortable headroom for busy months.
+            $maxSeq = 0;
+            $yearPattern = '/^' . preg_quote($currentYear, '/') . '-\d{2}-(\d+)$/';
 
-        // Recent tickets
-        TripTicket::whereNotNull('trip_ticket_number')
-            ->orderBy('trip_ticket_id', 'desc')
-            ->limit(100)
-            ->pluck('trip_ticket_number')
-            ->each(function ($num) use (&$maxSeq, $tailPattern) {
-                if ($num && preg_match($tailPattern, $num, $m)) {
-                    $seq = (int) $m[1];
-                    if ($seq > $maxSeq) $maxSeq = $seq;
-                }
-            });
+            // Current-year tickets
+            TripTicket::where('trip_ticket_number', 'like', $currentYear . '-%')
+                ->orderBy('trip_ticket_id', 'desc')
+                ->limit(500)
+                ->pluck('trip_ticket_number')
+                ->each(function ($num) use (&$maxSeq, $yearPattern) {
+                    if ($num && preg_match($yearPattern, $num, $m)) {
+                        $seq = (int) $m[1];
+                        if ($seq > $maxSeq) $maxSeq = $seq;
+                    }
+                });
 
-        // Recent control numbers (GasSlip shares the same sequence space)
-        GasSlip::whereNotNull('control_number')
-            ->orderBy('gas_slip_id', 'desc')
-            ->limit(100)
-            ->pluck('control_number')
-            ->each(function ($num) use (&$maxSeq, $tailPattern) {
-                if ($num && preg_match($tailPattern, $num, $m)) {
-                    $seq = (int) $m[1];
-                    if ($seq > $maxSeq) $maxSeq = $seq;
-                }
-            });
+            // Current-year control numbers (GasSlip shares the same sequence space)
+            GasSlip::where('control_number', 'like', $currentYear . '-%')
+                ->orderBy('gas_slip_id', 'desc')
+                ->limit(500)
+                ->pluck('control_number')
+                ->each(function ($num) use (&$maxSeq, $yearPattern) {
+                    if ($num && preg_match($yearPattern, $num, $m)) {
+                        $seq = (int) $m[1];
+                        if ($seq > $maxSeq) $maxSeq = $seq;
+                    }
+                });
 
-        // Format: YYYY-MM-NNN — sequence continues globally, month is just a prefix.
-        // str_pad handles numbers > 999 naturally (e.g. 1000 → "1000").
-        $ticketNumber = $yearMonth . '-' . str_pad((string) ($maxSeq + 1), 3, '0', STR_PAD_LEFT);
+            // Format: YYYY-MM-NNN
+            //   - Sequence continues across months
+            //   - Sequence resets on Jan 1 (LIKE filter scopes to current year)
+            //   - str_pad expands naturally beyond 999 (e.g. 1000 → "1000")
+            $ticketNumber = $yearMonth . '-' . str_pad((string) ($maxSeq + 1), 3, '0', STR_PAD_LEFT);
 
-        DB::beginTransaction();
+            DB::beginTransaction();
 
-        $submittedBy = $request->requested_by_driver_id ?? $user->user_id;
-        $submittedByDriver = $request->requested_by_driver_id ? true : false;
+            $submittedBy = $request->requested_by_driver_id ?? $user->user_id;
+            $submittedByDriver = $request->requested_by_driver_id ? true : false;
 
-        $tripTicket = TripTicket::create([
-            'trip_ticket_number' => $ticketNumber,
-            'department_id' => $request->department_id,
-            'driver_id' => $request->driver_id,
-            'vehicle_id' => $request->vehicle_id,
-            'submitted_by' => $submittedBy,
-            'submitted_by_staff' => $submittedByDriver,
-            'submitted_at' => now(),
-            'trip_date' => $request->trip_date,
-            'purpose' => $request->purpose,
-            'destination' => $request->destination,
-            'charge_to' => $request->charge_to,
-            'passenger_name' => $request->passenger_name ?? null,
-            'status' => TripTicket::STATUS_PENDING_MAYORS_OFFICE,
-            'estimated_distance_km' => $estimatedDistance,
-            'estimated_fuel_liters' => $estimatedFuel,
-            'has_insufficient_budget' => $hasInsufficientBudget,
-            'budget_shortage' => $budgetShortage,
-            'original_department_id' => $request->department_id,
-        ]);
-
-        TripTicketVehicleSnapshot::create([
-            'trip_ticket_id' => $tripTicket->trip_ticket_id,
-            'vehicle_status' => $vehicle->status,
-            'fuel_type' => is_string($vehicle->fuel_type) ? $vehicle->fuel_type : 'gasoline',
-            'snapshot_taken_at' => now(),
-        ]);
-
-        DB::commit();
-
-        $this->sendMONotification($tripTicket);
-
-        if ($request->requested_by_driver_id) {
-            $this->sendDriverNotification($tripTicket);
-        }
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Trip ticket created successfully and sent to Mayor\'s Office',
-            'data' => [
-                'trip_ticket_id' => $tripTicket->trip_ticket_id,
-                'trip_ticket_number' => $tripTicket->trip_ticket_number,
-                'status' => $tripTicket->status,
+            $tripTicket = TripTicket::create([
+                'trip_ticket_number' => $ticketNumber,
+                'department_id' => $request->department_id,
+                'driver_id' => $request->driver_id,
+                'vehicle_id' => $request->vehicle_id,
+                'submitted_by' => $submittedBy,
+                'submitted_by_staff' => $submittedByDriver,
+                'submitted_at' => now(),
+                'trip_date' => $request->trip_date,
+                'purpose' => $request->purpose,
+                'destination' => $request->destination,
+                'charge_to' => $request->charge_to,
+                'passenger_name' => $request->passenger_name ?? null,
+                'status' => TripTicket::STATUS_PENDING_MAYORS_OFFICE,
                 'estimated_distance_km' => $estimatedDistance,
                 'estimated_fuel_liters' => $estimatedFuel,
-                'estimated_cost' => $estimatedCost,
                 'has_insufficient_budget' => $hasInsufficientBudget,
                 'budget_shortage' => $budgetShortage,
-            ]
-        ], 201);
-    } catch (\Exception $e) {
-        DB::rollBack();
-        Log::error('GSO Create error: ' . $e->getMessage());
-        return response()->json([
-            'success' => false,
-            'message' => 'Failed to create trip ticket: ' . $e->getMessage()
-        ], 500);
-    }
-}
+                'original_department_id' => $request->department_id,
+            ]);
 
+            TripTicketVehicleSnapshot::create([
+                'trip_ticket_id' => $tripTicket->trip_ticket_id,
+                'vehicle_status' => $vehicle->status,
+                'fuel_type' => is_string($vehicle->fuel_type) ? $vehicle->fuel_type : 'gasoline',
+                'snapshot_taken_at' => now(),
+            ]);
+
+            DB::commit();
+
+            $this->sendMONotification($tripTicket);
+
+            if ($request->requested_by_driver_id) {
+                $this->sendDriverNotification($tripTicket);
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Trip ticket created successfully and sent to Mayor\'s Office',
+                'data' => [
+                    'trip_ticket_id' => $tripTicket->trip_ticket_id,
+                    'trip_ticket_number' => $tripTicket->trip_ticket_number,
+                    'status' => $tripTicket->status,
+                    'estimated_distance_km' => $estimatedDistance,
+                    'estimated_fuel_liters' => $estimatedFuel,
+                    'estimated_cost' => $estimatedCost,
+                    'has_insufficient_budget' => $hasInsufficientBudget,
+                    'budget_shortage' => $budgetShortage,
+                ]
+            ], 201);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('GSO Create error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to create trip ticket: ' . $e->getMessage()
+            ], 500);
+        }
+    }
     /**
      *  Check if vehicle is available for trip
      */
