@@ -48,6 +48,9 @@ import {
     Focus,
     Eye,
     Car,
+    Fuel,
+    Loader2,
+    X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -80,7 +83,6 @@ L.Icon.Default.mergeOptions({
 // ============================================
 // VEHICLE ICON WITH PLATE LABEL
 // ============================================
-
 const createVehicleIcon = (status, isSelected, isOnline = true, isFocused = false, plateNumber = '') => {
     const colors = {
         in_transit: '#22c55e',
@@ -230,7 +232,6 @@ document.head.appendChild(styleSheet);
 // ============================================
 // MAP TILE LAYER CONFIGURATIONS
 // ============================================
-
 const MAP_TILES = {
     street: {
         name: 'Street Map',
@@ -262,7 +263,6 @@ const MAP_TILES = {
 // ============================================
 // HELPER FUNCTIONS
 // ============================================
-
 const formatTime = (dateString) => {
     if (!dateString) return 'N/A';
     try {
@@ -274,6 +274,21 @@ const formatTime = (dateString) => {
         });
     } catch {
         return 'N/A';
+    }
+};
+
+const formatDateTimeShort = (dateString) => {
+    if (!dateString) return '--';
+    try {
+        const d = new Date(dateString);
+        return d.toLocaleString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+        });
+    } catch {
+        return '--';
     }
 };
 
@@ -309,16 +324,12 @@ const getStatusColor = (status) => {
 
 const getStatusDot = getStatusColor;
 
-const getMapTypeLabel = (type) => {
-    return MAP_TILES[type]?.name || 'Street Map';
-};
+const getMapTypeLabel = (type) => MAP_TILES[type]?.name || 'Street Map';
 
 // ============================================
-// INLINE STAT — compact horizontal pill for header
-// ✅ Moved OUTSIDE the component so it's always defined
+// INLINE STAT
 // ============================================
-
-const InlineStat = ({ title, value, icon: Icon, color, subtitle }) => (
+const InlineStat = ({ title, value, icon: Icon, color }) => (
     <div className="flex items-center gap-2 px-2.5 py-1.5 bg-slate-100/80 dark:bg-slate-800/80 rounded-lg border border-slate-200/60 dark:border-slate-700/60 flex-shrink-0">
         <div className={`p-1.5 rounded-md bg-gradient-to-br ${color} shadow-sm flex-shrink-0`}>
             <Icon className="h-3.5 w-3.5 text-white" />
@@ -335,10 +346,9 @@ const InlineStat = ({ title, value, icon: Icon, color, subtitle }) => (
 );
 
 // ============================================
-// POPUP CONTENT COMPONENT
+// POPUP CONTENT
 // ============================================
-
-const TripPopupContent = ({ trip, onViewTrip, onCenter, onFocus }) => {
+const TripPopupContent = ({ trip, onViewTrip, onCenter }) => {
     const current_location = trip?.current_location;
 
     return (
@@ -402,13 +412,6 @@ const TripPopupContent = ({ trip, onViewTrip, onCenter, onFocus }) => {
                     <Navigation className="h-3 w-3" />
                     Center
                 </button>
-                {/* <button
-                    onClick={() => onFocus(trip)}
-                    className="text-xs bg-emerald-600 text-white px-3 py-1.5 rounded-lg hover:bg-emerald-700 transition-colors flex items-center justify-center gap-1"
-                >
-                    <Focus className="h-3 w-3" />
-                    Focus
-                </button> */}
             </div>
         </div>
     );
@@ -417,7 +420,6 @@ const TripPopupContent = ({ trip, onViewTrip, onCenter, onFocus }) => {
 // ============================================
 // LOADING SKELETON
 // ============================================
-
 const LoadingSkeleton = () => (
     <div className="h-screen flex flex-col bg-slate-50 dark:bg-slate-950">
         <header className="bg-white/95 dark:bg-slate-900/95 px-4 md:px-6 py-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3 border-b border-slate-200/60 dark:border-slate-800/60">
@@ -443,7 +445,6 @@ const LoadingSkeleton = () => (
 // ============================================
 // MAIN COMPONENT
 // ============================================
-
 const LiveTracking = () => {
     const navigate = useNavigate();
     const queryClient = useQueryClient();
@@ -461,6 +462,12 @@ const LiveTracking = () => {
     const [pingCount, setPingCount] = useState(0);
     const [refreshAttempts, setRefreshAttempts] = useState(0);
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+
+    // ✅ Sidebar tabs + polyline state — INSIDE the component
+    const [sidebarTab, setSidebarTab] = useState('active');
+    const [polylineRoute, setPolylineRoute] = useState(null);
+    const [polylineInfo, setPolylineInfo] = useState(null);
+
     const mapRef = useRef(null);
     const dropdownRef = useRef(null);
     const pingCounterRef = useRef(0);
@@ -576,6 +583,47 @@ const LiveTracking = () => {
         retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 10000),
         enabled: true,
     });
+
+    // ✅ Refuelings query — only fires when tab is active
+    const { data: refuelingsRaw, isLoading: refuelingsLoading } = useOptimizedQuery({
+        queryKey: ['gps-recent-refuelings'],
+        queryFn: async () => {
+            try {
+                const res = await gpsAPI.getRecentRefuelings({ limit: 50 });
+                return res?.data?.data ?? [];
+            } catch (e) {
+                console.error('Refuelings fetch error:', e);
+                return [];
+            }
+        },
+        staleTime: 30_000,
+        enabled: sidebarTab === 'refuelings',
+    });
+
+    // ✅ Completed trips query — only fires when tab is active
+    const { data: completedRaw, isLoading: completedLoading } = useOptimizedQuery({
+        queryKey: ['gps-completed-trips'],
+        queryFn: async () => {
+            try {
+                const res = await gpsAPI.getCompletedTrips({ limit: 50 });
+                return res?.data?.data ?? [];
+            } catch (e) {
+                console.error('Completed trips fetch error:', e);
+                return [];
+            }
+        },
+        staleTime: 30_000,
+        enabled: sidebarTab === 'history',
+    });
+
+    const refuelings = useMemo(
+        () => (Array.isArray(refuelingsRaw) ? refuelingsRaw : []),
+        [refuelingsRaw]
+    );
+    const completedTrips = useMemo(
+        () => (Array.isArray(completedRaw) ? completedRaw : []),
+        [completedRaw]
+    );
 
     const activeTrips = useMemo(
         () => (Array.isArray(activeTripsRaw) ? activeTripsRaw : []),
@@ -793,7 +841,6 @@ const LiveTracking = () => {
             value: activeCount,
             icon: Car,
             color: 'from-green-500 to-emerald-600',
-            subtitle: `${activeCount} on the road`,
         },
         {
             title: 'Avg Speed',
@@ -802,16 +849,14 @@ const LiveTracking = () => {
                 : 0,
             icon: Gauge,
             color: 'from-blue-500 to-blue-600',
-            subtitle: 'km/h',
         },
         {
             title: 'Last Update',
             value: lastUpdate ? formatTime(lastUpdate) : '--',
             icon: Clock,
             color: 'from-purple-500 to-purple-600',
-            subtitle: `${pingCount} pings`,
         },
-    ], [activeCount, tripsWithLocation, lastUpdate, pingCount]);
+    ], [activeCount, tripsWithLocation, lastUpdate]);
 
     const handleTripSelect = (trip) => {
         setSelectedTrip(trip);
@@ -823,6 +868,38 @@ const LiveTracking = () => {
                 mapRef.current.setView([trip.current_location.latitude, trip.current_location.longitude], 16);
             }
         }
+    };
+
+    const handlePolylineView = async (item) => {
+        if (!item?.trip_id) {
+            toast.error('No trip data for this entry');
+            return;
+        }
+        try {
+            const res = await gpsAPI.getTripRoute(item.trip_id);
+            const track = res?.data?.data?.track ?? [];
+            if (track.length < 2) {
+                toast.error('Not enough GPS data for this trip');
+                return;
+            }
+            setPolylineRoute(track.map(p => [p.latitude, p.longitude]));
+            setPolylineInfo({
+                label: item.ticket_number || item.plate_number || `Trip #${item.trip_id}`,
+                trip_id: item.trip_id,
+            });
+            if (mapRef.current) {
+                const bounds = L.latLngBounds(track.map(p => [p.latitude, p.longitude]));
+                mapRef.current.fitBounds(bounds, { padding: [40, 40] });
+            }
+        } catch (e) {
+            console.error('Polyline error:', e);
+            toast.error('Failed to load route');
+        }
+    };
+
+    const handleClearPolyline = () => {
+        setPolylineRoute(null);
+        setPolylineInfo(null);
     };
 
     const handleViewTrip = (trip) => {
@@ -843,18 +920,6 @@ const LiveTracking = () => {
         }
     };
 
-    const handleFocus = (trip) => {
-        setFocusedTrip(trip);
-        setFocusModalOpen(true);
-    };
-
-    const handleCloseModal = () => {
-        setFocusModalOpen(false);
-        setTimeout(() => {
-            setFocusedTrip(null);
-        }, 300);
-    };
-
     const handleFocusAll = () => {
         setFocusedTrip(null);
         setFocusModalOpen(true);
@@ -865,13 +930,11 @@ const LiveTracking = () => {
             toast.error('No active vehicles to fit');
             return;
         }
-
         const validTrips = tripsWithLocation.filter(t => t && t.current_location);
         if (validTrips.length === 0) {
             toast.error('No valid vehicle locations');
             return;
         }
-
         const bounds = L.latLngBounds(
             validTrips.map(trip => [
                 trip.current_location.latitude,
@@ -946,11 +1009,10 @@ const LiveTracking = () => {
 
     return (
         <div className="h-[80vh] flex flex-col bg-slate-50 dark:bg-slate-950">
-            {/* ============ Header (stats inside) ============ */}
+            {/* ============ Header ============ */}
             <header className="flex-shrink-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm border-b border-slate-200/60 dark:border-slate-800/60 px-4 md:px-6 py-3">
                 <div className="flex items-center gap-3 flex-wrap lg:flex-nowrap">
 
-                    {/* Back button */}
                     <Button
                         variant="ghost"
                         size="icon"
@@ -960,7 +1022,6 @@ const LiveTracking = () => {
                         <ArrowLeft className="h-4 w-4" />
                     </Button>
 
-                    {/* Title block */}
                     <div className="flex-shrink-0">
                         <h1 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
                             <Satellite className="h-4 w-4 text-blue-500" />
@@ -977,9 +1038,6 @@ const LiveTracking = () => {
                                 <span className={`h-1.5 w-1.5 rounded-full ${hasActiveTrips ? 'bg-green-500 animate-pulse' : 'bg-slate-400'}`} />
                                 {hasActiveTrips ? `${activeCount} active` : 'No active trips'}
                             </span>
-                            {hasActiveTrips && (
-                                <span className="text-blue-500 text-[10px] font-medium">● Live</span>
-                            )}
                             <span className="flex items-center gap-1">
                                 {isWsConnected ? (
                                     <Wifi className="h-2.5 w-2.5 text-emerald-500" />
@@ -999,20 +1057,16 @@ const LiveTracking = () => {
                         </p>
                     </div>
 
-                    {/* Divider */}
                     <div className="hidden lg:block h-10 w-px bg-slate-200 dark:bg-slate-700 flex-shrink-0" />
 
-                    {/* Stats — inline horizontal pills */}
                     <div className="flex items-center gap-2 flex-shrink-0 overflow-x-auto lg:overflow-visible">
                         {stats.map((stat, index) => (
                             <InlineStat key={index} {...stat} />
                         ))}
                     </div>
 
-                    {/* Spacer */}
                     <div className="flex-1 hidden lg:block" />
 
-                    {/* Controls */}
                     <div className="flex items-center gap-2 flex-shrink-0 ml-auto">
                         <div className="relative" ref={dropdownRef}>
                             <button
@@ -1064,10 +1118,9 @@ const LiveTracking = () => {
                 </div>
             </header>
 
-            {/* ============ Main Content — Map + Sidebar ============ */}
+            {/* ============ Main Content ============ */}
             <div className="flex-1 flex overflow-hidden relative min-h-0">
 
-                {/* Map — flex-1 so it fills available space */}
                 <div className="flex-1 relative min-h-0 min-w-0">
                     {isLoading ? (
                         <div className="w-full h-full flex items-center justify-center bg-slate-100 dark:bg-slate-800">
@@ -1087,6 +1140,17 @@ const LiveTracking = () => {
                         >
                             {renderMapTiles()}
                             <ZoomControl position="bottomright" />
+
+                            {/* Selected route polyline (from refuelings/history tab) */}
+                            {polylineRoute && polylineRoute.length > 1 && (
+                                <Polyline
+                                    positions={polylineRoute}
+                                    color="#dc2626"
+                                    weight={5}
+                                    opacity={0.85}
+                                    smoothFactor={1}
+                                />
+                            )}
 
                             {tripsWithLocation.length > 0 ? (
                                 tripsWithLocation.map((trip) => {
@@ -1130,7 +1194,6 @@ const LiveTracking = () => {
                                                         trip={trip}
                                                         onViewTrip={handleViewTrip}
                                                         onCenter={handleCenter}
-                                                        onFocus={handleFocus}
                                                     />
                                                 </Popup>
                                             </Marker>
@@ -1164,7 +1227,7 @@ const LiveTracking = () => {
                     )}
                 </div>
 
-                {/* Toggle button for sidebar */}
+                {/* Toggle button */}
                 <button
                     onClick={() => setIsSidebarOpen(prev => !prev)}
                     className={cn(
@@ -1192,141 +1255,254 @@ const LiveTracking = () => {
                     )}
                 >
                     <div className="w-80 h-full flex flex-col">
-                        <div className="flex-shrink-0 p-4 border-b border-slate-200/60 dark:border-slate-800/60">
-                            <div className="flex items-center justify-between">
-                                <h2 className="font-semibold text-slate-800 dark:text-white flex items-center gap-2">
-                                    <Car className="h-4 w-4 text-blue-500" />
-                                    Active Vehicles
-                                </h2>
-                                {tripsWithLocation.length > 0 && (
+                        {/* ============ Tab Header ============ */}
+                        <div className="flex-shrink-0 px-3 pt-3 pb-2 border-b border-slate-200/60 dark:border-slate-800/60">
+                            <div className="flex gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
+                                {[
+                                    { key: 'active', label: 'Active', count: tripsWithLocation.length },
+                                    { key: 'refuelings', label: 'Refuelings', count: refuelings.length },
+                                    { key: 'history', label: 'History', count: completedTrips.length },
+                                ].map(tab => (
                                     <button
-                                        onClick={handleFocusAll}
-                                        className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1"
+                                        key={tab.key}
+                                        onClick={() => setSidebarTab(tab.key)}
+                                        className={cn(
+                                            "flex-1 px-2 py-1.5 text-xs font-medium rounded-md transition-colors flex items-center justify-center gap-1",
+                                            sidebarTab === tab.key
+                                                ? "bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm"
+                                                : "text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
+                                        )}
                                     >
-                                        <Focus className="h-3 w-3" />
-                                        Focus All
+                                        {tab.label}
+                                        {tab.count > 0 && (
+                                            <span className={cn(
+                                                "text-[10px] px-1.5 py-0.5 rounded-full font-semibold",
+                                                sidebarTab === tab.key
+                                                    ? "bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300"
+                                                    : "bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400"
+                                            )}>
+                                                {tab.count}
+                                            </span>
+                                        )}
                                     </button>
-                                )}
+                                ))}
                             </div>
-                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                                {hasActiveTrips ? 'Click a vehicle to focus on map' : 'No active trips at the moment'}
-                            </p>
+
+                            {polylineInfo && (
+                                <div className="mt-2 flex items-center justify-between bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 rounded-lg px-2.5 py-1.5">
+                                    <div className="flex items-center gap-1.5 min-w-0">
+                                        <div className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                                        <span className="text-[11px] font-medium text-red-700 dark:text-red-300 truncate">
+                                            Route: {polylineInfo.label}
+                                        </span>
+                                    </div>
+                                    <button
+                                        onClick={handleClearPolyline}
+                                        className="text-red-500 hover:text-red-700 flex-shrink-0"
+                                        title="Clear route"
+                                    >
+                                        <X className="h-3.5 w-3.5" />
+                                    </button>
+                                </div>
+                            )}
                         </div>
 
+                        {/* ============ Tab Body ============ */}
                         <div className="flex-1 overflow-y-auto p-3 space-y-2">
-                            {tripsWithLocation.length === 0 ? (
-                                <div className="text-center py-12">
-                                    <div className="w-12 h-12 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto mb-3">
-                                        <Car className="h-6 w-6 text-slate-400 dark:text-slate-500" />
-                                    </div>
-                                    <p className="text-slate-500 dark:text-slate-400 text-sm">No active vehicles</p>
-                                    <p className="text-xs text-slate-400 mt-1">Waiting for GPS pings...</p>
-                                </div>
-                            ) : (
-                                tripsWithLocation.map((trip) => {
-                                    if (!trip) return null;
-                                    const isSelected = selectedTrip?.trip_id === trip.trip_id;
-                                    const isFocused = focusedTrip?.trip_id === trip.trip_id;
-                                    const { current_location } = trip;
 
-                                    return (
-                                        <div
-                                            key={trip.trip_id}
-                                            onClick={() => handleTripSelect(trip)}
-                                            className={cn(
-                                                "p-3 rounded-xl cursor-pointer transition-all duration-200 relative",
-                                                isFocused
-                                                    ? "bg-emerald-50 dark:bg-emerald-950/30 ring-2 ring-emerald-500 shadow-lg shadow-emerald-500/10"
-                                                    : isSelected
+                            {/* ----- ACTIVE TAB ----- */}
+                            {sidebarTab === 'active' && (
+                                tripsWithLocation.length === 0 ? (
+                                    <div className="text-center py-12">
+                                        <div className="w-12 h-12 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto mb-3">
+                                            <Car className="h-6 w-6 text-slate-400 dark:text-slate-500" />
+                                        </div>
+                                        <p className="text-slate-500 dark:text-slate-400 text-sm">No active vehicles</p>
+                                        <p className="text-xs text-slate-400 mt-1">Waiting for GPS pings...</p>
+                                    </div>
+                                ) : (
+                                    tripsWithLocation.map((trip) => {
+                                        if (!trip) return null;
+                                        const isSelected = selectedTrip?.trip_id === trip.trip_id;
+                                        const isFocused = focusedTrip?.trip_id === trip.trip_id;
+                                        const { current_location } = trip;
+
+                                        return (
+                                            <div
+                                                key={trip.trip_id}
+                                                onClick={() => handleTripSelect(trip)}
+                                                className={cn(
+                                                    "p-3 rounded-xl cursor-pointer transition-all duration-200 relative",
+                                                    isSelected
                                                         ? "bg-blue-50 dark:bg-blue-900/20 ring-2 ring-blue-500 shadow-sm shadow-blue-500/10"
                                                         : "hover:bg-slate-50 dark:hover:bg-slate-800/50"
-                                            )}
-                                        >
-                                            {/* {isFocused && (
-                                                <div className="absolute top-2 right-2 bg-emerald-500 text-white text-[8px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
-                                                    <Focus className="h-2.5 w-2.5" />
-                                                    FOCUS
-                                                </div>
-                                            )} */}
-                                            <div className="flex items-start justify-between gap-2">
-                                                <div className="flex-1 min-w-0">
-                                                    <div className="flex items-center gap-2">
-                                                        <div className={`w-2 h-2 rounded-full ${getStatusDot(trip.status)} ${isFocused ? 'animate-ping' : 'animate-pulse'}`} />
-                                                        <span className={cn(
-                                                            "font-mono text-sm font-semibold truncate",
-                                                            isFocused ? "text-emerald-700 dark:text-emerald-300" : "text-slate-800 dark:text-white"
-                                                        )}>
-                                                            {trip.ticket_number}
-                                                        </span>
-                                                        <span className="text-[10px] text-emerald-500 font-medium">● Live</span>
+                                                )}
+                                            >
+                                                <div className="flex items-start justify-between gap-2">
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="flex items-center gap-2">
+                                                            <div className={`w-2 h-2 rounded-full ${getStatusDot(trip.status)} animate-pulse`} />
+                                                            <span className="font-mono text-sm font-semibold truncate text-slate-800 dark:text-white">
+                                                                {trip.ticket_number}
+                                                            </span>
+                                                            <span className="text-[10px] text-emerald-500 font-medium">● Live</span>
+                                                        </div>
+                                                        <div className="mt-1 text-sm text-slate-600 dark:text-slate-300 truncate flex items-center gap-1.5">
+                                                            <Car className="h-3 w-3 text-slate-400" />
+                                                            <span className="font-mono font-semibold">
+                                                                {trip.vehicle?.plate_number || 'N/A'}
+                                                            </span>
+                                                            <span className="text-slate-400 mx-1">•</span>
+                                                            <User className="h-3 w-3 text-slate-400" />
+                                                            {trip.driver?.name || 'N/A'}
+                                                        </div>
+                                                        <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-400 truncate flex items-center gap-1">
+                                                            <MapPin className="h-3 w-3" />
+                                                            {trip.destination || 'N/A'}
+                                                        </div>
                                                     </div>
-                                                    <div className="mt-1 text-sm text-slate-600 dark:text-slate-300 truncate flex items-center gap-1.5">
-                                                        <Car className="h-3 w-3 text-slate-400" />
-                                                        <span className="font-mono font-semibold">
-                                                            {trip.vehicle?.plate_number || 'N/A'}
-                                                        </span>
-                                                        <span className="text-slate-400 mx-1">•</span>
-                                                        <User className="h-3 w-3 text-slate-400" />
-                                                        {trip.driver?.name || 'N/A'}
-                                                    </div>
-                                                    <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-400 truncate flex items-center gap-1">
-                                                        <MapPin className="h-3 w-3" />
-                                                        {trip.destination || 'N/A'}
-                                                    </div>
-                                                </div>
-                                                <div className="text-right flex-shrink-0">
-                                                    <div className="text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-1 justify-end">
-                                                        <Gauge className="h-3 w-3 text-slate-400" />
-                                                        {current_location?.speed_kmh || 0} km/h
-                                                    </div>
-                                                    <div className="text-xs text-slate-400 dark:text-slate-500 flex items-center gap-1 justify-end">
-                                                        <Clock className="h-3 w-3" />
-                                                        {formatTime(current_location?.recorded_at)}
+                                                    <div className="text-right flex-shrink-0">
+                                                        <div className="text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-1 justify-end">
+                                                            <Gauge className="h-3 w-3 text-slate-400" />
+                                                            {current_location?.speed_kmh || 0} km/h
+                                                        </div>
+                                                        <div className="text-xs text-slate-400 dark:text-slate-500 flex items-center gap-1 justify-end">
+                                                            <Clock className="h-3 w-3" />
+                                                            {formatTime(current_location?.recorded_at)}
+                                                        </div>
                                                     </div>
                                                 </div>
                                             </div>
+                                        );
+                                    })
+                                )
+                            )}
 
-                                            {/* <div className="mt-2 flex gap-2">
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        handleFocus(trip);
-                                                    }}
-                                                    className="flex-1 text-[10px] bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg transition-colors flex items-center justify-center gap-1"
-                                                >
-                                                    <Focus className="h-3 w-3" />
-                                                    Focus Monitor
-                                                </button>
-                                            </div> */}
-
-                                            {/* {isSelected && current_location && (
-                                                <div className="mt-2 text-xs text-blue-600 dark:text-blue-400 flex items-center gap-2 bg-blue-50/50 dark:bg-blue-950/20 rounded-lg px-2 py-1">
-                                                    <Navigation className="h-3 w-3" />
-                                                    {current_location.latitude.toFixed(5)}, {current_location.longitude.toFixed(5)}
-                                                </div>
-                                            )} */}
+                            {/* ----- REFUELINGS TAB ----- */}
+                            {sidebarTab === 'refuelings' && (
+                                refuelingsLoading ? (
+                                    <div className="text-center py-12">
+                                        <Loader2 className="h-6 w-6 animate-spin text-slate-400 mx-auto" />
+                                        <p className="text-xs text-slate-400 mt-2">Loading refuelings...</p>
+                                    </div>
+                                ) : refuelings.length === 0 ? (
+                                    <div className="text-center py-12">
+                                        <div className="w-12 h-12 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto mb-3">
+                                            <Fuel className="h-6 w-6 text-slate-400 dark:text-slate-500" />
                                         </div>
-                                    );
-                                })
+                                        <p className="text-slate-500 dark:text-slate-400 text-sm">No refuelings yet</p>
+                                        <p className="text-xs text-slate-400 mt-1">Recent fuel purchases will appear here</p>
+                                    </div>
+                                ) : (
+                                    refuelings.map((r) => (
+                                        <div
+                                            key={r.fuel_receipt_id}
+                                            className="p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
+                                        >
+                                            <div className="flex items-start justify-between gap-2">
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="w-2 h-2 rounded-full bg-amber-500" />
+                                                        <span className="font-mono text-sm font-semibold text-slate-800 dark:text-white truncate">
+                                                            {r.plate_number}
+                                                        </span>
+                                                    </div>
+                                                    <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-400 truncate">
+                                                        {r.vehicle_model} • {r.driver_name}
+                                                    </div>
+                                                    <div className="mt-1 text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2">
+                                                        <span className="font-semibold text-amber-600 dark:text-amber-400">
+                                                            {r.liters_availed.toFixed(2)} L
+                                                        </span>
+                                                        <span className="text-slate-300 dark:text-slate-600">·</span>
+                                                        <span>₱{r.amount_on_receipt.toFixed(2)}</span>
+                                                    </div>
+                                                </div>
+                                                <div className="text-right flex-shrink-0">
+                                                    <div className="text-[10px] text-slate-400">
+                                                        {formatDateTimeShort(r.uploaded_at)}
+                                                    </div>
+                                                    {r.trip_id && (
+                                                        <button
+                                                            onClick={() => handlePolylineView(r)}
+                                                            className="mt-1 text-[10px] text-blue-600 hover:text-blue-700 dark:text-blue-400 flex items-center gap-1 ml-auto"
+                                                        >
+                                                            <Navigation className="h-3 w-3" />
+                                                            Route
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))
+                                )
+                            )}
+
+                            {/* ----- HISTORY TAB ----- */}
+                            {sidebarTab === 'history' && (
+                                completedLoading ? (
+                                    <div className="text-center py-12">
+                                        <Loader2 className="h-6 w-6 animate-spin text-slate-400 mx-auto" />
+                                        <p className="text-xs text-slate-400 mt-2">Loading trips...</p>
+                                    </div>
+                                ) : completedTrips.length === 0 ? (
+                                    <div className="text-center py-12">
+                                        <div className="w-12 h-12 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto mb-3">
+                                            <Clock className="h-6 w-6 text-slate-400 dark:text-slate-500" />
+                                        </div>
+                                        <p className="text-slate-500 dark:text-slate-400 text-sm">No completed trips</p>
+                                        <p className="text-xs text-slate-400 mt-1">Finished trips will appear here</p>
+                                    </div>
+                                ) : (
+                                    completedTrips.map((t) => (
+                                        <div
+                                            key={t.trip_id}
+                                            className="p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
+                                        >
+                                            <div className="flex items-start justify-between gap-2">
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="w-2 h-2 rounded-full bg-indigo-500" />
+                                                        <span className="font-mono text-sm font-semibold text-slate-800 dark:text-white truncate">
+                                                            {t.ticket_number}
+                                                        </span>
+                                                    </div>
+                                                    <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-400 truncate">
+                                                        {t.plate_number} • {t.driver_name}
+                                                    </div>
+                                                    <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-400 truncate flex items-center gap-1">
+                                                        <MapPin className="h-3 w-3" />
+                                                        {t.destination}
+                                                    </div>
+                                                    <div className="mt-1 text-xs flex items-center gap-2">
+                                                        <span className="font-semibold text-blue-600 dark:text-blue-400">
+                                                            {t.actual_distance_km?.toFixed(2) ?? '0.00'} km
+                                                        </span>
+                                                        <span className="text-slate-300 dark:text-slate-600">·</span>
+                                                        <span className="text-slate-500">{t.ping_count} pings</span>
+                                                    </div>
+                                                </div>
+                                                <div className="text-right flex-shrink-0">
+                                                    <div className="text-[10px] text-slate-400">
+                                                        {t.trip_date || '--'}
+                                                    </div>
+                                                    <button
+                                                        onClick={() => handlePolylineView(t)}
+                                                        className="mt-1 text-[10px] text-blue-600 hover:text-blue-700 dark:text-blue-400 flex items-center gap-1 ml-auto"
+                                                    >
+                                                        <Navigation className="h-3 w-3" />
+                                                        Route
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))
+                                )
                             )}
                         </div>
                     </div>
                 </div>
             </div>
-
-            {/* Focus Monitoring Modal
-            {focusModalOpen && focusedTrip && (
-                <div className="fixed inset-0 z-[2000] overflow-y-auto">
-                    <div className="min-h-screen px-2 py-4 md:px-4 md:py-8 flex items-center justify-center bg-black/80 backdrop-blur-md">
-                        <LiveTripTracker
-                            trip={focusedTrip}
-                            allTrips={tripsWithLocation}
-                            isOpen={focusModalOpen}
-                            onClose={handleCloseModal}
-                        />
-                    </div>
-                </div>
-            )} */}
         </div>
     );
 };

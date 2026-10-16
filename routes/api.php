@@ -413,6 +413,12 @@ Route::post('pending-gas-slips/{tripTicketId}/complete', [GsoController::class, 
             ->middleware(['role:gso_office']);
         // Real-time stats for active trip
         Route::get('trips/{id}/stats', [GpsPingController::class, 'getRealtimeStats']);
+
+
+        Route::get('recent-refuelings', [GpsPingController::class, 'getRecentRefuelings'])
+    ->middleware(['role:gso_office']);
+Route::get('completed-trips', [GpsPingController::class, 'getCompletedTrips'])
+    ->middleware(['role:gso_office']);
     });
 
     // ============ NOTIFICATIONS ============

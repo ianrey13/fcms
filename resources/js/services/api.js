@@ -615,6 +615,10 @@ export const gpsAPI = {
   deletePings: (tripId) => uncachedApi.delete(`/gps/trips/${tripId}/pings`),
   checkDeviation: (data) => uncachedApi.post('/gps/check-deviation', data),
   storeBatch: (data) => uncachedApi.post('/gps/pings/batch', data),
+
+
+  getRecentRefuelings: (params) => cachedApi.get('/gps/recent-refuelings', { params }),
+getCompletedTrips:   (params) => cachedApi.get('/gps/completed-trips', { params }),
 };
 
 // ============ LOCATION API ============

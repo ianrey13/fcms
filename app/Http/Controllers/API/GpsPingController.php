@@ -1517,4 +1517,122 @@ class GpsPingController extends Controller
             ], 500);
         }
     }
+
+
+    /**
+ * GET /api/gps/recent-refuelings
+ * GSO-only: recent fuel purchases across all trips
+ */
+public function getRecentRefuelings(Request $request)
+{
+    try {
+        $user = $request->user();
+        if (!$user || $user->role !== 'gso_office') {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
+        }
+
+        $limit = (int) $request->get('limit', 50);
+
+        $receipts = FuelReceipt::with([
+                'gasSlip.tripTicket.vehicle',
+                'gasSlip.tripTicket.driver.user',
+                'gasSlip.tripTicket.department',
+            ])
+            ->whereNotNull('receipt_uploaded_at')
+            ->orderBy('receipt_uploaded_at', 'desc')
+            ->limit($limit)
+            ->get();
+
+        $data = $receipts->map(function ($r) {
+            $trip = $r->gasSlip?->tripTicket;
+            $vehicle = $trip?->vehicle;
+            $driverUser = $trip?->driver?->user;
+
+            return [
+                'fuel_receipt_id'  => $r->fuel_receipt_id,
+                'trip_id'          => $trip?->trip_ticket_id,
+                'ticket_number'    => $trip?->trip_ticket_number ?? 'N/A',
+                'control_number'   => $r->gasSlip?->control_number,
+                'plate_number'     => $vehicle?->plate_number ?? 'N/A',
+                'vehicle_model'    => $vehicle?->vehicle_model ?? 'N/A',
+                'driver_name'      => $driverUser?->full_name ?? 'N/A',
+                'department'       => $trip?->department?->department_name ?? 'N/A',
+                'liters_availed'   => (float) ($r->liters_availed ?? 0),
+                'amount_on_receipt'=> (float) ($r->amount_on_receipt ?? 0),
+                'unit_price'       => (float) ($r->unit_price ?? 0),
+                'receipt_photo_url'=> $r->receipt_photo_path
+                    ? asset($r->receipt_photo_path)
+                    : null,
+                'uploaded_at'      => optional($r->receipt_uploaded_at)->toIso8601String(),
+            ];
+        });
+
+        return response()->json([
+            'success' => true,
+            'data'    => $data,
+            'meta'    => ['total' => $data->count()],
+        ]);
+    } catch (\Exception $e) {
+        Log::error('Recent refuelings error: ' . $e->getMessage());
+        return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+    }
+}
+
+/**
+ * GET /api/gps/completed-trips
+ * GSO-only: recent completed/closed trips for the history tab
+ */
+public function getCompletedTrips(Request $request)
+{
+    try {
+        $user = $request->user();
+        if (!$user || $user->role !== 'gso_office') {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
+        }
+
+        $limit = (int) $request->get('limit', 50);
+
+        $trips = TripTicket::with(['vehicle', 'driver.user', 'department'])
+            ->whereIn('status', ['closed', 'completed', 'pending_gso_validation'])
+            ->orderBy('updated_at', 'desc')
+            ->limit($limit)
+            ->get();
+
+        $data = $trips->map(function ($trip) {
+            $vehicle = $trip->vehicle;
+            $driverUser = $trip->driver?->user;
+            $pingCount = GpsPing::where('trip_ticket_id', $trip->trip_ticket_id)->count();
+
+            return [
+                'trip_id'          => $trip->trip_ticket_id,
+                'ticket_number'    => $trip->trip_ticket_number ?? 'N/A',
+                'plate_number'     => $vehicle?->plate_number ?? 'N/A',
+                'vehicle_model'    => $vehicle?->vehicle_model ?? 'N/A',
+                'driver_name'      => $driverUser?->full_name ?? 'N/A',
+                'department'       => $trip->department?->department_name ?? 'N/A',
+                'destination'      => $trip->destination ?? 'N/A',
+                'purpose'          => $trip->purpose ?? '',
+                'status'           => $trip->status,
+                'actual_distance_km' => $trip->actual_distance_km !== null
+                    ? (float) $trip->actual_distance_km
+                    : null,
+                'actual_fuel_used' => $trip->actual_fuel_used !== null
+                    ? (float) $trip->actual_fuel_used
+                    : null,
+                'ping_count'       => $pingCount,
+                'ended_at'         => optional($trip->updated_at)->toIso8601String(),
+                'trip_date'        => optional($trip->trip_date)->toDateString(),
+            ];
+        });
+
+        return response()->json([
+            'success' => true,
+            'data'    => $data,
+            'meta'    => ['total' => $data->count()],
+        ]);
+    } catch (\Exception $e) {
+        Log::error('Completed trips error: ' . $e->getMessage());
+        return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+    }
+}
 }
