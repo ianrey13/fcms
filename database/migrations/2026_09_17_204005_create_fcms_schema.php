@@ -503,6 +503,27 @@ return new class extends Migration
             $table->foreign('updated_by')->references('user_id')->on('users')->onDelete('set null');
         });
 
+
+        Schema::create('gps_ping_archive', function (Blueprint $table) {
+    $table->bigIncrements('archive_id');
+    $table->unsignedBigInteger('original_ping_id');
+    $table->unsignedBigInteger('trip_ticket_id');
+    $table->decimal('latitude', 10, 7);
+    $table->decimal('longitude', 10, 7);
+    $table->decimal('accuracy_meters', 10, 2)->nullable();
+    $table->decimal('speed_kmh', 8, 2)->nullable();
+    $table->decimal('heading_degrees', 8, 2)->nullable();
+    $table->boolean('is_low_accuracy')->default(false);
+    $table->boolean('is_queued_upload')->default(false);
+    $table->boolean('has_mock_location_flag')->default(false);
+    $table->timestamp('recorded_at');
+    $table->timestamp('received_at');
+    $table->timestamp('archived_at')->useCurrent();
+
+    $table->index('trip_ticket_id', 'idx_ping_archive_trip');
+    $table->index(['trip_ticket_id', 'recorded_at'], 'idx_ping_archive_trip_time');
+});
+
         // Laravel-standard
         Schema::create('cache', function (Blueprint $table) {
             $table->string('key')->primary();
@@ -775,6 +796,7 @@ return new class extends Migration
         Schema::dropIfExists('jobs');
         Schema::dropIfExists('cache_locks');
         Schema::dropIfExists('cache');
+        Schema::dropIfExists('gps_ping_archive');
         Schema::dropIfExists('system_setting');
         Schema::dropIfExists('notifications');
         Schema::dropIfExists('audit_log');

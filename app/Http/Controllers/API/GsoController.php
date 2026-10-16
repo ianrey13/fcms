@@ -12,6 +12,7 @@ use App\Models\Vehicle;
 use App\Models\Driver;
 use App\Models\TripHistory;
 use App\Models\FuelReceipt;
+use App\Models\GpsPing;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -781,9 +782,9 @@ class GsoController extends Controller
         }
     }
 
-    /**
+        /**
      * GSO validates and CLOSES the trip (final step)
-     *  Only Approve/Close - No Reject option
+     * ✅ Archive GPS pings before deleting them so route history survives.
      */
     public function validateTrip(Request $request, $id)
     {
@@ -829,6 +830,40 @@ class GsoController extends Controller
 
             $ticket->syncActuals();
             $ticket->save();
+
+            // ============================================================
+            // ✅ Archive GPS pings before deleting from hot table
+            // so route history (LiveTracking → History tab → Route) survives.
+            // Inside the transaction so a failed archive insert rolls back
+            // the entire closure — no risk of losing pings silently.
+            // ============================================================
+            $pings = \App\Models\GpsPing::where('trip_ticket_id', $ticket->trip_ticket_id)->get();
+
+            if ($pings->isNotEmpty()) {
+                $archiveRows = $pings->map(fn($p) => [
+                    'original_ping_id'       => $p->ping_id,
+                    'trip_ticket_id'         => $p->trip_ticket_id,
+                    'latitude'               => $p->latitude,
+                    'longitude'              => $p->longitude,
+                    'accuracy_meters'        => $p->accuracy_meters,
+                    'speed_kmh'              => $p->speed_kmh,
+                    'heading_degrees'        => $p->heading_degrees,
+                    'is_low_accuracy'        => $p->is_low_accuracy,
+                    'is_queued_upload'       => $p->is_queued_upload,
+                    'has_mock_location_flag' => $p->has_mock_location_flag,
+                    'recorded_at'            => $p->recorded_at,
+                    'received_at'            => $p->received_at,
+                    'archived_at'            => now(),
+                ])->toArray();
+
+                DB::table('gps_ping_archive')->insert($archiveRows);
+                \App\Models\GpsPing::where('trip_ticket_id', $ticket->trip_ticket_id)->delete();
+
+                Log::info('GPS pings archived on trip validation', [
+                    'trip_id' => $ticket->trip_ticket_id,
+                    'count'   => count($archiveRows),
+                ]);
+            }
 
             DB::commit();
 

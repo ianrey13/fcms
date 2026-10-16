@@ -819,10 +819,7 @@ class GpsPingController extends Controller
                 ], 403);
             }
 
-            $pings = GpsPing::where('trip_ticket_id', $tripId)
-                ->where('is_low_accuracy', false)
-                ->orderBy('recorded_at', 'asc')
-                ->get();
+          $pings = $this->getPingsOrArchive($tripId);
 
             $totalDistance = $this->filterAndSumDistance($pings);
             $maxSpeed = 0;
@@ -1012,216 +1009,201 @@ class GpsPingController extends Controller
     /**
      * Get GPS pings for a trip (driver-only)
      */
-    public function getPings(Request $request, $tripId)
-    {
-        try {
-            $user = $request->user();
-            $driver = Driver::where('user_id', $user->user_id)->first();
+  public function getPings(Request $request, $tripId)
+{
+    try {
+        $user = $request->user();
 
-            if (!$driver) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Driver record not found'
-                ], 404);
-            }
-
-            $trip = TripTicket::where('trip_ticket_id', $tripId)
-                ->where('driver_id', $driver->driver_id)
-                ->first();
-
-            if (!$trip) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Trip ticket not found or not assigned to you'
-                ], 404);
-            }
-
-            $limit = $request->get('limit', 100);
-            $since = $request->get('since');
-
-            $query = GpsPing::where('trip_ticket_id', $tripId)
-                ->orderBy('recorded_at', 'desc');
-
-            if ($since) {
-                $query->where('recorded_at', '>=', $since);
-            }
-
-            $pings = $query->limit($limit)->get();
-
-            return response()->json([
-                'success' => true,
-                'data' => [
-                    'trip_ticket_id' => $tripId,
-                    'total_pings' => $pings->count(),
-                    'pings' => $pings->map(function ($ping) {
-                        return [
-                            'ping_id' => $ping->ping_id,
-                            'latitude' => $ping->latitude,
-                            'longitude' => $ping->longitude,
-                            'accuracy_meters' => $ping->accuracy_meters,
-                            'speed_kmh' => $ping->speed_kmh,
-                            'heading_degrees' => $ping->heading_degrees,
-                            'is_low_accuracy' => $ping->is_low_accuracy,
-                            'recorded_at' => $ping->recorded_at,
-                        ];
-                    }),
-                ]
-            ]);
-
-        } catch (\Exception $e) {
-            Log::error('Get GPS pings error: ' . $e->getMessage());
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to fetch GPS pings: ' . $e->getMessage()
-            ], 500);
+        $trip = TripTicket::with(['driver'])->find($tripId);
+        if (!$trip) {
+            return response()->json(['success' => false, 'message' => 'Trip not found'], 404);
         }
+
+        $isGSO = $user->role === 'gso_office';
+        $isDriver = $trip->driver && (int) $trip->driver->user_id === (int) $user->user_id;
+        $isRequester = (int) $trip->submitted_by === (int) $user->user_id;
+
+        if (!$isGSO && !$isDriver && !$isRequester) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
+        }
+
+        $limit = $request->get('limit', 100);
+        $since = $request->get('since');
+
+        $query = GpsPing::where('trip_ticket_id', $tripId)
+            ->orderBy('recorded_at', 'desc');
+
+        if ($since) {
+            $query->where('recorded_at', '>=', $since);
+        }
+
+        $pings = $query->limit($limit)->get();
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'trip_ticket_id' => $tripId,
+                'total_pings' => $pings->count(),
+                'pings' => $pings->map(function ($ping) {
+                    return [
+                        'ping_id' => $ping->ping_id,
+                        'latitude' => $ping->latitude,
+                        'longitude' => $ping->longitude,
+                        'accuracy_meters' => $ping->accuracy_meters,
+                        'speed_kmh' => $ping->speed_kmh,
+                        'heading_degrees' => $ping->heading_degrees,
+                        'is_low_accuracy' => $ping->is_low_accuracy,
+                        'recorded_at' => $ping->recorded_at,
+                    ];
+                }),
+            ]
+        ]);
+
+    } catch (\Exception $e) {
+        Log::error('Get GPS pings error: ' . $e->getMessage());
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to fetch GPS pings: ' . $e->getMessage()
+        ], 500);
     }
+}
 
     /**
      * Get latest GPS ping for a trip (driver-only)
      */
     public function getLatestPing(Request $request, $tripId)
-    {
-        try {
-            $user = $request->user();
-            $driver = Driver::where('user_id', $user->user_id)->first();
+{
+    try {
+        $user = $request->user();
 
-            if (!$driver) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Driver record not found'
-                ], 404);
-            }
+        $trip = TripTicket::with(['driver'])->find($tripId);
+        if (!$trip) {
+            return response()->json(['success' => false, 'message' => 'Trip not found'], 404);
+        }
 
-            $trip = TripTicket::where('trip_ticket_id', $tripId)
-                ->where('driver_id', $driver->driver_id)
-                ->first();
+        $isGSO = $user->role === 'gso_office';
+        $isDriver = $trip->driver && (int) $trip->driver->user_id === (int) $user->user_id;
+        $isRequester = (int) $trip->submitted_by === (int) $user->user_id;
 
-            if (!$trip) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Trip ticket not found or not assigned to you'
-                ], 404);
-            }
+        if (!$isGSO && !$isDriver && !$isRequester) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
+        }
 
-            $ping = GpsPing::where('trip_ticket_id', $tripId)
-                ->orderBy('recorded_at', 'desc')
-                ->first();
+        $ping = GpsPing::where('trip_ticket_id', $tripId)
+            ->orderBy('recorded_at', 'desc')
+            ->first();
 
-            if (!$ping) {
-                return response()->json([
-                    'success' => true,
-                    'data' => null,
-                    'message' => 'No GPS pings found for this trip'
-                ]);
-            }
-
+        if (!$ping) {
             return response()->json([
                 'success' => true,
-                'data' => [
-                    'ping_id' => $ping->ping_id,
-                    'latitude' => $ping->latitude,
-                    'longitude' => $ping->longitude,
-                    'accuracy_meters' => $ping->accuracy_meters,
-                    'speed_kmh' => $ping->speed_kmh,
-                    'heading_degrees' => $ping->heading_degrees,
-                    'is_low_accuracy' => $ping->is_low_accuracy,
-                    'recorded_at' => $ping->recorded_at,
-                ]
+                'data' => null,
+                'message' => 'No GPS pings found for this trip'
             ]);
-
-        } catch (\Exception $e) {
-            Log::error('Get latest GPS ping error: ' . $e->getMessage());
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to fetch latest GPS ping: ' . $e->getMessage()
-            ], 500);
         }
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'ping_id' => $ping->ping_id,
+                'latitude' => $ping->latitude,
+                'longitude' => $ping->longitude,
+                'accuracy_meters' => $ping->accuracy_meters,
+                'speed_kmh' => $ping->speed_kmh,
+                'heading_degrees' => $ping->heading_degrees,
+                'is_low_accuracy' => $ping->is_low_accuracy,
+                'recorded_at' => $ping->recorded_at,
+            ]
+        ]);
+
+    } catch (\Exception $e) {
+        Log::error('Get latest GPS ping error: ' . $e->getMessage());
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to fetch latest GPS ping: ' . $e->getMessage()
+        ], 500);
     }
+}
 
     /**
      * Get GPS track for a trip (full route)
      */
     public function getTrack(Request $request, $tripId)
-    {
-        try {
-            $user = $request->user();
-            $driver = Driver::where('user_id', $user->user_id)->first();
+{
+    try {
+        $user = $request->user();
 
-            if (!$driver) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Driver record not found'
-                ], 404);
-            }
-
-            $trip = TripTicket::where('trip_ticket_id', $tripId)
-                ->where('driver_id', $driver->driver_id)
-                ->first();
-
-            if (!$trip) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Trip ticket not found or not assigned to you'
-                ], 404);
-            }
-
-            $pings = GpsPing::where('trip_ticket_id', $tripId)
-                ->where('is_low_accuracy', false)
-                ->orderBy('recorded_at', 'asc')
-                ->get();
-
-            $trackData = [];
-            $maxSpeed = 0;
-            $totalTime = 0;
-            $prevPing = null;
-
-            foreach ($pings as $ping) {
-                $trackData[] = [
-                    'latitude' => $ping->latitude,
-                    'longitude' => $ping->longitude,
-                    'speed_kmh' => $ping->speed_kmh,
-                    'heading_degrees' => $ping->heading_degrees,
-                    'recorded_at' => $ping->recorded_at,
-                ];
-
-                if ($ping->speed_kmh && $ping->speed_kmh > $maxSpeed) {
-                    $maxSpeed = $ping->speed_kmh;
-                }
-
-                if ($prevPing) {
-                    $totalTime += $prevPing->recorded_at->diffInSeconds($ping->recorded_at);
-                }
-
-                $prevPing = $ping;
-            }
-
-            $totalDistance = $this->filterAndSumDistance($pings);
-            $avgSpeed = ($totalTime > 0 && $totalDistance > 0) ? ($totalDistance / $totalTime) * 3.6 : 0;
-
-            return response()->json([
-                'success' => true,
-                'data' => [
-                    'trip_ticket_id' => $tripId,
-                    'total_pings' => $pings->count(),
-                    'total_distance_km' => round($totalDistance, 2),
-                    'max_speed_kmh' => round($maxSpeed, 2),
-                    'avg_speed_kmh' => round($avgSpeed, 2),
-                    'duration_minutes' => round($totalTime / 60, 2),
-                    'start_time' => $pings->first()?->recorded_at,
-                    'end_time' => $pings->last()?->recorded_at,
-                    'track' => $trackData,
-                ]
-            ]);
-
-        } catch (\Exception $e) {
-            Log::error('Get GPS track error: ' . $e->getMessage());
+        $trip = TripTicket::with(['driver'])->find($tripId);
+        if (!$trip) {
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to fetch GPS track: ' . $e->getMessage()
-            ], 500);
+                'message' => 'Trip not found'
+            ], 404);
         }
+
+        $isGSO = $user->role === 'gso_office';
+        $isDriver = $trip->driver && (int) $trip->driver->user_id === (int) $user->user_id;
+        $isRequester = (int) $trip->submitted_by === (int) $user->user_id;
+
+        if (!$isGSO && !$isDriver && !$isRequester) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized'
+            ], 403);
+        }
+
+        $pings = $this->getPingsOrArchive($tripId);
+
+        $trackData = [];
+        $maxSpeed = 0;
+        $totalTime = 0;
+        $prevPing = null;
+
+        foreach ($pings as $ping) {
+            $trackData[] = [
+                'latitude' => $ping->latitude,
+                'longitude' => $ping->longitude,
+                'speed_kmh' => $ping->speed_kmh,
+                'heading_degrees' => $ping->heading_degrees,
+                'recorded_at' => $ping->recorded_at,
+            ];
+
+            if ($ping->speed_kmh && $ping->speed_kmh > $maxSpeed) {
+                $maxSpeed = $ping->speed_kmh;
+            }
+
+            if ($prevPing) {
+                $totalTime += $prevPing->recorded_at->diffInSeconds($ping->recorded_at);
+            }
+
+            $prevPing = $ping;
+        }
+
+        $totalDistance = $this->filterAndSumDistance($pings);
+        $avgSpeed = ($totalTime > 0 && $totalDistance > 0) ? ($totalDistance / $totalTime) * 3.6 : 0;
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'trip_ticket_id' => $tripId,
+                'total_pings' => $pings->count(),
+                'total_distance_km' => round($totalDistance, 2),
+                'max_speed_kmh' => round($maxSpeed, 2),
+                'avg_speed_kmh' => round($avgSpeed, 2),
+                'duration_minutes' => round($totalTime / 60, 2),
+                'start_time' => $pings->first()?->recorded_at,
+                'end_time' => $pings->last()?->recorded_at,
+                'track' => $trackData,
+            ]
+        ]);
+
+    } catch (\Exception $e) {
+        Log::error('Get GPS track error: ' . $e->getMessage());
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to fetch GPS track: ' . $e->getMessage()
+        ], 500);
     }
+}
 
     /**
      * Get route for a trip (alias for getTrack)
@@ -1286,10 +1268,7 @@ class GpsPingController extends Controller
                 ], 403);
             }
 
-            $pings = GpsPing::where('trip_ticket_id', $tripId)
-                ->where('is_low_accuracy', false)
-                ->orderBy('recorded_at', 'asc')
-                ->get();
+            $pings = $this->getPingsOrArchive($tripId);
 
             $firstPing = $pings->first();
             $lastPing = $pings->last();
@@ -1351,40 +1330,70 @@ class GpsPingController extends Controller
      * Delete GPS pings for a trip (GSO only)
      */
     public function deletePings(Request $request, $tripId)
-    {
-        try {
-            if (!auth()->user() || auth()->user()->role !== 'gso_office') {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Unauthorized. Only GSO can delete GPS data.'
-                ], 403);
-            }
-
-            $count = GpsPing::where('trip_ticket_id', $tripId)->delete();
-
-            Log::warning('GPS pings deleted', [
-                'trip_id' => $tripId,
-                'count' => $count,
-                'deleted_by' => auth()->user()->user_id
-            ]);
-
-            return response()->json([
-                'success' => true,
-                'message' => "{$count} GPS pings deleted successfully",
-                'data' => [
-                    'trip_ticket_id' => $tripId,
-                    'deleted_count' => $count,
-                ]
-            ]);
-
-        } catch (\Exception $e) {
-            Log::error('Delete GPS pings error: ' . $e->getMessage());
+{
+    try {
+        if (!auth()->user() || auth()->user()->role !== 'gso_office') {
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to delete GPS pings: ' . $e->getMessage()
-            ], 500);
+                'message' => 'Unauthorized. Only GSO can delete GPS data.'
+            ], 403);
         }
+
+        $pings = GpsPing::where('trip_ticket_id', $tripId)->get();
+
+        if ($pings->isEmpty()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'No pings to delete',
+                'data' => ['trip_ticket_id' => $tripId, 'archived_count' => 0, 'deleted_count' => 0],
+            ]);
+        }
+
+        DB::transaction(function () use ($pings, $tripId) {
+            $archiveRows = $pings->map(fn($p) => [
+                'original_ping_id'       => $p->ping_id,
+                'trip_ticket_id'         => $p->trip_ticket_id,
+                'latitude'               => $p->latitude,
+                'longitude'              => $p->longitude,
+                'accuracy_meters'        => $p->accuracy_meters,
+                'speed_kmh'              => $p->speed_kmh,
+                'heading_degrees'        => $p->heading_degrees,
+                'is_low_accuracy'        => $p->is_low_accuracy,
+                'is_queued_upload'       => $p->is_queued_upload,
+                'has_mock_location_flag' => $p->has_mock_location_flag,
+                'recorded_at'            => $p->recorded_at,
+                'received_at'            => $p->received_at,
+                'archived_at'            => now(),
+            ])->toArray();
+
+            DB::table('gps_ping_archive')->insert($archiveRows);
+            GpsPing::where('trip_ticket_id', $tripId)->delete();
+        });
+
+        Log::warning('GPS pings archived + deleted', [
+            'trip_id' => $tripId,
+            'count' => $pings->count(),
+            'deleted_by' => auth()->user()->user_id,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => "{$pings->count()} GPS pings archived and deleted successfully",
+            'data' => [
+                'trip_ticket_id' => $tripId,
+                'archived_count' => $pings->count(),
+                'deleted_count' => $pings->count(),
+            ]
+        ]);
+
+    } catch (\Exception $e) {
+        Log::error('Delete GPS pings error: ' . $e->getMessage());
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to delete GPS pings: ' . $e->getMessage()
+        ], 500);
     }
+}
 
     // ============================================================
     // PRIVATE HELPERS
@@ -1393,22 +1402,28 @@ class GpsPingController extends Controller
     /**
      * Get pings for the CURRENT trip segment only.
      */
-    private function getPingsForSegment($tripId)
-    {
-        $segment = TripHistory::where('trip_ticket_id', $tripId)
-            ->orderBy('trip_number', 'desc')
-            ->first();
+   private function getPingsForSegment($tripId)
+{
+    $segment = TripHistory::where('trip_ticket_id', $tripId)
+        ->orderBy('trip_number', 'desc')
+        ->first();
 
-        $query = GpsPing::where('trip_ticket_id', $tripId)
-            ->where('is_low_accuracy', false)
-            ->orderBy('recorded_at', 'asc');
+    // ✅ Use archive-aware helper
+    $pings = $this->getPingsOrArchive($tripId, true);
 
-        if ($segment && $segment->started_at) {
-            $query->where('recorded_at', '>=', $segment->started_at);
-        }
-
-        return $query->get();
+    if (!$segment || !$segment->started_at) {
+        return $pings;
     }
+
+    $segmentStart = \Carbon\Carbon::parse($segment->started_at);
+
+    return $pings->filter(function ($p) use ($segmentStart) {
+        $recorded = $p->recorded_at instanceof \Carbon\Carbon
+            ? $p->recorded_at
+            : \Carbon\Carbon::parse($p->recorded_at);
+        return $recorded->gte($segmentStart);
+    })->values();
+}
 
     /**
      * Delegate to the trait's filter (shared with DriverController).
@@ -1519,10 +1534,6 @@ class GpsPingController extends Controller
     }
 
 
-    /**
- * GET /api/gps/recent-refuelings
- * GSO-only: recent fuel purchases across all trips
- */
 public function getRecentRefuelings(Request $request)
 {
     try {
@@ -1533,37 +1544,42 @@ public function getRecentRefuelings(Request $request)
 
         $limit = (int) $request->get('limit', 50);
 
-        $receipts = FuelReceipt::with([
-                'gasSlip.tripTicket.vehicle',
-                'gasSlip.tripTicket.driver.user',
-                'gasSlip.tripTicket.department',
-            ])
+        $receipts = FuelReceipt::with(['gasSlip'])
             ->whereNotNull('receipt_uploaded_at')
             ->orderBy('receipt_uploaded_at', 'desc')
             ->limit($limit)
             ->get();
 
-        $data = $receipts->map(function ($r) {
-            $trip = $r->gasSlip?->tripTicket;
-            $vehicle = $trip?->vehicle;
-            $driverUser = $trip?->driver?->user;
+        $tripIds = $receipts
+            ->map(fn($r) => $r->gasSlip?->trip_ticket_id)
+            ->filter()
+            ->unique()
+            ->values();
+
+        $trips = TripTicket::with(['vehicle', 'driver.user', 'department'])
+            ->whereIn('trip_ticket_id', $tripIds)
+            ->get()
+            ->keyBy('trip_ticket_id');
+
+        $data = $receipts->map(function ($r) use ($trips) {
+            $trip = $r->gasSlip?->trip_ticket_id
+                ? $trips->get($r->gasSlip->trip_ticket_id)
+                : null;
 
             return [
-                'fuel_receipt_id'  => $r->fuel_receipt_id,
-                'trip_id'          => $trip?->trip_ticket_id,
-                'ticket_number'    => $trip?->trip_ticket_number ?? 'N/A',
-                'control_number'   => $r->gasSlip?->control_number,
-                'plate_number'     => $vehicle?->plate_number ?? 'N/A',
-                'vehicle_model'    => $vehicle?->vehicle_model ?? 'N/A',
-                'driver_name'      => $driverUser?->full_name ?? 'N/A',
-                'department'       => $trip?->department?->department_name ?? 'N/A',
-                'liters_availed'   => (float) ($r->liters_availed ?? 0),
-                'amount_on_receipt'=> (float) ($r->amount_on_receipt ?? 0),
-                'unit_price'       => (float) ($r->unit_price ?? 0),
-                'receipt_photo_url'=> $r->receipt_photo_path
-                    ? asset($r->receipt_photo_path)
-                    : null,
-                'uploaded_at'      => optional($r->receipt_uploaded_at)->toIso8601String(),
+                'fuel_receipt_id'   => $r->fuel_receipt_id,
+                'trip_id'           => $trip?->trip_ticket_id,
+                'ticket_number'     => $trip?->trip_ticket_number ?? 'N/A',
+                'control_number'    => $r->gasSlip?->control_number,
+                'plate_number'      => $trip?->vehicle?->plate_number ?? 'N/A',
+                'vehicle_model'     => $trip?->vehicle?->vehicle_model ?? 'N/A',
+                'driver_name'       => $trip?->driver?->user?->full_name ?? 'N/A',
+                'department'        => $trip?->department?->department_name ?? 'N/A',
+                'liters_availed'    => (float) ($r->liters_availed ?? 0),
+                'amount_on_receipt' => (float) ($r->amount_on_receipt ?? 0),
+                'unit_price'        => (float) ($r->unit_price ?? 0),
+                'receipt_photo_url' => $r->receipt_photo_path ? asset($r->receipt_photo_path) : null,
+                'uploaded_at'       => optional($r->receipt_uploaded_at)->toIso8601String(),
             ];
         });
 
@@ -1635,4 +1651,45 @@ public function getCompletedTrips(Request $request)
         return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
     }
 }
+
+private function getPingsOrArchive($tripId, $accurateOnly = true)
+{
+    // Try hot table first
+    $query = GpsPing::where('trip_ticket_id', $tripId)->orderBy('recorded_at', 'asc');
+    if ($accurateOnly) {
+        $query->where('is_low_accuracy', false);
+    }
+    $pings = $query->get();
+
+    if ($pings->isNotEmpty()) {
+        return $pings;
+    }
+
+    // Fall back to archive
+    $archiveQuery = DB::table('gps_ping_archive')
+        ->where('trip_ticket_id', $tripId)
+        ->orderBy('recorded_at', 'asc');
+
+    if ($accurateOnly) {
+        $archiveQuery->where('is_low_accuracy', false);
+    }
+
+    return $archiveQuery->get()->map(function ($r) {
+        return (object) [
+            'ping_id'                => $r->original_ping_id,
+            'trip_ticket_id'         => $r->trip_ticket_id,
+            'latitude'               => $r->latitude,
+            'longitude'              => $r->longitude,
+            'accuracy_meters'        => $r->accuracy_meters,
+            'speed_kmh'              => $r->speed_kmh,
+            'heading_degrees'        => $r->heading_degrees,
+            'is_low_accuracy'        => (bool) $r->is_low_accuracy,
+            'is_queued_upload'       => (bool) $r->is_queued_upload,
+            'has_mock_location_flag' => (bool) $r->has_mock_location_flag,
+            'recorded_at'            => \Carbon\Carbon::parse($r->recorded_at),
+            'received_at'            => \Carbon\Carbon::parse($r->received_at),
+        ];
+    });
+}
+
 }
