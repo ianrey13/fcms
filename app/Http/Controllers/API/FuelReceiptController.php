@@ -85,6 +85,9 @@ class FuelReceiptController extends Controller
 
             //  Sync actuals on parent trip
             $tripTicket->syncActuals()->save();
+            if ($tripTicket->vehicle) {
+                (new \App\Services\FuelLevelService())->recalculate($tripTicket->vehicle);
+            }
 
             DB::commit();
 
@@ -92,7 +95,6 @@ class FuelReceiptController extends Controller
                 'message'      => 'Receipt uploaded successfully',
                 'fuel_receipt' => $fuelReceipt,
             ]);
-
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error('Fuel receipt upload error: ' . $e->getMessage());

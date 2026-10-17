@@ -260,7 +260,16 @@ const formatBudgetLogText = (log) => {
 //  Reference: classic pie + legend (like Monopoly/Candyland style)
 // ============================================
 
+// ============================================
+// ★ DEPARTMENT BUDGET ALLOCATION PIE — POLISHED
+//  Each department = one slice, sized by annual_amount
+//  Hover a slice → legend highlights matching row
+//  Click legend → focus slice (dim others)
+// ============================================
+
 const DepartmentBudgetBreakdown = ({ departments, totals, fiscalYear }) => {
+    const [activeIndex, setActiveIndex] = useState(null);
+
     const fmt = (n) =>
         new Intl.NumberFormat("en-PH", {
             style: "currency",
@@ -275,7 +284,6 @@ const DepartmentBudgetBreakdown = ({ departments, totals, fiscalYear }) => {
         return `₱${num.toFixed(0)}`;
     };
 
-    // Only departments that actually have a budget > 0
     const withBudget = useMemo(
         () =>
             departments
@@ -289,7 +297,6 @@ const DepartmentBudgetBreakdown = ({ departments, totals, fiscalYear }) => {
         [withBudget],
     );
 
-    // Pie data — one slice per department
     const pieData = useMemo(
         () =>
             withBudget.map((d, i) => ({
@@ -337,10 +344,9 @@ const DepartmentBudgetBreakdown = ({ departments, totals, fiscalYear }) => {
 
     return (
         <div className="flex flex-col h-full">
-            {/* Chart + legend side by side */}
-            <div className="flex-1 flex flex-col md:flex-row items-center gap-4 min-h-[340px]">
-                {/* Pie */}
-                <div className="relative w-full md:w-[58%] h-[280px] md:h-full md:min-h-[320px]">
+            <div className="flex-1 flex flex-col md:flex-row items-center gap-5 min-h-[340px]">
+                {/* ── Pie ── */}
+                <div className="relative w-full md:w-[55%] h-[300px] md:h-full md:min-h-[320px]">
                     <ResponsiveContainer width="100%" height="100%">
                         <RePieChart>
                             <Pie
@@ -349,60 +355,140 @@ const DepartmentBudgetBreakdown = ({ departments, totals, fiscalYear }) => {
                                 nameKey="name"
                                 cx="50%"
                                 cy="50%"
-                                outerRadius="88%"
-                                label={({ percentage }) =>
-                                    percentage >= 5
-                                        ? `${percentage.toFixed(0)}%`
-                                        : ""
+                                innerRadius="52%"
+                                outerRadius="85%"
+                                paddingAngle={1.5}
+                                minAngle={3}
+                                startAngle={90}
+                                endAngle={-270}
+                                stroke="none"
+                                onClick={(_, index) =>
+                                    setActiveIndex((prev) =>
+                                        prev === index ? null : index,
+                                    )
                                 }
-                                labelLine={false}
-                                stroke="#fff"
-                                strokeWidth={2}
+                                onMouseEnter={(_, index) => setActiveIndex(index)}
+                                onMouseLeave={() => setActiveIndex(null)}
+                                isAnimationActive={true}
+                                animationDuration={700}
+                                animationBegin={0}
                             >
-                                {pieData.map((entry, i) => (
-                                    <Cell key={i} fill={entry.color} />
-                                ))}
+                                {pieData.map((entry, i) => {
+                                    const dimmed =
+                                        activeIndex !== null && activeIndex !== i;
+                                    return (
+                                        <Cell
+                                            key={i}
+                                            fill={entry.color}
+                                            stroke="transparent"
+                                            style={{
+                                                opacity: dimmed ? 0.35 : 1,
+                                                transition: "opacity 150ms ease-out",
+                                                cursor: "pointer",
+                                                outline: "none",
+                                            }}
+                                        />
+                                    );
+                                })}
                             </Pie>
-                            <Tooltip content={<PieTooltip />} />
+                            <Tooltip
+                                content={<PieTooltip />}
+                                cursor={false}
+                                animationDuration={150}
+                            />
                         </RePieChart>
                     </ResponsiveContainer>
 
-                    {/* Center total */}
-                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                        <p className="text-base font-bold text-slate-900 dark:text-white leading-tight">
+                    {/* Center stat — clean donut hole */}
+                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none select-none">
+                        <p className="text-[9px] uppercase tracking-widest text-slate-400 dark:text-slate-500 font-semibold">
+                            Total
+                        </p>
+                        <p className="text-xl font-bold text-slate-900 dark:text-white leading-tight mt-0.5">
                             {fmtCompact(totalAllocated)}
                         </p>
                         <p className="text-[9px] uppercase tracking-wider text-slate-500 dark:text-slate-400 mt-0.5">
-                            Total FY {fiscalYear}
+                            FY {fiscalYear}
                         </p>
                     </div>
                 </div>
 
-                {/* Legend */}
-                <div className="w-full md:w-[42%] md:max-h-[320px] md:overflow-y-auto pr-1">
-                    <ul className="space-y-2">
-                        {pieData.map((d, i) => (
-                            <li
-                                key={i}
-                                className="flex items-start gap-2.5 text-xs"
+                {/* ── Legend — interactive, scrollable, counted ── */}
+                <div className="w-full md:w-[45%] md:max-h-[340px] md:overflow-y-auto md:pr-1 legend-scroll">
+                    <div className="flex items-center justify-between mb-2 px-0.5">
+                        <p className="text-[10px] uppercase tracking-wider text-slate-400 dark:text-slate-500 font-semibold">
+                            Departments ({pieData.length})
+                        </p>
+                        {activeIndex !== null && (
+                            <button
+                                onClick={() => setActiveIndex(null)}
+                                className="text-[10px] text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 font-medium"
                             >
-                                <span
-                                    className="mt-0.5 h-3 w-3 rounded-sm shrink-0"
-                                    style={{ backgroundColor: d.color }}
-                                />
-                                <div className="min-w-0 flex-1">
-                                    <p className="font-medium text-slate-700 dark:text-slate-200 truncate leading-tight">
-                                        {d.name}
-                                    </p>
-                                    <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-tight mt-0.5">
-                                        {fmt(d.value)} ·{" "}
-                                        <span className="font-semibold text-slate-600 dark:text-slate-300">
-                                            {d.percentage.toFixed(1)}%
-                                        </span>
-                                    </p>
-                                </div>
-                            </li>
-                        ))}
+                                Clear
+                            </button>
+                        )}
+                    </div>
+
+                    <ul className="space-y-1">
+                        {pieData.map((d, i) => {
+                            const isActive = activeIndex === i;
+                            const isDimmed = activeIndex !== null && activeIndex !== i;
+
+                            return (
+                                <li
+                                    key={i}
+                                    onMouseEnter={() => setActiveIndex(i)}
+                                    onMouseLeave={() => setActiveIndex(null)}
+                                    onClick={() =>
+                                        setActiveIndex((prev) =>
+                                            prev === i ? null : i,
+                                        )
+                                    }
+                                    className={cn(
+                                        "flex items-start gap-2.5 px-2 py-1.5 rounded-lg text-xs cursor-pointer transition-all duration-150",
+                                        isActive
+                                            ? "bg-slate-100 dark:bg-slate-700/40"
+                                            : "hover:bg-slate-50 dark:hover:bg-slate-700/20",
+                                        isDimmed && "opacity-50",
+                                    )}
+                                >
+                                    <span
+                                        className={cn(
+                                            "mt-0.5 h-2.5 w-2.5 rounded-sm shrink-0 transition-transform",
+                                            isActive && "scale-125",
+                                        )}
+                                        style={{ backgroundColor: d.color }}
+                                    />
+                                    <div className="min-w-0 flex-1">
+                                        <p
+                                            className={cn(
+                                                "font-medium truncate leading-tight transition-colors",
+                                                isActive
+                                                    ? "text-slate-900 dark:text-white"
+                                                    : "text-slate-700 dark:text-slate-200",
+                                            )}
+                                        >
+                                            {d.name}
+                                        </p>
+                                        <div className="flex items-center justify-between text-[11px] leading-tight mt-0.5">
+                                            <span className="text-slate-500 dark:text-slate-400">
+                                                {fmt(d.value)}
+                                            </span>
+                                            <span
+                                                className={cn(
+                                                    "font-semibold tabular-nums",
+                                                    isActive
+                                                        ? "text-slate-900 dark:text-white"
+                                                        : "text-slate-600 dark:text-slate-300",
+                                                )}
+                                            >
+                                                {d.percentage.toFixed(1)}%
+                                            </span>
+                                        </div>
+                                    </div>
+                                </li>
+                            );
+                        })}
                     </ul>
                 </div>
             </div>

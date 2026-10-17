@@ -5,6 +5,7 @@
 // Auto-focus first error field
 // + AlertDialog confirmation before update
 // + REMOVED: odometer_status (column does not exist in DB)
+// + Angelo's fuel algorithm: tank_capacity, initial_estimated_fuel, reference_efficiency
 // ============================================
 
 import React, { useState, useEffect, useRef } from "react";
@@ -38,6 +39,8 @@ import {
   Zap,
   Shield,
   Edit,
+  Gauge,
+  Droplet,
 } from "lucide-react";
 import { useVehicles, useUpdateVehicle, useDepartmentsForVehicles } from "../../../hooks/useVehicleManagement";
 import { toast } from "react-hot-toast";
@@ -96,7 +99,7 @@ const FormField = ({
 };
 
 // ============================================
-// DEPARTMENT DATALIST COMPONENT (with error highlighting)
+// DEPARTMENT DATALIST COMPONENT
 // ============================================
 
 const DepartmentDatalist = ({ value, onChange, onBlur, error, touched, departments }) => {
@@ -303,6 +306,10 @@ const EditVehicle = () => {
     status: "active",
     maintenance_flag: false,
     display_status: "Serviceable",
+    // ✅ Angelo's fuel algorithm fields
+    tank_capacity: "60",
+    initial_estimated_fuel: "0",
+    reference_efficiency: "10",
   });
   const [errors, setErrors] = useState({});
   const [touched, setTouched] = useState({});
@@ -337,6 +344,10 @@ const EditVehicle = () => {
           status: vehicle.status || "active",
           maintenance_flag: vehicle.maintenance_flag || false,
           display_status: displayStatus,
+          // ✅ Load fuel algorithm fields (with fallbacks for older rows)
+          tank_capacity: vehicle.tank_capacity != null ? String(vehicle.tank_capacity) : "60",
+          initial_estimated_fuel: vehicle.initial_estimated_fuel != null ? String(vehicle.initial_estimated_fuel) : "0",
+          reference_efficiency: vehicle.reference_efficiency != null ? String(vehicle.reference_efficiency) : "10",
         };
         setFormData(data);
         setOriginalData(data);
@@ -349,7 +360,7 @@ const EditVehicle = () => {
   }, [vehicles, id, navigate]);
 
   // ============================================
-  // ✅ ENHANCED VALIDATION - Single toast with all errors
+  // ✅ ENHANCED VALIDATION
   // ============================================
 
   const validate = () => {
@@ -395,6 +406,36 @@ const EditVehicle = () => {
       newTouched.fuel_type = true;
     }
 
+    // ✅ Tank capacity
+    const tankCap = parseFloat(formData.tank_capacity);
+    if (!formData.tank_capacity || isNaN(tankCap) || tankCap <= 0) {
+      newErrors.tank_capacity = "Tank capacity must be greater than 0";
+      newTouched.tank_capacity = true;
+    } else if (tankCap > 500) {
+      newErrors.tank_capacity = "Tank capacity must be 500 L or less";
+      newTouched.tank_capacity = true;
+    }
+
+    // ✅ Initial estimated fuel
+    const initialFuel = parseFloat(formData.initial_estimated_fuel);
+    if (formData.initial_estimated_fuel === "" || isNaN(initialFuel) || initialFuel < 0) {
+      newErrors.initial_estimated_fuel = "Initial fuel must be 0 or greater";
+      newTouched.initial_estimated_fuel = true;
+    } else if (!isNaN(tankCap) && initialFuel > tankCap) {
+      newErrors.initial_estimated_fuel = "Initial fuel cannot exceed tank capacity";
+      newTouched.initial_estimated_fuel = true;
+    }
+
+    // ✅ Reference efficiency
+    const refEff = parseFloat(formData.reference_efficiency);
+    if (!formData.reference_efficiency || isNaN(refEff) || refEff <= 0) {
+      newErrors.reference_efficiency = "Reference efficiency must be greater than 0";
+      newTouched.reference_efficiency = true;
+    } else if (refEff > 50) {
+      newErrors.reference_efficiency = "Reference efficiency must be 50 km/L or less";
+      newTouched.reference_efficiency = true;
+    }
+
     setErrors(newErrors);
     setTouched(prev => ({ ...prev, ...newTouched }));
 
@@ -405,6 +446,9 @@ const EditVehicle = () => {
           vehicle_model: 'Vehicle Model',
           plate_number: 'Plate Number',
           fuel_type: 'Fuel Type',
+          tank_capacity: 'Tank Capacity',
+          initial_estimated_fuel: 'Initial Fuel',
+          reference_efficiency: 'Reference Efficiency',
         };
         const label = labels[field] || field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
         return `• ${label}: ${msg}`;
@@ -465,7 +509,7 @@ const EditVehicle = () => {
   };
 
   // ============================================
-  // ✅ SUBMIT — validate, build payload, then confirm
+  // ✅ SUBMIT
   // ============================================
 
   const handleSubmitClick = (e) => {
@@ -484,6 +528,10 @@ const EditVehicle = () => {
       fuel_type: formData.fuel_type,
       status: formData.status,
       maintenance_flag: formData.maintenance_flag,
+      // ✅ Angelo's algorithm fields
+      tank_capacity: parseFloat(formData.tank_capacity),
+      initial_estimated_fuel: parseFloat(formData.initial_estimated_fuel),
+      reference_efficiency: parseFloat(formData.reference_efficiency),
     };
 
     setPendingPayload(payload);
@@ -673,6 +721,93 @@ const EditVehicle = () => {
                 </select>
               </FormField>
 
+              {/* ═══════════════════════════════════════════════════════ */}
+              {/* ✅ ANGELO'S FUEL ALGORITHM — 3 NEW FIELDS               */}
+              {/* ═══════════════════════════════════════════════════════ */}
+              <div className="pt-3 border-t border-slate-200/60 dark:border-slate-700/60">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="p-1.5 rounded-lg bg-emerald-500/10">
+                    <Droplet className="h-4 w-4 text-emerald-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-800 dark:text-white">
+                      Fuel Tracking Parameters
+                    </h3>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      Drives the live fuel-balance calculation
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <FormField
+                    label="Tank Capacity"
+                    icon={Fuel}
+                    required
+                    error={errors.tank_capacity}
+                    touched={touched.tank_capacity}
+                    helper="Max liters"
+                  >
+                    <Input
+                      id="tank_capacity"
+                      name="tank_capacity"
+                      type="number"
+                      step="0.01"
+                      min="1"
+                      max="500"
+                      value={formData.tank_capacity}
+                      onChange={(e) => handleChange("tank_capacity", e.target.value)}
+                      onBlur={() => handleBlur("tank_capacity")}
+                      className="bg-white dark:bg-slate-900 dark:border-slate-700"
+                    />
+                  </FormField>
+
+                  <FormField
+                    label="Initial Fuel"
+                    icon={Droplet}
+                    required
+                    error={errors.initial_estimated_fuel}
+                    touched={touched.initial_estimated_fuel}
+                    helper="At registration"
+                  >
+                    <Input
+                      id="initial_estimated_fuel"
+                      name="initial_estimated_fuel"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      max="500"
+                      value={formData.initial_estimated_fuel}
+                      onChange={(e) => handleChange("initial_estimated_fuel", e.target.value)}
+                      onBlur={() => handleBlur("initial_estimated_fuel")}
+                      className="bg-white dark:bg-slate-900 dark:border-slate-700"
+                    />
+                  </FormField>
+
+                  <FormField
+                    label="Reference Efficiency"
+                    icon={Gauge}
+                    required
+                    error={errors.reference_efficiency}
+                    touched={touched.reference_efficiency}
+                    helper="Baseline km/L"
+                  >
+                    <Input
+                      id="reference_efficiency"
+                      name="reference_efficiency"
+                      type="number"
+                      step="0.01"
+                      min="0.5"
+                      max="50"
+                      value={formData.reference_efficiency}
+                      onChange={(e) => handleChange("reference_efficiency", e.target.value)}
+                      onBlur={() => handleBlur("reference_efficiency")}
+                      className="bg-white dark:bg-slate-900 dark:border-slate-700"
+                    />
+                  </FormField>
+                </div>
+              </div>
+
               {/* Status */}
               <FormField
                 label="Vehicle Status"
@@ -759,6 +894,21 @@ const EditVehicle = () => {
                   <span className="text-slate-500">Fuel Type:</span>
                   <span className="col-span-2 font-medium text-slate-800 dark:text-slate-100 capitalize">
                     {pendingPayload?.fuel_type || "—"}
+                  </span>
+
+                  <span className="text-slate-500">Tank Capacity:</span>
+                  <span className="col-span-2 font-medium text-slate-800 dark:text-slate-100">
+                    {pendingPayload?.tank_capacity ?? "—"} L
+                  </span>
+
+                  <span className="text-slate-500">Initial Fuel:</span>
+                  <span className="col-span-2 font-medium text-slate-800 dark:text-slate-100">
+                    {pendingPayload?.initial_estimated_fuel ?? "—"} L
+                  </span>
+
+                  <span className="text-slate-500">Ref. Efficiency:</span>
+                  <span className="col-span-2 font-medium text-slate-800 dark:text-slate-100">
+                    {pendingPayload?.reference_efficiency ?? "—"} km/L
                   </span>
 
                   <span className="text-slate-500">Status:</span>

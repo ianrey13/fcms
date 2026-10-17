@@ -250,6 +250,10 @@ cancelGasSlip: (id, data) => uncachedApi.post(`/mayors-office/gas-slips/${id}/ca
 getDepartmentBudgetSummary: (departmentId) =>
     cachedApi.get(`/mayors-office/departments/${departmentId}/budget-summary`),
 
+
+getSuggestedRelease: (id) => cachedApi.get(`/mayors-office/tickets/${id}/suggest-release`),
+getHistoryTickets: (params) => cachedApi.get("/mayors-office/history", { params }),
+
 };
 
 // ============ DRIVER API ============

@@ -46,6 +46,7 @@ import {
   MapPin,
   X,
   AlertCircle,
+  Droplet,
 } from "lucide-react";
 import { useVehicles, useDeleteVehicle, useToggleVehicleStatus } from "../../../hooks/useVehicleManagement";
 import { useQuery } from "@tanstack/react-query";
@@ -105,6 +106,48 @@ const StatusBadge = ({ status, maintenanceFlag }) => {
 };
 
 // ============================================
+// FUEL LEVEL BAR COMPONENT
+// ============================================
+
+const FuelLevelBar = ({ balance, tankCapacity }) => {
+  const pct = tankCapacity > 0 ? Math.min(100, Math.max(0, (balance / tankCapacity) * 100)) : 0;
+
+  let barColor = "bg-emerald-500";
+  let textColor = "text-emerald-600 dark:text-emerald-400";
+  let statusLabel = "Sufficient";
+
+  if (pct <= 25) {
+    barColor = "bg-red-500";
+    textColor = "text-red-600 dark:text-red-400";
+    statusLabel = "Critical";
+  } else if (pct <= 50) {
+    barColor = "bg-yellow-500";
+    textColor = "text-yellow-600 dark:text-yellow-400";
+    statusLabel = "Low";
+  }
+
+  return (
+    <div className="min-w-[120px]">
+      <div className="flex items-center justify-between text-[10px] mb-1">
+        <span className={`font-semibold ${textColor}`}>
+          {balance?.toFixed(1) ?? "0.0"} L
+        </span>
+        <span className="text-slate-400">
+          / {tankCapacity?.toFixed(0) ?? "60"} L
+        </span>
+      </div>
+      <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-1.5 overflow-hidden">
+        <div
+          className={`h-1.5 rounded-full transition-all ${barColor}`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      <p className="text-[9px] text-slate-400 mt-0.5">{statusLabel}</p>
+    </div>
+  );
+};
+
+// ============================================
 // LOADING SKELETON
 // ============================================
 
@@ -132,9 +175,6 @@ const VehicleManagement = () => {
   const [fuelFilter, setFuelFilter] = useState("all");
   const [showFilters, setShowFilters] = useState(false);
 
-  // ✅ Modal state for status change confirmation
-  //    Kept in place — not currently wired to any click handler, but
-  //    available for the Edit page or a future "Change Status" action.
   const [confirmDialog, setConfirmDialog] = useState({
     open: false,
     vehicleId: null,
@@ -152,10 +192,6 @@ const VehicleManagement = () => {
   const deleteVehicle = useDeleteVehicle();
   const toggleStatus = useToggleVehicleStatus();
 
-  // ============================================
-  // AUTO-REFRESH
-  // ============================================
-
   useAutoRefresh(
     ["gso-trip-updated", "new-notification"],
     () => {
@@ -164,7 +200,6 @@ const VehicleManagement = () => {
     }
   );
 
-  // Fetch departments
   const { data: departments = [] } = useQuery({
     queryKey: ["departments"],
     queryFn: async () => {
@@ -275,9 +310,6 @@ const VehicleManagement = () => {
   }, [vehicles, searchTerm, statusFilter, fuelFilter, departments]);
 
   // ============ HANDLERS ============
-  // ⚠️ handleToggleStatus is currently unused — kept for the Edit page
-  //    or a future "Change Status" action. Do not delete without checking
-  //    other callers first.
   const handleToggleStatus = (id, currentStatus, maintenanceFlag, vehicleLabel) => {
     let newStatus = "active";
     let newMaintenanceFlag = false;
@@ -365,10 +397,6 @@ const VehicleManagement = () => {
   const hasActiveFilters = searchTerm || statusFilter !== "all" || fuelFilter !== "all";
   const connectionStatus = isConnected ? "🟢 Live" : "🔴 Offline";
   const isRealTime = isConnected;
-
-  // ============================================
-  // RENDER
-  // ============================================
 
   if (isLoading) {
     return (
@@ -494,7 +522,7 @@ const VehicleManagement = () => {
                     >
                       <option value="all">All Fuel Types</option>
                       <option value="diesel">Diesel</option>
-                      <option value="regular">Gasoline</option>
+                      <option value="gasoline">Gasoline</option>
                       <option value="premium">Premium</option>
                     </select>
                   </div>
@@ -591,6 +619,10 @@ const VehicleManagement = () => {
                       <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
                         Fuel
                       </th>
+                      {/* ✅ NEW: Fuel Level column */}
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
+                        Fuel Level
+                      </th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
                         Status
                       </th>
@@ -604,6 +636,10 @@ const VehicleManagement = () => {
                       const deptName = getDepartmentName(vehicle.department_id);
                       const deptColor = getDepartmentColor(vehicle.department_id);
                       const fuelColor = getFuelTypeColor(vehicle.fuel_type);
+                      const tankCapacity = parseFloat(vehicle.tank_capacity) || 60;
+                      const currentBalance = parseFloat(vehicle.current_fuel_balance) || 0;
+                      const refEff = parseFloat(vehicle.reference_efficiency);
+
                       return (
                         <tr
                           key={vehicle.vehicle_id}
@@ -630,6 +666,12 @@ const VehicleManagement = () => {
                             <span className="font-mono text-sm font-semibold text-slate-800 dark:text-white">
                               {vehicle.plate_number}
                             </span>
+                            {refEff && !isNaN(refEff) && (
+                              <p className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1">
+                                <Gauge className="h-2.5 w-2.5" />
+                                {refEff} km/L
+                              </p>
+                            )}
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-1.5">
@@ -645,7 +687,13 @@ const VehicleManagement = () => {
                               {vehicle.fuel_type || "N/A"}
                             </Badge>
                           </td>
-                          {/* ★ CHANGED: status is now read-only — not clickable */}
+                          {/* ✅ NEW: Fuel Level cell */}
+                          <td className="px-4 py-3">
+                            <FuelLevelBar
+                              balance={currentBalance}
+                              tankCapacity={tankCapacity}
+                            />
+                          </td>
                           <td className="px-4 py-3">
                             <StatusBadge
                               status={vehicle.status}
@@ -687,7 +735,7 @@ const VehicleManagement = () => {
         </div>
       </div>
 
-      {/* ✅ Confirmation Modal — kept in place, currently unused by any trigger */}
+      {/* Confirmation Modal */}
       <Dialog open={confirmDialog.open} onOpenChange={(open) => setConfirmDialog(prev => ({ ...prev, open }))}>
         <DialogContent className="sm:max-w-md dark:bg-slate-800 dark:border-slate-700">
           <DialogHeader>

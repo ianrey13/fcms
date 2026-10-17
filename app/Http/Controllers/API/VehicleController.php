@@ -36,16 +36,16 @@ class VehicleController extends Controller
 
             if ($request->has('search')) {
                 $search = $request->search;
-                $query->where(function($q) use ($search) {
+                $query->where(function ($q) use ($search) {
                     $q->where('plate_number', 'like', "%{$search}%")
-                      ->orWhere('vehicle_model', 'like', "%{$search}%");
+                        ->orWhere('vehicle_model', 'like', "%{$search}%");
                 });
             }
 
             $vehicles = $query->orderBy('created_at', 'desc')->get();
 
-          
-            $vehiclesWithStatus = $vehicles->map(function($vehicle) {
+
+            $vehiclesWithStatus = $vehicles->map(function ($vehicle) {
                 $availability = $vehicle->getAvailabilityStatus();
                 return [
                     'vehicle_id' => $vehicle->vehicle_id,
@@ -75,7 +75,6 @@ class VehicleController extends Controller
                 'data' => $vehiclesWithStatus,
                 'total' => $vehicles->count()
             ]);
-
         } catch (\Exception $e) {
             Log::error('Vehicle index error: ' . $e->getMessage());
             return response()->json([
@@ -85,45 +84,68 @@ class VehicleController extends Controller
         }
     }
 
-    /**
+  
+       /**
      * Store a newly created Vehicle.
      */
     public function store(Request $request)
     {
         try {
             $validator = Validator::make($request->all(), [
-                'department_id' => 'required|exists:departments,department_id',
-                'vehicle_model' => 'required|string|max:120',
-                'plate_number' => 'required|string|max:20|unique:vehicles,plate_number',
-'fuel_type' => 'required|in:diesel,gasoline,premium',
-                'status' => 'sometimes|in:active,inactive',
-                'maintenance_flag' => 'sometimes|boolean',
-                'fuel_capacity' => 'nullable|numeric|min:0',
+                'department_id'          => 'required|exists:departments,department_id',
+                'vehicle_model'          => 'required|string|max:120',
+                'plate_number'           => 'required|string|max:20|unique:vehicles,plate_number',
+                'fuel_type'              => 'required|in:diesel,gasoline,premium',
+                'status'                 => 'sometimes|in:active,inactive',
+                'maintenance_flag'       => 'sometimes|boolean',
+                'fuel_capacity'          => 'nullable|numeric|min:0',
+                'tank_capacity'          => 'nullable|numeric|min:1|max:500',
+                'initial_estimated_fuel' => 'nullable|numeric|min:0|max:500',
+                'reference_efficiency'   => 'nullable|numeric|min:0.5|max:50',
             ]);
 
             if ($validator->fails()) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Validation failed',
-                    'errors' => $validator->errors()
+                    'errors'  => $validator->errors()
+                ], 422);
+            }
+
+            $tankCapacity = $request->tank_capacity ?? 60;
+            $initialFuel  = $request->initial_estimated_fuel ?? 0;
+
+            // Guard: initial fuel cannot exceed tank capacity
+            if ((float) $initialFuel > (float) $tankCapacity) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation failed',
+                    'errors'  => [
+                        'initial_estimated_fuel' => [
+                            'Initial fuel cannot exceed tank capacity.'
+                        ]
+                    ]
                 ], 422);
             }
 
             $vehicle = Vehicle::create([
-                'department_id' => $request->department_id,
-                'vehicle_model' => $request->vehicle_model,
-                'plate_number' => strtoupper($request->plate_number),
-                'fuel_type' => $request->fuel_type,
-                'status' => $request->status ?? 'active',
-                'maintenance_flag' => $request->maintenance_flag ?? false,
-                'fuel_capacity' => $request->fuel_capacity ?? 60,
-                'current_fuel_balance' => 0,
+                'department_id'          => $request->department_id,
+                'vehicle_model'          => $request->vehicle_model,
+                'plate_number'           => strtoupper($request->plate_number),
+                'fuel_type'              => $request->fuel_type,
+                'status'                 => $request->status ?? 'active',
+                'maintenance_flag'       => $request->maintenance_flag ?? false,
+                'fuel_capacity'          => $request->fuel_capacity ?? 60,
+                'tank_capacity'          => $tankCapacity,
+                'initial_estimated_fuel' => $initialFuel,
+                'reference_efficiency'   => $request->reference_efficiency ?? 10,
+                'current_fuel_balance'   => $initialFuel, // ✅ seed from initial, not 0
             ]);
 
             return response()->json([
                 'success' => true,
                 'message' => 'Vehicle created successfully',
-                'data' => $vehicle->load('department')
+                'data'    => $vehicle->load('department')
             ], 201);
 
         } catch (\Exception $e) {
@@ -142,7 +164,7 @@ class VehicleController extends Controller
     {
         try {
             $vehicle = Vehicle::with('department')->findOrFail($id);
-            
+
             $availability = $vehicle->getAvailabilityStatus();
 
             return response()->json([
@@ -169,7 +191,6 @@ class VehicleController extends Controller
                     'updated_at' => $vehicle->updated_at,
                 ]
             ]);
-
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
@@ -178,8 +199,11 @@ class VehicleController extends Controller
         }
     }
 
-       
-       /**
+
+    /**
+     * Update the specified vehicle.
+     */
+    /**
      * Update the specified vehicle.
      */
     public function update(Request $request, $id)
@@ -188,20 +212,23 @@ class VehicleController extends Controller
             $vehicle = Vehicle::findOrFail($id);
 
             $validator = Validator::make($request->all(), [
-                'department_id' => 'sometimes|required|exists:departments,department_id',
-                'vehicle_model' => 'sometimes|required|string|max:120',
-                'plate_number' => 'sometimes|required|string|max:20|unique:vehicles,plate_number,' . $id . ',vehicle_id',
-              'fuel_type' => 'sometimes|required|in:diesel,gasoline,premium',
-                'status' => 'sometimes|in:active,inactive',
-                'maintenance_flag' => 'sometimes|boolean',
-                'fuel_capacity' => 'nullable|numeric|min:0',
+                'department_id'          => 'sometimes|required|exists:departments,department_id',
+                'vehicle_model'          => 'sometimes|required|string|max:120',
+                'plate_number'           => 'sometimes|required|string|max:20|unique:vehicles,plate_number,' . $id . ',vehicle_id',
+                'fuel_type'              => 'sometimes|required|in:diesel,gasoline,premium',
+                'status'                 => 'sometimes|in:active,inactive',
+                'maintenance_flag'       => 'sometimes|boolean',
+                'fuel_capacity'          => 'nullable|numeric|min:0',
+                'tank_capacity'          => 'nullable|numeric|min:1|max:500',
+                'initial_estimated_fuel' => 'nullable|numeric|min:0|max:500',
+                'reference_efficiency'   => 'nullable|numeric|min:0.5|max:50',
             ]);
 
             if ($validator->fails()) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Validation failed',
-                    'errors' => $validator->errors()
+                    'errors'  => $validator->errors()
                 ], 422);
             }
 
@@ -226,16 +253,45 @@ class VehicleController extends Controller
             if ($request->has('fuel_capacity')) {
                 $vehicle->fuel_capacity = $request->fuel_capacity;
             }
+            if ($request->has('tank_capacity')) {
+                $vehicle->tank_capacity = $request->tank_capacity;
+            }
+            if ($request->has('initial_estimated_fuel')) {
+                $vehicle->initial_estimated_fuel = $request->initial_estimated_fuel;
+            }
+            if ($request->has('reference_efficiency')) {
+                $vehicle->reference_efficiency = $request->reference_efficiency;
+            }
+
+            // Guard: initial fuel cannot exceed tank capacity
+            if ((float) $vehicle->initial_estimated_fuel > (float) $vehicle->tank_capacity) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation failed',
+                    'errors'  => [
+                        'initial_estimated_fuel' => [
+                            'Initial fuel cannot exceed tank capacity.'
+                        ]
+                    ]
+                ], 422);
+            }
 
             $vehicle->updated_at = now();
             $vehicle->save();
 
+            // ✅ Recalculate fuel balance after any efficiency/tank/initial change
+            // so the displayed bar doesn't drift from the stored ledger.
+            try {
+                (new \App\Services\FuelLevelService())->recalculate($vehicle);
+            } catch (\Throwable $e) {
+                Log::warning('Fuel balance recalc after vehicle update failed: ' . $e->getMessage());
+            }
+
             return response()->json([
                 'success' => true,
                 'message' => 'Vehicle updated successfully',
-                'data' => $vehicle->load('department')
+                'data'    => $vehicle->fresh()->load('department')
             ]);
-
         } catch (\Exception $e) {
             Log::error('Vehicle update error: ' . $e->getMessage());
             return response()->json([
@@ -244,7 +300,7 @@ class VehicleController extends Controller
             ], 500);
         }
     }
-       /**
+    /**
      * Deactivate the specified vehicle.
      */
     public function destroy($id)
@@ -270,7 +326,6 @@ class VehicleController extends Controller
                 'success' => true,
                 'message' => 'Vehicle deactivated successfully'
             ]);
-
         } catch (\Exception $e) {
             Log::error('Vehicle destroy error: ' . $e->getMessage());
             return response()->json([
@@ -280,7 +335,7 @@ class VehicleController extends Controller
         }
     }
 
-         /**
+    /**
      * Update vehicle status (activate/deactivate + maintenance flag)
      */
     public function updateStatus(Request $request, $id)
@@ -329,7 +384,6 @@ class VehicleController extends Controller
                     'maintenance_flag' => $vehicle->maintenance_flag,
                 ]
             ]);
-
         } catch (\Exception $e) {
             Log::error('Vehicle status update error: ' . $e->getMessage());
             return response()->json([
@@ -358,7 +412,7 @@ class VehicleController extends Controller
             }
 
             $vehicle = Vehicle::findOrFail($id);
-            
+
             //  Check if trying to set maintenance on a vehicle with active trip
             if ($request->maintenance_flag && $vehicle->hasActiveTrip()) {
                 $activeTrip = $vehicle->getActiveTrip();
@@ -371,7 +425,7 @@ class VehicleController extends Controller
                     ]
                 ], 400);
             }
-            
+
             $vehicle->maintenance_flag = $request->maintenance_flag;
             $vehicle->save();
 
@@ -384,7 +438,6 @@ class VehicleController extends Controller
                     'is_available' => $vehicle->isAvailableForTrip(),
                 ]
             ]);
-
         } catch (\Exception $e) {
             Log::error('Vehicle maintenance update error: ' . $e->getMessage());
             return response()->json([
@@ -404,26 +457,26 @@ class VehicleController extends Controller
             $user = auth()->user();
             $departmentId = $request->get('department_id', $user->department_id ?? null);
             $includeAll = $request->get('include_all', false);
-            
+
             //  Get vehicle IDs that are currently in active trips
             $activeTripVehicleIds = TripTicket::whereIn('status', Vehicle::getActiveTripStatuses())
                 ->pluck('vehicle_id')
                 ->toArray();
-            
+
             //  Query vehicles that are NOT in active trips
             $query = Vehicle::where('status', 'active')
                 ->where('maintenance_flag', false);
-            
+
             // Filter by department if specified
             if ($departmentId && !$includeAll) {
                 $query->where('department_id', $departmentId);
             }
-            
+
             //  Exclude vehicles in active trips
             if (!empty($activeTripVehicleIds)) {
                 $query->whereNotIn('vehicle_id', $activeTripVehicleIds);
             }
-            
+
             $vehicles = $query->orderBy('vehicle_model')
                 ->get()
                 ->map(function ($vehicle) {
@@ -442,14 +495,14 @@ class VehicleController extends Controller
                         'fuel_status' => $vehicle->fuel_status,
                     ];
                 });
-            
+
             //  Get vehicles in active trips
             $activeVehicles = [];
             if (!empty($activeTripVehicleIds)) {
                 $activeVehicles = Vehicle::whereIn('vehicle_id', $activeTripVehicleIds)
-                    ->with(['tripTickets' => function($q) {
+                    ->with(['tripTickets' => function ($q) {
                         $q->whereIn('status', Vehicle::getActiveTripStatuses())
-                          ->select('trip_ticket_id', 'trip_ticket_number', 'vehicle_id', 'status');
+                            ->select('trip_ticket_id', 'trip_ticket_number', 'vehicle_id', 'status');
                     }])
                     ->get()
                     ->map(function ($vehicle) {
@@ -474,7 +527,6 @@ class VehicleController extends Controller
                 'total_active' => count($activeTripVehicleIds),
                 'message' => 'Showing vehicles available for new trip assignments'
             ]);
-
         } catch (\Exception $e) {
             Log::error('Get available vehicles error: ' . $e->getMessage());
             return response()->json([
@@ -491,7 +543,7 @@ class VehicleController extends Controller
     {
         try {
             $department = Department::findOrFail($departmentId);
-            
+
             $vehicles = Vehicle::where('department_id', $departmentId)
                 ->orderBy('plate_number')
                 ->get()
@@ -523,7 +575,6 @@ class VehicleController extends Controller
                     'total' => $vehicles->count()
                 ]
             ]);
-
         } catch (\Exception $e) {
             Log::error('Get vehicles by department error: ' . $e->getMessage());
             return response()->json([
@@ -542,7 +593,7 @@ class VehicleController extends Controller
             $activeTripVehicleIds = TripTicket::whereIn('status', Vehicle::getActiveTripStatuses())
                 ->pluck('vehicle_id')
                 ->toArray();
-            
+
             $stats = [
                 'total' => Vehicle::count(),
                 'active' => Vehicle::where('status', 'active')->count(),
@@ -553,16 +604,16 @@ class VehicleController extends Controller
                     ->whereNotIn('vehicle_id', $activeTripVehicleIds)
                     ->count(),
                 'in_use' => count($activeTripVehicleIds),
-               'by_fuel_type' => [
-    'diesel'  => Vehicle::where('fuel_type', 'diesel')->count(),
-    'gasoline' => Vehicle::where('fuel_type', 'gasoline')->count(),
-    'premium' => Vehicle::where('fuel_type', 'premium')->count(),
-],
+                'by_fuel_type' => [
+                    'diesel'  => Vehicle::where('fuel_type', 'diesel')->count(),
+                    'gasoline' => Vehicle::where('fuel_type', 'gasoline')->count(),
+                    'premium' => Vehicle::where('fuel_type', 'premium')->count(),
+                ],
                 'by_department' => Vehicle::select('department_id', DB::raw('count(*) as count'))
                     ->with('department')
                     ->groupBy('department_id')
                     ->get()
-                    ->map(function($item) {
+                    ->map(function ($item) {
                         return [
                             'department_id' => $item->department_id,
                             'department_name' => $item->department->department_name ?? 'Unknown',
@@ -575,7 +626,6 @@ class VehicleController extends Controller
                 'success' => true,
                 'data' => $stats
             ]);
-
         } catch (\Exception $e) {
             Log::error('Vehicle stats error: ' . $e->getMessage());
             return response()->json([
@@ -584,6 +634,4 @@ class VehicleController extends Controller
             ], 500);
         }
     }
-
-  
 }

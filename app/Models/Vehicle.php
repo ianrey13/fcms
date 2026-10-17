@@ -21,6 +21,9 @@ class Vehicle extends Model
         'current_fuel_balance',
         'last_odometer_reading',
         'fuel_capacity',
+        'tank_capacity',
+'initial_estimated_fuel',
+'reference_efficiency',
     ];
     
     protected $casts = [
@@ -34,6 +37,9 @@ class Vehicle extends Model
         'current_fuel_balance' => 'decimal:2',
         'last_odometer_reading' => 'decimal:2',
         'fuel_capacity' => 'decimal:2',
+        'tank_capacity' => 'decimal:2',
+'initial_estimated_fuel' => 'decimal:2',
+'reference_efficiency' => 'decimal:2',
     ];
     
     // ============ RELATIONSHIPS ============

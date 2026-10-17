@@ -483,67 +483,67 @@ class GpsPingController extends Controller
     /**
      * Stop GPS tracking for a trip
      */
-    public function stopTracking(Request $request)
-    {
-        try {
-            $validator = Validator::make($request->all(), [
-                'trip_ticket_id' => 'required|exists:trip_ticket,trip_ticket_id',
-                'latitude' => 'required|numeric|between:-90,90',
-                'longitude' => 'required|numeric|between:-180,180',
-                'accuracy_meters' => 'nullable|numeric|min:0',
-                'is_done' => 'nullable|boolean',
+  public function stopTracking(Request $request)
+{
+    try {
+        $validator = Validator::make($request->all(), [
+            'trip_ticket_id' => 'required|exists:trip_ticket,trip_ticket_id',
+            'latitude' => 'required|numeric|between:-90,90',
+            'longitude' => 'required|numeric|between:-180,180',
+            'accuracy_meters' => 'nullable|numeric|min:0',
+            'is_done' => 'nullable|boolean',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $user = $request->user();
+        $driver = Driver::where('user_id', $user->user_id)->first();
+
+        if (!$driver) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Driver record not found'
+            ], 404);
+        }
+
+        $trip = TripTicket::with(['vehicle', 'gasSlip.fuelReceipt'])
+            ->where('trip_ticket_id', $request->trip_ticket_id)
+            ->where('driver_id', $driver->driver_id)
+            ->first();
+
+        if (!$trip) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Trip ticket not found or not assigned to you'
+            ], 404);
+        }
+
+        if (in_array($trip->status, ['completed', 'pending_gso_validation', 'closed'])) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Trip already completed',
+                'data' => [
+                    'trip_ticket_id' => $trip->trip_ticket_id,
+                    'status' => $trip->status
+                ]
             ]);
+        }
 
-            if ($validator->fails()) {
-                return response()->json([
-                    'success' => false,
-                    'errors' => $validator->errors()
-                ], 422);
-            }
+        if ($trip->status !== 'in_transit') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Cannot stop trip. Current status: ' . $trip->status . '. Required: in_transit'
+            ], 422);
+        }
 
-            $user = $request->user();
-            $driver = Driver::where('user_id', $user->user_id)->first();
+        DB::beginTransaction();
 
-            if (!$driver) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Driver record not found'
-                ], 404);
-            }
-
-            $trip = TripTicket::with(['vehicle', 'gasSlip.fuelReceipt'])
-                ->where('trip_ticket_id', $request->trip_ticket_id)
-                ->where('driver_id', $driver->driver_id)
-                ->first();
-
-            if (!$trip) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Trip ticket not found or not assigned to you'
-                ], 404);
-            }
-
-            if (in_array($trip->status, ['completed', 'pending_gso_validation', 'closed'])) {
-                return response()->json([
-                    'success' => true,
-                    'message' => 'Trip already completed',
-                    'data' => [
-                        'trip_ticket_id' => $trip->trip_ticket_id,
-                        'status' => $trip->status
-                    ]
-                ]);
-            }
-
-            if ($trip->status !== 'in_transit') {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Cannot stop trip. Current status: ' . $trip->status . '. Required: in_transit'
-                ], 422);
-            }
-
-            DB::beginTransaction();
-
-            // Use segment-aware filter
+        try {
             $pings = $this->getPingsForSegment($trip->trip_ticket_id);
             $finalDistance = $this->filterAndSumDistance($pings);
             $pingCount = $pings->count();
@@ -572,10 +572,7 @@ class GpsPingController extends Controller
                 $fuelReceipt->save();
             }
 
-            // ⚠️ Pings are NOT deleted here.
-            // The driver's completeTrip() re-computes distance from these pings.
-            // Deletion happens when GSO closes the trip (GsoController::validateTrip).
-
+            // ⚠️ Pings are NOT deleted here. Archive happens in GsoController::validateTrip.
             $isDone = $request->is_done ?? true;
 
             if ($isDone) {
@@ -590,59 +587,71 @@ class GpsPingController extends Controller
             $trip->save();
 
             DB::commit();
-
-            try {
-                broadcast(new TripCompleted(
-                    $trip->trip_ticket_id,
-                    $request->latitude,
-                    $request->longitude
-                ));
-            } catch (\Exception $e) {
-                Log::warning('Failed to broadcast trip completion: ' . $e->getMessage());
-            }
-
-            Log::info('GPS tracking stopped', [
-                'trip_id' => $trip->trip_ticket_id,
-                'driver_id' => $driver->driver_id,
-                'distance_km' => $finalDistance,
-                'ping_count' => $pingCount,
-                'is_done' => $isDone,
-            ]);
-
-            NotificationHelper::send(
-                $trip->submitted_by,
-                'trip_completed',
-                'trip_ticket',
-                $trip->trip_ticket_id,
-                "Trip {$trip->trip_ticket_number} has been completed by driver " . $user->full_name
-            );
-
-            return response()->json([
-                'success' => true,
-                'message' => $message,
-                'data' => [
-                    'trip_ticket_id' => $trip->trip_ticket_id,
-                    'status' => $trip->status,
-                    'trip_ended_at' => now(),
-                    'latitude' => $request->latitude,
-                    'longitude' => $request->longitude,
-                    'distance_km' => $finalDistance,
-                    'ping_count' => $pingCount,
-                    'is_complete' => $isDone,
-                    'actual_distance_km' => $trip->actual_distance_km,
-                    'actual_fuel_used' => $trip->actual_fuel_used,
-                ]
-            ]);
-
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error('Stop GPS tracking error: ' . $e->getMessage());
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to stop GPS tracking: ' . $e->getMessage()
-            ], 500);
+            throw $e;
         }
+
+        // ✅ Recalc AFTER commit — vehicle fuel balance reflects new trip distance
+        if ($trip->vehicle) {
+            try {
+                (new \App\Services\FuelLevelService())->recalculate($trip->vehicle);
+            } catch (\Throwable $e) {
+                Log::warning('Fuel balance recalc failed after trip stop: ' . $e->getMessage());
+            }
+        }
+
+        try {
+            broadcast(new TripCompleted(
+                $trip->trip_ticket_id,
+                $request->latitude,
+                $request->longitude
+            ));
+        } catch (\Exception $e) {
+            Log::warning('Failed to broadcast trip completion: ' . $e->getMessage());
+        }
+
+        Log::info('GPS tracking stopped', [
+            'trip_id' => $trip->trip_ticket_id,
+            'driver_id' => $driver->driver_id,
+            'distance_km' => $finalDistance,
+            'ping_count' => $pingCount,
+            'is_done' => $isDone,
+        ]);
+
+        NotificationHelper::send(
+            $trip->submitted_by,
+            'trip_completed',
+            'trip_ticket',
+            $trip->trip_ticket_id,
+            "Trip {$trip->trip_ticket_number} has been completed by driver " . $user->full_name
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => $message,
+            'data' => [
+                'trip_ticket_id' => $trip->trip_ticket_id,
+                'status' => $trip->status,
+                'trip_ended_at' => now(),
+                'latitude' => $request->latitude,
+                'longitude' => $request->longitude,
+                'distance_km' => $finalDistance,
+                'ping_count' => $pingCount,
+                'is_complete' => $isDone,
+                'actual_distance_km' => $trip->actual_distance_km,
+                'actual_fuel_used' => $trip->actual_fuel_used,
+            ]
+        ]);
+
+    } catch (\Exception $e) {
+        Log::error('Stop GPS tracking error: ' . $e->getMessage());
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to stop GPS tracking: ' . $e->getMessage()
+        ], 500);
     }
+}
 
     /**
      * Calculate total distance from GPS pings for a trip

@@ -1,5 +1,7 @@
 // src/pages/mayor/MayorPending.jsx
 // ============================================
+// ADD this import after the existing imports (around line 5)
+import { useQuery } from "@tanstack/react-query";
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
@@ -59,6 +61,9 @@ import {
   FileText,
   Users,
   PhilippinePeso,
+  Sparkles,
+  Brain,
+  TrendingUp as TrendingUpIcon,
 } from "lucide-react";
 import {
   Dialog,
@@ -1222,15 +1227,20 @@ const MayorPending = () => {
   const connectionStatus = isConnected ? "🟢 Live" : "🔴 Offline";
   const isRealTime = isConnected;
 
-  const balanceAfterRelease = useMemo(() => {
-    if (!requestingDeptBalance || !amountReleased) return null;
-    const amount = parseFloat(amountReleased) || 0;
-    return {
-      remaining: requestingDeptBalance.remaining - amount,
-      is_insufficient: amount > requestingDeptBalance.remaining,
-    };
-  }, [requestingDeptBalance, amountReleased]);
+  // ============================================
+  // ✅ FUEL PREDICTION — Suggest Release Amount
+  // ============================================
+  const selectedTicketId = selectedTicket?.id || selectedTicket?.trip_ticket_id;
 
+  const { data: suggestionResponse, isLoading: loadingSuggestion } = useQuery({
+    queryKey: ["suggest-release", selectedTicketId],
+    queryFn: () => mayorsOfficeAPI.getSuggestedRelease(selectedTicketId),
+    enabled: !!selectedTicketId && showApproveDialog,
+    staleTime: 60_000,
+    retry: 1,
+  });
+
+  const suggestion = suggestionResponse?.data?.data;
   // ============================================
   // LOADING STATE
   // ============================================
@@ -2117,6 +2127,130 @@ const MayorPending = () => {
                   </div>
                 </div>
               </div>
+
+                            {/* ✅ FUEL PREDICTION SUGGESTION CARD */}
+              {loadingSuggestion && (
+                <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />
+                  <span className="text-xs text-slate-500 dark:text-slate-400">
+                    Analyzing trip history…
+                  </span>
+                </div>
+              )}
+
+              {suggestion && suggestion.available && (
+                <div
+                  className={cn(
+                    "rounded-xl border p-3 space-y-2",
+                    suggestion.confidence === "high"
+                      ? "bg-emerald-50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800"
+                      : suggestion.confidence === "medium"
+                      ? "bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800"
+                      : "bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800"
+                  )}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <Sparkles
+                        className={cn(
+                          "h-4 w-4 flex-shrink-0",
+                          suggestion.confidence === "high"
+                            ? "text-emerald-600"
+                            : suggestion.confidence === "medium"
+                            ? "text-blue-600"
+                            : "text-amber-600"
+                        )}
+                      />
+                      <span className="text-xs font-semibold text-slate-800 dark:text-white">
+                        Suggested Release
+                      </span>
+                      <Badge
+                        className={cn(
+                          "text-[9px] px-1.5 py-0 h-4 font-bold",
+                          suggestion.confidence === "high"
+                            ? "bg-emerald-600 text-white"
+                            : suggestion.confidence === "medium"
+                            ? "bg-blue-600 text-white"
+                            : "bg-amber-600 text-white"
+                        )}
+                      >
+                        {suggestion.confidence.toUpperCase()}
+                      </Badge>
+                    </div>
+                    <span className="text-[10px] text-slate-500 dark:text-slate-400 flex-shrink-0">
+                      {suggestion.sample_size} trip{suggestion.sample_size === 1 ? "" : "s"}
+                    </span>
+                  </div>
+
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-xl font-bold text-slate-900 dark:text-white">
+                      {formatCurrency(suggestion.suggested_amount)}
+                    </span>
+                    {suggestion.suggested_liters != null && (
+                      <span className="text-xs text-slate-500 dark:text-slate-400">
+                        ≈ {suggestion.suggested_liters.toFixed(1)} L
+                      </span>
+                    )}
+                  </div>
+
+                  <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-snug">
+                    {suggestion.message}
+                  </p>
+
+                  <details className="text-[11px]">
+                    <summary className="cursor-pointer text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 flex items-center gap-1">
+                      <TrendingUpIcon className="h-3 w-3" />
+                      View basis ({suggestion.tier} level)
+                    </summary>
+                    <div className="mt-1.5 space-y-0.5 pl-2 border-l-2 border-slate-300 dark:border-slate-600">
+                      {(suggestion.basis || []).map((b, i) => (
+                        <div
+                          key={i}
+                          className="flex justify-between text-slate-600 dark:text-slate-400"
+                        >
+                          <span className="truncate max-w-[180px]">
+                            {b.ticket_number}
+                            {b.destination ? ` · ${b.destination}` : ""}
+                          </span>
+                          <span className="font-mono ml-2 flex-shrink-0">
+                            {formatCurrency(b.amount)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() =>
+                      setAmountReleased(String(suggestion.suggested_amount))
+                    }
+                    className={cn(
+                      "w-full h-8 text-xs",
+                      suggestion.confidence === "high"
+                        ? "border-emerald-300 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700 dark:text-emerald-400 dark:hover:bg-emerald-950/40"
+                        : suggestion.confidence === "medium"
+                        ? "border-blue-300 text-blue-700 hover:bg-blue-100 dark:border-blue-700 dark:text-blue-400 dark:hover:bg-blue-950/40"
+                        : "border-amber-300 text-amber-700 hover:bg-amber-100 dark:border-amber-700 dark:text-amber-400 dark:hover:bg-amber-950/40"
+                    )}
+                  >
+                    <Brain className="h-3.5 w-3.5 mr-1.5" />
+                    Use Suggested Amount
+                  </Button>
+                </div>
+              )}
+
+              {suggestion && !suggestion.available && (
+                <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 p-2.5 flex items-start gap-2">
+                  <Info className="h-3.5 w-3.5 text-slate-400 flex-shrink-0 mt-0.5" />
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    {suggestion.message ||
+                      "Not enough history to suggest an amount. Enter manually."}
+                  </p>
+                </div>
+              )}
 
               <FormField
                 label="Amount (₱)"

@@ -72,6 +72,7 @@ const StatusBadge = ({ status }) => {
     closed: { color: "bg-emerald-600", label: "Closed", icon: CheckCircle },
     cancelled: { color: "bg-red-500", label: "Cancelled", icon: XCircle },
     rejected: { color: "bg-rose-500", label: "Rejected", icon: XCircle },
+    returned_for_revision: { color: "bg-orange-600", label: "Returned", icon: Clock },
   };
   const config = configs[status] || {
     color: "bg-slate-500",
@@ -119,7 +120,7 @@ const MayorHistory = () => {
   const [dateTo, setDateTo] = useState("");
 
   const fetchAllData = useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: ["mayor-approved-tickets"] });
+    queryClient.invalidateQueries({ queryKey: ["mayor-history-tickets"] });
   }, [queryClient]);
 
   useAutoRefresh(
@@ -127,15 +128,30 @@ const MayorHistory = () => {
     fetchAllData
   );
 
+  // ✅ Uses getHistoryTickets — wider status set (closed, completed, cancelled,
+  //    rejected, returned_for_revision, pending_gso_validation)
   const fetchTickets = useCallback(async () => {
     setLoading(true);
     try {
-      // Same endpoint as MayorApproved — server already returns all non-pending statuses
-      const response = await mayorsOfficeAPI.getApprovedTickets();
-      const ticketsData = response.data?.data || response.data || [];
-      setTickets(Array.isArray(ticketsData) ? ticketsData : []);
+      const response = await mayorsOfficeAPI.getHistoryTickets();
+
+      // Handles Laravel paginator shape: { data: { data: [...], current_page, total, ... } }
+      // Also handles plain array response for backward compat
+      const payload = response.data?.data;
+      let ticketsData = [];
+
+      if (Array.isArray(payload)) {
+        ticketsData = payload;
+      } else if (payload && Array.isArray(payload.data)) {
+        ticketsData = payload.data;
+      } else if (Array.isArray(response.data)) {
+        ticketsData = response.data;
+      }
+
+      setTickets(ticketsData);
     } catch (error) {
       console.error("Failed to fetch history:", error);
+      setTickets([]);
     } finally {
       setLoading(false);
     }
@@ -183,6 +199,7 @@ const MayorHistory = () => {
         const q = search.toLowerCase();
         const haystack = [
           t.ticket_number,
+          t.trip_ticket_number,
           t.destination,
           t.department_name,
           getDriverName(t),
@@ -207,6 +224,7 @@ const MayorHistory = () => {
   const activeCount = tickets.filter((t) =>
     ["funds_issued", "acknowledged", "in_transit"].includes(t.status)
   ).length;
+  const cancelledCount = tickets.filter((t) => t.status === "cancelled").length;
 
   const stats = [
     {
@@ -235,10 +253,11 @@ const MayorHistory = () => {
       value: closedCount,
       icon: CheckCircle,
       color: "from-teal-500 to-teal-600",
-      subtitle: "Completed trips",
+      subtitle: `${cancelledCount} cancelled`,
     },
   ];
 
+  // ✅ Extended status options — includes cancelled/rejected/returned
   const statusOptions = [
     { value: "all", label: "All Statuses" },
     { value: "funds_issued", label: "Funds Issued" },
@@ -247,6 +266,9 @@ const MayorHistory = () => {
     { value: "pending_gso_validation", label: "Awaiting Validation" },
     { value: "completed", label: "Completed" },
     { value: "closed", label: "Closed" },
+    { value: "cancelled", label: "Cancelled" },
+    { value: "rejected", label: "Rejected" },
+    { value: "returned_for_revision", label: "Returned for Revision" },
   ];
 
   if (loading) return <LoadingSkeleton />;
@@ -275,7 +297,7 @@ const MayorHistory = () => {
                   Trip History
                 </h1>
                 <p className="text-sm text-slate-500 dark:text-slate-400">
-                  All trip tickets you've released funds for
+                  Complete trip record — approved, closed, cancelled, and returned
                   <span className="ml-2 text-xs opacity-70">
                     {isConnected ? "🟢 Live" : "🔴 Offline"}
                   </span>
@@ -371,7 +393,7 @@ const MayorHistory = () => {
                 </p>
                 <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">
                   {tickets.length === 0
-                    ? "Released fund transactions will appear here"
+                    ? "Released, closed, and cancelled tickets will appear here"
                     : "Try adjusting your search or filters"}
                 </p>
               </div>
@@ -394,6 +416,7 @@ const MayorHistory = () => {
                   <TableBody>
                     {filtered.map((ticket) => {
                       const id = ticket.id || ticket.trip_ticket_id;
+                      const ticketNumber = ticket.ticket_number || ticket.trip_ticket_number;
                       return (
                         <TableRow
                           key={id}
@@ -401,7 +424,7 @@ const MayorHistory = () => {
                         >
                           <TableCell>
                             <span className="font-mono font-semibold text-slate-800 dark:text-white">
-                              {ticket.ticket_number}
+                              {ticketNumber || "N/A"}
                             </span>
                           </TableCell>
                           <TableCell>
@@ -422,7 +445,7 @@ const MayorHistory = () => {
                             <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-400">
                               <Building2 className="h-3.5 w-3.5" />
                               <span className="text-sm truncate max-w-[140px]">
-                                {ticket.department_name || "N/A"}
+                                {ticket.department_name || ticket.department?.department_name || ticket.department?.name || "N/A"}
                               </span>
                             </div>
                           </TableCell>

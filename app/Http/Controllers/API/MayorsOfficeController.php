@@ -2433,4 +2433,59 @@ public function getDepartmentBudgetSummary(Request $request, $departmentId)
     }
 }
 
+public function getSuggestedRelease(Request $request, $id)
+{
+    try {
+        $user = $request->user();
+        if (!$user->isMayorsOffice()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $trip = \App\Models\TripTicket::with(['vehicle'])->find($id);
+        if (!$trip) {
+            return response()->json(['success' => false, 'message' => 'Trip not found'], 404);
+        }
+
+        $service = new \App\Services\FuelPredictionService();
+        $suggestion = $service->suggestFor($trip);
+
+        return response()->json([
+            'success' => true,
+            'data'    => $suggestion,
+        ]);
+    } catch (\Exception $e) {
+        Log::error('Suggest release error: ' . $e->getMessage());
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to generate suggestion: ' . $e->getMessage(),
+        ], 500);
+    }
+}
+
+public function getHistoryTickets(Request $request)
+{
+    try {
+        $user = $request->user();
+        if (!$user->isMayorsOffice()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $trips = TripTicket::with(['vehicle', 'department', 'driver.user', 'gasSlip'])
+            ->whereIn('status', [
+                'closed', 'completed', 'cancelled', 'rejected',
+                'returned_for_revision', 'pending_gso_validation',
+            ])
+            ->orderBy('updated_at', 'desc')
+            ->paginate(25);
+
+        return response()->json([
+            'success' => true,
+            'data'    => $trips,
+        ]);
+    } catch (\Exception $e) {
+        Log::error('History tickets error: ' . $e->getMessage());
+        return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+    }
+}
+
 }
