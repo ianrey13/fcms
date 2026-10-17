@@ -1,11 +1,10 @@
 // src/pages/mayor/MayorPending.jsx
 // ============================================
-// ADD this import after the existing imports (around line 5)
-import { useQuery } from "@tanstack/react-query";
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useAutoRefresh } from "../../hooks/useAutoRefresh";
 import { useRealtime } from "../../contexts/RealtimeContext";
 import { mayorsOfficeAPI } from "../../services/api";
@@ -81,7 +80,7 @@ import { cn } from "@/lib/utils";
 import GasSlipView from "../../pages/mayor/reports/GasSlipView";
 
 // ============================================
-// ✅ MODULE-LEVEL HELPERS (pure, safe to use anywhere)
+// ✅ MODULE-LEVEL HELPERS
 // ============================================
 
 const formatDate = (dateString) => {
@@ -451,12 +450,8 @@ const MayorPending = () => {
   const queryClient = useQueryClient();
   const toastIdRef = useRef(null);
 
-  // ============================================
-  //  TAB STATE
-  // ============================================
   const [activeTab, setActiveTab] = useState("pending");
 
-  // Pending state
   const [tickets, setTickets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedTicket, setSelectedTicket] = useState(null);
@@ -471,20 +466,16 @@ const MayorPending = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [departmentFilter, setDepartmentFilter] = useState("all");
 
-  // Cancel state
   const [showCancelDialog, setShowCancelDialog] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
   const [cancelling, setCancelling] = useState(false);
 
-  // Gas Slip State
   const [showGasSlip, setShowGasSlip] = useState(false);
   const [selectedGasSlipTicket, setSelectedGasSlipTicket] = useState(null);
 
-  // Cross-department state
   const [isCrossDepartment, setIsCrossDepartment] = useState(false);
   const [crossDepartmentReason, setCrossDepartmentReason] = useState("");
 
-  // Requesting department balance state
   const [requestingDeptBalance, setRequestingDeptBalance] = useState(null);
   const [loadingBalance, setLoadingBalance] = useState(false);
 
@@ -495,32 +486,20 @@ const MayorPending = () => {
   const [chargeToDepartmentId, setChargeToDepartmentId] = useState("");
   const [availableDepartments, setAvailableDepartments] = useState([]);
 
-  // Validation states
   const [approveErrors, setApproveErrors] = useState({});
   const [approveTouched, setApproveTouched] = useState({});
 
-  // Released tickets state
   const [releasedTickets, setReleasedTickets] = useState([]);
   const [loadingReleased, setLoadingReleased] = useState(false);
 
-  //  Weekly override warning state
   const [showWeeklyWarning, setShowWeeklyWarning] = useState(false);
   const [pendingApprovePayload, setPendingApprovePayload] = useState(null);
 
-  //  Refs to hold fetchers — avoids "cannot access before initialization"
   const fetchTicketsRef = useRef(null);
   const fetchReleasedTicketsRef = useRef(null);
 
-  // ============================================
-  // STATUSES THAT CAN BE CANCELLED BY MAYOR'S OFFICE
-  // ============================================
   const CANCELLABLE_STATUSES = ["pending_mayors_office", "returned_for_revision"];
-
   const canCancelTicket = (status) => CANCELLABLE_STATUSES.includes(status);
-
-  // ============================================
-  // AUTO-REFRESH
-  // ============================================
 
   const fetchAllData = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ["mayor-pending-tickets"] });
@@ -542,15 +521,11 @@ const MayorPending = () => {
       "trip-completed",
       "trip-started",
       "new-notification",
-      "gas-slip-created",   
-      "funds-released",     
+      "gas-slip-created",
+      "funds-released",
     ],
     fetchAllData
   );
-
-  // ============================================
-  // FETCH PENDING TICKETS
-  // ============================================
 
   const fetchTickets = useCallback(async () => {
     setLoading(true);
@@ -566,14 +541,9 @@ const MayorPending = () => {
     }
   }, []);
 
-  //  Assign fetchTickets to ref
   useEffect(() => {
     fetchTicketsRef.current = fetchTickets;
   }, [fetchTickets]);
-
-  // ============================================
-  // FETCH RELEASED TICKETS
-  // ============================================
 
   const fetchReleasedTickets = useCallback(async () => {
     setLoadingReleased(true);
@@ -588,14 +558,9 @@ const MayorPending = () => {
     }
   }, []);
 
-  //  Assign fetchReleasedTickets to ref
   useEffect(() => {
     fetchReleasedTicketsRef.current = fetchReleasedTickets;
   }, [fetchReleasedTickets]);
-
-  // ============================================
-  // INITIAL LOAD
-  // ============================================
 
   useEffect(() => {
     fetchTickets();
@@ -606,10 +571,6 @@ const MayorPending = () => {
       fetchReleasedTickets();
     }
   }, [activeTab, fetchReleasedTickets]);
-
-  // ============================================
-  // FILTERS
-  // ============================================
 
   const clearFilters = () => {
     setSearchTerm("");
@@ -636,10 +597,6 @@ const MayorPending = () => {
 
     return matchesSearch && matchesDepartment;
   });
-
-  // ============================================
-  // STATS
-  // ============================================
 
   const stats = [
     {
@@ -734,10 +691,6 @@ const MayorPending = () => {
     ];
   }, [releasedTickets]);
 
-  // ============================================
-  // HELPERS
-  // ============================================
-
   const checkTripDateValidation = (ticket) => {
     if (!ticket?.trip_date) return null;
 
@@ -809,38 +762,38 @@ const MayorPending = () => {
 
   const fetchDepartmentBalance = useCallback(async (departmentId) => {
     if (!departmentId) {
-        setRequestingDeptBalance(null);
-        return;
+      setRequestingDeptBalance(null);
+      return;
     }
 
     setLoadingBalance(true);
     try {
-        const response = await mayorsOfficeAPI.getDepartmentBudgetSummary(departmentId);
-        const d = response.data?.data;
+      const response = await mayorsOfficeAPI.getDepartmentBudgetSummary(departmentId);
+      const d = response.data?.data;
 
-        if (d) {
-            setRequestingDeptBalance({
-                department_id:    d.department_id,
-                department_name:  d.department_name,
-                department_code:  d.department_code,
-                allocated:        d.allocated        ?? 0,
-                spent:            d.used_amount      ?? 0,
-                remaining:        d.remaining_amount ?? 0,
-                weekly_suggested: d.weekly_suggested ?? 0,
-                weekly_used:      d.weekly_used      ?? 0,
-                weekly_remaining: d.weekly_remaining ?? 0,
-                utilization:      d.utilization_percentage ?? 0,
-            });
-        } else {
-            setRequestingDeptBalance(null);
-        }
-    } catch (error) {
-        console.error("Failed to fetch department balance:", error);
+      if (d) {
+        setRequestingDeptBalance({
+          department_id: d.department_id,
+          department_name: d.department_name,
+          department_code: d.department_code,
+          allocated: d.allocated ?? 0,
+          spent: d.used_amount ?? 0,
+          remaining: d.remaining_amount ?? 0,
+          weekly_suggested: d.weekly_suggested ?? 0,
+          weekly_used: d.weekly_used ?? 0,
+          weekly_remaining: d.weekly_remaining ?? 0,
+          utilization: d.utilization_percentage ?? 0,
+        });
+      } else {
         setRequestingDeptBalance(null);
+      }
+    } catch (error) {
+      console.error("Failed to fetch department balance:", error);
+      setRequestingDeptBalance(null);
     } finally {
-        setLoadingBalance(false);
+      setLoadingBalance(false);
     }
-}, []);
+  }, []);
 
   const fetchAllDepartments = useCallback(async () => {
     try {
@@ -1228,6 +1181,18 @@ const MayorPending = () => {
   const isRealTime = isConnected;
 
   // ============================================
+  // ✅ FIX: balanceAfterRelease declaration (was missing)
+  // ============================================
+  const balanceAfterRelease = useMemo(() => {
+    if (!requestingDeptBalance || !amountReleased) return null;
+    const amount = parseFloat(amountReleased) || 0;
+    return {
+      remaining: requestingDeptBalance.remaining - amount,
+      is_insufficient: amount > requestingDeptBalance.remaining,
+    };
+  }, [requestingDeptBalance, amountReleased]);
+
+  // ============================================
   // ✅ FUEL PREDICTION — Suggest Release Amount
   // ============================================
   const selectedTicketId = selectedTicket?.id || selectedTicket?.trip_ticket_id;
@@ -1241,6 +1206,7 @@ const MayorPending = () => {
   });
 
   const suggestion = suggestionResponse?.data?.data;
+
   // ============================================
   // LOADING STATE
   // ============================================
@@ -2128,7 +2094,7 @@ const MayorPending = () => {
                 </div>
               </div>
 
-                            {/* ✅ FUEL PREDICTION SUGGESTION CARD */}
+              {/* ✅ FUEL PREDICTION SUGGESTION CARD */}
               {loadingSuggestion && (
                 <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700">
                   <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />
