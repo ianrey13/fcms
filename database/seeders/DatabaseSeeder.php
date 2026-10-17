@@ -212,4 +212,5 @@ class DatabaseSeeder extends Seeder
         $this->command->info('  Department: Engineering Office (code: ENGR)');
         $this->command->info('═══════════════════════════════════════════');
     }
+    //
 }
