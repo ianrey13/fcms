@@ -190,8 +190,12 @@ return new class extends Migration
             $table->enum('fuel_type', ['diesel', 'gasoline', 'premium']);
             $table->decimal('fuel_efficiency', 5, 2)->default(10.00);
             $table->decimal('current_fuel_balance', 10, 2)->default(0.00);
-            $table->decimal('last_odometer_reading', 10, 2)->nullable(); // ✅ RESTORED
+            $table->decimal('last_odometer_reading', 10, 2)->nullable();
             $table->decimal('fuel_capacity', 10, 2)->default(60.00);
+            // ✅ Angelo's fuel algorithm
+            $table->decimal('tank_capacity', 8, 2)->default(60.00);
+            $table->decimal('initial_estimated_fuel', 8, 2)->default(0.00);
+            $table->decimal('reference_efficiency', 5, 2)->default(10.00);
             $table->enum('status', ['active', 'inactive'])->default('active');
             $table->boolean('maintenance_flag')->default(false);
             $table->timestamp('created_at')->useCurrent();
@@ -200,7 +204,6 @@ return new class extends Migration
             $table->index('department_id');
             $table->foreign('department_id')->references('department_id')->on('departments');
         });
-
         // ============================================================
         // 4. TRIP TICKETS
         // ✅ Added: source enum + pending_gso_ticket status
@@ -505,24 +508,24 @@ return new class extends Migration
 
 
         Schema::create('gps_ping_archive', function (Blueprint $table) {
-    $table->bigIncrements('archive_id');
-    $table->unsignedBigInteger('original_ping_id');
-    $table->unsignedBigInteger('trip_ticket_id');
-    $table->decimal('latitude', 10, 7);
-    $table->decimal('longitude', 10, 7);
-    $table->decimal('accuracy_meters', 10, 2)->nullable();
-    $table->decimal('speed_kmh', 8, 2)->nullable();
-    $table->decimal('heading_degrees', 8, 2)->nullable();
-    $table->boolean('is_low_accuracy')->default(false);
-    $table->boolean('is_queued_upload')->default(false);
-    $table->boolean('has_mock_location_flag')->default(false);
-    $table->timestamp('recorded_at');
-    $table->timestamp('received_at');
-    $table->timestamp('archived_at')->useCurrent();
+            $table->bigIncrements('archive_id');
+            $table->unsignedBigInteger('original_ping_id');
+            $table->unsignedBigInteger('trip_ticket_id');
+            $table->decimal('latitude', 10, 7);
+            $table->decimal('longitude', 10, 7);
+            $table->decimal('accuracy_meters', 10, 2)->nullable();
+            $table->decimal('speed_kmh', 8, 2)->nullable();
+            $table->decimal('heading_degrees', 8, 2)->nullable();
+            $table->boolean('is_low_accuracy')->default(false);
+            $table->boolean('is_queued_upload')->default(false);
+            $table->boolean('has_mock_location_flag')->default(false);
+            $table->timestamp('recorded_at');
+            $table->timestamp('received_at');
+            $table->timestamp('archived_at')->useCurrent();
 
-    $table->index('trip_ticket_id', 'idx_ping_archive_trip');
-    $table->index(['trip_ticket_id', 'recorded_at'], 'idx_ping_archive_trip_time');
-});
+            $table->index('trip_ticket_id', 'idx_ping_archive_trip');
+            $table->index(['trip_ticket_id', 'recorded_at'], 'idx_ping_archive_trip_time');
+        });
 
         // Laravel-standard
         Schema::create('cache', function (Blueprint $table) {

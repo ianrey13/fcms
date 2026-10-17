@@ -45,6 +45,8 @@ import {
     Minus,
     X,
     Save,
+    Pencil,
+    Lock,
 } from "lucide-react";
 import {
     Dialog,
@@ -115,8 +117,6 @@ const getReceiptImageUrls = (receipt) => {
     return [...new Set(urlsList)];
 };
 
-// ✅ Simple two-state status: Pending / Verified
-// Option Y — verified if EITHER DO or GSO has done their part
 const getReceiptStatus = (receipt) => {
     const doOk  = receipt?.do_verification_status === 'verified';
     const gsoOk = receipt?.gso_validation_status === 'verified';
@@ -148,7 +148,6 @@ const formatTimeAgo = (date) => {
     return formatDateShort(date);
 };
 
-// ✅ ReceiptImage — resets only when the receipt ID changes
 const ReceiptImage = ({ receipt }) => {
     const [imageError, setImageError] = useState(false);
     const [currentUrlIndex, setCurrentUrlIndex] = useState(0);
@@ -269,7 +268,8 @@ const FuelReceipts = () => {
     const [modalLiters, setModalLiters] = useState('');
     const [isSavingModal, setIsSavingModal] = useState(false);
     const [litersError, setLitersError] = useState('');
-    const [justSaved, setJustSaved] = useState(false);
+    // ✅ NEW: edit mode toggle — starts locked if liters already saved
+    const [isEditMode, setIsEditMode] = useState(false);
 
     const [showConfirmSave, setShowConfirmSave] = useState(false);
 
@@ -312,7 +312,6 @@ const FuelReceipts = () => {
     const connectionStatus = isConnected ? "🟢 Live" : "🔴 Offline";
     const isRealTime = isConnected;
 
-    // ✅ Option Y — verified if EITHER side is done
     const isVerified = (r) => {
         const doOk  = r?.do_verification_status === 'verified';
         const gsoOk = r?.gso_validation_status === 'verified';
@@ -362,7 +361,8 @@ const FuelReceipts = () => {
         const existingLiters = parseFloat(receipt.liters || receipt.liters_availed || 0);
         setModalLiters(existingLiters > 0 ? String(existingLiters) : '');
         setLitersError('');
-        setJustSaved(false);
+        // ✅ If liters already exist → start LOCKED. If empty → start in edit mode so user can type immediately
+        setIsEditMode(existingLiters <= 0);
         setShowReceiptDialog(true);
     }, []);
 
@@ -371,15 +371,14 @@ const FuelReceipts = () => {
         const existingLiters = parseFloat(selectedReceipt.liters || selectedReceipt.liters_availed || 0);
         setModalLiters(existingLiters > 0 ? String(existingLiters) : '');
         setLitersError('');
-        setJustSaved(false);
+        setIsEditMode(existingLiters <= 0);
     }, [selectedReceipt]);
 
     const handleLitersChange = useCallback((raw) => {
         const cleaned = sanitizeDecimalInput(raw, 2);
         setModalLiters(cleaned);
         if (litersError) setLitersError('');
-        if (justSaved) setJustSaved(false);
-    }, [litersError, justSaved]);
+    }, [litersError]);
 
     const validateAll = useCallback(() => {
         const litersErr = (!modalLiters || parseFloat(modalLiters) <= 0)
@@ -425,15 +424,15 @@ const FuelReceipts = () => {
                 });
             });
 
-            if (selectedReceipt) {
-                selectedReceipt.liters = updated.liters_availed ?? liters;
-                selectedReceipt.unit_price = updated.unit_price ?? selectedReceipt.unit_price;
-                selectedReceipt.gso_validation_status = updated.gso_validation_status ?? 'verified';
-            }
-
             toast.success('Liters saved');
+
+            // ✅ Close dialogs + reset state
             setShowConfirmSave(false);
-            setJustSaved(true);
+            setShowReceiptDialog(false);
+            setSelectedReceipt(null);
+            setModalLiters('');
+            setLitersError('');
+            setIsEditMode(false);
         } catch (err) {
             console.error('Save receipt error:', err);
             toast.error(err?.response?.data?.message || 'Failed to save liters');
@@ -450,13 +449,20 @@ const FuelReceipts = () => {
     const handleCloseReceiptDialog = useCallback((open) => {
         setShowReceiptDialog(open);
         if (!open) {
-            setTimeout(() => { setLitersError(''); setJustSaved(false); }, 200);
+            setTimeout(() => {
+                setLitersError('');
+                setIsEditMode(false);
+            }, 200);
         }
     }, []);
 
     if (isLoading && !receiptsResponse) return <LoadingSkeleton />;
 
-    const inputLocked = isSavingModal || justSaved || showConfirmSave;
+    // ✅ Input is locked when NOT in edit mode OR while saving
+    const inputLocked = !isEditMode || isSavingModal || showConfirmSave;
+
+    // ✅ Show "Edit" button only when NOT in edit mode and NOT currently saving
+    const canShowEditButton = !isEditMode && !isSavingModal;
 
     return (
         <div className="space-y-6 p-4 md:p-6 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 min-h-screen">
@@ -627,24 +633,41 @@ const FuelReceipts = () => {
                                     </p>
                                 </div>
 
+                                {/* ✅ LITERS FIELD — now with lock/edit toggle */}
                                 <div className={cn(
                                     "p-3 rounded-xl border md:col-span-2",
                                     litersError
                                         ? "bg-red-50 dark:bg-red-950/30 border-red-300 dark:border-red-800"
-                                        : justSaved
-                                            ? "bg-emerald-50 dark:bg-emerald-950/30 border-emerald-300 dark:border-emerald-800"
-                                            : "bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800"
+                                        : isEditMode
+                                            ? "bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800"
+                                            : "bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700"
                                 )}>
-                                    <p className={cn(
-                                        "text-xs font-semibold mb-2",
-                                        litersError
-                                            ? "text-red-600 dark:text-red-400"
-                                            : justSaved
-                                                ? "text-emerald-600 dark:text-emerald-400"
-                                                : "text-blue-600 dark:text-blue-400"
-                                    )}>
-                                        Fuel Loaded (Liters) *
-                                    </p>
+                                    <div className="flex items-center justify-between mb-2">
+                                        <p className={cn(
+                                            "text-xs font-semibold flex items-center gap-1.5",
+                                            litersError
+                                                ? "text-red-600 dark:text-red-400"
+                                                : isEditMode
+                                                    ? "text-blue-600 dark:text-blue-400"
+                                                    : "text-slate-600 dark:text-slate-400"
+                                        )}>
+                                            Fuel Loaded (Liters)
+                                            {!isEditMode && <Lock className="h-3 w-3" />}
+                                        </p>
+
+                                        {/* ✅ EDIT BUTTON — appears when locked */}
+                                        {canShowEditButton && (
+                                            <button
+                                                type="button"
+                                                onClick={() => setIsEditMode(true)}
+                                                className="flex items-center gap-1 text-[11px] font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 px-2 py-1 rounded-md hover:bg-blue-100 dark:hover:bg-blue-950/40 transition-colors"
+                                                title="Edit liters (correction)"
+                                            >
+                                                <Pencil className="h-3 w-3" />
+                                                Edit
+                                            </button>
+                                        )}
+                                    </div>
 
                                     <div className="flex items-center gap-2">
                                         <Fuel className="h-4 w-4 text-blue-500" />
@@ -660,27 +683,33 @@ const FuelReceipts = () => {
                                             aria-invalid={!!litersError}
                                             className={cn(
                                                 "h-9 w-32 px-3 text-sm font-semibold rounded-lg bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 transition-opacity",
-                                                inputLocked && "opacity-50 cursor-not-allowed",
+                                                inputLocked && "opacity-60 cursor-not-allowed",
                                                 litersError
                                                     ? "border border-red-500 focus:ring-red-500 dark:border-red-500"
-                                                    : "border border-blue-300 dark:border-blue-700 focus:ring-blue-500"
+                                                    : isEditMode
+                                                        ? "border border-blue-300 dark:border-blue-700 focus:ring-blue-500"
+                                                        : "border border-slate-300 dark:border-slate-600"
                                             )}
                                         />
                                         <span className="text-xs text-slate-600 dark:text-slate-300 font-medium">L</span>
                                     </div>
 
-                                    {justSaved ? (
-                                        <p className="mt-1.5 text-[11px] text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                                            <CheckCircle className="h-3 w-3 flex-shrink-0" />
-                                            Saved. Click Reset or Close to edit.
-                                        </p>
-                                    ) : litersError ? (
+                                    {litersError ? (
                                         <p className="mt-1.5 text-[11px] text-red-600 dark:text-red-400 flex items-center gap-1">
                                             <AlertCircle className="h-3 w-3 flex-shrink-0" />{litersError}
                                         </p>
-                                    ) : (
+                                    ) : isEditMode ? (
                                         <p className="text-[10px] text-blue-500 dark:text-blue-400 mt-1.5">
                                             Enter the liters from the physical receipt.
+                                        </p>
+                                    ) : modalLiters ? (
+                                        <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1.5 flex items-center gap-1">
+                                            <Lock className="h-2.5 w-2.5" />
+                                            Saved. Click <strong className="font-semibold">Edit</strong> above to correct.
+                                        </p>
+                                    ) : (
+                                        <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1.5">
+                                            No liters recorded yet.
                                         </p>
                                     )}
                                 </div>
@@ -695,18 +724,17 @@ const FuelReceipts = () => {
                             </div>
 
                             <div className="flex justify-end gap-3 pt-4 border-t border-slate-200 dark:border-slate-700">
-                                <Button variant="outline" onClick={() => handleCancelEdit()} disabled={isSavingModal}
-                                    className="dark:border-slate-700 dark:text-slate-300">
-                                    Reset
-                                </Button>
                                 <Button variant="outline" onClick={() => handleCloseReceiptDialog(false)} disabled={isSavingModal}
                                     className="dark:border-slate-700 dark:text-slate-300">
                                     Close
                                 </Button>
-                                <Button onClick={handleSaveClick} disabled={isSavingModal || justSaved || showConfirmSave}
-                                    className="bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-50">
-                                    {isSavingModal ? (<><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving...</>) : (<><Save className="h-4 w-4 mr-2" />Save Liters</>)}
-                                </Button>
+                                {/* ✅ Save button only visible when in edit mode */}
+                                {isEditMode && (
+                                    <Button onClick={handleSaveClick} disabled={isSavingModal || showConfirmSave}
+                                        className="bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-50">
+                                        {isSavingModal ? (<><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving...</>) : (<><Save className="h-4 w-4 mr-2" />Save Liters</>)}
+                                    </Button>
+                                )}
                             </div>
                         </div>
                     )}
