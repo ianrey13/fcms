@@ -110,7 +110,10 @@ const StatusBadge = ({ status, maintenanceFlag }) => {
 // ============================================
 
 const FuelLevelBar = ({ balance, tankCapacity }) => {
-  const pct = tankCapacity > 0 ? Math.min(100, Math.max(0, (balance / tankCapacity) * 100)) : 0;
+  const safeBalance = Number(balance) || 0;
+  const safeTank = Number(tankCapacity) || 60;
+  
+  const pct = safeTank > 0 ? Math.min(100, Math.max(0, (safeBalance / safeTank) * 100)) : 0;
 
   let barColor = "bg-emerald-500";
   let textColor = "text-emerald-600 dark:text-emerald-400";
@@ -130,10 +133,10 @@ const FuelLevelBar = ({ balance, tankCapacity }) => {
     <div className="min-w-[120px]">
       <div className="flex items-center justify-between text-[10px] mb-1">
         <span className={`font-semibold ${textColor}`}>
-          {balance?.toFixed(1) ?? "0.0"} L
+          {safeBalance.toFixed(1)} L
         </span>
         <span className="text-slate-400">
-          / {tankCapacity?.toFixed(0) ?? "60"} L
+          / {safeTank.toFixed(0)} L
         </span>
       </div>
       <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-1.5 overflow-hidden">
@@ -636,6 +639,8 @@ const VehicleManagement = () => {
                       const deptName = getDepartmentName(vehicle.department_id);
                       const deptColor = getDepartmentColor(vehicle.department_id);
                       const fuelColor = getFuelTypeColor(vehicle.fuel_type);
+                      
+                      // ✅ Safely parse values to prevent "NaN"
                       const tankCapacity = parseFloat(vehicle.tank_capacity) || 60;
                       const currentBalance = parseFloat(vehicle.current_fuel_balance) || 0;
                       const refEff = parseFloat(vehicle.reference_efficiency);
@@ -666,7 +671,8 @@ const VehicleManagement = () => {
                             <span className="font-mono text-sm font-semibold text-slate-800 dark:text-white">
                               {vehicle.plate_number}
                             </span>
-                            {refEff && !isNaN(refEff) && (
+                            {/* ✅ Only show efficiency if it's a valid number greater than 0 */}
+                            {!isNaN(refEff) && refEff > 0 && (
                               <p className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1">
                                 <Gauge className="h-2.5 w-2.5" />
                                 {refEff} km/L
@@ -687,7 +693,7 @@ const VehicleManagement = () => {
                               {vehicle.fuel_type || "N/A"}
                             </Badge>
                           </td>
-                          {/* ✅ NEW: Fuel Level cell */}
+                          {/* ✅ Fuel Level cell */}
                           <td className="px-4 py-3">
                             <FuelLevelBar
                               balance={currentBalance}

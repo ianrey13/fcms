@@ -1138,7 +1138,7 @@ class DriverController extends Controller
         }
     }
 
-    public function completeTrip(Request $request, $id)
+       public function completeTrip(Request $request, $id)
     {
         try {
             $user = $request->user();
@@ -1184,7 +1184,7 @@ class DriverController extends Controller
 
             DB::beginTransaction();
 
-            //  Compute distance server-side from GPS pings BEFORE deleting
+            //  Compute distance server-side from GPS pings
             $pings = GpsPing::where('trip_ticket_id', $id)
                 ->orderBy('recorded_at', 'asc')
                 ->get(['latitude', 'longitude', 'recorded_at', 'is_low_accuracy', 'accuracy_meters']);
@@ -1231,7 +1231,7 @@ class DriverController extends Controller
                 }
             }
 
-            $deletedPings = GpsPing::where('trip_ticket_id', $id)->delete();
+            // ✅ Pings are NOT deleted here. GSO validation will archive them.
 
             //  One trip per ticket — completion always ends the ticket
             $ticket->status = 'pending_gso_validation';
@@ -1267,7 +1267,6 @@ class DriverController extends Controller
                     'trip_number' => $ticket->trip_count,
                     'trip_ended_at' => now(),
                     'pings_count' => $pingCount,
-                    'pings_deleted' => $deletedPings,
                     'computed_distance_km' => $finalDistance,
                     'is_complete' => true,
                     'can_restart_tomorrow' => false,
@@ -1283,7 +1282,6 @@ class DriverController extends Controller
             return response()->json(['success' => false, 'message' => 'Failed to complete trip: ' . $e->getMessage()], 500);
         }
     }
-
   
 
     private function notifyGsoForValidation($ticket)
