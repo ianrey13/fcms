@@ -51,6 +51,8 @@ import {
     Fuel,
     Loader2,
     X,
+    Play,
+    Square,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -81,9 +83,9 @@ L.Icon.Default.mergeOptions({
 });
 
 // ============================================
-// VEHICLE ICON WITH PLATE LABEL
+// VEHICLE ICON WITH PLATE LABEL & MODEL
 // ============================================
-const createVehicleIcon = (status, isSelected, isOnline = true, isFocused = false, plateNumber = '') => {
+const createVehicleIcon = (status, isSelected, isOnline = true, isFocused = false, plateNumber = '', vehicleModel = '') => {
     const colors = {
         in_transit: '#22c55e',
         funds_issued: '#f59e0b',
@@ -105,7 +107,7 @@ const createVehicleIcon = (status, isSelected, isOnline = true, isFocused = fals
             <div style="
                 position: relative;
                 width: ${size + 12}px;
-                height: ${size + 12 + 22}px;
+                height: ${size + 12 + 35}px;
                 cursor: pointer;
                 transition: all 0.3s ease;
             ">
@@ -203,11 +205,35 @@ const createVehicleIcon = (status, isSelected, isOnline = true, isFocused = fals
                         <circle cx="17" cy="17" r="2"/>
                     </svg>
                 </div>
+
+                ${vehicleModel ? `
+                    <div style="
+                        position: absolute;
+                        bottom: 0;
+                        left: 50%;
+                        transform: translateX(-50%);
+                        background: rgba(15, 23, 42, 0.85);
+                        backdrop-filter: blur(4px);
+                        color: #e2e8f0;
+                        padding: 1px 6px;
+                        border-radius: 4px;
+                        font-size: 9px;
+                        font-weight: 600;
+                        white-space: nowrap;
+                        text-overflow: ellipsis;
+                        overflow: hidden;
+                        max-width: 80px;
+                        border: 1px solid rgba(255,255,255,0.2);
+                        z-index: 5;
+                    ">
+                        ${vehicleModel}
+                    </div>
+                ` : ''}
             </div>
         `,
-        iconSize: [size + 12, size + 12 + 22],
-        iconAnchor: [(size + 12) / 2, size + 12 + 22 - 6],
-        popupAnchor: [0, -(size + 12 + 22) / 2 + 10],
+        iconSize: [size + 12, size + 12 + 35],
+        iconAnchor: [(size + 12) / 2, size + 12 + 29],
+        popupAnchor: [0, -(size + 12 + 35) / 2 + 10],
     });
 };
 
@@ -371,6 +397,13 @@ const TripPopupContent = ({ trip, onViewTrip, onCenter }) => {
                     </span>
                 </div>
                 <div className="flex items-center gap-2">
+                    <Car className="h-3.5 w-3.5 text-slate-400" />
+                    <span className="text-slate-500">Model:</span>
+                    <span className="font-medium text-slate-700 dark:text-slate-300 truncate max-w-[120px]">
+                        {trip?.vehicle?.vehicle_model || 'N/A'}
+                    </span>
+                </div>
+                <div className="flex items-center gap-2">
                     <User className="h-3.5 w-3.5 text-slate-400" />
                     <span className="text-slate-500">Driver:</span>
                     <span className="font-medium text-slate-700 dark:text-slate-300">
@@ -463,10 +496,15 @@ const LiveTracking = () => {
     const [refreshAttempts, setRefreshAttempts] = useState(0);
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
-    // ✅ Sidebar tabs + polyline state — INSIDE the component
+    // ✅ Sidebar tabs + polyline state
     const [sidebarTab, setSidebarTab] = useState('active');
     const [polylineRoute, setPolylineRoute] = useState(null);
     const [polylineInfo, setPolylineInfo] = useState(null);
+
+    // ✅ Replay state
+    const [isReplaying, setIsReplaying] = useState(false);
+    const [replayIndex, setReplayIndex] = useState(0);
+    const replayIntervalRef = useRef(null);
 
     const mapRef = useRef(null);
     const dropdownRef = useRef(null);
@@ -486,6 +524,9 @@ const LiveTracking = () => {
         isMountedRef.current = true;
         return () => {
             isMountedRef.current = false;
+            if (replayIntervalRef.current) {
+                clearInterval(replayIntervalRef.current);
+            }
         };
     }, []);
 
@@ -584,7 +625,7 @@ const LiveTracking = () => {
         enabled: true,
     });
 
-    // ✅ Refuelings query — only fires when tab is active
+    // ✅ Refuelings query
     const { data: refuelingsRaw, isLoading: refuelingsLoading } = useOptimizedQuery({
         queryKey: ['gps-recent-refuelings'],
         queryFn: async () => {
@@ -600,7 +641,7 @@ const LiveTracking = () => {
         enabled: sidebarTab === 'refuelings',
     });
 
-    // ✅ Completed trips query — only fires when tab is active
+    // ✅ Completed trips query
     const { data: completedRaw, isLoading: completedLoading } = useOptimizedQuery({
         queryKey: ['gps-completed-trips'],
         queryFn: async () => {
@@ -870,11 +911,51 @@ const LiveTracking = () => {
         }
     };
 
+    // ✅ Replay handlers
+    const handleStopReplay = () => {
+        setIsReplaying(false);
+        setReplayIndex(0);
+        if (replayIntervalRef.current) {
+            clearInterval(replayIntervalRef.current);
+            replayIntervalRef.current = null;
+        }
+    };
+
+    const handleReplay = () => {
+        if (!polylineRoute || polylineRoute.length < 2) return;
+        
+        if (isReplaying) {
+            handleStopReplay();
+            return;
+        }
+
+        setIsReplaying(true);
+        setReplayIndex(0);
+
+        let currentIdx = 0;
+        replayIntervalRef.current = setInterval(() => {
+            currentIdx++;
+            if (currentIdx >= polylineRoute.length) {
+                clearInterval(replayIntervalRef.current);
+                setIsReplaying(false);
+                setReplayIndex(0);
+                return;
+            }
+            setReplayIndex(currentIdx);
+            
+            // Pan map to follow the replay marker
+            if (mapRef.current) {
+                mapRef.current.panTo(polylineRoute[currentIdx]);
+            }
+        }, 300); // 300ms per ping
+    };
+
     const handlePolylineView = async (item) => {
         if (!item?.trip_id) {
             toast.error('No trip data for this entry');
             return;
         }
+        handleStopReplay(); // Stop any active replay before loading a new one
         try {
             const res = await gpsAPI.getTripRoute(item.trip_id);
             const track = res?.data?.data?.track ?? [];
@@ -900,6 +981,7 @@ const LiveTracking = () => {
     const handleClearPolyline = () => {
         setPolylineRoute(null);
         setPolylineInfo(null);
+        handleStopReplay();
     };
 
     const handleViewTrip = (trip) => {
@@ -1152,12 +1234,21 @@ const LiveTracking = () => {
                                 />
                             )}
 
+                            {/* ✅ REPLAY MARKER */}
+                            {isReplaying && polylineRoute && polylineRoute.length > 0 && (
+                                <Marker
+                                    position={polylineRoute[replayIndex]}
+                                    icon={createVehicleIcon('in_transit', true, true, true, 'REPLAY', '')}
+                                />
+                            )}
+
                             {tripsWithLocation.length > 0 ? (
                                 tripsWithLocation.map((trip) => {
                                     if (!trip || !trip.current_location) return null;
                                     const isSelected = selectedTrip?.trip_id === trip.trip_id;
                                     const isFocused = focusedTrip?.trip_id === trip.trip_id;
                                     const plateNumber = trip?.vehicle?.plate_number || trip?.plate_number || '';
+                                    const vehicleModel = trip?.vehicle?.vehicle_model || '';
 
                                     return (
                                         <React.Fragment key={trip.trip_id}>
@@ -1178,7 +1269,8 @@ const LiveTracking = () => {
                                                     isSelected,
                                                     true,
                                                     isFocused,
-                                                    plateNumber
+                                                    plateNumber,
+                                                    vehicleModel
                                                 )}
                                                 eventHandlers={{
                                                     click: () => handleTripSelect(trip),
@@ -1296,13 +1388,29 @@ const LiveTracking = () => {
                                             Route: {polylineInfo.label}
                                         </span>
                                     </div>
-                                    <button
-                                        onClick={handleClearPolyline}
-                                        className="text-red-500 hover:text-red-700 flex-shrink-0"
-                                        title="Clear route"
-                                    >
-                                        <X className="h-3.5 w-3.5" />
-                                    </button>
+                                    <div className="flex items-center gap-2 flex-shrink-0">
+                                        {/* ✅ REPLAY BUTTON */}
+                                        {polylineRoute && polylineRoute.length > 1 && (
+                                            <button
+                                                onClick={handleReplay}
+                                                className="text-red-500 hover:text-red-700 flex items-center gap-1 text-[10px] font-bold"
+                                                title={isReplaying ? "Stop Replay" : "Play Replay"}
+                                            >
+                                                {isReplaying ? (
+                                                    <Square className="h-3 w-3 fill-red-500" />
+                                                ) : (
+                                                    <Play className="h-3.5 w-3.5 fill-red-500" />
+                                                )}
+                                            </button>
+                                        )}
+                                        <button
+                                            onClick={handleClearPolyline}
+                                            className="text-red-500 hover:text-red-700 flex-shrink-0"
+                                            title="Clear route"
+                                        >
+                                            <X className="h-3.5 w-3.5" />
+                                        </button>
+                                    </div>
                                 </div>
                             )}
                         </div>
