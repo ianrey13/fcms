@@ -1138,7 +1138,7 @@ class DriverController extends Controller
         }
     }
 
-       public function completeTrip(Request $request, $id)
+           public function completeTrip(Request $request, $id)
     {
         try {
             $user = $request->user();
@@ -1244,6 +1244,17 @@ class DriverController extends Controller
 
             DB::commit();
 
+            // ============================================================
+            // ✅ Fuel Level Recalculation (Angelo's Algorithm)
+            // ============================================================
+            if ($ticket->vehicle) {
+                try {
+                    (new \App\Services\FuelLevelService())->recalculate($ticket->vehicle);
+                } catch (\Throwable $e) {
+                    Log::warning('Fuel balance recalc failed during trip completion: ' . $e->getMessage());
+                }
+            }
+
             try {
                 broadcast(new TripCompleted(
                     $ticket->trip_ticket_id,
@@ -1282,7 +1293,6 @@ class DriverController extends Controller
             return response()->json(['success' => false, 'message' => 'Failed to complete trip: ' . $e->getMessage()], 500);
         }
     }
-  
 
     private function notifyGsoForValidation($ticket)
     {
