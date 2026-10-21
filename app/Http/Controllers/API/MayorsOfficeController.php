@@ -195,6 +195,9 @@ class MayorsOfficeController extends Controller
                     'plate_number' => $ticket->vehicle->plate_number,
                     'vehicle_model' => $ticket->vehicle->vehicle_model,
                     'fuel_type' => $ticket->vehicle->fuel_type,
+                       'current_fuel_balance' => (float) $ticket->vehicle->current_fuel_balance,
+                            'tank_capacity' => (float) $ticket->vehicle->tank_capacity,
+                            'reference_efficiency' => (float) $ticket->vehicle->reference_efficiency,
                 ] : null,
                 'driver' => $ticket->driver && $ticket->driver->user ? [
                     'full_name' => $ticket->driver->user->full_name,
