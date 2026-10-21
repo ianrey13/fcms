@@ -31,6 +31,8 @@ import {
   XCircle,
   Search,
   TrendingUp,
+  Car,
+  PhilippinePeso,
 } from "lucide-react";
 
 // ============================================
@@ -125,13 +127,11 @@ const MayorHistory = () => {
     fetchAllData
   );
 
-  // ✅ Uses getHistoryTickets — wider status set
   const fetchTickets = useCallback(async () => {
     setLoading(true);
     try {
       const response = await mayorsOfficeAPI.getHistoryTickets();
 
-      // Handles Laravel paginator shape
       const payload = response.data?.data;
       let ticketsData = [];
 
@@ -211,6 +211,32 @@ const MayorHistory = () => {
   }, [tickets, statusFilter, search, dateFrom, dateTo]);
 
   // ============================================
+  // CASH PER VEHICLE SUMMARY
+  // ============================================
+  const vehicleSummary = useMemo(() => {
+    const summary = {};
+    
+    filtered.forEach((ticket) => {
+      // Only count tickets that actually had cash released
+      const amount = parseFloat(ticket.amount_released) || 0;
+      if (amount > 0) {
+        const plate = ticket.vehicle?.plate_number || ticket.plate_number || "Unknown";
+        const model = ticket.vehicle?.vehicle_model || ticket.vehicle_model || "";
+        
+        if (!summary[plate]) {
+          summary[plate] = { plate, model, totalAmount: 0, tripCount: 0 };
+        }
+        
+        summary[plate].totalAmount += amount;
+        summary[plate].tripCount += 1;
+      }
+    });
+
+    // Convert to array and sort by total amount descending
+    return Object.values(summary).sort((a, b) => b.totalAmount - a.totalAmount);
+  }, [filtered]);
+
+  // ============================================
   // STATS
   // ============================================
   const safeAmount = (a) => (typeof a === "number" ? a : parseFloat(a) || 0);
@@ -230,11 +256,11 @@ const MayorHistory = () => {
       subtitle: `${tickets.length} total`,
     },
     {
-      title: "Total Amount",
+      title: "Total Cash Released",
       value: formatCurrency(totalAmount),
       icon: TrendingUp,
       color: "from-emerald-500 to-emerald-600",
-      subtitle: "Released funds",
+      subtitle: "Funds released",
     },
     {
       title: "Active",
@@ -252,7 +278,6 @@ const MayorHistory = () => {
     },
   ];
 
-  // ✅ Extended status options
   const statusOptions = [
     { value: "all", label: "All Statuses" },
     { value: "funds_issued", label: "Funds Issued" },
@@ -364,6 +389,42 @@ const MayorHistory = () => {
             )}
           </CardContent>
         </Card>
+
+        {/* ✅ CASH PER VEHICLE SUMMARY */}
+        {vehicleSummary.length > 0 && (
+          <Card className="dark:bg-slate-800/80 dark:border-slate-700 shadow-sm border-l-4 border-l-emerald-500">
+            <CardHeader className="pb-3 border-b border-slate-200/60 dark:border-slate-700/60">
+              <CardTitle className="flex items-center gap-2 text-slate-800 dark:text-white text-base">
+                <PhilippinePeso className="h-5 w-5 text-emerald-500" />
+                Cash Released per Vehicle
+              </CardTitle>
+              <CardDescription className="dark:text-slate-400">
+                Based on current filters. Proves total operational cost per vehicle.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="pt-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {vehicleSummary.map((v) => (
+                  <div key={v.plate} className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-emerald-100 dark:bg-emerald-900/30 rounded-lg">
+                        <Car className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+                      </div>
+                      <div>
+                        <p className="font-mono font-bold text-slate-800 dark:text-white">{v.plate}</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 truncate max-w-[120px]">{v.model}</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-bold text-emerald-600 dark:text-emerald-400">{formatCurrency(v.totalAmount)}</p>
+                      <p className="text-[10px] text-slate-400">{v.tripCount} trips</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Table */}
         <Card className="dark:bg-slate-800/80 dark:border-slate-700 shadow-xl shadow-black/5">
