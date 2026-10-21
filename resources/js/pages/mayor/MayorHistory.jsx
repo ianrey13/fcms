@@ -20,7 +20,6 @@ import {
 import {
   History,
   Eye,
-  Loader2,
   Calendar,
   MapPin,
   Truck,
@@ -131,10 +130,9 @@ const MayorHistory = () => {
     setLoading(true);
     try {
       const response = await mayorsOfficeAPI.getHistoryTickets();
-
       const payload = response.data?.data;
+      
       let ticketsData = [];
-
       if (Array.isArray(payload)) {
         ticketsData = payload;
       } else if (payload && Array.isArray(payload.data)) {
@@ -142,7 +140,6 @@ const MayorHistory = () => {
       } else if (Array.isArray(response.data)) {
         ticketsData = response.data;
       }
-
       setTickets(ticketsData);
     } catch (error) {
       console.error("Failed to fetch history:", error);
@@ -180,7 +177,12 @@ const MayorHistory = () => {
 
   const getDriverName = (ticket) => {
     if (!ticket) return "N/A";
-    return ticket.driver_name || ticket.driver?.name || ticket.driver?.user?.full_name || "N/A";
+    return ticket.driver?.user?.full_name || ticket.driver?.name || "N/A";
+  };
+
+  // ✅ Correctly get amount from gas_slip relation
+  const getAmount = (ticket) => {
+    return parseFloat(ticket.amount_released || ticket.gas_slip?.amount_released) || 0;
   };
 
   // ============================================
@@ -196,7 +198,7 @@ const MayorHistory = () => {
           t.ticket_number,
           t.trip_ticket_number,
           t.destination,
-          t.department_name,
+          t.department?.department_name,
           getDriverName(t),
           t.vehicle?.plate_number,
         ].filter(Boolean).join(" ").toLowerCase();
@@ -217,11 +219,10 @@ const MayorHistory = () => {
     const summary = {};
     
     filtered.forEach((ticket) => {
-      // Only count tickets that actually had cash released
-      const amount = parseFloat(ticket.amount_released) || 0;
+      const amount = getAmount(ticket);
       if (amount > 0) {
-        const plate = ticket.vehicle?.plate_number || ticket.plate_number || "Unknown";
-        const model = ticket.vehicle?.vehicle_model || ticket.vehicle_model || "";
+        const plate = ticket.vehicle?.plate_number || "Unknown";
+        const model = ticket.vehicle?.vehicle_model || "";
         
         if (!summary[plate]) {
           summary[plate] = { plate, model, totalAmount: 0, tripCount: 0 };
@@ -232,15 +233,13 @@ const MayorHistory = () => {
       }
     });
 
-    // Convert to array and sort by total amount descending
     return Object.values(summary).sort((a, b) => b.totalAmount - a.totalAmount);
   }, [filtered]);
 
   // ============================================
   // STATS
   // ============================================
-  const safeAmount = (a) => (typeof a === "number" ? a : parseFloat(a) || 0);
-  const totalAmount = filtered.reduce((s, t) => s + safeAmount(t.amount_released), 0);
+  const totalAmount = filtered.reduce((s, t) => s + getAmount(t), 0);
   const closedCount = tickets.filter((t) => t.status === "closed").length;
   const activeCount = tickets.filter((t) =>
     ["funds_issued", "acknowledged", "in_transit"].includes(t.status)
@@ -471,8 +470,8 @@ const MayorHistory = () => {
 
                   <TableBody>
                     {filtered.map((ticket) => {
-                      const id = ticket.id || ticket.trip_ticket_id;
-                      const ticketNumber = ticket.ticket_number || ticket.trip_ticket_number;
+                      const id = ticket.trip_ticket_id;
+                      const ticketNumber = ticket.trip_ticket_number;
                       return (
                         <TableRow
                           key={id}
@@ -501,7 +500,7 @@ const MayorHistory = () => {
                             <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-400">
                               <Building2 className="h-3.5 w-3.5" />
                               <span className="text-sm truncate max-w-[140px]">
-                                {ticket.department_name || ticket.department?.department_name || ticket.department?.name || "N/A"}
+                                {ticket.department?.department_name || "N/A"}
                               </span>
                             </div>
                           </TableCell>
@@ -512,7 +511,7 @@ const MayorHistory = () => {
                           </TableCell>
                           <TableCell className="text-right">
                             <span className="font-semibold text-emerald-600 dark:text-emerald-400">
-                              {formatCurrency(ticket.amount_released)}
+                              {formatCurrency(getAmount(ticket))}
                             </span>
                           </TableCell>
                           <TableCell>
