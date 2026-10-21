@@ -30,10 +30,7 @@ import {
   Clock,
   XCircle,
   Search,
-  Filter,
   TrendingUp,
-  TrendingDown,
-  Minus,
 } from "lucide-react";
 
 // ============================================
@@ -128,15 +125,13 @@ const MayorHistory = () => {
     fetchAllData
   );
 
-  // ✅ Uses getHistoryTickets — wider status set (closed, completed, cancelled,
-  //    rejected, returned_for_revision, pending_gso_validation)
+  // ✅ Uses getHistoryTickets — wider status set
   const fetchTickets = useCallback(async () => {
     setLoading(true);
     try {
       const response = await mayorsOfficeAPI.getHistoryTickets();
 
-      // Handles Laravel paginator shape: { data: { data: [...], current_page, total, ... } }
-      // Also handles plain array response for backward compat
+      // Handles Laravel paginator shape
       const payload = response.data?.data;
       let ticketsData = [];
 
@@ -257,7 +252,7 @@ const MayorHistory = () => {
     },
   ];
 
-  // ✅ Extended status options — includes cancelled/rejected/returned
+  // ✅ Extended status options
   const statusOptions = [
     { value: "all", label: "All Statuses" },
     { value: "funds_issued", label: "Funds Issued" },
