@@ -2164,6 +2164,66 @@ const MayorPending = () => {
                   </span>
                 </div>
               )}
+                            {/* ✅ LIVE FUEL BALANCE STATUS */}
+              {selectedTicket?.vehicle && (
+                <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-3 border border-slate-200 dark:border-slate-700">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <div className="p-1.5 rounded-lg bg-amber-500/10">
+                        <Fuel className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold text-slate-800 dark:text-white">
+                          Live Fuel Status
+                        </p>
+                        <p className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">
+                          {selectedTicket.vehicle.plate_number}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-bold text-slate-800 dark:text-white">
+                        {selectedTicket.vehicle.current_fuel_balance?.toFixed(1) || "0.0"} L
+                      </p>
+                      <p className="text-[10px] text-slate-500">
+                        / {selectedTicket.vehicle.tank_capacity?.toFixed(0) || "60"} L
+                      </p>
+                    </div>
+                  </div>
+                  
+                  {/* Progress Bar */}
+                  <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2 overflow-hidden mb-2">
+                    <div
+                      className={cn(
+                        "h-2 rounded-full transition-all",
+                        (selectedTicket.vehicle.current_fuel_balance / selectedTicket.vehicle.tank_capacity) > 0.5
+                          ? "bg-emerald-500"
+                          : (selectedTicket.vehicle.current_fuel_balance / selectedTicket.vehicle.tank_capacity) > 0.25
+                          ? "bg-yellow-500"
+                          : "bg-red-500"
+                      )}
+                      style={{
+                        width: `${Math.min(
+                          100,
+                          Math.max(
+                            0,
+                            (selectedTicket.vehicle.current_fuel_balance / selectedTicket.vehicle.tank_capacity) * 100
+                          )
+                        )}%`,
+                      }}
+                    />
+                  </div>
+                  
+                  <div className="flex items-center justify-between text-[10px] text-slate-500">
+                    <span>
+                      Ref. Efficiency: {selectedTicket.vehicle.reference_efficiency || 10} km/L
+                    </span>
+                    <span className="text-amber-600 dark:text-amber-400 font-medium">
+                      Angelo's Algorithm
+                    </span>
+                  </div>
+                </div>
+              )}
 
               {suggestion && suggestion.available && (
                 <div
