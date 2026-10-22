@@ -41,28 +41,23 @@ import {
   Search,
   X,
   AlertTriangle,
-  HelpCircle,
   Calendar,
   CalendarCheck,
   CalendarDays,
   ArrowLeft,
   Zap,
-  Shield,
   Gauge,
   Fuel,
   TrendingUp,
   TrendingDown,
   Minus,
-  Calculator,
   Printer,
   Wallet,
   Ban,
-  FileText,
-  Users,
-  PhilippinePeso,
   Sparkles,
   Brain,
   TrendingUp as TrendingUpIcon,
+  CircleDollarSign,
 } from "lucide-react";
 import {
   Dialog,
@@ -309,6 +304,91 @@ const ReleasedStatusBadge = ({ status }) => {
       <Icon className="h-3 w-3" />
       {config.label}
     </Badge>
+  );
+};
+
+// ============================================
+// LIVE FUEL STATUS WIDGET
+// ============================================
+
+const LiveFuelStatusWidget = ({ vehicle }) => {
+  if (!vehicle) return null;
+
+  const currentFuel = parseFloat(vehicle.current_fuel_balance ?? 0) || 0;
+  const tankCapacity = parseFloat(vehicle.tank_capacity ?? 0) || 60;
+  const efficiency = parseFloat(vehicle.reference_efficiency ?? 0) || 10;
+
+  // If the backend didn't send fuel fields, show a friendly fallback instead of an empty bar
+  const hasFuelData =
+    vehicle.current_fuel_balance != null || vehicle.tank_capacity != null;
+
+  if (!hasFuelData) {
+    return (
+      <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-3 border border-slate-200 dark:border-slate-700">
+        <div className="flex items-center gap-2">
+          <div className="p-1.5 rounded-lg bg-amber-500/10">
+            <Fuel className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+          </div>
+          <div>
+            <p className="text-xs font-semibold text-slate-800 dark:text-white">
+              Live Fuel Status
+            </p>
+            <p className="text-[10px] text-slate-500 dark:text-slate-400">
+              Fuel tracking not configured for this vehicle
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const pct = tankCapacity > 0
+    ? Math.min(100, Math.max(0, (currentFuel / tankCapacity) * 100))
+    : 0;
+
+  const barColor =
+    pct > 50 ? "bg-emerald-500" : pct > 25 ? "bg-yellow-500" : "bg-red-500";
+
+  return (
+    <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-3 border border-slate-200 dark:border-slate-700">
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <div className="p-1.5 rounded-lg bg-amber-500/10">
+            <Fuel className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+          </div>
+          <div>
+            <p className="text-xs font-semibold text-slate-800 dark:text-white">
+              Live Fuel Status
+            </p>
+            <p className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">
+              {vehicle.plate_number || "—"}
+            </p>
+          </div>
+        </div>
+        <div className="text-right">
+          <p className="text-sm font-bold text-slate-800 dark:text-white">
+            {currentFuel.toFixed(1)} L
+          </p>
+          <p className="text-[10px] text-slate-500">
+            / {tankCapacity.toFixed(0)} L
+          </p>
+        </div>
+      </div>
+
+      <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2 overflow-hidden mb-2">
+        <div
+          className={cn("h-2 rounded-full transition-all", barColor)}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+
+      <div className="flex items-center justify-between text-[10px] text-slate-500">
+        <span>Ref. Efficiency: {efficiency} km/L</span>
+        <span className="text-amber-600 dark:text-amber-400 font-medium">
+          Angelo's Algorithm
+        </span>
+      </div>
+    </div>
   );
 };
 
@@ -1180,9 +1260,6 @@ const MayorPending = () => {
   const connectionStatus = isConnected ? "🟢 Live" : "🔴 Offline";
   const isRealTime = isConnected;
 
-  // ============================================
-  // ✅ FIX: balanceAfterRelease declaration (was missing)
-  // ============================================
   const balanceAfterRelease = useMemo(() => {
     if (!requestingDeptBalance || !amountReleased) return null;
     const amount = parseFloat(amountReleased) || 0;
@@ -1192,9 +1269,6 @@ const MayorPending = () => {
     };
   }, [requestingDeptBalance, amountReleased]);
 
-  // ============================================
-  // ✅ FUEL PREDICTION — Suggest Release Amount
-  // ============================================
   const selectedTicketId = selectedTicket?.id || selectedTicket?.trip_ticket_id;
 
   const { data: suggestionResponse, isLoading: loadingSuggestion } = useQuery({
@@ -1250,7 +1324,7 @@ const MayorPending = () => {
             <div>
               <div className="flex items-center gap-3">
                 <div className="p-2.5 rounded-xl bg-gradient-to-br from-yellow-500 to-yellow-600 shadow-lg shadow-yellow-500/20">
-                  <PhilippinePeso className="h-5 w-5 text-white" />
+                  <CircleDollarSign className="h-5 w-5 text-white" />
                 </div>
                 <div>
                   <h1 className="text-2xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 bg-clip-text text-transparent">
@@ -1564,7 +1638,7 @@ const MayorPending = () => {
                                       : "bg-gradient-to-r from-orange-600 to-orange-700 hover:from-orange-700 hover:to-orange-800 text-white"
                                   }`}
                                 >
-                                  <PhilippinePeso className="h-3.5 w-3.5 mr-1.5" />
+                                  <CircleDollarSign className="h-3.5 w-3.5 mr-1.5" />
                                   Release
                                 </Button>
                               </div>
@@ -2094,66 +2168,8 @@ const MayorPending = () => {
                 </div>
               </div>
 
-                            {/* ✅ LIVE FUEL BALANCE STATUS */}
-              {selectedTicket?.vehicle && (
-                <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-3 border border-slate-200 dark:border-slate-700">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <div className="p-1.5 rounded-lg bg-amber-500/10">
-                        <Fuel className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-                      </div>
-                      <div>
-                        <p className="text-xs font-semibold text-slate-800 dark:text-white">
-                          Live Fuel Status
-                        </p>
-                        <p className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">
-                          {selectedTicket.vehicle.plate_number}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-bold text-slate-800 dark:text-white">
-                        {selectedTicket.vehicle.current_fuel_balance?.toFixed(1) || "0.0"} L
-                      </p>
-                      <p className="text-[10px] text-slate-500">
-                        / {selectedTicket.vehicle.tank_capacity?.toFixed(0) || "60"} L
-                      </p>
-                    </div>
-                  </div>
-                  
-                  {/* Progress Bar */}
-                  <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2 overflow-hidden mb-2">
-                    <div
-                      className={cn(
-                        "h-2 rounded-full transition-all",
-                        (selectedTicket.vehicle.current_fuel_balance / selectedTicket.vehicle.tank_capacity) > 0.5
-                          ? "bg-emerald-500"
-                          : (selectedTicket.vehicle.current_fuel_balance / selectedTicket.vehicle.tank_capacity) > 0.25
-                          ? "bg-yellow-500"
-                          : "bg-red-500"
-                      )}
-                      style={{
-                        width: `${Math.min(
-                          100,
-                          Math.max(
-                            0,
-                            (selectedTicket.vehicle.current_fuel_balance / selectedTicket.vehicle.tank_capacity) * 100
-                          )
-                        )}%`,
-                      }}
-                    />
-                  </div>
-                  
-                  <div className="flex items-center justify-between text-[10px] text-slate-500">
-                    <span>
-                      Ref. Efficiency: {selectedTicket.vehicle.reference_efficiency || 10} km/L
-                    </span>
-                    <span className="text-amber-600 dark:text-amber-400 font-medium">
-                      Angelo's Algorithm
-                    </span>
-                  </div>
-                </div>
-              )}
+              {/* ✅ LIVE FUEL BALANCE STATUS (single, non-duplicated) */}
+              <LiveFuelStatusWidget vehicle={selectedTicket?.vehicle} />
 
               {/* ✅ FUEL PREDICTION SUGGESTION CARD */}
               {loadingSuggestion && (
@@ -2162,66 +2178,6 @@ const MayorPending = () => {
                   <span className="text-xs text-slate-500 dark:text-slate-400">
                     Analyzing trip history…
                   </span>
-                </div>
-              )}
-                            {/* ✅ LIVE FUEL BALANCE STATUS */}
-              {selectedTicket?.vehicle && (
-                <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-3 border border-slate-200 dark:border-slate-700">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <div className="p-1.5 rounded-lg bg-amber-500/10">
-                        <Fuel className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-                      </div>
-                      <div>
-                        <p className="text-xs font-semibold text-slate-800 dark:text-white">
-                          Live Fuel Status
-                        </p>
-                        <p className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">
-                          {selectedTicket.vehicle.plate_number}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-bold text-slate-800 dark:text-white">
-                        {selectedTicket.vehicle.current_fuel_balance?.toFixed(1) || "0.0"} L
-                      </p>
-                      <p className="text-[10px] text-slate-500">
-                        / {selectedTicket.vehicle.tank_capacity?.toFixed(0) || "60"} L
-                      </p>
-                    </div>
-                  </div>
-                  
-                  {/* Progress Bar */}
-                  <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2 overflow-hidden mb-2">
-                    <div
-                      className={cn(
-                        "h-2 rounded-full transition-all",
-                        (selectedTicket.vehicle.current_fuel_balance / selectedTicket.vehicle.tank_capacity) > 0.5
-                          ? "bg-emerald-500"
-                          : (selectedTicket.vehicle.current_fuel_balance / selectedTicket.vehicle.tank_capacity) > 0.25
-                          ? "bg-yellow-500"
-                          : "bg-red-500"
-                      )}
-                      style={{
-                        width: `${Math.min(
-                          100,
-                          Math.max(
-                            0,
-                            (selectedTicket.vehicle.current_fuel_balance / selectedTicket.vehicle.tank_capacity) * 100
-                          )
-                        )}%`,
-                      }}
-                    />
-                  </div>
-                  
-                  <div className="flex items-center justify-between text-[10px] text-slate-500">
-                    <span>
-                      Ref. Efficiency: {selectedTicket.vehicle.reference_efficiency || 10} km/L
-                    </span>
-                    <span className="text-amber-600 dark:text-amber-400 font-medium">
-                      Angelo's Algorithm
-                    </span>
-                  </div>
                 </div>
               )}
 
