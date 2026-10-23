@@ -192,7 +192,7 @@ return new class extends Migration
             $table->decimal('current_fuel_balance', 10, 2)->default(0.00);
             $table->decimal('last_odometer_reading', 10, 2)->nullable();
             $table->decimal('fuel_capacity', 10, 2)->default(60.00);
-            // ✅ Angelo's fuel algorithm
+           
             $table->decimal('tank_capacity', 8, 2)->default(60.00);
             $table->decimal('initial_estimated_fuel', 8, 2)->default(0.00);
             $table->decimal('reference_efficiency', 5, 2)->default(10.00);

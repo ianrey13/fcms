@@ -312,35 +312,30 @@ const ReleasedStatusBadge = ({ status }) => {
 // ============================================
 
 const LiveFuelStatusWidget = ({ vehicle }) => {
-  if (!vehicle) return null;
-
-  const currentFuel = parseFloat(vehicle.current_fuel_balance ?? 0) || 0;
-  const tankCapacity = parseFloat(vehicle.tank_capacity ?? 0) || 60;
-  const efficiency = parseFloat(vehicle.reference_efficiency ?? 0) || 10;
-
-  // If the backend didn't send fuel fields, show a friendly fallback instead of an empty bar
-  const hasFuelData =
-    vehicle.current_fuel_balance != null || vehicle.tank_capacity != null;
-
-  if (!hasFuelData) {
+  // 1. Fallback if no vehicle is assigned
+  if (!vehicle) {
     return (
       <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-3 border border-slate-200 dark:border-slate-700">
         <div className="flex items-center gap-2">
-          <div className="p-1.5 rounded-lg bg-amber-500/10">
-            <Fuel className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+          <div className="p-1.5 rounded-lg bg-slate-500/10">
+            <Truck className="h-4 w-4 text-slate-500 dark:text-slate-400" />
           </div>
           <div>
             <p className="text-xs font-semibold text-slate-800 dark:text-white">
               Live Fuel Status
             </p>
             <p className="text-[10px] text-slate-500 dark:text-slate-400">
-              Fuel tracking not configured for this vehicle
+              No vehicle assigned to this trip ticket
             </p>
           </div>
         </div>
       </div>
     );
   }
+
+  const currentFuel = parseFloat(vehicle.current_fuel_balance ?? 0) || 0;
+  const tankCapacity = parseFloat(vehicle.tank_capacity ?? 0) || 60;
+  const efficiency = parseFloat(vehicle.reference_efficiency ?? 0) || 10;
 
   const pct = tankCapacity > 0
     ? Math.min(100, Math.max(0, (currentFuel / tankCapacity) * 100))
@@ -384,9 +379,7 @@ const LiveFuelStatusWidget = ({ vehicle }) => {
 
       <div className="flex items-center justify-between text-[10px] text-slate-500">
         <span>Ref. Efficiency: {efficiency} km/L</span>
-        <span className="text-amber-600 dark:text-amber-400 font-medium">
-          Angelo's Algorithm
-        </span>
+      
       </div>
     </div>
   );
