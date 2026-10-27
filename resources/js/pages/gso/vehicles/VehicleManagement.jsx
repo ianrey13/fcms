@@ -45,7 +45,7 @@ import {
     Gauge,
     Calendar,
     AlertTriangle,
-    Eye,
+    Eye, // ✅ Imported for View button
     MoreHorizontal,
     Users,
     Clock,
@@ -728,7 +728,7 @@ const VehicleManagement = () => {
                                             <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
                                                 Fuel
                                             </th>
-                                            {/* ✅ NEW: Fuel Level column */}
+                                            {/* ✅ Fuel Level column */}
                                             <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
                                                 Fuel Level
                                             </th>
@@ -851,6 +851,23 @@ const VehicleManagement = () => {
                                                     </td>
                                                     <td className="px-4 py-3 text-right">
                                                         <div className="flex items-center justify-end gap-1">
+                                                            
+                                                            {/* ✅ NEW: View Details Button */}
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="sm"
+                                                                onClick={() =>
+                                                                    navigate(
+                                                                        `/admin/vehicles/details/${vehicle.vehicle_id}`,
+                                                                    )
+                                                                }
+                                                                className="text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:text-emerald-300 dark:hover:bg-emerald-950/30 h-9 w-9 p-0 rounded-lg transition-all duration-200 group-hover:scale-110"
+                                                                title="View Details"
+                                                            >
+                                                                <Eye className="h-4 w-4" />
+                                                            </Button>
+
+                                                            {/* Edit Button */}
                                                             <Button
                                                                 variant="ghost"
                                                                 size="sm"

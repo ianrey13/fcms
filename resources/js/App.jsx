@@ -47,6 +47,7 @@ const EditUser = lazy(() => import("./pages/gso/users/EditUser"));
 const VehicleManagement = lazy(() => import("./pages/gso/vehicles/VehicleManagement"));
 const AddVehicle = lazy(() => import("./pages/gso/vehicles/AddVehicle"));
 const EditVehicle = lazy(() => import("./pages/gso/vehicles/EditVehicle"));
+const VehicleDetails = lazy(() => import("./pages/gso/vehicles/VehicleDetails"));
 
 // ============ MAYOR PAGES ============
 const MayorDashboard = lazy(() => import("./pages/mayor/MayorDashboard"));
@@ -350,6 +351,16 @@ function App() {
                             <ProtectedRoute allowedRoles={["gso_office"]}>
                                 <Layout>
                                     <VehicleManagement />
+                                </Layout>
+                            </ProtectedRoute>
+                        }
+                    />
+                     <Route
+                        path="/admin/vehicles/details/:id"
+                        element={
+                            <ProtectedRoute allowedRoles={["gso_office"]}>
+                                <Layout>
+                                    <VehicleDetails />
                                 </Layout>
                             </ProtectedRoute>
                         }
