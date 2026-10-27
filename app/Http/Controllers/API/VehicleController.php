@@ -56,7 +56,7 @@ class VehicleController extends Controller
                     'status' => $vehicle->status,
                     'maintenance_flag' => $vehicle->maintenance_flag,
                     'current_fuel_balance' => $vehicle->current_fuel_balance,
-                    'fuel_capacity' => $vehicle->fuel_capacity,
+                    'fuel_capacity' => $vehicle->tank_capacity ?? $vehicle->fuel_capacity, // ✅ Use the new column
                     'fuel_percentage' => $vehicle->fuel_percentage,
                     'fuel_status' => $vehicle->fuel_status,
                     'is_available' => $availability['is_available'],
@@ -84,8 +84,8 @@ class VehicleController extends Controller
         }
     }
 
-  
-       /**
+
+    /**
      * Store a newly created Vehicle.
      */
     public function store(Request $request)
@@ -147,7 +147,6 @@ class VehicleController extends Controller
                 'message' => 'Vehicle created successfully',
                 'data'    => $vehicle->load('department')
             ], 201);
-
         } catch (\Exception $e) {
             Log::error('Vehicle store error: ' . $e->getMessage());
             return response()->json([
