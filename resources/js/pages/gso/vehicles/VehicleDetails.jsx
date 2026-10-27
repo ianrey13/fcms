@@ -9,7 +9,7 @@ import 'leaflet/dist/leaflet.css';
 import { cn } from '@/lib/utils';
 import {
     ArrowLeft, Car, Fuel, Gauge, MapPin, Clock, User, 
-    Building2, Activity, Navigation, Play, Square, Loader2, TrendingUp, TrendingDown
+    Building2, Activity, Navigation, Play, Square, Loader2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -90,7 +90,9 @@ const VehicleDetails = () => {
         const now = new Date();
         const ranges = { '7d': 7, '30d': 30, '3m': 90 };
         const daysToLookBack = ranges[chartRange];
-        const cutoffDate = new Date(now.setDate(now.getDate() - daysToLookBack));
+        
+        const cutoffDate = new Date();
+        cutoffDate.setDate(cutoffDate.getDate() - daysToLookBack);
 
         let relevantReceipts = sorted.filter(r => new Date(r.uploaded_at) >= cutoffDate);
 
@@ -102,14 +104,17 @@ const VehicleDetails = () => {
         // Group by Date (YYYY-MM-DD)
         const grouped = {};
         relevantReceipts.forEach(r => {
-            const dateStr = new Date(r.uploaded_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            const dateObj = new Date(r.uploaded_at);
+            const dateStr = dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            
             if (!grouped[dateStr]) grouped[dateStr] = 0;
-            grouped[dateStr] += parseFloat(r.liters);
+            grouped[dateStr] += parseFloat(r.liters || 0);
         });
 
         const labels = Object.keys(grouped);
         const values = Object.values(grouped);
-        const max = Math.max(...values, 10) * 1.2; // Add 20% headroom for the chart
+        // Add 20% headroom for the chart
+        const max = Math.max(...values, 5) * 1.2; 
 
         return { labels, values, max };
     }, [fuelReceipts, chartRange]);
@@ -191,10 +196,14 @@ const VehicleDetails = () => {
     const tankCap = parseFloat(vehicle.tank_capacity || 60);
     const refEff = parseFloat(vehicle.reference_efficiency || 10);
 
-    // Helper to generate SVG path
+    // ✅ SAFE SVG Path Generator
     const generatePath = (data, width, height, max) => {
-        if (data.length === 0) return '';
-        if (data.length === 1) return `M ${width/2} ${height - (data[0]/max)*height}`;
+        if (!data || data.length === 0) return '';
+        // Handle Single Point (avoids NaN error)
+        if (data.length === 1) {
+            const y = height - (data[0] / max) * height;
+            return `M ${width/2} ${y}`;
+        }
         
         const xStep = width / (data.length - 1);
         return data.map((val, i) => {
@@ -339,12 +348,14 @@ const VehicleDetails = () => {
                                         <line x1="0" y1="150" x2="700" y2="150" stroke="#e2e8f0" strokeWidth="1" strokeDasharray="4"/>
                                         <line x1="0" y1="200" x2="700" y2="200" stroke="#cbd5e1" strokeWidth="1" />
 
+                                        {/* Chart Area Fill */}
                                         <path 
-                                            d={`${generatePath(chartData.values, 700, 200, chartData.max)} L 700 200 L 0 200 Z`} 
+                                            d={`${generatePath(chartData.values, 700, 200, chartData.max)} L ${chartData.values.length === 1 ? 350 : 700} 200 L 0 200 Z`} 
                                             fill="url(#gradient)" 
                                             opacity="0.2" 
                                         />
                                         
+                                        {/* Chart Line */}
                                         <path 
                                             d={generatePath(chartData.values, 700, 200, chartData.max)} 
                                             fill="none" 
@@ -354,6 +365,7 @@ const VehicleDetails = () => {
                                             strokeLinejoin="round" 
                                         />
 
+                                        {/* Data Points */}
                                         {chartData.values.map((val, i) => {
                                             const x = chartData.values.length === 1 ? 350 : (i / (chartData.values.length - 1)) * 700;
                                             const y = 200 - (val / chartData.max) * 200;
