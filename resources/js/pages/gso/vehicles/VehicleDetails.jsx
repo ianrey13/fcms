@@ -68,19 +68,20 @@ const VehicleDetails = () => {
         };
     }, []);
 
-    // ✅ Fetch Active Trips to find the current driver
-    const { data: activeTrips = [] } = useQuery({
-        queryKey: ['gps-active-trips'],
+    // ✅ Fetch Trip History FIRST (Used for Driver Name AND History tab)
+    const { data: historyData = [], isLoading: historyLoading } = useQuery({
+        queryKey: ['vehicle-history', id],
         queryFn: async () => {
-            const res = await gpsAPI.getActiveTrips();
-            return res?.data?.data || [];
+            const res = await gpsAPI.getCompletedTrips({ limit: 50 });
+            const trips = res?.data?.data || [];
+            return trips.filter(t => t.plate_number === vehicle?.plate_number);
         },
-        refetchInterval: 30000,
+        enabled: !!vehicle
     });
 
-    // Find the active trip for this specific vehicle to get the driver
-    const activeTrip = activeTrips.find(t => t.vehicle?.plate_number === vehicle?.plate_number);
-    const assignedDriver = activeTrip?.driver?.name || "Unassigned";
+    // ✅ Driver Name Fallback Logic
+    const lastTrip = historyData?.[0]; 
+    const assignedDriver = lastTrip?.driver_name || "Unassigned";
 
     // Fetch Fuel Receipts
     const { data: fuelReceipts = [], isLoading: fuelLoading } = useQuery({
@@ -89,17 +90,6 @@ const VehicleDetails = () => {
             const res = await gsoAPI.getFuelReceipts();
             const allReceipts = res?.data?.data || [];
             return allReceipts.filter(r => r.plate_number === vehicle?.plate_number);
-        },
-        enabled: !!vehicle
-    });
-
-    // Fetch Trip History
-    const { data: historyData = [], isLoading: historyLoading } = useQuery({
-        queryKey: ['vehicle-history', id],
-        queryFn: async () => {
-            const res = await gpsAPI.getCompletedTrips({ limit: 50 });
-            const trips = res?.data?.data || [];
-            return trips.filter(t => t.plate_number === vehicle?.plate_number);
         },
         enabled: !!vehicle
     });
@@ -344,7 +334,7 @@ const VehicleDetails = () => {
                 </div>
             )}
 
-            {/* TAB CONTENT: FUEL */}
+            {/* ✅ TAB CONTENT: FUEL (DESCRIPTION REMOVED) */}
             {activeTab === 'fuel' && (
                 <div className="space-y-6">
                     <Card className="dark:bg-slate-900 border-slate-200 dark:border-slate-800 p-6">
@@ -353,7 +343,6 @@ const VehicleDetails = () => {
                                 <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
                                     <Activity className="h-5 w-5 text-blue-500"/> Fuel Balance History
                                 </h3>
-                                <p className="text-xs text-slate-500">Tank level based on Angelo's Algorithm (Receipts vs Trips)</p>
                             </div>
                             <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
                                 <button onClick={() => setChartRange('7d')} className={cn("px-3 py-1 text-xs font-medium rounded-md transition-colors", chartRange === '7d' ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" : "text-slate-500")}>7 Days</button>
@@ -443,6 +432,7 @@ const VehicleDetails = () => {
                         )}
                     </Card>
 
+                    {/* Stat Cards */}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <Card className="dark:bg-slate-900 border-slate-200 dark:border-slate-800 p-4 flex items-center justify-between">
                             <div className="flex items-center gap-3">
