@@ -9,7 +9,8 @@ import 'leaflet/dist/leaflet.css';
 import { cn } from '@/lib/utils';
 import {
     ArrowLeft, Car, Fuel, Gauge, MapPin, Clock, User, 
-    Building2, Activity, Navigation, Play, Square, Loader2
+    Building2, Activity, Navigation, Play, Square, Loader2,
+    ArrowDownRight, ArrowUpRight, List
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -49,6 +50,7 @@ const VehicleDetails = () => {
     const navigate = useNavigate();
     const [activeTab, setActiveTab] = useState('overview');
     const [chartRange, setChartRange] = useState('7d');
+    const [fuelViewMode, setFuelViewMode] = useState('chart'); // 'chart' or 'table'
     
     const { data: vehicles = [], isLoading } = useVehicles();
     const vehicle = vehicles.find(v => v.vehicle_id === parseInt(id));
@@ -68,7 +70,7 @@ const VehicleDetails = () => {
         };
     }, []);
 
-    // ✅ Fetch Trip History FIRST (Used for Driver Name AND History tab)
+    // Fetch Trip History
     const { data: historyData = [], isLoading: historyLoading } = useQuery({
         queryKey: ['vehicle-history', id],
         queryFn: async () => {
@@ -79,9 +81,7 @@ const VehicleDetails = () => {
         enabled: !!vehicle
     });
 
-    // ✅ Driver Name Fallback Logic
-    const lastTrip = historyData?.[0]; 
-    const assignedDriver = lastTrip?.driver_name || "Unassigned";
+    const assignedDriver = historyData?.[0]?.driver_name || "Unassigned";
 
     // Fetch Fuel Receipts
     const { data: fuelReceipts = [], isLoading: fuelLoading } = useQuery({
@@ -94,9 +94,9 @@ const VehicleDetails = () => {
         enabled: !!vehicle
     });
 
-    // Calculate Historical Fuel Balance
-    const chartData = useMemo(() => {
-        if (!vehicle) return { labels: [], values: [], max: 60 };
+    // ✅ Calculate Historical Fuel Balance AND Build Table Ledger
+    const { chartData, tableData } = useMemo(() => {
+        if (!vehicle) return { chartData: { labels: [], values: [], max: 60 }, tableData: [] };
         
         const tankCap = parseFloat(vehicle.tank_capacity || 60);
         const eff = parseFloat(vehicle.reference_efficiency || 10);
@@ -104,58 +104,66 @@ const VehicleDetails = () => {
 
         let events = [];
 
+        // Add Receipts
         fuelReceipts.forEach(r => {
             events.push({
                 date: new Date(r.uploaded_at),
-                type: 'purchase',
-                value: parseFloat(r.liters || 0)
+                type: 'Refuel',
+                description: `Receipt ${r.ticket_number || ''}`,
+                fuelChange: parseFloat(r.liters || 0), // Positive
+                distance: 0
             });
         });
 
+        // Add Trips
         historyData.forEach(t => {
+            const dist = parseFloat(t.actual_distance_km || 0);
             events.push({
                 date: new Date(t.updated_at || t.trip_date),
-                type: 'trip',
-                value: parseFloat(t.actual_distance_km || 0) / eff
+                type: 'Trip',
+                description: `${t.ticket_number} (${t.destination})`,
+                fuelChange: -(dist / eff), // Negative
+                distance: dist
             });
         });
 
-        events.sort((a, b) => b.date - a.date);
+        // Sort Chronologically (Oldest to Newest for the Table)
+        events.sort((a, b) => a.date - b.date);
 
-        const now = new Date();
+        // Build the Ledger for the Table
+        let runningBal = parseFloat(vehicle.initial_estimated_fuel || 0);
+        const ledger = events.map(e => {
+            runningBal += e.fuelChange;
+            runningBal = Math.min(Math.max(runningBal, 0), tankCap); // Clamp
+            return {
+                ...e,
+                balance: runningBal
+            };
+        });
+
+        // Filter based on range for the Chart
         const ranges = { '7d': 7, '30d': 30, '3m': 90 };
         const cutoff = new Date();
         cutoff.setDate(cutoff.getDate() - ranges[chartRange]);
 
-        let runningBalance = currentBal;
-        let historyPoints = [];
-
-        for (let event of events) {
-            if (event.date < cutoff) break;
-
-            historyPoints.push({
-                date: event.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-                balance: Math.min(Math.max(runningBalance, 0), tankCap)
-            });
-
-            if (event.type === 'purchase') {
-                runningBalance -= event.value;
-            } else if (event.type === 'trip') {
-                runningBalance += event.value;
-            }
+        let chartPoints = ledger.filter(e => e.date >= cutoff);
+        
+        // If no events in range, just use the last few
+        if (chartPoints.length === 0) {
+            chartPoints = ledger.slice(-7);
         }
 
-        historyPoints.reverse();
-        
         let grouped = {};
-        historyPoints.forEach(p => {
-            grouped[p.date] = p.balance;
+        chartPoints.forEach(e => {
+            const dateStr = e.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            grouped[dateStr] = e.balance;
         });
 
-        const labels = Object.keys(grouped);
-        const values = Object.values(grouped);
-
-        return { labels, values, max: tankCap };
+        return { 
+            chartData: { labels: Object.keys(grouped), values: Object.values(grouped), max: tankCap },
+            // Show the latest events first in the table
+            tableData: [...ledger].reverse()
+        };
     }, [vehicle, fuelReceipts, historyData, chartRange]);
 
     const handleViewRoute = async (trip) => {
@@ -262,7 +270,6 @@ const VehicleDetails = () => {
                                 <User className="h-8 w-8 p-1.5 bg-slate-100 dark:bg-slate-800 text-slate-500 rounded-full" />
                                 <div>
                                     <p className="text-xs text-slate-400 uppercase tracking-wider">Assigned Driver</p>
-                                    {/* ✅ Dynamic Driver Name */}
                                     <p className="font-medium text-slate-800 dark:text-slate-200">{assignedDriver}</p>
                                 </div>
                             </div>
@@ -334,7 +341,7 @@ const VehicleDetails = () => {
                 </div>
             )}
 
-            {/* ✅ TAB CONTENT: FUEL (DESCRIPTION REMOVED) */}
+            {/* ✅ TAB CONTENT: FUEL (CHART + TABLE TOGGLE) */}
             {activeTab === 'fuel' && (
                 <div className="space-y-6">
                     <Card className="dark:bg-slate-900 border-slate-200 dark:border-slate-800 p-6">
@@ -344,90 +351,141 @@ const VehicleDetails = () => {
                                     <Activity className="h-5 w-5 text-blue-500"/> Fuel Balance History
                                 </h3>
                             </div>
-                            <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
-                                <button onClick={() => setChartRange('7d')} className={cn("px-3 py-1 text-xs font-medium rounded-md transition-colors", chartRange === '7d' ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" : "text-slate-500")}>7 Days</button>
-                                <button onClick={() => setChartRange('30d')} className={cn("px-3 py-1 text-xs font-medium rounded-md transition-colors", chartRange === '30d' ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" : "text-slate-500")}>30 Days</button>
-                                <button onClick={() => setChartRange('3m')} className={cn("px-3 py-1 text-xs font-medium rounded-md transition-colors", chartRange === '3m' ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" : "text-slate-500")}>3 Months</button>
+                            <div className="flex items-center gap-3">
+                                {/* View Mode Toggle */}
+                                <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
+                                    <button onClick={() => setFuelViewMode('chart')} className={cn("px-3 py-1 text-xs font-medium rounded-md transition-colors", fuelViewMode === 'chart' ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" : "text-slate-500")}>Chart</button>
+                                    <button onClick={() => setFuelViewMode('table')} className={cn("px-3 py-1 text-xs font-medium rounded-md transition-colors", fuelViewMode === 'table' ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" : "text-slate-500")}>Table</button>
+                                </div>
+                                {/* Range Toggle */}
+                                <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
+                                    <button onClick={() => setChartRange('7d')} className={cn("px-3 py-1 text-xs font-medium rounded-md transition-colors", chartRange === '7d' ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" : "text-slate-500")}>7 Days</button>
+                                    <button onClick={() => setChartRange('30d')} className={cn("px-3 py-1 text-xs font-medium rounded-md transition-colors", chartRange === '30d' ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" : "text-slate-500")}>30 Days</button>
+                                    <button onClick={() => setChartRange('3m')} className={cn("px-3 py-1 text-xs font-medium rounded-md transition-colors", chartRange === '3m' ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" : "text-slate-500")}>3 Months</button>
+                                </div>
                             </div>
                         </div>
 
                         {fuelLoading || historyLoading ? (
                             <div className="h-64 flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-blue-500" /></div>
-                        ) : chartData.values.length === 0 ? (
-                            <div className="h-64 flex flex-col items-center justify-center text-slate-400">
-                                <Fuel className="h-10 w-10 mb-2 opacity-50" />
-                                <p>No fuel or trip history found for this range.</p>
-                            </div>
+                        ) : fuelViewMode === 'chart' ? (
+                            // CHART VIEW
+                            chartData.values.length === 0 ? (
+                                <div className="h-64 flex flex-col items-center justify-center text-slate-400">
+                                    <Fuel className="h-10 w-10 mb-2 opacity-50" />
+                                    <p>No fuel or trip history found for this range.</p>
+                                </div>
+                            ) : (
+                                <div className="flex">
+                                    <div className="flex flex-col justify-between text-[10px] text-slate-400 h-64 pr-2 py-1 font-mono text-right">
+                                        <span>{Math.round(chartData.max).toFixed(0)}L</span>
+                                        <span>{Math.round(chartData.max * 0.75).toFixed(0)}L</span>
+                                        <span>{Math.round(chartData.max * 0.5).toFixed(0)}L</span>
+                                        <span>{Math.round(chartData.max * 0.25).toFixed(0)}L</span>
+                                        <span>0L</span>
+                                    </div>
+
+                                    <div className="flex-1 relative">
+                                        <div className="h-64 w-full">
+                                            <svg viewBox="0 0 700 200" className="w-full h-full overflow-visible preserve-3d">
+                                                <line x1="0" y1="50" x2="700" y2="50" stroke="#e2e8f0" strokeWidth="1" strokeDasharray="4"/>
+                                                <line x1="0" y1="100" x2="700" y2="100" stroke="#e2e8f0" strokeWidth="1" strokeDasharray="4"/>
+                                                <line x1="0" y1="150" x2="700" y2="150" stroke="#e2e8f0" strokeWidth="1" strokeDasharray="4"/>
+                                                <line x1="0" y1="200" x2="700" y2="200" stroke="#cbd5e1" strokeWidth="1" />
+
+                                                <path 
+                                                    d={`${generatePath(chartData.values, 700, 200, chartData.max)} L ${chartData.values.length === 1 ? 350 : 700} 200 L 0 200 Z`} 
+                                                    fill="url(#gradient)" 
+                                                    opacity="0.2" 
+                                                />
+                                                
+                                                <path 
+                                                    d={generatePath(chartData.values, 700, 200, chartData.max)} 
+                                                    fill="none" 
+                                                    stroke="#3b82f6" 
+                                                    strokeWidth="3" 
+                                                    strokeLinecap="round" 
+                                                    strokeLinejoin="round" 
+                                                />
+
+                                                {chartData.values.map((val, i) => {
+                                                    const x = chartData.values.length === 1 ? 350 : (i / (chartData.values.length - 1)) * 700;
+                                                    const y = 200 - (val / chartData.max) * 200;
+                                                    return (
+                                                        <g 
+                                                            key={i} 
+                                                            onMouseEnter={() => setHoveredPoint({ x, y, label: chartData.labels[i], value: val })}
+                                                            onMouseLeave={() => setHoveredPoint(null)}
+                                                            className="cursor-pointer"
+                                                        >
+                                                            <circle cx={x} cy={y} r="6" fill="transparent" />
+                                                            <circle cx={x} cy={y} r="4" fill="white" stroke="#3b82f6" strokeWidth="2" />
+                                                            
+                                                            {hoveredPoint?.label === chartData.labels[i] && (
+                                                                <foreignObject x={Math.min(Math.max(x - 40, 0), 620)} y={y - 35} width="100" height="30">
+                                                                    <div className="bg-slate-800 text-white text-[10px] font-semibold px-2 py-1 rounded shadow-md text-center">
+                                                                        {val.toFixed(1)} L
+                                                                    </div>
+                                                                </foreignObject>
+                                                            )}
+                                                        </g>
+                                                    );
+                                                })}
+
+                                                <defs>
+                                                    <linearGradient id="gradient" x1="0" y1="0" x2="0" y2="1">
+                                                        <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.8"/>
+                                                        <stop offset="100%" stopColor="#3b82f6" stopOpacity="0"/>
+                                                    </linearGradient>
+                                                </defs>
+                                            </svg>
+                                        </div>
+
+                                        <div className="flex justify-between text-xs text-slate-400 px-2 font-medium mt-1">
+                                            {chartData.labels.map((label, i) => <span key={i}>{label}</span>)}
+                                        </div>
+                                    </div>
+                                </div>
+                            )
                         ) : (
-                            <div className="flex">
-                                <div className="flex flex-col justify-between text-[10px] text-slate-400 h-64 pr-2 py-1 font-mono text-right">
-                                    <span>{Math.round(chartData.max).toFixed(0)}L</span>
-                                    <span>{Math.round(chartData.max * 0.75).toFixed(0)}L</span>
-                                    <span>{Math.round(chartData.max * 0.5).toFixed(0)}L</span>
-                                    <span>{Math.round(chartData.max * 0.25).toFixed(0)}L</span>
-                                    <span>0L</span>
-                                </div>
-
-                                <div className="flex-1 relative">
-                                    <div className="h-64 w-full">
-                                        <svg viewBox="0 0 700 200" className="w-full h-full overflow-visible preserve-3d">
-                                            <line x1="0" y1="50" x2="700" y2="50" stroke="#e2e8f0" strokeWidth="1" strokeDasharray="4"/>
-                                            <line x1="0" y1="100" x2="700" y2="100" stroke="#e2e8f0" strokeWidth="1" strokeDasharray="4"/>
-                                            <line x1="0" y1="150" x2="700" y2="150" stroke="#e2e8f0" strokeWidth="1" strokeDasharray="4"/>
-                                            <line x1="0" y1="200" x2="700" y2="200" stroke="#cbd5e1" strokeWidth="1" />
-
-                                            <path 
-                                                d={`${generatePath(chartData.values, 700, 200, chartData.max)} L ${chartData.values.length === 1 ? 350 : 700} 200 L 0 200 Z`} 
-                                                fill="url(#gradient)" 
-                                                opacity="0.2" 
-                                            />
-                                            
-                                            <path 
-                                                d={generatePath(chartData.values, 700, 200, chartData.max)} 
-                                                fill="none" 
-                                                stroke="#3b82f6" 
-                                                strokeWidth="3" 
-                                                strokeLinecap="round" 
-                                                strokeLinejoin="round" 
-                                            />
-
-                                            {chartData.values.map((val, i) => {
-                                                const x = chartData.values.length === 1 ? 350 : (i / (chartData.values.length - 1)) * 700;
-                                                const y = 200 - (val / chartData.max) * 200;
-                                                return (
-                                                    <g 
-                                                        key={i} 
-                                                        onMouseEnter={() => setHoveredPoint({ x, y, label: chartData.labels[i], value: val })}
-                                                        onMouseLeave={() => setHoveredPoint(null)}
-                                                        className="cursor-pointer"
-                                                    >
-                                                        <circle cx={x} cy={y} r="6" fill="transparent" />
-                                                        <circle cx={x} cy={y} r="4" fill="white" stroke="#3b82f6" strokeWidth="2" />
-                                                        
-                                                        {hoveredPoint?.label === chartData.labels[i] && (
-                                                            <foreignObject x={Math.min(Math.max(x - 40, 0), 620)} y={y - 35} width="100" height="30">
-                                                                <div className="bg-slate-800 text-white text-[10px] font-semibold px-2 py-1 rounded shadow-md text-center">
-                                                                    {val.toFixed(1)} L
-                                                                </div>
-                                                            </foreignObject>
-                                                        )}
-                                                    </g>
-                                                );
-                                            })}
-
-                                            <defs>
-                                                <linearGradient id="gradient" x1="0" y1="0" x2="0" y2="1">
-                                                    <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.8"/>
-                                                    <stop offset="100%" stopColor="#3b82f6" stopOpacity="0"/>
-                                                </linearGradient>
-                                            </defs>
-                                        </svg>
-                                    </div>
-
-                                    <div className="flex justify-between text-xs text-slate-400 px-2 font-medium mt-1">
-                                        {chartData.labels.map((label, i) => <span key={i}>{label}</span>)}
-                                    </div>
-                                </div>
+                            // TABLE VIEW
+                            <div className="overflow-x-auto border border-slate-200 dark:border-slate-800 rounded-xl">
+                                <table className="w-full text-sm text-left">
+                                    <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-800">
+                                        <tr>
+                                            <th className="px-4 py-3 font-semibold">Date</th>
+                                            <th className="px-4 py-3 font-semibold">Event</th>
+                                            <th className="px-4 py-3 font-semibold">Reference</th>
+                                            <th className="px-4 py-3 font-semibold text-right">Distance</th>
+                                            <th className="px-4 py-3 font-semibold text-right">Fuel +/-</th>
+                                            <th className="px-4 py-3 font-semibold text-right">Balance</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300">
+                                        {tableData.map((row, i) => (
+                                            <tr key={i} className="hover:bg-slate-50 dark:hover:bg-slate-800/30">
+                                                <td className="px-4 py-3 whitespace-nowrap">
+                                                    {row.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    {row.type === 'Refuel' ? (
+                                                        <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-100 border-none shadow-none"><Fuel className="h-3 w-3 mr-1"/> Refuel</Badge>
+                                                    ) : (
+                                                        <Badge className="bg-orange-100 text-orange-700 hover:bg-orange-100 border-none shadow-none"><Navigation className="h-3 w-3 mr-1"/> Trip</Badge>
+                                                    )}
+                                                </td>
+                                                <td className="px-4 py-3 font-medium">{row.description}</td>
+                                                <td className="px-4 py-3 text-right">{row.distance > 0 ? `${row.distance.toFixed(1)} km` : '-'}</td>
+                                                <td className={cn("px-4 py-3 text-right font-semibold", row.fuelChange > 0 ? "text-emerald-500" : "text-red-500")}>
+                                                    {row.fuelChange > 0 ? '+' : ''}{row.fuelChange.toFixed(1)} L
+                                                </td>
+                                                <td className="px-4 py-3 text-right font-bold text-slate-900 dark:text-white">
+                                                    {row.balance.toFixed(1)} L
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
                             </div>
                         )}
                     </Card>
