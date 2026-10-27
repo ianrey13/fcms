@@ -68,6 +68,20 @@ const VehicleDetails = () => {
         };
     }, []);
 
+    // ✅ Fetch Active Trips to find the current driver
+    const { data: activeTrips = [] } = useQuery({
+        queryKey: ['gps-active-trips'],
+        queryFn: async () => {
+            const res = await gpsAPI.getActiveTrips();
+            return res?.data?.data || [];
+        },
+        refetchInterval: 30000,
+    });
+
+    // Find the active trip for this specific vehicle to get the driver
+    const activeTrip = activeTrips.find(t => t.vehicle?.plate_number === vehicle?.plate_number);
+    const assignedDriver = activeTrip?.driver?.name || "Unassigned";
+
     // Fetch Fuel Receipts
     const { data: fuelReceipts = [], isLoading: fuelLoading } = useQuery({
         queryKey: ['vehicle-fuel-receipts', vehicle?.plate_number],
@@ -79,7 +93,7 @@ const VehicleDetails = () => {
         enabled: !!vehicle
     });
 
-    // Fetch Trip History (Used for both the History tab and the Fuel Chart)
+    // Fetch Trip History
     const { data: historyData = [], isLoading: historyLoading } = useQuery({
         queryKey: ['vehicle-history', id],
         queryFn: async () => {
@@ -90,7 +104,7 @@ const VehicleDetails = () => {
         enabled: !!vehicle
     });
 
-    // ✅ Calculate Historical Fuel Balance
+    // Calculate Historical Fuel Balance
     const chartData = useMemo(() => {
         if (!vehicle) return { labels: [], values: [], max: 60 };
         
@@ -98,7 +112,6 @@ const VehicleDetails = () => {
         const eff = parseFloat(vehicle.reference_efficiency || 10);
         const currentBal = parseFloat(vehicle.current_fuel_balance || 0);
 
-        // 1. Create a timeline of all events (receipts + trips)
         let events = [];
 
         fuelReceipts.forEach(r => {
@@ -111,44 +124,38 @@ const VehicleDetails = () => {
 
         historyData.forEach(t => {
             events.push({
-                date: new Date(t.updated_at || t.trip_date), // fallback to trip_date if no updated_at
+                date: new Date(t.updated_at || t.trip_date),
                 type: 'trip',
                 value: parseFloat(t.actual_distance_km || 0) / eff
             });
         });
 
-        // 2. Sort newest to oldest (Reverse chronological)
         events.sort((a, b) => b.date - a.date);
 
-        // 3. Filter by range
         const now = new Date();
         const ranges = { '7d': 7, '30d': 30, '3m': 90 };
         const cutoff = new Date();
         cutoff.setDate(cutoff.getDate() - ranges[chartRange]);
 
-        // 4. Reverse Engineer Balance (Newest -> Oldest)
         let runningBalance = currentBal;
         let historyPoints = [];
 
         for (let event of events) {
             if (event.date < cutoff) break;
 
-            // Record the balance at this point in time
             historyPoints.push({
                 date: event.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
                 balance: Math.min(Math.max(runningBalance, 0), tankCap)
             });
 
-            // Reverse the math to find the previous balance
             if (event.type === 'purchase') {
-                runningBalance -= event.value; // Un-do the purchase
+                runningBalance -= event.value;
             } else if (event.type === 'trip') {
-                runningBalance += event.value; // Un-do the trip (add back consumed liters)
+                runningBalance += event.value;
             }
         }
 
-        // 5. Group by day (take the last balance of the day)
-        historyPoints.reverse(); // Put back in chronological order
+        historyPoints.reverse();
         
         let grouped = {};
         historyPoints.forEach(p => {
@@ -263,11 +270,18 @@ const VehicleDetails = () => {
                         <div className="grid grid-cols-2 gap-4 mt-2 border-t border-slate-100 dark:border-slate-800 pt-4">
                             <div className="flex items-center gap-2">
                                 <User className="h-8 w-8 p-1.5 bg-slate-100 dark:bg-slate-800 text-slate-500 rounded-full" />
-                                <div><p className="text-xs text-slate-400 uppercase tracking-wider">Assigned Driver</p><p className="font-medium text-slate-800 dark:text-slate-200">Juan Dela Cruz</p></div>
+                                <div>
+                                    <p className="text-xs text-slate-400 uppercase tracking-wider">Assigned Driver</p>
+                                    {/* ✅ Dynamic Driver Name */}
+                                    <p className="font-medium text-slate-800 dark:text-slate-200">{assignedDriver}</p>
+                                </div>
                             </div>
                             <div className="flex items-center gap-2">
                                 <Building2 className="h-8 w-8 p-1.5 bg-slate-100 dark:bg-slate-800 text-slate-500 rounded-full" />
-                                <div><p className="text-xs text-slate-400 uppercase tracking-wider">Department</p><p className="font-medium text-slate-800 dark:text-slate-200">{vehicle.department?.department_name || 'Engineering Office'}</p></div>
+                                <div>
+                                    <p className="text-xs text-slate-400 uppercase tracking-wider">Department</p>
+                                    <p className="font-medium text-slate-800 dark:text-slate-200">{vehicle.department?.department_name || 'Engineering Office'}</p>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -330,7 +344,7 @@ const VehicleDetails = () => {
                 </div>
             )}
 
-            {/* ✅ TAB CONTENT: FUEL (HISTORICAL BALANCE) */}
+            {/* TAB CONTENT: FUEL */}
             {activeTab === 'fuel' && (
                 <div className="space-y-6">
                     <Card className="dark:bg-slate-900 border-slate-200 dark:border-slate-800 p-6">
@@ -429,7 +443,6 @@ const VehicleDetails = () => {
                         )}
                     </Card>
 
-                    {/* Stat Cards */}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <Card className="dark:bg-slate-900 border-slate-200 dark:border-slate-800 p-4 flex items-center justify-between">
                             <div className="flex items-center gap-3">
