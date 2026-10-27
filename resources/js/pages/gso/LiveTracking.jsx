@@ -53,9 +53,15 @@ import {
     X,
     Play,
     Square,
+    Route,
+    Calendar,
+    Search,
+    Filter,
+    ArrowRight
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
 import { toast } from 'react-hot-toast';
 
 // ============================================
@@ -83,7 +89,7 @@ L.Icon.Default.mergeOptions({
 });
 
 // ============================================
-// VEHICLE ICON WITH PLATE LABEL & MODEL
+// VEHICLE ICON
 // ============================================
 const createVehicleIcon = (status, isSelected, isOnline = true, isFocused = false, plateNumber = '', vehicleModel = '') => {
     const colors = {
@@ -104,131 +110,13 @@ const createVehicleIcon = (status, isSelected, isOnline = true, isFocused = fals
     return L.divIcon({
         className: 'custom-vehicle-icon',
         html: `
-            <div style="
-                position: relative;
-                width: ${size + 12}px;
-                height: ${size + 12 + 35}px;
-                cursor: pointer;
-                transition: all 0.3s ease;
-            ">
-                ${plateNumber ? `
-                    <div style="
-                        position: absolute;
-                        top: 0;
-                        left: 50%;
-                        transform: translateX(-50%);
-                        background: ${labelBg};
-                        color: white;
-                        padding: 2px 8px;
-                        border-radius: 6px;
-                        font-size: ${isFocused ? '11px' : '10px'};
-                        font-weight: 700;
-                        font-family: 'Courier New', monospace;
-                        letter-spacing: 0.5px;
-                        white-space: nowrap;
-                        box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-                        border: 1.5px solid white;
-                        z-index: 10;
-                        ${isFocused ? 'animation: label-glow 1.5s ease-in-out infinite;' : ''}
-                    ">
-                        ${plateNumber}
-                        <div style="
-                            position: absolute;
-                            bottom: -4px;
-                            left: 50%;
-                            transform: translateX(-50%);
-                            width: 0;
-                            height: 0;
-                            border-left: 4px solid transparent;
-                            border-right: 4px solid transparent;
-                            border-top: 4px solid ${labelBg};
-                        "></div>
-                    </div>
-                ` : ''}
-                
-                ${isFocused ? `
-                    <div style="
-                        position: absolute;
-                        top: 22px;
-                        left: 50%;
-                        transform: translateX(-50%);
-                        width: ${size + 24}px;
-                        height: ${size + 24}px;
-                        margin-left: -${(size + 24) / 2}px;
-                        border-radius: 50%;
-                        background: rgba(59, 130, 246, 0.15);
-                        border: 3px solid rgba(59, 130, 246, 0.5);
-                        animation: pulse-ring 1.5s ease-out infinite;
-                        box-shadow: 0 0 40px rgba(59, 130, 246, 0.3);
-                    "></div>
-                ` : isSelected ? `
-                    <div style="
-                        position: absolute;
-                        top: 26px;
-                        left: 50%;
-                        transform: translateX(-50%);
-                        width: ${size + 16}px;
-                        height: ${size + 16}px;
-                        margin-left: -${(size + 16) / 2}px;
-                        border-radius: 50%;
-                        background: rgba(59, 130, 246, 0.15);
-                        border: 2px solid rgba(59, 130, 246, 0.3);
-                        animation: pulse-ring 2s ease-out infinite;
-                    "></div>
-                ` : ''}
-                
-                <div style="
-                    position: absolute;
-                    top: 22px;
-                    left: 50%;
-                    transform: translateX(-50%) ${isFocused ? 'scale(1.15)' : isSelected ? 'scale(1.08)' : 'scale(1)'};
-                    width: ${size}px;
-                    height: ${size}px;
-                    background: ${color};
-                    border-radius: 12px;
-                    border: ${isFocused ? '3px solid #3b82f6' : '2px solid white'};
-                    box-shadow: ${isFocused 
-                        ? '0 4px 24px rgba(59,130,246,0.6), 0 0 60px rgba(59,130,246,0.15)' 
-                        : '0 4px 12px rgba(0,0,0,0.25)'};
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    color: white;
-                    z-index: 1;
-                    transition: all 0.3s ease;
-                    ${!isOnline ? 'opacity: 0.5;' : ''}
-                ">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="${size * 0.55}" height="${size * 0.55}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/>
-                        <circle cx="7" cy="17" r="2"/>
-                        <path d="M9 17h6"/>
-                        <circle cx="17" cy="17" r="2"/>
-                    </svg>
+            <div style="position: relative; width: ${size + 12}px; height: ${size + 12 + 35}px; cursor: pointer; transition: all 0.3s ease;">
+                ${plateNumber ? `<div style="position: absolute; top: 0; left: 50%; transform: translateX(-50%); background: ${labelBg}; color: white; padding: 2px 8px; border-radius: 6px; font-size: ${isFocused ? '11px' : '10px'}; font-weight: 700; font-family: 'Courier New', monospace; letter-spacing: 0.5px; white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,0.3); border: 1.5px solid white; z-index: 10; ${isFocused ? 'animation: label-glow 1.5s ease-in-out infinite;' : ''}">${plateNumber}<div style="position: absolute; bottom: -4px; left: 50%; transform: translateX(-50%); width: 0; height: 0; border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 4px solid ${labelBg};"></div></div>` : ''}
+                ${isFocused ? `<div style="position: absolute; top: 22px; left: 50%; transform: translateX(-50%); width: ${size + 24}px; height: ${size + 24}px; margin-left: -${(size + 24) / 2}px; border-radius: 50%; background: rgba(59, 130, 246, 0.15); border: 3px solid rgba(59, 130, 246, 0.5); animation: pulse-ring 1.5s ease-out infinite; box-shadow: 0 0 40px rgba(59, 130, 246, 0.3);"></div>` : isSelected ? `<div style="position: absolute; top: 26px; left: 50%; transform: translateX(-50%); width: ${size + 16}px; height: ${size + 16}px; margin-left: -${(size + 16) / 2}px; border-radius: 50%; background: rgba(59, 130, 246, 0.15); border: 2px solid rgba(59, 130, 246, 0.3); animation: pulse-ring 2s ease-out infinite;"></div>` : ''}
+                <div style="position: absolute; top: 22px; left: 50%; transform: translateX(-50%) ${isFocused ? 'scale(1.15)' : isSelected ? 'scale(1.08)' : 'scale(1)'}; width: ${size}px; height: ${size}px; background: ${color}; border-radius: 12px; border: ${isFocused ? '3px solid #3b82f6' : '2px solid white'}; box-shadow: ${isFocused ? '0 4px 24px rgba(59,130,246,0.6), 0 0 60px rgba(59,130,246,0.15)' : '0 4px 12px rgba(0,0,0,0.25)'}; display: flex; align-items: center; justify-content: center; color: white; z-index: 1; transition: all 0.3s ease; ${!isOnline ? 'opacity: 0.5;' : ''}">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="${size * 0.55}" height="${size * 0.55}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/></svg>
                 </div>
-
-                ${vehicleModel ? `
-                    <div style="
-                        position: absolute;
-                        bottom: 0;
-                        left: 50%;
-                        transform: translateX(-50%);
-                        background: rgba(15, 23, 42, 0.85);
-                        backdrop-filter: blur(4px);
-                        color: #e2e8f0;
-                        padding: 1px 6px;
-                        border-radius: 4px;
-                        font-size: 9px;
-                        font-weight: 600;
-                        white-space: nowrap;
-                        text-overflow: ellipsis;
-                        overflow: hidden;
-                        max-width: 80px;
-                        border: 1px solid rgba(255,255,255,0.2);
-                        z-index: 5;
-                    ">
-                        ${vehicleModel}
-                    </div>
-                ` : ''}
+                ${vehicleModel ? `<div style="position: absolute; bottom: 0; left: 50%; transform: translateX(-50%); background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(4px); color: #e2e8f0; padding: 1px 6px; border-radius: 4px; font-size: 9px; font-weight: 600; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; max-width: 80px; border: 1px solid rgba(255,255,255,0.2); z-index: 5;">${vehicleModel}</div>` : ''}
             </div>
         `,
         iconSize: [size + 12, size + 12 + 35],
@@ -240,133 +128,75 @@ const createVehicleIcon = (status, isSelected, isOnline = true, isFocused = fals
 // Add keyframe animations
 const styleSheet = document.createElement("style");
 styleSheet.textContent = `
-    @keyframes pulse-ring {
-        0% { transform: scale(1); opacity: 0.8; }
-        100% { transform: scale(1.8); opacity: 0; }
-    }
-    @keyframes label-glow {
-        0% { box-shadow: 0 2px 8px rgba(59,130,246,0.3); }
-        50% { box-shadow: 0 2px 16px rgba(59,130,246,0.7); }
-        100% { box-shadow: 0 2px 8px rgba(59,130,246,0.3); }
-    }
-    .custom-vehicle-icon:hover {
-        filter: brightness(1.1);
-    }
+    @keyframes pulse-ring { 0% { transform: scale(1); opacity: 0.8; } 100% { transform: scale(1.8); opacity: 0; } }
+    @keyframes label-glow { 0% { box-shadow: 0 2px 8px rgba(59,130,246,0.3); } 50% { box-shadow: 0 2px 16px rgba(59,130,246,0.7); } 100% { box-shadow: 0 2px 8px rgba(59,130,246,0.3); } }
+    .custom-vehicle-icon:hover { filter: brightness(1.1); }
 `;
 document.head.appendChild(styleSheet);
 
 // ============================================
-// MAP TILE LAYER CONFIGURATIONS
+// MAP TILES
 // ============================================
 const MAP_TILES = {
-    street: {
-        name: 'Street Map',
-        url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-    },
-    satellite: {
-        name: 'Satellite',
-        url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-        attribution: '&copy; <a href="https://www.esri.com/">Esri</a>',
-    },
-    hybrid: {
-        name: 'Hybrid',
-        url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-        attribution: '&copy; <a href="https://www.esri.com/">Esri</a>',
-    },
-    terrain: {
-        name: 'Terrain',
-        url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
-        attribution: '&copy; <a href="https://opentopomap.org/">OpenTopoMap</a>',
-    },
-    dark: {
-        name: 'Dark Mode',
-        url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>, &copy; CartoDB',
-    },
+    street: { name: 'Street Map', url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', attribution: '&copy; OpenStreetMap' },
+    satellite: { name: 'Satellite', url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attribution: '&copy; Esri' },
+    hybrid: { name: 'Hybrid', url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attribution: '&copy; Esri' },
+    terrain: { name: 'Terrain', url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', attribution: '&copy; OpenTopoMap' },
+    dark: { name: 'Dark Mode', url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', attribution: '&copy; CartoDB' },
 };
 
 // ============================================
-// HELPER FUNCTIONS
+// HELPERS
 // ============================================
 const formatTime = (dateString) => {
     if (!dateString) return 'N/A';
     try {
         const date = typeof dateString === 'string' ? new Date(dateString) : dateString;
-        return date.toLocaleTimeString('en-US', {
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit',
-        });
-    } catch {
-        return 'N/A';
-    }
+        return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    } catch { return 'N/A'; }
 };
 
 const formatDateTimeShort = (dateString) => {
     if (!dateString) return '--';
     try {
-        const d = new Date(dateString);
-        return d.toLocaleString('en-US', {
-            month: 'short',
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit',
-        });
-    } catch {
-        return '--';
-    }
+        return new Date(dateString).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    } catch { return '--'; }
 };
 
 const getStatusLabel = (status) => {
-    const labels = {
-        in_transit: 'In Transit',
-        funds_issued: 'Funds Issued',
-        acknowledged: 'Acknowledged',
-        pending_mayors_office: 'Submitted',
-        pending_reconciliation: 'Pending Recon',
-        completed: 'Completed',
-        pending_gso_validation: 'Pending Validation',
-        closed: 'Closed',
-        returned_for_revision: 'Returned',
-    };
+    const labels = { in_transit: 'In Transit', funds_issued: 'Funds Issued', acknowledged: 'Acknowledged', pending_mayors_office: 'Submitted', pending_reconciliation: 'Pending Recon', completed: 'Completed', pending_gso_validation: 'Pending Validation', closed: 'Closed', returned_for_revision: 'Returned' };
     return labels[status] || status || 'Unknown';
 };
 
 const getStatusColor = (status) => {
-    const colors = {
-        in_transit: 'bg-green-500',
-        funds_issued: 'bg-yellow-500',
-        acknowledged: 'bg-blue-500',
-        pending_mayors_office: 'bg-purple-500',
-        pending_reconciliation: 'bg-orange-500',
-        completed: 'bg-indigo-500',
-        pending_gso_validation: 'bg-indigo-400',
-        closed: 'bg-slate-500',
-        returned_for_revision: 'bg-red-400',
-    };
+    const colors = { in_transit: 'bg-green-500', funds_issued: 'bg-yellow-500', acknowledged: 'bg-blue-500', pending_mayors_office: 'bg-purple-500', pending_reconciliation: 'bg-orange-500', completed: 'bg-indigo-500', pending_gso_validation: 'bg-indigo-400', closed: 'bg-slate-500', returned_for_revision: 'bg-red-400' };
     return colors[status] || 'bg-slate-500';
 };
 
 const getStatusDot = getStatusColor;
-
 const getMapTypeLabel = (type) => MAP_TILES[type]?.name || 'Street Map';
 
 // ============================================
-// INLINE STAT
+// TOP STAT CARD COMPONENT
 // ============================================
-const InlineStat = ({ title, value, icon: Icon, color }) => (
-    <div className="flex items-center gap-2 px-2.5 py-1.5 bg-slate-100/80 dark:bg-slate-800/80 rounded-lg border border-slate-200/60 dark:border-slate-700/60 flex-shrink-0">
-        <div className={`p-1.5 rounded-md bg-gradient-to-br ${color} shadow-sm flex-shrink-0`}>
-            <Icon className="h-3.5 w-3.5 text-white" />
+const TopStatCard = ({ title, value, subtitle, icon: Icon, color, trend, trendLabel }) => (
+    <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200/60 dark:border-slate-800/60 shadow-sm flex flex-col justify-between">
+        <div className="flex items-start justify-between">
+            <div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">{title}</p>
+                <h3 className="text-2xl font-bold text-slate-900 dark:text-white mt-1">{value}</h3>
+            </div>
+            <div className={`p-3 rounded-xl bg-gradient-to-br ${color} shadow-lg`}>
+                <Icon className="h-5 w-5 text-white" />
+            </div>
         </div>
-        <div className="min-w-0">
-            <p className="text-[9px] text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider leading-none">
-                {title}
-            </p>
-            <p className="text-sm font-bold text-slate-900 dark:text-white leading-tight">
-                {value}
-            </p>
+        <div className="mt-4 flex items-center justify-between text-[11px]">
+            <span className="text-slate-500 dark:text-slate-400">{subtitle}</span>
+            {trend && (
+                <span className={`font-semibold flex items-center gap-1 ${trend > 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                    {trend > 0 ? '↑' : '↓'} {Math.abs(trend)}% <span className="text-slate-400 font-normal ml-0.5">{trendLabel}</span>
+                </span>
+            )}
         </div>
     </div>
 );
@@ -375,105 +205,26 @@ const InlineStat = ({ title, value, icon: Icon, color }) => (
 // POPUP CONTENT
 // ============================================
 const TripPopupContent = ({ trip, onViewTrip, onCenter }) => {
-    const current_location = trip?.current_location;
-
     return (
         <div className="p-2 min-w-[240px] max-w-[300px]">
             <div className="flex items-center gap-2 mb-3">
                 <div className={`w-2.5 h-2.5 rounded-full ${getStatusDot(trip?.status)} animate-pulse`} />
-                <span className="font-semibold text-sm text-slate-800 dark:text-white">
-                    {trip?.ticket_number || 'N/A'}
-                </span>
-                <Badge className={`${getStatusColor(trip?.status)} text-white text-[10px] ml-auto`}>
-                    {getStatusLabel(trip?.status)}
-                </Badge>
+                <span className="font-semibold text-sm text-slate-800 dark:text-white">{trip?.ticket_number || 'N/A'}</span>
+                <Badge className={`${getStatusColor(trip?.status)} text-white text-[10px] ml-auto`}>{getStatusLabel(trip?.status)}</Badge>
             </div>
             <div className="space-y-2 text-sm">
-                <div className="flex items-center gap-2">
-                    <Truck className="h-3.5 w-3.5 text-slate-400" />
-                    <span className="text-slate-500">Plate:</span>
-                    <span className="font-bold text-slate-700 dark:text-slate-300 font-mono">
-                        {trip?.vehicle?.plate_number || 'N/A'}
-                    </span>
-                </div>
-                <div className="flex items-center gap-2">
-                    <Car className="h-3.5 w-3.5 text-slate-400" />
-                    <span className="text-slate-500">Model:</span>
-                    <span className="font-medium text-slate-700 dark:text-slate-300 truncate max-w-[120px]">
-                        {trip?.vehicle?.vehicle_model || 'N/A'}
-                    </span>
-                </div>
-                <div className="flex items-center gap-2">
-                    <User className="h-3.5 w-3.5 text-slate-400" />
-                    <span className="text-slate-500">Driver:</span>
-                    <span className="font-medium text-slate-700 dark:text-slate-300">
-                        {trip?.driver?.name || 'N/A'}
-                    </span>
-                </div>
-                <div className="flex items-center gap-2">
-                    <MapPin className="h-3.5 w-3.5 text-slate-400" />
-                    <span className="text-slate-500">Destination:</span>
-                    <span className="font-medium text-slate-700 dark:text-slate-300 truncate max-w-[150px]">
-                        {trip?.destination || 'N/A'}
-                    </span>
-                </div>
-                <div className="flex items-center gap-2">
-                    <Gauge className="h-3.5 w-3.5 text-slate-400" />
-                    <span className="text-slate-500">Speed:</span>
-                    <span className="font-medium text-slate-700 dark:text-slate-300">
-                        {current_location?.speed_kmh || 0} km/h
-                    </span>
-                </div>
-                <div className="flex items-center gap-2 text-xs text-slate-400 border-t border-slate-100 dark:border-slate-700 pt-2 mt-1">
-                    <Clock className="h-3 w-3" />
-                    Updated: {formatTime(current_location?.recorded_at)}
-                    <span className="text-emerald-500 text-[10px] font-medium ml-auto">● Live</span>
-                </div>
+                <div className="flex items-center gap-2"><Truck className="h-3.5 w-3.5 text-slate-400" /><span className="text-slate-500">Plate:</span><span className="font-bold text-slate-700 dark:text-slate-300 font-mono">{trip?.vehicle?.plate_number || 'N/A'}</span></div>
+                <div className="flex items-center gap-2"><User className="h-3.5 w-3.5 text-slate-400" /><span className="text-slate-500">Driver:</span><span className="font-medium text-slate-700 dark:text-slate-300">{trip?.driver?.name || 'N/A'}</span></div>
+                <div className="flex items-center gap-2"><MapPin className="h-3.5 w-3.5 text-slate-400" /><span className="text-slate-500">Dest:</span><span className="font-medium text-slate-700 dark:text-slate-300 truncate max-w-[150px]">{trip?.destination || 'N/A'}</span></div>
+                <div className="flex items-center gap-2"><Gauge className="h-3.5 w-3.5 text-slate-400" /><span className="text-slate-500">Speed:</span><span className="font-medium text-slate-700 dark:text-slate-300">{trip?.current_location?.speed_kmh || 0} km/h</span></div>
             </div>
             <div className="mt-3 flex gap-2">
-                <button
-                    onClick={() => onViewTrip(trip)}
-                    className="flex-1 text-xs bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-1"
-                >
-                    <Eye className="h-3 w-3" />
-                    View Trip
-                </button>
-                <button
-                    onClick={() => onCenter(trip)}
-                    className="text-xs bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 px-3 py-1.5 rounded-lg hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors flex items-center justify-center gap-1"
-                >
-                    <Navigation className="h-3 w-3" />
-                    Center
-                </button>
+                <button onClick={() => onViewTrip(trip)} className="flex-1 text-xs bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-1"><Eye className="h-3 w-3" /> View</button>
+                <button onClick={() => onCenter(trip)} className="text-xs bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 px-3 py-1.5 rounded-lg hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors flex items-center justify-center gap-1"><Navigation className="h-3 w-3" /> Center</button>
             </div>
         </div>
     );
 };
-
-// ============================================
-// LOADING SKELETON
-// ============================================
-const LoadingSkeleton = () => (
-    <div className="h-screen flex flex-col bg-slate-50 dark:bg-slate-950">
-        <header className="bg-white/95 dark:bg-slate-900/95 px-4 md:px-6 py-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3 border-b border-slate-200/60 dark:border-slate-800/60">
-            <div className="flex items-center gap-3">
-                <SkeletonCard className="h-9 w-9 rounded-xl" />
-                <div>
-                    <SkeletonTitle width="w-32" className="h-5" />
-                    <SkeletonText width="w-48" className="h-3" />
-                </div>
-            </div>
-        </header>
-        <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
-            <div className="flex-1 relative bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
-                <div className="text-center">
-                    <SkeletonCard className="w-16 h-16 rounded-full mx-auto mb-4" />
-                    <SkeletonText width="w-32" className="h-4 mx-auto" />
-                </div>
-            </div>
-        </div>
-    </div>
-);
 
 // ============================================
 // MAIN COMPONENT
@@ -484,7 +235,6 @@ const LiveTracking = () => {
     const { isConnected } = useRealtime();
     const [selectedTrip, setSelectedTrip] = useState(null);
     const [focusedTrip, setFocusedTrip] = useState(null);
-    const [focusModalOpen, setFocusModalOpen] = useState(false);
     const [mapCenter, setMapCenter] = useState([8.5833, 124.6667]);
     const [mapZoom, setMapZoom] = useState(13);
     const [mapType, setMapType] = useState('street');
@@ -492,30 +242,19 @@ const LiveTracking = () => {
     const [lastUpdate, setLastUpdate] = useState(null);
     const [tripsData, setTripsData] = useState([]);
     const [isWsConnected, setIsWsConnected] = useState(false);
-    const [pingCount, setPingCount] = useState(0);
-    const [refreshAttempts, setRefreshAttempts] = useState(0);
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-
-    // ✅ Sidebar tabs + polyline state
     const [sidebarTab, setSidebarTab] = useState('active');
     const [polylineRoute, setPolylineRoute] = useState(null);
     const [polylineInfo, setPolylineInfo] = useState(null);
-
-    // ✅ Replay state
     const [isReplaying, setIsReplaying] = useState(false);
     const [replayIndex, setReplayIndex] = useState(0);
-    const replayIntervalRef = useRef(null);
+    const [searchTerm, setSearchTerm] = useState("");
 
     const mapRef = useRef(null);
     const dropdownRef = useRef(null);
-    const pingCounterRef = useRef(0);
-    const markerRefs = useRef({});
-    const [followedTripId, setFollowedTripId] = useState(null);
-    const hasSetupRef = useRef(false);
-
+    const replayIntervalRef = useRef(null);
     const followedTripIdRef = useRef(null);
     const mapZoomRef = useRef(13);
-
     const tripsDataRef = useRef([]);
     const pendingPingsRef = useRef({});
     const isMountedRef = useRef(true);
@@ -524,36 +263,23 @@ const LiveTracking = () => {
         isMountedRef.current = true;
         return () => {
             isMountedRef.current = false;
-            if (replayIntervalRef.current) {
-                clearInterval(replayIntervalRef.current);
-            }
+            if (replayIntervalRef.current) clearInterval(replayIntervalRef.current);
         };
     }, []);
 
     useEffect(() => {
         const t = setTimeout(() => {
-            if (mapRef.current) {
-                mapRef.current.invalidateSize();
-            }
+            if (mapRef.current) mapRef.current.invalidateSize();
         }, 350);
         return () => clearTimeout(t);
     }, [isSidebarOpen]);
 
-    const hasActiveTrips = useMemo(() => {
-        return Array.isArray(tripsData) && tripsData.some(trip => trip && trip.current_location);
-    }, [tripsData]);
-
-    useEffect(() => {
-        tripsDataRef.current = tripsData;
-    }, [tripsData]);
-    useEffect(() => { followedTripIdRef.current = followedTripId; }, [followedTripId]);
+    useEffect(() => { tripsDataRef.current = tripsData; }, [tripsData]);
     useEffect(() => { mapZoomRef.current = mapZoom; }, [mapZoom]);
 
     useEffect(() => {
         const handleClickOutside = (event) => {
-            if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
-                setIsMapTypeDropdownOpen(false);
-            }
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target)) setIsMapTypeDropdownOpen(false);
         };
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
@@ -563,190 +289,84 @@ const LiveTracking = () => {
         queryClient.invalidateQueries({ queryKey: ['gps-active-trips-live'] });
     }, [queryClient]);
 
-    useAutoRefresh(
-        [
-            "gps-location-updated",
-            "trip-started",
-            "trip-completed",
-            "gso-trip-updated",
-            "new-notification",
-        ],
-        fetchAllData,
-        2000
-    );
+    useAutoRefresh(["gps-location-updated", "trip-started", "trip-completed", "gso-trip-updated", "new-notification"], fetchAllData, 2000);
 
-    const {
-        data: activeTripsRaw,
-        isLoading,
-        refetch,
-        isFetching,
-    } = useOptimizedQuery({
+    const { data: activeTripsRaw, isLoading, refetch, isFetching } = useOptimizedQuery({
         queryKey: ['gps-active-trips-live'],
         queryFn: async () => {
             try {
                 const response = await gpsAPI.getActiveTrips();
-
-                let data = [];
-                if (response?.data?.data) {
-                    data = response.data.data;
-                } else if (response?.data) {
-                    data = response.data;
-                } else if (Array.isArray(response)) {
-                    data = response;
-                }
-
-                const safeData = Array.isArray(data) ? data : [];
-                setRefreshAttempts(0);
-                return safeData;
+                let data = response?.data?.data || response?.data || [];
+                return Array.isArray(data) ? data : [];
             } catch (error) {
-                console.error('❌ Error fetching active trips:', error);
-
-                setRefreshAttempts(prev => {
-                    const newAttempts = prev + 1;
-                    if (newAttempts === 1) {
-                        toast.error('Failed to load active trips. Retrying...');
-                    } else if (newAttempts === 5) {
-                        toast.error('Multiple connection errors. Please refresh the page.');
-                    }
-                    return newAttempts;
-                });
-
                 return [];
             }
         },
-        refetchInterval: (query) => {
-            const data = query?.state?.data;
-            return Array.isArray(data) && data.length > 0 ? 15000 : false;
-        },
+        refetchInterval: (query) => Array.isArray(query?.state?.data) && query.state.data.length > 0 ? 15000 : false,
         staleTime: 0,
         keepPreviousData: true,
         retry: 2,
-        retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 10000),
-        enabled: true,
     });
 
-    // ✅ Refuelings query
     const { data: refuelingsRaw, isLoading: refuelingsLoading } = useOptimizedQuery({
         queryKey: ['gps-recent-refuelings'],
         queryFn: async () => {
-            try {
-                const res = await gpsAPI.getRecentRefuelings({ limit: 50 });
-                return res?.data?.data ?? [];
-            } catch (e) {
-                console.error('Refuelings fetch error:', e);
-                return [];
-            }
+            try { const res = await gpsAPI.getRecentRefuelings({ limit: 50 }); return res?.data?.data ?? []; } catch (e) { return []; }
         },
         staleTime: 30_000,
         enabled: sidebarTab === 'refuelings',
     });
 
-    // ✅ Completed trips query
     const { data: completedRaw, isLoading: completedLoading } = useOptimizedQuery({
         queryKey: ['gps-completed-trips'],
         queryFn: async () => {
-            try {
-                const res = await gpsAPI.getCompletedTrips({ limit: 50 });
-                return res?.data?.data ?? [];
-            } catch (e) {
-                console.error('Completed trips fetch error:', e);
-                return [];
-            }
+            try { const res = await gpsAPI.getCompletedTrips({ limit: 50 }); return res?.data?.data ?? []; } catch (e) { return []; }
         },
         staleTime: 30_000,
         enabled: sidebarTab === 'history',
     });
 
-    const refuelings = useMemo(
-        () => (Array.isArray(refuelingsRaw) ? refuelingsRaw : []),
-        [refuelingsRaw]
-    );
-    const completedTrips = useMemo(
-        () => (Array.isArray(completedRaw) ? completedRaw : []),
-        [completedRaw]
-    );
-
-    const activeTrips = useMemo(
-        () => (Array.isArray(activeTripsRaw) ? activeTripsRaw : []),
-        [activeTripsRaw]
-    );
+    const refuelings = useMemo(() => (Array.isArray(refuelingsRaw) ? refuelingsRaw : []), [refuelingsRaw]);
+    const completedTrips = useMemo(() => (Array.isArray(completedRaw) ? completedRaw : []), [completedRaw]);
+    const activeTrips = useMemo(() => (Array.isArray(activeTripsRaw) ? activeTripsRaw : []), [activeTripsRaw]);
 
     useEffect(() => {
         if (!Array.isArray(activeTrips)) return;
-
         setTripsData(prev => {
             const prevArr = Array.isArray(prev) ? prev : [];
             const prevById = {};
-            for (const t of prevArr) {
-                if (t && t.trip_id != null) {
-                    prevById[t.trip_id] = t;
-                }
-            }
-
+            for (const t of prevArr) { if (t && t.trip_id != null) prevById[t.trip_id] = t; }
             return activeTrips.map(serverTrip => {
                 const existing = prevById[serverTrip.trip_id];
-
                 const pending = pendingPingsRef.current[serverTrip.trip_id];
                 if (pending && !serverTrip.current_location) {
                     delete pendingPingsRef.current[serverTrip.trip_id];
-                    return {
-                        ...serverTrip,
-                        current_location: {
-                            latitude: pending.latitude,
-                            longitude: pending.longitude,
-                            speed_kmh: pending.speed_kmh || 0,
-                            accuracy_meters: pending.accuracy_meters || 0,
-                            heading_degrees: pending.heading_degrees || 0,
-                            recorded_at: pending.timestamp || new Date().toISOString(),
-                        },
-                    };
+                    return { ...serverTrip, current_location: { latitude: pending.latitude, longitude: pending.longitude, speed_kmh: pending.speed_kmh || 0, accuracy_meters: pending.accuracy_meters || 0, heading_degrees: pending.heading_degrees || 0, recorded_at: pending.timestamp || new Date().toISOString() } };
                 }
-
                 if (existing?.current_location && !serverTrip.current_location) {
-                    return {
-                        ...serverTrip,
-                        current_location: existing.current_location,
-                    };
+                    return { ...serverTrip, current_location: existing.current_location };
                 }
-
                 return serverTrip;
             });
         });
-
         setLastUpdate(new Date());
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activeTrips]);
 
     useEffect(() => {
-        if (hasSetupRef.current) return;
-        hasSetupRef.current = true;
-
         const channel = echo.channel('gso-live-tracking');
         setIsWsConnected(true);
 
         channel.listen('.location.updated', (data) => {
             if (!isMountedRef.current) return;
-
-            const accuracy = data.accuracy_meters || 0;
-            if (accuracy > 30) return;
-
+            if ((data.accuracy_meters || 0) > 30) return;
+            
             const existingTrip = tripsDataRef.current.find(t => t.trip_id === data.trip_id);
             if (existingTrip?.current_location) {
-                const distMeters = haversineMeters(
-                    existingTrip.current_location.latitude,
-                    existingTrip.current_location.longitude,
-                    data.latitude,
-                    data.longitude
-                );
-                const speed = data.speed_kmh || 0;
-                if (distMeters < 15 && speed < 2) return;
+                const distMeters = haversineMeters(existingTrip.current_location.latitude, existingTrip.current_location.longitude, data.latitude, data.longitude);
+                if (distMeters < 15 && (data.speed_kmh || 0) < 2) return;
             }
 
-            pingCounterRef.current += 1;
-            setPingCount(pingCounterRef.current);
-
-            const tripExists = tripsDataRef.current.some(t => t.trip_id === data.trip_id);
-            if (!tripExists) {
+            if (!tripsDataRef.current.some(t => t.trip_id === data.trip_id)) {
                 pendingPingsRef.current[data.trip_id] = data;
                 queryClient.invalidateQueries({ queryKey: ['gps-active-trips-live'] });
                 return;
@@ -754,862 +374,371 @@ const LiveTracking = () => {
 
             setTripsData(prev => {
                 if (!Array.isArray(prev)) return [];
-                return prev.map(trip => {
-                    if (trip && trip.trip_id === data.trip_id) {
-                        return {
-                            ...trip,
-                            current_location: {
-                                latitude: data.latitude,
-                                longitude: data.longitude,
-                                speed_kmh: data.speed_kmh || 0,
-                                accuracy_meters: data.accuracy_meters || 0,
-                                heading_degrees: data.heading_degrees || 0,
-                                recorded_at: data.timestamp || new Date().toISOString(),
-                            }
-                        };
-                    }
-                    return trip;
-                });
+                return prev.map(trip => trip && trip.trip_id === data.trip_id ? { ...trip, current_location: { latitude: data.latitude, longitude: data.longitude, speed_kmh: data.speed_kmh || 0, accuracy_meters: data.accuracy_meters || 0, heading_degrees: data.heading_degrees || 0, recorded_at: data.timestamp || new Date().toISOString() } } : trip);
             });
 
-            setSelectedTrip(prev => {
-                if (prev && prev.trip_id === data.trip_id) {
-                    return {
-                        ...prev,
-                        current_location: {
-                            latitude: data.latitude,
-                            longitude: data.longitude,
-                            speed_kmh: data.speed_kmh || 0,
-                            accuracy_meters: data.accuracy_meters || 0,
-                            heading_degrees: data.heading_degrees || 0,
-                            recorded_at: data.timestamp || new Date().toISOString(),
-                        }
-                    };
-                }
-                return prev;
-            });
-
-            setFocusedTrip(prev => {
-                if (prev && prev.trip_id === data.trip_id) {
-                    return {
-                        ...prev,
-                        current_location: {
-                            latitude: data.latitude,
-                            longitude: data.longitude,
-                            speed_kmh: data.speed_kmh || 0,
-                            accuracy_meters: data.accuracy_meters || 0,
-                            heading_degrees: data.heading_degrees || 0,
-                            recorded_at: data.timestamp || new Date().toISOString(),
-                        }
-                    };
-                }
-                return prev;
-            });
-
-            if (followedTripIdRef.current === data.trip_id && mapRef.current) {
-                mapRef.current.setView([data.latitude, data.longitude], mapZoomRef.current);
-            }
-
+            setSelectedTrip(prev => prev && prev.trip_id === data.trip_id ? { ...prev, current_location: { latitude: data.latitude, longitude: data.longitude, speed_kmh: data.speed_kmh || 0, accuracy_meters: data.accuracy_meters || 0, heading_degrees: data.heading_degrees || 0, recorded_at: data.timestamp || new Date().toISOString() } } : prev);
+            if (followedTripIdRef.current === data.trip_id && mapRef.current) mapRef.current.setView([data.latitude, data.longitude], mapZoomRef.current);
             setLastUpdate(new Date());
         });
 
         channel.listen('.trip.completed', (data) => {
             if (!isMountedRef.current) return;
-
-            setTripsData(prev => {
-                if (!Array.isArray(prev)) return [];
-                return prev.filter(t => t.trip_id !== data.trip_id);
-            });
-            setSelectedTrip(prev => (prev?.trip_id === data.trip_id ? null : prev));
-            setFocusedTrip(prev => (prev?.trip_id === data.trip_id ? null : prev));
-            setFollowedTripId(prev => (prev === data.trip_id ? null : prev));
-
-            delete pendingPingsRef.current[data.trip_id];
-
+            setTripsData(prev => prev.filter(t => t.trip_id !== data.trip_id));
+            setSelectedTrip(prev => prev?.trip_id === data.trip_id ? null : prev);
             queryClient.invalidateQueries({ queryKey: ['gps-active-trips-live'] });
         });
 
-        channel.listen('.trip.started', (data) => {
-            if (!isMountedRef.current) return;
-            queryClient.invalidateQueries({ queryKey: ['gps-active-trips-live'] });
-        });
-
-        channel.subscribed(() => {
-            if (!isMountedRef.current) return;
-            setIsWsConnected(true);
-        });
-
-        channel.error((error) => {
-            if (!isMountedRef.current) return;
-            console.error('❌ gso-live-tracking subscription error:', error);
-            setIsWsConnected(false);
-        });
+        channel.subscribed(() => { if (isMountedRef.current) setIsWsConnected(true); });
+        channel.error(() => { if (isMountedRef.current) setIsWsConnected(false); });
 
         if (echo.connector && echo.connector.pusher) {
-            const connection = echo.connector.pusher.connection;
-            connection.bind('connected', () => {
-                if (!isMountedRef.current) return;
-                setIsWsConnected(true);
-            });
-            connection.bind('disconnected', () => {
-                if (!isMountedRef.current) return;
-                setIsWsConnected(false);
-            });
+            echo.connector.pusher.connection.bind('connected', () => { if (isMountedRef.current) setIsWsConnected(true); });
+            echo.connector.pusher.connection.bind('disconnected', () => { if (isMountedRef.current) setIsWsConnected(false); });
         }
 
         return () => {
-            hasSetupRef.current = false;
-            try {
-                channel.stopListening('.location.updated');
-                channel.stopListening('.trip.completed');
-                channel.stopListening('.trip.started');
-            } catch (e) {}
+            try { channel.stopListening('.location.updated'); channel.stopListening('.trip.completed'); } catch (e) {}
         };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    const tripsWithLocation = useMemo(() => {
-        return Array.isArray(tripsData)
-            ? tripsData.filter(trip => trip && trip.current_location)
-            : [];
-    }, [tripsData]);
-
-    const activeCount = tripsWithLocation.length;
-
-    const stats = useMemo(() => [
-        {
-            title: 'Active',
-            value: activeCount,
-            icon: Car,
-            color: 'from-green-500 to-emerald-600',
-        },
-        {
-            title: 'Avg Speed',
-            value: activeCount > 0
-                ? Math.round(tripsWithLocation.reduce((acc, t) => acc + (t?.current_location?.speed_kmh || 0), 0) / activeCount)
-                : 0,
-            icon: Gauge,
-            color: 'from-blue-500 to-blue-600',
-        },
-        {
-            title: 'Last Update',
-            value: lastUpdate ? formatTime(lastUpdate) : '--',
-            icon: Clock,
-            color: 'from-purple-500 to-purple-600',
-        },
-    ], [activeCount, tripsWithLocation, lastUpdate]);
+    const tripsWithLocation = useMemo(() => Array.isArray(tripsData) ? tripsData.filter(trip => trip && trip.current_location) : [], [tripsData]);
+    
+    // Filters the ongoing trips list based on the search bar
+    const filteredTrips = useMemo(() => {
+        if (!searchTerm) return tripsWithLocation;
+        const lower = searchTerm.toLowerCase();
+        return tripsWithLocation.filter(t => 
+            (t.vehicle?.plate_number || '').toLowerCase().includes(lower) || 
+            (t.vehicle?.vehicle_model || '').toLowerCase().includes(lower)
+        );
+    }, [tripsWithLocation, searchTerm]);
 
     const handleTripSelect = (trip) => {
         setSelectedTrip(trip);
-        setFollowedTripId(trip?.trip_id);
+        followedTripIdRef.current = trip?.trip_id;
         if (trip && trip.current_location) {
             setMapCenter([trip.current_location.latitude, trip.current_location.longitude]);
             setMapZoom(16);
-            if (mapRef.current) {
-                mapRef.current.setView([trip.current_location.latitude, trip.current_location.longitude], 16);
-            }
+            if (mapRef.current) mapRef.current.setView([trip.current_location.latitude, trip.current_location.longitude], 16);
         }
     };
 
-    // ✅ Replay handlers
     const handleStopReplay = () => {
-        setIsReplaying(false);
-        setReplayIndex(0);
-        if (replayIntervalRef.current) {
-            clearInterval(replayIntervalRef.current);
-            replayIntervalRef.current = null;
-        }
+        setIsReplaying(false); setReplayIndex(0);
+        if (replayIntervalRef.current) { clearInterval(replayIntervalRef.current); replayIntervalRef.current = null; }
     };
 
     const handleReplay = () => {
         if (!polylineRoute || polylineRoute.length < 2) return;
-        
-        if (isReplaying) {
-            handleStopReplay();
-            return;
-        }
-
-        setIsReplaying(true);
-        setReplayIndex(0);
-
+        if (isReplaying) { handleStopReplay(); return; }
+        setIsReplaying(true); setReplayIndex(0);
         let currentIdx = 0;
         replayIntervalRef.current = setInterval(() => {
             currentIdx++;
-            if (currentIdx >= polylineRoute.length) {
-                clearInterval(replayIntervalRef.current);
-                setIsReplaying(false);
-                setReplayIndex(0);
-                return;
-            }
+            if (currentIdx >= polylineRoute.length) { clearInterval(replayIntervalRef.current); setIsReplaying(false); setReplayIndex(0); return; }
             setReplayIndex(currentIdx);
-            
-            // Pan map to follow the replay marker
-            if (mapRef.current) {
-                mapRef.current.panTo(polylineRoute[currentIdx]);
-            }
-        }, 300); // 300ms per ping
+            if (mapRef.current) mapRef.current.panTo(polylineRoute[currentIdx]);
+        }, 300);
     };
 
     const handlePolylineView = async (item) => {
-        if (!item?.trip_id) {
-            toast.error('No trip data for this entry');
-            return;
-        }
-        handleStopReplay(); // Stop any active replay before loading a new one
+        if (!item?.trip_id) return toast.error('No trip data');
+        handleStopReplay();
         try {
             const res = await gpsAPI.getTripRoute(item.trip_id);
             const track = res?.data?.data?.track ?? [];
-            if (track.length < 2) {
-                toast.error('Not enough GPS data for this trip');
-                return;
-            }
+            if (track.length < 2) return toast.error('Not enough GPS data');
             setPolylineRoute(track.map(p => [p.latitude, p.longitude]));
-            setPolylineInfo({
-                label: item.ticket_number || item.plate_number || `Trip #${item.trip_id}`,
-                trip_id: item.trip_id,
-            });
-            if (mapRef.current) {
-                const bounds = L.latLngBounds(track.map(p => [p.latitude, p.longitude]));
-                mapRef.current.fitBounds(bounds, { padding: [40, 40] });
-            }
-        } catch (e) {
-            console.error('Polyline error:', e);
-            toast.error('Failed to load route');
-        }
+            setPolylineInfo({ label: item.ticket_number || item.plate_number, trip_id: item.trip_id });
+            if (mapRef.current) mapRef.current.fitBounds(L.latLngBounds(track.map(p => [p.latitude, p.longitude])), { padding: [40, 40] });
+        } catch (e) { toast.error('Failed to load route'); }
     };
 
-    const handleClearPolyline = () => {
-        setPolylineRoute(null);
-        setPolylineInfo(null);
-        handleStopReplay();
-    };
+    const handleClearPolyline = () => { setPolylineRoute(null); setPolylineInfo(null); handleStopReplay(); };
 
-    const handleViewTrip = (trip) => {
-        setSelectedTrip(null);
-        setFollowedTripId(null);
-        navigate(`/gso/trip/${trip?.trip_id}`);
-    };
+    const handleViewTrip = (trip) => { setSelectedTrip(null); followedTripIdRef.current = null; navigate(`/gso/trip/${trip?.trip_id}`); };
 
     const handleCenter = (trip) => {
         if (trip && trip.current_location) {
             setMapCenter([trip.current_location.latitude, trip.current_location.longitude]);
-            setMapZoom(16);
-            setSelectedTrip(trip);
-            setFollowedTripId(trip.trip_id);
-            if (mapRef.current) {
-                mapRef.current.setView([trip.current_location.latitude, trip.current_location.longitude], 16);
-            }
+            setMapZoom(16); setSelectedTrip(trip); followedTripIdRef.current = trip.trip_id;
+            if (mapRef.current) mapRef.current.setView([trip.current_location.latitude, trip.current_location.longitude], 16);
         }
-    };
-
-    const handleFocusAll = () => {
-        setFocusedTrip(null);
-        setFocusModalOpen(true);
     };
 
     const handleFitBounds = () => {
-        if (tripsWithLocation.length === 0) {
-            toast.error('No active vehicles to fit');
-            return;
-        }
-        const validTrips = tripsWithLocation.filter(t => t && t.current_location);
-        if (validTrips.length === 0) {
-            toast.error('No valid vehicle locations');
-            return;
-        }
-        const bounds = L.latLngBounds(
-            validTrips.map(trip => [
-                trip.current_location.latitude,
-                trip.current_location.longitude,
-            ])
-        );
-        mapRef.current?.fitBounds(bounds, { padding: [50, 50] });
-    };
-
-    const handleMapTypeChange = (type) => {
-        setMapType(type);
-        setIsMapTypeDropdownOpen(false);
-        if (type === 'satellite' || type === 'hybrid') {
-            setMapZoom(prev => Math.max(prev, 14));
-        }
-    };
-
-    const renderMapTiles = () => {
-        switch (mapType) {
-            case 'satellite':
-                return (
-                    <TileLayer
-                        key="satellite"
-                        url={MAP_TILES.satellite.url}
-                        attribution={MAP_TILES.satellite.attribution}
-                    />
-                );
-            case 'hybrid':
-                return (
-                    <React.Fragment key="hybrid">
-                        <TileLayer
-                            url={MAP_TILES.satellite.url}
-                            attribution={MAP_TILES.satellite.attribution}
-                        />
-                        <TileLayer
-                            url="https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png"
-                            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>, &copy; CartoDB'
-                            opacity={0.7}
-                        />
-                    </React.Fragment>
-                );
-            case 'terrain':
-                return (
-                    <TileLayer
-                        key="terrain"
-                        url={MAP_TILES.terrain.url}
-                        attribution={MAP_TILES.terrain.attribution}
-                    />
-                );
-            case 'dark':
-                return (
-                    <TileLayer
-                        key="dark"
-                        url={MAP_TILES.dark.url}
-                        attribution={MAP_TILES.dark.attribution}
-                    />
-                );
-            default:
-                return (
-                    <TileLayer
-                        key="street"
-                        url={MAP_TILES.street.url}
-                        attribution={MAP_TILES.street.attribution}
-                    />
-                );
-        }
+        if (tripsWithLocation.length === 0) return toast.error('No active vehicles');
+        mapRef.current?.fitBounds(L.latLngBounds(tripsWithLocation.map(t => [t.current_location.latitude, t.current_location.longitude])), { padding: [50, 50] });
     };
 
     if (isLoading && tripsData.length === 0) {
-        return <LoadingSkeleton />;
+        return <div className="h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950"><Loader2 className="h-8 w-8 animate-spin text-blue-500" /></div>;
     }
 
     return (
-        <div className="h-[80vh] flex flex-col bg-slate-50 dark:bg-slate-950">
-            {/* ============ Header ============ */}
-            <header className="flex-shrink-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm border-b border-slate-200/60 dark:border-slate-800/60 px-4 md:px-6 py-3">
-                <div className="flex items-center gap-3 flex-wrap lg:flex-nowrap">
-
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => navigate('/gso/dashboard')}
-                        className="rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 h-9 w-9 flex-shrink-0"
-                    >
-                        <ArrowLeft className="h-4 w-4" />
-                    </Button>
-
-                    <div className="flex-shrink-0">
-                        <h1 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                            <Satellite className="h-4 w-4 text-blue-500" />
-                            Live Tracking
-                            {!hasActiveTrips && (
-                                <Badge variant="outline" className="text-[10px] text-slate-400 border-slate-300 dark:border-slate-600 ml-1">
-                                    <Activity className="h-2.5 w-2.5 mr-1" />
-                                    Paused
-                                </Badge>
-                            )}
-                        </h1>
-                        <p className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-2 flex-wrap">
-                            <span className="flex items-center gap-1">
-                                <span className={`h-1.5 w-1.5 rounded-full ${hasActiveTrips ? 'bg-green-500 animate-pulse' : 'bg-slate-400'}`} />
-                                {hasActiveTrips ? `${activeCount} active` : 'No active trips'}
-                            </span>
-                            <span className="flex items-center gap-1">
-                                {isWsConnected ? (
-                                    <Wifi className="h-2.5 w-2.5 text-emerald-500" />
-                                ) : (
-                                    <WifiOff className="h-2.5 w-2.5 text-red-500" />
-                                )}
-                                <span className={isWsConnected ? 'text-emerald-500' : 'text-red-500'}>
-                                    {isWsConnected ? 'Connected' : 'Disconnected'}
-                                </span>
-                            </span>
-                            {isFetching && hasActiveTrips && (
-                                <span className="flex items-center gap-1 text-slate-400">
-                                    <RefreshCw className="h-2.5 w-2.5 animate-spin" />
-                                    Updating
-                                </span>
-                            )}
-                        </p>
-                    </div>
-
-                    <div className="hidden lg:block h-10 w-px bg-slate-200 dark:bg-slate-700 flex-shrink-0" />
-
-                    <div className="flex items-center gap-2 flex-shrink-0 overflow-x-auto lg:overflow-visible">
-                        {stats.map((stat, index) => (
-                            <InlineStat key={index} {...stat} />
-                        ))}
-                    </div>
-
-                    <div className="flex-1 hidden lg:block" />
-
-                    <div className="flex items-center gap-2 flex-shrink-0 ml-auto">
-                        <div className="relative" ref={dropdownRef}>
-                            <button
-                                onClick={() => setIsMapTypeDropdownOpen(!isMapTypeDropdownOpen)}
-                                className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors text-xs font-medium flex items-center gap-1.5"
-                            >
-                                <Layers className="h-3.5 w-3.5" />
-                                {getMapTypeLabel(mapType)}
-                                <ChevronDown className="h-3.5 w-3.5" />
-                            </button>
-
-                            {isMapTypeDropdownOpen && (
-                                <div className="absolute top-full right-0 mt-1 w-44 bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700 z-50 py-1 overflow-hidden">
-                                    {Object.entries(MAP_TILES).map(([key, config]) => {
-                                        const isActive = mapType === key;
-                                        return (
-                                            <button
-                                                key={key}
-                                                onClick={() => handleMapTypeChange(key)}
-                                                className={cn(
-                                                    "w-full text-left px-3 py-2 text-xs transition-colors flex items-center gap-2",
-                                                    isActive
-                                                        ? "bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300"
-                                                        : "hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300"
-                                                )}
-                                            >
-                                                <span>{config.name}</span>
-                                                {isActive && (
-                                                    <Check className="h-3.5 w-3.5 ml-auto text-blue-600" />
-                                                )}
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-                            )}
-                        </div>
-
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={handleFitBounds}
-                            disabled={!hasActiveTrips}
-                            className="dark:border-slate-700 dark:text-slate-300 h-8 text-xs"
-                        >
-                            <Maximize2 className="h-3.5 w-3.5 mr-1" />
-                            Fit All
+        <div className="h-screen flex flex-col bg-slate-50 dark:bg-slate-950 overflow-hidden">
+            
+            {/* ============ Top Header & Stats ============ */}
+            <header className="flex-shrink-0 bg-slate-50 dark:bg-slate-950 px-4 md:px-6 pt-6 pb-2 z-10">
+                <div className="flex items-center justify-between mb-6">
+                    <div className="flex items-center gap-3">
+                        <Button variant="ghost" size="icon" onClick={() => navigate('/gso/dashboard')} className="rounded-xl hover:bg-slate-200 dark:hover:bg-slate-800 h-10 w-10 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                            <ArrowLeft className="h-5 w-5 text-slate-600 dark:text-slate-300" />
                         </Button>
+                        <div>
+                            <h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                                <MapPin className="h-6 w-6 text-blue-500" />
+                                Live Tracking
+                            </h1>
+                            <p className="text-sm text-slate-500 dark:text-slate-400">
+                                Monitor real-time distance per trip and vehicle movement.
+                            </p>
+                        </div>
                     </div>
+                    <div className="text-right text-sm text-slate-500 dark:text-slate-400 hidden md:block">
+                        <div>{new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</div>
+                        <div className="font-semibold text-slate-900 dark:text-white">{formatTime(new Date())}</div>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-2">
+                    <TopStatCard title="Total Vehicles" value="12" subtitle="Active: 8 | Inactive: 4" icon={Truck} color="from-blue-500 to-blue-600" />
+                    <TopStatCard title="Ongoing Trips" value={tripsWithLocation.length} subtitle={`Out of 12 vehicles`} icon={Route} color="from-indigo-500 to-indigo-600" />
+                    <TopStatCard title="Total Distance (Today)" value="482.6 km" subtitle="↑ 12% vs. yesterday" trend={12} trendLabel="" icon={Route} color="from-blue-400 to-blue-500" />
+                    <TopStatCard title="Total Fuel Consumed (Today)" value="78.4 L" subtitle="↓ 8% vs. yesterday" trend={-8} trendLabel="" icon={Fuel} color="from-slate-700 to-slate-800" />
                 </div>
             </header>
 
-            {/* ============ Main Content ============ */}
-            <div className="flex-1 flex overflow-hidden relative min-h-0">
-
-                <div className="flex-1 relative min-h-0 min-w-0">
-                    {isLoading ? (
-                        <div className="w-full h-full flex items-center justify-center bg-slate-100 dark:bg-slate-800">
-                            <div className="text-center">
-                                <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-                                <p className="text-slate-500 dark:text-slate-400">Loading vehicles...</p>
-                            </div>
+            {/* ============ Main Content Area ============ */}
+            <div className="flex-1 flex overflow-hidden p-4 md:px-6 md:pb-6 min-h-0 gap-4">
+                
+                {/* LEFT SIDEBAR (Filters & Lists) */}
+                <div className="w-80 flex-shrink-0 flex flex-col gap-4">
+                    
+                    {/* Filters Card */}
+                    <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 shadow-sm flex-shrink-0">
+                        <div className="flex items-center gap-2 mb-3">
+                            <Filter className="h-4 w-4 text-slate-500" />
+                            <span className="text-sm font-semibold text-slate-800 dark:text-white">Vehicle</span>
                         </div>
-                    ) : (
-                        <MapContainer
-                            ref={mapRef}
-                            center={mapCenter}
-                            zoom={mapZoom}
-                            style={{ height: '100%', width: '100%' }}
-                            zoomControl={false}
-                            className="z-0"
-                        >
-                            {renderMapTiles()}
-                            <ZoomControl position="bottomright" />
+                        
+                        <select className="w-full mb-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <option>All Vehicles</option>
+                        </select>
 
-                            {/* Selected route polyline (from refuelings/history tab) */}
-                            {polylineRoute && polylineRoute.length > 1 && (
-                                <Polyline
-                                    positions={polylineRoute}
-                                    color="#dc2626"
-                                    weight={5}
-                                    opacity={0.85}
-                                    smoothFactor={1}
-                                />
-                            )}
+                        <div className="relative">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                            <Input 
+                                placeholder="Search by plate no. or vehicle name..." 
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                className="pl-9 bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700"
+                            />
+                        </div>
+                    </div>
 
-                            {/* ✅ REPLAY MARKER */}
-                            {isReplaying && polylineRoute && polylineRoute.length > 0 && (
-                                <Marker
-                                    position={polylineRoute[replayIndex]}
-                                    icon={createVehicleIcon('in_transit', true, true, true, 'REPLAY', '')}
-                                />
-                            )}
-
-                            {tripsWithLocation.length > 0 ? (
-                                tripsWithLocation.map((trip) => {
-                                    if (!trip || !trip.current_location) return null;
+                    {/* Ongoing Trips List Card */}
+                    <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex-1 flex flex-col min-h-0 overflow-hidden">
+                        <div className="flex items-center justify-between p-4 border-b border-slate-100 dark:border-slate-800">
+                            <h3 className="font-bold text-slate-800 dark:text-white">Ongoing Trips</h3>
+                            <span className="text-xs font-semibold text-slate-500">{filteredTrips.length} trips</span>
+                        </div>
+                        
+                        <div className="flex-1 overflow-y-auto p-2 space-y-2">
+                            {filteredTrips.length === 0 ? (
+                                <div className="text-center py-10">
+                                    <Car className="h-8 w-8 text-slate-300 mx-auto mb-2" />
+                                    <p className="text-sm text-slate-500">No active vehicles</p>
+                                </div>
+                            ) : (
+                                filteredTrips.map((trip) => {
                                     const isSelected = selectedTrip?.trip_id === trip.trip_id;
-                                    const isFocused = focusedTrip?.trip_id === trip.trip_id;
-                                    const plateNumber = trip?.vehicle?.plate_number || trip?.plate_number || '';
-                                    const vehicleModel = trip?.vehicle?.vehicle_model || '';
-
                                     return (
-                                        <React.Fragment key={trip.trip_id}>
-                                            {trip.route && trip.route.length > 1 && (
-                                                <Polyline
-                                                    positions={trip.route.map(p => [p.latitude, p.longitude])}
-                                                    color={isSelected || isFocused ? '#2563eb' : '#94a3b8'}
-                                                    weight={isSelected || isFocused ? 4 : 2}
-                                                    opacity={isSelected || isFocused ? 0.9 : 0.4}
-                                                    dashArray={isSelected || isFocused ? null : '5, 5'}
-                                                />
+                                        <div
+                                            key={trip.trip_id}
+                                            onClick={() => handleTripSelect(trip)}
+                                            className={cn(
+                                                "p-3 rounded-xl cursor-pointer transition-all duration-200 border-l-4",
+                                                isSelected ? "bg-blue-50 dark:bg-blue-900/20 border-blue-500 shadow-sm" : "bg-transparent border-transparent hover:bg-slate-50 dark:hover:bg-slate-800/50"
                                             )}
+                                        >
+                                            <div className="flex items-start justify-between">
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex items-center gap-2 mb-1">
+                                                        <span className="font-mono text-sm font-bold text-slate-800 dark:text-white">
+                                                            {trip.vehicle?.plate_number || 'N/A'}
+                                                        </span>
+                                                        <span className="text-[10px] text-slate-400">·</span>
+                                                        <span className="text-xs text-slate-500 truncate">{trip.vehicle?.vehicle_model}</span>
+                                                        
+                                                        <Badge className={`ml-auto text-[10px] px-2 py-0.5 rounded-md ${
+                                                            trip.status === 'in_transit' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'
+                                                        }`}>
+                                                            {getStatusLabel(trip.status)}
+                                                        </Badge>
+                                                    </div>
+                                                    
+                                                    <div className="text-xs text-slate-500 truncate flex items-center gap-1 mt-0.5">
+                                                        GSO → {trip.destination} → GSO
+                                                    </div>
 
-                                            <Marker
-                                                position={[trip.current_location.latitude, trip.current_location.longitude]}
-                                                icon={createVehicleIcon(
-                                                    trip.status,
-                                                    isSelected,
-                                                    true,
-                                                    isFocused,
-                                                    plateNumber,
-                                                    vehicleModel
-                                                )}
-                                                eventHandlers={{
-                                                    click: () => handleTripSelect(trip),
-                                                }}
-                                                ref={(ref) => {
-                                                    if (ref) {
-                                                        markerRefs.current[trip.trip_id] = ref;
-                                                    }
-                                                }}
-                                            >
-                                                <Popup>
-                                                    <TripPopupContent
-                                                        trip={trip}
-                                                        onViewTrip={handleViewTrip}
-                                                        onCenter={handleCenter}
-                                                    />
-                                                </Popup>
-                                            </Marker>
-
-                                            {trip.current_location.accuracy_meters && trip.current_location.accuracy_meters < 100 && (
-                                                <Circle
-                                                    center={[trip.current_location.latitude, trip.current_location.longitude]}
-                                                    radius={trip.current_location.accuracy_meters}
-                                                    color={isSelected || isFocused ? '#2563eb' : '#94a3b8'}
-                                                    fillColor={isSelected || isFocused ? '#2563eb' : '#94a3b8'}
-                                                    fillOpacity={0.1}
-                                                />
-                                            )}
-                                        </React.Fragment>
+                                                    <div className="flex items-center gap-4 mt-2">
+                                                        <div>
+                                                            <div className="text-xs font-semibold text-slate-800 dark:text-white">
+                                                                {trip.current_location?.speed_kmh ? `${trip.current_location.speed_kmh} km/h` : '0 km/h'}
+                                                            </div>
+                                                        </div>
+                                                        <div className="text-xs text-slate-400">
+                                                            {formatTime(trip.current_location?.recorded_at)}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <ChevronRight className="h-4 w-4 text-slate-400 mt-2" />
+                                            </div>
+                                        </div>
                                     );
                                 })
-                            ) : (
-                                <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
-                                    <div className="bg-white/90 dark:bg-slate-900/90 backdrop-blur-sm rounded-2xl shadow-2xl p-8 max-w-md text-center pointer-events-auto border border-slate-200/60 dark:border-slate-700/60">
-                                        <div className="w-20 h-20 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto mb-4">
-                                            <Satellite className="h-10 w-10 text-slate-400 dark:text-slate-500" />
-                                        </div>
-                                        <p className="text-slate-600 dark:text-slate-400 font-medium text-lg">No active vehicles</p>
-                                        <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">
-                                            Vehicles with GPS tracking will appear here
-                                        </p>
-                                    </div>
-                                </div>
-                            )}
-                        </MapContainer>
-                    )}
-                </div>
-
-                {/* Toggle button */}
-                <button
-                    onClick={() => setIsSidebarOpen(prev => !prev)}
-                    className={cn(
-                        "absolute top-1/2 -translate-y-1/2 z-[1001] flex items-center justify-center",
-                        "w-8 h-16 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700",
-                        "border-y border-l border-slate-200 dark:border-slate-700",
-                        "rounded-l-lg shadow-lg transition-all duration-300",
-                        isSidebarOpen ? "right-80" : "right-0"
-                    )}
-                    title={isSidebarOpen ? "Hide vehicles panel" : "Show vehicles panel"}
-                >
-                    {isSidebarOpen ? (
-                        <ChevronRight className="h-4 w-4 text-slate-600 dark:text-slate-300" />
-                    ) : (
-                        <ChevronLeft className="h-4 w-4 text-slate-600 dark:text-slate-300" />
-                    )}
-                </button>
-
-                {/* Sidebar */}
-                <div
-                    className={cn(
-                        "flex-shrink-0 bg-white dark:bg-slate-900 border-l border-slate-200/60 dark:border-slate-800/60 overflow-hidden",
-                        "transition-[width] duration-300 ease-in-out",
-                        isSidebarOpen ? "w-80" : "w-0"
-                    )}
-                >
-                    <div className="w-80 h-full flex flex-col">
-                        {/* ============ Tab Header ============ */}
-                        <div className="flex-shrink-0 px-3 pt-3 pb-2 border-b border-slate-200/60 dark:border-slate-800/60">
-                            <div className="flex gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
-                                {[
-                                    { key: 'active', label: 'Active', count: tripsWithLocation.length },
-                                    { key: 'refuelings', label: 'Refuelings', count: refuelings.length },
-                                    { key: 'history', label: 'History', count: completedTrips.length },
-                                ].map(tab => (
-                                    <button
-                                        key={tab.key}
-                                        onClick={() => setSidebarTab(tab.key)}
-                                        className={cn(
-                                            "flex-1 px-2 py-1.5 text-xs font-medium rounded-md transition-colors flex items-center justify-center gap-1",
-                                            sidebarTab === tab.key
-                                                ? "bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm"
-                                                : "text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
-                                        )}
-                                    >
-                                        {tab.label}
-                                        {tab.count > 0 && (
-                                            <span className={cn(
-                                                "text-[10px] px-1.5 py-0.5 rounded-full font-semibold",
-                                                sidebarTab === tab.key
-                                                    ? "bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300"
-                                                    : "bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400"
-                                            )}>
-                                                {tab.count}
-                                            </span>
-                                        )}
-                                    </button>
-                                ))}
-                            </div>
-
-                            {polylineInfo && (
-                                <div className="mt-2 flex items-center justify-between bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 rounded-lg px-2.5 py-1.5">
-                                    <div className="flex items-center gap-1.5 min-w-0">
-                                        <div className="w-1.5 h-1.5 rounded-full bg-red-500" />
-                                        <span className="text-[11px] font-medium text-red-700 dark:text-red-300 truncate">
-                                            Route: {polylineInfo.label}
-                                        </span>
-                                    </div>
-                                    <div className="flex items-center gap-2 flex-shrink-0">
-                                        {/* ✅ REPLAY BUTTON */}
-                                        {polylineRoute && polylineRoute.length > 1 && (
-                                            <button
-                                                onClick={handleReplay}
-                                                className="text-red-500 hover:text-red-700 flex items-center gap-1 text-[10px] font-bold"
-                                                title={isReplaying ? "Stop Replay" : "Play Replay"}
-                                            >
-                                                {isReplaying ? (
-                                                    <Square className="h-3 w-3 fill-red-500" />
-                                                ) : (
-                                                    <Play className="h-3.5 w-3.5 fill-red-500" />
-                                                )}
-                                            </button>
-                                        )}
-                                        <button
-                                            onClick={handleClearPolyline}
-                                            className="text-red-500 hover:text-red-700 flex-shrink-0"
-                                            title="Clear route"
-                                        >
-                                            <X className="h-3.5 w-3.5" />
-                                        </button>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-
-                        {/* ============ Tab Body ============ */}
-                        <div className="flex-1 overflow-y-auto p-3 space-y-2">
-
-                            {/* ----- ACTIVE TAB ----- */}
-                            {sidebarTab === 'active' && (
-                                tripsWithLocation.length === 0 ? (
-                                    <div className="text-center py-12">
-                                        <div className="w-12 h-12 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto mb-3">
-                                            <Car className="h-6 w-6 text-slate-400 dark:text-slate-500" />
-                                        </div>
-                                        <p className="text-slate-500 dark:text-slate-400 text-sm">No active vehicles</p>
-                                        <p className="text-xs text-slate-400 mt-1">Waiting for GPS pings...</p>
-                                    </div>
-                                ) : (
-                                    tripsWithLocation.map((trip) => {
-                                        if (!trip) return null;
-                                        const isSelected = selectedTrip?.trip_id === trip.trip_id;
-                                        const isFocused = focusedTrip?.trip_id === trip.trip_id;
-                                        const { current_location } = trip;
-
-                                        return (
-                                            <div
-                                                key={trip.trip_id}
-                                                onClick={() => handleTripSelect(trip)}
-                                                className={cn(
-                                                    "p-3 rounded-xl cursor-pointer transition-all duration-200 relative",
-                                                    isSelected
-                                                        ? "bg-blue-50 dark:bg-blue-900/20 ring-2 ring-blue-500 shadow-sm shadow-blue-500/10"
-                                                        : "hover:bg-slate-50 dark:hover:bg-slate-800/50"
-                                                )}
-                                            >
-                                                <div className="flex items-start justify-between gap-2">
-                                                    <div className="flex-1 min-w-0">
-                                                        <div className="flex items-center gap-2">
-                                                            <div className={`w-2 h-2 rounded-full ${getStatusDot(trip.status)} animate-pulse`} />
-                                                            <span className="font-mono text-sm font-semibold truncate text-slate-800 dark:text-white">
-                                                                {trip.ticket_number}
-                                                            </span>
-                                                            <span className="text-[10px] text-emerald-500 font-medium">● Live</span>
-                                                        </div>
-                                                        <div className="mt-1 text-sm text-slate-600 dark:text-slate-300 truncate flex items-center gap-1.5">
-                                                            <Car className="h-3 w-3 text-slate-400" />
-                                                            <span className="font-mono font-semibold">
-                                                                {trip.vehicle?.plate_number || 'N/A'}
-                                                            </span>
-                                                            <span className="text-slate-400 mx-1">•</span>
-                                                            <User className="h-3 w-3 text-slate-400" />
-                                                            {trip.driver?.name || 'N/A'}
-                                                        </div>
-                                                        <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-400 truncate flex items-center gap-1">
-                                                            <MapPin className="h-3 w-3" />
-                                                            {trip.destination || 'N/A'}
-                                                        </div>
-                                                    </div>
-                                                    <div className="text-right flex-shrink-0">
-                                                        <div className="text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-1 justify-end">
-                                                            <Gauge className="h-3 w-3 text-slate-400" />
-                                                            {current_location?.speed_kmh || 0} km/h
-                                                        </div>
-                                                        <div className="text-xs text-slate-400 dark:text-slate-500 flex items-center gap-1 justify-end">
-                                                            <Clock className="h-3 w-3" />
-                                                            {formatTime(current_location?.recorded_at)}
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        );
-                                    })
-                                )
-                            )}
-
-                            {/* ----- REFUELINGS TAB ----- */}
-                            {sidebarTab === 'refuelings' && (
-                                refuelingsLoading ? (
-                                    <div className="text-center py-12">
-                                        <Loader2 className="h-6 w-6 animate-spin text-slate-400 mx-auto" />
-                                        <p className="text-xs text-slate-400 mt-2">Loading refuelings...</p>
-                                    </div>
-                                ) : refuelings.length === 0 ? (
-                                    <div className="text-center py-12">
-                                        <div className="w-12 h-12 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto mb-3">
-                                            <Fuel className="h-6 w-6 text-slate-400 dark:text-slate-500" />
-                                        </div>
-                                        <p className="text-slate-500 dark:text-slate-400 text-sm">No refuelings yet</p>
-                                        <p className="text-xs text-slate-400 mt-1">Recent fuel purchases will appear here</p>
-                                    </div>
-                                ) : (
-                                    refuelings.map((r) => (
-                                        <div
-                                            key={r.fuel_receipt_id}
-                                            className="p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
-                                        >
-                                            <div className="flex items-start justify-between gap-2">
-                                                <div className="flex-1 min-w-0">
-                                                    <div className="flex items-center gap-2">
-                                                        <div className="w-2 h-2 rounded-full bg-amber-500" />
-                                                        <span className="font-mono text-sm font-semibold text-slate-800 dark:text-white truncate">
-                                                            {r.plate_number}
-                                                        </span>
-                                                    </div>
-                                                    <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-400 truncate">
-                                                        {r.vehicle_model} • {r.driver_name}
-                                                    </div>
-                                                    <div className="mt-1 text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2">
-                                                        <span className="font-semibold text-amber-600 dark:text-amber-400">
-                                                            {r.liters_availed.toFixed(2)} L
-                                                        </span>
-                                                        <span className="text-slate-300 dark:text-slate-600">·</span>
-                                                        <span>₱{r.amount_on_receipt.toFixed(2)}</span>
-                                                    </div>
-                                                </div>
-                                                <div className="text-right flex-shrink-0">
-                                                    <div className="text-[10px] text-slate-400">
-                                                        {formatDateTimeShort(r.uploaded_at)}
-                                                    </div>
-                                                    {r.trip_id && (
-                                                        <button
-                                                            onClick={() => handlePolylineView(r)}
-                                                            className="mt-1 text-[10px] text-blue-600 hover:text-blue-700 dark:text-blue-400 flex items-center gap-1 ml-auto"
-                                                        >
-                                                            <Navigation className="h-3 w-3" />
-                                                            Route
-                                                        </button>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    ))
-                                )
-                            )}
-
-                            {/* ----- HISTORY TAB ----- */}
-                            {sidebarTab === 'history' && (
-                                completedLoading ? (
-                                    <div className="text-center py-12">
-                                        <Loader2 className="h-6 w-6 animate-spin text-slate-400 mx-auto" />
-                                        <p className="text-xs text-slate-400 mt-2">Loading trips...</p>
-                                    </div>
-                                ) : completedTrips.length === 0 ? (
-                                    <div className="text-center py-12">
-                                        <div className="w-12 h-12 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto mb-3">
-                                            <Clock className="h-6 w-6 text-slate-400 dark:text-slate-500" />
-                                        </div>
-                                        <p className="text-slate-500 dark:text-slate-400 text-sm">No completed trips</p>
-                                        <p className="text-xs text-slate-400 mt-1">Finished trips will appear here</p>
-                                    </div>
-                                ) : (
-                                    completedTrips.map((t) => (
-                                        <div
-                                            key={t.trip_id}
-                                            className="p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
-                                        >
-                                            <div className="flex items-start justify-between gap-2">
-                                                <div className="flex-1 min-w-0">
-                                                    <div className="flex items-center gap-2">
-                                                        <div className="w-2 h-2 rounded-full bg-indigo-500" />
-                                                        <span className="font-mono text-sm font-semibold text-slate-800 dark:text-white truncate">
-                                                            {t.ticket_number}
-                                                        </span>
-                                                    </div>
-                                                    <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-400 truncate">
-                                                        {t.plate_number} • {t.driver_name}
-                                                    </div>
-                                                    <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-400 truncate flex items-center gap-1">
-                                                        <MapPin className="h-3 w-3" />
-                                                        {t.destination}
-                                                    </div>
-                                                    <div className="mt-1 text-xs flex items-center gap-2">
-                                                        <span className="font-semibold text-blue-600 dark:text-blue-400">
-                                                            {t.actual_distance_km?.toFixed(2) ?? '0.00'} km
-                                                        </span>
-                                                        <span className="text-slate-300 dark:text-slate-600">·</span>
-                                                        <span className="text-slate-500">{t.ping_count} pings</span>
-                                                    </div>
-                                                </div>
-                                                <div className="text-right flex-shrink-0">
-                                                    <div className="text-[10px] text-slate-400">
-                                                        {t.trip_date || '--'}
-                                                    </div>
-                                                    <button
-                                                        onClick={() => handlePolylineView(t)}
-                                                        className="mt-1 text-[10px] text-blue-600 hover:text-blue-700 dark:text-blue-400 flex items-center gap-1 ml-auto"
-                                                    >
-                                                        <Navigation className="h-3 w-3" />
-                                                        Route
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    ))
-                                )
                             )}
                         </div>
                     </div>
                 </div>
+
+                {/* RIGHT MAP AREA */}
+                <div className="flex-1 rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-sm relative">
+                    <MapContainer
+                        ref={mapRef}
+                        center={mapCenter}
+                        zoom={mapZoom}
+                        style={{ height: '100%', width: '100%' }}
+                        zoomControl={false}
+                        className="z-0"
+                    >
+                        {mapType === 'satellite' ? (
+                            <TileLayer url={MAP_TILES.satellite.url} attribution={MAP_TILES.satellite.attribution} />
+                        ) : (
+                            <TileLayer url={MAP_TILES.street.url} attribution={MAP_TILES.street.attribution} />
+                        )}
+                        <ZoomControl position="bottomright" />
+
+                        {polylineRoute && polylineRoute.length > 1 && (
+                            <Polyline positions={polylineRoute} color="#2563eb" weight={5} opacity={0.85} />
+                        )}
+
+                        {isReplaying && polylineRoute && polylineRoute.length > 0 && (
+                            <Marker position={polylineRoute[replayIndex]} icon={createVehicleIcon('in_transit', true, true, true, 'REPLAY', '')} />
+                        )}
+
+                        {tripsWithLocation.map((trip) => {
+                            if (!trip || !trip.current_location) return null;
+                            const isSelected = selectedTrip?.trip_id === trip.trip_id;
+                            return (
+                                <Marker
+                                    key={trip.trip_id}
+                                    position={[trip.current_location.latitude, trip.current_location.longitude]}
+                                    icon={createVehicleIcon(trip.status, isSelected, true, isSelected, trip.vehicle?.plate_number, trip.vehicle?.vehicle_model)}
+                                    eventHandlers={{ click: () => handleTripSelect(trip) }}
+                                >
+                                    <Popup><TripPopupContent trip={trip} onViewTrip={handleViewTrip} onCenter={handleCenter} /></Popup>
+                                </Marker>
+                            );
+                        })}
+                    </MapContainer>
+
+                    {/* Map Style Selector Overlay */}
+                    <div className="absolute top-4 right-4 z-[1000] bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 shadow-lg flex overflow-hidden">
+                        <button onClick={() => setMapType('street')} className={cn("px-4 py-1.5 text-xs font-medium", mapType === 'street' ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-100")}>Map</button>
+                        <button onClick={() => setMapType('satellite')} className={cn("px-4 py-1.5 text-xs font-medium", mapType === 'satellite' ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-100")}>Satellite</button>
+                    </div>
+
+                    {/* ✅ BOTTOM MAP OVERLAY (Route Progress) */}
+                    {selectedTrip && (
+                        <div className="absolute bottom-4 left-4 right-4 z-[1000] bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xl overflow-hidden animate-in slide-in-from-bottom-4 duration-300">
+                            
+                            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50">
+                                <div className="flex items-center gap-2">
+                                    <div className="p-1.5 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
+                                        <Truck className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                                    </div>
+                                    <span className="font-mono font-bold text-sm text-slate-800 dark:text-white">
+                                        {selectedTrip.vehicle?.plate_number}
+                                    </span>
+                                    <span className="text-xs text-slate-400">·</span>
+                                    <span className="text-xs text-slate-500">{selectedTrip.vehicle?.vehicle_model}</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 border-none">
+                                        {getStatusLabel(selectedTrip.status)}
+                                    </Badge>
+                                    <button onClick={() => handleViewTrip(selectedTrip)} className="text-xs text-blue-600 hover:text-blue-700 font-medium ml-2">
+                                        View Details <ArrowRight className="h-3 w-3 inline" />
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="p-4">
+                                {/* Route Timeline Graphic */}
+                                <div className="flex items-center justify-between text-[11px] text-slate-500 mb-2 font-medium">
+                                    <div className="flex flex-col items-center gap-1">
+                                        <div className="p-1.5 bg-slate-100 dark:bg-slate-800 rounded-full"><Fuel className="h-3.5 w-3.5 text-slate-500" /></div>
+                                        <span>Fuel Station</span>
+                                        <span className="text-[9px] text-slate-400">(0.0 km)</span>
+                                    </div>
+                                    <div className="flex-1 h-px bg-slate-200 dark:bg-slate-700 mx-2 relative">
+                                        <div className="absolute top-1/2 -translate-y-1/2 left-1/2 -translate-x-1/2 bg-white dark:bg-slate-900 px-2">
+                                            <MapPin className="h-4 w-4 text-blue-500" />
+                                        </div>
+                                    </div>
+                                    <div className="flex flex-col items-center gap-1">
+                                        <span className="text-xs font-semibold text-slate-800 dark:text-white">Destination</span>
+                                        <span className="text-[9px] text-slate-400">({selectedTrip.destination})</span>
+                                    </div>
+                                    <div className="flex-1 h-px bg-slate-200 dark:bg-slate-700 mx-2 relative">
+                                        <div className="absolute top-1/2 -translate-y-1/2 left-1/2 -translate-x-1/2 bg-white dark:bg-slate-900 px-2">
+                                            <div className="w-2 h-2 rounded-full bg-slate-300 dark:bg-slate-600" />
+                                        </div>
+                                    </div>
+                                    <div className="flex flex-col items-center gap-1">
+                                        <div className="p-1.5 bg-slate-100 dark:bg-slate-800 rounded-full"><MapPin className="h-3.5 w-3.5 text-slate-500" /></div>
+                                        <span>Laguindingan Hall</span>
+                                        <span className="text-[9px] text-slate-400">(56.3 km)</span>
+                                    </div>
+                                </div>
+
+                                {/* Distance Progress Bar */}
+                                <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-3 mt-4 relative overflow-hidden">
+                                    <div className="bg-emerald-500 h-3 rounded-full absolute left-0 top-0 transition-all duration-1000" style={{ width: '75%' }} />
+                                </div>
+                                
+                                <div className="flex justify-between items-center text-xs mt-2">
+                                    <span className="font-bold text-slate-800 dark:text-white text-sm">42.8 km <span className="text-slate-400 font-normal">/ 58.0 km</span></span>
+                                    <span className="text-slate-500">Variance: <span className="text-amber-500 font-semibold">+2.6 km (4.7%)</span></span>
+                                </div>
+                            </div>
+                            
+                            {/* Bottom info row */}
+                            <div className="grid grid-cols-4 gap-4 px-4 py-3 bg-slate-50 dark:bg-slate-900/80 border-t border-slate-100 dark:border-slate-800">
+                                <div>
+                                    <div className="text-[10px] text-slate-500">Current Location</div>
+                                    <div className="text-xs font-medium text-slate-800 dark:text-white truncate">Near Opol, Misamis Oriental</div>
+                                </div>
+                                <div>
+                                    <div className="text-[10px] text-slate-500">Start Time</div>
+                                    <div className="text-xs font-medium text-slate-800 dark:text-white">10:30 AM</div>
+                                </div>
+                                <div>
+                                    <div className="text-[10px] text-slate-500">Estimated Arrival</div>
+                                    <div className="text-xs font-medium text-slate-800 dark:text-white">12:15 PM</div>
+                                </div>
+                                <div>
+                                    <div className="text-[10px] text-slate-500">Current Distance</div>
+                                    <div className="text-xs font-medium text-slate-800 dark:text-white">42.8 km</div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+
             </div>
         </div>
     );
