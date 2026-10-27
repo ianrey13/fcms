@@ -3,10 +3,9 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from "@tanstack/react-query";
-import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 import { useRealtime } from '../../contexts/RealtimeContext';
 import { useOptimizedQuery } from '../../hooks/useOptimizedQuery';
-import { gpsAPI, gsoAPI } from '../../services/api'; // ✅ Added gsoAPI
+import { gpsAPI, gsoAPI } from '../../services/api'; 
 import echo from '../../services/echo';
 import {
     MapContainer, TileLayer, Marker, Polyline, ZoomControl,
@@ -15,9 +14,10 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { cn } from '@/lib/utils';
 import {
-    Car, Gauge, Clock, MapPin, User
+    Car, Gauge, Clock, MapPin, User, Search
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 
 // ============================================
 // CUSTOM MAP ICONS (SVG)
@@ -67,21 +67,19 @@ const LiveTracking = () => {
     const [selectedTrip, setSelectedTrip] = useState(null);
     const [mapType, setMapType] = useState('street');
     const [isWsConnected, setIsWsConnected] = useState(false);
+    const [searchTerm, setSearchTerm] = useState('');
     
     const mapRef = useRef(null);
-    const tripsDataRef = useRef([]);
     const hasSetupRef = useRef(false);
 
-    useEffect(() => { tripsDataRef.current = tripsData; }, [tripsData]);
-
-    // ✅ Fetch Real Dashboard Stats for Vehicles
+    // ✅ Fetch Real Dashboard Stats
     const { data: dashboardData } = useOptimizedQuery({
         queryKey: ['gso-dashboard-stats'],
         queryFn: async () => {
             const res = await gsoAPI.getDashboard();
             return res?.data?.data || {};
         },
-        staleTime: 60000, // 1 minute
+        staleTime: 60000, 
     });
 
     // Fetch Active Trips
@@ -175,14 +173,22 @@ const LiveTracking = () => {
         }
     };
 
-    if (isLoading && tripsData.length === 0) {
-        return <div className="h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 text-slate-500">Loading Live Tracking...</div>;
-    }
-
-    // Extract real numbers for stat cards
+    // ✅ Extract stats from dashboardData
     const totalVehicles = dashboardData?.total_vehicles || 0;
     const availableVehicles = dashboardData?.available_vehicles || 0;
     const inUseVehicles = dashboardData?.vehicles_in_use || 0;
+
+    // ✅ Merge Vehicles with Active Trips for the left list
+    // Since the backend doesn't return the full list in getDashboard yet, 
+    // we'll use active trips as the primary list and add an empty state.
+    const filteredTrips = tripsData.filter(trip => 
+        trip.vehicle?.plate_number?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        trip.vehicle?.vehicle_model?.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+
+    if (isLoading && tripsData.length === 0) {
+        return <div className="h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 text-slate-500">Loading Live Tracking...</div>;
+    }
 
     return (
         <div className="h-screen flex flex-col bg-slate-50 dark:bg-slate-950 font-sans">
@@ -219,7 +225,7 @@ const LiveTracking = () => {
                         <div className="bg-white dark:bg-slate-900 rounded-xl p-3 border border-slate-200 dark:border-slate-800">
                             <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Total Vehicles</p>
                             <p className="text-2xl font-bold text-slate-800 dark:text-white mt-1">{totalVehicles}</p>
-                            <p className="text-[10px] text-slate-400 mt-1">Active: {availableVehicles} | In Use: {inUseVehicles}</p>
+                            <p className="text-[10px] text-slate-400 mt-1">Available: {availableVehicles} | In Use: {inUseVehicles}</p>
                         </div>
                         <div className="bg-white dark:bg-slate-900 rounded-xl p-3 border border-slate-200 dark:border-slate-800">
                             <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Ongoing Trips</p>
@@ -228,60 +234,72 @@ const LiveTracking = () => {
                         </div>
                     </div>
 
-                    {/* Filters */}
-                    <div className="bg-white dark:bg-slate-900 rounded-xl p-3 border border-slate-200 dark:border-slate-800 flex flex-col gap-3">
-                        <select className="w-full text-sm bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-lg p-2 text-slate-700 dark:text-slate-300 outline-none">
-                            <option>All Vehicles</option>
-                        </select>
-                        <input type="text" placeholder="Search by plate no. or vehicle name..." className="w-full text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-2 text-slate-700 dark:text-slate-300 outline-none" />
+                    {/* Search Bar */}
+                    <div className="bg-white dark:bg-slate-900 rounded-xl p-3 border border-slate-200 dark:border-slate-800">
+                        <div className="relative">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                            <input 
+                                type="text" 
+                                placeholder="Search by plate no. or vehicle name..." 
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                className="w-full text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg pl-9 pr-3 py-2 text-slate-700 dark:text-slate-300 outline-none focus:ring-2 focus:ring-blue-500" 
+                            />
+                        </div>
                     </div>
 
                     {/* Ongoing Trips List */}
                     <div className="flex-1 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-col overflow-hidden">
                         <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-900">
                             <h2 className="font-bold text-slate-800 dark:text-white text-sm">Ongoing Trips</h2>
-                            <span className="text-xs text-slate-500">{tripsData.length} trips</span>
+                            <span className="text-xs text-slate-500">{filteredTrips.length} trips</span>
                         </div>
                         <div className="flex-1 overflow-y-auto p-2 space-y-2">
-                            {tripsData.map(trip => (
-                                <div 
-                                    key={trip.trip_id}
-                                    onClick={() => handleTripClick(trip)}
-                                    className={cn(
-                                        "p-3 rounded-lg border transition-all cursor-pointer flex items-center justify-between",
-                                        selectedTrip?.trip_id === trip.trip_id 
-                                            ? "bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800 shadow-sm" 
-                                            : "bg-white dark:bg-slate-800/50 border-transparent hover:bg-slate-50 dark:hover:bg-slate-800"
-                                    )}
-                                >
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center flex-shrink-0">
-                                            <Car className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-                                        </div>
-                                        <div>
-                                            <div className="flex items-center gap-2">
-                                                <span className="font-bold text-sm text-slate-800 dark:text-white">{trip.vehicle?.plate_number || 'Unknown'}</span>
-                                                <span className="text-[10px] text-slate-400">•</span>
-                                                <span className="text-xs text-slate-500">{trip.vehicle?.vehicle_model || 'Vehicle'}</span>
-                                            </div>
-                                            <p className="text-xs text-slate-500 mt-0.5 truncate max-w-[180px]">
-                                                {trip.destination || 'Unknown Destination'}
-                                            </p>
-                                        </div>
-                                    </div>
-                                    <div className="text-right flex-shrink-0">
-                                        <div className="flex flex-col items-end gap-1">
-                                            <Badge variant="outline" className="text-[10px] bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800">
-                                                In Transit
-                                            </Badge>
-                                            <span className="text-[10px] text-slate-500 mt-1 flex items-center gap-1">
-                                                <Clock className="h-3 w-3" />
-                                                {formatTime(trip.current_location?.recorded_at)}
-                                            </span>
-                                        </div>
-                                    </div>
+                            {filteredTrips.length === 0 ? (
+                                <div className="text-center py-8">
+                                    <p className="text-sm text-slate-500">No active trips found.</p>
                                 </div>
-                            ))}
+                            ) : (
+                                filteredTrips.map(trip => (
+                                    <div 
+                                        key={trip.trip_id}
+                                        onClick={() => handleTripClick(trip)}
+                                        className={cn(
+                                            "p-3 rounded-lg border transition-all cursor-pointer flex items-center justify-between",
+                                            selectedTrip?.trip_id === trip.trip_id 
+                                                ? "bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800 shadow-sm" 
+                                                : "bg-white dark:bg-slate-800/50 border-transparent hover:bg-slate-50 dark:hover:bg-slate-800"
+                                        )}
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center flex-shrink-0">
+                                                <Car className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                                            </div>
+                                            <div>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="font-bold text-sm text-slate-800 dark:text-white">{trip.vehicle?.plate_number || 'Unknown'}</span>
+                                                    <span className="text-[10px] text-slate-400">•</span>
+                                                    <span className="text-xs text-slate-500">{trip.vehicle?.vehicle_model || 'Vehicle'}</span>
+                                                </div>
+                                                <p className="text-xs text-slate-500 mt-0.5 truncate max-w-[180px]">
+                                                    {trip.driver?.name || 'Unknown Driver'} • {trip.destination || 'N/A'}
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <div className="text-right flex-shrink-0">
+                                            <div className="flex flex-col items-end gap-1">
+                                                <Badge variant="outline" className="text-[10px] bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800">
+                                                    In Transit
+                                                </Badge>
+                                                <span className="text-[10px] text-slate-500 mt-1 flex items-center gap-1">
+                                                    <Clock className="h-3 w-3" />
+                                                    {formatTime(trip.current_location?.recorded_at)}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))
+                            )}
                         </div>
                     </div>
                 </div>
@@ -306,7 +324,7 @@ const LiveTracking = () => {
                             />
                             <ZoomControl position="bottomright" />
 
-                            {tripsData.map(trip => {
+                            {filteredTrips.map(trip => {
                                 if (!trip.current_location) return null;
 
                                 return (
