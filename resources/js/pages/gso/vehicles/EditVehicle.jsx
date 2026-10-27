@@ -4,7 +4,7 @@
 // No duplicate toasts - single toast with all errors
 // Auto-focus first error field
 // + AlertDialog confirmation before update
-// + REMOVED: odometer_status (column does not exist in DB)
+// + REMOVED: initial fuel (only set on Add, not Edit)
 // + Angelo's fuel algorithm: tank_capacity, reference_efficiency
 // ============================================
 
@@ -708,7 +708,7 @@ const EditVehicle = () => {
               </FormField>
 
               {/* ═══════════════════════════════════════════════════════ */}
-              {/* ✅ ANGELO'S FUEL ALGORITHM — 2 FIELDS (initial fuel removed) */}
+              {/* ✅ ANGELO'S FUEL ALGORITHM — 2 FIELDS (initial fuel is locked) */}
               {/* ═══════════════════════════════════════════════════════ */}
               <div className="pt-3 border-t border-slate-200/60 dark:border-slate-700/60">
                 <div className="flex items-center gap-2 mb-3">
@@ -720,7 +720,7 @@ const EditVehicle = () => {
                       Fuel Tracking Parameters
                     </h3>
                     <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                      Tank starts empty. GSO fills it via Fuel Receipts.
+                      Adjust capacity or efficiency. Balance is tracked via Receipts.
                     </p>
                   </div>
                 </div>
