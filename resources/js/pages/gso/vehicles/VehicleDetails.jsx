@@ -50,19 +50,16 @@ const VehicleDetails = () => {
     const [activeTab, setActiveTab] = useState('overview');
     const [chartRange, setChartRange] = useState('7d');
     
-    // We reuse the existing vehicles hook to get the details
     const { data: vehicles = [], isLoading } = useVehicles();
     const vehicle = vehicles.find(v => v.vehicle_id === parseInt(id));
 
-    // Trip History State
+    // State for History
     const [selectedHistoryTrip, setSelectedHistoryTrip] = useState(null);
     const [routeCoordinates, setRouteCoordinates] = useState([]);
     const [loadingRoute, setLoadingRoute] = useState(false);
     const [isReplaying, setIsReplaying] = useState(false);
     const [replayIndex, setReplayIndex] = useState(0);
     const replayIntervalRef = useRef(null);
-
-    // Tooltip State
     const [hoveredPoint, setHoveredPoint] = useState(null);
 
     useEffect(() => {
@@ -71,7 +68,7 @@ const VehicleDetails = () => {
         };
     }, []);
 
-    // ✅ Fetch REAL Fuel Receipts for this vehicle
+    // Fetch Fuel Receipts
     const { data: fuelReceipts = [], isLoading: fuelLoading } = useQuery({
         queryKey: ['vehicle-fuel-receipts', vehicle?.plate_number],
         queryFn: async () => {
@@ -82,49 +79,8 @@ const VehicleDetails = () => {
         enabled: !!vehicle
     });
 
-    // ✅ Calculate Real Chart Data based on receipts
-    const chartData = useMemo(() => {
-        if (!fuelReceipts || fuelReceipts.length === 0) return { labels: [], values: [], max: 10 };
-
-        const sorted = [...fuelReceipts].sort((a, b) => new Date(a.uploaded_at) - new Date(b.uploaded_at));
-        const now = new Date();
-        const ranges = { '7d': 7, '30d': 30, '3m': 90 };
-        const daysToLookBack = ranges[chartRange];
-        
-        const cutoffDate = new Date();
-        cutoffDate.setDate(cutoffDate.getDate() - daysToLookBack);
-
-        let relevantReceipts = sorted.filter(r => new Date(r.uploaded_at) >= cutoffDate);
-        if (relevantReceipts.length === 0) relevantReceipts = sorted.slice(-5);
-
-        const grouped = {};
-        relevantReceipts.forEach(r => {
-            const dateObj = new Date(r.uploaded_at);
-            const dateStr = dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-            if (!grouped[dateStr]) grouped[dateStr] = 0;
-            grouped[dateStr] += parseFloat(r.liters || 0);
-        });
-
-        const labels = Object.keys(grouped);
-        const values = Object.values(grouped);
-        const max = Math.max(...values, 5) * 1.2; 
-
-        return { labels, values, max };
-    }, [fuelReceipts, chartRange]);
-
-    // ✅ Calculate Real Stat Cards
-    const stats = useMemo(() => {
-        if (!fuelReceipts || fuelReceipts.length === 0) return { totalFuel: 0, totalDistance: 0, avgEfficiency: 0 };
-        
-        const totalFuel = fuelReceipts.reduce((sum, r) => sum + parseFloat(r.liters || 0), 0);
-        const totalDistance = fuelReceipts.reduce((sum, r) => sum + parseFloat(r.gps_distance_km || 0), 0);
-        const avgEfficiency = totalFuel > 0 ? (totalDistance / totalFuel).toFixed(1) : 0;
-
-        return { totalFuel, totalDistance, avgEfficiency };
-    }, [fuelReceipts]);
-
-    // Trip History Query
-    const { data: historyData, isLoading: historyLoading } = useQuery({
+    // Fetch Trip History (Used for both the History tab and the Fuel Chart)
+    const { data: historyData = [], isLoading: historyLoading } = useQuery({
         queryKey: ['vehicle-history', id],
         queryFn: async () => {
             const res = await gpsAPI.getCompletedTrips({ limit: 50 });
@@ -133,6 +89,77 @@ const VehicleDetails = () => {
         },
         enabled: !!vehicle
     });
+
+    // ✅ Calculate Historical Fuel Balance
+    const chartData = useMemo(() => {
+        if (!vehicle) return { labels: [], values: [], max: 60 };
+        
+        const tankCap = parseFloat(vehicle.tank_capacity || 60);
+        const eff = parseFloat(vehicle.reference_efficiency || 10);
+        const currentBal = parseFloat(vehicle.current_fuel_balance || 0);
+
+        // 1. Create a timeline of all events (receipts + trips)
+        let events = [];
+
+        fuelReceipts.forEach(r => {
+            events.push({
+                date: new Date(r.uploaded_at),
+                type: 'purchase',
+                value: parseFloat(r.liters || 0)
+            });
+        });
+
+        historyData.forEach(t => {
+            events.push({
+                date: new Date(t.updated_at || t.trip_date), // fallback to trip_date if no updated_at
+                type: 'trip',
+                value: parseFloat(t.actual_distance_km || 0) / eff
+            });
+        });
+
+        // 2. Sort newest to oldest (Reverse chronological)
+        events.sort((a, b) => b.date - a.date);
+
+        // 3. Filter by range
+        const now = new Date();
+        const ranges = { '7d': 7, '30d': 30, '3m': 90 };
+        const cutoff = new Date();
+        cutoff.setDate(cutoff.getDate() - ranges[chartRange]);
+
+        // 4. Reverse Engineer Balance (Newest -> Oldest)
+        let runningBalance = currentBal;
+        let historyPoints = [];
+
+        for (let event of events) {
+            if (event.date < cutoff) break;
+
+            // Record the balance at this point in time
+            historyPoints.push({
+                date: event.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+                balance: Math.min(Math.max(runningBalance, 0), tankCap)
+            });
+
+            // Reverse the math to find the previous balance
+            if (event.type === 'purchase') {
+                runningBalance -= event.value; // Un-do the purchase
+            } else if (event.type === 'trip') {
+                runningBalance += event.value; // Un-do the trip (add back consumed liters)
+            }
+        }
+
+        // 5. Group by day (take the last balance of the day)
+        historyPoints.reverse(); // Put back in chronological order
+        
+        let grouped = {};
+        historyPoints.forEach(p => {
+            grouped[p.date] = p.balance;
+        });
+
+        const labels = Object.keys(grouped);
+        const values = Object.values(grouped);
+
+        return { labels, values, max: tankCap };
+    }, [vehicle, fuelReceipts, historyData, chartRange]);
 
     const handleViewRoute = async (trip) => {
         setSelectedHistoryTrip(trip);
@@ -187,14 +214,12 @@ const VehicleDetails = () => {
     const tankCap = parseFloat(vehicle.tank_capacity || 60);
     const refEff = parseFloat(vehicle.reference_efficiency || 10);
 
-    // ✅ SAFE SVG Path Generator
     const generatePath = (data, width, height, max) => {
         if (!data || data.length === 0) return '';
         if (data.length === 1) {
             const y = height - (data[0] / max) * height;
             return `M ${width/2} ${y}`;
         }
-        
         const xStep = width / (data.length - 1);
         return data.map((val, i) => {
             const x = i * xStep;
@@ -305,14 +330,17 @@ const VehicleDetails = () => {
                 </div>
             )}
 
-            {/* ✅ TAB CONTENT: FUEL (REAL DATA with Y-Axis) */}
+            {/* ✅ TAB CONTENT: FUEL (HISTORICAL BALANCE) */}
             {activeTab === 'fuel' && (
                 <div className="space-y-6">
                     <Card className="dark:bg-slate-900 border-slate-200 dark:border-slate-800 p-6">
                         <div className="flex justify-between items-center mb-6">
-                            <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
-                                <Activity className="h-5 w-5 text-blue-500"/> Fuel Consumption Overview
-                            </h3>
+                            <div>
+                                <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                                    <Activity className="h-5 w-5 text-blue-500"/> Fuel Balance History
+                                </h3>
+                                <p className="text-xs text-slate-500">Tank level based on Angelo's Algorithm (Receipts vs Trips)</p>
+                            </div>
                             <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
                                 <button onClick={() => setChartRange('7d')} className={cn("px-3 py-1 text-xs font-medium rounded-md transition-colors", chartRange === '7d' ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" : "text-slate-500")}>7 Days</button>
                                 <button onClick={() => setChartRange('30d')} className={cn("px-3 py-1 text-xs font-medium rounded-md transition-colors", chartRange === '30d' ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" : "text-slate-500")}>30 Days</button>
@@ -320,16 +348,15 @@ const VehicleDetails = () => {
                             </div>
                         </div>
 
-                        {fuelLoading ? (
+                        {fuelLoading || historyLoading ? (
                             <div className="h-64 flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-blue-500" /></div>
                         ) : chartData.values.length === 0 ? (
                             <div className="h-64 flex flex-col items-center justify-center text-slate-400">
                                 <Fuel className="h-10 w-10 mb-2 opacity-50" />
-                                <p>No fuel records found for this range.</p>
+                                <p>No fuel or trip history found for this range.</p>
                             </div>
                         ) : (
                             <div className="flex">
-                                {/* Y-Axis Labels */}
                                 <div className="flex flex-col justify-between text-[10px] text-slate-400 h-64 pr-2 py-1 font-mono text-right">
                                     <span>{Math.round(chartData.max).toFixed(0)}L</span>
                                     <span>{Math.round(chartData.max * 0.75).toFixed(0)}L</span>
@@ -338,24 +365,20 @@ const VehicleDetails = () => {
                                     <span>0L</span>
                                 </div>
 
-                                {/* The Chart */}
                                 <div className="flex-1 relative">
                                     <div className="h-64 w-full">
                                         <svg viewBox="0 0 700 200" className="w-full h-full overflow-visible preserve-3d">
-                                            {/* Grid Lines */}
                                             <line x1="0" y1="50" x2="700" y2="50" stroke="#e2e8f0" strokeWidth="1" strokeDasharray="4"/>
                                             <line x1="0" y1="100" x2="700" y2="100" stroke="#e2e8f0" strokeWidth="1" strokeDasharray="4"/>
                                             <line x1="0" y1="150" x2="700" y2="150" stroke="#e2e8f0" strokeWidth="1" strokeDasharray="4"/>
                                             <line x1="0" y1="200" x2="700" y2="200" stroke="#cbd5e1" strokeWidth="1" />
 
-                                            {/* Chart Area Fill */}
                                             <path 
                                                 d={`${generatePath(chartData.values, 700, 200, chartData.max)} L ${chartData.values.length === 1 ? 350 : 700} 200 L 0 200 Z`} 
                                                 fill="url(#gradient)" 
                                                 opacity="0.2" 
                                             />
                                             
-                                            {/* Chart Line */}
                                             <path 
                                                 d={generatePath(chartData.values, 700, 200, chartData.max)} 
                                                 fill="none" 
@@ -365,7 +388,6 @@ const VehicleDetails = () => {
                                                 strokeLinejoin="round" 
                                             />
 
-                                            {/* Data Points with Hover Tooltips */}
                                             {chartData.values.map((val, i) => {
                                                 const x = chartData.values.length === 1 ? 350 : (i / (chartData.values.length - 1)) * 700;
                                                 const y = 200 - (val / chartData.max) * 200;
@@ -379,7 +401,6 @@ const VehicleDetails = () => {
                                                         <circle cx={x} cy={y} r="6" fill="transparent" />
                                                         <circle cx={x} cy={y} r="4" fill="white" stroke="#3b82f6" strokeWidth="2" />
                                                         
-                                                        {/* SVG Tooltip */}
                                                         {hoveredPoint?.label === chartData.labels[i] && (
                                                             <foreignObject x={Math.min(Math.max(x - 40, 0), 620)} y={y - 35} width="100" height="30">
                                                                 <div className="bg-slate-800 text-white text-[10px] font-semibold px-2 py-1 rounded shadow-md text-center">
@@ -400,7 +421,6 @@ const VehicleDetails = () => {
                                         </svg>
                                     </div>
 
-                                    {/* X-Axis Labels */}
                                     <div className="flex justify-between text-xs text-slate-400 px-2 font-medium mt-1">
                                         {chartData.labels.map((label, i) => <span key={i}>{label}</span>)}
                                     </div>
@@ -415,8 +435,8 @@ const VehicleDetails = () => {
                             <div className="flex items-center gap-3">
                                 <div className="p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg"><Fuel className="h-5 w-5 text-blue-500" /></div>
                                 <div>
-                                    <p className="text-xs text-slate-500 uppercase tracking-wider font-semibold">Total Fuel Consumed</p>
-                                    <p className="text-xl font-bold text-slate-900 dark:text-white">{stats.totalFuel.toFixed(1)} L</p>
+                                    <p className="text-xs text-slate-500 uppercase tracking-wider font-semibold">Current Balance</p>
+                                    <p className="text-xl font-bold text-slate-900 dark:text-white">{currentFuel.toFixed(1)} L</p>
                                 </div>
                             </div>
                         </Card>
@@ -425,8 +445,8 @@ const VehicleDetails = () => {
                             <div className="flex items-center gap-3">
                                 <div className="p-2 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg"><MapPin className="h-5 w-5 text-emerald-500" /></div>
                                 <div>
-                                    <p className="text-xs text-slate-500 uppercase tracking-wider font-semibold">Total Distance</p>
-                                    <p className="text-xl font-bold text-slate-900 dark:text-white">{stats.totalDistance.toFixed(1)} km</p>
+                                    <p className="text-xs text-slate-500 uppercase tracking-wider font-semibold">Tank Capacity</p>
+                                    <p className="text-xl font-bold text-slate-900 dark:text-white">{tankCap.toFixed(1)} L</p>
                                 </div>
                             </div>
                         </Card>
@@ -435,8 +455,8 @@ const VehicleDetails = () => {
                             <div className="flex items-center gap-3">
                                 <div className="p-2 bg-purple-50 dark:bg-purple-900/20 rounded-lg"><Gauge className="h-5 w-5 text-purple-500" /></div>
                                 <div>
-                                    <p className="text-xs text-slate-500 uppercase tracking-wider font-semibold">Avg. Fuel Efficiency</p>
-                                    <p className="text-xl font-bold text-slate-900 dark:text-white">{stats.avgEfficiency} km/L</p>
+                                    <p className="text-xs text-slate-500 uppercase tracking-wider font-semibold">Ref. Efficiency</p>
+                                    <p className="text-xl font-bold text-slate-900 dark:text-white">{refEff} km/L</p>
                                 </div>
                             </div>
                         </Card>
