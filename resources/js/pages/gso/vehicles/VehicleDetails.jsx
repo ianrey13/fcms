@@ -1,15 +1,15 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useVehicles } from '../../../hooks/useVehicleManagement';
-import { gpsAPI } from '../../../services/api';
+import { gpsAPI, gsoAPI } from '../../../services/api';
 import { MapContainer, TileLayer, Polyline, Marker } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { cn } from '@/lib/utils';
 import {
     ArrowLeft, Car, Fuel, Gauge, MapPin, Clock, User, 
-    Building2, Activity, Navigation, Play, Square, Loader2
+    Building2, Activity, Navigation, Play, Square, Loader2, TrendingUp, TrendingDown
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -48,29 +48,86 @@ const VehicleDetails = () => {
     const { id } = useParams();
     const navigate = useNavigate();
     const [activeTab, setActiveTab] = useState('overview');
+    const [chartRange, setChartRange] = useState('7d');
     
     // We reuse the existing vehicles hook to get the details
     const { data: vehicles = [], isLoading } = useVehicles();
     const vehicle = vehicles.find(v => v.vehicle_id === parseInt(id));
 
-    // State for selecting a past trip to view its route
+    // Trip History State
     const [selectedHistoryTrip, setSelectedHistoryTrip] = useState(null);
     const [routeCoordinates, setRouteCoordinates] = useState([]);
     const [loadingRoute, setLoadingRoute] = useState(false);
-
-    // ✅ Replay State
     const [isReplaying, setIsReplaying] = useState(false);
     const [replayIndex, setReplayIndex] = useState(0);
     const replayIntervalRef = useRef(null);
 
-    // ✅ Cleanup replay on unmount
     useEffect(() => {
         return () => {
             if (replayIntervalRef.current) clearInterval(replayIntervalRef.current);
         };
     }, []);
 
-    // Fetch Trip History for this vehicle
+    // ✅ Fetch REAL Fuel Receipts for this vehicle
+    const { data: fuelReceipts = [], isLoading: fuelLoading } = useQuery({
+        queryKey: ['vehicle-fuel-receipts', vehicle?.plate_number],
+        queryFn: async () => {
+            const res = await gsoAPI.getFuelReceipts();
+            const allReceipts = res?.data?.data || [];
+            // Filter receipts belonging to this vehicle
+            return allReceipts.filter(r => r.plate_number === vehicle?.plate_number);
+        },
+        enabled: !!vehicle
+    });
+
+    // ✅ Calculate Real Chart Data based on receipts
+    const chartData = useMemo(() => {
+        if (!fuelReceipts || fuelReceipts.length === 0) return { labels: [], values: [], max: 10 };
+
+        // Sort by date ascending
+        const sorted = [...fuelReceipts].sort((a, b) => new Date(a.uploaded_at) - new Date(b.uploaded_at));
+        
+        const now = new Date();
+        const ranges = { '7d': 7, '30d': 30, '3m': 90 };
+        const daysToLookBack = ranges[chartRange];
+        const cutoffDate = new Date(now.setDate(now.getDate() - daysToLookBack));
+
+        let relevantReceipts = sorted.filter(r => new Date(r.uploaded_at) >= cutoffDate);
+
+        // If no receipts in the range, show the last 5 receipts just so the chart isn't empty
+        if (relevantReceipts.length === 0) {
+            relevantReceipts = sorted.slice(-5);
+        }
+
+        // Group by Date (YYYY-MM-DD)
+        const grouped = {};
+        relevantReceipts.forEach(r => {
+            const dateStr = new Date(r.uploaded_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            if (!grouped[dateStr]) grouped[dateStr] = 0;
+            grouped[dateStr] += parseFloat(r.liters);
+        });
+
+        const labels = Object.keys(grouped);
+        const values = Object.values(grouped);
+        const max = Math.max(...values, 10) * 1.2; // Add 20% headroom for the chart
+
+        return { labels, values, max };
+    }, [fuelReceipts, chartRange]);
+
+    // ✅ Calculate Real Stat Cards
+    const stats = useMemo(() => {
+        if (!fuelReceipts || fuelReceipts.length === 0) return { totalFuel: 0, totalDistance: 0, avgEfficiency: 0 };
+        
+        const totalFuel = fuelReceipts.reduce((sum, r) => sum + parseFloat(r.liters || 0), 0);
+        const totalDistance = fuelReceipts.reduce((sum, r) => sum + parseFloat(r.gps_distance_km || 0), 0);
+        
+        // Efficiency = Distance / Liters
+        const avgEfficiency = totalFuel > 0 ? (totalDistance / totalFuel).toFixed(1) : 0;
+
+        return { totalFuel, totalDistance, avgEfficiency };
+    }, [fuelReceipts]);
+
+    // Trip History Query
     const { data: historyData, isLoading: historyLoading } = useQuery({
         queryKey: ['vehicle-history', id],
         queryFn: async () => {
@@ -81,7 +138,6 @@ const VehicleDetails = () => {
         enabled: !!vehicle
     });
 
-    // Fetch the route for the selected trip
     const handleViewRoute = async (trip) => {
         setSelectedHistoryTrip(trip);
         setLoadingRoute(true);
@@ -98,7 +154,6 @@ const VehicleDetails = () => {
         }
     };
 
-    // ✅ Replay Handlers
     const handleStopReplay = () => {
         setIsReplaying(false);
         setReplayIndex(0);
@@ -110,11 +165,7 @@ const VehicleDetails = () => {
 
     const handleReplay = () => {
         if (!routeCoordinates || routeCoordinates.length < 2) return;
-        
-        if (isReplaying) {
-            handleStopReplay();
-            return;
-        }
+        if (isReplaying) { handleStopReplay(); return; }
 
         setIsReplaying(true);
         setReplayIndex(0);
@@ -129,7 +180,7 @@ const VehicleDetails = () => {
                 return;
             }
             setReplayIndex(currentIdx);
-        }, 300); // 300ms per ping
+        }, 300);
     };
 
     if (isLoading) return <div className="p-8 text-center text-slate-500">Loading vehicle details...</div>;
@@ -139,6 +190,19 @@ const VehicleDetails = () => {
     const currentFuel = parseFloat(vehicle.current_fuel_balance || 0);
     const tankCap = parseFloat(vehicle.tank_capacity || 60);
     const refEff = parseFloat(vehicle.reference_efficiency || 10);
+
+    // Helper to generate SVG path
+    const generatePath = (data, width, height, max) => {
+        if (data.length === 0) return '';
+        if (data.length === 1) return `M ${width/2} ${height - (data[0]/max)*height}`;
+        
+        const xStep = width / (data.length - 1);
+        return data.map((val, i) => {
+            const x = i * xStep;
+            const y = height - (val / max) * height;
+            return `${i === 0 ? 'M' : 'L'} ${x} ${y}`;
+        }).join(' ');
+    };
 
     return (
         <div className="min-h-screen bg-slate-50 dark:bg-slate-950 p-4 md:p-6 font-sans">
@@ -153,13 +217,10 @@ const VehicleDetails = () => {
 
             {/* Top Hero Section */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
-                
                 {/* Main Info Card */}
                 <Card className="lg:col-span-2 dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm flex flex-col md:flex-row overflow-hidden">
                     <div className="p-6 bg-slate-100/50 dark:bg-slate-800/30 flex items-center justify-center md:w-1/3">
-                        <div className="relative">
-                            <Car className="h-20 w-20 text-slate-300 dark:text-slate-700" />
-                        </div>
+                        <Car className="h-20 w-20 text-slate-300 dark:text-slate-700" />
                     </div>
                     <div className="p-6 flex-1 flex flex-col justify-center">
                         <div className="flex justify-between items-start mb-4">
@@ -174,25 +235,16 @@ const VehicleDetails = () => {
                                     {vehicle.vehicle_model} • {vehicle.fuel_type} • {vehicle.maintenance_flag ? 'Under Maintenance' : 'Serviceable'}
                                 </p>
                             </div>
-                            <Button variant="outline" size="sm" onClick={() => navigate(`/admin/vehicles/edit/${id}`)}>
-                                Edit
-                            </Button>
+                            <Button variant="outline" size="sm" onClick={() => navigate(`/admin/vehicles/edit/${id}`)}>Edit</Button>
                         </div>
-
                         <div className="grid grid-cols-2 gap-4 mt-2 border-t border-slate-100 dark:border-slate-800 pt-4">
                             <div className="flex items-center gap-2">
                                 <User className="h-8 w-8 p-1.5 bg-slate-100 dark:bg-slate-800 text-slate-500 rounded-full" />
-                                <div>
-                                    <p className="text-xs text-slate-400 uppercase tracking-wider">Assigned Driver</p>
-                                    <p className="font-medium text-slate-800 dark:text-slate-200">Juan Dela Cruz</p>
-                                </div>
+                                <div><p className="text-xs text-slate-400 uppercase tracking-wider">Assigned Driver</p><p className="font-medium text-slate-800 dark:text-slate-200">Juan Dela Cruz</p></div>
                             </div>
                             <div className="flex items-center gap-2">
                                 <Building2 className="h-8 w-8 p-1.5 bg-slate-100 dark:bg-slate-800 text-slate-500 rounded-full" />
-                                <div>
-                                    <p className="text-xs text-slate-400 uppercase tracking-wider">Department</p>
-                                    <p className="font-medium text-slate-800 dark:text-slate-200">{vehicle.department?.department_name || 'Engineering Office'}</p>
-                                </div>
+                                <div><p className="text-xs text-slate-400 uppercase tracking-wider">Department</p><p className="font-medium text-slate-800 dark:text-slate-200">{vehicle.department?.department_name || 'Engineering Office'}</p></div>
                             </div>
                         </div>
                     </div>
@@ -204,7 +256,6 @@ const VehicleDetails = () => {
                         <Fuel className="h-4 w-4 text-blue-500" />
                         <h3 className="font-bold text-slate-800 dark:text-white">Fuel Information</h3>
                     </div>
-                    
                     <div className="relative w-32 h-32 mt-6">
                         <svg className="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
                             <path className="text-slate-100 dark:text-slate-800" strokeWidth="4" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
@@ -215,20 +266,10 @@ const VehicleDetails = () => {
                             <span className="text-[10px] text-slate-400 uppercase">Current Fuel</span>
                         </div>
                     </div>
-
                     <div className="w-full mt-6 space-y-2">
-                        <div className="flex justify-between text-sm">
-                            <span className="text-slate-500 flex items-center gap-1"><Fuel className="h-3 w-3"/> Tank Capacity</span>
-                            <span className="font-semibold text-slate-800 dark:text-white">{tankCap.toFixed(1)} L</span>
-                        </div>
-                        <div className="flex justify-between text-sm">
-                            <span className="text-slate-500 flex items-center gap-1"><Activity className="h-3 w-3"/> Fuel Efficiency</span>
-                            <span className="font-semibold text-slate-800 dark:text-white">{refEff} km/L</span>
-                        </div>
-                        <div className="flex justify-between text-sm">
-                            <span className="text-slate-500 flex items-center gap-1"><Navigation className="h-3 w-3"/> Estimated Range</span>
-                            <span className="font-semibold text-slate-800 dark:text-white">~ {Math.round(currentFuel * refEff)} km</span>
-                        </div>
+                        <div className="flex justify-between text-sm"><span className="text-slate-500 flex items-center gap-1"><Fuel className="h-3 w-3"/> Tank Capacity</span><span className="font-semibold text-slate-800 dark:text-white">{tankCap.toFixed(1)} L</span></div>
+                        <div className="flex justify-between text-sm"><span className="text-slate-500 flex items-center gap-1"><Activity className="h-3 w-3"/> Fuel Efficiency</span><span className="font-semibold text-slate-800 dark:text-white">{refEff} km/L</span></div>
+                        <div className="flex justify-between text-sm"><span className="text-slate-500 flex items-center gap-1"><Navigation className="h-3 w-3"/> Estimated Range</span><span className="font-semibold text-slate-800 dark:text-white">~ {Math.round(currentFuel * refEff)} km</span></div>
                     </div>
                 </Card>
             </div>
@@ -241,9 +282,7 @@ const VehicleDetails = () => {
                         onClick={() => setActiveTab(tab)}
                         className={cn(
                             "px-6 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 capitalize",
-                            activeTab === tab 
-                                ? "border-blue-600 text-blue-600 dark:text-blue-400" 
-                                : "border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+                            activeTab === tab ? "border-blue-600 text-blue-600 dark:text-blue-400" : "border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
                         )}
                     >
                         {tab === 'overview' && <Car className="h-4 w-4" />}
@@ -269,33 +308,127 @@ const VehicleDetails = () => {
                 </div>
             )}
 
-            {/* TAB CONTENT: HISTORY (WITH ROUTES & REPLAY) */}
+            {/* ✅ TAB CONTENT: FUEL (REAL DATA) */}
+            {activeTab === 'fuel' && (
+                <div className="space-y-6">
+                    <Card className="dark:bg-slate-900 border-slate-200 dark:border-slate-800 p-6">
+                        <div className="flex justify-between items-center mb-6">
+                            <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                                <Activity className="h-5 w-5 text-blue-500"/> Fuel Consumption Overview
+                            </h3>
+                            <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
+                                <button onClick={() => setChartRange('7d')} className={cn("px-3 py-1 text-xs font-medium rounded-md transition-colors", chartRange === '7d' ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" : "text-slate-500")}>7 Days</button>
+                                <button onClick={() => setChartRange('30d')} className={cn("px-3 py-1 text-xs font-medium rounded-md transition-colors", chartRange === '30d' ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" : "text-slate-500")}>30 Days</button>
+                                <button onClick={() => setChartRange('3m')} className={cn("px-3 py-1 text-xs font-medium rounded-md transition-colors", chartRange === '3m' ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" : "text-slate-500")}>3 Months</button>
+                            </div>
+                        </div>
+
+                        {fuelLoading ? (
+                            <div className="h-64 flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-blue-500" /></div>
+                        ) : chartData.values.length === 0 ? (
+                            <div className="h-64 flex flex-col items-center justify-center text-slate-400">
+                                <Fuel className="h-10 w-10 mb-2 opacity-50" />
+                                <p>No fuel records found for this range.</p>
+                            </div>
+                        ) : (
+                            <>
+                                <div className="h-64 w-full relative mb-4">
+                                    <svg viewBox="0 0 700 200" className="w-full h-full overflow-visible preserve-3d">
+                                        <line x1="0" y1="50" x2="700" y2="50" stroke="#e2e8f0" strokeWidth="1" strokeDasharray="4"/>
+                                        <line x1="0" y1="100" x2="700" y2="100" stroke="#e2e8f0" strokeWidth="1" strokeDasharray="4"/>
+                                        <line x1="0" y1="150" x2="700" y2="150" stroke="#e2e8f0" strokeWidth="1" strokeDasharray="4"/>
+                                        <line x1="0" y1="200" x2="700" y2="200" stroke="#cbd5e1" strokeWidth="1" />
+
+                                        <path 
+                                            d={`${generatePath(chartData.values, 700, 200, chartData.max)} L 700 200 L 0 200 Z`} 
+                                            fill="url(#gradient)" 
+                                            opacity="0.2" 
+                                        />
+                                        
+                                        <path 
+                                            d={generatePath(chartData.values, 700, 200, chartData.max)} 
+                                            fill="none" 
+                                            stroke="#3b82f6" 
+                                            strokeWidth="3" 
+                                            strokeLinecap="round" 
+                                            strokeLinejoin="round" 
+                                        />
+
+                                        {chartData.values.map((val, i) => {
+                                            const x = chartData.values.length === 1 ? 350 : (i / (chartData.values.length - 1)) * 700;
+                                            const y = 200 - (val / chartData.max) * 200;
+                                            return <circle key={i} cx={x} cy={y} r="4" fill="white" stroke="#3b82f6" strokeWidth="2" />;
+                                        })}
+
+                                        <defs>
+                                            <linearGradient id="gradient" x1="0" y1="0" x2="0" y2="1">
+                                                <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.8"/>
+                                                <stop offset="100%" stopColor="#3b82f6" stopOpacity="0"/>
+                                            </linearGradient>
+                                        </defs>
+                                    </svg>
+                                </div>
+                                
+                                <div className="flex justify-between text-xs text-slate-400 px-2 font-medium">
+                                    {chartData.labels.map((label, i) => <span key={i}>{label}</span>)}
+                                </div>
+                            </>
+                        )}
+                    </Card>
+
+                    {/* Stat Cards with REAL DATA */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <Card className="dark:bg-slate-900 border-slate-200 dark:border-slate-800 p-4 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg"><Fuel className="h-5 w-5 text-blue-500" /></div>
+                                <div>
+                                    <p className="text-xs text-slate-500 uppercase tracking-wider font-semibold">Total Fuel Consumed</p>
+                                    <p className="text-xl font-bold text-slate-900 dark:text-white">{stats.totalFuel.toFixed(1)} L</p>
+                                </div>
+                            </div>
+                        </Card>
+
+                        <Card className="dark:bg-slate-900 border-slate-200 dark:border-slate-800 p-4 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg"><MapPin className="h-5 w-5 text-emerald-500" /></div>
+                                <div>
+                                    <p className="text-xs text-slate-500 uppercase tracking-wider font-semibold">Total Distance</p>
+                                    <p className="text-xl font-bold text-slate-900 dark:text-white">{stats.totalDistance.toFixed(1)} km</p>
+                                </div>
+                            </div>
+                        </Card>
+
+                        <Card className="dark:bg-slate-900 border-slate-200 dark:border-slate-800 p-4 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2 bg-purple-50 dark:bg-purple-900/20 rounded-lg"><Gauge className="h-5 w-5 text-purple-500" /></div>
+                                <div>
+                                    <p className="text-xs text-slate-500 uppercase tracking-wider font-semibold">Avg. Fuel Efficiency</p>
+                                    <p className="text-xl font-bold text-slate-900 dark:text-white">{stats.avgEfficiency} km/L</p>
+                                </div>
+                            </div>
+                        </Card>
+                    </div>
+                </div>
+            )}
+
+            {/* TAB CONTENT: HISTORY */}
             {activeTab === 'history' && (
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    
-                    {/* History List */}
                     <Card className="dark:bg-slate-900 border-slate-200 dark:border-slate-800 flex flex-col h-[600px] overflow-hidden">
                         <div className="p-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/20">
                             <h3 className="font-bold text-slate-800 dark:text-white">Past Trips</h3>
                         </div>
                         <div className="flex-1 overflow-y-auto p-2 space-y-2">
                             {historyLoading ? (
-                                <div className="flex justify-center py-8">
-                                    <Loader2 className="h-6 w-6 animate-spin text-blue-500" />
-                                </div>
+                                <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-blue-500" /></div>
                             ) : historyData?.length === 0 ? (
-                                <p className="text-center text-sm text-slate-500 py-8">No completed trips for this vehicle.</p>
+                                <p className="text-center text-sm text-slate-500 py-8">No completed trips.</p>
                             ) : (
                                 historyData?.map(trip => (
                                     <div 
                                         key={trip.trip_id}
                                         onClick={() => handleViewRoute(trip)}
-                                        className={cn(
-                                            "p-3 rounded-lg border cursor-pointer transition-all",
-                                            selectedHistoryTrip?.trip_id === trip.trip_id 
-                                                ? "bg-blue-50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-800 shadow-sm" 
-                                                : "border-transparent hover:bg-slate-50 dark:hover:bg-slate-800"
-                                        )}
+                                        className={cn("p-3 rounded-lg border cursor-pointer transition-all", selectedHistoryTrip?.trip_id === trip.trip_id ? "bg-blue-50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-800 shadow-sm" : "border-transparent hover:bg-slate-50 dark:hover:bg-slate-800")}
                                     >
                                         <div className="flex justify-between items-start mb-1">
                                             <span className="font-bold text-sm text-slate-800 dark:text-white">{trip.ticket_number}</span>
@@ -312,64 +445,36 @@ const VehicleDetails = () => {
                         </div>
                     </Card>
 
-                    {/* Route Map */}
                     <Card className="lg:col-span-2 dark:bg-slate-900 border-slate-200 dark:border-slate-800 h-[600px] overflow-hidden relative">
-                        
-                        {/* ✅ REPLAY CONTROL BAR OVERLAY */}
                         {selectedHistoryTrip && routeCoordinates.length > 1 && (
                             <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000] flex items-center gap-3 bg-white dark:bg-slate-800 px-4 py-2 rounded-full shadow-lg border border-slate-200 dark:border-slate-700">
-                                <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                                    Route Replay
-                                </span>
+                                <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">Route Replay</span>
                                 <div className="h-4 w-px bg-slate-300 dark:bg-slate-600" />
-                                <button
-                                    onClick={handleReplay}
-                                    className={cn(
-                                        "p-1.5 rounded-full transition-colors flex items-center justify-center",
-                                        isReplaying ? "bg-red-100 text-red-600 hover:bg-red-200" : "bg-blue-100 text-blue-600 hover:bg-blue-200"
-                                    )}
-                                    title={isReplaying ? "Stop" : "Play"}
-                                >
+                                <button onClick={handleReplay} className={cn("p-1.5 rounded-full transition-colors flex items-center justify-center", isReplaying ? "bg-red-100 text-red-600 hover:bg-red-200" : "bg-blue-100 text-blue-600 hover:bg-blue-200")}>
                                     {isReplaying ? <Square className="h-4 w-4 fill-current" /> : <Play className="h-4 w-4 fill-current ml-0.5" />}
                                 </button>
-                                <span className="text-[10px] text-slate-500 font-mono">
-                                    {isReplaying ? `${replayIndex} / ${routeCoordinates.length}` : `${routeCoordinates.length} pings`}
-                                </span>
+                                <span className="text-[10px] text-slate-500 font-mono">{isReplaying ? `${replayIndex} / ${routeCoordinates.length}` : `${routeCoordinates.length} pings`}</span>
                             </div>
                         )}
 
                         {selectedHistoryTrip && routeCoordinates.length > 0 ? (
-                            <MapContainer
-                                bounds={routeCoordinates}
-                                boundsOptions={{ padding: [50, 50] }}
-                                style={{ height: '100%', width: '100%' }}
-                                zoomControl={true}
-                            >
+                            <MapContainer bounds={routeCoordinates} boundsOptions={{ padding: [50, 50] }} style={{ height: '100%', width: '100%' }} zoomControl={true}>
                                 <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-                                
-                                {/* The Route Line */}
                                 <Polyline positions={routeCoordinates} color="#3b82f6" weight={5} opacity={0.8} />
-                                
-                                {/* Start & End Markers */}
                                 <Marker position={routeCoordinates[0]} icon={icons.start} />
                                 <Marker position={routeCoordinates[routeCoordinates.length - 1]} icon={icons.end} />
-
-                                {/* ✅ Replay Moving Marker */}
-                                {isReplaying && (
-                                    <Marker position={routeCoordinates[replayIndex]} icon={icons.vehicle} />
-                                )}
+                                {isReplaying && <Marker position={routeCoordinates[replayIndex]} icon={icons.vehicle} />}
                             </MapContainer>
                         ) : (
                             <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-900/50">
                                 <MapPin className="h-12 w-12 text-slate-300 dark:text-slate-700 mb-3" />
-                                <p className="text-slate-500 text-sm">Select a trip from the list to view its GPS route.</p>
+                                <p className="text-slate-500 text-sm">Select a trip to view its GPS route.</p>
                             </div>
                         )}
-                        
                         {loadingRoute && (
                             <div className="absolute inset-0 bg-white/70 dark:bg-slate-900/70 backdrop-blur-sm z-[1000] flex flex-col items-center justify-center">
                                 <Loader2 className="h-8 w-8 animate-spin text-blue-500 mb-2" />
-                                <p className="text-sm font-medium text-slate-600 dark:text-slate-400">Loading route data...</p>
+                                <p className="text-sm font-medium text-slate-600 dark:text-slate-400">Loading route...</p>
                             </div>
                         )}
                     </Card>
