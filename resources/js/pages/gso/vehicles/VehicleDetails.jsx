@@ -62,6 +62,9 @@ const VehicleDetails = () => {
     const [replayIndex, setReplayIndex] = useState(0);
     const replayIntervalRef = useRef(null);
 
+    // Tooltip State
+    const [hoveredPoint, setHoveredPoint] = useState(null);
+
     useEffect(() => {
         return () => {
             if (replayIntervalRef.current) clearInterval(replayIntervalRef.current);
@@ -74,7 +77,6 @@ const VehicleDetails = () => {
         queryFn: async () => {
             const res = await gsoAPI.getFuelReceipts();
             const allReceipts = res?.data?.data || [];
-            // Filter receipts belonging to this vehicle
             return allReceipts.filter(r => r.plate_number === vehicle?.plate_number);
         },
         enabled: !!vehicle
@@ -84,9 +86,7 @@ const VehicleDetails = () => {
     const chartData = useMemo(() => {
         if (!fuelReceipts || fuelReceipts.length === 0) return { labels: [], values: [], max: 10 };
 
-        // Sort by date ascending
         const sorted = [...fuelReceipts].sort((a, b) => new Date(a.uploaded_at) - new Date(b.uploaded_at));
-        
         const now = new Date();
         const ranges = { '7d': 7, '30d': 30, '3m': 90 };
         const daysToLookBack = ranges[chartRange];
@@ -95,25 +95,18 @@ const VehicleDetails = () => {
         cutoffDate.setDate(cutoffDate.getDate() - daysToLookBack);
 
         let relevantReceipts = sorted.filter(r => new Date(r.uploaded_at) >= cutoffDate);
+        if (relevantReceipts.length === 0) relevantReceipts = sorted.slice(-5);
 
-        // If no receipts in the range, show the last 5 receipts just so the chart isn't empty
-        if (relevantReceipts.length === 0) {
-            relevantReceipts = sorted.slice(-5);
-        }
-
-        // Group by Date (YYYY-MM-DD)
         const grouped = {};
         relevantReceipts.forEach(r => {
             const dateObj = new Date(r.uploaded_at);
             const dateStr = dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-            
             if (!grouped[dateStr]) grouped[dateStr] = 0;
             grouped[dateStr] += parseFloat(r.liters || 0);
         });
 
         const labels = Object.keys(grouped);
         const values = Object.values(grouped);
-        // Add 20% headroom for the chart
         const max = Math.max(...values, 5) * 1.2; 
 
         return { labels, values, max };
@@ -125,8 +118,6 @@ const VehicleDetails = () => {
         
         const totalFuel = fuelReceipts.reduce((sum, r) => sum + parseFloat(r.liters || 0), 0);
         const totalDistance = fuelReceipts.reduce((sum, r) => sum + parseFloat(r.gps_distance_km || 0), 0);
-        
-        // Efficiency = Distance / Liters
         const avgEfficiency = totalFuel > 0 ? (totalDistance / totalFuel).toFixed(1) : 0;
 
         return { totalFuel, totalDistance, avgEfficiency };
@@ -199,7 +190,6 @@ const VehicleDetails = () => {
     // ✅ SAFE SVG Path Generator
     const generatePath = (data, width, height, max) => {
         if (!data || data.length === 0) return '';
-        // Handle Single Point (avoids NaN error)
         if (data.length === 1) {
             const y = height - (data[0] / max) * height;
             return `M ${width/2} ${y}`;
@@ -226,7 +216,6 @@ const VehicleDetails = () => {
 
             {/* Top Hero Section */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
-                {/* Main Info Card */}
                 <Card className="lg:col-span-2 dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm flex flex-col md:flex-row overflow-hidden">
                     <div className="p-6 bg-slate-100/50 dark:bg-slate-800/30 flex items-center justify-center md:w-1/3">
                         <Car className="h-20 w-20 text-slate-300 dark:text-slate-700" />
@@ -259,7 +248,6 @@ const VehicleDetails = () => {
                     </div>
                 </Card>
 
-                {/* Fuel Donut Card */}
                 <Card className="dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm p-6 flex flex-col items-center justify-center relative">
                     <div className="absolute top-4 left-4 flex items-center gap-2">
                         <Fuel className="h-4 w-4 text-blue-500" />
@@ -317,7 +305,7 @@ const VehicleDetails = () => {
                 </div>
             )}
 
-            {/* ✅ TAB CONTENT: FUEL (REAL DATA) */}
+            {/* ✅ TAB CONTENT: FUEL (REAL DATA with Y-Axis) */}
             {activeTab === 'fuel' && (
                 <div className="space-y-6">
                     <Card className="dark:bg-slate-900 border-slate-200 dark:border-slate-800 p-6">
@@ -340,55 +328,88 @@ const VehicleDetails = () => {
                                 <p>No fuel records found for this range.</p>
                             </div>
                         ) : (
-                            <>
-                                <div className="h-64 w-full relative mb-4">
-                                    <svg viewBox="0 0 700 200" className="w-full h-full overflow-visible preserve-3d">
-                                        <line x1="0" y1="50" x2="700" y2="50" stroke="#e2e8f0" strokeWidth="1" strokeDasharray="4"/>
-                                        <line x1="0" y1="100" x2="700" y2="100" stroke="#e2e8f0" strokeWidth="1" strokeDasharray="4"/>
-                                        <line x1="0" y1="150" x2="700" y2="150" stroke="#e2e8f0" strokeWidth="1" strokeDasharray="4"/>
-                                        <line x1="0" y1="200" x2="700" y2="200" stroke="#cbd5e1" strokeWidth="1" />
-
-                                        {/* Chart Area Fill */}
-                                        <path 
-                                            d={`${generatePath(chartData.values, 700, 200, chartData.max)} L ${chartData.values.length === 1 ? 350 : 700} 200 L 0 200 Z`} 
-                                            fill="url(#gradient)" 
-                                            opacity="0.2" 
-                                        />
-                                        
-                                        {/* Chart Line */}
-                                        <path 
-                                            d={generatePath(chartData.values, 700, 200, chartData.max)} 
-                                            fill="none" 
-                                            stroke="#3b82f6" 
-                                            strokeWidth="3" 
-                                            strokeLinecap="round" 
-                                            strokeLinejoin="round" 
-                                        />
-
-                                        {/* Data Points */}
-                                        {chartData.values.map((val, i) => {
-                                            const x = chartData.values.length === 1 ? 350 : (i / (chartData.values.length - 1)) * 700;
-                                            const y = 200 - (val / chartData.max) * 200;
-                                            return <circle key={i} cx={x} cy={y} r="4" fill="white" stroke="#3b82f6" strokeWidth="2" />;
-                                        })}
-
-                                        <defs>
-                                            <linearGradient id="gradient" x1="0" y1="0" x2="0" y2="1">
-                                                <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.8"/>
-                                                <stop offset="100%" stopColor="#3b82f6" stopOpacity="0"/>
-                                            </linearGradient>
-                                        </defs>
-                                    </svg>
+                            <div className="flex">
+                                {/* Y-Axis Labels */}
+                                <div className="flex flex-col justify-between text-[10px] text-slate-400 h-64 pr-2 py-1 font-mono text-right">
+                                    <span>{Math.round(chartData.max).toFixed(0)}L</span>
+                                    <span>{Math.round(chartData.max * 0.75).toFixed(0)}L</span>
+                                    <span>{Math.round(chartData.max * 0.5).toFixed(0)}L</span>
+                                    <span>{Math.round(chartData.max * 0.25).toFixed(0)}L</span>
+                                    <span>0L</span>
                                 </div>
-                                
-                                <div className="flex justify-between text-xs text-slate-400 px-2 font-medium">
-                                    {chartData.labels.map((label, i) => <span key={i}>{label}</span>)}
+
+                                {/* The Chart */}
+                                <div className="flex-1 relative">
+                                    <div className="h-64 w-full">
+                                        <svg viewBox="0 0 700 200" className="w-full h-full overflow-visible preserve-3d">
+                                            {/* Grid Lines */}
+                                            <line x1="0" y1="50" x2="700" y2="50" stroke="#e2e8f0" strokeWidth="1" strokeDasharray="4"/>
+                                            <line x1="0" y1="100" x2="700" y2="100" stroke="#e2e8f0" strokeWidth="1" strokeDasharray="4"/>
+                                            <line x1="0" y1="150" x2="700" y2="150" stroke="#e2e8f0" strokeWidth="1" strokeDasharray="4"/>
+                                            <line x1="0" y1="200" x2="700" y2="200" stroke="#cbd5e1" strokeWidth="1" />
+
+                                            {/* Chart Area Fill */}
+                                            <path 
+                                                d={`${generatePath(chartData.values, 700, 200, chartData.max)} L ${chartData.values.length === 1 ? 350 : 700} 200 L 0 200 Z`} 
+                                                fill="url(#gradient)" 
+                                                opacity="0.2" 
+                                            />
+                                            
+                                            {/* Chart Line */}
+                                            <path 
+                                                d={generatePath(chartData.values, 700, 200, chartData.max)} 
+                                                fill="none" 
+                                                stroke="#3b82f6" 
+                                                strokeWidth="3" 
+                                                strokeLinecap="round" 
+                                                strokeLinejoin="round" 
+                                            />
+
+                                            {/* Data Points with Hover Tooltips */}
+                                            {chartData.values.map((val, i) => {
+                                                const x = chartData.values.length === 1 ? 350 : (i / (chartData.values.length - 1)) * 700;
+                                                const y = 200 - (val / chartData.max) * 200;
+                                                return (
+                                                    <g 
+                                                        key={i} 
+                                                        onMouseEnter={() => setHoveredPoint({ x, y, label: chartData.labels[i], value: val })}
+                                                        onMouseLeave={() => setHoveredPoint(null)}
+                                                        className="cursor-pointer"
+                                                    >
+                                                        <circle cx={x} cy={y} r="6" fill="transparent" />
+                                                        <circle cx={x} cy={y} r="4" fill="white" stroke="#3b82f6" strokeWidth="2" />
+                                                        
+                                                        {/* SVG Tooltip */}
+                                                        {hoveredPoint?.label === chartData.labels[i] && (
+                                                            <foreignObject x={Math.min(Math.max(x - 40, 0), 620)} y={y - 35} width="100" height="30">
+                                                                <div className="bg-slate-800 text-white text-[10px] font-semibold px-2 py-1 rounded shadow-md text-center">
+                                                                    {val.toFixed(1)} L
+                                                                </div>
+                                                            </foreignObject>
+                                                        )}
+                                                    </g>
+                                                );
+                                            })}
+
+                                            <defs>
+                                                <linearGradient id="gradient" x1="0" y1="0" x2="0" y2="1">
+                                                    <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.8"/>
+                                                    <stop offset="100%" stopColor="#3b82f6" stopOpacity="0"/>
+                                                </linearGradient>
+                                            </defs>
+                                        </svg>
+                                    </div>
+
+                                    {/* X-Axis Labels */}
+                                    <div className="flex justify-between text-xs text-slate-400 px-2 font-medium mt-1">
+                                        {chartData.labels.map((label, i) => <span key={i}>{label}</span>)}
+                                    </div>
                                 </div>
-                            </>
+                            </div>
                         )}
                     </Card>
 
-                    {/* Stat Cards with REAL DATA */}
+                    {/* Stat Cards */}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <Card className="dark:bg-slate-900 border-slate-200 dark:border-slate-800 p-4 flex items-center justify-between">
                             <div className="flex items-center gap-3">
