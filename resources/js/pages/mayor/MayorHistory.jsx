@@ -32,6 +32,8 @@ import {
   TrendingUp,
   Car,
   PhilippinePeso,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 
 // ============================================
@@ -116,6 +118,9 @@ const MayorHistory = () => {
   const [statusFilter, setStatusFilter] = useState("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  
+  // Expanded vehicle state
+  const [expandedVehicle, setExpandedVehicle] = useState(null);
 
   const fetchAllData = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ["mayor-history-tickets"] });
@@ -180,7 +185,6 @@ const MayorHistory = () => {
     return ticket.driver?.user?.full_name || ticket.driver?.name || "N/A";
   };
 
-  // ✅ Correctly get amount from gas_slip relation
   const getAmount = (ticket) => {
     return parseFloat(ticket.amount_released || ticket.gas_slip?.amount_released) || 0;
   };
@@ -213,7 +217,7 @@ const MayorHistory = () => {
   }, [tickets, statusFilter, search, dateFrom, dateTo]);
 
   // ============================================
-  // CASH PER VEHICLE SUMMARY
+  // CASH PER VEHICLE SUMMARY + DAILY BREAKDOWN
   // ============================================
   const vehicleSummary = useMemo(() => {
     const summary = {};
@@ -225,16 +229,21 @@ const MayorHistory = () => {
         const model = ticket.vehicle?.vehicle_model || "";
         
         if (!summary[plate]) {
-          summary[plate] = { plate, model, totalAmount: 0, tripCount: 0 };
+          summary[plate] = { plate, model, totalAmount: 0, tripCount: 0, trips: [] };
         }
         
         summary[plate].totalAmount += amount;
         summary[plate].tripCount += 1;
+        summary[plate].trips.push(ticket);
       }
     });
 
     return Object.values(summary).sort((a, b) => b.totalAmount - a.totalAmount);
   }, [filtered]);
+
+  const toggleVehicle = (plate) => {
+    setExpandedVehicle(prev => prev === plate ? null : plate);
+  };
 
   // ============================================
   // STATS
@@ -389,7 +398,7 @@ const MayorHistory = () => {
           </CardContent>
         </Card>
 
-        {/* ✅ CASH PER VEHICLE SUMMARY */}
+        {/* ✅ CASH PER VEHICLE SUMMARY WITH DAILY BREAKDOWN */}
         {vehicleSummary.length > 0 && (
           <Card className="dark:bg-slate-800/80 dark:border-slate-700 shadow-sm border-l-4 border-l-emerald-500">
             <CardHeader className="pb-3 border-b border-slate-200/60 dark:border-slate-700/60">
@@ -398,29 +407,86 @@ const MayorHistory = () => {
                 Cash Released per Vehicle
               </CardTitle>
               <CardDescription className="dark:text-slate-400">
-                Based on current filters. Proves total operational cost per vehicle.
+                Click a vehicle to see the daily breakdown of released funds.
               </CardDescription>
             </CardHeader>
-            <CardContent className="pt-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {vehicleSummary.map((v) => (
-                  <div key={v.plate} className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 bg-emerald-100 dark:bg-emerald-900/30 rounded-lg">
-                        <Car className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+            <CardContent className="pt-4 p-0">
+              
+              {vehicleSummary.map((v) => {
+                const isExpanded = expandedVehicle === v.plate;
+                
+                return (
+                  <div key={v.plate} className="border-b last:border-0 border-slate-200 dark:border-slate-700/60">
+                    
+                    {/* Vehicle Summary Row (Clickable) */}
+                    <div 
+                      onClick={() => toggleVehicle(v.plate)}
+                      className="flex items-center justify-between p-4 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 bg-emerald-100 dark:bg-emerald-900/30 rounded-lg">
+                          <Car className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+                        </div>
+                        <div>
+                          <p className="font-mono font-bold text-slate-800 dark:text-white">{v.plate}</p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 truncate max-w-[200px]">{v.model}</p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="font-mono font-bold text-slate-800 dark:text-white">{v.plate}</p>
-                        <p className="text-xs text-slate-500 dark:text-slate-400 truncate max-w-[120px]">{v.model}</p>
+                      
+                      <div className="flex items-center gap-6">
+                        <div className="text-right">
+                          <p className="font-bold text-emerald-600 dark:text-emerald-400">{formatCurrency(v.totalAmount)}</p>
+                          <p className="text-[10px] text-slate-400">{v.tripCount} trips</p>
+                        </div>
+                        <div className="text-slate-400">
+                          {isExpanded ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
+                        </div>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <p className="font-bold text-emerald-600 dark:text-emerald-400">{formatCurrency(v.totalAmount)}</p>
-                      <p className="text-[10px] text-slate-400">{v.tripCount} trips</p>
-                    </div>
+
+                    {/* Expanded Daily Breakdown Table */}
+                    {isExpanded && (
+                      <div className="bg-slate-50 dark:bg-slate-900/50 p-4 border-t border-slate-200 dark:border-slate-700/60">
+                        <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700">
+                          <Table>
+                            <TableHeader>
+                              <TableRow className="bg-white dark:bg-slate-800">
+                                <TableHead className="text-[11px] uppercase tracking-wider">Date</TableHead>
+                                <TableHead className="text-[11px] uppercase tracking-wider">Ticket #</TableHead>
+                                <TableHead className="text-[11px] uppercase tracking-wider">Driver</TableHead>
+                                <TableHead className="text-[11px] uppercase tracking-wider">Destination</TableHead>
+                                <TableHead className="text-right text-[11px] uppercase tracking-wider">Amount Released</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {/* Sort trips by date (newest first) */}
+                              {[...v.trips].sort((a, b) => new Date(b.trip_date) - new Date(a.trip_date)).map((t) => (
+                                <TableRow key={t.trip_ticket_id} className="bg-white dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-700/50">
+                                  <TableCell className="text-sm text-slate-600 dark:text-slate-300">
+                                    {formatDate(t.trip_date)}
+                                  </TableCell>
+                                  <TableCell className="font-mono text-sm font-medium text-slate-800 dark:text-white">
+                                    {t.trip_ticket_number}
+                                  </TableCell>
+                                  <TableCell className="text-sm text-slate-600 dark:text-slate-300">
+                                    {getDriverName(t)}
+                                  </TableCell>
+                                  <TableCell className="text-sm text-slate-600 dark:text-slate-300 truncate max-w-[200px]">
+                                    {t.destination}
+                                  </TableCell>
+                                  <TableCell className="text-right font-semibold text-emerald-600 dark:text-emerald-400">
+                                    {formatCurrency(getAmount(t))}
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                ))}
-              </div>
+                );
+              })}
             </CardContent>
           </Card>
         )}
