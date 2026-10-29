@@ -24,10 +24,14 @@ class GpsPingController extends Controller
 
     /**
      * Accuracy threshold for a ping to be considered reliable.
-     * Pings with accuracy worse than this are flagged is_low_accuracy=true
-     * and excluded from distance calculations + live broadcasts.
      */
     private const ACCURACY_THRESHOLD = 30;
+
+    /**
+     * Stationary drift threshold (meters).
+     * If the vehicle is moving less than 2 km/h and the jump is less than 30m, it's GPS drift.
+     */
+    private const STATIONARY_DRIFT_THRESHOLD = 30;
 
     /**
      * Store a single GPS ping
@@ -105,8 +109,9 @@ class GpsPingController extends Controller
 
                     $speed = (float) ($request->speed_kmh ?? 0);
 
-                    if ($distMeters < 15 && $speed < 2) {
-                        Log::info('Server skipped jitter ping', [
+                    // ✅ FIX: Increased threshold to 30m to kill stationary ghost distance
+                    if ($distMeters < self::STATIONARY_DRIFT_THRESHOLD && $speed < 2) {
+                        Log::info('Server skipped stationary drift', [
                             'trip_id' => $request->trip_ticket_id,
                             'dist_m' => round($distMeters, 1),
                             'speed' => $speed,
@@ -114,7 +119,7 @@ class GpsPingController extends Controller
                         return response()->json([
                             'success' => true,
                             'skipped' => true,
-                            'reason' => 'jitter',
+                            'reason' => 'stationary_drift',
                         ]);
                     }
                 }
