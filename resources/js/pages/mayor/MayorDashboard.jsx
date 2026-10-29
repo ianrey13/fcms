@@ -236,7 +236,7 @@ const DashboardPie = ({ departments, totals, fiscalYear, tickets }) => {
                 </div>
 
                 {/* Department Filter */}
-                <select value={selectedDept} onChange={e => setSelectedDept(e.target.value)} className="text-xs p-1.5 rounded border dark:bg-slate-800 dark:border-slate-600 font-medium">
+                <select value={selectedDept} onChange={e => setSelectedDept(e.target.value)} className="text-xs p-1.5 rounded border dark:bg-slate-800 dark:border-slate-600 font-medium text-slate-900 dark:text-white outline-none">
                     <option value="all">All Departments</option>
                     {departmentOptions.map(d => <option key={d.department_id} value={d.department_name}>{d.department_name}</option>)}
                 </select>
@@ -244,10 +244,10 @@ const DashboardPie = ({ departments, totals, fiscalYear, tickets }) => {
                 {/* Drill-down Filters (Only visible on Consumption) */}
                 {viewMode === 'consumption' && (
                     <div className="flex gap-1">
-                        <select value={selectedYear} onChange={e => setSelectedYear(e.target.value)} className="text-xs p-1.5 rounded border dark:bg-slate-800 dark:border-slate-600"><option value={String(fiscalYear)}>{fiscalYear}</option></select>
-                        <select value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} className="text-xs p-1.5 rounded border dark:bg-slate-800 dark:border-slate-600">{months.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}</select>
-                        <select value={selectedWeek} onChange={e => setSelectedWeek(e.target.value)} className="text-xs p-1.5 rounded border dark:bg-slate-800 dark:border-slate-600">{weeks.map(w => <option key={w.value} value={w.value}>{w.label}</option>)}</select>
-                        <select value={selectedDay} onChange={e => setSelectedDay(e.target.value)} className="text-xs p-1.5 rounded border dark:bg-slate-800 dark:border-slate-600">{days.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}</select>
+                        <select value={selectedYear} onChange={e => setSelectedYear(e.target.value)} className="text-xs p-1.5 rounded border dark:bg-slate-800 dark:border-slate-600 text-slate-900 dark:text-white outline-none"><option value={String(fiscalYear)}>{fiscalYear}</option></select>
+                        <select value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} className="text-xs p-1.5 rounded border dark:bg-slate-800 dark:border-slate-600 text-slate-900 dark:text-white outline-none">{months.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}</select>
+                        <select value={selectedWeek} onChange={e => setSelectedWeek(e.target.value)} className="text-xs p-1.5 rounded border dark:bg-slate-800 dark:border-slate-600 text-slate-900 dark:text-white outline-none">{weeks.map(w => <option key={w.value} value={w.value}>{w.label}</option>)}</select>
+                        <select value={selectedDay} onChange={e => setSelectedDay(e.target.value)} className="text-xs p-1.5 rounded border dark:bg-slate-800 dark:border-slate-600 text-slate-900 dark:text-white outline-none">{days.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}</select>
                     </div>
                 )}
             </div>
