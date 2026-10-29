@@ -34,7 +34,11 @@ import {
   PhilippinePeso,
   ChevronDown,
   ChevronUp,
+  Activity,
+  DollarSign,
+  Navigation,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 // ============================================
 // STATS CARD
@@ -102,6 +106,168 @@ const LoadingSkeleton = () => (
     <div className="h-96 bg-slate-200 dark:bg-slate-700 rounded-xl animate-pulse" />
   </div>
 );
+
+// ============================================
+// VEHICLE CASH BREAKDOWN (Table + Chart)
+// ============================================
+const VehicleCashBreakdown = ({ vehicle, trips, formatCurrency, formatDate }) => {
+  const [viewMode, setViewMode] = useState('table');
+  const [range, setRange] = useState('7d');
+
+  // Chart data generation
+  const chartData = useMemo(() => {
+    if (!trips || trips.length === 0) return { labels: [], values: [], max: 1000 };
+
+    const now = new Date();
+    const ranges = { '7d': 7, '30d': 30, '3m': 90 };
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - ranges[range]);
+
+    const filtered = trips.filter(t => new Date(t.trip_date) >= cutoff);
+    const grouped = {};
+    
+    filtered.forEach(t => {
+      const dateStr = new Date(t.trip_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      const amt = parseFloat(t.amount_released || t.gas_slip?.amount_released) || 0;
+      grouped[dateStr] = (grouped[dateStr] || 0) + amt;
+    });
+
+    const labels = Object.keys(grouped);
+    const values = Object.values(grouped);
+    const max = Math.max(...values, 1000) * 1.2;
+
+    return { labels, values, max };
+  }, [trips, range]);
+
+  const generatePath = (data, width, height, max) => {
+    if (!data || data.length === 0) return '';
+    if (data.length === 1) {
+        const y = height - (data[0] / max) * height;
+        return `M ${width/2} ${y}`;
+    }
+    const xStep = width / (data.length - 1);
+    return data.map((val, i) => {
+        const x = i * xStep;
+        const y = height - (val / max) * height;
+        return `${i === 0 ? 'M' : 'L'} ${x} ${y}`;
+    }).join(' ');
+  };
+
+  return (
+    <div className="mt-4 space-y-6">
+      <Card className="dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm">
+        <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
+              <Activity className="h-5 w-5 text-blue-500"/> Cash Release History
+            </h3>
+            <p className="text-xs text-slate-500 mt-1">Money released for {vehicle.plate} over time</p>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
+              <button onClick={() => setViewMode('table')} className={cn("px-3 py-1 text-xs font-medium rounded-md transition-colors", viewMode === 'table' ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" : "text-slate-500")}>Table</button>
+              <button onClick={() => setViewMode('chart')} className={cn("px-3 py-1 text-xs font-medium rounded-md transition-colors", viewMode === 'chart' ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" : "text-slate-500")}>Chart</button>
+            </div>
+            <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
+              <button onClick={() => setRange('7d')} className={cn("px-3 py-1 text-xs font-medium rounded-md transition-colors", range === '7d' ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" : "text-slate-500")}>7 Days</button>
+              <button onClick={() => setRange('30d')} className={cn("px-3 py-1 text-xs font-medium rounded-md transition-colors", range === '30d' ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" : "text-slate-500")}>30 Days</button>
+              <button onClick={() => setRange('3m')} className={cn("px-3 py-1 text-xs font-medium rounded-md transition-colors", range === '3m' ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" : "text-slate-500")}>3 Months</button>
+            </div>
+          </div>
+        </div>
+
+        <div className="p-4">
+          {viewMode === 'table' ? (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-slate-50 dark:bg-slate-800/50">
+                    <TableHead className="text-xs">Date</TableHead>
+                    <TableHead className="text-xs">Ticket #</TableHead>
+                    <TableHead className="text-xs">Driver</TableHead>
+                    <TableHead className="text-xs">Destination</TableHead>
+                    <TableHead className="text-right text-xs">Amount Released</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {trips.length === 0 ? (
+                    <TableRow><TableCell colSpan={5} className="text-center py-6 text-slate-500">No releases found.</TableCell></TableRow>
+                  ) : (
+                    trips.sort((a, b) => new Date(b.trip_date) - new Date(a.trip_date)).map(t => (
+                      <TableRow key={t.trip_ticket_id}>
+                        <TableCell className="text-sm">{formatDate(t.trip_date)}</TableCell>
+                        <TableCell className="font-mono text-sm">{t.trip_ticket_number}</TableCell>
+                        <TableCell className="text-sm">{t.driver?.user?.full_name || t.driver?.name || 'N/A'}</TableCell>
+                        <TableCell className="text-sm truncate max-w-[200px]">{t.destination}</TableCell>
+                        <TableCell className="text-right font-semibold text-emerald-600">{formatCurrency(t.amount_released || t.gas_slip?.amount_released)}</TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          ) : (
+            <div>
+              {chartData.values.length === 0 ? (
+                <div className="h-64 flex flex-col items-center justify-center text-slate-400">
+                  <DollarSign className="h-10 w-10 mb-2 opacity-50" />
+                  <p>No releases found for this range.</p>
+                </div>
+              ) : (
+                <div className="flex">
+                  <div className="flex flex-col justify-between text-[10px] text-slate-400 h-64 pr-2 py-1 font-mono text-right">
+                    <span>₱{Math.round(chartData.max).toLocaleString()}</span>
+                    <span>₱{Math.round(chartData.max * 0.75).toLocaleString()}</span>
+                    <span>₱{Math.round(chartData.max * 0.5).toLocaleString()}</span>
+                    <span>₱{Math.round(chartData.max * 0.25).toLocaleString()}</span>
+                    <span>₱0</span>
+                  </div>
+                  <div className="flex-1 relative">
+                    <div className="h-64 w-full">
+                      <svg viewBox="0 0 700 200" className="w-full h-full overflow-visible preserve-3d">
+                        <line x1="0" y1="50" x2="700" y2="50" stroke="#e2e8f0" strokeWidth="1" strokeDasharray="4"/>
+                        <line x1="0" y1="100" x2="700" y2="100" stroke="#e2e8f0" strokeWidth="1" strokeDasharray="4"/>
+                        <line x1="0" y1="150" x2="700" y2="150" stroke="#e2e8f0" strokeWidth="1" strokeDasharray="4"/>
+                        <line x1="0" y1="200" x2="700" y2="200" stroke="#cbd5e1" strokeWidth="1" />
+                        
+                        <path d={`${generatePath(chartData.values, 700, 200, chartData.max)} L ${chartData.values.length === 1 ? 350 : 700} 200 L 0 200 Z`} fill="url(#gradient)" opacity="0.2" />
+                        <path d={generatePath(chartData.values, 700, 200, chartData.max)} fill="none" stroke="#10b981" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+                        
+                        {chartData.values.map((val, i) => {
+                          const x = chartData.values.length === 1 ? 350 : (i / (chartData.values.length - 1)) * 700;
+                          const y = 200 - (val / chartData.max) * 200;
+                          return (
+                            <g key={i}>
+                              <circle cx={x} cy={y} r="4" fill="white" stroke="#10b981" strokeWidth="2" />
+                              <foreignObject x={Math.min(Math.max(x - 40, 0), 620)} y={y - 35} width="100" height="30">
+                                <div className="bg-slate-800 text-white text-[10px] font-semibold px-2 py-1 rounded shadow-md text-center opacity-0 hover:opacity-100 transition-opacity">
+                                  {formatCurrency(val)}
+                                </div>
+                              </foreignObject>
+                            </g>
+                          );
+                        })}
+                        <defs>
+                          <linearGradient id="gradient" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#10b981" stopOpacity="0.8"/>
+                            <stop offset="100%" stopColor="#10b981" stopOpacity="0"/>
+                          </linearGradient>
+                        </defs>
+                      </svg>
+                    </div>
+                    <div className="flex justify-between text-xs text-slate-400 px-2 font-medium mt-1">
+                      {chartData.labels.map((label, i) => <span key={i}>{label}</span>)}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </Card>
+    </div>
+  );
+};
 
 // ============================================
 // MAIN COMPONENT
@@ -217,7 +383,7 @@ const MayorHistory = () => {
   }, [tickets, statusFilter, search, dateFrom, dateTo]);
 
   // ============================================
-  // CASH PER VEHICLE SUMMARY + DAILY BREAKDOWN
+  // CASH PER VEHICLE SUMMARY
   // ============================================
   const vehicleSummary = useMemo(() => {
     const summary = {};
@@ -398,7 +564,7 @@ const MayorHistory = () => {
           </CardContent>
         </Card>
 
-        {/* ✅ CASH PER VEHICLE SUMMARY WITH DAILY BREAKDOWN */}
+        {/* ✅ CASH PER VEHICLE SUMMARY WITH EXPANDABLE DETAILED VIEW */}
         {vehicleSummary.length > 0 && (
           <Card className="dark:bg-slate-800/80 dark:border-slate-700 shadow-sm border-l-4 border-l-emerald-500">
             <CardHeader className="pb-3 border-b border-slate-200/60 dark:border-slate-700/60">
@@ -444,44 +610,15 @@ const MayorHistory = () => {
                       </div>
                     </div>
 
-                    {/* Expanded Daily Breakdown Table */}
+                    {/* Expanded Detailed View */}
                     {isExpanded && (
                       <div className="bg-slate-50 dark:bg-slate-900/50 p-4 border-t border-slate-200 dark:border-slate-700/60">
-                        <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700">
-                          <Table>
-                            <TableHeader>
-                              <TableRow className="bg-white dark:bg-slate-800">
-                                <TableHead className="text-[11px] uppercase tracking-wider">Date</TableHead>
-                                <TableHead className="text-[11px] uppercase tracking-wider">Ticket #</TableHead>
-                                <TableHead className="text-[11px] uppercase tracking-wider">Driver</TableHead>
-                                <TableHead className="text-[11px] uppercase tracking-wider">Destination</TableHead>
-                                <TableHead className="text-right text-[11px] uppercase tracking-wider">Amount Released</TableHead>
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {/* Sort trips by date (newest first) */}
-                              {[...v.trips].sort((a, b) => new Date(b.trip_date) - new Date(a.trip_date)).map((t) => (
-                                <TableRow key={t.trip_ticket_id} className="bg-white dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-700/50">
-                                  <TableCell className="text-sm text-slate-600 dark:text-slate-300">
-                                    {formatDate(t.trip_date)}
-                                  </TableCell>
-                                  <TableCell className="font-mono text-sm font-medium text-slate-800 dark:text-white">
-                                    {t.trip_ticket_number}
-                                  </TableCell>
-                                  <TableCell className="text-sm text-slate-600 dark:text-slate-300">
-                                    {getDriverName(t)}
-                                  </TableCell>
-                                  <TableCell className="text-sm text-slate-600 dark:text-slate-300 truncate max-w-[200px]">
-                                    {t.destination}
-                                  </TableCell>
-                                  <TableCell className="text-right font-semibold text-emerald-600 dark:text-emerald-400">
-                                    {formatCurrency(getAmount(t))}
-                                  </TableCell>
-                                </TableRow>
-                              ))}
-                            </TableBody>
-                          </Table>
-                        </div>
+                        <VehicleCashBreakdown 
+                          vehicle={v} 
+                          trips={v.trips} 
+                          formatCurrency={formatCurrency} 
+                          formatDate={formatDate} 
+                        />
                       </div>
                     )}
                   </div>
