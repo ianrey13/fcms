@@ -1,8 +1,6 @@
 // src/pages/gso/GsoReports.jsx
 // ============================================
 
-// ============================================
-
 import React, { useState, useMemo, useCallback, lazy, Suspense } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
@@ -29,20 +27,17 @@ const VehicleSummaryReport = lazy(() => import('./reports/VehicleSummaryReport')
 const DepartmentSummaryReport = lazy(() => import('./reports/DepartmentSummaryReport'));
 const MonthlySummaryReport = lazy(() => import('./reports/MonthlySummaryReport'));
 const TripTicketReport = lazy(() => import('./reports/TripTicketReport'));
-
 const ReconciliationReport = lazy(() => import('./reports/ReconciliationReport'));
 
 // ============================================
 // ✅ SHARED CONSTANTS
 // ============================================
 
-// const CACHE_5MIN = 5 * 60 * 1000;
-// const CACHE_10MIN = 10 * 60 * 1000;
 const CACHE_5MIN = 0;
 const CACHE_10MIN = 0;
 
 // ============================================
-// ✅ REPORT SKELETON (shows while chunk loads)
+// ✅ REPORT SKELETON
 // ============================================
 
 const ReportSkeleton = () => (
@@ -103,9 +98,8 @@ const GsoReports = () => {
     const [gpsVehicleFilter, setGpsVehicleFilter] = useState('all');
     const [reconciliationThreshold, setReconciliationThreshold] = useState('all');
     const [receiptStatusFilter, setReceiptStatusFilter] = useState('all');
-    // ✅ NEW: fuel consumption section filters
-const [fuelWeekFilter, setFuelWeekFilter] = useState('all');
-const [fuelDeptFilter, setFuelDeptFilter] = useState('all');
+    const [fuelWeekFilter, setFuelWeekFilter] = useState('all');
+    const [fuelDeptFilter, setFuelDeptFilter] = useState('all');
     const [auditResultFilter, setAuditResultFilter] = useState('all');
     const [driverFilter, setDriverFilter] = useState('all');
     const [yearFilter, setYearFilter] = useState(new Date().getFullYear());
@@ -118,9 +112,7 @@ const [fuelDeptFilter, setFuelDeptFilter] = useState('all');
         departmentSummary: true,
         monthlySummary: true,
         tripTicket: true,
-       
         reconciliation: true,
-        
         auditTrail: false,
     });
 
@@ -181,33 +173,16 @@ const [fuelDeptFilter, setFuelDeptFilter] = useState('all');
         keepPreviousData: true,
     });
 
-    // const { data: drivers = [] } = useOptimizedQuery({
-    //     queryKey: ['drivers-list'],
-    //     queryFn: async () => {
-    //         try {
-    //             const res = await fetch('/api/admin/drivers');
-    //             if (!res.ok || res.status === 204) return [];
-    //             const text = await res.text();
-    //             if (!text) return [];
-    //             const data = JSON.parse(text);
-    //             return data.data || [];
-    //         } catch {
-    //             return [];
-    //         }
-    //     },
-    //     staleTime: CACHE_10MIN,
-    //     keepPreviousData: true,
-    // });
-
     // ============================================
-    // ✅ DATE RANGE
+    // ✅ DATE RANGE (OPTION B: ALL-TIME BY DEFAULT)
     // ============================================
 
     const dateRange = useMemo(() => {
         if (globalStartDate && globalEndDate) {
             return { startDate: globalStartDate, endDate: globalEndDate };
         }
-        return getDateRange('monthly');
+        // ✅ Default to all-time (empty strings) so backend skips the date filter
+        return { startDate: '', endDate: '' };
     }, [globalStartDate, globalEndDate]);
 
     const connectionStatus = isConnected ? '🟢 Live' : '🔴 Offline';
@@ -218,44 +193,43 @@ const [fuelDeptFilter, setFuelDeptFilter] = useState('all');
     // ============================================
 
     // 1. FUEL CONSUMPTION
-    // 1. FUEL CONSUMPTION
-const { data: fuelData, isLoading: fuelLoading } = useOptimizedQuery({
-    queryKey: ['fuel-consumption', dateRange, globalDepartmentFilter, globalVehicleFilter, fuelWeekFilter, fuelDeptFilter],
-    queryFn: async () => {
-        // ✅ Compute effective date range from week filter
-        const weekRange = (() => {
-            if (fuelWeekFilter === 'current') {
-                const start = startOfWeek(new Date(), { weekStartsOn: 1 });
-                return { start_date: format(start, 'yyyy-MM-dd'), end_date: format(endOfWeek(new Date(), { weekStartsOn: 1 }), 'yyyy-MM-dd') };
-            }
-            if (fuelWeekFilter === 'last') {
-                const lastWeek = new Date();
-                lastWeek.setDate(lastWeek.getDate() - 7);
-                return { start_date: format(startOfWeek(lastWeek, { weekStartsOn: 1 }), 'yyyy-MM-dd'), end_date: format(endOfWeek(lastWeek, { weekStartsOn: 1 }), 'yyyy-MM-dd') };
-            }
-            if (fuelWeekFilter === 'month') {
-                return { start_date: format(startOfMonth(new Date()), 'yyyy-MM-dd'), end_date: format(endOfMonth(new Date()), 'yyyy-MM-dd') };
-            }
-            return { start_date: dateRange.startDate, end_date: dateRange.endDate };
-        })();
+    const { data: fuelData, isLoading: fuelLoading } = useOptimizedQuery({
+        queryKey: ['fuel-consumption', dateRange, globalDepartmentFilter, globalVehicleFilter, fuelWeekFilter, fuelDeptFilter],
+        queryFn: async () => {
+            // ✅ Compute effective date range from week filter
+            const weekRange = (() => {
+                if (fuelWeekFilter === 'current') {
+                    const start = startOfWeek(new Date(), { weekStartsOn: 1 });
+                    return { start_date: format(start, 'yyyy-MM-dd'), end_date: format(endOfWeek(new Date(), { weekStartsOn: 1 }), 'yyyy-MM-dd') };
+                }
+                if (fuelWeekFilter === 'last') {
+                    const lastWeek = new Date();
+                    lastWeek.setDate(lastWeek.getDate() - 7);
+                    return { start_date: format(startOfWeek(lastWeek, { weekStartsOn: 1 }), 'yyyy-MM-dd'), end_date: format(endOfWeek(lastWeek, { weekStartsOn: 1 }), 'yyyy-MM-dd') };
+                }
+                if (fuelWeekFilter === 'month') {
+                    return { start_date: format(startOfMonth(new Date()), 'yyyy-MM-dd'), end_date: format(endOfMonth(new Date()), 'yyyy-MM-dd') };
+                }
+                return { start_date: dateRange.startDate, end_date: dateRange.endDate };
+            })();
 
-        // ✅ Effective department: section filter wins, fallback to global
-        const effectiveDept = fuelDeptFilter !== 'all' ? fuelDeptFilter
-            : (globalDepartmentFilter !== 'all' ? globalDepartmentFilter : undefined);
+            // ✅ Effective department: section filter wins, fallback to global
+            const effectiveDept = fuelDeptFilter !== 'all' ? fuelDeptFilter
+                : (globalDepartmentFilter !== 'all' ? globalDepartmentFilter : undefined);
 
-        const params = {
-            start_date: weekRange.start_date,
-            end_date: weekRange.end_date,
-            department_id: effectiveDept,
-            vehicle_id: globalVehicleFilter !== 'all' ? globalVehicleFilter : undefined,
-        };
-        const res = await reportsAPI.getFuelConsumptionReport(params);
-        return res.data?.data || {};
-    },
-    enabled: expandedSections.fuelConsumption,
-    staleTime: CACHE_5MIN,
-    keepPreviousData: true,
-});
+            const params = {
+                start_date: weekRange.start_date,
+                end_date: weekRange.end_date,
+                department_id: effectiveDept,
+                vehicle_id: globalVehicleFilter !== 'all' ? globalVehicleFilter : undefined,
+            };
+            const res = await reportsAPI.getFuelConsumptionReport(params);
+            return res.data?.data || {};
+        },
+        enabled: expandedSections.fuelConsumption,
+        staleTime: CACHE_5MIN,
+        keepPreviousData: true,
+    });
 
     // 2. VEHICLE SUMMARY
     const { data: vehicleSummaryData, isLoading: vehicleSummaryLoading } = useOptimizedQuery({
@@ -375,8 +349,8 @@ const { data: fuelData, isLoading: fuelLoading } = useOptimizedQuery({
             let data = res.data?.data || {};
             if (receiptStatusFilter !== 'all' && data.receipts) {
                 data.receipts = data.receipts.filter(r =>
-    (r.reconciliation_status || '').toLowerCase() === receiptStatusFilter.toLowerCase()
-);
+                    (r.reconciliation_status || '').toLowerCase() === receiptStatusFilter.toLowerCase()
+                );
             }
             return data;
         },
@@ -436,12 +410,12 @@ const { data: fuelData, isLoading: fuelLoading } = useOptimizedQuery({
             };
 
             let response;
-            const fileName = `${reportType}_${dateRange.startDate}_to_${dateRange.endDate}`;
+            const fileName = `${reportType}_${dateRange.startDate || 'all'}_to_${dateRange.endDate || 'all'}`;
 
             switch (reportType) {
                 case 'fuel_consumption': response = await reportsAPI.exportFuelConsumptionReport(format, baseParams); break;
                 case 'fuel_receipt': response = await reportsAPI.exportFuelReceiptReport(format, baseParams); break;
-               case 'reconciliation': response = await reportsAPI.exportReconciliation(format, { ...baseParams, mode: 'trip' }); break;
+                case 'reconciliation': response = await reportsAPI.exportReconciliation(format, { ...baseParams, mode: 'trip' }); break;
                 case 'driver_efficiency': response = await reportsAPI.exportDriverEfficiency(format, baseParams); break;
                 case 'gps_activity': response = await reportsAPI.exportGPSVehicleActivity(format, baseParams); break;
                 case 'audit_trail': response = await reportsAPI.exportAuditTrail(format, baseParams); break;
@@ -467,7 +441,7 @@ const { data: fuelData, isLoading: fuelLoading } = useOptimizedQuery({
     }, [dateRange, globalDepartmentFilter, globalVehicleFilter, statusFilter, yearFilter]);
 
     // ============================================
-    // LOADING STATE (only for initial expanded sections)
+    // LOADING STATE
     // ============================================
 
     const isLoading =
@@ -512,7 +486,9 @@ const { data: fuelData, isLoading: fuelLoading } = useOptimizedQuery({
                                     Reports Dashboard
                                 </h1>
                                 <p className="text-sm text-slate-500 dark:text-slate-400">
-                                    Period: {dateRange.startDate} to {dateRange.endDate}
+                                    Period: {dateRange.startDate && dateRange.endDate
+                                        ? `${dateRange.startDate} to ${dateRange.endDate}`
+                                        : 'All Time'}
                                     <span className="ml-2 text-xs opacity-70">{connectionStatus}</span>
                                     {isRealTime && <span className="ml-2 text-xs text-emerald-400 animate-pulse">● Auto-refresh</span>}
                                 </p>
@@ -521,77 +497,21 @@ const { data: fuelData, isLoading: fuelLoading } = useOptimizedQuery({
                     </div>
                 </div>
 
-                {/* Global Filters
-                <Card className="dark:bg-slate-800/80 dark:border-slate-700 print:hidden">
-                    <CardContent className="pt-6">
-                        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
-                            <div>
-                                <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Start Date</label>
-                                <Input type="date" value={globalStartDate} onChange={(e) => setGlobalStartDate(e.target.value)} className="mt-1 dark:bg-slate-900 dark:border-slate-700" />
-                            </div>
-                            <div>
-                                <label className="text-sm font-medium text-slate-700 dark:text-slate-300">End Date</label>
-                                <Input type="date" value={globalEndDate} onChange={(e) => setGlobalEndDate(e.target.value)} className="mt-1 dark:bg-slate-900 dark:border-slate-700" />
-                            </div>
-                            <div>
-                                <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Department</label>
-                                <Select value={globalDepartmentFilter} onValueChange={setGlobalDepartmentFilter}>
-                                    <SelectTrigger className="mt-1 dark:bg-slate-900 dark:border-slate-700">
-                                        <SelectValue placeholder="All Departments" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="all">All Departments</SelectItem>
-                                        {departments.map((d) => (
-                                            <SelectItem key={d.department_id} value={String(d.department_id)}>{d.department_name}</SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                            <div>
-                                <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Vehicle</label>
-                                <Select value={globalVehicleFilter} onValueChange={setGlobalVehicleFilter}>
-                                    <SelectTrigger className="mt-1 dark:bg-slate-900 dark:border-slate-700">
-                                        <SelectValue placeholder="All Vehicles" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="all">All Vehicles</SelectItem>
-                                        {vehicles.map((v) => (
-                                            <SelectItem key={v.vehicle_id} value={String(v.vehicle_id)}>{v.plate_number} - {v.vehicle_model}</SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                            <div className="flex items-end">
-                                <Button variant="outline" onClick={() => { const r = getDateRange('monthly'); setGlobalStartDate(r.startDate); setGlobalEndDate(r.endDate); }} className="w-full">
-                                    <Calendar className="h-4 w-4 mr-2" /> This Month
-                                </Button>
-                            </div>
-                        </div>
-
-                        <div className="flex gap-2 mt-4 flex-wrap">
-                            <Button variant="outline" size="sm" onClick={() => { const r = getDateRange('weekly'); setGlobalStartDate(r.startDate); setGlobalEndDate(r.endDate); }} className="text-xs">This Week</Button>
-                            <Button variant="outline" size="sm" onClick={() => { const r = getDateRange('monthly'); setGlobalStartDate(r.startDate); setGlobalEndDate(r.endDate); }} className="text-xs">This Month</Button>
-                            <Button variant="outline" size="sm" onClick={() => { const r = getDateRange('yearly'); setGlobalStartDate(r.startDate); setGlobalEndDate(r.endDate); }} className="text-xs">This Year</Button>
-                            <Button variant="outline" size="sm" onClick={() => { setGlobalStartDate(''); setGlobalEndDate(''); }} className="text-xs">Clear Dates</Button>
-                        </div>
-                    </CardContent>
-                </Card> */}
-
                 {/* ✅ All 10 Reports — Lazy loaded */}
                 <div className="space-y-6">
                     <Suspense fallback={<ReportSkeleton />}>
-                       <FuelConsumptionReport
-    data={fuelData}
-    expanded={expandedSections.fuelConsumption}
-    onToggle={() => toggleSection('fuelConsumption')}
-    onExport={handleExport}
-    exportLoading={exportLoading}
-    departments={departments}
-    departmentFilter={fuelDeptFilter}
-    onDepartmentChange={setFuelDeptFilter}
-    weekFilter={fuelWeekFilter}
-    onWeekChange={setFuelWeekFilter}
-/>
+                        <FuelConsumptionReport
+                            data={fuelData}
+                            expanded={expandedSections.fuelConsumption}
+                            onToggle={() => toggleSection('fuelConsumption')}
+                            onExport={handleExport}
+                            exportLoading={exportLoading}
+                            departments={departments}
+                            departmentFilter={fuelDeptFilter}
+                            onDepartmentChange={setFuelDeptFilter}
+                            weekFilter={fuelWeekFilter}
+                            onWeekChange={setFuelWeekFilter}
+                        />
                     </Suspense>
 
                     <Suspense fallback={<ReportSkeleton />}>
@@ -614,8 +534,6 @@ const { data: fuelData, isLoading: fuelLoading } = useOptimizedQuery({
                         />
                     </Suspense>
 
-                 
-
                     <Suspense fallback={<ReportSkeleton />}>
                         <TripTicketReport
                             data={tripData}
@@ -628,7 +546,6 @@ const { data: fuelData, isLoading: fuelLoading } = useOptimizedQuery({
                         />
                     </Suspense>
 
-
                     <Suspense fallback={<ReportSkeleton />}>
                         <ReconciliationReport
                             data={reconciliationData}
@@ -640,12 +557,6 @@ const { data: fuelData, isLoading: fuelLoading } = useOptimizedQuery({
                             onThresholdChange={setReconciliationThreshold}
                         />
                     </Suspense>
-
-                  
-
-                    
-
-                  
                 </div>
 
                 {/* Footer */}
