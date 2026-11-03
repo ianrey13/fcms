@@ -13,7 +13,7 @@ import api, { mayorsOfficeAPI } from "../../services/api";
 import {
     Clock, BarChart3, ArrowRight, AlertCircle, Activity, PieChart,
     ChevronRight, Receipt, Coins, History, Lock, DollarSign, Fuel,
-    Building2, Filter, Car, Download, TrendingUp // ✅ FIX: Added TrendingUp
+    Building2, Filter, Car, Download, TrendingUp
 } from "lucide-react";
 import {
     Cell, PieChart as RePieChart, Pie, ResponsiveContainer, Tooltip,
@@ -25,16 +25,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 
 // ============================================
-// CONSTANTS
+// CONSTANTS & HELPERS
 // ============================================
 
 const DEPARTMENT_PALETTE = [
     "#3b82f6", "#10b981", "#f59e0b", "#8b5cf6", "#ef4444", "#06b6d4",
 ];
-
-// ============================================
-// HELPERS
-// ============================================
 
 const extractArray = (response) => {
     if (!response) return [];
@@ -74,6 +70,7 @@ const MayorDashboard = () => {
 
     // ✅ State for drill-down
     const [selectedDepartment, setSelectedDepartment] = useState(null);
+    const [activeTab, setActiveTab] = useState("transactions"); // "transactions" | "summary" | "overview"
 
     const fetchAllData = useCallback(() => {
         queryClient.invalidateQueries({ queryKey: ["mayor-approved-tickets"] });
@@ -143,7 +140,6 @@ const MayorDashboard = () => {
         const totalAllocated = departmentBudgets.reduce((s, d) => s + d.allocated, 0);
         const totalUsed = departmentBudgets.reduce((s, d) => s + d.spent, 0);
         
-        // Compute total distance from tickets
         const totalDistance = approvedTickets.reduce((sum, t) => sum + (parseFloat(t.actual_distance_km) || 0), 0);
 
         return { 
@@ -169,7 +165,7 @@ const MayorDashboard = () => {
 
     // ✅ Dynamic Data for Right Panel based on clicked Pie Slice
     const dynamicPanelData = useMemo(() => {
-        // If nothing is selected, show the combined "All Departments" view
+        // 1. Aggregate view (No department selected)
         if (!selectedDepartment) {
             return {
                 name: "All Departments",
@@ -182,35 +178,57 @@ const MayorDashboard = () => {
                 },
                 transactions: approvedTickets
                     .sort((a, b) => new Date(b.trip_date) - new Date(a.trip_date))
-                    .slice(0, 3)
+                    .slice(0, 5),
+                // For summary tab
+                budgetBreakdown: {
+                    allocated: totals.totalAllocated,
+                    used: totals.totalUsed,
+                    remaining: totals.totalRemaining,
+                },
+                overviewList: departmentBudgets.sort((a, b) => b.utilization - a.utilization),
             };
         }
 
-        // Otherwise, filter by the selected department
+        // 2. Specific Department view
         const targetDept = departmentBudgets.find(d => d.department_name === selectedDepartment);
         const deptTickets = approvedTickets.filter(t => t.department_name === selectedDepartment);
 
-        // Calculate Stats
         const fuelPurchased = deptTickets.reduce((sum, t) => sum + (parseFloat(t.actual_fuel_used) || 0), 0);
         const amountSpent = targetDept ? targetDept.spent : 0;
         const distance = deptTickets.reduce((sum, t) => sum + (parseFloat(t.actual_distance_km) || 0), 0);
         const avgCost = distance > 0 ? (amountSpent / distance) : 0;
         
-        // Recent Transactions
         const transactions = deptTickets
             .sort((a, b) => new Date(b.trip_date) - new Date(a.trip_date))
-            .slice(0, 3);
+            .slice(0, 5);
 
         return {
             name: selectedDepartment,
             isAggregate: false,
             stats: { fuelPurchased, amountSpent, distance, avgCost },
-            transactions
+            transactions,
+            // For summary tab
+            budgetBreakdown: {
+                allocated: targetDept?.allocated || 0,
+                used: targetDept?.spent || 0,
+                remaining: targetDept?.remaining || 0,
+            },
+            // For overview tab — highlight this dept first
+            overviewList: [
+                ...departmentBudgets.filter(d => d.department_name === selectedDepartment),
+                ...departmentBudgets.filter(d => d.department_name !== selectedDepartment).sort((a, b) => b.utilization - a.utilization)
+            ],
         };
     }, [selectedDepartment, departmentBudgets, approvedTickets, totals]);
 
     const isLoading = approvedLoading || budgetLoading || fiscalYearLoading;
     if (isLoading && approvedTickets.length === 0 && departmentBudgets.length === 0 && !hasActiveFiscalYear) return <SkeletonPage />;
+
+    // Small donut chart data for the summary tab
+    const summaryDonutData = [
+        { name: 'Used', value: dynamicPanelData.budgetBreakdown.used, fill: '#3b82f6' },
+        { name: 'Remaining', value: Math.max(dynamicPanelData.budgetBreakdown.remaining, 0), fill: '#e2e8f0' }
+    ];
 
     return (
         <div className="min-h-screen bg-slate-50 dark:bg-slate-900 p-4 md:p-6 font-sans">
@@ -351,15 +369,30 @@ const MayorDashboard = () => {
                 </Card>
 
                 {/* Right: Dynamic Drill-Down Panel */}
-                <Card className="lg:col-span-3 dark:bg-slate-800 border-none shadow-sm flex flex-col">
+                <Card className="lg:col-span-3 dark:bg-slate-800 border-none shadow-sm flex flex-col min-h-[400px]">
                     {/* Header Tabs */}
                     <div className="flex items-center gap-2 p-4 border-b border-slate-100 dark:border-slate-700">
-                        <button className="px-4 py-1.5 text-xs font-semibold rounded-md bg-blue-600 text-white">Transactions</button>
-                        <button className="px-4 py-1.5 text-xs font-medium rounded-md text-slate-500 hover:bg-slate-100">Summary</button>
-                        <button className="px-4 py-1.5 text-xs font-medium rounded-md text-slate-500 hover:bg-slate-100">Department Overview</button>
+                        <button 
+                            onClick={() => setActiveTab("transactions")}
+                            className={cn("px-4 py-1.5 text-xs font-semibold rounded-md transition-colors", activeTab === "transactions" ? "bg-blue-600 text-white" : "text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700")}
+                        >
+                            Transactions
+                        </button>
+                        <button 
+                            onClick={() => setActiveTab("summary")}
+                            className={cn("px-4 py-1.5 text-xs font-semibold rounded-md transition-colors", activeTab === "summary" ? "bg-blue-600 text-white" : "text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700")}
+                        >
+                            Summary
+                        </button>
+                        <button 
+                            onClick={() => setActiveTab("overview")}
+                            className={cn("px-4 py-1.5 text-xs font-semibold rounded-md transition-colors", activeTab === "overview" ? "bg-blue-600 text-white" : "text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700")}
+                        >
+                            Department Overview
+                        </button>
                     </div>
 
-                    {/* Dynamic Content */}
+                    {/* Dynamic Content Header */}
                     <div className="p-4 flex-1 flex flex-col">
                         <div className="flex items-center justify-between mb-4">
                             <div className="flex items-center gap-2">
@@ -374,63 +407,157 @@ const MayorDashboard = () => {
                             </button>
                         </div>
 
-                        {/* 4 Stat Cards inside Panel */}
-                        <div className="grid grid-cols-4 gap-2 mb-4 bg-slate-50 dark:bg-slate-900/50 p-3 rounded-lg">
-                            <div>
-                                <p className="text-[10px] text-slate-500">Fuel Purchased</p>
-                                <p className="text-sm font-bold text-slate-900 dark:text-white">{dynamicPanelData.stats.fuelPurchased.toLocaleString()} L</p>
-                            </div>
-                            <div>
-                                <p className="text-[10px] text-slate-500">Amount Spent</p>
-                                <p className="text-sm font-bold text-slate-900 dark:text-white">{formatCompact(dynamicPanelData.stats.amountSpent)}</p>
-                            </div>
-                            <div>
-                                <p className="text-[10px] text-slate-500">Distance Traveled</p>
-                                <p className="text-sm font-bold text-slate-900 dark:text-white">{dynamicPanelData.stats.distance.toLocaleString()} km</p>
-                            </div>
-                            <div>
-                                <p className="text-[10px] text-slate-500">Avg. Cost per Km</p>
-                                <p className="text-sm font-bold text-slate-900 dark:text-white">{formatCurrency(dynamicPanelData.stats.avgCost)}</p>
-                            </div>
-                        </div>
+                        {/* --- TAB CONTENT: TRANSACTIONS --- */}
+                        {activeTab === "transactions" && (
+                            <div className="flex-1 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                                <div className="grid grid-cols-4 gap-2 mb-4 bg-slate-50 dark:bg-slate-900/50 p-3 rounded-lg">
+                                    <div>
+                                        <p className="text-[10px] text-slate-500">Fuel Purchased</p>
+                                        <p className="text-sm font-bold text-slate-900 dark:text-white">{dynamicPanelData.stats.fuelPurchased.toLocaleString()} L</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-[10px] text-slate-500">Amount Spent</p>
+                                        <p className="text-sm font-bold text-slate-900 dark:text-white">{formatCompact(dynamicPanelData.stats.amountSpent)}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-[10px] text-slate-500">Distance Traveled</p>
+                                        <p className="text-sm font-bold text-slate-900 dark:text-white">{dynamicPanelData.stats.distance.toLocaleString()} km</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-[10px] text-slate-500">Avg. Cost per Km</p>
+                                        <p className="text-sm font-bold text-slate-900 dark:text-white">{formatCurrency(dynamicPanelData.stats.avgCost)}</p>
+                                    </div>
+                                </div>
 
-                        {/* Transactions Table */}
-                        <div className="flex-1">
-                            <div className="flex justify-between items-center mb-2">
-                                <h4 className="text-sm font-semibold text-slate-800 dark:text-white">Transactions</h4>
-                                <button className="text-xs text-blue-600">View All →</button>
+                                <div className="flex justify-between items-center mb-2">
+                                    <h4 className="text-sm font-semibold text-slate-800 dark:text-white">Recent Transactions</h4>
+                                    <button className="text-xs text-blue-600">View All →</button>
+                                </div>
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-xs text-left">
+                                        <thead className="text-slate-400 border-b dark:border-slate-700">
+                                            <tr>
+                                                <th className="pb-2 font-medium">Date</th>
+                                                <th className="pb-2 font-medium">Control No.</th>
+                                                <th className="pb-2 font-medium">Vehicle</th>
+                                                <th className="pb-2 font-medium">Fuel (L)</th>
+                                                <th className="pb-2 font-medium">Amount (₱)</th>
+                                                <th className="pb-2 font-medium">Receipt</th>
+                                                <th className="pb-2 font-medium text-right">Status</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {dynamicPanelData.transactions.length === 0 ? (
+                                                <tr><td colSpan={7} className="py-4 text-center text-slate-400">No transactions found</td></tr>
+                                            ) : dynamicPanelData.transactions.map((t, i) => (
+                                                <tr key={i} className="border-b last:border-0 dark:border-slate-700/50 hover:bg-slate-50 dark:hover:bg-slate-700/50">
+                                                    <td className="py-2 text-slate-600 dark:text-slate-300">{formatDateShort(t.trip_date)}</td>
+                                                    <td className="py-2 text-slate-800 dark:text-white font-medium">{t.ticket_number}</td>
+                                                    <td className="py-2 text-slate-600 dark:text-slate-300">{t.vehicle?.plate_number || 'N/A'}</td>
+                                                    <td className="py-2 text-slate-600 dark:text-slate-300">{t.actual_fuel_used || 0} L</td>
+                                                    <td className="py-2 font-medium text-slate-800 dark:text-white">{formatCurrency(t.amount_released)}</td>
+                                                    <td className="py-2"><Download className="h-3 w-3 text-blue-500 cursor-pointer hover:text-blue-700" /></td>
+                                                    <td className="py-2 text-right">
+                                                        <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">Verified</span>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
                             </div>
-                            <table className="w-full text-xs text-left">
-                                <thead className="text-slate-400 border-b dark:border-slate-700">
-                                    <tr>
-                                        <th className="pb-2 font-medium">Date</th>
-                                        <th className="pb-2 font-medium">Control No.</th>
-                                        <th className="pb-2 font-medium">Vehicle</th>
-                                        <th className="pb-2 font-medium">Fuel (L)</th>
-                                        <th className="pb-2 font-medium">Amount (₱)</th>
-                                        <th className="pb-2 font-medium">Receipt</th>
-                                        <th className="pb-2 font-medium text-right">Status</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {dynamicPanelData.transactions.length === 0 ? (
-                                        <tr><td colSpan={7} className="py-4 text-center text-slate-400">No transactions found</td></tr>
-                                    ) : dynamicPanelData.transactions.map((t, i) => (
-                                        <tr key={i} className="border-b last:border-0 dark:border-slate-700/50">
-                                            <td className="py-2 text-slate-600 dark:text-slate-300">{formatDateShort(t.trip_date)}</td>
-                                            <td className="py-2 text-slate-800 dark:text-white">{t.ticket_number}</td>
-                                            <td className="py-2 text-slate-600 dark:text-slate-300">{t.vehicle?.plate_number || 'N/A'}</td>
-                                            <td className="py-2 text-slate-600 dark:text-slate-300">{t.actual_fuel_used || 0} L</td>
-                                            <td className="py-2 font-medium text-slate-800 dark:text-white">{formatCurrency(t.amount_released)}</td>
-                                            <td className="py-2"><Download className="h-3 w-3 text-blue-500" /></td>
-                                            <td className="py-2 text-right">
-                                                <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">Verified</span>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
+                        )}
+
+                        {/* --- TAB CONTENT: SUMMARY --- */}
+                        {activeTab === "summary" && (
+                            <div className="flex-1 animate-in fade-in slide-in-from-bottom-2 duration-300 flex flex-col justify-center items-center">
+                                <div className="w-full max-w-md">
+                                    <h4 className="text-sm font-semibold text-slate-800 dark:text-white mb-6 text-center">Budget Health Overview</h4>
+                                    
+                                    <div className="flex items-center gap-8 mb-8 bg-slate-50 dark:bg-slate-900/50 p-6 rounded-xl">
+                                        <div className="relative w-32 h-32 shrink-0">
+                                            <ResponsiveContainer width="100%" height="100%">
+                                                <RePieChart>
+                                                    <Pie
+                                                        data={summaryDonutData}
+                                                        dataKey="value"
+                                                        cx="50%" cy="50%"
+                                                        innerRadius="70%" outerRadius="100%"
+                                                        paddingAngle={0} stroke="none"
+                                                    >
+                                                        {summaryDonutData.map((entry, i) => (
+                                                            <Cell key={i} fill={entry.fill} />
+                                                        ))}
+                                                    </Pie>
+                                                </RePieChart>
+                                            </ResponsiveContainer>
+                                            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                                                <p className="text-sm font-bold text-slate-800 dark:text-white">
+                                                    {dynamicPanelData.budgetBreakdown.allocated > 0 
+                                                        ? ((dynamicPanelData.budgetBreakdown.used / dynamicPanelData.budgetBreakdown.allocated) * 100).toFixed(0) 
+                                                        : 0}%
+                                                </p>
+                                                <p className="text-[9px] text-slate-500 uppercase">Used</p>
+                                            </div>
+                                        </div>
+                                        
+                                        <div className="space-y-4 flex-1">
+                                            <div>
+                                                <p className="text-xs text-slate-500">Total Allocated</p>
+                                                <p className="text-lg font-bold text-slate-800 dark:text-white">{formatCurrency(dynamicPanelData.budgetBreakdown.allocated)}</p>
+                                            </div>
+                                            <div>
+                                                <p className="text-xs text-slate-500">Total Spent</p>
+                                                <p className="text-lg font-bold text-blue-600">{formatCurrency(dynamicPanelData.budgetBreakdown.used)}</p>
+                                            </div>
+                                            <div>
+                                                <p className="text-xs text-slate-500">Remaining</p>
+                                                <p className={`text-lg font-bold ${dynamicPanelData.budgetBreakdown.remaining < 0 ? 'text-red-500' : 'text-emerald-500'}`}>
+                                                    {formatCurrency(dynamicPanelData.budgetBreakdown.remaining)}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div className="text-center text-xs text-slate-500">
+                                        {dynamicPanelData.isAggregate 
+                                            ? "Showing combined budget health for all departments." 
+                                            : `Showing budget health specifically for ${dynamicPanelData.name}.`}
+                                        <br /> Click another slice on the left to filter.
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* --- TAB CONTENT: DEPARTMENT OVERVIEW --- */}
+                        {activeTab === "overview" && (
+                            <div className="flex-1 animate-in fade-in slide-in-from-bottom-2 duration-300 overflow-y-auto max-h-[300px] pr-2">
+                                <h4 className="text-sm font-semibold text-slate-800 dark:text-white mb-4 sticky top-0 bg-white dark:bg-slate-800 pb-2">All Departments Utilization</h4>
+                                <div className="space-y-4">
+                                    {dynamicPanelData.overviewList.map((d, i) => {
+                                        const color = d.utilization > 80 ? 'bg-red-500' : d.utilization > 50 ? 'bg-yellow-500' : 'bg-emerald-500';
+                                        const statusLabel = d.utilization > 80 ? 'Needs Attention' : d.utilization > 50 ? 'Monitor' : 'On Track';
+                                        const statusColor = d.utilization > 80 ? 'text-red-500' : d.utilization > 50 ? 'text-yellow-600' : 'text-emerald-500';
+                                        const isHighlighted = !dynamicPanelData.isAggregate && d.department_name === dynamicPanelData.name;
+                                        
+                                        return (
+                                            <div key={i} className={cn("p-3 rounded-lg border transition-all", isHighlighted ? "border-blue-200 bg-blue-50/50 dark:border-blue-900 dark:bg-blue-900/20" : "border-transparent hover:bg-slate-50 dark:hover:bg-slate-800/50")}>
+                                                <div className="flex justify-between text-xs mb-2">
+                                                    <span className={cn("font-bold", isHighlighted ? "text-blue-700 dark:text-blue-400" : "text-slate-700 dark:text-slate-300")}>{d.department_name}</span>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-slate-500">{formatCurrency(d.remaining)} left</span>
+                                                        <span className={`font-semibold ${statusColor}`}>{statusLabel}</span>
+                                                    </div>
+                                                </div>
+                                                <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2 relative">
+                                                    <div className={`h-2 rounded-full ${color} transition-all duration-500`} style={{ width: `${Math.min(d.utilization, 100)}%` }} />
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </Card>
             </div>
