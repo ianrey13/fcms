@@ -13,7 +13,7 @@ import api, { mayorsOfficeAPI } from "../../services/api";
 import {
     Clock, BarChart3, ArrowRight, AlertCircle, Activity, PieChart,
     ChevronRight, Receipt, Coins, History, Lock, DollarSign, Fuel,
-    Building2, Filter, Car, Download
+    Building2, Filter, Car, Download, TrendingUp // ✅ FIX: Added TrendingUp
 } from "lucide-react";
 import {
     Cell, PieChart as RePieChart, Pie, ResponsiveContainer, Tooltip,
@@ -169,12 +169,26 @@ const MayorDashboard = () => {
 
     // ✅ Dynamic Data for Right Panel based on clicked Pie Slice
     const dynamicPanelData = useMemo(() => {
-        // Determine which department to show (default to highest spend if none selected)
-        const targetDeptName = selectedDepartment || (pieData[0]?.name ?? "General Services Office (GSO)");
-        const targetDept = departmentBudgets.find(d => d.department_name === targetDeptName);
+        // If nothing is selected, show the combined "All Departments" view
+        if (!selectedDepartment) {
+            return {
+                name: "All Departments",
+                isAggregate: true,
+                stats: {
+                    fuelPurchased: approvedTickets.reduce((sum, t) => sum + (parseFloat(t.actual_fuel_used) || 0), 0),
+                    amountSpent: totals.totalUsed,
+                    distance: totals.totalDistance,
+                    avgCost: totals.totalDistance > 0 ? (totals.totalUsed / totals.totalDistance) : 0,
+                },
+                transactions: approvedTickets
+                    .sort((a, b) => new Date(b.trip_date) - new Date(a.trip_date))
+                    .slice(0, 3)
+            };
+        }
 
-        // Filter tickets for this department
-        const deptTickets = approvedTickets.filter(t => t.department_name === targetDeptName);
+        // Otherwise, filter by the selected department
+        const targetDept = departmentBudgets.find(d => d.department_name === selectedDepartment);
+        const deptTickets = approvedTickets.filter(t => t.department_name === selectedDepartment);
 
         // Calculate Stats
         const fuelPurchased = deptTickets.reduce((sum, t) => sum + (parseFloat(t.actual_fuel_used) || 0), 0);
@@ -188,11 +202,12 @@ const MayorDashboard = () => {
             .slice(0, 3);
 
         return {
-            name: targetDeptName,
+            name: selectedDepartment,
+            isAggregate: false,
             stats: { fuelPurchased, amountSpent, distance, avgCost },
             transactions
         };
-    }, [selectedDepartment, pieData, departmentBudgets, approvedTickets]);
+    }, [selectedDepartment, departmentBudgets, approvedTickets, totals]);
 
     const isLoading = approvedLoading || budgetLoading || fiscalYearLoading;
     if (isLoading && approvedTickets.length === 0 && departmentBudgets.length === 0 && !hasActiveFiscalYear) return <SkeletonPage />;
@@ -296,7 +311,7 @@ const MayorDashboard = () => {
                                         cx="50%" cy="50%"
                                         innerRadius="60%" outerRadius="85%"
                                         paddingAngle={2} stroke="none"
-                                        onClick={(data) => setSelectedDepartment(data.name)}
+                                        onClick={(data) => setSelectedDepartment(data.name === selectedDepartment ? null : data.name)}
                                         className="cursor-pointer"
                                     >
                                         {pieData.map((entry, i) => (
