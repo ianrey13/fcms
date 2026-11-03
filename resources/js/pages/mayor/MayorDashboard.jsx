@@ -1,6 +1,6 @@
 // src/pages/mayor/MayorDashboard.jsx
 
-import React, { useMemo, useCallback, useState, useEffect } from "react";
+import React, { useMemo, useCallback, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
@@ -13,13 +13,16 @@ import api, { mayorsOfficeAPI } from "../../services/api";
 import {
     Clock, BarChart3, ArrowRight, AlertCircle, Activity, PieChart,
     ChevronRight, Receipt, Coins, History, Lock, DollarSign, Fuel,
-    Building2, Calendar, Download, CheckCircle
+    Building2, Filter, Car, Download
 } from "lucide-react";
 import {
     Cell, PieChart as RePieChart, Pie, ResponsiveContainer, Tooltip,
+    BarChart, Bar, XAxis, YAxis, CartesianGrid
 } from "recharts";
 import { cn } from "@/lib/utils";
-import { format } from "date-fns";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 
 // ============================================
 // CONSTANTS
@@ -27,11 +30,10 @@ import { format } from "date-fns";
 
 const DEPARTMENT_PALETTE = [
     "#3b82f6", "#10b981", "#f59e0b", "#8b5cf6", "#ef4444", "#06b6d4",
-    "#ec4899", "#84cc16", "#f97316", "#6366f1", "#14b8a6", "#a855f7",
 ];
 
 // ============================================
-// SAFE ARRAY EXTRACTION
+// HELPERS
 // ============================================
 
 const extractArray = (response) => {
@@ -44,322 +46,21 @@ const extractArray = (response) => {
 
 const useSafeArray = (value) => useMemo(() => (Array.isArray(value) ? value : []), [value]);
 
-// ============================================
-// HELPERS
-// ============================================
-
-const formatHistoryTimestamp = (dateString) => {
-    if (!dateString) return "N/A";
-    try {
-        const date = new Date(dateString);
-        return format(date, "MMM d, yyyy");
-    } catch { return "N/A"; }
+const formatCurrency = (amount) => {
+    const num = parseFloat(amount);
+    if (isNaN(num)) return "₱0";
+    return new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", minimumFractionDigits: 2 }).format(num);
 };
 
-// ============================================
-// DYNAMIC PIE CHART WITH DRILL-DOWN
-// ============================================
-
-const DashboardPie = ({ departments, totals, fiscalYear, tickets, onSelectDepartment }) => {
-    const [activeIndex, setActiveIndex] = useState(null);
-    const [viewMode, setViewMode] = useState('consumption'); // Default to consumption for the drill-down
-
-    const fmtCompact = (n) => {
-        const num = Number(n) || 0;
-        if (Math.abs(num) >= 1_000_000) return `₱${(num / 1_000_000).toFixed(2)}M`;
-        if (Math.abs(num) >= 1_000) return `₱${(num / 1_000).toFixed(0)}k`;
-        return `₱${num.toFixed(0)}`;
-    };
-
-    // --- ALLOCATION DATA ---
-    const allocationData = useMemo(() => {
-        let filtered = departments.filter(d => d.has_budget && d.allocated > 0);
-        return filtered
-            .map((d, i) => ({ name: d.department_name, value: d.allocated, color: DEPARTMENT_PALETTE[i % DEPARTMENT_PALETTE.length] }))
-            .sort((a, b) => b.value - a.value);
-    }, [departments]);
-
-    // --- CONSUMPTION DATA ---
-    const consumptionData = useMemo(() => {
-        let filteredTickets = tickets.filter(t => {
-            const d = new Date(t.trip_date || t.created_at);
-            return d.getFullYear() === fiscalYear;
-        });
-
-        const grouped = {};
-        filteredTickets.forEach(t => {
-            const key = t.department_name || "Unknown";
-            const amount = parseFloat(t.amount_released ?? t.gas_slip?.amount_released ?? 0);
-            if (amount > 0) grouped[key] = (grouped[key] || 0) + amount;
-        });
-
-        return Object.entries(grouped)
-            .map(([name, value], i) => ({ name, value, color: DEPARTMENT_PALETTE[i % DEPARTMENT_PALETTE.length] }))
-            .sort((a, b) => b.value - a.value);
-    }, [tickets, fiscalYear]);
-
-    const pieData = viewMode === 'allocation' ? allocationData : consumptionData;
-    const totalValue = pieData.reduce((s, d) => s + d.value, 0);
-
-    const PieTooltip = ({ active, payload }) => {
-        if (!active || !payload?.length) return null;
-        const d = payload[0].payload;
-        return (
-            <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-lg dark:border-slate-700 dark:bg-slate-800">
-                <p className="mb-1 text-xs font-semibold text-slate-700 dark:text-slate-200">{d.name}</p>
-                <p className="text-xs text-slate-600 dark:text-slate-400">{viewMode === 'allocation' ? 'Annual Budget' : 'Released'}: <strong>{fmtCompact(d.value)}</strong></p>
-            </div>
-        );
-    };
-
-    return (
-        <div className="flex flex-col h-full">
-            {/* Filters Bar */}
-            <div className="flex flex-wrap items-center gap-2 mb-4">
-                <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-lg mr-auto">
-                    <button onClick={() => setViewMode('allocation')} className={cn("px-3 py-1 text-xs font-medium rounded-md transition-colors", viewMode === 'allocation' ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" : "text-slate-500")}>Allocation</button>
-                    <button onClick={() => setViewMode('consumption')} className={cn("px-3 py-1 text-xs font-medium rounded-md transition-colors", viewMode === 'consumption' ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" : "text-slate-500")}>Consumption</button>
-                </div>
-            </div>
-
-            {/* Chart */}
-            {pieData.length === 0 ? (
-                <div className="flex-1 flex flex-col items-center justify-center text-center py-10">
-                    <PieChart className="h-10 w-10 text-slate-300 dark:text-slate-600" />
-                    <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">No data for this selection</p>
-                </div>
-            ) : (
-                <div className="flex-1 flex flex-col md:flex-row items-center gap-4">
-                    <div className="relative w-full md:w-[55%] h-[250px]">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <RePieChart>
-                                <Pie
-                                    data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%"
-                                    innerRadius="55%" outerRadius="85%" paddingAngle={2} minAngle={3} stroke="none"
-                                    onClick={(entry) => {
-                                        setActiveIndex(prev => prev === entry.index ? null : entry.index);
-                                        if (onSelectDepartment) {
-                                            onSelectDepartment(entry.name);
-                                        }
-                                    }}
-                                    onMouseEnter={(entry) => setActiveIndex(entry.index)}
-                                    onMouseLeave={() => setActiveIndex(null)}
-                                >
-                                    {pieData.map((entry, i) => (
-                                        <Cell key={i} fill={entry.color} style={{ opacity: activeIndex !== null && activeIndex !== i ? 0.3 : 1, cursor: 'pointer' }} />
-                                    ))}
-                                </Pie>
-                                <Tooltip content={<PieTooltip />} cursor={false} />
-                            </RePieChart>
-                        </ResponsiveContainer>
-                        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                            <p className="text-[10px] uppercase text-slate-400 font-bold">Total Used</p>
-                            <p className="text-xl font-bold text-slate-900 dark:text-white mt-0.5">{fmtCompact(totalValue)}</p>
-                        </div>
-                    </div>
-
-                    <div className="w-full md:w-[45%] md:max-h-[250px] md:overflow-y-auto">
-                        <ul className="space-y-1">
-                            {pieData.map((d, i) => (
-                                <li 
-                                    key={i} 
-                                    onMouseEnter={() => setActiveIndex(i)} 
-                                    onMouseLeave={() => setActiveIndex(null)} 
-                                    onClick={() => onSelectDepartment && onSelectDepartment(d.name)}
-                                    className={cn("flex items-center justify-between px-2 py-1.5 rounded text-xs cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors", activeIndex === i ? "bg-slate-100 dark:bg-slate-700/50" : "")}
-                                >
-                                    <div className="flex items-center gap-2 min-w-0">
-                                        <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
-                                        <span className="truncate text-slate-700 dark:text-slate-300">{d.name}</span>
-                                    </div>
-                                    <div className="text-right">
-                                        <p className="font-semibold text-slate-800 dark:text-white">{fmtCompact(d.value)}</p>
-                                    </div>
-                                </li>
-                            ))}
-                        </ul>
-                    </div>
-                </div>
-            )}
-        </div>
-    );
+const formatCompact = (amount) => {
+    const num = parseFloat(amount);
+    if (isNaN(num)) return "₱0";
+    if (num >= 1_000_000) return `₱${(num / 1_000_000).toFixed(2)}M`;
+    if (num >= 1_000) return `₱${(num / 1_000).toFixed(0)}k`;
+    return `₱${num.toFixed(0)}`;
 };
 
-// ============================================
-// DYNAMIC DEPARTMENT PANEL (Right Side)
-// ============================================
-
-const DepartmentDrillDownPanel = ({ departmentName, tickets }) => {
-    const [timeRange, setTimeRange] = useState("month"); // month, year, all
-
-    // Filter tickets based on selected department and time range
-    const filteredTickets = useMemo(() => {
-        if (!departmentName) return [];
-        
-        let data = tickets.filter(t => {
-            // Check if department matches (exact name or GSO default)
-            const matchesDept = t.department_name === departmentName || 
-                               (departmentName === "General Services Office (GSO)" && t.department_name?.includes("GSO"));
-            if (!matchesDept) return false;
-
-            // Time filter
-            const ticketDate = new Date(t.trip_date || t.created_at);
-            const now = new Date();
-            
-            if (timeRange === "month") {
-                return ticketDate.getMonth() === now.getMonth() && 
-                       ticketDate.getFullYear() === now.getFullYear();
-            }
-            if (timeRange === "year") {
-                return ticketDate.getFullYear() === now.getFullYear();
-            }
-            return true; // all time
-        });
-
-        return data.sort((a, b) => new Date(b.trip_date || b.created_at) - new Date(a.trip_date || a.created_at));
-    }, [departmentName, tickets, timeRange]);
-
-    // Calculate dynamic stats
-    const stats = useMemo(() => {
-        let fuelPurchased = 0;
-        let amountSpent = 0;
-        let distance = 0;
-
-        filteredTickets.forEach(t => {
-            const liters = parseFloat(t.gas_slip?.fuel_receipt?.liters_availed ?? t.liters ?? 0);
-            const amount = parseFloat(t.amount_released ?? t.gas_slip?.amount_released ?? 0);
-            const dist = parseFloat(t.actual_distance_km ?? 0);
-
-            fuelPurchased += liters;
-            amountSpent += amount;
-            distance += dist;
-        });
-
-        const avgCost = distance > 0 ? (amountSpent / distance) : 0;
-
-        return { fuelPurchased, amountSpent, distance, avgCost };
-    }, [filteredTickets]);
-
-    if (!departmentName) {
-        return (
-            <div className="flex flex-col items-center justify-center h-full py-20 text-slate-400">
-                <Building2 className="h-12 w-12 mb-3 opacity-50" />
-                <p>Click a slice on the pie chart to view details</p>
-            </div>
-        );
-    }
-
-    return (
-        <div className="flex flex-col h-full">
-            
-            {/* Header */}
-            <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-200 dark:border-slate-700">
-                <div className="flex items-center gap-2">
-                    <Building2 className="h-5 w-5 text-blue-500" />
-                    <h3 className="text-lg font-bold text-slate-900 dark:text-white">
-                        {departmentName}
-                    </h3>
-                </div>
-                <select 
-                    value={timeRange} 
-                    onChange={(e) => setTimeRange(e.target.value)} 
-                    className="text-xs p-1.5 rounded border dark:bg-slate-800 dark:border-slate-600 text-slate-900 dark:text-white outline-none"
-                >
-                    <option value="month">This Month</option>
-                    <option value="year">This Year</option>
-                    <option value="all">All Time</option>
-                </select>
-            </div>
-
-            {/* Stats Row */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6 bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-100 dark:border-slate-700/50">
-                <div>
-                    <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold flex items-center gap-1"><Fuel className="h-3 w-3"/> Fuel Purchased</p>
-                    <p className="text-lg font-bold text-slate-800 dark:text-white">{stats.fuelPurchased.toFixed(0)} L</p>
-                </div>
-                <div>
-                    <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold flex items-center gap-1"><DollarSign className="h-3 w-3"/> Amount Spent</p>
-                    <p className="text-lg font-bold text-slate-800 dark:text-white">₱{stats.amountSpent.toLocaleString()}</p>
-                </div>
-                <div>
-                    <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold flex items-center gap-1"><Activity className="h-3 w-3"/> Distance</p>
-                    <p className="text-lg font-bold text-slate-800 dark:text-white">{stats.distance.toFixed(0)} km</p>
-                </div>
-                <div>
-                    <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold flex items-center gap-1"><BarChart3 className="h-3 w-3"/> Avg Cost/km</p>
-                    <p className="text-lg font-bold text-slate-800 dark:text-white">₱{stats.avgCost.toFixed(2)}</p>
-                </div>
-            </div>
-
-            {/* Transactions Table */}
-            <div className="flex-1 overflow-x-auto">
-                <div className="flex items-center justify-between mb-2">
-                    <h4 className="text-sm font-semibold text-slate-800 dark:text-white flex items-center gap-2">
-                        <Activity className="h-4 w-4 text-blue-500" /> Transactions
-                    </h4>
-                </div>
-                <table className="w-full text-sm">
-                    <thead>
-                        <tr className="border-b text-left text-xs text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700/60">
-                            <th className="pb-2 font-medium">Date</th>
-                            <th className="pb-2 font-medium">Control No.</th>
-                            <th className="pb-2 font-medium">Vehicle</th>
-                            <th className="pb-2 text-right font-medium">Fuel (L)</th>
-                            <th className="pb-2 text-right font-medium">Amount (₱)</th>
-                            <th className="pb-2 text-center font-medium">Receipt</th>
-                            <th className="pb-2 text-right font-medium">Status</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {filteredTickets.length === 0 ? (
-                            <tr>
-                                <td colSpan={7} className="py-8 text-center text-slate-400 dark:text-slate-500">
-                                    No transactions found for this period
-                                </td>
-                            </tr>
-                        ) : (
-                            filteredTickets.map(t => (
-                                <tr key={t.id || t.trip_ticket_id} className="border-b last:border-0 border-slate-100 dark:border-slate-700/30 hover:bg-slate-50 dark:hover:bg-slate-700/20">
-                                    <td className="py-2.5 text-slate-600 dark:text-slate-300 whitespace-nowrap">{formatHistoryTimestamp(t.trip_date || t.created_at)}</td>
-                                    <td className="py-2.5 font-mono text-slate-700 dark:text-slate-200">{t.ticket_number || t.trip_ticket_number}</td>
-                                    <td className="py-2.5 text-slate-600 dark:text-slate-300">{t.vehicle?.plate_number || 'N/A'}</td>
-                                    <td className="py-2.5 text-right text-slate-600 dark:text-slate-300">{t.gas_slip?.fuel_receipt?.liters_availed || '0'}</td>
-                                    <td className="py-2.5 text-right font-semibold text-slate-800 dark:text-white">
-                                        ₱{parseFloat(t.amount_released || t.gas_slip?.amount_released || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}
-                                    </td>
-                                    <td className="py-2.5 text-center">
-                                        <button className="text-blue-500 hover:text-blue-700"><Download className="h-3.5 w-3.5 inline" /></button>
-                                    </td>
-                                    <td className="py-2.5 text-right">
-                                        <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
-                                            Verified
-                                        </span>
-                                    </td>
-                                </tr>
-                            ))
-                        )}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    );
-};
-
-
-// ============================================
-// LOADING SKELETON
-// ============================================
-
-const LoadingSkeleton = () => (
-    <div className="space-y-6 p-4 md:p-6 min-h-screen">
-        <SkeletonPage />
-        <SkeletonCard className="h-16" />
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <SkeletonCard className="h-[560px]" />
-            <SkeletonCard className="h-[560px]" />
-        </div>
-    </div>
-);
+const formatDateShort = (ds) => ds ? new Date(ds).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" }) : "—";
 
 // ============================================
 // MAIN COMPONENT
@@ -371,8 +72,8 @@ const MayorDashboard = () => {
     const { isConnected } = useRealtime();
     const queryClient = useQueryClient();
 
-    // ✅ State for the drill-down
-    const [selectedDept, setSelectedDept] = useState("General Services Office (GSO)");
+    // ✅ State for drill-down
+    const [selectedDepartment, setSelectedDepartment] = useState(null);
 
     const fetchAllData = useCallback(() => {
         queryClient.invalidateQueries({ queryKey: ["mayor-approved-tickets"] });
@@ -380,8 +81,9 @@ const MayorDashboard = () => {
         queryClient.invalidateQueries({ queryKey: ["mayor-active-fiscal-year"] });
     }, [queryClient]);
 
-    useAutoRefresh(["mayor-trip-updated", "mayor-new-pending", "mayor-budget-updated", "gso-funds-released", "trip-completed", "new-notification"], fetchAllData, 1000);
+    useAutoRefresh(["mayor-trip-updated", "gso-funds-released", "trip-completed"], fetchAllData, 1000);
 
+    // ============ ACTIVE FISCAL YEAR ============
     const { data: activeFiscalYearsRaw, isLoading: fiscalYearLoading } = useOptimizedQuery({
         queryKey: ["mayor-active-fiscal-year"],
         queryFn: async () => {
@@ -396,6 +98,7 @@ const MayorDashboard = () => {
     const activeFiscalYear = activeFiscalYears[0]?.year ?? new Date().getFullYear();
     const hasActiveFiscalYear = activeFiscalYears.length > 0;
 
+    // ============ APPROVED TICKETS ============
     const { data: approvedResponse, isLoading: approvedLoading } = useOptimizedQuery({
         queryKey: ["mayor-approved-tickets"],
         queryFn: async () => {
@@ -404,9 +107,11 @@ const MayorDashboard = () => {
                 return { data: extractArray(response) };
             } catch { return { data: [] }; }
         },
+        refetchOnMount: "always",
     });
     const approvedTickets = useSafeArray(approvedResponse?.data);
 
+    // ============ DEPARTMENT BUDGETS ============
     const { data: budgetRaw, isLoading: budgetLoading } = useOptimizedQuery({
         queryKey: ["mayor-department-budgets"],
         queryFn: async () => {
@@ -415,11 +120,14 @@ const MayorDashboard = () => {
                 return extractArray(response);
             } catch { return []; }
         },
+        refetchOnMount: "always",
     });
     const budgetData = useSafeArray(budgetRaw);
 
+    // ============ CALCULATIONS ============
+    
     const departmentBudgets = useMemo(() => {
-        return budgetData.map(dept => ({
+        const formatted = budgetData.map(dept => ({
             department_id: dept.department_id,
             department_name: dept.department_name,
             allocated: parseFloat(dept.allocated_amount ?? dept.annual_amount ?? dept.allocated ?? 0),
@@ -428,73 +136,367 @@ const MayorDashboard = () => {
             has_budget: dept.has_budget || false,
             utilization: parseFloat(dept.utilization_percentage ?? dept.utilization ?? 0),
         }));
+        return formatted;
     }, [budgetData]);
 
     const totals = useMemo(() => {
         const totalAllocated = departmentBudgets.reduce((s, d) => s + d.allocated, 0);
         const totalUsed = departmentBudgets.reduce((s, d) => s + d.spent, 0);
-        return { totalAllocated, totalUsed, totalRemaining: Math.max(totalAllocated - totalUsed, 0), departmentsWithBudget: departmentBudgets.filter(d => d.has_budget).length };
+        
+        // Compute total distance from tickets
+        const totalDistance = approvedTickets.reduce((sum, t) => sum + (parseFloat(t.actual_distance_km) || 0), 0);
+
+        return { 
+            totalAllocated, 
+            totalUsed, 
+            totalRemaining: Math.max(totalAllocated - totalUsed, 0), 
+            totalDistance
+        };
+    }, [departmentBudgets, approvedTickets]);
+
+    // Pie Data
+    const pieData = useMemo(() => {
+        return departmentBudgets
+            .filter(d => d.has_budget && d.allocated > 0)
+            .map((d, i) => ({
+                name: d.department_name,
+                value: d.allocated,
+                color: DEPARTMENT_PALETTE[i % DEPARTMENT_PALETTE.length],
+                department_id: d.department_id
+            }))
+            .sort((a, b) => b.value - a.value);
     }, [departmentBudgets]);
 
+    // ✅ Dynamic Data for Right Panel based on clicked Pie Slice
+    const dynamicPanelData = useMemo(() => {
+        // Determine which department to show (default to highest spend if none selected)
+        const targetDeptName = selectedDepartment || (pieData[0]?.name ?? "General Services Office (GSO)");
+        const targetDept = departmentBudgets.find(d => d.department_name === targetDeptName);
+
+        // Filter tickets for this department
+        const deptTickets = approvedTickets.filter(t => t.department_name === targetDeptName);
+
+        // Calculate Stats
+        const fuelPurchased = deptTickets.reduce((sum, t) => sum + (parseFloat(t.actual_fuel_used) || 0), 0);
+        const amountSpent = targetDept ? targetDept.spent : 0;
+        const distance = deptTickets.reduce((sum, t) => sum + (parseFloat(t.actual_distance_km) || 0), 0);
+        const avgCost = distance > 0 ? (amountSpent / distance) : 0;
+        
+        // Recent Transactions
+        const transactions = deptTickets
+            .sort((a, b) => new Date(b.trip_date) - new Date(a.trip_date))
+            .slice(0, 3);
+
+        return {
+            name: targetDeptName,
+            stats: { fuelPurchased, amountSpent, distance, avgCost },
+            transactions
+        };
+    }, [selectedDepartment, pieData, departmentBudgets, approvedTickets]);
+
     const isLoading = approvedLoading || budgetLoading || fiscalYearLoading;
-    if (isLoading && approvedTickets.length === 0 && departmentBudgets.length === 0 && !hasActiveFiscalYear) return <LoadingSkeleton />;
+    if (isLoading && approvedTickets.length === 0 && departmentBudgets.length === 0 && !hasActiveFiscalYear) return <SkeletonPage />;
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
-            <div className="space-y-5 p-4 md:p-6">
-                
-                {/* Hero Header */}
-                <div className={cn("relative overflow-hidden rounded-2xl p-6 shadow-xl border", "bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 border-slate-700/40", "dark:from-[#0d1b3e] dark:via-[#122252] dark:to-[#0d1b3e]")}>
-                    <div className="relative z-10 flex justify-between items-center">
+        <div className="min-h-screen bg-slate-50 dark:bg-slate-900 p-4 md:p-6 font-sans">
+            
+            {/* Header */}
+            <div className="flex items-center justify-between mb-6">
+                <div>
+                    <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Mayor's Office</h1>
+                    <p className="text-sm text-slate-500">Fuel Fund Dashboard</p>
+                </div>
+                <div className="flex items-center gap-4">
+                    <span className="text-sm font-medium text-slate-600 dark:text-slate-300">
+                        Oct 1, 2026 - Oct 31, 2026
+                    </span>
+                </div>
+            </div>
+
+            {/* 1. Top Stat Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                <Card className="dark:bg-slate-800 border-none shadow-sm">
+                    <CardContent className="p-4 flex items-center gap-4">
+                        <div className="p-3 bg-blue-100 dark:bg-blue-900/30 rounded-xl">
+                            <Fuel className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+                        </div>
                         <div>
-                            <h1 className="text-2xl font-bold tracking-tight text-white sm:text-3xl">
-                                Mayor's Office Dashboard
-                            </h1>
-                            <p className="mt-1.5 text-sm text-slate-300">
-                                Fuel Fund Dashboard for <strong className="text-white">FY {activeFiscalYear}</strong>
-                                {isConnected && <span className="ml-2 text-xs text-emerald-400 animate-pulse">● Live</span>}
+                            <p className="text-xs text-slate-500 font-medium uppercase">Total Fuel Budget</p>
+                            <p className="text-xl font-bold text-slate-900 dark:text-white">{formatCurrency(totals.totalAllocated)}</p>
+                            <p className="text-[10px] text-slate-400">Annual Allocation</p>
+                        </div>
+                    </CardContent>
+                </Card>
+
+                <Card className="dark:bg-slate-800 border-none shadow-sm">
+                    <CardContent className="p-4 flex items-center gap-4">
+                        <div className="p-3 bg-emerald-100 dark:bg-emerald-900/30 rounded-xl">
+                            <ArrowRight className="h-6 w-6 text-emerald-600 dark:text-emerald-400 -rotate-45" />
+                        </div>
+                        <div>
+                            <p className="text-xs text-slate-500 font-medium uppercase">Total Amount Used</p>
+                            <p className="text-xl font-bold text-slate-900 dark:text-white">{formatCurrency(totals.totalUsed)}</p>
+                            <p className="text-[10px] text-slate-400">
+                                {totals.totalAllocated > 0 ? ((totals.totalUsed / totals.totalAllocated) * 100).toFixed(2) : 0}% of Budget
                             </p>
                         </div>
-                    </div>
-                </div>
+                    </CardContent>
+                </Card>
 
-                {!hasActiveFiscalYear ? (
-                     <div className="text-center py-20">
-                         <AlertCircle className="h-12 w-12 text-amber-500 mx-auto mb-4" />
-                         <h2 className="text-xl font-bold text-slate-800">No Active Fiscal Year</h2>
-                         <p className="text-slate-500">Please activate a fiscal year to view dashboard data.</p>
-                     </div>
-                ) : (
-                    <>
-                        {/* Grid Layout */}
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-stretch min-h-[500px]">
-                            
-                            {/* Left: Pie Chart */}
-                            <div className="rounded-2xl p-5 border bg-white shadow-sm dark:bg-slate-800/80 dark:border-slate-700 flex flex-col">
-                                <div className="mb-2">
-                                    <h3 className="text-base font-semibold text-slate-900 dark:text-white">Fuel Budget Utilization by Department</h3>
-                                    <p className="text-xs text-slate-500">Click a slice to view department details</p>
-                                </div>
-                                <DashboardPie 
-                                    departments={departmentBudgets} 
-                                    totals={totals} 
-                                    fiscalYear={activeFiscalYear} 
-                                    tickets={approvedTickets} 
-                                    onSelectDepartment={setSelectedDept}
-                                />
-                            </div>
-
-                            {/* Right: Dynamic Drill-Down Panel */}
-                            <div className="rounded-2xl p-5 border bg-white shadow-sm dark:bg-slate-800/80 dark:border-slate-700 flex flex-col">
-                                <DepartmentDrillDownPanel 
-                                    departmentName={selectedDept} 
-                                    tickets={approvedTickets} 
-                                />
-                            </div>
-
+                <Card className="dark:bg-slate-800 border-none shadow-sm">
+                    <CardContent className="p-4 flex items-center gap-4">
+                        <div className="p-3 bg-red-100 dark:bg-red-900/30 rounded-xl">
+                            <ArrowRight className="h-6 w-6 text-red-600 dark:text-red-400 rotate-45" />
                         </div>
-                    </>
-                )}
+                        <div>
+                            <p className="text-xs text-slate-500 font-medium uppercase">Remaining Balance</p>
+                            <p className="text-xl font-bold text-slate-900 dark:text-white">{formatCurrency(totals.totalRemaining)}</p>
+                            <p className="text-[10px] text-slate-400">
+                                {totals.totalAllocated > 0 ? ((totals.totalRemaining / totals.totalAllocated) * 100).toFixed(2) : 0}% Remaining
+                            </p>
+                        </div>
+                    </CardContent>
+                </Card>
+
+                <Card className="dark:bg-slate-800 border-none shadow-sm">
+                    <CardContent className="p-4 flex items-center gap-4">
+                        <div className="p-3 bg-purple-100 dark:bg-purple-900/30 rounded-xl">
+                            <Car className="h-6 w-6 text-purple-600 dark:text-purple-400" />
+                        </div>
+                        <div>
+                            <p className="text-xs text-slate-500 font-medium uppercase">Total Distance Traveled</p>
+                            <p className="text-xl font-bold text-slate-900 dark:text-white">{totals.totalDistance.toLocaleString()} km</p>
+                            <p className="text-[10px] text-slate-400">This Period</p>
+                        </div>
+                    </CardContent>
+                </Card>
+            </div>
+
+            {/* 2. Middle Section: Pie Chart & Dynamic Transactions */}
+            <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 mb-6">
+                
+                {/* Left: Pie Chart */}
+                <Card className="lg:col-span-2 dark:bg-slate-800 border-none shadow-sm p-5">
+                    <div className="flex items-center justify-between mb-4">
+                        <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                            <PieChart className="h-5 w-5 text-blue-500" />
+                            Fuel Budget Utilization by Department
+                        </h3>
+                        <button className="text-xs text-blue-600 font-medium">View Report →</button>
+                    </div>
+                    
+                    <div className="flex flex-col md:flex-row items-center gap-4">
+                        <div className="relative w-full md:w-1/2 h-[220px]">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <RePieChart>
+                                    <Pie
+                                        data={pieData}
+                                        dataKey="value"
+                                        nameKey="name"
+                                        cx="50%" cy="50%"
+                                        innerRadius="60%" outerRadius="85%"
+                                        paddingAngle={2} stroke="none"
+                                        onClick={(data) => setSelectedDepartment(data.name)}
+                                        className="cursor-pointer"
+                                    >
+                                        {pieData.map((entry, i) => (
+                                            <Cell 
+                                                key={i} 
+                                                fill={entry.color} 
+                                                style={{ 
+                                                    opacity: selectedDepartment && selectedDepartment !== entry.name ? 0.3 : 1,
+                                                    transition: 'opacity 0.2s'
+                                                }} 
+                                            />
+                                        ))}
+                                    </Pie>
+                                    <Tooltip formatter={(value) => formatCurrency(value)} />
+                                </RePieChart>
+                            </ResponsiveContainer>
+                            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                                <p className="text-lg font-bold text-slate-900 dark:text-white">{formatCompact(totals.totalUsed)}</p>
+                                <p className="text-[10px] text-slate-500 uppercase">Total Used</p>
+                            </div>
+                        </div>
+                        
+                        <div className="w-full md:w-1/2 space-y-2">
+                            {pieData.map((d, i) => (
+                                <div key={i} className="flex items-center justify-between text-xs">
+                                    <div className="flex items-center gap-2">
+                                        <span className="h-2 w-2 rounded-full" style={{ backgroundColor: d.color }} />
+                                        <span className="text-slate-600 dark:text-slate-300 truncate max-w-[120px]">{d.name}</span>
+                                    </div>
+                                    <span className="font-semibold text-slate-800 dark:text-white">
+                                        {totals.totalUsed > 0 ? ((d.value / totals.totalUsed) * 100).toFixed(1) : 0}%
+                                    </span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </Card>
+
+                {/* Right: Dynamic Drill-Down Panel */}
+                <Card className="lg:col-span-3 dark:bg-slate-800 border-none shadow-sm flex flex-col">
+                    {/* Header Tabs */}
+                    <div className="flex items-center gap-2 p-4 border-b border-slate-100 dark:border-slate-700">
+                        <button className="px-4 py-1.5 text-xs font-semibold rounded-md bg-blue-600 text-white">Transactions</button>
+                        <button className="px-4 py-1.5 text-xs font-medium rounded-md text-slate-500 hover:bg-slate-100">Summary</button>
+                        <button className="px-4 py-1.5 text-xs font-medium rounded-md text-slate-500 hover:bg-slate-100">Department Overview</button>
+                    </div>
+
+                    {/* Dynamic Content */}
+                    <div className="p-4 flex-1 flex flex-col">
+                        <div className="flex items-center justify-between mb-4">
+                            <div className="flex items-center gap-2">
+                                <Building2 className="h-5 w-5 text-blue-500" />
+                                <h3 className="text-lg font-bold text-slate-800 dark:text-white">{dynamicPanelData.name}</h3>
+                                <Badge className="bg-blue-100 text-blue-700 ml-2">
+                                    {totals.totalUsed > 0 ? ((dynamicPanelData.stats.amountSpent / totals.totalUsed) * 100).toFixed(1) : 0}% of Total Usage
+                                </Badge>
+                            </div>
+                            <button className="flex items-center gap-1 text-xs border rounded px-2 py-1">
+                                <Clock className="h-3 w-3" /> This Month
+                            </button>
+                        </div>
+
+                        {/* 4 Stat Cards inside Panel */}
+                        <div className="grid grid-cols-4 gap-2 mb-4 bg-slate-50 dark:bg-slate-900/50 p-3 rounded-lg">
+                            <div>
+                                <p className="text-[10px] text-slate-500">Fuel Purchased</p>
+                                <p className="text-sm font-bold text-slate-900 dark:text-white">{dynamicPanelData.stats.fuelPurchased.toLocaleString()} L</p>
+                            </div>
+                            <div>
+                                <p className="text-[10px] text-slate-500">Amount Spent</p>
+                                <p className="text-sm font-bold text-slate-900 dark:text-white">{formatCompact(dynamicPanelData.stats.amountSpent)}</p>
+                            </div>
+                            <div>
+                                <p className="text-[10px] text-slate-500">Distance Traveled</p>
+                                <p className="text-sm font-bold text-slate-900 dark:text-white">{dynamicPanelData.stats.distance.toLocaleString()} km</p>
+                            </div>
+                            <div>
+                                <p className="text-[10px] text-slate-500">Avg. Cost per Km</p>
+                                <p className="text-sm font-bold text-slate-900 dark:text-white">{formatCurrency(dynamicPanelData.stats.avgCost)}</p>
+                            </div>
+                        </div>
+
+                        {/* Transactions Table */}
+                        <div className="flex-1">
+                            <div className="flex justify-between items-center mb-2">
+                                <h4 className="text-sm font-semibold text-slate-800 dark:text-white">Transactions</h4>
+                                <button className="text-xs text-blue-600">View All →</button>
+                            </div>
+                            <table className="w-full text-xs text-left">
+                                <thead className="text-slate-400 border-b dark:border-slate-700">
+                                    <tr>
+                                        <th className="pb-2 font-medium">Date</th>
+                                        <th className="pb-2 font-medium">Control No.</th>
+                                        <th className="pb-2 font-medium">Vehicle</th>
+                                        <th className="pb-2 font-medium">Fuel (L)</th>
+                                        <th className="pb-2 font-medium">Amount (₱)</th>
+                                        <th className="pb-2 font-medium">Receipt</th>
+                                        <th className="pb-2 font-medium text-right">Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {dynamicPanelData.transactions.length === 0 ? (
+                                        <tr><td colSpan={7} className="py-4 text-center text-slate-400">No transactions found</td></tr>
+                                    ) : dynamicPanelData.transactions.map((t, i) => (
+                                        <tr key={i} className="border-b last:border-0 dark:border-slate-700/50">
+                                            <td className="py-2 text-slate-600 dark:text-slate-300">{formatDateShort(t.trip_date)}</td>
+                                            <td className="py-2 text-slate-800 dark:text-white">{t.ticket_number}</td>
+                                            <td className="py-2 text-slate-600 dark:text-slate-300">{t.vehicle?.plate_number || 'N/A'}</td>
+                                            <td className="py-2 text-slate-600 dark:text-slate-300">{t.actual_fuel_used || 0} L</td>
+                                            <td className="py-2 font-medium text-slate-800 dark:text-white">{formatCurrency(t.amount_released)}</td>
+                                            <td className="py-2"><Download className="h-3 w-3 text-blue-500" /></td>
+                                            <td className="py-2 text-right">
+                                                <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">Verified</span>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </Card>
+            </div>
+
+            {/* 3. Bottom Section */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                
+                {/* Bar Chart */}
+                <Card className="dark:bg-slate-800 border-none shadow-sm p-5">
+                    <h3 className="font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
+                        <BarChart3 className="h-5 w-5 text-blue-500"/> Fuel Fund Summary
+                    </h3>
+                    <div className="h-48">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={[
+                                { name: 'Used', value: totals.totalUsed, fill: '#3b82f6' },
+                                { name: 'Remaining', value: totals.totalRemaining, fill: '#e2e8f0' }
+                            ]}>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 10}} />
+                                <YAxis axisLine={false} tickLine={false} tick={{fontSize: 10}} tickFormatter={(val) => `₱${val/1000000}M`} />
+                                <Tooltip formatter={(val) => formatCurrency(val)} />
+                                <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                                    {
+                                        [0, 1].map((i) => (
+                                            <Cell key={i} fill={i === 0 ? '#3b82f6' : '#cbd5e1'} />
+                                        ))
+                                    }
+                                </Bar>
+                            </BarChart>
+                        </ResponsiveContainer>
+                    </div>
+                </Card>
+
+                {/* Recent Fund Releases */}
+                <Card className="dark:bg-slate-800 border-none shadow-sm p-5">
+                     <div className="flex justify-between items-center mb-4">
+                        <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                            <Activity className="h-5 w-5 text-purple-500"/> Recent Fund Releases
+                        </h3>
+                        <button className="text-xs text-blue-600">View All →</button>
+                    </div>
+                    <div className="space-y-3">
+                        {approvedTickets.slice(0, 3).map((t, i) => (
+                            <div key={i} className="flex justify-between items-center text-sm">
+                                <div>
+                                    <p className="font-medium text-slate-800 dark:text-white">{formatDateShort(t.trip_date)}</p>
+                                    <p className="text-[10px] text-slate-500">Purpose: Fuel Fund Release</p>
+                                </div>
+                                <p className="font-bold text-slate-800 dark:text-white">{formatCurrency(t.amount_released)}</p>
+                            </div>
+                        ))}
+                    </div>
+                </Card>
+
+                {/* Dept Utilization */}
+                <Card className="dark:bg-slate-800 border-none shadow-sm p-5">
+                    <div className="flex justify-between items-center mb-4">
+                        <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                            <TrendingUp className="h-5 w-5 text-emerald-500"/> Department Utilization Overview
+                        </h3>
+                    </div>
+                    <div className="space-y-4">
+                        {departmentBudgets.slice(0, 4).map((d, i) => {
+                            const color = d.utilization > 80 ? 'bg-red-500' : d.utilization > 50 ? 'bg-yellow-500' : 'bg-emerald-500';
+                            const statusLabel = d.utilization > 80 ? 'Needs Attention' : d.utilization > 50 ? 'Monitor' : 'On Track';
+                            const statusColor = d.utilization > 80 ? 'text-red-500' : d.utilization > 50 ? 'text-yellow-600' : 'text-emerald-500';
+                            return (
+                                <div key={i}>
+                                    <div className="flex justify-between text-xs mb-1">
+                                        <span className="font-medium text-slate-700 dark:text-slate-300">{d.department_name}</span>
+                                        <span className={`font-semibold ${statusColor}`}>{statusLabel}</span>
+                                    </div>
+                                    <div className="w-full bg-slate-100 dark:bg-slate-700 rounded-full h-2">
+                                        <div className={`h-2 rounded-full ${color}`} style={{ width: `${d.utilization}%` }} />
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </Card>
             </div>
         </div>
     );
