@@ -9,11 +9,12 @@ import { useAutoRefresh } from "../../hooks/useAutoRefresh";
 import { useRealtime } from "../../contexts/RealtimeContext";
 import { SkeletonPage, SkeletonCard } from "../../components/ui/SkeletonCard";
 import api, { mayorsOfficeAPI } from "../../services/api";
+import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, subWeeks, isWithinInterval } from "date-fns";
 
 import {
     Clock, BarChart3, ArrowRight, AlertCircle, Activity, PieChart,
     ChevronRight, Receipt, Coins, History, Lock, DollarSign, Fuel,
-    Building2, Filter, Car, Download, TrendingUp
+    Building2, Filter, Car, Download, TrendingUp, ChevronDown
 } from "lucide-react";
 import {
     Cell, PieChart as RePieChart, Pie, ResponsiveContainer, Tooltip,
@@ -70,7 +71,34 @@ const MayorDashboard = () => {
 
     // ✅ State for drill-down
     const [selectedDepartment, setSelectedDepartment] = useState(null);
-    const [activeTab, setActiveTab] = useState("transactions"); // "transactions" | "summary" | "overview"
+    const [activeTab, setActiveTab] = useState("transactions");
+    const [timeFilter, setTimeFilter] = useState("this_month"); // "this_month" | "this_week" | "two_weeks_ago"
+
+    // ✅ Time filter logic
+    const dateRange = useMemo(() => {
+        const today = new Date();
+        let start, end;
+        
+        if (timeFilter === "this_week") {
+            start = startOfWeek(today, { weekStartsOn: 1 }); // Monday
+            end = endOfWeek(today, { weekStartsOn: 1 });
+        } else if (timeFilter === "two_weeks_ago") {
+            const twoWeeksAgo = subWeeks(today, 2);
+            start = startOfWeek(twoWeeksAgo, { weekStartsOn: 1 });
+            end = endOfWeek(twoWeeksAgo, { weekStartsOn: 1 });
+        } else {
+            // Default: This Month
+            start = startOfMonth(today);
+            end = endOfMonth(today);
+        }
+        return { start, end };
+    }, [timeFilter]);
+
+    const timeFilterLabel = useMemo(() => {
+        if (timeFilter === "this_week") return "This Week";
+        if (timeFilter === "two_weeks_ago") return "Two Weeks Ago";
+        return "This Month";
+    }, [timeFilter]);
 
     const fetchAllData = useCallback(() => {
         queryClient.invalidateQueries({ queryKey: ["mayor-approved-tickets"] });
@@ -106,7 +134,16 @@ const MayorDashboard = () => {
         },
         refetchOnMount: "always",
     });
-    const approvedTickets = useSafeArray(approvedResponse?.data);
+    const approvedTicketsRaw = useSafeArray(approvedResponse?.data);
+
+    // ✅ Filter tickets by the selected time range
+    const filteredTickets = useMemo(() => {
+        return approvedTicketsRaw.filter(t => {
+            if (!t.trip_date) return false;
+            const tripDate = new Date(t.trip_date);
+            return isWithinInterval(tripDate, { start: dateRange.start, end: dateRange.end });
+        });
+    }, [approvedTicketsRaw, dateRange]);
 
     // ============ DEPARTMENT BUDGETS ============
     const { data: budgetRaw, isLoading: budgetLoading } = useOptimizedQuery({
@@ -138,9 +175,9 @@ const MayorDashboard = () => {
 
     const totals = useMemo(() => {
         const totalAllocated = departmentBudgets.reduce((s, d) => s + d.allocated, 0);
-        const totalUsed = departmentBudgets.reduce((s, d) => s + d.spent, 0);
-        
-        const totalDistance = approvedTickets.reduce((sum, t) => sum + (parseFloat(t.actual_distance_km) || 0), 0);
+        // For top stat cards, we use the filtered timeframe to match the overall page context
+        const totalUsed = filteredTickets.reduce((sum, t) => sum + (parseFloat(t.amount_released) || 0), 0);
+        const totalDistance = filteredTickets.reduce((sum, t) => sum + (parseFloat(t.actual_distance_km) || 0), 0);
 
         return { 
             totalAllocated, 
@@ -148,9 +185,9 @@ const MayorDashboard = () => {
             totalRemaining: Math.max(totalAllocated - totalUsed, 0), 
             totalDistance
         };
-    }, [departmentBudgets, approvedTickets]);
+    }, [departmentBudgets, filteredTickets]);
 
-    // Pie Data
+    // Pie Data (Unchanged, shows total annual utilization)
     const pieData = useMemo(() => {
         return departmentBudgets
             .filter(d => d.has_budget && d.allocated > 0)
@@ -163,7 +200,7 @@ const MayorDashboard = () => {
             .sort((a, b) => b.value - a.value);
     }, [departmentBudgets]);
 
-    // ✅ Dynamic Data for Right Panel based on clicked Pie Slice
+    // ✅ Dynamic Data for Right Panel based on clicked Pie Slice + Time Filter
     const dynamicPanelData = useMemo(() => {
         // 1. Aggregate view (No department selected)
         if (!selectedDepartment) {
@@ -171,15 +208,14 @@ const MayorDashboard = () => {
                 name: "All Departments",
                 isAggregate: true,
                 stats: {
-                    fuelPurchased: approvedTickets.reduce((sum, t) => sum + (parseFloat(t.actual_fuel_used) || 0), 0),
+                    fuelPurchased: filteredTickets.reduce((sum, t) => sum + (parseFloat(t.actual_fuel_used) || 0), 0),
                     amountSpent: totals.totalUsed,
                     distance: totals.totalDistance,
                     avgCost: totals.totalDistance > 0 ? (totals.totalUsed / totals.totalDistance) : 0,
                 },
-                transactions: approvedTickets
+                transactions: filteredTickets
                     .sort((a, b) => new Date(b.trip_date) - new Date(a.trip_date))
                     .slice(0, 5),
-                // For summary tab
                 budgetBreakdown: {
                     allocated: totals.totalAllocated,
                     used: totals.totalUsed,
@@ -191,10 +227,10 @@ const MayorDashboard = () => {
 
         // 2. Specific Department view
         const targetDept = departmentBudgets.find(d => d.department_name === selectedDepartment);
-        const deptTickets = approvedTickets.filter(t => t.department_name === selectedDepartment);
+        const deptTickets = filteredTickets.filter(t => t.department_name === selectedDepartment);
 
         const fuelPurchased = deptTickets.reduce((sum, t) => sum + (parseFloat(t.actual_fuel_used) || 0), 0);
-        const amountSpent = targetDept ? targetDept.spent : 0;
+        const amountSpent = deptTickets.reduce((sum, t) => sum + (parseFloat(t.amount_released) || 0), 0); // Using filtered timeframe
         const distance = deptTickets.reduce((sum, t) => sum + (parseFloat(t.actual_distance_km) || 0), 0);
         const avgCost = distance > 0 ? (amountSpent / distance) : 0;
         
@@ -202,27 +238,43 @@ const MayorDashboard = () => {
             .sort((a, b) => new Date(b.trip_date) - new Date(a.trip_date))
             .slice(0, 5);
 
+        // Recalculate utilization for the timeframe
+        const timeframeUtilization = targetDept?.allocated > 0 
+            ? ((amountSpent / targetDept.allocated) * 100).toFixed(1) 
+            : 0;
+
+        // Map over departments and recalculate used for the timeframe
+        const overviewList = departmentBudgets.map(dept => {
+            const deptTimeframeTickets = filteredTickets.filter(t => t.department_name === dept.department_name);
+            const timeframeSpent = deptTimeframeTickets.reduce((sum, t) => sum + (parseFloat(t.amount_released) || 0), 0);
+            const timeframeUtilization = dept.allocated > 0 ? (timeframeSpent / dept.allocated) * 100 : 0;
+            
+            return {
+                ...dept,
+                spent: timeframeSpent, // Use timeframe spent for the overview bar
+                utilization: timeframeUtilization
+            };
+        }).sort((a, b) => b.utilization - a.utilization);
+
         return {
             name: selectedDepartment,
             isAggregate: false,
             stats: { fuelPurchased, amountSpent, distance, avgCost },
             transactions,
-            // For summary tab
             budgetBreakdown: {
                 allocated: targetDept?.allocated || 0,
-                used: targetDept?.spent || 0,
-                remaining: targetDept?.remaining || 0,
+                used: amountSpent,
+                remaining: (targetDept?.allocated || 0) - amountSpent,
             },
-            // For overview tab — highlight this dept first
             overviewList: [
-                ...departmentBudgets.filter(d => d.department_name === selectedDepartment),
-                ...departmentBudgets.filter(d => d.department_name !== selectedDepartment).sort((a, b) => b.utilization - a.utilization)
+                ...overviewList.filter(d => d.department_name === selectedDepartment),
+                ...overviewList.filter(d => d.department_name !== selectedDepartment)
             ],
         };
-    }, [selectedDepartment, departmentBudgets, approvedTickets, totals]);
+    }, [selectedDepartment, departmentBudgets, filteredTickets, totals]);
 
     const isLoading = approvedLoading || budgetLoading || fiscalYearLoading;
-    if (isLoading && approvedTickets.length === 0 && departmentBudgets.length === 0 && !hasActiveFiscalYear) return <SkeletonPage />;
+    if (isLoading && approvedTicketsRaw.length === 0 && departmentBudgets.length === 0 && !hasActiveFiscalYear) return <SkeletonPage />;
 
     // Small donut chart data for the summary tab
     const summaryDonutData = [
@@ -241,7 +293,7 @@ const MayorDashboard = () => {
                 </div>
                 <div className="flex items-center gap-4">
                     <span className="text-sm font-medium text-slate-600 dark:text-slate-300">
-                        Oct 1, 2026 - Oct 31, 2026
+                        {timeFilterLabel}
                     </span>
                 </div>
             </div>
@@ -267,7 +319,7 @@ const MayorDashboard = () => {
                             <ArrowRight className="h-6 w-6 text-emerald-600 dark:text-emerald-400 -rotate-45" />
                         </div>
                         <div>
-                            <p className="text-xs text-slate-500 font-medium uppercase">Total Amount Used</p>
+                            <p className="text-xs text-slate-500 font-medium uppercase">Amount Used</p>
                             <p className="text-xl font-bold text-slate-900 dark:text-white">{formatCurrency(totals.totalUsed)}</p>
                             <p className="text-[10px] text-slate-400">
                                 {totals.totalAllocated > 0 ? ((totals.totalUsed / totals.totalAllocated) * 100).toFixed(2) : 0}% of Budget
@@ -297,9 +349,9 @@ const MayorDashboard = () => {
                             <Car className="h-6 w-6 text-purple-600 dark:text-purple-400" />
                         </div>
                         <div>
-                            <p className="text-xs text-slate-500 font-medium uppercase">Total Distance Traveled</p>
+                            <p className="text-xs text-slate-500 font-medium uppercase">Distance Traveled</p>
                             <p className="text-xl font-bold text-slate-900 dark:text-white">{totals.totalDistance.toLocaleString()} km</p>
-                            <p className="text-[10px] text-slate-400">This Period</p>
+                            <p className="text-[10px] text-slate-400">{timeFilterLabel}</p>
                         </div>
                     </CardContent>
                 </Card>
@@ -313,7 +365,7 @@ const MayorDashboard = () => {
                     <div className="flex items-center justify-between mb-4">
                         <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
                             <PieChart className="h-5 w-5 text-blue-500" />
-                            Fuel Budget Utilization by Department
+                            Fuel Budget Allocation
                         </h3>
                         <button className="text-xs text-blue-600 font-medium">View Report →</button>
                     </div>
@@ -347,8 +399,8 @@ const MayorDashboard = () => {
                                 </RePieChart>
                             </ResponsiveContainer>
                             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                                <p className="text-lg font-bold text-slate-900 dark:text-white">{formatCompact(totals.totalUsed)}</p>
-                                <p className="text-[10px] text-slate-500 uppercase">Total Used</p>
+                                <p className="text-lg font-bold text-slate-900 dark:text-white">{formatCompact(totals.totalAllocated)}</p>
+                                <p className="text-[10px] text-slate-500 uppercase">Total Allocated</p>
                             </div>
                         </div>
                         
@@ -360,7 +412,7 @@ const MayorDashboard = () => {
                                         <span className="text-slate-600 dark:text-slate-300 truncate max-w-[120px]">{d.name}</span>
                                     </div>
                                     <span className="font-semibold text-slate-800 dark:text-white">
-                                        {totals.totalUsed > 0 ? ((d.value / totals.totalUsed) * 100).toFixed(1) : 0}%
+                                        {totals.totalAllocated > 0 ? ((d.value / totals.totalAllocated) * 100).toFixed(1) : 0}%
                                     </span>
                                 </div>
                             ))}
@@ -371,25 +423,43 @@ const MayorDashboard = () => {
                 {/* Right: Dynamic Drill-Down Panel */}
                 <Card className="lg:col-span-3 dark:bg-slate-800 border-none shadow-sm flex flex-col min-h-[400px]">
                     {/* Header Tabs */}
-                    <div className="flex items-center gap-2 p-4 border-b border-slate-100 dark:border-slate-700">
-                        <button 
-                            onClick={() => setActiveTab("transactions")}
-                            className={cn("px-4 py-1.5 text-xs font-semibold rounded-md transition-colors", activeTab === "transactions" ? "bg-blue-600 text-white" : "text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700")}
-                        >
-                            Transactions
-                        </button>
-                        <button 
-                            onClick={() => setActiveTab("summary")}
-                            className={cn("px-4 py-1.5 text-xs font-semibold rounded-md transition-colors", activeTab === "summary" ? "bg-blue-600 text-white" : "text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700")}
-                        >
-                            Summary
-                        </button>
-                        <button 
-                            onClick={() => setActiveTab("overview")}
-                            className={cn("px-4 py-1.5 text-xs font-semibold rounded-md transition-colors", activeTab === "overview" ? "bg-blue-600 text-white" : "text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700")}
-                        >
-                            Department Overview
-                        </button>
+                    <div className="flex items-center justify-between p-4 border-b border-slate-100 dark:border-slate-700">
+                        <div className="flex items-center gap-2">
+                            <button 
+                                onClick={() => setActiveTab("transactions")}
+                                className={cn("px-4 py-1.5 text-xs font-semibold rounded-md transition-colors", activeTab === "transactions" ? "bg-blue-600 text-white" : "text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700")}
+                            >
+                                Transactions
+                            </button>
+                            <button 
+                                onClick={() => setActiveTab("summary")}
+                                className={cn("px-4 py-1.5 text-xs font-semibold rounded-md transition-colors", activeTab === "summary" ? "bg-blue-600 text-white" : "text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700")}
+                            >
+                                Summary
+                            </button>
+                            <button 
+                                onClick={() => setActiveTab("overview")}
+                                className={cn("px-4 py-1.5 text-xs font-semibold rounded-md transition-colors", activeTab === "overview" ? "bg-blue-600 text-white" : "text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700")}
+                            >
+                                Department Overview
+                            </button>
+                        </div>
+
+                        {/* Time Filter Dropdown */}
+                        <div className="relative group">
+                            <button className="flex items-center gap-2 text-xs font-medium border border-slate-200 dark:border-slate-600 rounded-lg px-3 py-1.5 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
+                                <Clock className="h-3.5 w-3.5 text-slate-500" /> 
+                                {timeFilterLabel}
+                                <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
+                            </button>
+                            
+                            {/* Dropdown Menu */}
+                            <div className="absolute right-0 mt-1 w-36 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10 overflow-hidden">
+                                <button onClick={() => setTimeFilter("this_month")} className={cn("w-full text-left px-4 py-2 text-xs hover:bg-slate-100 dark:hover:bg-slate-700", timeFilter === "this_month" && "font-bold text-blue-600 bg-blue-50 dark:bg-blue-900/20")}>This Month</button>
+                                <button onClick={() => setTimeFilter("this_week")} className={cn("w-full text-left px-4 py-2 text-xs hover:bg-slate-100 dark:hover:bg-slate-700", timeFilter === "this_week" && "font-bold text-blue-600 bg-blue-50 dark:bg-blue-900/20")}>This Week</button>
+                                <button onClick={() => setTimeFilter("two_weeks_ago")} className={cn("w-full text-left px-4 py-2 text-xs hover:bg-slate-100 dark:hover:bg-slate-700", timeFilter === "two_weeks_ago" && "font-bold text-blue-600 bg-blue-50 dark:bg-blue-900/20")}>Two Weeks Ago</button>
+                            </div>
+                        </div>
                     </div>
 
                     {/* Dynamic Content Header */}
@@ -399,12 +469,9 @@ const MayorDashboard = () => {
                                 <Building2 className="h-5 w-5 text-blue-500" />
                                 <h3 className="text-lg font-bold text-slate-800 dark:text-white">{dynamicPanelData.name}</h3>
                                 <Badge className="bg-blue-100 text-blue-700 ml-2">
-                                    {totals.totalUsed > 0 ? ((dynamicPanelData.stats.amountSpent / totals.totalUsed) * 100).toFixed(1) : 0}% of Total Usage
+                                    {totals.totalUsed > 0 ? ((dynamicPanelData.stats.amountSpent / totals.totalUsed) * 100).toFixed(1) : 0}% of Filtered Usage
                                 </Badge>
                             </div>
-                            <button className="flex items-center gap-1 text-xs border rounded px-2 py-1">
-                                <Clock className="h-3 w-3" /> This Month
-                            </button>
                         </div>
 
                         {/* --- TAB CONTENT: TRANSACTIONS --- */}
@@ -448,7 +515,7 @@ const MayorDashboard = () => {
                                         </thead>
                                         <tbody>
                                             {dynamicPanelData.transactions.length === 0 ? (
-                                                <tr><td colSpan={7} className="py-4 text-center text-slate-400">No transactions found</td></tr>
+                                                <tr><td colSpan={7} className="py-4 text-center text-slate-400">No transactions found for {timeFilterLabel.toLowerCase()}</td></tr>
                                             ) : dynamicPanelData.transactions.map((t, i) => (
                                                 <tr key={i} className="border-b last:border-0 dark:border-slate-700/50 hover:bg-slate-50 dark:hover:bg-slate-700/50">
                                                     <td className="py-2 text-slate-600 dark:text-slate-300">{formatDateShort(t.trip_date)}</td>
@@ -472,7 +539,7 @@ const MayorDashboard = () => {
                         {activeTab === "summary" && (
                             <div className="flex-1 animate-in fade-in slide-in-from-bottom-2 duration-300 flex flex-col justify-center items-center">
                                 <div className="w-full max-w-md">
-                                    <h4 className="text-sm font-semibold text-slate-800 dark:text-white mb-6 text-center">Budget Health Overview</h4>
+                                    <h4 className="text-sm font-semibold text-slate-800 dark:text-white mb-6 text-center">Budget Health ({timeFilterLabel})</h4>
                                     
                                     <div className="flex items-center gap-8 mb-8 bg-slate-50 dark:bg-slate-900/50 p-6 rounded-xl">
                                         <div className="relative w-32 h-32 shrink-0">
@@ -494,7 +561,7 @@ const MayorDashboard = () => {
                                             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                                                 <p className="text-sm font-bold text-slate-800 dark:text-white">
                                                     {dynamicPanelData.budgetBreakdown.allocated > 0 
-                                                        ? ((dynamicPanelData.budgetBreakdown.used / dynamicPanelData.budgetBreakdown.allocated) * 100).toFixed(0) 
+                                                        ? ((dynamicPanelData.budgetBreakdown.used / dynamicPanelData.budgetBreakdown.allocated) * 100).toFixed(1) 
                                                         : 0}%
                                                 </p>
                                                 <p className="text-[9px] text-slate-500 uppercase">Used</p>
@@ -503,15 +570,15 @@ const MayorDashboard = () => {
                                         
                                         <div className="space-y-4 flex-1">
                                             <div>
-                                                <p className="text-xs text-slate-500">Total Allocated</p>
+                                                <p className="text-xs text-slate-500">Total Annual Allocated</p>
                                                 <p className="text-lg font-bold text-slate-800 dark:text-white">{formatCurrency(dynamicPanelData.budgetBreakdown.allocated)}</p>
                                             </div>
                                             <div>
-                                                <p className="text-xs text-slate-500">Total Spent</p>
+                                                <p className="text-xs text-slate-500">Spent ({timeFilterLabel})</p>
                                                 <p className="text-lg font-bold text-blue-600">{formatCurrency(dynamicPanelData.budgetBreakdown.used)}</p>
                                             </div>
                                             <div>
-                                                <p className="text-xs text-slate-500">Remaining</p>
+                                                <p className="text-xs text-slate-500">Current Remaining</p>
                                                 <p className={`text-lg font-bold ${dynamicPanelData.budgetBreakdown.remaining < 0 ? 'text-red-500' : 'text-emerald-500'}`}>
                                                     {formatCurrency(dynamicPanelData.budgetBreakdown.remaining)}
                                                 </p>
@@ -521,9 +588,8 @@ const MayorDashboard = () => {
                                     
                                     <div className="text-center text-xs text-slate-500">
                                         {dynamicPanelData.isAggregate 
-                                            ? "Showing combined budget health for all departments." 
-                                            : `Showing budget health specifically for ${dynamicPanelData.name}.`}
-                                        <br /> Click another slice on the left to filter.
+                                            ? `Showing combined stats for ${timeFilterLabel.toLowerCase()}.` 
+                                            : `Showing stats for ${dynamicPanelData.name} for ${timeFilterLabel.toLowerCase()}.`}
                                     </div>
                                 </div>
                             </div>
@@ -532,7 +598,7 @@ const MayorDashboard = () => {
                         {/* --- TAB CONTENT: DEPARTMENT OVERVIEW --- */}
                         {activeTab === "overview" && (
                             <div className="flex-1 animate-in fade-in slide-in-from-bottom-2 duration-300 overflow-y-auto max-h-[300px] pr-2">
-                                <h4 className="text-sm font-semibold text-slate-800 dark:text-white mb-4 sticky top-0 bg-white dark:bg-slate-800 pb-2">All Departments Utilization</h4>
+                                <h4 className="text-sm font-semibold text-slate-800 dark:text-white mb-4 sticky top-0 bg-white dark:bg-slate-800 pb-2">Utilization ({timeFilterLabel})</h4>
                                 <div className="space-y-4">
                                     {dynamicPanelData.overviewList.map((d, i) => {
                                         const color = d.utilization > 80 ? 'bg-red-500' : d.utilization > 50 ? 'bg-yellow-500' : 'bg-emerald-500';
@@ -545,7 +611,7 @@ const MayorDashboard = () => {
                                                 <div className="flex justify-between text-xs mb-2">
                                                     <span className={cn("font-bold", isHighlighted ? "text-blue-700 dark:text-blue-400" : "text-slate-700 dark:text-slate-300")}>{d.department_name}</span>
                                                     <div className="flex items-center gap-2">
-                                                        <span className="text-slate-500">{formatCurrency(d.remaining)} left</span>
+                                                        <span className="text-slate-500">{formatCurrency(d.spent)} used</span>
                                                         <span className={`font-semibold ${statusColor}`}>{statusLabel}</span>
                                                     </div>
                                                 </div>
@@ -601,7 +667,7 @@ const MayorDashboard = () => {
                         <button className="text-xs text-blue-600">View All →</button>
                     </div>
                     <div className="space-y-3">
-                        {approvedTickets.slice(0, 3).map((t, i) => (
+                        {filteredTickets.slice(0, 3).map((t, i) => (
                             <div key={i} className="flex justify-between items-center text-sm">
                                 <div>
                                     <p className="font-medium text-slate-800 dark:text-white">{formatDateShort(t.trip_date)}</p>
@@ -610,6 +676,9 @@ const MayorDashboard = () => {
                                 <p className="font-bold text-slate-800 dark:text-white">{formatCurrency(t.amount_released)}</p>
                             </div>
                         ))}
+                        {filteredTickets.length === 0 && (
+                            <p className="text-xs text-center text-slate-400 py-4">No releases in {timeFilterLabel.toLowerCase()}</p>
+                        )}
                     </div>
                 </Card>
 
@@ -621,7 +690,7 @@ const MayorDashboard = () => {
                         </h3>
                     </div>
                     <div className="space-y-4">
-                        {departmentBudgets.slice(0, 4).map((d, i) => {
+                        {dynamicPanelData.overviewList.slice(0, 4).map((d, i) => {
                             const color = d.utilization > 80 ? 'bg-red-500' : d.utilization > 50 ? 'bg-yellow-500' : 'bg-emerald-500';
                             const statusLabel = d.utilization > 80 ? 'Needs Attention' : d.utilization > 50 ? 'Monitor' : 'On Track';
                             const statusColor = d.utilization > 80 ? 'text-red-500' : d.utilization > 50 ? 'text-yellow-600' : 'text-emerald-500';
@@ -632,7 +701,7 @@ const MayorDashboard = () => {
                                         <span className={`font-semibold ${statusColor}`}>{statusLabel}</span>
                                     </div>
                                     <div className="w-full bg-slate-100 dark:bg-slate-700 rounded-full h-2">
-                                        <div className={`h-2 rounded-full ${color}`} style={{ width: `${d.utilization}%` }} />
+                                        <div className={`h-2 rounded-full ${color}`} style={{ width: `${Math.min(d.utilization, 100)}%` }} />
                                     </div>
                                 </div>
                             );
