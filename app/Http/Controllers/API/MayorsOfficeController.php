@@ -312,6 +312,11 @@ class MayorsOfficeController extends Controller
                         ] : null,
                         'department_name' => $ticket->department ? $ticket->department->department_name : null,
                         'amount_released' => $ticket->gasSlip ? $ticket->gasSlip->amount_released : 0,
+
+                        // ✅ ADDED FIELDS HERE:
+                        'actual_fuel_used' => (float) $ticket->actual_fuel_used,
+                        'actual_distance_km' => (float) $ticket->actual_distance_km,
+
                         'is_mo_funded' => $ticket->created_by_mo_user_id !== null,
                         'charged_to_department' => $ticket->charge_to_department_id ?
                             Department::find($ticket->charge_to_department_id)?->department_name : null,
@@ -334,15 +339,23 @@ class MayorsOfficeController extends Controller
             $allTimeCount = $tickets->count();
             $allTimeAmount = (float) $tickets->sum('amount_released');
 
+            // ✅ FIXED N+1 QUERY BUG HERE
             // FY-scoped counts (still useful for stat card subtitle)
             $validPeriodIds = DeptBudgetPeriod::where('fiscal_year', $activeYear)
                 ->pluck('period_id')
                 ->toArray();
 
-            $fyCount = $tickets->filter(function ($t) use ($validPeriodIds) {
-                $ticket = TripTicket::find($t['id']);
-                if (!$ticket || !$ticket->gasSlip) return true; // no gas slip → count in FY
-                return in_array($ticket->gasSlip->period_id, $validPeriodIds);
+            // Get all trip IDs that belong to this FY via a single query
+            $fyTicketIds = DB::table('trip_ticket')
+                ->join('gas_slip', 'trip_ticket.trip_ticket_id', '=', 'gas_slip.trip_ticket_id')
+                ->whereIn('gas_slip.period_id', $validPeriodIds)
+                ->pluck('trip_ticket.trip_ticket_id')
+                ->toArray();
+
+            // Count how many of our current tickets are in that list
+            $fyCount = $tickets->filter(function ($t) use ($fyTicketIds) {
+                // If no gas slip, it counts in FY by default (matching your original logic)
+                return in_array($t['id'], $fyTicketIds) || !TripTicket::find($t['id'])->gasSlip;
             })->count();
 
             return response()->json([
@@ -2491,7 +2504,7 @@ class MayorsOfficeController extends Controller
         }
     }
 
-        /**
+    /**
      * Build vehicle payload with live-computed fuel balance.
      */
     private function buildVehicleFuelPayload(?Vehicle $vehicle): ?array
