@@ -32,7 +32,7 @@ class FuelPredictionService
             ->get();
 
         if ($routeRows->count() >= 5) {
-            return $this->buildResponse($routeRows, 'route', 'high');
+            return $this->buildResponse($routeRows, 'route', 'high', $trip);
         }
 
         // ============ TIER 2: vehicle-level ============
@@ -41,7 +41,7 @@ class FuelPredictionService
             ->get();
 
         if ($vehicleRows->count() >= 3) {
-            return $this->buildResponse($vehicleRows, 'vehicle', 'medium');
+            return $this->buildResponse($vehicleRows, 'vehicle', 'medium', $trip);
         }
 
         // ============ TIER 3: department-level ============
@@ -50,7 +50,7 @@ class FuelPredictionService
             ->get();
 
         if ($deptRows->count() >= 1) {
-            return $this->buildResponse($deptRows, 'department', 'low');
+            return $this->buildResponse($deptRows, 'department', 'low', $trip);
         }
 
         // ============ NO HISTORY ============
@@ -102,7 +102,7 @@ class FuelPredictionService
     /**
      * Compute suggestion from a collection of history rows.
      */
-    private function buildResponse($rows, string $tier, string $confidence): array
+    private function buildResponse($rows, string $tier, string $confidence, TripTicket $trip): array
     {
         $amounts = $rows->pluck('amount_on_receipt')->map(fn($v) => (float) $v)->filter(fn($v) => $v > 0)->values();
         $liters  = $rows->pluck('liters_availed')->map(fn($v) => (float) $v)->filter(fn($v) => $v > 0)->values();
@@ -119,27 +119,33 @@ class FuelPredictionService
                 'range_max'        => null,
                 'avg_amount'       => null,
                 'avg_liters'       => null,
-                'unit_price_hint'  => null,
+                'unit_price_hint'  => $this->currentUnitPrice($trip),
                 'basis'            => [],
                 'message'          => 'Insufficient verified fuel data.',
             ];
         }
 
-        // Prefer median — one outlier shouldn't skew the suggestion
-        $sortedAmounts = $amounts->sort()->values();
-        $medianAmount  = $this->median($sortedAmounts);
-        $p25Amount     = $this->percentile($sortedAmounts, 25);
-        $p75Amount     = $this->percentile($sortedAmounts, 75);
-
+        // ✅ SWITCHED TO AVERAGE (MEAN)
         $avgAmount = round($amounts->avg(), 2);
         $avgLiters = $liters->isNotEmpty() ? round($liters->avg(), 2) : null;
 
-        // Derive liters from median if we don't have enough liters history
+        // Calculate Standard Deviation for a realistic range
+        $variance = 0;
+        if ($amounts->count() > 1) {
+            $variance = $amounts->map(fn($v) => pow($v - $avgAmount, 2))->sum() / ($amounts->count() - 1);
+        }
+        $stdDev = sqrt($variance);
+        
+        // Range is Mean ± 1 Standard Deviation (clamped to 0 to avoid negative amounts)
+        $rangeMin = max(0, round($avgAmount - $stdDev, 2));
+        $rangeMax = round($avgAmount + $stdDev, 2);
+
+        // Derive liters from average if we don't have enough liters history
         $unitPrice = null;
-        $medianLiters = null;
+        $suggestedLiters = null;
 
         if ($liters->isNotEmpty()) {
-            $medianLiters = $this->median($liters->sort()->values());
+            $suggestedLiters = $avgLiters;
         }
 
         // Fallback: derive liters from a recent unit price
@@ -148,8 +154,8 @@ class FuelPredictionService
             $unitPrice = round($unitPrices->avg(), 2);
         }
 
-        if ($medianLiters === null && $unitPrice && $unitPrice > 0) {
-            $medianLiters = round($medianAmount / $unitPrice, 2);
+        if ($suggestedLiters === null && $unitPrice && $unitPrice > 0) {
+            $suggestedLiters = round($avgAmount / $unitPrice, 2);
         }
 
         // Basis: last 5 entries for the "why" tooltip
@@ -166,15 +172,15 @@ class FuelPredictionService
             'confidence'       => $confidence,   // high | medium | low
             'tier'             => $tier,         // route | vehicle | department
             'sample_size'      => $rows->count(),
-            'suggested_amount' => round($medianAmount, 2),
-            'suggested_liters' => $medianLiters,
-            'range_min'        => round($p25Amount, 2),
-            'range_max'        => round($p75Amount, 2),
+            'suggested_amount' => $avgAmount,    // ✅ Now returns Average
+            'suggested_liters' => $suggestedLiters,
+            'range_min'        => $rangeMin,     // ✅ Now Mean - StdDev
+            'range_max'        => $rangeMax,     // ✅ Now Mean + StdDev
             'avg_amount'       => $avgAmount,
             'avg_liters'       => $avgLiters,
             'unit_price_hint'  => $unitPrice,
             'basis'            => $basis,
-            'message'          => $this->buildMessage($tier, $rows->count(), $medianAmount, $p25Amount, $p75Amount),
+            'message'          => $this->buildMessage($tier, $rows->count(), $avgAmount, $rangeMin, $rangeMax),
         ];
     }
 
@@ -188,7 +194,7 @@ class FuelPredictionService
         };
 
         return sprintf(
-            "Based on %d prior trip%s on %s: median ₱%s (range ₱%s – ₱%s).",
+            "Based on %d prior trip%s on %s: average ₱%s (range ₱%s – ₱%s).",
             $n,
             $n === 1 ? '' : 's',
             $tierLabel,
@@ -198,26 +204,19 @@ class FuelPredictionService
         );
     }
 
-    private function median($sortedValues): float
-    {
-        $n = $sortedValues->count();
-        if ($n === 0) return 0;
-        if ($n % 2 === 1) return (float) $sortedValues[intdiv($n, 2)];
-        return ((float) $sortedValues[$n / 2 - 1] + (float) $sortedValues[$n / 2]) / 2;
-    }
-
-    private function percentile($sortedValues, int $p): float
-    {
-        $n = $sortedValues->count();
-        if ($n === 0) return 0;
-        $idx = (int) floor(($p / 100) * ($n - 1));
-        return (float) $sortedValues[$idx];
-    }
-
     private function currentUnitPrice(TripTicket $trip): ?float
     {
+        // ✅ Load vehicle if it's missing to prevent null errors
+        if (!$trip->relationLoaded('vehicle')) {
+            $trip->load('vehicle');
+        }
+
+        if (!$trip->vehicle || !$trip->vehicle->fuel_type) {
+            return null;
+        }
+
         $setting = DB::table('system_setting')
-            ->where('setting_key', $trip->vehicle?->fuel_type . '_price_per_liter')
+            ->where('setting_key', $trip->vehicle->fuel_type . '_price_per_liter')
             ->first();
 
         return $setting ? (float) $setting->setting_value : null;
