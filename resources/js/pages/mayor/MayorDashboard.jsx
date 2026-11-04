@@ -7,14 +7,13 @@ import { useAuth } from "../../contexts/AuthContext";
 import { useOptimizedQuery } from "../../hooks/useOptimizedQuery";
 import { useAutoRefresh } from "../../hooks/useAutoRefresh";
 import { useRealtime } from "../../contexts/RealtimeContext";
-import { SkeletonPage, SkeletonCard } from "../../components/ui/SkeletonCard";
+import { SkeletonPage } from "../../components/ui/SkeletonCard";
 import api, { mayorsOfficeAPI } from "../../services/api";
-import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, subWeeks, isWithinInterval } from "date-fns";
+import { startOfWeek, endOfWeek, startOfMonth, endOfMonth, subWeeks, isWithinInterval } from "date-fns";
 
 import {
-    Clock, BarChart3, ArrowRight, AlertCircle, Activity, PieChart,
-    ChevronRight, Receipt, Coins, History, Lock, DollarSign, Fuel,
-    Building2, Filter, Car, Download, TrendingUp, ChevronDown
+    Clock, BarChart3, ArrowRight, Activity, PieChart,
+    DollarSign, Fuel, Building2, Car, Download, TrendingUp, ChevronDown
 } from "lucide-react";
 import {
     Cell, PieChart as RePieChart, Pie, ResponsiveContainer, Tooltip,
@@ -22,16 +21,13 @@ import {
 } from "recharts";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 
 // ============================================
 // CONSTANTS & HELPERS
 // ============================================
 
-const DEPARTMENT_PALETTE = [
-    "#3b82f6", "#10b981", "#f59e0b", "#8b5cf6", "#ef4444", "#06b6d4",
-];
+const DEPARTMENT_PALETTE = ["#3b82f6", "#10b981", "#f59e0b", "#8b5cf6", "#ef4444", "#06b6d4"];
 
 const extractArray = (response) => {
     if (!response) return [];
@@ -69,36 +65,10 @@ const MayorDashboard = () => {
     const { isConnected } = useRealtime();
     const queryClient = useQueryClient();
 
-    // ✅ State for drill-down
     const [selectedDepartment, setSelectedDepartment] = useState(null);
     const [activeTab, setActiveTab] = useState("transactions");
-    const [timeFilter, setTimeFilter] = useState("this_month"); // "this_month" | "this_week" | "two_weeks_ago"
-
-    // ✅ Time filter logic
-    const dateRange = useMemo(() => {
-        const today = new Date();
-        let start, end;
-        
-        if (timeFilter === "this_week") {
-            start = startOfWeek(today, { weekStartsOn: 1 }); // Monday
-            end = endOfWeek(today, { weekStartsOn: 1 });
-        } else if (timeFilter === "two_weeks_ago") {
-            const twoWeeksAgo = subWeeks(today, 2);
-            start = startOfWeek(twoWeeksAgo, { weekStartsOn: 1 });
-            end = endOfWeek(twoWeeksAgo, { weekStartsOn: 1 });
-        } else {
-            // Default: This Month
-            start = startOfMonth(today);
-            end = endOfMonth(today);
-        }
-        return { start, end };
-    }, [timeFilter]);
-
-    const timeFilterLabel = useMemo(() => {
-        if (timeFilter === "this_week") return "This Week";
-        if (timeFilter === "two_weeks_ago") return "Two Weeks Ago";
-        return "This Month";
-    }, [timeFilter]);
+    // Added "all_time" to the options
+    const [timeFilter, setTimeFilter] = useState("this_month"); 
 
     const fetchAllData = useCallback(() => {
         queryClient.invalidateQueries({ queryKey: ["mayor-approved-tickets"] });
@@ -120,7 +90,6 @@ const MayorDashboard = () => {
         staleTime: 5 * 60 * 1000,
     });
     const activeFiscalYears = useSafeArray(activeFiscalYearsRaw);
-    const activeFiscalYear = activeFiscalYears[0]?.year ?? new Date().getFullYear();
     const hasActiveFiscalYear = activeFiscalYears.length > 0;
 
     // ============ APPROVED TICKETS ============
@@ -136,15 +105,6 @@ const MayorDashboard = () => {
     });
     const approvedTicketsRaw = useSafeArray(approvedResponse?.data);
 
-    // ✅ Filter tickets by the selected time range
-    const filteredTickets = useMemo(() => {
-        return approvedTicketsRaw.filter(t => {
-            if (!t.trip_date) return false;
-            const tripDate = new Date(t.trip_date);
-            return isWithinInterval(tripDate, { start: dateRange.start, end: dateRange.end });
-        });
-    }, [approvedTicketsRaw, dateRange]);
-
     // ============ DEPARTMENT BUDGETS ============
     const { data: budgetRaw, isLoading: budgetLoading } = useOptimizedQuery({
         queryKey: ["mayor-department-budgets"],
@@ -158,8 +118,8 @@ const MayorDashboard = () => {
     });
     const budgetData = useSafeArray(budgetRaw);
 
-    // ============ CALCULATIONS ============
-    
+    // ============ CALCULATIONS (ALL TIME) ============
+    // These are used for the TOP STAT CARDS, PIE CHART, and BOTTOM CHARTS
     const departmentBudgets = useMemo(() => {
         const formatted = budgetData.map(dept => ({
             department_id: dept.department_id,
@@ -173,21 +133,21 @@ const MayorDashboard = () => {
         return formatted;
     }, [budgetData]);
 
-    const totals = useMemo(() => {
+    const allTimeTotals = useMemo(() => {
         const totalAllocated = departmentBudgets.reduce((s, d) => s + d.allocated, 0);
-        // For top stat cards, we use the filtered timeframe to match the overall page context
-        const totalUsed = filteredTickets.reduce((sum, t) => sum + (parseFloat(t.amount_released) || 0), 0);
-        const totalDistance = filteredTickets.reduce((sum, t) => sum + (parseFloat(t.actual_distance_km) || 0), 0);
+        const totalUsed = departmentBudgets.reduce((s, d) => s + d.spent, 0);
+        const totalDistance = approvedTicketsRaw.reduce((sum, t) => sum + (parseFloat(t.actual_distance_km) || 0), 0);
+        const totalFuel = approvedTicketsRaw.reduce((sum, t) => sum + (parseFloat(t.actual_fuel_used) || 0), 0);
 
         return { 
             totalAllocated, 
             totalUsed, 
             totalRemaining: Math.max(totalAllocated - totalUsed, 0), 
-            totalDistance
+            totalDistance,
+            totalFuel
         };
-    }, [departmentBudgets, filteredTickets]);
+    }, [departmentBudgets, approvedTicketsRaw]);
 
-    // Pie Data (Unchanged, shows total annual utilization)
     const pieData = useMemo(() => {
         return departmentBudgets
             .filter(d => d.has_budget && d.allocated > 0)
@@ -200,7 +160,47 @@ const MayorDashboard = () => {
             .sort((a, b) => b.value - a.value);
     }, [departmentBudgets]);
 
-    // ✅ Dynamic Data for Right Panel based on clicked Pie Slice + Time Filter
+
+    // ============ TIME FILTERING (FOR RIGHT PANEL ONLY) ============
+    const timeFilterLabel = useMemo(() => {
+        if (timeFilter === "this_week") return "This Week";
+        if (timeFilter === "two_weeks_ago") return "Two Weeks Ago";
+        if (timeFilter === "all_time") return "All Time";
+        return "This Month";
+    }, [timeFilter]);
+
+    const filteredTickets = useMemo(() => {
+        if (timeFilter === "all_time") return approvedTicketsRaw;
+
+        const today = new Date();
+        let start, end;
+        
+        if (timeFilter === "this_week") {
+            start = startOfWeek(today, { weekStartsOn: 1 });
+            end = endOfWeek(today, { weekStartsOn: 1 });
+        } else if (timeFilter === "two_weeks_ago") {
+            const twoWeeksAgo = subWeeks(today, 2);
+            start = startOfWeek(twoWeeksAgo, { weekStartsOn: 1 });
+            end = endOfWeek(twoWeeksAgo, { weekStartsOn: 1 });
+        } else {
+            start = startOfMonth(today);
+            end = endOfMonth(today);
+        }
+        
+        return approvedTicketsRaw.filter(t => {
+            if (!t.trip_date) return false;
+            return isWithinInterval(new Date(t.trip_date), { start, end });
+        });
+    }, [approvedTicketsRaw, timeFilter]);
+
+    const filteredTotals = useMemo(() => {
+        const totalUsed = filteredTickets.reduce((sum, t) => sum + (parseFloat(t.amount_released) || 0), 0);
+        const totalDistance = filteredTickets.reduce((sum, t) => sum + (parseFloat(t.actual_distance_km) || 0), 0);
+        const totalFuel = filteredTickets.reduce((sum, t) => sum + (parseFloat(t.actual_fuel_used) || 0), 0);
+        return { totalUsed, totalDistance, totalFuel };
+    }, [filteredTickets]);
+
+    // ✅ Dynamic Data for Right Panel (Uses filteredTickets & filteredTotals)
     const dynamicPanelData = useMemo(() => {
         // 1. Aggregate view (No department selected)
         if (!selectedDepartment) {
@@ -208,18 +208,18 @@ const MayorDashboard = () => {
                 name: "All Departments",
                 isAggregate: true,
                 stats: {
-                    fuelPurchased: filteredTickets.reduce((sum, t) => sum + (parseFloat(t.actual_fuel_used) || 0), 0),
-                    amountSpent: totals.totalUsed,
-                    distance: totals.totalDistance,
-                    avgCost: totals.totalDistance > 0 ? (totals.totalUsed / totals.totalDistance) : 0,
+                    fuelPurchased: filteredTotals.totalFuel,
+                    amountSpent: filteredTotals.totalUsed,
+                    distance: filteredTotals.totalDistance,
+                    avgCost: filteredTotals.totalDistance > 0 ? (filteredTotals.totalUsed / filteredTotals.totalDistance) : 0,
                 },
                 transactions: filteredTickets
                     .sort((a, b) => new Date(b.trip_date) - new Date(a.trip_date))
                     .slice(0, 5),
                 budgetBreakdown: {
-                    allocated: totals.totalAllocated,
-                    used: totals.totalUsed,
-                    remaining: totals.totalRemaining,
+                    allocated: allTimeTotals.totalAllocated,
+                    used: filteredTotals.totalUsed,
+                    remaining: allTimeTotals.totalAllocated - filteredTotals.totalUsed,
                 },
                 overviewList: departmentBudgets.sort((a, b) => b.utilization - a.utilization),
             };
@@ -230,18 +230,13 @@ const MayorDashboard = () => {
         const deptTickets = filteredTickets.filter(t => t.department_name === selectedDepartment);
 
         const fuelPurchased = deptTickets.reduce((sum, t) => sum + (parseFloat(t.actual_fuel_used) || 0), 0);
-        const amountSpent = deptTickets.reduce((sum, t) => sum + (parseFloat(t.amount_released) || 0), 0); // Using filtered timeframe
+        const amountSpent = deptTickets.reduce((sum, t) => sum + (parseFloat(t.amount_released) || 0), 0);
         const distance = deptTickets.reduce((sum, t) => sum + (parseFloat(t.actual_distance_km) || 0), 0);
         const avgCost = distance > 0 ? (amountSpent / distance) : 0;
         
         const transactions = deptTickets
             .sort((a, b) => new Date(b.trip_date) - new Date(a.trip_date))
             .slice(0, 5);
-
-        // Recalculate utilization for the timeframe
-        const timeframeUtilization = targetDept?.allocated > 0 
-            ? ((amountSpent / targetDept.allocated) * 100).toFixed(1) 
-            : 0;
 
         // Map over departments and recalculate used for the timeframe
         const overviewList = departmentBudgets.map(dept => {
@@ -251,7 +246,7 @@ const MayorDashboard = () => {
             
             return {
                 ...dept,
-                spent: timeframeSpent, // Use timeframe spent for the overview bar
+                spent: timeframeSpent, 
                 utilization: timeframeUtilization
             };
         }).sort((a, b) => b.utilization - a.utilization);
@@ -271,12 +266,11 @@ const MayorDashboard = () => {
                 ...overviewList.filter(d => d.department_name !== selectedDepartment)
             ],
         };
-    }, [selectedDepartment, departmentBudgets, filteredTickets, totals]);
+    }, [selectedDepartment, departmentBudgets, filteredTickets, filteredTotals, allTimeTotals]);
 
     const isLoading = approvedLoading || budgetLoading || fiscalYearLoading;
     if (isLoading && approvedTicketsRaw.length === 0 && departmentBudgets.length === 0 && !hasActiveFiscalYear) return <SkeletonPage />;
 
-    // Small donut chart data for the summary tab
     const summaryDonutData = [
         { name: 'Used', value: dynamicPanelData.budgetBreakdown.used, fill: '#3b82f6' },
         { name: 'Remaining', value: Math.max(dynamicPanelData.budgetBreakdown.remaining, 0), fill: '#e2e8f0' }
@@ -298,7 +292,7 @@ const MayorDashboard = () => {
                 </div>
             </div>
 
-            {/* 1. Top Stat Cards */}
+            {/* 1. Top Stat Cards - Always All Time */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
                 <Card className="dark:bg-slate-800 border-none shadow-sm">
                     <CardContent className="p-4 flex items-center gap-4">
@@ -307,7 +301,7 @@ const MayorDashboard = () => {
                         </div>
                         <div>
                             <p className="text-xs text-slate-500 font-medium uppercase">Total Fuel Budget</p>
-                            <p className="text-xl font-bold text-slate-900 dark:text-white">{formatCurrency(totals.totalAllocated)}</p>
+                            <p className="text-xl font-bold text-slate-900 dark:text-white">{formatCurrency(allTimeTotals.totalAllocated)}</p>
                             <p className="text-[10px] text-slate-400">Annual Allocation</p>
                         </div>
                     </CardContent>
@@ -320,9 +314,9 @@ const MayorDashboard = () => {
                         </div>
                         <div>
                             <p className="text-xs text-slate-500 font-medium uppercase">Amount Used</p>
-                            <p className="text-xl font-bold text-slate-900 dark:text-white">{formatCurrency(totals.totalUsed)}</p>
+                            <p className="text-xl font-bold text-slate-900 dark:text-white">{formatCurrency(allTimeTotals.totalUsed)}</p>
                             <p className="text-[10px] text-slate-400">
-                                {totals.totalAllocated > 0 ? ((totals.totalUsed / totals.totalAllocated) * 100).toFixed(2) : 0}% of Budget
+                                {allTimeTotals.totalAllocated > 0 ? ((allTimeTotals.totalUsed / allTimeTotals.totalAllocated) * 100).toFixed(2) : 0}% of Budget
                             </p>
                         </div>
                     </CardContent>
@@ -335,9 +329,9 @@ const MayorDashboard = () => {
                         </div>
                         <div>
                             <p className="text-xs text-slate-500 font-medium uppercase">Remaining Balance</p>
-                            <p className="text-xl font-bold text-slate-900 dark:text-white">{formatCurrency(totals.totalRemaining)}</p>
+                            <p className="text-xl font-bold text-slate-900 dark:text-white">{formatCurrency(allTimeTotals.totalRemaining)}</p>
                             <p className="text-[10px] text-slate-400">
-                                {totals.totalAllocated > 0 ? ((totals.totalRemaining / totals.totalAllocated) * 100).toFixed(2) : 0}% Remaining
+                                {allTimeTotals.totalAllocated > 0 ? ((allTimeTotals.totalRemaining / allTimeTotals.totalAllocated) * 100).toFixed(2) : 0}% Remaining
                             </p>
                         </div>
                     </CardContent>
@@ -349,9 +343,9 @@ const MayorDashboard = () => {
                             <Car className="h-6 w-6 text-purple-600 dark:text-purple-400" />
                         </div>
                         <div>
-                            <p className="text-xs text-slate-500 font-medium uppercase">Distance Traveled</p>
-                            <p className="text-xl font-bold text-slate-900 dark:text-white">{totals.totalDistance.toLocaleString()} km</p>
-                            <p className="text-[10px] text-slate-400">{timeFilterLabel}</p>
+                            <p className="text-xs text-slate-500 font-medium uppercase">Total Distance</p>
+                            <p className="text-xl font-bold text-slate-900 dark:text-white">{allTimeTotals.totalDistance.toLocaleString()} km</p>
+                            <p className="text-[10px] text-slate-400">All Time</p>
                         </div>
                     </CardContent>
                 </Card>
@@ -360,7 +354,7 @@ const MayorDashboard = () => {
             {/* 2. Middle Section: Pie Chart & Dynamic Transactions */}
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 mb-6">
                 
-                {/* Left: Pie Chart */}
+                {/* Left: Pie Chart - Always All Time */}
                 <Card className="lg:col-span-2 dark:bg-slate-800 border-none shadow-sm p-5">
                     <div className="flex items-center justify-between mb-4">
                         <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
@@ -399,7 +393,7 @@ const MayorDashboard = () => {
                                 </RePieChart>
                             </ResponsiveContainer>
                             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                                <p className="text-lg font-bold text-slate-900 dark:text-white">{formatCompact(totals.totalAllocated)}</p>
+                                <p className="text-lg font-bold text-slate-900 dark:text-white">{formatCompact(allTimeTotals.totalAllocated)}</p>
                                 <p className="text-[10px] text-slate-500 uppercase">Total Allocated</p>
                             </div>
                         </div>
@@ -412,7 +406,7 @@ const MayorDashboard = () => {
                                         <span className="text-slate-600 dark:text-slate-300 truncate max-w-[120px]">{d.name}</span>
                                     </div>
                                     <span className="font-semibold text-slate-800 dark:text-white">
-                                        {totals.totalAllocated > 0 ? ((d.value / totals.totalAllocated) * 100).toFixed(1) : 0}%
+                                        {allTimeTotals.totalAllocated > 0 ? ((d.value / allTimeTotals.totalAllocated) * 100).toFixed(1) : 0}%
                                     </span>
                                 </div>
                             ))}
@@ -420,7 +414,7 @@ const MayorDashboard = () => {
                     </div>
                 </Card>
 
-                {/* Right: Dynamic Drill-Down Panel */}
+                {/* Right: Dynamic Drill-Down Panel - Uses Time Filter */}
                 <Card className="lg:col-span-3 dark:bg-slate-800 border-none shadow-sm flex flex-col min-h-[400px]">
                     {/* Header Tabs */}
                     <div className="flex items-center justify-between p-4 border-b border-slate-100 dark:border-slate-700">
@@ -453,8 +447,8 @@ const MayorDashboard = () => {
                                 <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
                             </button>
                             
-                            {/* Dropdown Menu */}
                             <div className="absolute right-0 mt-1 w-36 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10 overflow-hidden">
+                                <button onClick={() => setTimeFilter("all_time")} className={cn("w-full text-left px-4 py-2 text-xs hover:bg-slate-100 dark:hover:bg-slate-700", timeFilter === "all_time" && "font-bold text-blue-600 bg-blue-50 dark:bg-blue-900/20")}>All Time</button>
                                 <button onClick={() => setTimeFilter("this_month")} className={cn("w-full text-left px-4 py-2 text-xs hover:bg-slate-100 dark:hover:bg-slate-700", timeFilter === "this_month" && "font-bold text-blue-600 bg-blue-50 dark:bg-blue-900/20")}>This Month</button>
                                 <button onClick={() => setTimeFilter("this_week")} className={cn("w-full text-left px-4 py-2 text-xs hover:bg-slate-100 dark:hover:bg-slate-700", timeFilter === "this_week" && "font-bold text-blue-600 bg-blue-50 dark:bg-blue-900/20")}>This Week</button>
                                 <button onClick={() => setTimeFilter("two_weeks_ago")} className={cn("w-full text-left px-4 py-2 text-xs hover:bg-slate-100 dark:hover:bg-slate-700", timeFilter === "two_weeks_ago" && "font-bold text-blue-600 bg-blue-50 dark:bg-blue-900/20")}>Two Weeks Ago</button>
@@ -469,7 +463,7 @@ const MayorDashboard = () => {
                                 <Building2 className="h-5 w-5 text-blue-500" />
                                 <h3 className="text-lg font-bold text-slate-800 dark:text-white">{dynamicPanelData.name}</h3>
                                 <Badge className="bg-blue-100 text-blue-700 ml-2">
-                                    {totals.totalUsed > 0 ? ((dynamicPanelData.stats.amountSpent / totals.totalUsed) * 100).toFixed(1) : 0}% of Filtered Usage
+                                    {filteredTotals.totalUsed > 0 ? ((dynamicPanelData.stats.amountSpent / filteredTotals.totalUsed) * 100).toFixed(1) : 0}% of Filtered Usage
                                 </Badge>
                             </div>
                         </div>
@@ -628,7 +622,7 @@ const MayorDashboard = () => {
                 </Card>
             </div>
 
-            {/* 3. Bottom Section */}
+            {/* 3. Bottom Section - Always All Time */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 
                 {/* Bar Chart */}
@@ -639,8 +633,8 @@ const MayorDashboard = () => {
                     <div className="h-48">
                         <ResponsiveContainer width="100%" height="100%">
                             <BarChart data={[
-                                { name: 'Used', value: totals.totalUsed, fill: '#3b82f6' },
-                                { name: 'Remaining', value: totals.totalRemaining, fill: '#e2e8f0' }
+                                { name: 'Used', value: allTimeTotals.totalUsed, fill: '#3b82f6' },
+                                { name: 'Remaining', value: allTimeTotals.totalRemaining, fill: '#e2e8f0' }
                             ]}>
                                 <CartesianGrid strokeDasharray="3 3" vertical={false} />
                                 <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 10}} />
@@ -667,7 +661,7 @@ const MayorDashboard = () => {
                         <button className="text-xs text-blue-600">View All →</button>
                     </div>
                     <div className="space-y-3">
-                        {filteredTickets.slice(0, 3).map((t, i) => (
+                        {approvedTicketsRaw.slice(0, 3).map((t, i) => (
                             <div key={i} className="flex justify-between items-center text-sm">
                                 <div>
                                     <p className="font-medium text-slate-800 dark:text-white">{formatDateShort(t.trip_date)}</p>
@@ -676,9 +670,6 @@ const MayorDashboard = () => {
                                 <p className="font-bold text-slate-800 dark:text-white">{formatCurrency(t.amount_released)}</p>
                             </div>
                         ))}
-                        {filteredTickets.length === 0 && (
-                            <p className="text-xs text-center text-slate-400 py-4">No releases in {timeFilterLabel.toLowerCase()}</p>
-                        )}
                     </div>
                 </Card>
 
@@ -690,7 +681,7 @@ const MayorDashboard = () => {
                         </h3>
                     </div>
                     <div className="space-y-4">
-                        {dynamicPanelData.overviewList.slice(0, 4).map((d, i) => {
+                        {departmentBudgets.slice(0, 4).map((d, i) => {
                             const color = d.utilization > 80 ? 'bg-red-500' : d.utilization > 50 ? 'bg-yellow-500' : 'bg-emerald-500';
                             const statusLabel = d.utilization > 80 ? 'Needs Attention' : d.utilization > 50 ? 'Monitor' : 'On Track';
                             const statusColor = d.utilization > 80 ? 'text-red-500' : d.utilization > 50 ? 'text-yellow-600' : 'text-emerald-500';
