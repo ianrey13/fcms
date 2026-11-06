@@ -346,9 +346,10 @@ const MayorHistory = () => {
     }).format(numAmount);
   };
 
-  const getDriverName = (ticket) => {
+   const getDriverName = (ticket) => {
     if (!ticket) return "N/A";
-    return ticket.driver?.user?.full_name || ticket.driver?.name || "N/A";
+    // Check direct driver_name first, then fallback to nested
+    return ticket.driver_name || ticket.driver?.user?.full_name || ticket.driver?.name || "N/A";
   };
 
   const getAmount = (ticket) => {

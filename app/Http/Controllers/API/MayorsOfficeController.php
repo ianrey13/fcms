@@ -2478,7 +2478,7 @@ class MayorsOfficeController extends Controller
         }
     }
 
-    public function getHistoryTickets(Request $request)
+       public function getHistoryTickets(Request $request)
     {
         try {
             $user = $request->user();
@@ -2496,7 +2496,21 @@ class MayorsOfficeController extends Controller
                     'pending_gso_validation',
                 ])
                 ->orderBy('updated_at', 'desc')
-                ->paginate(25);
+                ->paginate(25)
+                ->through(function ($ticket) {
+                    // Add the driver_name directly to the ticket object
+                    $driverName = null;
+                    if ($ticket->driver && $ticket->driver->user) {
+                        $driverName = $ticket->driver->user->full_name;
+                    } elseif ($ticket->driver) {
+                        $driverName = $ticket->driver->name ?? null;
+                    }
+                    
+                    $ticket->driver_name = $driverName;
+                    $ticket->amount_released = $ticket->gasSlip ? $ticket->gasSlip->amount_released : 0;
+                    
+                    return $ticket;
+                });
 
             return response()->json([
                 'success' => true,
