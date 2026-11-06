@@ -279,7 +279,7 @@ class MayorsOfficeController extends Controller
             $activeYear = $this->budgetService->getActiveFiscalYear();
 
             // ── 1. Query ALL released tickets — no FY filter ────────
-            $tickets = TripTicket::with(['vehicle', 'department', 'gasSlip', 'driver', 'driver.user'])
+          $tickets = TripTicket::with(['vehicle', 'department', 'gasSlip.fuelReceipt', 'driver', 'driver.user'])
                 ->whereIn('status', [
                     'funds_issued',
                     'acknowledged',
@@ -316,6 +316,10 @@ class MayorsOfficeController extends Controller
                         // ✅ ADDED FIELDS HERE:
                         'actual_fuel_used' => (float) $ticket->actual_fuel_used,
                         'actual_distance_km' => (float) $ticket->actual_distance_km,
+
+                         'receipt_url' => $ticket->gasSlip?->fuelReceipt?->receipt_photo_path 
+                            ? asset($ticket->gasSlip->fuelReceipt->receipt_photo_path) 
+                            : null,
 
                         'is_mo_funded' => $ticket->created_by_mo_user_id !== null,
                         'charged_to_department' => $ticket->charge_to_department_id ?

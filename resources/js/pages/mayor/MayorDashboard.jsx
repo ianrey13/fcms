@@ -55,6 +55,32 @@ const formatCompact = (amount) => {
 
 const formatDateShort = (ds) => ds ? new Date(ds).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" }) : "—";
 
+// ✅ NEW HELPER FOR DOWNLOADING RECEIPTS
+const handleDownloadReceipt = async (url, ticketNumber) => {
+    if (!url) {
+        alert("No receipt uploaded for this trip yet.");
+        return;
+    }
+    
+    try {
+        const response = await fetch(url);
+        const blob = await response.blob();
+        const blobUrl = window.URL.createObjectURL(blob);
+        
+        const link = document.createElement('a');
+        link.href = blobUrl;
+        link.download = `Receipt_${ticketNumber}.jpg`;
+        document.body.appendChild(link);
+        link.click();
+        
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(blobUrl);
+    } catch (error) {
+        console.error("Download failed:", error);
+        window.open(url, '_blank'); // Fallback
+    }
+};
+
 // ============================================
 // MAIN COMPONENT
 // ============================================
@@ -67,7 +93,6 @@ const MayorDashboard = () => {
 
     const [selectedDepartment, setSelectedDepartment] = useState(null);
     const [activeTab, setActiveTab] = useState("transactions");
-    // Added "all_time" to the options
     const [timeFilter, setTimeFilter] = useState("this_month"); 
 
     const fetchAllData = useCallback(() => {
@@ -119,7 +144,6 @@ const MayorDashboard = () => {
     const budgetData = useSafeArray(budgetRaw);
 
     // ============ CALCULATIONS (ALL TIME) ============
-    // These are used for the TOP STAT CARDS, PIE CHART, and BOTTOM CHARTS
     const departmentBudgets = useMemo(() => {
         const formatted = budgetData.map(dept => ({
             department_id: dept.department_id,
@@ -160,7 +184,6 @@ const MayorDashboard = () => {
             .sort((a, b) => b.value - a.value);
     }, [departmentBudgets]);
 
-
     // ============ TIME FILTERING (FOR RIGHT PANEL ONLY) ============
     const timeFilterLabel = useMemo(() => {
         if (timeFilter === "this_week") return "This Week";
@@ -200,9 +223,8 @@ const MayorDashboard = () => {
         return { totalUsed, totalDistance, totalFuel };
     }, [filteredTickets]);
 
-    // ✅ Dynamic Data for Right Panel (Uses filteredTickets & filteredTotals)
+    // ✅ Dynamic Data for Right Panel
     const dynamicPanelData = useMemo(() => {
-        // 1. Aggregate view (No department selected)
         if (!selectedDepartment) {
             return {
                 name: "All Departments",
@@ -225,7 +247,6 @@ const MayorDashboard = () => {
             };
         }
 
-        // 2. Specific Department view
         const targetDept = departmentBudgets.find(d => d.department_name === selectedDepartment);
         const deptTickets = filteredTickets.filter(t => t.department_name === selectedDepartment);
 
@@ -238,7 +259,6 @@ const MayorDashboard = () => {
             .sort((a, b) => new Date(b.trip_date) - new Date(a.trip_date))
             .slice(0, 5);
 
-        // Map over departments and recalculate used for the timeframe
         const overviewList = departmentBudgets.map(dept => {
             const deptTimeframeTickets = filteredTickets.filter(t => t.department_name === dept.department_name);
             const timeframeSpent = deptTimeframeTickets.reduce((sum, t) => sum + (parseFloat(t.amount_released) || 0), 0);
@@ -517,7 +537,24 @@ const MayorDashboard = () => {
                                                     <td className="py-2 text-slate-600 dark:text-slate-300">{t.vehicle?.plate_number || 'N/A'}</td>
                                                     <td className="py-2 text-slate-600 dark:text-slate-300">{t.actual_fuel_used || 0} L</td>
                                                     <td className="py-2 font-medium text-slate-800 dark:text-white">{formatCurrency(t.amount_released)}</td>
-                                                    <td className="py-2"><Download className="h-3 w-3 text-blue-500 cursor-pointer hover:text-blue-700" /></td>
+                                                    
+                                                    {/* ✅ UPDATED DOWNLOAD BUTTON */}
+                                                    <td className="py-2">
+                                                        <button 
+                                                            onClick={() => handleDownloadReceipt(t.receipt_url, t.ticket_number)}
+                                                            disabled={!t.receipt_url}
+                                                            className={cn(
+                                                                "p-1 rounded transition-colors",
+                                                                t.receipt_url 
+                                                                    ? "text-blue-500 hover:text-blue-700 hover:bg-blue-50 cursor-pointer" 
+                                                                    : "text-slate-300 cursor-not-allowed"
+                                                            )}
+                                                            title={t.receipt_url ? "Download Receipt" : "No receipt available"}
+                                                        >
+                                                            <Download className="h-4 w-4" />
+                                                        </button>
+                                                    </td>
+
                                                     <td className="py-2 text-right">
                                                         <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">Verified</span>
                                                     </td>
