@@ -219,68 +219,6 @@ const StatsCard = ({ title, value, icon: Icon, color, subtitle, trend }) => (
 );
 
 // ============================================
-// TRIP DATE BADGE COMPONENT
-// ============================================
-
-const TripDateBadge = ({ ticket }) => {
-  if (!ticket?.trip_date) return null;
-
-  const tripDate = new Date(ticket.trip_date);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  tripDate.setHours(0, 0, 0, 0);
-
-  const isToday = tripDate.getTime() === today.getTime();
-  const isPast = tripDate.getTime() < today.getTime();
-  const isFuture = tripDate.getTime() > today.getTime();
-  const isTripFriday = tripDate.getDay() === 5;
-
-  const daysUntil = Math.ceil((tripDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-
-  let label = "";
-  let color = "";
-  let icon = Calendar;
-
-  if (isToday) {
-    label = "Today";
-    color = "bg-green-100 text-green-700 border-green-300 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800";
-    icon = CalendarCheck;
-  } else if (isPast) {
-    label = "Past Trip";
-    color = "bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800";
-    icon = CalendarDays;
-  } else if (isFuture && isTripFriday) {
-    label = `Friday (${daysUntil}d)`;
-    color = "bg-purple-100 text-purple-700 border-purple-300 dark:bg-purple-900/30 dark:text-purple-400 dark:border-purple-800";
-    icon = Calendar;
-  } else if (isFuture && daysUntil === 1) {
-    label = "⚠️ Tomorrow";
-    color = "bg-orange-100 text-orange-700 border-orange-300 dark:bg-orange-900/30 dark:text-orange-400 dark:border-orange-800";
-    icon = AlertTriangle;
-  } else if (isFuture && daysUntil <= 7) {
-    label = `📅 ${daysUntil}d`;
-    color = "bg-yellow-100 text-yellow-700 border-yellow-300 dark:bg-yellow-900/30 dark:text-yellow-400 dark:border-yellow-800";
-    icon = AlertCircle;
-  } else if (isFuture) {
-    label = `📅 ${daysUntil}d`;
-    color = "bg-red-100 text-red-700 border-red-300 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800";
-    icon = AlertTriangle;
-  } else {
-    label = "N/A";
-    color = "bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700";
-    icon = Clock;
-  }
-
-  const Icon = icon;
-  return (
-    <Badge variant="outline" className={`${color} text-xs font-medium flex items-center gap-1`}>
-      <Icon className="h-3 w-3" />
-      {label}
-    </Badge>
-  );
-};
-
-// ============================================
 // STATUS BADGE COMPONENT (for released tickets)
 // ============================================
 
@@ -379,7 +317,6 @@ const LiveFuelStatusWidget = ({ vehicle }) => {
 
       <div className="flex items-center justify-between text-[10px] text-slate-500">
         <span>Ref. Efficiency: {efficiency} km/L</span>
-      
       </div>
     </div>
   );
@@ -1511,12 +1448,13 @@ const MayorPending = () => {
                         <TableRow className="bg-slate-50 dark:bg-slate-900/50">
                           <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Ticket #</TableHead>
                           <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Date</TableHead>
-                          <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Destination</TableHead>
-                          <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Department</TableHead>
+                          {/* ✅ REMOVED Destination */}
+                          {/* ✅ RENAMED Department to Dept Code */}
+                          <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Dept Code</TableHead>
                           <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Vehicle</TableHead>
-                          <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Driver</TableHead>
+                          {/* ✅ REMOVED Driver */}
                           <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Trip Date</TableHead>
-                          <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Status</TableHead>
+                          {/* ✅ REMOVED Status (TripDateBadge) */}
                           <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Actions</TableHead>
                         </TableRow>
                       </TableHeader>
@@ -1532,22 +1470,22 @@ const MayorPending = () => {
                             <TableCell className="text-slate-600 dark:text-slate-400">
                               {formatDate(ticket.trip_date)}
                             </TableCell>
+                            
+                            {/* ✅ DEPT CODE WITH HOVER TOOLTIP */}
                             <TableCell>
-                              <div className="flex items-center gap-1">
-                                <MapPin className="h-3 w-3 text-slate-400 flex-shrink-0" />
-                                <span className="text-slate-600 dark:text-slate-400 truncate max-w-[150px]">
-                                  {ticket.destination}
-                                </span>
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <div className="flex items-center gap-1">
+                              <div className="flex items-center gap-1 group/dept relative">
                                 <Building2 className="h-3 w-3 text-slate-400 flex-shrink-0" />
-                                <span className="text-slate-600 dark:text-slate-400 truncate max-w-[130px]">
-                                  {ticket.department_name}
+                                <span className="text-slate-600 dark:text-slate-400 font-semibold cursor-help border-b border-dashed border-slate-300 dark:border-slate-600">
+                                  {ticket.department_code || "N/A"}
                                 </span>
+                                {/* Tooltip */}
+                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1.5 bg-slate-800 text-white text-xs rounded-lg shadow-xl opacity-0 invisible group-hover/dept:opacity-100 group-hover/dept:visible transition-all z-50 whitespace-nowrap">
+                                  {ticket.department_name || "Unknown Department"}
+                                  <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 border-4 border-transparent border-t-slate-800"></div>
+                                </div>
                               </div>
                             </TableCell>
+
                             <TableCell>
                               <div className="flex items-center gap-1">
                                 <Truck className="h-3 w-3 text-slate-400 flex-shrink-0" />
@@ -1557,19 +1495,9 @@ const MayorPending = () => {
                               </div>
                             </TableCell>
                             <TableCell>
-                              <div className="flex items-center gap-1">
-                                <User className="h-3 w-3 text-slate-400 flex-shrink-0" />
-                                <span className="text-slate-600 dark:text-slate-400 truncate max-w-[130px]">
-                                  {getDriverName(ticket)}
-                                </span>
-                              </div>
-                            </TableCell>
-                            <TableCell>
                               <TripDateBadge ticket={ticket} />
                             </TableCell>
-                            <TableCell>
-                              {getStatusBadge(ticket.has_insufficient_budget)}
-                            </TableCell>
+                            
                             <TableCell className="text-right">
                               <div className="flex items-center justify-end gap-1">
                                 <Button
@@ -1647,7 +1575,7 @@ const MayorPending = () => {
           </>
         )}
 
-        {/* RELEASED TAB */}
+        {/* RELEASED TAB (UNCHANGED) */}
         {activeTab === "released" && (
           <>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -2161,10 +2089,8 @@ const MayorPending = () => {
                 </div>
               </div>
 
-              {/* ✅ LIVE FUEL BALANCE STATUS (single, non-duplicated) */}
               <LiveFuelStatusWidget vehicle={selectedTicket?.vehicle} />
 
-              {/* ✅ FUEL PREDICTION SUGGESTION CARD */}
               {loadingSuggestion && (
                 <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700">
                   <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />
