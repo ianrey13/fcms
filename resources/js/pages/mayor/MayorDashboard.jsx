@@ -14,7 +14,7 @@ import { startOfWeek, endOfWeek, startOfMonth, endOfMonth, subWeeks, isWithinInt
 import {
     Clock, BarChart3, ArrowRight, Activity, PieChart,
     DollarSign, Fuel, Building2, Car, Download, TrendingUp, ChevronDown,
-    CheckCircle, Truck
+    CheckCircle, Truck, X
 } from "lucide-react";
 import {
     Cell, PieChart as RePieChart, Pie, ResponsiveContainer, Tooltip,
@@ -42,7 +42,7 @@ const useSafeArray = (value) => useMemo(() => (Array.isArray(value) ? value : []
 
 const formatCurrency = (amount) => {
     const num = parseFloat(amount);
-    if (isNaN(num)) return "₱0";
+    if (isNaN(num)) return "₱0.00";
     return new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", minimumFractionDigits: 2 }).format(num);
 };
 
@@ -56,27 +56,31 @@ const formatCompact = (amount) => {
 
 const formatDateShort = (ds) => ds ? new Date(ds).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" }) : "—";
 
-// ✅ DYNAMIC STATUS BADGE
+// ✅ UPDATED STATUS BADGE
 const StatusBadge = ({ status }) => {
-    const configs = {
-        funds_issued: { color: "bg-emerald-500", label: "Funds Issued", icon: CheckCircle },
-        acknowledged: { color: "bg-blue-500", label: "Acknowledged", icon: CheckCircle },
-        in_transit: { color: "bg-indigo-500", label: "In Transit", icon: Truck },
-        closed: { color: "bg-slate-500", label: "Closed", icon: CheckCircle },
-        pending_reconciliation: { color: "bg-amber-500", label: "Pending Recon", icon: Clock },
-        completed: { color: "bg-green-600", label: "Completed", icon: CheckCircle },
-        pending_gso_validation: { color: "bg-amber-500", label: "Awaiting Validation", icon: Clock },
-    };
-    const config = configs[status] || {
-        color: "bg-slate-500",
-        label: status?.replace(/_/g, " ") || "Unknown",
-        icon: CheckCircle,
-    };
-    const Icon = config.icon;
+    let displayStatus = "Funds Issued";
+    let colorClass = "bg-blue-500";
+
+    if (status === "acknowledged") {
+        displayStatus = "Acknowledged";
+        colorClass = "bg-cyan-500";
+    } else if (status === "in_transit") {
+        displayStatus = "In Transit";
+        colorClass = "bg-indigo-500"; 
+    } else if (
+        status === "completed" || 
+        status === "closed" || 
+        status === "pending_gso_validation" || 
+        status === "pending_reconciliation"
+    ) {
+        displayStatus = "Verified";
+        colorClass = "bg-emerald-500";
+    }
+
     return (
-        <Badge className={`${config.color} text-white flex items-center justify-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-medium`}>
-            <Icon className="h-3 w-3" />
-            {config.label}
+        <Badge className={`${colorClass} text-white flex items-center justify-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-medium whitespace-nowrap`}>
+            <CheckCircle className="h-3 w-3" />
+            {displayStatus}
         </Badge>
     );
 };
@@ -511,6 +515,16 @@ const MayorDashboard = () => {
                                 <Badge className="bg-blue-100 text-blue-700 ml-2">
                                     {filteredTotals.totalUsed > 0 ? ((dynamicPanelData.stats.amountSpent / filteredTotals.totalUsed) * 100).toFixed(1) : 0}% of Filtered Usage
                                 </Badge>
+                                
+                                {/* ✅ Clear Filter Button */}
+                                {selectedDepartment && (
+                                    <button 
+                                        onClick={() => setSelectedDepartment(null)}
+                                        className="ml-2 flex items-center gap-1 text-[10px] text-slate-500 hover:text-slate-700 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 px-2 py-1 rounded-md transition-colors"
+                                    >
+                                        <X className="h-3 w-3" /> Clear Filter
+                                    </button>
+                                )}
                             </div>
                         </div>
 
@@ -524,7 +538,8 @@ const MayorDashboard = () => {
                                     </div>
                                     <div>
                                         <p className="text-[10px] text-slate-500">Amount Spent</p>
-                                        <p className="text-sm font-bold text-slate-900 dark:text-white">{formatCompact(dynamicPanelData.stats.amountSpent)}</p>
+                                        {/* ✅ FIXED: Format exact currency instead of compact "2k" */}
+                                        <p className="text-sm font-bold text-slate-900 dark:text-white">{formatCurrency(dynamicPanelData.stats.amountSpent)}</p>
                                     </div>
                                     <div>
                                         <p className="text-[10px] text-slate-500">Distance Traveled</p>
