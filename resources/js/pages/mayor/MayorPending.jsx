@@ -155,6 +155,70 @@ const FormField = ({
   );
 };
 
+
+
+
+// ============================================
+// TRIP DATE BADGE COMPONENT
+// ============================================
+
+const TripDateBadge = ({ ticket }) => {
+  if (!ticket?.trip_date) return null;
+
+  const tripDate = new Date(ticket.trip_date);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  tripDate.setHours(0, 0, 0, 0);
+
+  const isToday = tripDate.getTime() === today.getTime();
+  const isPast = tripDate.getTime() < today.getTime();
+  const isFuture = tripDate.getTime() > today.getTime();
+  const isTripFriday = tripDate.getDay() === 5;
+
+  const daysUntil = Math.ceil((tripDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+  let label = "";
+  let color = "";
+  let icon = Calendar;
+
+  if (isToday) {
+    label = "Today";
+    color = "bg-green-100 text-green-700 border-green-300 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800";
+    icon = CalendarCheck;
+  } else if (isPast) {
+    label = "Past Trip";
+    color = "bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800";
+    icon = CalendarDays;
+  } else if (isFuture && isTripFriday) {
+    label = `Friday (${daysUntil}d)`;
+    color = "bg-purple-100 text-purple-700 border-purple-300 dark:bg-purple-900/30 dark:text-purple-400 dark:border-purple-800";
+    icon = Calendar;
+  } else if (isFuture && daysUntil === 1) {
+    label = "⚠️ Tomorrow";
+    color = "bg-orange-100 text-orange-700 border-orange-300 dark:bg-orange-900/30 dark:text-orange-400 dark:border-orange-800";
+    icon = AlertTriangle;
+  } else if (isFuture && daysUntil <= 7) {
+    label = `📅 ${daysUntil}d`;
+    color = "bg-yellow-100 text-yellow-700 border-yellow-300 dark:bg-yellow-900/30 dark:text-yellow-400 dark:border-yellow-800";
+    icon = AlertCircle;
+  } else if (isFuture) {
+    label = `📅 ${daysUntil}d`;
+    color = "bg-red-100 text-red-700 border-red-300 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800";
+    icon = AlertTriangle;
+  } else {
+    label = "N/A";
+    color = "bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700";
+    icon = Clock;
+  }
+
+  const Icon = icon;
+  return (
+    <Badge variant="outline" className={`${color} text-xs font-medium flex items-center gap-1`}>
+      <Icon className="h-3 w-3" />
+      {label}
+    </Badge>
+  );
+};
 // ============================================
 // Number Input
 // ============================================
