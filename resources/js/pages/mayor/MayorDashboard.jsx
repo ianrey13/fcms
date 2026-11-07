@@ -191,14 +191,12 @@ const MayorDashboard = () => {
         const totalAllocated = departmentBudgets.reduce((s, d) => s + d.allocated, 0);
         const totalUsed = departmentBudgets.reduce((s, d) => s + d.spent, 0);
         const totalDistance = approvedTicketsRaw.reduce((sum, t) => sum + (parseFloat(t.actual_distance_km) || 0), 0);
-        const totalFuel = approvedTicketsRaw.reduce((sum, t) => sum + (parseFloat(t.actual_fuel_used) || 0), 0);
 
         return { 
             totalAllocated, 
             totalUsed, 
             totalRemaining: Math.max(totalAllocated - totalUsed, 0), 
             totalDistance,
-            totalFuel
         };
     }, [departmentBudgets, approvedTicketsRaw]);
 
@@ -248,9 +246,7 @@ const MayorDashboard = () => {
 
     const filteredTotals = useMemo(() => {
         const totalReleased = filteredTickets.reduce((sum, t) => sum + (parseFloat(t.amount_released) || 0), 0);
-        const totalDistance = filteredTickets.reduce((sum, t) => sum + (parseFloat(t.actual_distance_km) || 0), 0);
-        const totalFuel = filteredTickets.reduce((sum, t) => sum + (parseFloat(t.actual_fuel_used) || 0), 0);
-        return { totalReleased, totalDistance, totalFuel };
+        return { totalReleased };
     }, [filteredTickets]);
 
     // ✅ Dynamic Data for Right Panel
@@ -260,10 +256,7 @@ const MayorDashboard = () => {
                 name: "All Departments",
                 isAggregate: true,
                 stats: {
-                    fuelPurchased: filteredTotals.totalFuel,
                     amountReleased: filteredTotals.totalReleased,
-                    distance: filteredTotals.totalDistance,
-                    avgCost: filteredTotals.totalDistance > 0 ? (filteredTotals.totalReleased / filteredTotals.totalDistance) : 0,
                 },
                 transactions: filteredTickets
                     .sort((a, b) => new Date(b.trip_date) - new Date(a.trip_date))
@@ -280,10 +273,7 @@ const MayorDashboard = () => {
         const targetDept = departmentBudgets.find(d => d.department_name === selectedDepartment);
         const deptTickets = filteredTickets.filter(t => t.department_name === selectedDepartment);
 
-        const fuelPurchased = deptTickets.reduce((sum, t) => sum + (parseFloat(t.actual_fuel_used) || 0), 0);
         const amountReleased = deptTickets.reduce((sum, t) => sum + (parseFloat(t.amount_released) || 0), 0);
-        const distance = deptTickets.reduce((sum, t) => sum + (parseFloat(t.actual_distance_km) || 0), 0);
-        const avgCost = distance > 0 ? (amountReleased / distance) : 0;
         
         const transactions = deptTickets
             .sort((a, b) => new Date(b.trip_date) - new Date(a.trip_date))
@@ -304,7 +294,7 @@ const MayorDashboard = () => {
         return {
             name: selectedDepartment,
             isAggregate: false,
-            stats: { fuelPurchased, amountReleased, distance, avgCost },
+            stats: { amountReleased },
             transactions,
             budgetBreakdown: {
                 allocated: targetDept?.allocated || 0,
@@ -527,20 +517,11 @@ const MayorDashboard = () => {
                         {/* --- TAB CONTENT: TRANSACTIONS --- */}
                         {activeTab === "transactions" && (
                             <div className="flex-1 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                                <div className="grid grid-cols-3 gap-2 mb-4 bg-slate-50 dark:bg-slate-900/50 p-3 rounded-lg">
-                                    <div>
-                                        <p className="text-[10px] text-slate-500">Fuel Purchased</p>
-                                        <p className="text-sm font-bold text-slate-900 dark:text-white">{dynamicPanelData.stats.fuelPurchased.toLocaleString()} L</p>
-                                    </div>
-                                    <div>
-                                        {/* ✅ Gi-ilis gikan sa Amount Spent ngadto sa Amount Released */}
-                                        <p className="text-[10px] text-slate-500">Amount Released</p>
-                                        <p className="text-sm font-bold text-slate-900 dark:text-white">{formatCurrency(dynamicPanelData.stats.amountReleased)}</p>
-                                    </div>
-                                    <div>
-                                        <p className="text-[10px] text-slate-500">Avg. Cost per Km</p>
-                                        <p className="text-sm font-bold text-slate-900 dark:text-white">{formatCurrency(dynamicPanelData.stats.avgCost)}</p>
-                                    </div>
+                                
+                                {/* ✅ Gi-remove ang Fuel ug Avg Cost. Karon kay Amount Released na lang ang mabilin */}
+                                <div className="mb-4 bg-slate-50 dark:bg-slate-900/50 p-3 rounded-lg flex flex-col">
+                                    <p className="text-[10px] text-slate-500 uppercase font-semibold">Total Amount Released</p>
+                                    <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 mt-1">{formatCurrency(dynamicPanelData.stats.amountReleased)}</p>
                                 </div>
 
                                 <div className="flex justify-between items-center mb-2">
@@ -554,9 +535,7 @@ const MayorDashboard = () => {
                                                 <th className="pb-2 font-medium">Date</th>
                                                 <th className="pb-2 font-medium">Control No.</th>
                                                 <th className="pb-2 font-medium">Vehicle</th>
-                                                {/* ✅ Gikuha ang Fuel (L) */}
                                                 <th className="pb-2 font-medium">Amount Released</th>
-                                                {/* ✅ Gi-ilis ang Amount Spent */}
                                                 <th className="pb-2 font-medium">Amount Spent</th>
                                                 <th className="pb-2 font-medium">Receipt</th>
                                                 <th className="pb-2 font-medium text-right">Status</th>
@@ -566,7 +545,6 @@ const MayorDashboard = () => {
                                             {dynamicPanelData.transactions.length === 0 ? (
                                                 <tr><td colSpan={7} className="py-4 text-center text-slate-400">No transactions found for {timeFilterLabel.toLowerCase()}</td></tr>
                                             ) : dynamicPanelData.transactions.map((t, i) => {
-                                                // ✅ Logic para maging '-' ang Amount Spent kung wala pa na verify
                                                 const isVerified = ["completed", "closed", "pending_gso_validation", "pending_reconciliation"].includes(t.status);
                                                 const amountSpentDisplay = isVerified ? formatCurrency(t.actual_fuel_cost || 0) : "-";
 
