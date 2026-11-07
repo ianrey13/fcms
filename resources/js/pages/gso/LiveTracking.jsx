@@ -14,7 +14,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { cn } from '@/lib/utils';
 import {
-    Car, Gauge, Clock, MapPin, User, Search
+    Car, Gauge, Clock, MapPin, User, Search, Fuel, Droplets
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -22,6 +22,61 @@ import { Button } from '@/components/ui/button';
 // ============================================
 // CUSTOM MAP ICONS (SVG)
 // ============================================
+
+// ✅ Vehicle Icon with Plate & Name Label
+const createVehicleIcon = (plateNumber, vehicleModel) => {
+    return L.divIcon({
+        className: 'custom-vehicle-icon',
+        html: `<div style="
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            transform: translate(-50%, -50%);
+            position: relative;
+            width: 120px; /* Allow space for text */
+        ">
+            <!-- The Car Circle -->
+            <div style="
+                background-color: #3b82f6;
+                width: 32px; height: 32px;
+                border-radius: 50%;
+                border: 2px solid white;
+                display: flex; align-items: center; justify-content: center;
+                box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+                z-index: 2;
+            ">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/>
+                </svg>
+            </div>
+            <!-- The Label -->
+            <div style="
+                position: absolute;
+                top: 38px;
+                background-color: rgba(255, 255, 255, 0.95);
+                color: #0f172a;
+                padding: 2px 6px;
+                border-radius: 4px;
+                font-size: 10px;
+                font-weight: 700;
+                white-space: nowrap;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+                border: 1px solid #cbd5e1;
+                z-index: 1;
+            ">
+                ${plateNumber || 'Unknown'}
+                <span style="font-weight: 400; font-size: 9px; color: #64748b; display: block; text-align: center;">
+                    ${vehicleModel || ''}
+                </span>
+            </div>
+        </div>`,
+        iconSize: [120, 80], 
+        iconAnchor: [60, 40], 
+        popupAnchor: [0, -30],
+    });
+};
+
 const createSvgIcon = (color, iconPath) => {
     return L.divIcon({
         className: 'custom-svg-icon',
@@ -43,7 +98,6 @@ const createSvgIcon = (color, iconPath) => {
 };
 
 const icons = {
-    vehicle: createSvgIcon('#3b82f6', '<path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/>'),
     start: createSvgIcon('#22c55e', '<path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle>'),
     end: createSvgIcon('#ef4444', '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><line x1="4" y1="22" x2="4" y2="15"></line>'),
 };
@@ -178,13 +232,31 @@ const LiveTracking = () => {
     const availableVehicles = dashboardData?.available_vehicles || 0;
     const inUseVehicles = dashboardData?.vehicles_in_use || 0;
 
-    // ✅ Merge Vehicles with Active Trips for the left list
-    // Since the backend doesn't return the full list in getDashboard yet, 
-    // we'll use active trips as the primary list and add an empty state.
     const filteredTrips = tripsData.filter(trip => 
         trip.vehicle?.plate_number?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         trip.vehicle?.vehicle_model?.toLowerCase().includes(searchTerm.toLowerCase())
     );
+
+    // ✅ Calculate Fuel Info for Selected Trip
+    const fuelInfo = useMemo(() => {
+        if (!selectedTrip?.vehicle) return null;
+        
+        const tankCap = parseFloat(selectedTrip.vehicle.tank_capacity) || 60;
+        const currentBalance = parseFloat(selectedTrip.vehicle.current_fuel_balance) || 0;
+        const initialFuel = parseFloat(selectedTrip.vehicle.initial_estimated_fuel) || tankCap;
+        
+        // Calculate consumed based on initial + purchases - current
+        // Assuming API passes purchases if we had them, or we just use difference from initial
+        const consumed = Math.max(0, initialFuel - currentBalance);
+        const percent = tankCap > 0 ? Math.min(100, Math.max(0, (currentBalance / tankCap) * 100)) : 0;
+
+        return {
+            tankCap,
+            currentBalance,
+            consumed,
+            percent
+        };
+    }, [selectedTrip]);
 
     if (isLoading && tripsData.length === 0) {
         return <div className="h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 text-slate-500">Loading Live Tracking...</div>;
@@ -220,7 +292,7 @@ const LiveTracking = () => {
                 {/* LEFT PANEL: LIST */}
                 <div className="w-full lg:w-[420px] flex flex-col gap-4 flex-shrink-0">
                     
-                    {/* ✅ REAL STATS ROW */}
+                    {/* REAL STATS ROW */}
                     <div className="grid grid-cols-2 gap-3">
                         <div className="bg-white dark:bg-slate-900 rounded-xl p-3 border border-slate-200 dark:border-slate-800">
                             <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Total Vehicles</p>
@@ -348,7 +420,7 @@ const LiveTracking = () => {
 
                                         <Marker 
                                             position={[trip.current_location.latitude, trip.current_location.longitude]} 
-                                            icon={icons.vehicle}
+                                            icon={createVehicleIcon(trip.vehicle?.plate_number, trip.vehicle?.vehicle_model)}
                                         />
                                     </React.Fragment>
                                 );
@@ -376,18 +448,36 @@ const LiveTracking = () => {
                     {selectedTrip && (
                         <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 shadow-sm flex-shrink-0">
                             
-                            <div className="flex items-center gap-3 mb-4 pb-3 border-b border-slate-100 dark:border-slate-800">
-                                <div className="w-10 h-10 rounded-xl bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
-                                    <Car className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-                                </div>
-                                <div>
-                                    <div className="flex items-center gap-2">
-                                        <h2 className="font-bold text-slate-900 dark:text-white">{selectedTrip.vehicle?.plate_number || 'Unknown'}</h2>
-                                        <span className="text-slate-300 dark:text-slate-600">•</span>
-                                        <span className="text-sm text-slate-500">{selectedTrip.vehicle?.vehicle_model}</span>
+                            <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100 dark:border-slate-800">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-xl bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
+                                        <Car className="h-5 w-5 text-blue-600 dark:text-blue-400" />
                                     </div>
-                                    <Badge variant="outline" className="text-[10px] bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-400 mt-1">In Transit</Badge>
+                                    <div>
+                                        <div className="flex items-center gap-2">
+                                            <h2 className="font-bold text-slate-900 dark:text-white">{selectedTrip.vehicle?.plate_number || 'Unknown'}</h2>
+                                            <span className="text-slate-300 dark:text-slate-600">•</span>
+                                            <span className="text-sm text-slate-500">{selectedTrip.vehicle?.vehicle_model}</span>
+                                        </div>
+                                        <Badge variant="outline" className="text-[10px] bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-400 mt-1">In Transit</Badge>
+                                    </div>
                                 </div>
+
+                                {/* ✅ Fuel Badge Display */}
+                                {fuelInfo && (
+                                    <div className="flex flex-col items-end">
+                                        <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700">
+                                            <Fuel className="h-4 w-4 text-amber-500" />
+                                            <div>
+                                                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider leading-none mb-0.5">Fuel Level</p>
+                                                <div className="flex items-baseline gap-1">
+                                                    <span className="text-sm font-bold text-slate-800 dark:text-white">{fuelInfo.currentBalance.toFixed(1)} L</span>
+                                                    <span className="text-[10px] text-slate-500">/ {fuelInfo.tankCap.toFixed(0)} L</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
 
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -408,6 +498,27 @@ const LiveTracking = () => {
                                     <p className="text-xs font-medium text-slate-800 dark:text-slate-200">{formatTime(selectedTrip.current_location?.recorded_at)}</p>
                                 </div>
                             </div>
+
+                            {/* ✅ Detailed Fuel Info */}
+                            {fuelInfo && (
+                                <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800">
+                                    <div className="flex items-center gap-6">
+                                        <div className="flex-1">
+                                            <div className="flex items-center justify-between mb-1">
+                                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1"><Droplets className="h-3 w-3 text-blue-500"/> Remaining Fuel</p>
+                                                <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400">{fuelInfo.currentBalance.toFixed(2)} L</p>
+                                            </div>
+                                            <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-2">
+                                                <div className="bg-emerald-500 h-2 rounded-full" style={{ width: `${fuelInfo.percent}%` }} />
+                                            </div>
+                                        </div>
+                                        <div className="flex-1 border-l border-slate-200 dark:border-slate-700 pl-6">
+                                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1"><Fuel className="h-3 w-3 text-red-500"/> Consumed</p>
+                                            <p className="text-xs font-bold text-red-600 dark:text-red-400 mt-1">{fuelInfo.consumed.toFixed(2)} L</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>

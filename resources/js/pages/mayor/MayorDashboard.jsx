@@ -13,7 +13,8 @@ import { startOfWeek, endOfWeek, startOfMonth, endOfMonth, subWeeks, isWithinInt
 
 import {
     Clock, BarChart3, ArrowRight, Activity, PieChart,
-    DollarSign, Fuel, Building2, Car, Download, TrendingUp, ChevronDown
+    DollarSign, Fuel, Building2, Car, Download, TrendingUp, ChevronDown,
+    CheckCircle, Truck
 } from "lucide-react";
 import {
     Cell, PieChart as RePieChart, Pie, ResponsiveContainer, Tooltip,
@@ -54,6 +55,31 @@ const formatCompact = (amount) => {
 };
 
 const formatDateShort = (ds) => ds ? new Date(ds).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" }) : "—";
+
+// ✅ DYNAMIC STATUS BADGE
+const StatusBadge = ({ status }) => {
+    const configs = {
+        funds_issued: { color: "bg-emerald-500", label: "Funds Issued", icon: CheckCircle },
+        acknowledged: { color: "bg-blue-500", label: "Acknowledged", icon: CheckCircle },
+        in_transit: { color: "bg-indigo-500", label: "In Transit", icon: Truck },
+        closed: { color: "bg-slate-500", label: "Closed", icon: CheckCircle },
+        pending_reconciliation: { color: "bg-amber-500", label: "Pending Recon", icon: Clock },
+        completed: { color: "bg-green-600", label: "Completed", icon: CheckCircle },
+        pending_gso_validation: { color: "bg-amber-500", label: "Awaiting Validation", icon: Clock },
+    };
+    const config = configs[status] || {
+        color: "bg-slate-500",
+        label: status?.replace(/_/g, " ") || "Unknown",
+        icon: CheckCircle,
+    };
+    const Icon = config.icon;
+    return (
+        <Badge className={`${config.color} text-white flex items-center justify-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-medium`}>
+            <Icon className="h-3 w-3" />
+            {config.label}
+        </Badge>
+    );
+};
 
 // ✅ NEW HELPER FOR DOWNLOADING RECEIPTS
 const handleDownloadReceipt = async (url, ticketNumber) => {
@@ -555,8 +581,9 @@ const MayorDashboard = () => {
                                                         </button>
                                                     </td>
 
+                                                    {/* ✅ DYNAMIC STATUS BADGE */}
                                                     <td className="py-2 text-right">
-                                                        <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">Verified</span>
+                                                        <StatusBadge status={t.status} />
                                                     </td>
                                                 </tr>
                                             ))}
