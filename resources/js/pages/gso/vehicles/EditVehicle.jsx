@@ -4,8 +4,7 @@
 // No duplicate toasts - single toast with all errors
 // Auto-focus first error field
 // + AlertDialog confirmation before update
-// + REMOVED: initial fuel (only set on Add, not Edit)
-// + Angelo's fuel algorithm: tank_capacity, reference_efficiency
+// + Angelo's fuel algorithm: tank_capacity, reference_efficiency, initial_estimated_fuel
 // ============================================
 
 import React, { useState, useEffect, useRef } from "react";
@@ -309,6 +308,7 @@ const EditVehicle = () => {
     // ✅ Angelo's fuel algorithm fields
     tank_capacity: "60",
     reference_efficiency: "10",
+    initial_estimated_fuel: "0", // ✅ Added back
   });
   const [errors, setErrors] = useState({});
   const [touched, setTouched] = useState({});
@@ -346,6 +346,7 @@ const EditVehicle = () => {
           // ✅ Load fuel algorithm fields (with fallbacks for older rows)
           tank_capacity: vehicle.tank_capacity != null ? String(vehicle.tank_capacity) : "60",
           reference_efficiency: vehicle.reference_efficiency != null ? String(vehicle.reference_efficiency) : "10",
+          initial_estimated_fuel: vehicle.initial_estimated_fuel != null ? String(vehicle.initial_estimated_fuel) : "0",
         };
         setFormData(data);
         setOriginalData(data);
@@ -414,6 +415,16 @@ const EditVehicle = () => {
       newTouched.tank_capacity = true;
     }
 
+    // ✅ Initial estimated fuel
+    const initFuel = parseFloat(formData.initial_estimated_fuel);
+    if (formData.initial_estimated_fuel === "" || isNaN(initFuel) || initFuel < 0) {
+      newErrors.initial_estimated_fuel = "Initial fuel cannot be negative";
+      newTouched.initial_estimated_fuel = true;
+    } else if (!isNaN(tankCap) && initFuel > tankCap) {
+      newErrors.initial_estimated_fuel = "Initial fuel cannot exceed tank capacity";
+      newTouched.initial_estimated_fuel = true;
+    }
+
     // ✅ Reference efficiency
     const refEff = parseFloat(formData.reference_efficiency);
     if (!formData.reference_efficiency || isNaN(refEff) || refEff <= 0) {
@@ -436,6 +447,7 @@ const EditVehicle = () => {
           fuel_type: 'Fuel Type',
           tank_capacity: 'Tank Capacity',
           reference_efficiency: 'Reference Efficiency',
+          initial_estimated_fuel: 'Initial Fuel',
         };
         const label = labels[field] || field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
         return `• ${label}: ${msg}`;
@@ -518,6 +530,7 @@ const EditVehicle = () => {
       // ✅ Angelo's algorithm fields
       tank_capacity: parseFloat(formData.tank_capacity),
       reference_efficiency: parseFloat(formData.reference_efficiency),
+      initial_estimated_fuel: parseFloat(formData.initial_estimated_fuel),
     };
 
     setPendingPayload(payload);
@@ -708,7 +721,7 @@ const EditVehicle = () => {
               </FormField>
 
               {/* ═══════════════════════════════════════════════════════ */}
-              {/* ✅ ANGELO'S FUEL ALGORITHM — 2 FIELDS (initial fuel is locked) */}
+              {/* ✅ ANGELO'S FUEL ALGORITHM — 3 FIELDS (includes initial fuel) */}
               {/* ═══════════════════════════════════════════════════════ */}
               <div className="pt-3 border-t border-slate-200/60 dark:border-slate-700/60">
                 <div className="flex items-center gap-2 mb-3">
@@ -720,12 +733,12 @@ const EditVehicle = () => {
                       Fuel Tracking Parameters
                     </h3>
                     <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                      Adjust capacity or efficiency. Balance is tracked via Receipts.
+                      Adjust capacity, efficiency, or current fuel state.
                     </p>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   <FormField
                     label="Tank Capacity"
                     icon={Fuel}
@@ -744,6 +757,28 @@ const EditVehicle = () => {
                       value={formData.tank_capacity}
                       onChange={(e) => handleChange("tank_capacity", e.target.value)}
                       onBlur={() => handleBlur("tank_capacity")}
+                      className="bg-white dark:bg-slate-900 dark:border-slate-700"
+                    />
+                  </FormField>
+
+                  <FormField
+                    label="Initial Fuel"
+                    icon={Droplet}
+                    required
+                    error={errors.initial_estimated_fuel}
+                    touched={touched.initial_estimated_fuel}
+                    helper="Current liters"
+                  >
+                    <Input
+                      id="initial_estimated_fuel"
+                      name="initial_estimated_fuel"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      max="500"
+                      value={formData.initial_estimated_fuel}
+                      onChange={(e) => handleChange("initial_estimated_fuel", e.target.value)}
+                      onBlur={() => handleBlur("initial_estimated_fuel")}
                       className="bg-white dark:bg-slate-900 dark:border-slate-700"
                     />
                   </FormField>
@@ -863,6 +898,11 @@ const EditVehicle = () => {
                   <span className="text-slate-500">Tank Capacity:</span>
                   <span className="col-span-2 font-medium text-slate-800 dark:text-slate-100">
                     {pendingPayload?.tank_capacity ?? "—"} L
+                  </span>
+
+                  <span className="text-slate-500">Initial Fuel:</span>
+                  <span className="col-span-2 font-medium text-slate-800 dark:text-slate-100">
+                    {pendingPayload?.initial_estimated_fuel ?? "—"} L
                   </span>
 
                   <span className="text-slate-500">Ref. Efficiency:</span>
