@@ -327,13 +327,14 @@ class BudgetPolicyController extends Controller
         }
     }
     
-    /**
+       /**
      * Get budget history for a department or all
      */
     public function getBudgetHistory(Request $request)
     {
         try {
             $departmentId = $request->get('department_id');
+            $year = $request->get('year'); // ✅ Added year parameter support
             $limit = $request->get('limit', 100);
             
             $query = DB::table('budget_history')
@@ -341,6 +342,12 @@ class BudgetPolicyController extends Controller
             
             if ($departmentId) {
                 $query->where('department_id', $departmentId);
+            }
+
+            // ✅ Optional: If you later add fiscal_year to budget_history, filter here.
+            // For now, if a year is passed, we filter by the year of the created_at date.
+            if ($year) {
+                $query->whereYear('created_at', $year);
             }
             
             $history = $query->limit($limit)->get();

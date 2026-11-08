@@ -1,6 +1,3 @@
-// src/pages/mayor/budget/BudgetAllocation.jsx
-// ============================================
-
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useQueryClient, useMutation } from "@tanstack/react-query";
 import { useAutoRefresh } from "../../../hooks/useAutoRefresh";
@@ -12,7 +9,7 @@ import {
     SkeletonTable,
 } from "../../../components/ui/SkeletonCard";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"; // ✅ FIXED: Added CardHeader, CardTitle, CardDescription
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -32,10 +29,6 @@ import {
     DialogTitle,
 } from "@/components/ui/dialog";
 import {
-    RefreshCw,
-    Loader2,
-    Calendar,
-    DollarSign,
     TrendingUp,
     TrendingDown,
     Edit,
@@ -48,22 +41,21 @@ import {
     Info,
     ArrowLeft,
     Zap,
-    Shield,
     Clock,
     Activity,
-    CheckCircle,
     Search,
     Filter,
     ChevronDown,
     ChevronUp,
-    Wallet,
-    Gauge,
     PhilippinePeso,
+    History,
+    CalendarDays
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { useNavigate } from "react-router-dom";
 import api from "../../../services/api";
 import { cn } from "@/lib/utils";
+import { format } from "date-fns";
 
 // ============================================
 // STATS CARD COMPONENT
@@ -78,20 +70,6 @@ const StatsCard = ({ title, value, icon: Icon, color, subtitle, trend }) => (
                     <p className="text-2xl font-bold text-slate-900 dark:text-white mt-1">{value}</p>
                     {subtitle && (
                         <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">{subtitle}</p>
-                    )}
-                    {trend !== undefined && (
-                        <div className="flex items-center gap-1 mt-1 text-[10px]">
-                            {trend > 0 ? (
-                                <TrendingUp className="h-3 w-3 text-emerald-500" />
-                            ) : trend < 0 ? (
-                                <TrendingDown className="h-3 w-3 text-red-500" />
-                            ) : (
-                                <Activity className="h-3 w-3 text-slate-400" />
-                            )}
-                            <span className={trend > 0 ? 'text-emerald-600 dark:text-emerald-400' : trend < 0 ? 'text-red-600 dark:text-red-400' : 'text-slate-400'}>
-                                {trend > 0 ? '+' : ''}{trend}%
-                            </span>
-                        </div>
                     )}
                 </div>
                 <div className={`p-3 rounded-xl bg-gradient-to-br ${color} shadow-lg`}>
@@ -129,21 +107,11 @@ const DepartmentTooltip = ({ code, name }) => {
 };
 
 // ============================================
-// Form Field
+// FORM FIELD COMPONENT
 // ============================================
 
-const FormField = ({
-    label,
-    icon: Icon,
-    required,
-    error,
-    touched,
-    helper,
-    children,
-    className,
-}) => {
+const FormField = ({ label, icon: Icon, required, error, touched, helper, children, className }) => {
     const hasError = touched && error;
-
     return (
         <div className={cn("space-y-1.5", className)}>
             <label className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300">
@@ -153,10 +121,7 @@ const FormField = ({
             </label>
             <div className="relative">
                 {React.cloneElement(children, {
-                    className: cn(
-                        children.props.className,
-                        hasError && "border-red-500 ring-red-500 focus:ring-red-500 bg-red-50/50 dark:bg-red-950/10"
-                    )
+                    className: cn(children.props.className, hasError && "border-red-500 ring-red-500 focus:ring-red-500 bg-red-50/50 dark:bg-red-950/10")
                 })}
                 {hasError && (
                     <div className="absolute right-3 top-1/2 -translate-y-1/2">
@@ -181,117 +146,6 @@ const FormField = ({
 };
 
 // ============================================
-// FILTER SECTION
-// ============================================
-
-const FilterSection = ({ filters, setFilters, departments, isFilterOpen, setIsFilterOpen }) => {
-    const hasActiveFilters = filters.searchTerm || filters.allocationStatus !== 'all' || filters.budgetRange !== 'all';
-
-    return (
-        <div className="mb-4">
-            <div className="flex items-center gap-2 mb-3">
-                <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setIsFilterOpen(!isFilterOpen)}
-                    className="dark:border-slate-700 dark:text-slate-300"
-                >
-                    <Filter className="h-4 w-4 mr-1.5" />
-                    Filters
-                    {hasActiveFilters && (
-                        <Badge className="ml-1.5 bg-blue-500 text-white text-[10px] px-1.5 py-0.5">
-                            {Object.values(filters).filter(v => v !== 'all' && v !== '').length}
-                        </Badge>
-                    )}
-                    {isFilterOpen ? (
-                        <ChevronUp className="h-4 w-4 ml-1.5" />
-                    ) : (
-                        <ChevronDown className="h-4 w-4 ml-1.5" />
-                    )}
-                </Button>
-
-                {hasActiveFilters && (
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setFilters({ searchTerm: '', departmentId: 'all', allocationStatus: 'all', budgetRange: 'all' })}
-                        className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30 h-8 px-2"
-                    >
-                        <X className="h-3.5 w-3.5 mr-1" />
-                        Clear
-                    </Button>
-                )}
-            </div>
-
-            {isFilterOpen && (
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-slate-200 dark:border-slate-700">
-                    <div>
-                        <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Search Department</label>
-                        <div className="relative mt-1">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-                            <Input
-                                placeholder="Type department name..."
-                                value={filters.searchTerm}
-                                onChange={(e) => setFilters(prev => ({ ...prev, searchTerm: e.target.value }))}
-                                className="pl-9 h-9 text-sm dark:bg-slate-800 dark:border-slate-700 dark:text-white"
-                            />
-                        </div>
-                    </div>
-
-                    <div>
-                        <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Department</label>
-                        <select
-                            value={filters.departmentId}
-                            onChange={(e) => setFilters(prev => ({ ...prev, departmentId: e.target.value }))}
-                            className="w-full mt-1 px-3 py-1.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-800 dark:border-slate-700 dark:text-white text-sm"
-                        >
-                            <option value="all">All Departments</option>
-                            {departments.map((dept) => (
-                                <option key={dept.department_id} value={dept.department_id}>
-                                    {dept.department_name} ({dept.department_code})
-                                </option>
-                            ))}
-                        </select>
-                    </div>
-
-                    <div>
-                        <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Allocation Status</label>
-                        <select
-                            value={filters.allocationStatus}
-                            onChange={(e) => setFilters(prev => ({ ...prev, allocationStatus: e.target.value }))}
-                            className="w-full mt-1 px-3 py-1.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-800 dark:border-slate-700 dark:text-white text-sm"
-                        >
-                            <option value="all">All Statuses</option>
-                            <option value="has_budget">Has Budget</option>
-                            <option value="no_budget">No Budget</option>
-                            <option value="over_budget">Over Budget</option>
-                            <option value="near_limit">Near Limit (&gt;80%)</option>
-                            <option value="on_track">On Track</option>
-                        </select>
-                    </div>
-
-                    <div>
-                        <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Budget Range</label>
-                        <select
-                            value={filters.budgetRange}
-                            onChange={(e) => setFilters(prev => ({ ...prev, budgetRange: e.target.value }))}
-                            className="w-full mt-1 px-3 py-1.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-800 dark:border-slate-700 dark:text-white text-sm"
-                        >
-                            <option value="all">All Ranges</option>
-                            <option value="under_50k">Under ₱50,000</option>
-                            <option value="50k_100k">₱50,000 - ₱100,000</option>
-                            <option value="100k_500k">₱100,000 - ₱500,000</option>
-                            <option value="500k_1m">₱500,000 - ₱1,000,000</option>
-                            <option value="over_1m">Over ₱1,000,000</option>
-                        </select>
-                    </div>
-                </div>
-            )}
-        </div>
-    );
-};
-
-// ============================================
 // MAIN COMPONENT
 // ============================================
 
@@ -301,256 +155,133 @@ const BudgetAllocation = () => {
     const { isConnected } = useRealtime();
     const toastIdRef = useRef(null);
 
-    // ★ FIX: start as null — let fiscal years query decide
+    const [activeTab, setActiveTab] = useState("allocation"); // "allocation" | "history"
     const [selectedYear, setSelectedYear] = useState(null);
-
+    
+    // Dialog States
     const [editingBudget, setEditingBudget] = useState(null);
     const [showEditDialog, setShowEditDialog] = useState(false);
     const [showViewDialog, setShowViewDialog] = useState(false);
     const [viewingBudget, setViewingBudget] = useState(null);
     const [showAddBudgetDialog, setShowAddBudgetDialog] = useState(false);
-    const [addBudgetData, setAddBudgetData] = useState({
-        department_id: "",
-        additional_amount: "",
-        reason: "",
-    });
-    const [formData, setFormData] = useState({
-        annual_amount: "",
-    });
-    const [isBulkMode, setIsBulkMode] = useState(false);
-    const [bulkData, setBulkData] = useState({});
+    const [addBudgetData, setAddBudgetData] = useState({ department_id: "", additional_amount: "", reason: "" });
+    const [formData, setFormData] = useState({ annual_amount: "" });
+    
     const [isFilterOpen, setIsFilterOpen] = useState(false);
-
     const [editErrors, setEditErrors] = useState({});
     const [editTouched, setEditTouched] = useState({});
     const [addErrors, setAddErrors] = useState({});
     const [addTouched, setAddTouched] = useState({});
-
-    const [filters, setFilters] = useState({
-        searchTerm: '',
-        departmentId: 'all',
-        allocationStatus: 'all',
-        budgetRange: 'all',
-    });
+    const [filters, setFilters] = useState({ searchTerm: '', departmentId: 'all', allocationStatus: 'all', budgetRange: 'all' });
 
     // ============================================
     // AUTO-REFRESH
     // ============================================
-
-    useAutoRefresh(
-        [
-            "mayor-budget-updated",
-            "mayor-trip-updated",
-            "gso-funds-released",
-            "new-notification",
-        ],
-        () => {
-            queryClient.invalidateQueries({ queryKey: ["annual-budgets", selectedYear] });
-            queryClient.invalidateQueries({ queryKey: ["fiscal-years-active"] });
-        }
-    );
+    useAutoRefresh(["mayor-budget-updated", "mayor-trip-updated", "gso-funds-released"], () => {
+        queryClient.invalidateQueries({ queryKey: ["annual-budgets", selectedYear] });
+        queryClient.invalidateQueries({ queryKey: ["fiscal-years-active"] });
+        queryClient.invalidateQueries({ queryKey: ["budget-history", selectedYear] });
+    });
 
     // ============================================
-    // OPTIMIZED QUERIES
+    // QUERIES
     // ============================================
-
-    // Query 1: active fiscal years
     const { data: yearsData, isLoading: yearsLoading } = useOptimizedQuery({
         queryKey: ["fiscal-years-active"],
         queryFn: async () => {
             try {
                 const response = await api.get("/mayors-office/fiscal-years?is_active=1");
                 return response.data.data || [];
-            } catch (error) {
-                console.error("Error fetching fiscal years:", error);
-                return [];
-            }
+            } catch (error) { return []; }
         },
         staleTime: 5 * 60 * 1000,
-        keepPreviousData: true,
     });
 
-    // ★ FIX: resolve the year once we know the valid years
     useEffect(() => {
         if (!yearsData || yearsData.length === 0) return;
-
-        const validYears = yearsData.map((y) =>
-            typeof y === "object" ? Number(y.year) : Number(y)
-        );
-
+        const validYears = yearsData.map((y) => typeof y === "object" ? Number(y.year) : Number(y));
         if (selectedYear && validYears.includes(selectedYear)) return;
-
         setSelectedYear(validYears.includes(2026) ? 2026 : validYears[0]);
     }, [yearsData, selectedYear]);
 
-    // Query 2: budgets for the selected year
-    const {
-        data: budgetData,
-        isLoading,
-        refetch,
-        isFetching,
-        error: budgetError,
-    } = useOptimizedQuery({
+    const { data: budgetData, isLoading, error: budgetError } = useOptimizedQuery({
         queryKey: ["annual-budgets", selectedYear],
         queryFn: async () => {
-            try {
-                const response = await api.get(`/mayors-office/annual-budgets/year/${selectedYear}`);
-                return response.data;
-            } catch (error) {
-                console.error("Error fetching budgets:", error);
-                throw error;
-            }
+            const response = await api.get(`/mayors-office/annual-budgets/year/${selectedYear}`);
+            return response.data;
         },
-        enabled: !!selectedYear,   // ★ don't fetch until year is known
+        enabled: !!selectedYear,
         staleTime: 2 * 60 * 1000,
-        refetchOnMount: false,
         keepPreviousData: true,
-        retry: 1,
+    });
+
+    // ✅ Query for Budget History
+    const { data: historyData, isLoading: historyLoading } = useOptimizedQuery({
+        queryKey: ["budget-history", selectedYear],
+        queryFn: async () => {
+            const response = await api.get(`/mayors-office/budget-history?year=${selectedYear}`);
+            return response.data.data || [];
+        },
+        enabled: !!selectedYear && activeTab === 'history',
     });
 
     // ============================================
     // MUTATIONS
     // ============================================
-
     const setBudgetMutation = useMutation({
         mutationFn: async ({ data }) => {
-            const response = await api.post("/mayors-office/annual-budgets", {
-                fiscal_year: selectedYear,
-                ...data,
-            });
+            const response = await api.post("/mayors-office/annual-budgets", { fiscal_year: selectedYear, ...data });
             return response.data;
         },
         onSuccess: () => {
-            if (toastIdRef.current) toast.dismiss(toastIdRef.current);
-            toastIdRef.current = toast.success("Annual budget set successfully");
+            toast.success("Annual budget set successfully");
             setShowEditDialog(false);
-            setEditingBudget(null);
-            setEditErrors({});
-            setEditTouched({});
             queryClient.invalidateQueries(["annual-budgets"]);
+            queryClient.invalidateQueries(["budget-history"]);
         },
-        onError: (error) => {
-            if (toastIdRef.current) toast.dismiss(toastIdRef.current);
-            toastIdRef.current = toast.error(error.response?.data?.message || "Failed to set budget");
-        },
+        onError: (error) => toast.error(error.response?.data?.message || "Failed to set budget"),
     });
 
     const addBudgetMutation = useMutation({
         mutationFn: async (data) => {
-            const response = await api.post("/mayors-office/annual-budgets/add", {
-                fiscal_year: selectedYear,
-                ...data,
-            });
+            const response = await api.post("/mayors-office/annual-budgets/add", { fiscal_year: selectedYear, ...data });
             return response.data;
         },
         onSuccess: () => {
-            if (toastIdRef.current) toast.dismiss(toastIdRef.current);
-            toastIdRef.current = toast.success("Additional budget added successfully");
+            toast.success("Additional budget added successfully");
             setShowAddBudgetDialog(false);
-            setAddBudgetData({
-                department_id: "",
-                additional_amount: "",
-                reason: "",
-            });
-            setAddErrors({});
-            setAddTouched({});
             queryClient.invalidateQueries(["annual-budgets"]);
+            queryClient.invalidateQueries(["budget-history"]);
         },
-        onError: (error) => {
-            if (toastIdRef.current) toast.dismiss(toastIdRef.current);
-            toastIdRef.current = toast.error(error.response?.data?.message || "Failed to add budget");
-        },
-    });
-
-    const bulkUpdateMutation = useMutation({
-        mutationFn: async () => {
-            const budgets = Object.entries(bulkData).map(([departmentId, data]) => ({
-                department_id: parseInt(departmentId),
-                annual_amount: parseFloat(data.annual_amount) || 0,
-            }));
-
-            const response = await api.post("/mayors-office/annual-budgets/bulk", {
-                fiscal_year: selectedYear,
-                budgets,
-            });
-            return response.data;
-        },
-        onSuccess: () => {
-            if (toastIdRef.current) toast.dismiss(toastIdRef.current);
-            toastIdRef.current = toast.success("All budgets saved successfully");
-            setIsBulkMode(false);
-            setBulkData({});
-            queryClient.invalidateQueries(["annual-budgets"]);
-        },
-        onError: (error) => {
-            if (toastIdRef.current) toast.dismiss(toastIdRef.current);
-            toastIdRef.current = toast.error(error.response?.data?.message || "Failed to save budgets");
-        },
+        onError: (error) => toast.error(error.response?.data?.message || "Failed to add budget"),
     });
 
     // ============================================
     // HELPERS
     // ============================================
-
-    const budgets = (() => {
+    const budgets = useMemo(() => {
         const raw = budgetData?.data;
         if (Array.isArray(raw)) return raw;
         if (raw && Array.isArray(raw.data)) return raw.data;
-        if (budgetData && Array.isArray(budgetData)) return budgetData;
-        const keys = ['budgets', 'items', 'results', 'records'];
-        for (const k of keys) {
-            if (Array.isArray(budgetData?.[k])) return budgetData[k];
-            if (Array.isArray(raw?.[k])) return raw[k];
-        }
         return [];
-    })();
+    }, [budgetData]);
 
-    // ★ FIX: shape-tolerant summary — handles top-level, nested, and
-    //        derives from budgets list as a fallback.
     const summary = useMemo(() => {
         if (!budgetData) return {};
-
-        if (budgetData.summary && typeof budgetData.summary === "object") {
-            return budgetData.summary;
-        }
-        if (budgetData.data?.summary && typeof budgetData.data.summary === "object") {
-            return budgetData.data.summary;
-        }
-
-        // Fallback: derive from list
-        const list = budgets;
-        const total_allocated = list.reduce(
-            (s, b) => s + parseFloat(b.annual_amount || b.allocated_amount || 0),
-            0
-        );
-        const total_used = list.reduce(
-            (s, b) => s + parseFloat(b.used_amount || b.spent_amount || 0),
-            0
-        );
-        const departments_with_budget = list.filter((b) => b.has_budget).length;
-
+        if (budgetData.summary) return budgetData.summary;
+        const total_allocated = budgets.reduce((s, b) => s + parseFloat(b.annual_amount || 0), 0);
+        const total_used = budgets.reduce((s, b) => s + parseFloat(b.used_amount || 0), 0);
         return {
-            total_allocated,
-            total_used,
-            total_remaining: total_allocated - total_used,
-            departments_with_budget,
-            total_departments: list.length,
-            departments_without_budget: list.length - departments_with_budget,
+            total_allocated, total_used, total_remaining: total_allocated - total_used,
+            departments_with_budget: budgets.filter((b) => b.has_budget).length,
+            total_departments: budgets.length,
+            departments_without_budget: budgets.length - budgets.filter((b) => b.has_budget).length,
         };
     }, [budgetData, budgets]);
 
-    const fiscalYear = useMemo(() => {
-        if (!budgetData) return {};
-        return budgetData.fiscal_year || budgetData.data?.fiscal_year || {};
-    }, [budgetData]);
-
     const formatCurrency = (amount) => {
         if (!amount || amount === 0) return "₱0.00";
-        return new Intl.NumberFormat("en-PH", {
-            style: "currency",
-            currency: "PHP",
-            minimumFractionDigits: 2,
-        }).format(amount);
+        return new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", minimumFractionDigits: 2 }).format(amount);
     };
 
     const weeklySuggested = (annualAmount) => {
@@ -559,107 +290,32 @@ const BudgetAllocation = () => {
     };
 
     const getStatusBadge = (status) => {
-        if (status === "not_set" || !status) {
-            return <Badge className="bg-slate-400">Not Set</Badge>;
-        }
+        if (status === "not_set" || !status) return <Badge className="bg-slate-400">Not Set</Badge>;
         return <Badge className="bg-green-500">Active</Badge>;
     };
 
     // ============================================
-    // VALIDATION FUNCTIONS
+    // VALIDATION
     // ============================================
-
     const validateEditBudget = () => {
         const newErrors = {};
-        const newTouched = {};
-
         if (!formData.annual_amount || parseFloat(formData.annual_amount) <= 0) {
             newErrors.annual_amount = "Annual budget must be greater than 0";
-            newTouched.annual_amount = true;
         }
-
         setEditErrors(newErrors);
-        setEditTouched(prev => ({ ...prev, ...newTouched }));
-
-        if (Object.keys(newErrors).length > 0) {
-            const errorMessages = Object.entries(newErrors).map(([field, msg]) => {
-                const labels = { annual_amount: 'Annual Budget' };
-                const label = labels[field] || field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-                return `• ${label}: ${msg}`;
-            });
-
-            if (toastIdRef.current) toast.dismiss(toastIdRef.current);
-            toastIdRef.current = toast.error(
-                <div className="space-y-1">
-                    <div className="font-semibold text-red-600 dark:text-red-400">Please fix the following errors:</div>
-                    <div className="text-sm text-red-500 dark:text-red-300 space-y-0.5">
-                        {errorMessages.map((msg, i) => (
-                            <div key={i}>{msg}</div>
-                        ))}
-                    </div>
-                </div>,
-                { duration: 5000 }
-            );
-
-            const firstField = Object.keys(newErrors)[0];
-            if (firstField) {
-                const element = document.querySelector(`[name="${firstField}"]`) || document.getElementById(firstField);
-                if (element) setTimeout(() => element.focus(), 100);
-            }
-            return false;
-        }
+        if (Object.keys(newErrors).length > 0) return false;
         return true;
     };
 
     const validateAddBudget = () => {
         const newErrors = {};
-        const newTouched = {};
-
-        if (!addBudgetData.department_id) {
-            newErrors.department_id = "Department is required";
-            newTouched.department_id = true;
-        }
-        if (!addBudgetData.additional_amount || parseFloat(addBudgetData.additional_amount) <= 0) {
-            newErrors.additional_amount = "Amount must be greater than 0";
-            newTouched.additional_amount = true;
-        }
-        if (!addBudgetData.reason || addBudgetData.reason.trim().length < 3) {
-            newErrors.reason = "Reason must be at least 3 characters";
-            newTouched.reason = true;
-        }
-
+        if (!addBudgetData.department_id) newErrors.department_id = "Department is required";
+        if (!addBudgetData.additional_amount || parseFloat(addBudgetData.additional_amount) <= 0) newErrors.additional_amount = "Amount must be > 0";
+        if (!addBudgetData.reason || addBudgetData.reason.trim().length < 3) newErrors.reason = "Reason must be at least 3 characters";
+        
         setAddErrors(newErrors);
-        setAddTouched(prev => ({ ...prev, ...newTouched }));
-
         if (Object.keys(newErrors).length > 0) {
-            const errorMessages = Object.entries(newErrors).map(([field, msg]) => {
-                const labels = {
-                    department_id: 'Department',
-                    additional_amount: 'Amount',
-                    reason: 'Reason'
-                };
-                const label = labels[field] || field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-                return `• ${label}: ${msg}`;
-            });
-
-            if (toastIdRef.current) toast.dismiss(toastIdRef.current);
-            toastIdRef.current = toast.error(
-                <div className="space-y-1">
-                    <div className="font-semibold text-red-600 dark:text-red-400">Please fix the following errors:</div>
-                    <div className="text-sm text-red-500 dark:text-red-300 space-y-0.5">
-                        {errorMessages.map((msg, i) => (
-                            <div key={i}>{msg}</div>
-                        ))}
-                    </div>
-                </div>,
-                { duration: 5000 }
-            );
-
-            const firstField = Object.keys(newErrors)[0];
-            if (firstField) {
-                const element = document.querySelector(`[name="${firstField}"]`) || document.getElementById(firstField);
-                if (element) setTimeout(() => element.focus(), 100);
-            }
+            toast.error("Please fix validation errors");
             return false;
         }
         return true;
@@ -668,1042 +324,306 @@ const BudgetAllocation = () => {
     // ============================================
     // HANDLERS
     // ============================================
-
     const handleEdit = (budget) => {
         setEditingBudget(budget);
-        setFormData({
-            annual_amount: budget.annual_amount?.toString() || "",
-        });
-        setEditErrors({});
-        setEditTouched({});
+        setFormData({ annual_amount: budget.annual_amount?.toString() || "" });
         setShowEditDialog(true);
     };
 
-    const handleView = (budget) => {
-        setViewingBudget(budget);
-        setShowViewDialog(true);
-    };
-
     const handleSetBudget = () => {
-        if (toastIdRef.current) toast.dismiss(toastIdRef.current);
         if (!validateEditBudget()) return;
-
-        const data = {
-            department_id: editingBudget.department_id,
-            annual_amount: parseFloat(formData.annual_amount) || 0,
-        };
-        setBudgetMutation.mutate({ data });
+        setBudgetMutation.mutate({ data: { department_id: editingBudget.department_id, annual_amount: parseFloat(formData.annual_amount) } });
     };
 
     const handleAddBudget = () => {
-        if (toastIdRef.current) toast.dismiss(toastIdRef.current);
         if (!validateAddBudget()) return;
-
         addBudgetMutation.mutate({
             department_id: parseInt(addBudgetData.department_id),
             additional_amount: parseFloat(addBudgetData.additional_amount),
-            reason: addBudgetData.reason || "Additional budget allocation",
+            reason: addBudgetData.reason,
         });
     };
-
-    const handleBulkChange = (departmentId, field, value) => {
-        setBulkData((prev) => {
-            const current = prev[departmentId] || {
-                annual_amount: "",
-            };
-            return {
-                ...prev,
-                [departmentId]: {
-                    ...current,
-                    [field]: value,
-                },
-            };
-        });
-    };
-
-    const handleBulkSave = () => {
-        if (toastIdRef.current) toast.dismiss(toastIdRef.current);
-        bulkUpdateMutation.mutate();
-    };
-
-    const handleBulkCancel = () => {
-        setIsBulkMode(false);
-        setBulkData({});
-    };
-
-    // ============================================
-    // FILTER LOGIC
-    // ============================================
 
     const filteredBudgets = useMemo(() => {
         let filtered = [...budgets];
-
         if (filters.searchTerm) {
             const search = filters.searchTerm.toLowerCase();
-            filtered = filtered.filter(b =>
-                b.department_name?.toLowerCase().includes(search) ||
-                b.department_code?.toLowerCase().includes(search)
-            );
+            filtered = filtered.filter(b => b.department_name?.toLowerCase().includes(search));
         }
-
-        if (filters.departmentId !== 'all') {
-            filtered = filtered.filter(b => b.department_id === parseInt(filters.departmentId));
-        }
-
-        if (filters.allocationStatus !== 'all') {
-            filtered = filtered.filter(b => {
-                const annualAmount = b.annual_amount || 0;
-                const usedAmount = b.used_amount || 0;
-                const utilization = annualAmount > 0 ? (usedAmount / annualAmount) * 100 : 0;
-
-                switch (filters.allocationStatus) {
-                    case 'has_budget':
-                        return b.has_budget;
-                    case 'no_budget':
-                        return !b.has_budget;
-                    case 'over_budget':
-                        return b.remaining_amount < 0;
-                    case 'near_limit':
-                        return utilization > 80 && utilization <= 100;
-                    case 'on_track':
-                        return utilization > 0 && utilization <= 80;
-                    default:
-                        return true;
-                }
-            });
-        }
-
-        if (filters.budgetRange !== 'all') {
-            filtered = filtered.filter(b => {
-                const amount = b.annual_amount || 0;
-                switch (filters.budgetRange) {
-                    case 'under_50k':
-                        return amount < 50000;
-                    case '50k_100k':
-                        return amount >= 50000 && amount < 100000;
-                    case '100k_500k':
-                        return amount >= 100000 && amount < 500000;
-                    case '500k_1m':
-                        return amount >= 500000 && amount < 1000000;
-                    case 'over_1m':
-                        return amount >= 1000000;
-                    default:
-                        return true;
-                }
-            });
-        }
-
+        if (filters.departmentId !== 'all') filtered = filtered.filter(b => b.department_id === parseInt(filters.departmentId));
         return filtered;
     }, [budgets, filters]);
 
-    useEffect(() => {
-        if (budgets.length > 0 && isBulkMode) {
-            const initialBulk = {};
-            budgets.forEach((budget) => {
-                initialBulk[budget.department_id] = {
-                    annual_amount: budget.annual_amount?.toString() || "",
-                };
-            });
-            setBulkData(initialBulk);
-        }
-    }, [budgets, isBulkMode]);
-
-    const connectionStatus = isConnected ? "🟢 Live" : "🔴 Offline";
-    const isRealTime = isConnected;
-
-    // ============================================
-    // LOADING & ERROR STATES
-    // ============================================
-    // ★ ALL hooks above this line. Safe to early-return now.
-
-    if (budgetError) {
-        return (
-            <div className="flex flex-col items-center justify-center py-12">
-                <div className="w-20 h-20 rounded-2xl bg-red-100 dark:bg-red-900/30 flex items-center justify-center mx-auto mb-4">
-                    <AlertCircle className="h-10 w-10 text-red-500" />
-                </div>
-                <p className="text-red-600 dark:text-red-400 font-medium mb-2">Failed to load budget data</p>
-                <p className="text-slate-500 dark:text-slate-400 text-sm mb-4">
-                    {budgetError.response?.data?.message || budgetError.message}
-                </p>
-            </div>
-        );
-    }
-
-    // ★ FIX: wait for year resolution AND budget data
-    if (yearsLoading || !selectedYear || isLoading || !budgetData) {
-        return (
-            <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
-                <div className="p-4 md:p-6">
-                    <SkeletonPage />
-                    <SkeletonStats count={4} />
-                    <SkeletonTable rows={5} cols={8} />
-                </div>
-            </div>
-        );
-    }
-
-    // ============================================
-    // RENDER
-    // ============================================
+    if (budgetError) return <div className="p-8 text-center text-red-500">Error loading data.</div>;
+    if (yearsLoading || !selectedYear || isLoading || !budgetData) return <div className="p-6"><SkeletonPage /><SkeletonTable rows={5} cols={8} /></div>;
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
             <div className="space-y-6 p-4 md:p-6">
+                
                 {/* Header */}
                 <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                     <div className="flex items-center gap-3">
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => navigate('/mo/dashboard')}
-                            className="rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 h-10 w-10"
-                        >
+                        <Button variant="ghost" size="icon" onClick={() => navigate('/mo/dashboard')} className="rounded-xl h-10 w-10">
                             <ArrowLeft className="h-5 w-5" />
                         </Button>
-                        <div>
-                            <div className="flex items-center gap-3">
-                                <div className="p-2.5 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 shadow-lg shadow-blue-500/20">
-                                    <PhilippinePeso className="h-5 w-5 text-white" />
-                                </div>
-                                <div>
-                                    <h1 className="text-2xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 bg-clip-text text-transparent">
-                                        Annual Budget Allocation
-                                    </h1>
-                                    <p className="text-sm text-slate-500 dark:text-slate-400">
-                                        Set annual fuel budget per department — weekly is auto-computed
-                                        <span className="ml-2 text-xs opacity-70">{connectionStatus}</span>
-                                        {isRealTime && (
-                                            <span className="ml-2 text-xs text-emerald-400 animate-pulse">
-                                                ● Auto-refresh
-                                            </span>
-                                        )}
-                                    </p>
-                                </div>
+                        <div className="flex items-center gap-3">
+                            <div className="p-2.5 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 shadow-lg shadow-blue-500/20">
+                                <PhilippinePeso className="h-5 w-5 text-white" />
                             </div>
-                        </div>
-                    </div>
-                    <div className="flex flex-wrap gap-3">
-                        {budgets.length > 0 && (
-                            <Button
-                                variant={isBulkMode ? "default" : "outline"}
-                                onClick={() => setIsBulkMode(!isBulkMode)}
-                                className={isBulkMode ? "bg-blue-600 hover:bg-blue-700 text-white" : "dark:border-slate-700 dark:text-slate-300"}
-                            >
-                                {isBulkMode ? "Exit Bulk Edit" : "Bulk Edit"}
-                            </Button>
-                        )}
-                        {isBulkMode && (
-                            <>
-                                <Button
-                                    onClick={handleBulkSave}
-                                    disabled={bulkUpdateMutation.isPending}
-                                    className="bg-green-600 hover:bg-green-700 text-white"
-                                >
-                                    {bulkUpdateMutation.isPending ? (
-                                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                                    ) : (
-                                        <Save className="h-4 w-4 mr-2" />
-                                    )}
-                                    Save All
-                                </Button>
-                                <Button
-                                    variant="outline"
-                                    onClick={handleBulkCancel}
-                                    className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30"
-                                >
-                                    <X className="h-4 w-4 mr-2" />
-                                    Cancel
-                                </Button>
-                            </>
-                        )}
-                    </div>
-                </div>
-
-                {/* Year Selector */}
-                <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-                    <CardContent className="pt-6">
-                        <div className="flex flex-wrap items-center gap-4">
-                            <div className="flex items-center gap-2">
-                                <Calendar className="h-5 w-5 text-slate-400" />
-                                <span className="font-medium text-slate-700 dark:text-slate-300">
-                                    Select Fiscal Year:
-                                </span>
-                            </div>
-                            <div className="flex flex-wrap gap-2">
-                                {yearsData?.length > 0 ? (
-                                    yearsData.map((year) => {
-                                        const yearValue = typeof year === "object" ? Number(year.year) : Number(year);
-                                        const isActive = typeof year === "object" ? year.is_active : true;
-                                        const key = typeof year === "object" ? year.fiscal_year_id || yearValue : yearValue;
-
-                                        return (
-                                            <Button
-                                                key={key}
-                                                variant={selectedYear === yearValue ? "default" : "outline"}
-                                                size="sm"
-                                                onClick={() => setSelectedYear(yearValue)}
-                                                className={
-                                                    selectedYear === yearValue
-                                                        ? "bg-blue-600 hover:bg-blue-700 text-white"
-                                                        : "dark:border-slate-700 dark:text-slate-300"
-                                                }
-                                            >
-                                                {yearValue}
-                                                {isActive && (
-                                                    <span className="ml-1 text-xs text-green-400">●</span>
-                                                )}
-                                            </Button>
-                                        );
-                                    })
-                                ) : (
-                                    <p className="text-slate-500 dark:text-slate-400 text-sm">
-                                        No fiscal years available. Please ask GSO to add years.
-                                    </p>
-                                )}
-                            </div>
-                        </div>
-                    </CardContent>
-                </Card>
-
-                {/* Stats Cards */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <StatsCard
-                        title="Total Annual Budget"
-                        value={formatCurrency(summary.total_allocated)}
-                        icon={PhilippinePeso}
-                        color="from-blue-500 to-blue-600"
-                        subtitle="Total allocation"
-                        trend={summary.total_allocated > 0 ? 5 : 0}
-                    />
-                    <StatsCard
-                        title="Used"
-                        value={formatCurrency(summary.total_used)}
-                        icon={TrendingDown}
-                        color="from-yellow-500 to-yellow-600"
-                        subtitle="Total spent so far"
-                        trend={summary.total_used > 0 ? 8 : 0}
-                    />
-                    <StatsCard
-                        title="Remaining Annual"
-                        value={formatCurrency(summary.total_remaining)}
-                        icon={TrendingUp}
-                        color="from-emerald-500 to-emerald-600"
-                        subtitle="Available for allocation"
-                        trend={summary.total_remaining > 0 ? -3 : 0}
-                    />
-                    <StatsCard
-                        title="Departments"
-                        value={`${summary.departments_with_budget || 0} / ${summary.total_departments || 0}`}
-                        icon={Building2}
-                        color="from-purple-500 to-purple-600"
-                        subtitle={`${summary.departments_without_budget || 0} without budget`}
-                        trend={summary.departments_with_budget > 0 ? 2 : 0}
-                    />
-                </div>
-
-                {/* Filter Section */}
-                <FilterSection
-                    filters={filters}
-                    setFilters={setFilters}
-                    departments={budgets}
-                    isFilterOpen={isFilterOpen}
-                    setIsFilterOpen={setIsFilterOpen}
-                />
-
-                {/* Budget Table */}
-                <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xl shadow-black/5">
-                    <div className="border-b border-slate-200/60 dark:border-slate-700/60 px-6 py-4">
-                        <div className="flex items-center justify-between">
                             <div>
-                                <h3 className="flex items-center gap-2 text-slate-800 dark:text-white font-semibold">
-                                    <PhilippinePeso className="h-5 w-5 text-green-500" />
-                                    Budget Details for {selectedYear}
-                                </h3>
-                                <p className="text-sm text-slate-500 dark:text-slate-400">
-                                    {filteredBudgets.length} departments
-                                    {filteredBudgets.length !== budgets.length && ` (filtered from ${budgets.length})`}
-                                    {fiscalYear?.is_active === false && (
-                                        <Badge className="ml-2 bg-yellow-500 text-white">
-                                            <AlertCircle className="h-3 w-3 mr-1" />
-                                            Inactive
-                                        </Badge>
-                                    )}
-                                </p>
+                                <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Budget Management</h1>
+                                <p className="text-sm text-slate-500 dark:text-slate-400">Manage allocations and view history</p>
                             </div>
-                            {filteredBudgets.length > 0 && (
-                                <Badge className="bg-blue-500/20 text-blue-600 dark:text-blue-400 border-blue-500/30">
-                                    <Zap className="h-3 w-3 mr-1" />
-                                    {filteredBudgets.length} records
-                                </Badge>
-                            )}
                         </div>
                     </div>
+                </div>
 
-                    {filteredBudgets.length === 0 ? (
-                        <div className="text-center py-16">
-                            <div className="w-20 h-20 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto mb-4">
-                                <Search className="h-10 w-10 text-slate-400 dark:text-slate-500" />
-                            </div>
-                            <p className="text-slate-600 dark:text-slate-400 font-medium text-lg">No departments found</p>
-                            <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">
-                                {filters.searchTerm || filters.departmentId !== 'all' || filters.allocationStatus !== 'all' || filters.budgetRange !== 'all'
-                                    ? 'Try adjusting your filters'
-                                    : 'Please ask GSO to add departments or select a different year'}
-                            </p>
-                            {(filters.searchTerm || filters.departmentId !== 'all' || filters.allocationStatus !== 'all' || filters.budgetRange !== 'all') && (
-                                <Button
-                                    variant="link"
-                                    onClick={() => setFilters({ searchTerm: '', departmentId: 'all', allocationStatus: 'all', budgetRange: 'all' })}
-                                    className="mt-2"
-                                >
-                                    Clear filters
-                                </Button>
-                            )}
+                {/* TABS */}
+                <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-700 pb-0">
+                    <button
+                        onClick={() => setActiveTab("allocation")}
+                        className={cn(
+                            "px-4 py-2.5 text-sm font-medium rounded-t-lg transition-all duration-200 flex items-center gap-2 relative",
+                            activeTab === "allocation"
+                                ? "text-blue-600 dark:text-blue-400 bg-white dark:bg-slate-800 border-b-2 border-blue-500 -mb-px"
+                                : "text-slate-500 dark:text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+                        )}
+                    >
+                        <PhilippinePeso className="h-4 w-4" />
+                        Allocation
+                    </button>
+                    <button
+                        onClick={() => setActiveTab("history")}
+                        className={cn(
+                            "px-4 py-2.5 text-sm font-medium rounded-t-lg transition-all duration-200 flex items-center gap-2 relative",
+                            activeTab === "history"
+                                ? "text-purple-600 dark:text-purple-400 bg-white dark:bg-slate-800 border-b-2 border-purple-500 -mb-px"
+                                : "text-slate-500 dark:text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+                        )}
+                    >
+                        <History className="h-4 w-4" />
+                        Budget History
+                    </button>
+                </div>
+
+                {/* ============================================ */}
+                {/* TAB 1: ALLOCATION */}
+                {/* ============================================ */}
+                {activeTab === "allocation" && (
+                    <>
+                        {/* Year Selector */}
+                        <Card className="dark:bg-slate-800/80 dark:border-slate-700">
+                            <CardContent className="pt-6">
+                                <div className="flex flex-wrap items-center gap-4">
+                                    <span className="font-medium text-slate-700 dark:text-slate-300">Select Fiscal Year:</span>
+                                    <div className="flex flex-wrap gap-2">
+                                        {yearsData?.map((year) => {
+                                            const yVal = typeof year === "object" ? Number(year.year) : Number(year);
+                                            return (
+                                                <Button
+                                                    key={yVal}
+                                                    variant={selectedYear === yVal ? "default" : "outline"}
+                                                    size="sm"
+                                                    onClick={() => setSelectedYear(yVal)}
+                                                    className={selectedYear === yVal ? "bg-blue-600 text-white" : ""}
+                                                >
+                                                    {yVal}
+                                                </Button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            </CardContent>
+                        </Card>
+
+                        {/* Stats Cards */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                            <StatsCard title="Total Annual Budget" value={formatCurrency(summary.total_allocated)} icon={PhilippinePeso} color="from-blue-500 to-blue-600" />
+                            <StatsCard title="Used" value={formatCurrency(summary.total_used)} icon={TrendingDown} color="from-yellow-500 to-yellow-600" />
+                            <StatsCard title="Remaining Annual" value={formatCurrency(summary.total_remaining)} icon={TrendingUp} color="from-emerald-500 to-emerald-600" />
+                            <StatsCard title="Departments" value={`${summary.departments_with_budget || 0} / ${summary.total_departments || 0}`} icon={Building2} color="from-purple-500 to-purple-600" />
                         </div>
-                    ) : (
-                        <div className="overflow-auto" style={{ maxHeight: "500px" }}>
-                            <Table className="w-full">
-                                <TableHeader
-                                    className="sticky top-0 z-40 bg-slate-50 dark:bg-slate-900/95 backdrop-blur"
-                                    style={{ position: 'sticky', top: 0 }}
-                                >
-                                    <TableRow className="bg-slate-50 dark:bg-slate-900/95">
-                                        <TableHead
-                                            className="
-                                                sticky left-0 z-50
-                                                bg-slate-50 dark:bg-slate-900/95
-                                                font-semibold
-                                                text-slate-600 dark:text-slate-400
-                                                text-xs uppercase tracking-wider
-                                                min-w-[131.5px]
-                                                border-r border-slate-200 dark:border-slate-700
-                                            "
-                                        >
-                                            <span className="flex items-center gap-1">
-                                                <Building2 className="h-3 w-5" />
-                                                Code
-                                            </span>
-                                        </TableHead>
-                                        <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider min-w-[120px]">
-                                            Annual Budget
-                                        </TableHead>
-                                        <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider min-w-[120px]">
-                                            Weekly Suggested
-                                        </TableHead>
-                                        <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider min-w-[100px]">
-                                            Used
-                                        </TableHead>
-                                        <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider min-w-[110px]">
-                                            Remaining
-                                        </TableHead>
-                                        <TableHead className="text-center font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider min-w-[90px]">
-                                            Status
-                                        </TableHead>
-                                        <TableHead
-                                            className="
-                                                sticky right-0 z-50
-                                                bg-slate-50 dark:bg-slate-900/95
-                                                text-right
-                                                font-semibold
-                                                text-slate-600 dark:text-slate-400
-                                                text-xs uppercase tracking-wider
-                                                min-w-[160px]
-                                                border-l border-slate-200 dark:border-slate-700
-                                            "
-                                        >
-                                            Actions
-                                        </TableHead>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {filteredBudgets.map((budget) => {
-                                        const isEditing =
-                                            isBulkMode && bulkData[budget.department_id];
 
-                                        const isNew = !budget.has_budget;
-                                        const suggested = weeklySuggested(budget.annual_amount);
-
-                                        return (
-                                            <TableRow
-                                                key={budget.department_id}
-                                                className={cn(
-                                                    "hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors",
-                                                    isNew
-                                                        ? "bg-yellow-50/50 dark:bg-yellow-950/20"
-                                                        : ""
-                                                )}
-                                            >
-                                                <TableCell
-                                                    className="
-                                                        sticky left-0 z-30
-                                                        bg-white dark:bg-slate-800
-                                                        border-r border-slate-200 dark:border-slate-700
-                                                    "
-                                                >
-                                                    <div className="flex items-center gap-2 min-w-[101.6px]">
-                                                        <DepartmentTooltip
-                                                            code={budget.department_code || "N/A"}
-                                                            name={budget.department_name}
-                                                        />
-                                                    </div>
+                        {/* Table */}
+                        <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                            <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center">
+                                <h3 className="font-semibold text-slate-800 dark:text-white">Budget Details for {selectedYear}</h3>
+                                <Button onClick={() => setShowAddBudgetDialog(true)} size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white">
+                                    <Plus className="h-4 w-4 mr-1" /> Add Budget
+                                </Button>
+                            </div>
+                            <div className="overflow-auto max-h-[500px]">
+                                <Table>
+                                    <TableHeader className="sticky top-0 bg-slate-50 dark:bg-slate-900 z-10">
+                                        <TableRow>
+                                            <TableHead>Code</TableHead>
+                                            <TableHead className="text-right">Annual Budget</TableHead>
+                                            <TableHead className="text-right">Weekly Suggested</TableHead>
+                                            <TableHead className="text-right">Used</TableHead>
+                                            <TableHead className="text-right">Remaining</TableHead>
+                                            <TableHead className="text-center">Status</TableHead>
+                                            <TableHead className="text-right">Actions</TableHead>
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {filteredBudgets.map((budget) => (
+                                            <TableRow key={budget.department_id}>
+                                                <TableCell><DepartmentTooltip code={budget.department_code} name={budget.department_name} /></TableCell>
+                                                <TableCell className="text-right font-medium text-blue-600">{formatCurrency(budget.annual_amount)}</TableCell>
+                                                <TableCell className="text-right text-purple-600">{formatCurrency(weeklySuggested(budget.annual_amount))}</TableCell>
+                                                <TableCell className="text-right text-yellow-600">{formatCurrency(budget.used_amount)}</TableCell>
+                                                <TableCell className={cn("text-right font-medium", (budget.remaining_amount || 0) < 0 ? "text-red-600" : "text-emerald-600")}>
+                                                    {formatCurrency(budget.remaining_amount)}
                                                 </TableCell>
-
+                                                <TableCell className="text-center">{getStatusBadge(budget.status)}</TableCell>
                                                 <TableCell className="text-right">
-                                                    {isBulkMode ? (
-                                                        <Input
-                                                            type="number"
-                                                            step="0.01"
-                                                            min="0"
-                                                            value={
-                                                                isEditing
-                                                                    ? bulkData[budget.department_id]?.annual_amount
-                                                                    : ""
-                                                            }
-                                                            onChange={(e) =>
-                                                                handleBulkChange(
-                                                                    budget.department_id,
-                                                                    "annual_amount",
-                                                                    e.target.value
-                                                                )
-                                                            }
-                                                            className="w-32 ml-auto text-right dark:bg-slate-900 dark:border-slate-700 dark:text-white"
-                                                            placeholder="0.00"
-                                                        />
-                                                    ) : (
-                                                        <span className="font-medium text-blue-600 dark:text-blue-400">
-                                                            {formatCurrency(budget.annual_amount)}
-                                                        </span>
-                                                    )}
-                                                </TableCell>
-
-                                                <TableCell className="text-right">
-                                                    <span className="font-medium text-purple-600 dark:text-purple-400">
-                                                        {formatCurrency(suggested)}
-                                                    </span>
-                                                    <div className="text-[10px] text-slate-400 dark:text-slate-500">
-                                                        Annual ÷ 52
-                                                    </div>
-                                                </TableCell>
-
-                                                <TableCell className="text-right">
-                                                    <span className="font-medium text-yellow-600 dark:text-yellow-400">
-                                                        {formatCurrency(budget.used_amount || 0)}
-                                                    </span>
-                                                </TableCell>
-
-                                                <TableCell className="text-right">
-                                                    <span className={cn(
-                                                        "font-medium",
-                                                        (budget.remaining_amount || 0) < 0
-                                                            ? "text-red-600 dark:text-red-400"
-                                                            : "text-emerald-600 dark:text-emerald-400"
-                                                    )}>
-                                                        {formatCurrency(budget.remaining_amount || 0)}
-                                                    </span>
-                                                </TableCell>
-
-                                                <TableCell className="text-center">
-                                                    {getStatusBadge(budget.status)}
-                                                </TableCell>
-
-                                                <TableCell
-                                                    className="
-                                                        sticky right-0 z-30
-                                                        bg-white dark:bg-slate-800
-                                                        text-right
-                                                        border-l border-slate-200 dark:border-slate-700
-                                                    "
-                                                >
-                                                    <div className="flex items-center justify-end gap-1 min-w-[120px]">
-                                                        <Button
-                                                            variant="ghost"
-                                                            size="sm"
-                                                            onClick={() => handleView(budget)}
-                                                            className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:text-blue-300 dark:hover:bg-blue-950/30 h-9 w-9 p-0 rounded-lg transition-all duration-200"
-                                                            title="View Details"
-                                                        >
-                                                            <Eye className="h-4 w-4" />
-                                                        </Button>
-
-                                                        {!isBulkMode && (
-                                                            <>
-                                                                {!budget.has_budget && (
-                                                                    <Button
-                                                                        variant="ghost"
-                                                                        size="sm"
-                                                                        onClick={() => handleEdit(budget)}
-                                                                        className="text-green-600 hover:text-green-700 hover:bg-green-50 dark:text-green-400 dark:hover:text-green-300 dark:hover:bg-green-950/30 h-9 w-9 p-0 rounded-lg transition-all duration-200"
-                                                                        title="Set Annual Budget"
-                                                                    >
-                                                                        <Edit className="h-4 w-4" />
-                                                                    </Button>
-                                                                )}
-
-                                                                {budget.has_budget && (
-                                                                    <Button
-                                                                        variant="ghost"
-                                                                        size="sm"
-                                                                        onClick={() => {
-                                                                            setAddBudgetData({
-                                                                                department_id: budget.department_id.toString(),
-                                                                                additional_amount: "",
-                                                                                reason: "",
-                                                                            });
-                                                                            setAddErrors({});
-                                                                            setAddTouched({});
-                                                                            setShowAddBudgetDialog(true);
-                                                                        }}
-                                                                        className="text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:text-emerald-300 dark:hover:bg-emerald-950/30 h-9 w-9 p-0 rounded-lg transition-all duration-200"
-                                                                        title="Add Additional Budget"
-                                                                    >
-                                                                        <Plus className="h-4 w-4" />
-                                                                    </Button>
-                                                                )}
-                                                            </>
+                                                    <div className="flex justify-end gap-1">
+                                                        {!budget.has_budget ? (
+                                                            <Button variant="ghost" size="sm" onClick={() => handleEdit(budget)} className="text-green-600">
+                                                                <Edit className="h-4 w-4" />
+                                                            </Button>
+                                                        ) : (
+                                                            <Button variant="ghost" size="sm" onClick={() => {
+                                                                setAddBudgetData({ department_id: budget.department_id.toString(), additional_amount: "", reason: "" });
+                                                                setShowAddBudgetDialog(true);
+                                                            }} className="text-emerald-600">
+                                                                <Plus className="h-4 w-4" />
+                                                            </Button>
                                                         )}
                                                     </div>
                                                 </TableCell>
                                             </TableRow>
-                                        );
-                                    })}
-                                </TableBody>
-                            </Table>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            </div>
                         </div>
-                    )}
-                </div>
+                    </>
+                )}
 
-                {/* Footer */}
-                <div className="text-center text-xs text-slate-400 dark:text-slate-500 pt-2 border-t border-slate-200 dark:border-slate-700">
-                    <p>FCMS - Mayor's Office • Annual Budget Allocation</p>
-                    <p className="mt-0.5">FY {selectedYear} • {filteredBudgets.length} departments • {filteredBudgets.filter(b => b.has_budget).length} with budget</p>
-                </div>
+                {/* ============================================ */}
+                {/* TAB 2: BUDGET HISTORY */}
+                {/* ============================================ */}
+                {activeTab === "history" && (
+                    <Card className="dark:bg-slate-800/80 dark:border-slate-700 shadow-sm">
+                        <CardHeader className="border-b border-slate-200/60 dark:border-slate-700/60">
+                            <CardTitle className="flex items-center gap-2 text-slate-800 dark:text-white">
+                                <History className="h-5 w-5 text-purple-500" />
+                                Budget History
+                            </CardTitle>
+                            <CardDescription>Record of all budget allocations and additions</CardDescription>
+                        </CardHeader>
+                        <CardContent className="p-0">
+                            {historyLoading ? (
+                                <div className="p-12 text-center text-slate-500"><Activity className="h-6 w-6 animate-spin mx-auto mb-2" /> Loading history...</div>
+                            ) : !historyData || historyData.length === 0 ? (
+                                <div className="p-12 text-center text-slate-500">
+                                    <History className="h-10 w-10 text-slate-300 mx-auto mb-2" />
+                                    No budget history found for {selectedYear}.
+                                </div>
+                            ) : (
+                                <div className="overflow-x-auto">
+                                    <Table>
+                                        <TableHeader>
+                                            <TableRow className="bg-slate-50 dark:bg-slate-900/50">
+                                                <TableHead>Date</TableHead>
+                                                <TableHead>Department</TableHead>
+                                                <TableHead>Action</TableHead>
+                                                <TableHead className="text-right">Previous</TableHead>
+                                                <TableHead className="text-right text-emerald-600">Added</TableHead>
+                                                <TableHead className="text-right">New Total</TableHead>
+                                                <TableHead>Reason</TableHead>
+                                                <TableHead>By</TableHead>
+                                            </TableRow>
+                                        </TableHeader>
+                                        <TableBody>
+                                            {historyData.map((log, i) => (
+                                                <TableRow key={i}>
+                                                    <TableCell className="whitespace-nowrap text-xs text-slate-500">
+                                                        {format(new Date(log.created_at), 'MMM dd, yyyy h:mm a')}
+                                                    </TableCell>
+                                                    <TableCell className="font-medium text-slate-800 dark:text-white">
+                                                        {log.department_name}
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <Badge variant="outline" className="capitalize text-xs">
+                                                            {log.action.replace(/_/g, ' ')}
+                                                        </Badge>
+                                                    </TableCell>
+                                                    <TableCell className="text-right text-slate-500">
+                                                        {formatCurrency(log.previous_amount)}
+                                                    </TableCell>
+                                                    <TableCell className="text-right font-medium text-emerald-600">
+                                                        +{formatCurrency(log.added_amount)}
+                                                    </TableCell>
+                                                    <TableCell className="text-right font-bold text-blue-600">
+                                                        {formatCurrency(log.new_amount)}
+                                                    </TableCell>
+                                                    <TableCell className="max-w-[200px] truncate" title={log.reason}>
+                                                        {log.reason || "—"}
+                                                    </TableCell>
+                                                    <TableCell className="text-xs text-slate-500">
+                                                        {log.user_name || "System"}
+                                                    </TableCell>
+                                                </TableRow>
+                                            ))}
+                                        </TableBody>
+                                    </Table>
+                                </div>
+                            )}
+                        </CardContent>
+                    </Card>
+                )}
             </div>
 
-            {/* ========== DIALOGS ========== */}
-
-            {/* ANNUAL BUDGET EDIT DIALOG */}
+            {/* EDIT DIALOG */}
             <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
                 <DialogContent className="dark:bg-slate-800 dark:border-slate-700 max-w-md">
                     <DialogHeader>
-                        <DialogTitle className="flex items-center gap-2 text-slate-900 dark:text-white">
-                            <div className="p-2 rounded-xl bg-green-500/10">
-                                <PhilippinePeso className="h-5 w-5 text-green-600 dark:text-green-400" />
-                            </div>
-                            {editingBudget?.has_budget ? "Edit Annual Budget" : "Set Annual Budget"}
-                        </DialogTitle>
-                        <DialogDescription className="dark:text-slate-400">
-                            {editingBudget?.has_budget
-                                ? `Update annual budget for ${editingBudget?.department_name}`
-                                : `Set the initial annual budget for ${editingBudget?.department_name}`}
-                        </DialogDescription>
+                        <DialogTitle>Set Annual Budget</DialogTitle>
                     </DialogHeader>
-
-                    <div className="space-y-4">
-                        <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-4 border border-slate-200 dark:border-slate-700">
-                            <div className="grid grid-cols-2 gap-2 text-sm">
-                                <div>
-                                    <p className="text-xs text-slate-500 dark:text-slate-400">Department</p>
-                                    <p className="font-semibold text-slate-900 dark:text-white">
-                                        {editingBudget?.department_name}
-                                    </p>
-                                </div>
-                                <div>
-                                    <p className="text-xs text-slate-500 dark:text-slate-400">Code</p>
-                                    <p className="font-semibold text-slate-900 dark:text-white">
-                                        {editingBudget?.department_code}
-                                    </p>
-                                </div>
-                                <div>
-                                    <p className="text-xs text-slate-500 dark:text-slate-400">Fiscal Year</p>
-                                    <p className="font-semibold text-slate-900 dark:text-white">
-                                        {selectedYear}
-                                    </p>
-                                </div>
-                                <div>
-                                    <p className="text-xs text-slate-500 dark:text-slate-400">Current Used</p>
-                                    <p className="font-semibold text-yellow-600 dark:text-yellow-400">
-                                        {formatCurrency(editingBudget?.used_amount)}
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-
-                        <FormField
-                            label="Annual Budget (₱)"
-                            icon={PhilippinePeso}
-                            required
-                            error={editErrors.annual_amount}
-                            touched={editTouched.annual_amount}
-                        >
-                            <Input
-                                id="annual_amount"
-                                name="annual_amount"
-                                type="number"
-                                step="0.01"
-                                min="0"
-                                value={formData.annual_amount}
-                                onChange={(e) => {
-                                    setFormData({
-                                        ...formData,
-                                        annual_amount: e.target.value,
-                                    });
-                                    if (editErrors.annual_amount) {
-                                        setEditErrors(prev => ({ ...prev, annual_amount: "" }));
-                                    }
-                                }}
-                                onBlur={() => setEditTouched(prev => ({ ...prev, annual_amount: true }))}
-                                className="mt-1.5 dark:bg-slate-900 dark:border-slate-700 dark:text-white"
-                                placeholder="Enter annual budget"
-                            />
+                    <div className="space-y-4 py-4">
+                        <FormField label="Annual Budget (₱)" required error={editErrors.annual_amount} touched={editTouched.annual_amount}>
+                            <Input type="number" value={formData.annual_amount} onChange={(e) => setFormData({ annual_amount: e.target.value })} />
                         </FormField>
-
-                        <div className="bg-purple-50 dark:bg-purple-950/30 rounded-xl p-3 border border-purple-200 dark:border-purple-800">
-                            <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-2">
-                                    <Clock className="h-4 w-4 text-purple-500 dark:text-purple-400" />
-                                    <span className="text-xs font-medium text-purple-700 dark:text-purple-300">
-                                        Weekly Suggested
-                                    </span>
-                                </div>
-                                <span className="text-sm font-bold text-purple-700 dark:text-purple-300">
-                                    {formatCurrency(weeklySuggested(formData.annual_amount))}
-                                </span>
-                            </div>
-                            <p className="text-[10px] text-purple-600 dark:text-purple-400 mt-1">
-                                Auto-computed: Annual Budget ÷ 52 weeks
-                            </p>
-                        </div>
                     </div>
-
-                    <DialogFooter className="mt-6">
-                        <Button
-                            variant="outline"
-                            onClick={() => {
-                                setShowEditDialog(false);
-                                setEditingBudget(null);
-                                setEditErrors({});
-                                setEditTouched({});
-                            }}
-                            className="dark:border-slate-700 dark:text-slate-300"
-                        >
-                            Cancel
-                        </Button>
-                        <Button
-                            onClick={handleSetBudget}
-                            disabled={setBudgetMutation.isPending}
-                            className="bg-green-600 hover:bg-green-700 text-white"
-                        >
-                            {setBudgetMutation.isPending ? (
-                                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                            ) : (
-                                <Save className="h-4 w-4 mr-2" />
-                            )}
-                            Save Annual Budget
-                        </Button>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setShowEditDialog(false)}>Cancel</Button>
+                        <Button onClick={handleSetBudget} disabled={setBudgetMutation.isPending}>Save Budget</Button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
 
-            {/* ========== ADD BUDGET DIALOG ========== */}
+            {/* ADD BUDGET DIALOG */}
             <Dialog open={showAddBudgetDialog} onOpenChange={setShowAddBudgetDialog}>
                 <DialogContent className="dark:bg-slate-800 dark:border-slate-700 max-w-md">
                     <DialogHeader>
-                        <DialogTitle className="flex items-center gap-2 text-slate-900 dark:text-white">
-                            <div className="p-2 rounded-xl bg-emerald-500/10">
-                                <Plus className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
-                            </div>
-                            Add Additional Budget
-                        </DialogTitle>
-                        <DialogDescription className="dark:text-slate-400">
-                            Add additional annual budget to a department
-                        </DialogDescription>
+                        <DialogTitle>Add Additional Budget</DialogTitle>
                     </DialogHeader>
-
-                    <div className="space-y-4">
-                        <div className="bg-blue-50 dark:bg-blue-950/30 rounded-xl p-3 border border-blue-200 dark:border-blue-800">
-                            <div className="flex items-start gap-2">
-                                <Info className="h-4 w-4 text-blue-500 dark:text-blue-400 mt-0.5 flex-shrink-0" />
-                                <div className="text-xs text-blue-700 dark:text-blue-300">
-                                    <p>Adding budget will:</p>
-                                    <ul className="list-disc list-inside mt-1 space-y-1">
-                                        <li>Increase the annual budget of the department</li>
-                                        <li>Automatically update the weekly suggested amount</li>
-                                        <li>Be recorded in the budget history</li>
-                                    </ul>
-                                </div>
-                            </div>
-                        </div>
-
-                        <FormField
-                            label="Department"
-                            icon={Building2}
-                            required
-                            error={addErrors.department_id}
-                            touched={addTouched.department_id}
-                        >
+                    <div className="space-y-4 py-4">
+                        <FormField label="Department" required error={addErrors.department_id}>
                             <select
-                                id="department_id"
-                                name="department_id"
                                 value={addBudgetData.department_id}
-                                onChange={(e) => {
-                                    setAddBudgetData({
-                                        ...addBudgetData,
-                                        department_id: e.target.value,
-                                    });
-                                    if (addErrors.department_id) {
-                                        setAddErrors(prev => ({ ...prev, department_id: "" }));
-                                    }
-                                }}
-                                onBlur={() => setAddTouched(prev => ({ ...prev, department_id: true }))}
-                                className={cn(
-                                    "w-full mt-1.5 px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-900 dark:text-white",
-                                    addErrors.department_id && "border-red-500 ring-red-500 bg-red-50/50 dark:bg-red-950/10"
-                                )}
+                                onChange={(e) => setAddBudgetData({ ...addBudgetData, department_id: e.target.value })}
+                                className="w-full px-3 py-2 border rounded-lg dark:bg-slate-900 dark:border-slate-700"
                             >
                                 <option value="">Select Department</option>
-                                {budgets.map((budget) => (
-                                    <option key={budget.department_id} value={budget.department_id}>
-                                        {budget.department_code} - {budget.department_name}
-                                        {budget.has_budget && ` (Current: ${formatCurrency(budget.annual_amount)})`}
-                                    </option>
+                                {budgets.map((b) => (
+                                    <option key={b.department_id} value={b.department_id}>{b.department_code} - {b.department_name}</option>
                                 ))}
                             </select>
                         </FormField>
-
-                        <FormField
-                            label="Additional Amount (₱)"
-                            icon={PhilippinePeso}
-                            required
-                            error={addErrors.additional_amount}
-                            touched={addTouched.additional_amount}
-                        >
-                            <Input
-                                id="additional_amount"
-                                name="additional_amount"
-                                type="number"
-                                step="0.01"
-                                min="0.01"
-                                value={addBudgetData.additional_amount}
-                                onChange={(e) => {
-                                    setAddBudgetData({
-                                        ...addBudgetData,
-                                        additional_amount: e.target.value,
-                                    });
-                                    if (addErrors.additional_amount) {
-                                        setAddErrors(prev => ({ ...prev, additional_amount: "" }));
-                                    }
-                                }}
-                                onBlur={() => setAddTouched(prev => ({ ...prev, additional_amount: true }))}
-                                className="mt-1.5 dark:bg-slate-900 dark:border-slate-700 dark:text-white"
-                                placeholder="Enter amount to add"
-                            />
+                        <FormField label="Additional Amount (₱)" required error={addErrors.additional_amount}>
+                            <Input type="number" value={addBudgetData.additional_amount} onChange={(e) => setAddBudgetData({ ...addBudgetData, additional_amount: e.target.value })} />
                         </FormField>
-
-                        <FormField
-                            label="Reason"
-                            icon={Info}
-                            required
-                            error={addErrors.reason}
-                            touched={addTouched.reason}
-                        >
-                            <Input
-                                id="reason"
-                                name="reason"
-                                type="text"
-                                value={addBudgetData.reason}
-                                onChange={(e) => {
-                                    setAddBudgetData({
-                                        ...addBudgetData,
-                                        reason: e.target.value,
-                                    });
-                                    if (addErrors.reason) {
-                                        setAddErrors(prev => ({ ...prev, reason: "" }));
-                                    }
-                                }}
-                                onBlur={() => setAddTouched(prev => ({ ...prev, reason: true }))}
-                                className="mt-1.5 dark:bg-slate-900 dark:border-slate-700 dark:text-white"
-                                placeholder="e.g., Mayor's Memo No. 2026-001"
-                            />
+                        <FormField label="Reason" required error={addErrors.reason} helper="e.g., Mayor's Memo No. 2026-001">
+                            <Input value={addBudgetData.reason} onChange={(e) => setAddBudgetData({ ...addBudgetData, reason: e.target.value })} placeholder="Reason for adding budget" />
                         </FormField>
-
-                        {addBudgetData.department_id && addBudgetData.additional_amount && (
-                            <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-3 border border-slate-200 dark:border-slate-700">
-                                <p className="text-sm text-slate-600 dark:text-slate-300">
-                                    {budgets.find(b => b.department_id === parseInt(addBudgetData.department_id))?.department_name} will receive:
-                                </p>
-                                <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400">
-                                    {formatCurrency(parseFloat(addBudgetData.additional_amount) || 0)}
-                                </p>
-                                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                                    Weekly suggested increases by: {formatCurrency((parseFloat(addBudgetData.additional_amount) || 0) / 52)}
-                                </p>
-                            </div>
-                        )}
                     </div>
-
-                    <DialogFooter className="mt-6">
-                        <Button
-                            variant="outline"
-                            onClick={() => {
-                                setShowAddBudgetDialog(false);
-                                setAddBudgetData({
-                                    department_id: "",
-                                    additional_amount: "",
-                                    reason: "",
-                                });
-                                setAddErrors({});
-                                setAddTouched({});
-                            }}
-                            className="dark:border-slate-700 dark:text-slate-300"
-                        >
-                            Cancel
-                        </Button>
-                        <Button
-                            onClick={handleAddBudget}
-                            disabled={addBudgetMutation.isPending}
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white"
-                        >
-                            {addBudgetMutation.isPending ? (
-                                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                            ) : (
-                                <Plus className="h-4 w-4 mr-2" />
-                            )}
-                            Add Budget
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
-
-            {/* ========== VIEW DIALOG ========== */}
-            <Dialog open={showViewDialog} onOpenChange={setShowViewDialog}>
-                <DialogContent className="dark:bg-slate-800 dark:border-slate-700 max-w-lg">
-                    <DialogHeader>
-                        <DialogTitle className="flex items-center gap-2 text-slate-900 dark:text-white">
-                            <div className="p-2 rounded-xl bg-blue-500/10">
-                                <Eye className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-                            </div>
-                            Budget Details
-                        </DialogTitle>
-                        <DialogDescription className="dark:text-slate-400">
-                            {viewingBudget?.department_name} - {selectedYear}
-                        </DialogDescription>
-                    </DialogHeader>
-
-                    {viewingBudget && (
-                        <div className="space-y-4">
-                            <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-4 border border-slate-200 dark:border-slate-700">
-                                <div className="grid grid-cols-2 gap-2 text-sm">
-                                    <div>
-                                        <p className="text-xs text-slate-500 dark:text-slate-400">Department</p>
-                                        <p className="font-semibold text-slate-900 dark:text-white">
-                                            {viewingBudget.department_name}
-                                        </p>
-                                    </div>
-                                    <div>
-                                        <p className="text-xs text-slate-500 dark:text-slate-400">Code</p>
-                                        <p className="font-semibold text-slate-900 dark:text-white">
-                                            {viewingBudget.department_code}
-                                        </p>
-                                    </div>
-                                    <div>
-                                        <p className="text-xs text-slate-500 dark:text-slate-400">Fiscal Year</p>
-                                        <p className="font-semibold text-slate-900 dark:text-white">
-                                            {selectedYear}
-                                        </p>
-                                    </div>
-                                    <div>
-                                        <p className="text-xs text-slate-500 dark:text-slate-400">Status</p>
-                                        <p>{getStatusBadge(viewingBudget.status)}</p>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-3">
-                                <div className="bg-blue-50 dark:bg-blue-950/30 rounded-xl p-3 text-center border border-blue-200 dark:border-blue-800">
-                                    <p className="text-xs text-blue-600 dark:text-blue-400 font-medium">Annual Budget</p>
-                                    <p className="text-lg font-bold text-blue-600 dark:text-blue-400">
-                                        {formatCurrency(viewingBudget.annual_amount)}
-                                    </p>
-                                </div>
-                                <div className="bg-purple-50 dark:bg-purple-950/30 rounded-xl p-3 text-center border border-purple-200 dark:border-purple-800">
-                                    <p className="text-xs text-purple-600 dark:text-purple-400 font-medium">Weekly Suggested</p>
-                                    <p className="text-lg font-bold text-purple-600 dark:text-purple-400">
-                                        {formatCurrency(weeklySuggested(viewingBudget.annual_amount))}
-                                    </p>
-                                    <p className="text-[10px] text-purple-500 dark:text-purple-400">
-                                        Annual ÷ 52
-                                    </p>
-                                </div>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-3">
-                                <div className="bg-yellow-50 dark:bg-yellow-950/30 rounded-xl p-3 text-center border border-yellow-200 dark:border-yellow-800">
-                                    <p className="text-xs text-yellow-600 dark:text-yellow-400 font-medium">Total Used</p>
-                                    <p className="text-lg font-bold text-yellow-600 dark:text-yellow-400">
-                                        {formatCurrency(viewingBudget.used_amount || 0)}
-                                    </p>
-                                </div>
-                                <div className={cn(
-                                    "rounded-xl p-3 text-center border",
-                                    (viewingBudget.remaining_amount || 0) < 0
-                                        ? "bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800"
-                                        : "bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800"
-                                )}>
-                                    <p className={cn(
-                                        "text-xs font-medium",
-                                        (viewingBudget.remaining_amount || 0) < 0
-                                            ? "text-red-600 dark:text-red-400"
-                                            : "text-emerald-600 dark:text-emerald-400"
-                                    )}>
-                                        Annual Remaining
-                                    </p>
-                                    <p className={cn(
-                                        "text-lg font-bold",
-                                        (viewingBudget.remaining_amount || 0) < 0
-                                            ? "text-red-600 dark:text-red-400"
-                                            : "text-emerald-600 dark:text-emerald-400"
-                                    )}>
-                                        {formatCurrency(viewingBudget.remaining_amount || 0)}
-                                    </p>
-                                </div>
-                            </div>
-
-                            <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-3 border border-slate-200 dark:border-slate-700">
-                                <div className="flex justify-between items-center">
-                                    <span className="text-xs text-slate-500 dark:text-slate-400">Annual Utilization</span>
-                                    <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                                        {viewingBudget.utilization_percentage || 0}%
-                                    </span>
-                                </div>
-                                <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2 mt-1">
-                                    <div
-                                        className={cn(
-                                            "h-2 rounded-full transition-all",
-                                            (viewingBudget.utilization_percentage || 0) > 80
-                                                ? "bg-red-500"
-                                                : (viewingBudget.utilization_percentage || 0) > 50
-                                                    ? "bg-yellow-500"
-                                                    : "bg-emerald-500"
-                                        )}
-                                        style={{ width: `${Math.min(viewingBudget.utilization_percentage || 0, 100)}%` }}
-                                    />
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
                     <DialogFooter>
-                        <Button
-                            variant="outline"
-                            onClick={() => {
-                                setShowViewDialog(false);
-                                setViewingBudget(null);
-                            }}
-                            className="dark:border-slate-700 dark:text-slate-300"
-                        >
-                            Close
-                        </Button>
+                        <Button variant="outline" onClick={() => setShowAddBudgetDialog(false)}>Cancel</Button>
+                        <Button onClick={handleAddBudget} disabled={addBudgetMutation.isPending} className="bg-emerald-600 hover:bg-emerald-700">Add Budget</Button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
