@@ -1,44 +1,20 @@
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useQueryClient, useMutation } from "@tanstack/react-query";
 import { useAutoRefresh } from "../../../hooks/useAutoRefresh";
-import { useRealtime } from "../../../contexts/RealtimeContext";
 import { useOptimizedQuery } from "../../../hooks/useOptimizedQuery";
-import {
-    SkeletonPage,
-    SkeletonStats,
-    SkeletonTable,
-} from "../../../components/ui/SkeletonCard";
+import { SkeletonPage, SkeletonTable } from "../../../components/ui/SkeletonCard";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
-    Table,
-    TableBody,
-    TableCell,
-    TableHead,
-    TableHeader,
-    TableRow,
+    Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import {
-    Dialog,
-    DialogContent,
-    DialogFooter,
-    DialogHeader,
-    DialogTitle,
+    Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import {
-    TrendingUp,
-    TrendingDown,
-    Edit,
-    AlertCircle,
-    Building2,
-    Plus,
-    Info,
-    ArrowLeft,
-    PhilippinePeso,
-    History,
-    Activity,
+    TrendingUp, TrendingDown, Edit, AlertCircle, Building2, Plus, Info, ArrowLeft, PhilippinePeso, History, Activity,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { useNavigate } from "react-router-dom";
@@ -49,17 +25,13 @@ import { format } from "date-fns";
 // ============================================
 // STATS CARD COMPONENT
 // ============================================
-
-const StatsCard = ({ title, value, icon: Icon, color, subtitle }) => (
+const StatsCard = ({ title, value, icon: Icon, color }) => (
     <Card className="dark:bg-slate-800/80 dark:border-slate-700 hover:shadow-lg transition-all duration-300">
         <CardContent className="pt-6">
             <div className="flex items-center justify-between">
                 <div>
                     <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">{title}</p>
                     <p className="text-2xl font-bold text-slate-900 dark:text-white mt-1">{value}</p>
-                    {subtitle && (
-                        <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">{subtitle}</p>
-                    )}
                 </div>
                 <div className={`p-3 rounded-xl bg-gradient-to-br ${color} shadow-lg`}>
                     <Icon className="h-6 w-6 text-white" />
@@ -72,10 +44,8 @@ const StatsCard = ({ title, value, icon: Icon, color, subtitle }) => (
 // ============================================
 // TOOLTIP COMPONENT
 // ============================================
-
 const DepartmentTooltip = ({ code, name }) => {
     const [show, setShow] = useState(false);
-
     return (
         <div className="relative inline-block">
             <span
@@ -98,7 +68,6 @@ const DepartmentTooltip = ({ code, name }) => {
 // ============================================
 // FORM FIELD COMPONENT
 // ============================================
-
 const FormField = ({ label, icon: Icon, required, error, touched, helper, children, className }) => {
     const hasError = touched && error;
     return (
@@ -137,7 +106,6 @@ const FormField = ({ label, icon: Icon, required, error, touched, helper, childr
 // ============================================
 // MAIN COMPONENT
 // ============================================
-
 const BudgetAllocation = () => {
     const navigate = useNavigate();
     const queryClient = useQueryClient();
@@ -156,18 +124,12 @@ const BudgetAllocation = () => {
     const [addErrors, setAddErrors] = useState({});
     const [addTouched, setAddTouched] = useState({});
 
-    // ============================================
-    // AUTO-REFRESH
-    // ============================================
     useAutoRefresh(["mayor-budget-updated", "mayor-trip-updated", "gso-funds-released"], () => {
         queryClient.invalidateQueries({ queryKey: ["annual-budgets", selectedYear] });
         queryClient.invalidateQueries({ queryKey: ["fiscal-years-active"] });
         queryClient.invalidateQueries({ queryKey: ["budget-history", selectedYear] });
     });
 
-    // ============================================
-    // QUERIES
-    // ============================================
     const { data: yearsData, isLoading: yearsLoading } = useOptimizedQuery({
         queryKey: ["fiscal-years-active"],
         queryFn: async () => {
@@ -197,7 +159,6 @@ const BudgetAllocation = () => {
         keepPreviousData: true,
     });
 
-    // ✅ Query for Budget History
     const { data: historyData, isLoading: historyLoading } = useOptimizedQuery({
         queryKey: ["budget-history", selectedYear],
         queryFn: async () => {
@@ -207,9 +168,6 @@ const BudgetAllocation = () => {
         enabled: !!selectedYear,
     });
 
-    // ============================================
-    // MUTATIONS
-    // ============================================
     const setBudgetMutation = useMutation({
         mutationFn: async ({ data }) => {
             const response = await api.post("/mayors-office/annual-budgets", { fiscal_year: selectedYear, ...data });
@@ -238,9 +196,6 @@ const BudgetAllocation = () => {
         onError: (error) => toast.error(error.response?.data?.message || "Failed to add budget"),
     });
 
-    // ============================================
-    // HELPERS
-    // ============================================
     const budgets = useMemo(() => {
         const raw = budgetData?.data;
         if (Array.isArray(raw)) return raw;
@@ -257,7 +212,6 @@ const BudgetAllocation = () => {
             total_allocated, total_used, total_remaining: total_allocated - total_used,
             departments_with_budget: budgets.filter((b) => b.has_budget).length,
             total_departments: budgets.length,
-            departments_without_budget: budgets.length - budgets.filter((b) => b.has_budget).length,
         };
     }, [budgetData, budgets]);
 
@@ -276,9 +230,6 @@ const BudgetAllocation = () => {
         return <Badge className="bg-green-500">Active</Badge>;
     };
 
-    // ============================================
-    // VALIDATION
-    // ============================================
     const validateEditBudget = () => {
         const newErrors = {};
         if (!formData.annual_amount || parseFloat(formData.annual_amount) <= 0) {
@@ -303,9 +254,6 @@ const BudgetAllocation = () => {
         return true;
     };
 
-    // ============================================
-    // HANDLERS
-    // ============================================
     const handleEdit = (budget) => {
         setEditingBudget(budget);
         setFormData({ annual_amount: budget.annual_amount?.toString() || "" });
@@ -386,47 +334,46 @@ const BudgetAllocation = () => {
 
                 {/* Allocation Table */}
                 <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                    {/* ✅ REMOVED the "Add Budget" button here */}
                     <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center">
                         <h3 className="font-semibold text-slate-800 dark:text-white">Budget Details for {selectedYear}</h3>
-                        <Button onClick={() => setShowAddBudgetDialog(true)} size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white">
-                            <Plus className="h-4 w-4 mr-1" /> Add Budget
-                        </Button>
                     </div>
                     <div className="overflow-auto max-h-[500px]">
                         <Table>
                             <TableHeader className="sticky top-0 bg-slate-50 dark:bg-slate-900 z-10">
                                 <TableRow>
-                                    <TableHead>Code</TableHead>
-                                    <TableHead className="text-right">Annual Budget</TableHead>
-                                    <TableHead className="text-right">Weekly Suggested</TableHead>
-                                    <TableHead className="text-right">Used</TableHead>
-                                    <TableHead className="text-right">Remaining</TableHead>
-                                    <TableHead className="text-center">Status</TableHead>
-                                    <TableHead className="text-right">Actions</TableHead>
+                                    <TableHead className="text-slate-600 dark:text-slate-300">Code</TableHead>
+                                    <TableHead className="text-right text-slate-600 dark:text-slate-300">Annual Budget</TableHead>
+                                    <TableHead className="text-right text-slate-600 dark:text-slate-300">Weekly Suggested</TableHead>
+                                    <TableHead className="text-right text-slate-600 dark:text-slate-300">Used</TableHead>
+                                    <TableHead className="text-right text-slate-600 dark:text-slate-300">Remaining</TableHead>
+                                    <TableHead className="text-center text-slate-600 dark:text-slate-300">Status</TableHead>
+                                    <TableHead className="text-right text-slate-600 dark:text-slate-300">Actions</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
                                 {budgets.map((budget) => (
                                     <TableRow key={budget.department_id}>
                                         <TableCell><DepartmentTooltip code={budget.department_code} name={budget.department_name} /></TableCell>
-                                        <TableCell className="text-right font-medium text-blue-600">{formatCurrency(budget.annual_amount)}</TableCell>
-                                        <TableCell className="text-right text-purple-600">{formatCurrency(weeklySuggested(budget.annual_amount))}</TableCell>
-                                        <TableCell className="text-right text-yellow-600">{formatCurrency(budget.used_amount)}</TableCell>
-                                        <TableCell className={cn("text-right font-medium", (budget.remaining_amount || 0) < 0 ? "text-red-600" : "text-emerald-600")}>
+                                        {/* ✅ FIXED DARK MODE COLORS for amounts */}
+                                        <TableCell className="text-right font-medium text-blue-600 dark:text-blue-400">{formatCurrency(budget.annual_amount)}</TableCell>
+                                        <TableCell className="text-right text-purple-600 dark:text-purple-400">{formatCurrency(weeklySuggested(budget.annual_amount))}</TableCell>
+                                        <TableCell className="text-right text-yellow-600 dark:text-yellow-400">{formatCurrency(budget.used_amount)}</TableCell>
+                                        <TableCell className={cn("text-right font-medium", (budget.remaining_amount || 0) < 0 ? "text-red-600 dark:text-red-400" : "text-emerald-600 dark:text-emerald-400")}>
                                             {formatCurrency(budget.remaining_amount)}
                                         </TableCell>
                                         <TableCell className="text-center">{getStatusBadge(budget.status)}</TableCell>
                                         <TableCell className="text-right">
                                             <div className="flex justify-end gap-1">
                                                 {!budget.has_budget ? (
-                                                    <Button variant="ghost" size="sm" onClick={() => handleEdit(budget)} className="text-green-600">
+                                                    <Button variant="ghost" size="sm" onClick={() => handleEdit(budget)} className="text-green-600 dark:text-green-400">
                                                         <Edit className="h-4 w-4" />
                                                     </Button>
                                                 ) : (
                                                     <Button variant="ghost" size="sm" onClick={() => {
                                                         setAddBudgetData({ department_id: budget.department_id.toString(), additional_amount: "", reason: "" });
                                                         setShowAddBudgetDialog(true);
-                                                    }} className="text-emerald-600">
+                                                    }} className="text-emerald-600 dark:text-emerald-400">
                                                         <Plus className="h-4 w-4" />
                                                     </Button>
                                                 )}
@@ -463,43 +410,43 @@ const BudgetAllocation = () => {
                                 <Table>
                                     <TableHeader>
                                         <TableRow className="bg-slate-50 dark:bg-slate-900/50">
-                                            <TableHead>Date</TableHead>
-                                            <TableHead>Department</TableHead>
-                                            <TableHead>Action</TableHead>
-                                            <TableHead className="text-right">Previous</TableHead>
-                                            <TableHead className="text-right text-emerald-600">Added</TableHead>
-                                            <TableHead className="text-right">New Total</TableHead>
-                                            <TableHead>Reason</TableHead>
-                                            <TableHead>By</TableHead>
+                                            <TableHead className="text-slate-600 dark:text-slate-300">Date</TableHead>
+                                            <TableHead className="text-slate-600 dark:text-slate-300">Department</TableHead>
+                                            <TableHead className="text-slate-600 dark:text-slate-300">Action</TableHead>
+                                            <TableHead className="text-right text-slate-600 dark:text-slate-300">Previous</TableHead>
+                                            <TableHead className="text-right text-emerald-600 dark:text-emerald-400">Added</TableHead>
+                                            <TableHead className="text-right text-slate-600 dark:text-slate-300">New Total</TableHead>
+                                            <TableHead className="text-slate-600 dark:text-slate-300">Reason</TableHead>
+                                            <TableHead className="text-slate-600 dark:text-slate-300">By</TableHead>
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
                                         {historyData.map((log, i) => (
                                             <TableRow key={i}>
-                                                <TableCell className="whitespace-nowrap text-xs text-slate-500">
+                                                <TableCell className="whitespace-nowrap text-xs text-slate-500 dark:text-slate-400">
                                                     {format(new Date(log.created_at), 'MMM dd, yyyy h:mm a')}
                                                 </TableCell>
-                                                <TableCell className="font-medium text-slate-800 dark:text-white">
+                                                <TableCell className="font-medium text-slate-800 dark:text-slate-200">
                                                     {log.department_name}
                                                 </TableCell>
                                                 <TableCell>
-                                                    <Badge variant="outline" className="capitalize text-xs">
+                                                    <Badge variant="outline" className="capitalize text-xs dark:text-slate-300 dark:border-slate-600">
                                                         {log.action.replace(/_/g, ' ')}
                                                     </Badge>
                                                 </TableCell>
-                                                <TableCell className="text-right text-slate-500">
+                                                <TableCell className="text-right text-slate-500 dark:text-slate-400">
                                                     {formatCurrency(log.previous_amount)}
                                                 </TableCell>
-                                                <TableCell className="text-right font-medium text-emerald-600">
+                                                <TableCell className="text-right font-medium text-emerald-600 dark:text-emerald-400">
                                                     +{formatCurrency(log.added_amount)}
                                                 </TableCell>
-                                                <TableCell className="text-right font-bold text-blue-600">
+                                                <TableCell className="text-right font-bold text-blue-600 dark:text-blue-400">
                                                     {formatCurrency(log.new_amount)}
                                                 </TableCell>
-                                                <TableCell className="max-w-[200px] truncate" title={log.reason}>
+                                                <TableCell className="max-w-[200px] truncate text-slate-600 dark:text-slate-300" title={log.reason}>
                                                     {log.reason || "—"}
                                                 </TableCell>
-                                                <TableCell className="text-xs text-slate-500">
+                                                <TableCell className="text-xs text-slate-500 dark:text-slate-400">
                                                     {log.user_name || "System"}
                                                 </TableCell>
                                             </TableRow>
@@ -516,7 +463,7 @@ const BudgetAllocation = () => {
             <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
                 <DialogContent className="dark:bg-slate-800 dark:border-slate-700 max-w-md">
                     <DialogHeader>
-                        <DialogTitle>Set Annual Budget</DialogTitle>
+                        <DialogTitle className="dark:text-white">Set Annual Budget</DialogTitle>
                     </DialogHeader>
                     <div className="space-y-4 py-4">
                         <FormField label="Annual Budget (₱)" required error={editErrors.annual_amount} touched={editTouched.annual_amount}>
@@ -534,14 +481,14 @@ const BudgetAllocation = () => {
             <Dialog open={showAddBudgetDialog} onOpenChange={setShowAddBudgetDialog}>
                 <DialogContent className="dark:bg-slate-800 dark:border-slate-700 max-w-md">
                     <DialogHeader>
-                        <DialogTitle>Add Additional Budget</DialogTitle>
+                        <DialogTitle className="dark:text-white">Add Additional Budget</DialogTitle>
                     </DialogHeader>
                     <div className="space-y-4 py-4">
                         <FormField label="Department" required error={addErrors.department_id}>
                             <select
                                 value={addBudgetData.department_id}
                                 onChange={(e) => setAddBudgetData({ ...addBudgetData, department_id: e.target.value })}
-                                className="w-full px-3 py-2 border rounded-lg dark:bg-slate-900 dark:border-slate-700"
+                                className="w-full px-3 py-2 border rounded-lg dark:bg-slate-900 dark:border-slate-700 dark:text-white"
                             >
                                 <option value="">Select Department</option>
                                 {budgets.map((b) => (
@@ -558,7 +505,7 @@ const BudgetAllocation = () => {
                     </div>
                     <DialogFooter>
                         <Button variant="outline" onClick={() => setShowAddBudgetDialog(false)}>Cancel</Button>
-                        <Button onClick={handleAddBudget} disabled={addBudgetMutation.isPending} className="bg-emerald-600 hover:bg-emerald-700">Add Budget</Button>
+                        <Button onClick={handleAddBudget} disabled={addBudgetMutation.isPending} className="bg-emerald-600 hover:bg-emerald-700 text-white">Add Budget</Button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
