@@ -9,7 +9,7 @@ import {
     SkeletonTable,
 } from "../../../components/ui/SkeletonCard";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"; // ✅ FIXED: Added CardHeader, CardTitle, CardDescription
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -23,7 +23,6 @@ import {
 import {
     Dialog,
     DialogContent,
-    DialogDescription,
     DialogFooter,
     DialogHeader,
     DialogTitle,
@@ -32,24 +31,14 @@ import {
     TrendingUp,
     TrendingDown,
     Edit,
-    Save,
     AlertCircle,
     Building2,
-    X,
-    Eye,
     Plus,
     Info,
     ArrowLeft,
-    Zap,
-    Clock,
-    Activity,
-    Search,
-    Filter,
-    ChevronDown,
-    ChevronUp,
     PhilippinePeso,
     History,
-    CalendarDays
+    Activity,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { useNavigate } from "react-router-dom";
@@ -61,7 +50,7 @@ import { format } from "date-fns";
 // STATS CARD COMPONENT
 // ============================================
 
-const StatsCard = ({ title, value, icon: Icon, color, subtitle, trend }) => (
+const StatsCard = ({ title, value, icon: Icon, color, subtitle }) => (
     <Card className="dark:bg-slate-800/80 dark:border-slate-700 hover:shadow-lg transition-all duration-300">
         <CardContent className="pt-6">
             <div className="flex items-center justify-between">
@@ -152,27 +141,20 @@ const FormField = ({ label, icon: Icon, required, error, touched, helper, childr
 const BudgetAllocation = () => {
     const navigate = useNavigate();
     const queryClient = useQueryClient();
-    const { isConnected } = useRealtime();
-    const toastIdRef = useRef(null);
-
-    const [activeTab, setActiveTab] = useState("allocation"); // "allocation" | "history"
+    
     const [selectedYear, setSelectedYear] = useState(null);
     
     // Dialog States
     const [editingBudget, setEditingBudget] = useState(null);
     const [showEditDialog, setShowEditDialog] = useState(false);
-    const [showViewDialog, setShowViewDialog] = useState(false);
-    const [viewingBudget, setViewingBudget] = useState(null);
     const [showAddBudgetDialog, setShowAddBudgetDialog] = useState(false);
     const [addBudgetData, setAddBudgetData] = useState({ department_id: "", additional_amount: "", reason: "" });
     const [formData, setFormData] = useState({ annual_amount: "" });
     
-    const [isFilterOpen, setIsFilterOpen] = useState(false);
     const [editErrors, setEditErrors] = useState({});
     const [editTouched, setEditTouched] = useState({});
     const [addErrors, setAddErrors] = useState({});
     const [addTouched, setAddTouched] = useState({});
-    const [filters, setFilters] = useState({ searchTerm: '', departmentId: 'all', allocationStatus: 'all', budgetRange: 'all' });
 
     // ============================================
     // AUTO-REFRESH
@@ -222,7 +204,7 @@ const BudgetAllocation = () => {
             const response = await api.get(`/mayors-office/budget-history?year=${selectedYear}`);
             return response.data.data || [];
         },
-        enabled: !!selectedYear && activeTab === 'history',
+        enabled: !!selectedYear,
     });
 
     // ============================================
@@ -344,16 +326,6 @@ const BudgetAllocation = () => {
         });
     };
 
-    const filteredBudgets = useMemo(() => {
-        let filtered = [...budgets];
-        if (filters.searchTerm) {
-            const search = filters.searchTerm.toLowerCase();
-            filtered = filtered.filter(b => b.department_name?.toLowerCase().includes(search));
-        }
-        if (filters.departmentId !== 'all') filtered = filtered.filter(b => b.department_id === parseInt(filters.departmentId));
-        return filtered;
-    }, [budgets, filters]);
-
     if (budgetError) return <div className="p-8 text-center text-red-500">Error loading data.</div>;
     if (yearsLoading || !selectedYear || isLoading || !budgetData) return <div className="p-6"><SkeletonPage /><SkeletonTable rows={5} cols={8} /></div>;
 
@@ -379,202 +351,165 @@ const BudgetAllocation = () => {
                     </div>
                 </div>
 
-                {/* TABS */}
-                <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-700 pb-0">
-                    <button
-                        onClick={() => setActiveTab("allocation")}
-                        className={cn(
-                            "px-4 py-2.5 text-sm font-medium rounded-t-lg transition-all duration-200 flex items-center gap-2 relative",
-                            activeTab === "allocation"
-                                ? "text-blue-600 dark:text-blue-400 bg-white dark:bg-slate-800 border-b-2 border-blue-500 -mb-px"
-                                : "text-slate-500 dark:text-slate-400 hover:text-slate-700 hover:bg-slate-100"
-                        )}
-                    >
-                        <PhilippinePeso className="h-4 w-4" />
-                        Allocation
-                    </button>
-                    <button
-                        onClick={() => setActiveTab("history")}
-                        className={cn(
-                            "px-4 py-2.5 text-sm font-medium rounded-t-lg transition-all duration-200 flex items-center gap-2 relative",
-                            activeTab === "history"
-                                ? "text-purple-600 dark:text-purple-400 bg-white dark:bg-slate-800 border-b-2 border-purple-500 -mb-px"
-                                : "text-slate-500 dark:text-slate-400 hover:text-slate-700 hover:bg-slate-100"
-                        )}
-                    >
-                        <History className="h-4 w-4" />
-                        Budget History
-                    </button>
+                {/* Year Selector */}
+                <Card className="dark:bg-slate-800/80 dark:border-slate-700">
+                    <CardContent className="pt-6">
+                        <div className="flex flex-wrap items-center gap-4">
+                            <span className="font-medium text-slate-700 dark:text-slate-300">Select Fiscal Year:</span>
+                            <div className="flex flex-wrap gap-2">
+                                {yearsData?.map((year) => {
+                                    const yVal = typeof year === "object" ? Number(year.year) : Number(year);
+                                    return (
+                                        <Button
+                                            key={yVal}
+                                            variant={selectedYear === yVal ? "default" : "outline"}
+                                            size="sm"
+                                            onClick={() => setSelectedYear(yVal)}
+                                            className={selectedYear === yVal ? "bg-blue-600 text-white" : ""}
+                                        >
+                                            {yVal}
+                                        </Button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    </CardContent>
+                </Card>
+
+                {/* Stats Cards */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <StatsCard title="Total Annual Budget" value={formatCurrency(summary.total_allocated)} icon={PhilippinePeso} color="from-blue-500 to-blue-600" />
+                    <StatsCard title="Used" value={formatCurrency(summary.total_used)} icon={TrendingDown} color="from-yellow-500 to-yellow-600" />
+                    <StatsCard title="Remaining Annual" value={formatCurrency(summary.total_remaining)} icon={TrendingUp} color="from-emerald-500 to-emerald-600" />
+                    <StatsCard title="Departments" value={`${summary.departments_with_budget || 0} / ${summary.total_departments || 0}`} icon={Building2} color="from-purple-500 to-purple-600" />
+                </div>
+
+                {/* Allocation Table */}
+                <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                    <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center">
+                        <h3 className="font-semibold text-slate-800 dark:text-white">Budget Details for {selectedYear}</h3>
+                        <Button onClick={() => setShowAddBudgetDialog(true)} size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white">
+                            <Plus className="h-4 w-4 mr-1" /> Add Budget
+                        </Button>
+                    </div>
+                    <div className="overflow-auto max-h-[500px]">
+                        <Table>
+                            <TableHeader className="sticky top-0 bg-slate-50 dark:bg-slate-900 z-10">
+                                <TableRow>
+                                    <TableHead>Code</TableHead>
+                                    <TableHead className="text-right">Annual Budget</TableHead>
+                                    <TableHead className="text-right">Weekly Suggested</TableHead>
+                                    <TableHead className="text-right">Used</TableHead>
+                                    <TableHead className="text-right">Remaining</TableHead>
+                                    <TableHead className="text-center">Status</TableHead>
+                                    <TableHead className="text-right">Actions</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {budgets.map((budget) => (
+                                    <TableRow key={budget.department_id}>
+                                        <TableCell><DepartmentTooltip code={budget.department_code} name={budget.department_name} /></TableCell>
+                                        <TableCell className="text-right font-medium text-blue-600">{formatCurrency(budget.annual_amount)}</TableCell>
+                                        <TableCell className="text-right text-purple-600">{formatCurrency(weeklySuggested(budget.annual_amount))}</TableCell>
+                                        <TableCell className="text-right text-yellow-600">{formatCurrency(budget.used_amount)}</TableCell>
+                                        <TableCell className={cn("text-right font-medium", (budget.remaining_amount || 0) < 0 ? "text-red-600" : "text-emerald-600")}>
+                                            {formatCurrency(budget.remaining_amount)}
+                                        </TableCell>
+                                        <TableCell className="text-center">{getStatusBadge(budget.status)}</TableCell>
+                                        <TableCell className="text-right">
+                                            <div className="flex justify-end gap-1">
+                                                {!budget.has_budget ? (
+                                                    <Button variant="ghost" size="sm" onClick={() => handleEdit(budget)} className="text-green-600">
+                                                        <Edit className="h-4 w-4" />
+                                                    </Button>
+                                                ) : (
+                                                    <Button variant="ghost" size="sm" onClick={() => {
+                                                        setAddBudgetData({ department_id: budget.department_id.toString(), additional_amount: "", reason: "" });
+                                                        setShowAddBudgetDialog(true);
+                                                    }} className="text-emerald-600">
+                                                        <Plus className="h-4 w-4" />
+                                                    </Button>
+                                                )}
+                                            </div>
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    </div>
                 </div>
 
                 {/* ============================================ */}
-                {/* TAB 1: ALLOCATION */}
+                {/* BUDGET HISTORY (BELOW) */}
                 {/* ============================================ */}
-                {activeTab === "allocation" && (
-                    <>
-                        {/* Year Selector */}
-                        <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-                            <CardContent className="pt-6">
-                                <div className="flex flex-wrap items-center gap-4">
-                                    <span className="font-medium text-slate-700 dark:text-slate-300">Select Fiscal Year:</span>
-                                    <div className="flex flex-wrap gap-2">
-                                        {yearsData?.map((year) => {
-                                            const yVal = typeof year === "object" ? Number(year.year) : Number(year);
-                                            return (
-                                                <Button
-                                                    key={yVal}
-                                                    variant={selectedYear === yVal ? "default" : "outline"}
-                                                    size="sm"
-                                                    onClick={() => setSelectedYear(yVal)}
-                                                    className={selectedYear === yVal ? "bg-blue-600 text-white" : ""}
-                                                >
-                                                    {yVal}
-                                                </Button>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-                            </CardContent>
-                        </Card>
-
-                        {/* Stats Cards */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                            <StatsCard title="Total Annual Budget" value={formatCurrency(summary.total_allocated)} icon={PhilippinePeso} color="from-blue-500 to-blue-600" />
-                            <StatsCard title="Used" value={formatCurrency(summary.total_used)} icon={TrendingDown} color="from-yellow-500 to-yellow-600" />
-                            <StatsCard title="Remaining Annual" value={formatCurrency(summary.total_remaining)} icon={TrendingUp} color="from-emerald-500 to-emerald-600" />
-                            <StatsCard title="Departments" value={`${summary.departments_with_budget || 0} / ${summary.total_departments || 0}`} icon={Building2} color="from-purple-500 to-purple-600" />
-                        </div>
-
-                        {/* Table */}
-                        <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
-                            <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center">
-                                <h3 className="font-semibold text-slate-800 dark:text-white">Budget Details for {selectedYear}</h3>
-                                <Button onClick={() => setShowAddBudgetDialog(true)} size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white">
-                                    <Plus className="h-4 w-4 mr-1" /> Add Budget
-                                </Button>
+                <Card className="dark:bg-slate-800/80 dark:border-slate-700 shadow-sm">
+                    <CardHeader className="border-b border-slate-200/60 dark:border-slate-700/60">
+                        <CardTitle className="flex items-center gap-2 text-slate-800 dark:text-white">
+                            <History className="h-5 w-5 text-purple-500" />
+                            Budget History
+                        </CardTitle>
+                        <CardDescription>Record of all budget allocations and additions for {selectedYear}</CardDescription>
+                    </CardHeader>
+                    <CardContent className="p-0">
+                        {historyLoading ? (
+                            <div className="p-12 text-center text-slate-500"><Activity className="h-6 w-6 animate-spin mx-auto mb-2" /> Loading history...</div>
+                        ) : !historyData || historyData.length === 0 ? (
+                            <div className="p-12 text-center text-slate-500">
+                                <History className="h-10 w-10 text-slate-300 mx-auto mb-2" />
+                                No budget history found for {selectedYear}.
                             </div>
-                            <div className="overflow-auto max-h-[500px]">
+                        ) : (
+                            <div className="overflow-x-auto">
                                 <Table>
-                                    <TableHeader className="sticky top-0 bg-slate-50 dark:bg-slate-900 z-10">
-                                        <TableRow>
-                                            <TableHead>Code</TableHead>
-                                            <TableHead className="text-right">Annual Budget</TableHead>
-                                            <TableHead className="text-right">Weekly Suggested</TableHead>
-                                            <TableHead className="text-right">Used</TableHead>
-                                            <TableHead className="text-right">Remaining</TableHead>
-                                            <TableHead className="text-center">Status</TableHead>
-                                            <TableHead className="text-right">Actions</TableHead>
+                                    <TableHeader>
+                                        <TableRow className="bg-slate-50 dark:bg-slate-900/50">
+                                            <TableHead>Date</TableHead>
+                                            <TableHead>Department</TableHead>
+                                            <TableHead>Action</TableHead>
+                                            <TableHead className="text-right">Previous</TableHead>
+                                            <TableHead className="text-right text-emerald-600">Added</TableHead>
+                                            <TableHead className="text-right">New Total</TableHead>
+                                            <TableHead>Reason</TableHead>
+                                            <TableHead>By</TableHead>
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
-                                        {filteredBudgets.map((budget) => (
-                                            <TableRow key={budget.department_id}>
-                                                <TableCell><DepartmentTooltip code={budget.department_code} name={budget.department_name} /></TableCell>
-                                                <TableCell className="text-right font-medium text-blue-600">{formatCurrency(budget.annual_amount)}</TableCell>
-                                                <TableCell className="text-right text-purple-600">{formatCurrency(weeklySuggested(budget.annual_amount))}</TableCell>
-                                                <TableCell className="text-right text-yellow-600">{formatCurrency(budget.used_amount)}</TableCell>
-                                                <TableCell className={cn("text-right font-medium", (budget.remaining_amount || 0) < 0 ? "text-red-600" : "text-emerald-600")}>
-                                                    {formatCurrency(budget.remaining_amount)}
+                                        {historyData.map((log, i) => (
+                                            <TableRow key={i}>
+                                                <TableCell className="whitespace-nowrap text-xs text-slate-500">
+                                                    {format(new Date(log.created_at), 'MMM dd, yyyy h:mm a')}
                                                 </TableCell>
-                                                <TableCell className="text-center">{getStatusBadge(budget.status)}</TableCell>
-                                                <TableCell className="text-right">
-                                                    <div className="flex justify-end gap-1">
-                                                        {!budget.has_budget ? (
-                                                            <Button variant="ghost" size="sm" onClick={() => handleEdit(budget)} className="text-green-600">
-                                                                <Edit className="h-4 w-4" />
-                                                            </Button>
-                                                        ) : (
-                                                            <Button variant="ghost" size="sm" onClick={() => {
-                                                                setAddBudgetData({ department_id: budget.department_id.toString(), additional_amount: "", reason: "" });
-                                                                setShowAddBudgetDialog(true);
-                                                            }} className="text-emerald-600">
-                                                                <Plus className="h-4 w-4" />
-                                                            </Button>
-                                                        )}
-                                                    </div>
+                                                <TableCell className="font-medium text-slate-800 dark:text-white">
+                                                    {log.department_name}
+                                                </TableCell>
+                                                <TableCell>
+                                                    <Badge variant="outline" className="capitalize text-xs">
+                                                        {log.action.replace(/_/g, ' ')}
+                                                    </Badge>
+                                                </TableCell>
+                                                <TableCell className="text-right text-slate-500">
+                                                    {formatCurrency(log.previous_amount)}
+                                                </TableCell>
+                                                <TableCell className="text-right font-medium text-emerald-600">
+                                                    +{formatCurrency(log.added_amount)}
+                                                </TableCell>
+                                                <TableCell className="text-right font-bold text-blue-600">
+                                                    {formatCurrency(log.new_amount)}
+                                                </TableCell>
+                                                <TableCell className="max-w-[200px] truncate" title={log.reason}>
+                                                    {log.reason || "—"}
+                                                </TableCell>
+                                                <TableCell className="text-xs text-slate-500">
+                                                    {log.user_name || "System"}
                                                 </TableCell>
                                             </TableRow>
                                         ))}
                                     </TableBody>
                                 </Table>
                             </div>
-                        </div>
-                    </>
-                )}
-
-                {/* ============================================ */}
-                {/* TAB 2: BUDGET HISTORY */}
-                {/* ============================================ */}
-                {activeTab === "history" && (
-                    <Card className="dark:bg-slate-800/80 dark:border-slate-700 shadow-sm">
-                        <CardHeader className="border-b border-slate-200/60 dark:border-slate-700/60">
-                            <CardTitle className="flex items-center gap-2 text-slate-800 dark:text-white">
-                                <History className="h-5 w-5 text-purple-500" />
-                                Budget History
-                            </CardTitle>
-                            <CardDescription>Record of all budget allocations and additions</CardDescription>
-                        </CardHeader>
-                        <CardContent className="p-0">
-                            {historyLoading ? (
-                                <div className="p-12 text-center text-slate-500"><Activity className="h-6 w-6 animate-spin mx-auto mb-2" /> Loading history...</div>
-                            ) : !historyData || historyData.length === 0 ? (
-                                <div className="p-12 text-center text-slate-500">
-                                    <History className="h-10 w-10 text-slate-300 mx-auto mb-2" />
-                                    No budget history found for {selectedYear}.
-                                </div>
-                            ) : (
-                                <div className="overflow-x-auto">
-                                    <Table>
-                                        <TableHeader>
-                                            <TableRow className="bg-slate-50 dark:bg-slate-900/50">
-                                                <TableHead>Date</TableHead>
-                                                <TableHead>Department</TableHead>
-                                                <TableHead>Action</TableHead>
-                                                <TableHead className="text-right">Previous</TableHead>
-                                                <TableHead className="text-right text-emerald-600">Added</TableHead>
-                                                <TableHead className="text-right">New Total</TableHead>
-                                                <TableHead>Reason</TableHead>
-                                                <TableHead>By</TableHead>
-                                            </TableRow>
-                                        </TableHeader>
-                                        <TableBody>
-                                            {historyData.map((log, i) => (
-                                                <TableRow key={i}>
-                                                    <TableCell className="whitespace-nowrap text-xs text-slate-500">
-                                                        {format(new Date(log.created_at), 'MMM dd, yyyy h:mm a')}
-                                                    </TableCell>
-                                                    <TableCell className="font-medium text-slate-800 dark:text-white">
-                                                        {log.department_name}
-                                                    </TableCell>
-                                                    <TableCell>
-                                                        <Badge variant="outline" className="capitalize text-xs">
-                                                            {log.action.replace(/_/g, ' ')}
-                                                        </Badge>
-                                                    </TableCell>
-                                                    <TableCell className="text-right text-slate-500">
-                                                        {formatCurrency(log.previous_amount)}
-                                                    </TableCell>
-                                                    <TableCell className="text-right font-medium text-emerald-600">
-                                                        +{formatCurrency(log.added_amount)}
-                                                    </TableCell>
-                                                    <TableCell className="text-right font-bold text-blue-600">
-                                                        {formatCurrency(log.new_amount)}
-                                                    </TableCell>
-                                                    <TableCell className="max-w-[200px] truncate" title={log.reason}>
-                                                        {log.reason || "—"}
-                                                    </TableCell>
-                                                    <TableCell className="text-xs text-slate-500">
-                                                        {log.user_name || "System"}
-                                                    </TableCell>
-                                                </TableRow>
-                                            ))}
-                                        </TableBody>
-                                    </Table>
-                                </div>
-                            )}
-                        </CardContent>
-                    </Card>
-                )}
+                        )}
+                    </CardContent>
+                </Card>
             </div>
 
             {/* EDIT DIALOG */}
