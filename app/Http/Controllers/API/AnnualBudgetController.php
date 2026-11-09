@@ -335,7 +335,7 @@ class AnnualBudgetController extends Controller
                 'previous_amount' => $oldAmount,
                 'added_amount' => $annualAmount - $oldAmount,
                 'new_amount' => $annualAmount,
-                'reason' => "Annual budget for FY {$fiscalYear}: ₱" . number_format($annualAmount, 2) . " (Weekly suggested: ₱" . number_format($weeklyCeiling, 2) . ")",
+                'reason' => $request->reason ?? "Set annual budget for FY {$fiscalYear}",
                 'user_id' => auth()->id(),
                 'user_name' => auth()->user()->full_name ?? 'System',
             ]);
