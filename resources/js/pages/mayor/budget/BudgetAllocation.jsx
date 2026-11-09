@@ -79,7 +79,11 @@ const FormField = ({ label, icon: Icon, required, error, touched, helper, childr
             </label>
             <div className="relative">
                 {React.cloneElement(children, {
-                    className: cn(children.props.className, hasError && "border-red-500 ring-red-500 focus:ring-red-500 bg-red-50/50 dark:bg-red-950/10")
+                    className: cn(
+                        children.props.className, 
+                        "dark:bg-slate-900 dark:border-slate-700 dark:text-white", // ✅ FIX: Dark mode input styles
+                        hasError && "border-red-500 ring-red-500 focus:ring-red-500 bg-red-50/50 dark:bg-red-950/10"
+                    )
                 })}
                 {hasError && (
                     <div className="absolute right-3 top-1/2 -translate-y-1/2">
@@ -117,7 +121,9 @@ const BudgetAllocation = () => {
     const [showEditDialog, setShowEditDialog] = useState(false);
     const [showAddBudgetDialog, setShowAddBudgetDialog] = useState(false);
     const [addBudgetData, setAddBudgetData] = useState({ department_id: "", additional_amount: "", reason: "" });
-    const [formData, setFormData] = useState({ annual_amount: "" });
+    
+    // ✅ Added 'reason' to the initial form state
+    const [formData, setFormData] = useState({ annual_amount: "", reason: "" });
     
     const [editErrors, setEditErrors] = useState({});
     const [editTouched, setEditTouched] = useState({});
@@ -230,10 +236,14 @@ const BudgetAllocation = () => {
         return <Badge className="bg-green-500">Active</Badge>;
     };
 
+    // ✅ Added reason validation
     const validateEditBudget = () => {
         const newErrors = {};
         if (!formData.annual_amount || parseFloat(formData.annual_amount) <= 0) {
             newErrors.annual_amount = "Annual budget must be greater than 0";
+        }
+        if (!formData.reason || formData.reason.trim().length < 3) {
+            newErrors.reason = "Reason must be at least 3 characters";
         }
         setEditErrors(newErrors);
         if (Object.keys(newErrors).length > 0) return false;
@@ -256,13 +266,20 @@ const BudgetAllocation = () => {
 
     const handleEdit = (budget) => {
         setEditingBudget(budget);
-        setFormData({ annual_amount: budget.annual_amount?.toString() || "" });
+        // ✅ Reset reason when opening
+        setFormData({ annual_amount: budget.annual_amount?.toString() || "", reason: "" });
         setShowEditDialog(true);
     };
 
     const handleSetBudget = () => {
         if (!validateEditBudget()) return;
-        setBudgetMutation.mutate({ data: { department_id: editingBudget.department_id, annual_amount: parseFloat(formData.annual_amount) } });
+        setBudgetMutation.mutate({ 
+            data: { 
+                department_id: editingBudget.department_id, 
+                annual_amount: parseFloat(formData.annual_amount),
+                reason: formData.reason // ✅ Send reason to backend
+            } 
+        });
     };
 
     const handleAddBudget = () => {
@@ -284,7 +301,7 @@ const BudgetAllocation = () => {
                 {/* Header */}
                 <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                     <div className="flex items-center gap-3">
-                        <Button variant="ghost" size="icon" onClick={() => navigate('/mo/dashboard')} className="rounded-xl h-10 w-10">
+                        <Button variant="ghost" size="icon" onClick={() => navigate('/mo/dashboard')} className="rounded-xl h-10 w-10 dark:text-slate-300">
                             <ArrowLeft className="h-5 w-5" />
                         </Button>
                         <div className="flex items-center gap-3">
@@ -313,7 +330,7 @@ const BudgetAllocation = () => {
                                             variant={selectedYear === yVal ? "default" : "outline"}
                                             size="sm"
                                             onClick={() => setSelectedYear(yVal)}
-                                            className={selectedYear === yVal ? "bg-blue-600 text-white" : ""}
+                                            className={selectedYear === yVal ? "bg-blue-600 text-white" : "dark:text-slate-300 dark:border-slate-600"}
                                         >
                                             {yVal}
                                         </Button>
@@ -334,7 +351,6 @@ const BudgetAllocation = () => {
 
                 {/* Allocation Table */}
                 <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
-                    {/* ✅ REMOVED the "Add Budget" button here */}
                     <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center">
                         <h3 className="font-semibold text-slate-800 dark:text-white">Budget Details for {selectedYear}</h3>
                     </div>
@@ -342,6 +358,7 @@ const BudgetAllocation = () => {
                         <Table>
                             <TableHeader className="sticky top-0 bg-slate-50 dark:bg-slate-900 z-10">
                                 <TableRow>
+                                    {/* ✅ FIX: Added dark:text-slate-300 for visibility */}
                                     <TableHead className="text-slate-600 dark:text-slate-300">Code</TableHead>
                                     <TableHead className="text-right text-slate-600 dark:text-slate-300">Annual Budget</TableHead>
                                     <TableHead className="text-right text-slate-600 dark:text-slate-300">Weekly Suggested</TableHead>
@@ -355,7 +372,7 @@ const BudgetAllocation = () => {
                                 {budgets.map((budget) => (
                                     <TableRow key={budget.department_id}>
                                         <TableCell><DepartmentTooltip code={budget.department_code} name={budget.department_name} /></TableCell>
-                                        {/* ✅ FIXED DARK MODE COLORS for amounts */}
+                                        {/* ✅ FIX: Dark mode color variants */}
                                         <TableCell className="text-right font-medium text-blue-600 dark:text-blue-400">{formatCurrency(budget.annual_amount)}</TableCell>
                                         <TableCell className="text-right text-purple-600 dark:text-purple-400">{formatCurrency(weeklySuggested(budget.annual_amount))}</TableCell>
                                         <TableCell className="text-right text-yellow-600 dark:text-yellow-400">{formatCurrency(budget.used_amount)}</TableCell>
@@ -399,10 +416,10 @@ const BudgetAllocation = () => {
                     </CardHeader>
                     <CardContent className="p-0">
                         {historyLoading ? (
-                            <div className="p-12 text-center text-slate-500"><Activity className="h-6 w-6 animate-spin mx-auto mb-2" /> Loading history...</div>
+                            <div className="p-12 text-center text-slate-500 dark:text-slate-400"><Activity className="h-6 w-6 animate-spin mx-auto mb-2" /> Loading history...</div>
                         ) : !historyData || historyData.length === 0 ? (
-                            <div className="p-12 text-center text-slate-500">
-                                <History className="h-10 w-10 text-slate-300 mx-auto mb-2" />
+                            <div className="p-12 text-center text-slate-500 dark:text-slate-400">
+                                <History className="h-10 w-10 text-slate-300 dark:text-slate-600 mx-auto mb-2" />
                                 No budget history found for {selectedYear}.
                             </div>
                         ) : (
@@ -459,7 +476,7 @@ const BudgetAllocation = () => {
                 </Card>
             </div>
 
-            {/* EDIT DIALOG */}
+            {/* EDIT DIALOG (SET BUDGET) */}
             <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
                 <DialogContent className="dark:bg-slate-800 dark:border-slate-700 max-w-md">
                     <DialogHeader>
@@ -467,12 +484,25 @@ const BudgetAllocation = () => {
                     </DialogHeader>
                     <div className="space-y-4 py-4">
                         <FormField label="Annual Budget (₱)" required error={editErrors.annual_amount} touched={editTouched.annual_amount}>
-                            <Input type="number" value={formData.annual_amount} onChange={(e) => setFormData({ annual_amount: e.target.value })} />
+                            <Input 
+                                type="number" 
+                                value={formData.annual_amount} 
+                                onChange={(e) => setFormData({ ...formData, annual_amount: e.target.value })} 
+                                placeholder="e.g., 500000"
+                            />
+                        </FormField>
+                        {/* ✅ ADDED REASON FIELD */}
+                        <FormField label="Reason" required error={editErrors.reason} touched={editTouched.reason} helper="e.g., Initial allocation for FY 2026">
+                            <Input 
+                                value={formData.reason} 
+                                onChange={(e) => setFormData({ ...formData, reason: e.target.value })} 
+                                placeholder="Reason for setting budget" 
+                            />
                         </FormField>
                     </div>
                     <DialogFooter>
-                        <Button variant="outline" onClick={() => setShowEditDialog(false)}>Cancel</Button>
-                        <Button onClick={handleSetBudget} disabled={setBudgetMutation.isPending}>Save Budget</Button>
+                        <Button variant="outline" onClick={() => setShowEditDialog(false)} className="dark:text-slate-300 dark:border-slate-600">Cancel</Button>
+                        <Button onClick={handleSetBudget} disabled={setBudgetMutation.isPending} className="bg-blue-600 hover:bg-blue-700 text-white">Save Budget</Button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
@@ -504,7 +534,7 @@ const BudgetAllocation = () => {
                         </FormField>
                     </div>
                     <DialogFooter>
-                        <Button variant="outline" onClick={() => setShowAddBudgetDialog(false)}>Cancel</Button>
+                        <Button variant="outline" onClick={() => setShowAddBudgetDialog(false)} className="dark:text-slate-300 dark:border-slate-600">Cancel</Button>
                         <Button onClick={handleAddBudget} disabled={addBudgetMutation.isPending} className="bg-emerald-600 hover:bg-emerald-700 text-white">Add Budget</Button>
                     </DialogFooter>
                 </DialogContent>
