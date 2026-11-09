@@ -17,6 +17,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use App\Traits\FiltersGpsDistance;
+use App\Services\FuelLevelService;
 
 class GpsPingController extends Controller
 {
@@ -919,10 +920,10 @@ class GpsPingController extends Controller
         }
     }
 
-    /**
+       /**
      * Get all active trips with latest GPS location
      */
-    public function getActiveTrips(Request $request)
+    public function getActiveTrips(Request $request, FuelLevelService $fuelLevelService)
     {
         try {
             $user = $request->user();
@@ -968,6 +969,9 @@ class GpsPingController extends Controller
                 $driverUser = $driver ? $driver->user : null;
                 $department = $trip->department;
 
+                // ✅ Compute live fuel payload
+                $fuelInfo = $vehicle ? $fuelLevelService->compute($vehicle) : null;
+
                 $result[] = [
                     'trip_id' => $trip->trip_ticket_id,
                     'ticket_number' => $trip->trip_ticket_number ?? 'N/A',
@@ -976,6 +980,11 @@ class GpsPingController extends Controller
                     'vehicle' => [
                         'plate_number' => $vehicle ? $vehicle->plate_number : 'Unknown',
                         'vehicle_model' => $vehicle ? $vehicle->vehicle_model : 'Unknown',
+                        // ✅ OVERRIDE STALE DB COLUMN WITH LIVE COMPUTATION
+                        'tank_capacity' => $vehicle ? $vehicle->tank_capacity : 60,
+                        'reference_efficiency' => $vehicle ? $vehicle->reference_efficiency : 10,
+                        'initial_estimated_fuel' => $vehicle ? $vehicle->initial_estimated_fuel : 0,
+                        'current_fuel_balance' => $fuelInfo ? $fuelInfo['clamped_balance'] : 0,
                     ],
                     'driver' => [
                         'name' => $driverUser ? $driverUser->full_name : 'Unknown',
