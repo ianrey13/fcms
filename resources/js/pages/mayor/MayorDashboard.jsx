@@ -7,23 +7,20 @@ import { useAutoRefresh } from "../../hooks/useAutoRefresh";
 import { useRealtime } from "../../contexts/RealtimeContext";
 import { SkeletonPage } from "../../components/ui/SkeletonCard";
 import api, { mayorsOfficeAPI } from "../../services/api";
-import { startOfWeek, endOfWeek, startOfMonth, endOfMonth, subDays, isWithinInterval } from "date-fns";
 
 import {
-    Clock, ArrowRight, Activity, PieChart,
-    Fuel, Building2, Car, Download, TrendingUp, ChevronDown,
-    CheckCircle, Wallet, Scale, AlertTriangle, Info, Trophy,
-    ShieldCheck, Calendar
+    ArrowRight, Activity, PieChart, Fuel, Building2, Car, Download, TrendingUp, 
+    CheckCircle, Wallet, Scale, AlertTriangle, Info, Trophy, ShieldCheck, Calendar
 } from "lucide-react";
 import {
     Cell, PieChart as RePieChart, Pie, ResponsiveContainer, Tooltip,
-    LineChart, Line, XAxis, YAxis, CartesianGrid
+    LineChart, Line, XAxis, YAxis
 } from "recharts";
 import { cn } from "@/lib/utils";
 import { Card, CardContent } from "@/components/ui/card";
 
 // ============================================
-// CONSTANTS & HELPERS
+// HELPERS
 // ============================================
 
 const DEPARTMENT_PALETTE = ["#3b82f6", "#10b981", "#8b5cf6", "#f59e0b", "#ef4444"];
@@ -79,39 +76,14 @@ const StatusBadge = ({ status }) => {
     );
 };
 
-const handleDownloadReceipt = async (url, ticketNumber) => {
-    if (!url) {
-        alert("No receipt uploaded for this trip yet.");
-        return;
-    }
-    try {
-        const response = await fetch(url);
-        const blob = await response.blob();
-        const blobUrl = window.URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = blobUrl;
-        link.download = `Receipt_${ticketNumber}.jpg`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        window.URL.revokeObjectURL(blobUrl);
-    } catch (error) {
-        window.open(url, '_blank');
-    }
-};
-
 // ============================================
 // MAIN COMPONENT
 // ============================================
 
 const MayorDashboard = () => {
-    const { user } = useAuth();
-    const navigate = useNavigate();
-    const { isConnected } = useRealtime();
     const queryClient = useQueryClient();
-
-    // State for the department filters
-    const [selectedPieDept, setSelectedPieDept] = useState(null);
+    
+    // Filters
     const [trendDept, setTrendDept] = useState("all");
     const [transDept, setTransDept] = useState("all");
 
@@ -180,52 +152,49 @@ const MayorDashboard = () => {
             }));
     }, [departmentBudgets]);
 
-    // ✅ WEEKLY TREND DATA (No Date Filter, just Department)
+    // ✅ REAL TREND DATA CALCULATION
     const trendData = useMemo(() => {
-        // Filter tickets based on selected department
+        // 1. Filter tickets based on selected department
         const filtered = approvedTicketsRaw.filter(t => 
             trendDept === "all" || t.department_name === trendDept
         );
 
-        // Group releases by month (for a 1-year view)
-        const monthly = {};
+        // 2. Group by Month
+        const monthlyGroups = {};
         filtered.forEach(t => {
             if (!t.trip_date) return;
-            const d = new Date(t.trip_date);
-            const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-            if (!monthly[key]) monthly[key] = 0;
-            monthly[key] += parseFloat(t.amount_released) || 0;
+            const date = new Date(t.trip_date);
+            const monthYear = date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }); // e.g., "Nov 2026"
+            
+            if (!monthlyGroups[monthYear]) {
+                monthlyGroups[monthYear] = { released: 0, dateObj: date };
+            }
+            monthlyGroups[monthYear].released += parseFloat(t.amount_released) || 0;
         });
 
-        // Get Weekly Suggested for the selected dept
-        let weeklySuggested = 0;
+        // 3. Calculate the Baseline (Weekly Suggested)
+        let totalWeeklySuggested = 0;
         if (trendDept === "all") {
-            // Sum of all departments' weekly suggested (Annual / 52)
-            weeklySuggested = departmentBudgets.reduce((sum, d) => sum + (d.allocated / 52), 0);
+            totalWeeklySuggested = departmentBudgets.reduce((sum, d) => sum + (d.allocated / 52), 0);
         } else {
             const dept = departmentBudgets.find(d => d.department_name === trendDept);
-            weeklySuggested = dept ? (dept.allocated / 52) : 0;
+            totalWeeklySuggested = dept ? (dept.allocated / 52) : 0;
         }
 
-        // Generate 12 months of data
-        const chartData = [];
-        const now = new Date();
-        for (let i = 11; i >= 0; i--) {
-            const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-            const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-            const monthName = d.toLocaleDateString('en-US', { month: 'short' });
-            
-            // Weekly suggested multiplied by ~4.33 to get monthly baseline
-            const monthlyBaseline = weeklySuggested * 4.33;
+        // 4. Convert object to sorted array for the chart
+        const sortedKeys = Object.keys(monthlyGroups).sort((a, b) => monthlyGroups[a].dateObj - monthlyGroups[b].dateObj);
 
-            chartData.push({
-                name: monthName,
-                released: monthly[key] || 0,
-                suggested: monthlyBaseline
-            });
+        // If there's no data, just return an empty state to avoid chart errors
+        if (sortedKeys.length === 0) {
+            return [{ name: "No Data", released: 0, suggested: totalWeeklySuggested * 4.33 }];
         }
 
-        return chartData;
+        return sortedKeys.map(key => ({
+            name: key,
+            released: monthlyGroups[key].released,
+            // Approximate monthly baseline by multiplying weekly suggested by ~4.33 weeks
+            suggested: Math.round(totalWeeklySuggested * 4.33) 
+        }));
     }, [approvedTicketsRaw, trendDept, departmentBudgets]);
 
     // ✅ TRANSACTIONS DATA
@@ -249,7 +218,6 @@ const MayorDashboard = () => {
                     </h1>
                     <p className="text-sm text-slate-400 mt-1">General Services Office • Mayor's Office</p>
                 </div>
-                {/* ✅ REMOVED THE DATE FILTER HERE */}
             </div>
 
             {/* 1. Top Stat Cards */}
@@ -353,7 +321,6 @@ const MayorDashboard = () => {
                                         cx="50%" cy="50%"
                                         innerRadius="65%" outerRadius="85%"
                                         paddingAngle={2} stroke="none"
-                                        onClick={(data) => setSelectedPieDept(data.name === selectedPieDept ? null : data.name)}
                                     >
                                         {pieData.map((entry, i) => (
                                             <Cell key={i} fill={entry.color} />
@@ -388,7 +355,6 @@ const MayorDashboard = () => {
                         <h3 className="font-bold text-white flex items-center gap-2">
                             <Trophy className="h-4 w-4 text-yellow-500" /> Top Fund Consumers
                         </h3>
-                        {/* ✅ Removed the filter buttons from here to avoid confusion */}
                     </div>
                     <div className="space-y-4">
                         {departmentBudgets.slice(0, 4).map((d, i) => (
@@ -411,24 +377,22 @@ const MayorDashboard = () => {
                     </div>
                 </Card>
 
-                {/* ✅ Fund Trend Overview (Weekly, No Date, Dept Filter) */}
+                {/* Fund Trend Overview */}
                 <Card className="bg-[#121829] border border-slate-800 rounded-2xl shadow-lg p-5">
                     <div className="flex items-center justify-between mb-6">
                         <h3 className="font-bold text-white flex items-center gap-2">
                             <TrendingUp className="h-4 w-4 text-emerald-400" /> FUND TREND OVERVIEW
                         </h3>
-                        <div className="flex items-center gap-2">
-                            <select 
-                                value={trendDept}
-                                onChange={(e) => setTrendDept(e.target.value)}
-                                className="bg-slate-800 text-[10px] text-slate-300 px-2 py-1 rounded border border-slate-700 outline-none cursor-pointer"
-                            >
-                                <option value="all">All Departments</option>
-                                {departmentBudgets.map(d => (
-                                    <option key={d.department_id} value={d.department_name}>{d.department_name}</option>
-                                ))}
-                            </select>
-                        </div>
+                        <select 
+                            value={trendDept}
+                            onChange={(e) => setTrendDept(e.target.value)}
+                            className="bg-slate-800 text-[10px] text-slate-300 px-2 py-1 rounded border border-slate-700 outline-none cursor-pointer"
+                        >
+                            <option value="all">All Departments</option>
+                            {departmentBudgets.map(d => (
+                                <option key={d.department_id} value={d.department_name}>{d.department_name}</option>
+                            ))}
+                        </select>
                     </div>
                     <div className="h-[180px] w-full">
                         <ResponsiveContainer width="100%" height="100%">
@@ -579,7 +543,7 @@ const MayorDashboard = () => {
                     </div>
                 </Card>
 
-                {/* Insights & Alerts */}
+                {/* Insights & Alerts (Dynamic) */}
                 <Card className="lg:col-span-2 bg-[#121829] border border-slate-800 rounded-2xl shadow-lg p-5">
                     <h3 className="font-bold text-white flex items-center gap-2 mb-4 text-sm">
                         <Info className="h-4 w-4 text-yellow-400" /> INSIGHTS & ALERTS
@@ -589,7 +553,7 @@ const MayorDashboard = () => {
                             <div className="flex items-start gap-2">
                                 <AlertTriangle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
                                 <p className="text-xs text-slate-300">
-                                    {departmentBudgets[0].department_name} spent {allTimeTotals.totalUsed > 0 ? ((departmentBudgets[0].spent / allTimeTotals.totalUsed) * 100).toFixed(1) : 0}% of total funds used.
+                                    {departmentBudgets[0].department_name} spent {allTimeTotals.totalUsed > 0 ? ((departmentBudgets[0].spent / allTimeTotals.totalUsed) * 100).toFixed(1) : 0}% of total funds.
                                 </p>
                             </div>
                         )}
