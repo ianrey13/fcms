@@ -57,13 +57,16 @@ const StatusBadge = ({ status, actualCost }) => {
     let displayStatus = "Funds Issued";
     let colorClass = "text-blue-400"; // Default
 
-    // Check if there's actual fuel cost recorded (meaning it's verified)
+    // ✅ Check if there's a verified amount spent
     const hasCost = actualCost !== null && actualCost !== undefined && parseFloat(actualCost) > 0;
 
-    if (status === "acknowledged") {
+    if (status === "funds_issued") {
+        displayStatus = "Funds Issued";
+        colorClass = "text-blue-400";
+    } else if (status === "acknowledged") {
         displayStatus = "Received";
         colorClass = "text-yellow-400";
-    } else if (status === "in_transit" || (!hasCost && status !== 'closed' && status !== 'completed')) {
+    } else if (status === "in_transit" && !hasCost) {
         displayStatus = "For Verification";
         colorClass = "text-orange-400";
     } else if (hasCost || ["completed", "closed", "pending_gso_validation", "pending_reconciliation"].includes(status)) {
@@ -80,6 +83,7 @@ const StatusBadge = ({ status, actualCost }) => {
         </span>
     );
 };
+
 
 const handleDownloadReceipt = async (url, ticketNumber) => {
     if (!url) {
@@ -583,7 +587,7 @@ const MayorDashboard = () => {
                                 {transactionsData.length === 0 ? (
                                     <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-500">No transactions found.</td></tr>
                                 ) : transactionsData.map((t, i) => {
-                                    // ✅ FIX: Only show amount if it's greater than 0 (Verified na)
+                                    // ✅ FIX: If status is funds_issued OR no actual cost, show "-"
                                     const hasCost = t.actual_fuel_cost && parseFloat(t.actual_fuel_cost) > 0;
                                     const amountSpentDisplay = hasCost ? formatCurrency(t.actual_fuel_cost) : "-";
 
@@ -600,7 +604,7 @@ const MayorDashboard = () => {
                                                 </button>
                                             </td>
                                             <td className="px-4 py-3 text-right">
-                                                {/* ✅ Gi-pass ang actualCost aron makabalo ang badge kung Verified ba jud */}
+                                                {/* ✅ I-pass ang status ug actualCost */}
                                                 <StatusBadge status={t.status} actualCost={t.actual_fuel_cost} />
                                             </td>
                                         </tr>
