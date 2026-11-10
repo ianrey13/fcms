@@ -13,11 +13,11 @@ import {
     Clock, ArrowRight, Activity, PieChart,
     Fuel, Building2, Car, Download, TrendingUp, ChevronDown,
     CheckCircle, Wallet, Scale, AlertTriangle, Info, Trophy,
-    MoreVertical, ShieldCheck, Calendar, Monitor
+    ShieldCheck, Calendar
 } from "lucide-react";
 import {
     Cell, PieChart as RePieChart, Pie, ResponsiveContainer, Tooltip,
-    AreaChart, Area, XAxis, YAxis, CartesianGrid
+    LineChart, Line, XAxis, YAxis, CartesianGrid
 } from "recharts";
 import { cn } from "@/lib/utils";
 import { Card, CardContent } from "@/components/ui/card";
@@ -110,22 +110,14 @@ const MayorDashboard = () => {
     const { isConnected } = useRealtime();
     const queryClient = useQueryClient();
 
-    const [selectedDepartment, setSelectedDepartment] = useState(null);
-    const [timeFilter, setTimeFilter] = useState("this_month"); 
-
-    // Dummy data for the trend chart to match UI
-    const trendData = [
-        { name: 'Nov 1', spent: 1000000, available: 3500000 },
-        { name: 'Nov 7', spent: 1500000, available: 3000000 },
-        { name: 'Nov 14', spent: 2200000, available: 2300000 },
-        { name: 'Nov 21', spent: 2800000, available: 1700000 },
-        { name: 'Nov 30', spent: 3210500, available: 989500 },
-    ];
+    // State for the department filters
+    const [selectedPieDept, setSelectedPieDept] = useState(null);
+    const [trendDept, setTrendDept] = useState("all");
+    const [transDept, setTransDept] = useState("all");
 
     const fetchAllData = useCallback(() => {
         queryClient.invalidateQueries({ queryKey: ["mayor-approved-tickets"] });
         queryClient.invalidateQueries({ queryKey: ["mayor-department-budgets"] });
-        queryClient.invalidateQueries({ queryKey: ["mayor-active-fiscal-year"] });
     }, [queryClient]);
 
     useAutoRefresh(["mayor-trip-updated", "gso-funds-released", "trip-completed"], fetchAllData, 1000);
@@ -164,7 +156,7 @@ const MayorDashboard = () => {
             spent: parseFloat(dept.spent_amount ?? dept.used_amount ?? dept.spent ?? 0),
             remaining: parseFloat(dept.remaining_amount ?? 0),
             utilization: parseFloat(dept.utilization_percentage ?? dept.utilization ?? 0),
-        })).sort((a, b) => b.spent - a.spent); // Sort top consumers
+        })).sort((a, b) => b.spent - a.spent);
     }, [budgetData]);
 
     const allTimeTotals = useMemo(() => {
@@ -188,45 +180,61 @@ const MayorDashboard = () => {
             }));
     }, [departmentBudgets]);
 
-    const filteredTickets = useMemo(() => {
-        if (timeFilter === "all_time") return approvedTicketsRaw;
-        const today = new Date();
-        let start, end;
-        if (timeFilter === "this_week") {
-            start = startOfWeek(today, { weekStartsOn: 1 });
-            end = endOfWeek(today, { weekStartsOn: 1 });
-        } else if (timeFilter === "two_weeks_ago") {
-            start = subDays(today, 14);
-            end = today;
-        } else {
-            start = startOfMonth(today);
-            end = endOfMonth(today);
-        }
-        return approvedTicketsRaw.filter(t => {
-            if (!t.trip_date) return false;
-            return isWithinInterval(new Date(t.trip_date), { start, end });
+    // ✅ WEEKLY TREND DATA (No Date Filter, just Department)
+    const trendData = useMemo(() => {
+        // Filter tickets based on selected department
+        const filtered = approvedTicketsRaw.filter(t => 
+            trendDept === "all" || t.department_name === trendDept
+        );
+
+        // Group releases by month (for a 1-year view)
+        const monthly = {};
+        filtered.forEach(t => {
+            if (!t.trip_date) return;
+            const d = new Date(t.trip_date);
+            const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+            if (!monthly[key]) monthly[key] = 0;
+            monthly[key] += parseFloat(t.amount_released) || 0;
         });
-    }, [approvedTicketsRaw, timeFilter]);
 
-    const timeFilterLabel = useMemo(() => {
-        if (timeFilter === "this_week") return "This Week";
-        if (timeFilter === "two_weeks_ago") return "Last 2 Weeks";
-        if (timeFilter === "all_time") return "All Time";
-        return "This Month";
-    }, [timeFilter]);
-
-    const dynamicPanelData = useMemo(() => {
-        if (!selectedDepartment) {
-            return {
-                name: "All Departments",
-                transactions: filteredTickets.sort((a, b) => new Date(b.trip_date) - new Date(a.trip_date)).slice(0, 5),
-            };
+        // Get Weekly Suggested for the selected dept
+        let weeklySuggested = 0;
+        if (trendDept === "all") {
+            // Sum of all departments' weekly suggested (Annual / 52)
+            weeklySuggested = departmentBudgets.reduce((sum, d) => sum + (d.allocated / 52), 0);
+        } else {
+            const dept = departmentBudgets.find(d => d.department_name === trendDept);
+            weeklySuggested = dept ? (dept.allocated / 52) : 0;
         }
-        return {
-            name: selectedDepartment,
-            transactions: filteredTickets.filter(t => t.department_name === selectedDepartment).sort((a, b) => new Date(b.trip_date) - new Date(a.trip_date)).slice(0, 5),
-        };
-    }, [selectedDepartment, filteredTickets]);
+
+        // Generate 12 months of data
+        const chartData = [];
+        const now = new Date();
+        for (let i = 11; i >= 0; i--) {
+            const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+            const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+            const monthName = d.toLocaleDateString('en-US', { month: 'short' });
+            
+            // Weekly suggested multiplied by ~4.33 to get monthly baseline
+            const monthlyBaseline = weeklySuggested * 4.33;
+
+            chartData.push({
+                name: monthName,
+                released: monthly[key] || 0,
+                suggested: monthlyBaseline
+            });
+        }
+
+        return chartData;
+    }, [approvedTicketsRaw, trendDept, departmentBudgets]);
+
+    // ✅ TRANSACTIONS DATA
+    const transactionsData = useMemo(() => {
+        return approvedTicketsRaw
+            .filter(t => transDept === "all" || t.department_name === transDept)
+            .sort((a, b) => new Date(b.trip_date) - new Date(a.trip_date))
+            .slice(0, 5);
+    }, [approvedTicketsRaw, transDept]);
 
     if (approvedLoading || budgetLoading) return <SkeletonPage />;
 
@@ -241,12 +249,7 @@ const MayorDashboard = () => {
                     </h1>
                     <p className="text-sm text-slate-400 mt-1">General Services Office • Mayor's Office</p>
                 </div>
-                <div className="flex items-center gap-4 mt-4 md:mt-0">
-                    <div className="flex items-center gap-2 bg-[#121829] border border-slate-700 rounded-lg px-4 py-2 text-sm text-slate-300">
-                        <Calendar className="h-4 w-4 text-slate-400" />
-                        Nov 1 – Nov 30, 2026
-                    </div>
-                </div>
+                {/* ✅ REMOVED THE DATE FILTER HERE */}
             </div>
 
             {/* 1. Top Stat Cards */}
@@ -280,9 +283,9 @@ const MayorDashboard = () => {
                                 <CheckCircle className="h-5 w-5 text-emerald-400" />
                             </div>
                         </div>
-                        <p className="text-[11px] text-slate-400 mb-2">93.33% of Budget</p>
+                        <p className="text-[11px] text-slate-400 mb-2">100% of Budget</p>
                         <div className="w-full bg-slate-700/50 h-1.5 rounded-full overflow-hidden">
-                            <div className="h-full bg-emerald-500 rounded-full w-[93%]" />
+                            <div className="h-full bg-emerald-500 rounded-full w-full" />
                         </div>
                     </CardContent>
                 </Card>
@@ -298,9 +301,11 @@ const MayorDashboard = () => {
                                 <TrendingUp className="h-5 w-5 text-purple-400" />
                             </div>
                         </div>
-                        <p className="text-[11px] text-slate-400 mb-2">71.34% of Budget</p>
+                        <p className="text-[11px] text-slate-400 mb-2">
+                            {allTimeTotals.totalAllocated > 0 ? ((allTimeTotals.totalUsed / allTimeTotals.totalAllocated) * 100).toFixed(2) : 0}% of Budget
+                        </p>
                         <div className="w-full bg-slate-700/50 h-1.5 rounded-full overflow-hidden">
-                            <div className="h-full bg-purple-500 rounded-full w-[71%]" />
+                            <div className="h-full bg-purple-500 rounded-full" style={{ width: `${allTimeTotals.totalAllocated > 0 ? (allTimeTotals.totalUsed / allTimeTotals.totalAllocated) * 100 : 0}%` }} />
                         </div>
                     </CardContent>
                 </Card>
@@ -316,9 +321,11 @@ const MayorDashboard = () => {
                                 <Scale className="h-5 w-5 text-yellow-400" />
                             </div>
                         </div>
-                        <p className="text-[11px] text-slate-400 mb-2">21.96% of Budget</p>
+                        <p className="text-[11px] text-slate-400 mb-2">
+                            {allTimeTotals.totalAllocated > 0 ? ((allTimeTotals.totalRemaining / allTimeTotals.totalAllocated) * 100).toFixed(2) : 0}% of Budget
+                        </p>
                         <div className="w-full bg-slate-700/50 h-1.5 rounded-full overflow-hidden">
-                            <div className="h-full bg-yellow-500 rounded-full w-[21%]" />
+                            <div className="h-full bg-yellow-500 rounded-full" style={{ width: `${allTimeTotals.totalAllocated > 0 ? (allTimeTotals.totalRemaining / allTimeTotals.totalAllocated) * 100 : 0}%` }} />
                         </div>
                     </CardContent>
                 </Card>
@@ -346,7 +353,7 @@ const MayorDashboard = () => {
                                         cx="50%" cy="50%"
                                         innerRadius="65%" outerRadius="85%"
                                         paddingAngle={2} stroke="none"
-                                        onClick={(data) => setSelectedDepartment(data.name === selectedDepartment ? null : data.name)}
+                                        onClick={(data) => setSelectedPieDept(data.name === selectedPieDept ? null : data.name)}
                                     >
                                         {pieData.map((entry, i) => (
                                             <Cell key={i} fill={entry.color} />
@@ -381,11 +388,7 @@ const MayorDashboard = () => {
                         <h3 className="font-bold text-white flex items-center gap-2">
                             <Trophy className="h-4 w-4 text-yellow-500" /> Top Fund Consumers
                         </h3>
-                        <div className="flex gap-1 bg-slate-800/50 p-1 rounded-md text-[10px]">
-                            <button onClick={() => setTimeFilter("this_week")} className={cn("px-2 py-1 rounded", timeFilter === "this_week" ? "bg-blue-600 text-white" : "text-slate-400")}>This Week</button>
-                            <button onClick={() => setTimeFilter("this_month")} className={cn("px-2 py-1 rounded", timeFilter === "this_month" ? "bg-blue-600 text-white" : "text-slate-400")}>This Month</button>
-                            <button onClick={() => setTimeFilter("two_weeks_ago")} className={cn("px-2 py-1 rounded", timeFilter === "two_weeks_ago" ? "bg-blue-600 text-white" : "text-slate-400")}>Last 2 Weeks</button>
-                        </div>
+                        {/* ✅ Removed the filter buttons from here to avoid confusion */}
                     </div>
                     <div className="space-y-4">
                         {departmentBudgets.slice(0, 4).map((d, i) => (
@@ -408,25 +411,28 @@ const MayorDashboard = () => {
                     </div>
                 </Card>
 
-                {/* Fund Trend Overview */}
+                {/* ✅ Fund Trend Overview (Weekly, No Date, Dept Filter) */}
                 <Card className="bg-[#121829] border border-slate-800 rounded-2xl shadow-lg p-5">
                     <div className="flex items-center justify-between mb-6">
                         <h3 className="font-bold text-white flex items-center gap-2">
                             <TrendingUp className="h-4 w-4 text-emerald-400" /> FUND TREND OVERVIEW
                         </h3>
-                        <button className="flex items-center gap-1 text-[10px] bg-slate-800 px-2 py-1 rounded text-slate-300">
-                            This Month <ChevronDown className="h-3 w-3" />
-                        </button>
+                        <div className="flex items-center gap-2">
+                            <select 
+                                value={trendDept}
+                                onChange={(e) => setTrendDept(e.target.value)}
+                                className="bg-slate-800 text-[10px] text-slate-300 px-2 py-1 rounded border border-slate-700 outline-none cursor-pointer"
+                            >
+                                <option value="all">All Departments</option>
+                                {departmentBudgets.map(d => (
+                                    <option key={d.department_id} value={d.department_name}>{d.department_name}</option>
+                                ))}
+                            </select>
+                        </div>
                     </div>
                     <div className="h-[180px] w-full">
                         <ResponsiveContainer width="100%" height="100%">
-                            <AreaChart data={trendData} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
-                                <defs>
-                                    <linearGradient id="colorSpent" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
-                                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
-                                    </linearGradient>
-                                </defs>
+                            <LineChart data={trendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                                 <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#64748b'}} dy={10} />
                                 <YAxis axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#64748b'}} tickFormatter={(val) => `₱${val/1000000}M`} />
                                 <Tooltip 
@@ -434,8 +440,9 @@ const MayorDashboard = () => {
                                     itemStyle={{ color: '#fff' }}
                                     formatter={(val) => formatCurrency(val)}
                                 />
-                                <Area type="monotone" dataKey="spent" stroke="#3b82f6" strokeWidth={2} fillOpacity={1} fill="url(#colorSpent)" />
-                            </AreaChart>
+                                <Line type="monotone" name="Amount Released" dataKey="released" stroke="#3b82f6" strokeWidth={2} dot={{ r: 4 }} />
+                                <Line type="monotone" name="Weekly Suggested Baseline" dataKey="suggested" stroke="#10b981" strokeWidth={2} strokeDasharray="5 5" dot={{ r: 4 }} />
+                            </LineChart>
                         </ResponsiveContainer>
                     </div>
                 </Card>
@@ -450,9 +457,6 @@ const MayorDashboard = () => {
                         <h3 className="font-bold text-white flex items-center gap-2">
                             <Building2 className="h-4 w-4 text-blue-400" /> DEPARTMENT FUND MONITORING
                         </h3>
-                        <button className="flex items-center gap-1 text-[10px] bg-slate-800 px-2 py-1 rounded text-slate-300">
-                            This Month <ChevronDown className="h-3 w-3" />
-                        </button>
                     </div>
                     <div className="overflow-x-auto">
                         <table className="w-full text-left text-xs">
@@ -493,8 +497,15 @@ const MayorDashboard = () => {
                             <Activity className="h-4 w-4 text-blue-400" /> DEPARTMENT TRANSACTIONS
                         </h3>
                         <div className="flex items-center gap-2">
-                            <select className="bg-slate-800 text-[10px] text-slate-300 px-2 py-1 rounded border-none outline-none">
-                                <option>All Departments</option>
+                            <select 
+                                value={transDept}
+                                onChange={(e) => setTransDept(e.target.value)}
+                                className="bg-slate-800 text-[10px] text-slate-300 px-2 py-1 rounded border border-slate-700 outline-none cursor-pointer"
+                            >
+                                <option value="all">All Departments</option>
+                                {departmentBudgets.map(d => (
+                                    <option key={d.department_id} value={d.department_name}>{d.department_name}</option>
+                                ))}
                             </select>
                             <button className="text-[10px] text-blue-400">View All →</button>
                         </div>
@@ -513,7 +524,9 @@ const MayorDashboard = () => {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-800/50">
-                                {dynamicPanelData.transactions.map((t, i) => {
+                                {transactionsData.length === 0 ? (
+                                    <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-500">No transactions found.</td></tr>
+                                ) : transactionsData.map((t, i) => {
                                     const isVerified = ["completed", "closed", "pending_gso_validation", "pending_reconciliation"].includes(t.status);
                                     return (
                                         <tr key={i} className="hover:bg-slate-800/20 transition-colors">
@@ -546,7 +559,7 @@ const MayorDashboard = () => {
                 <Card className="lg:col-span-1 bg-[#121829] border border-slate-800 rounded-2xl shadow-lg p-5">
                     <div className="flex items-center justify-between mb-4">
                         <h3 className="font-bold text-white flex items-center gap-2 text-sm">
-                            <Activity className="h-4 w-4 text-blue-400" /> RECENT FUND RELEASES (ALL DEPARTMENTS)
+                            <Activity className="h-4 w-4 text-blue-400" /> RECENT FUND RELEASES
                         </h3>
                         <button className="text-[10px] text-blue-400">View All →</button>
                     </div>
@@ -572,18 +585,40 @@ const MayorDashboard = () => {
                         <Info className="h-4 w-4 text-yellow-400" /> INSIGHTS & ALERTS
                     </h3>
                     <div className="space-y-3">
-                        <div className="flex items-start gap-2">
-                            <AlertTriangle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
-                            <p className="text-xs text-slate-300">Rural Health Unit spent 31.5% of total funds this week.</p>
-                        </div>
-                        <div className="flex items-start gap-2">
-                            <Info className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />
-                            <p className="text-xs text-slate-300">Engineering Office has unspent balance of ₱170,000.00.</p>
-                        </div>
-                        <div className="flex items-start gap-2">
-                            <AlertTriangle className="h-4 w-4 text-yellow-500 shrink-0 mt-0.5" />
-                            <p className="text-xs text-slate-300">2 transactions require verification.</p>
-                        </div>
+                        {departmentBudgets.length > 0 && (
+                            <div className="flex items-start gap-2">
+                                <AlertTriangle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
+                                <p className="text-xs text-slate-300">
+                                    {departmentBudgets[0].department_name} spent {allTimeTotals.totalUsed > 0 ? ((departmentBudgets[0].spent / allTimeTotals.totalUsed) * 100).toFixed(1) : 0}% of total funds used.
+                                </p>
+                            </div>
+                        )}
+                        
+                        {departmentBudgets.find(d => d.remaining > 100000) && (
+                            <div className="flex items-start gap-2">
+                                <Info className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />
+                                <p className="text-xs text-slate-300">
+                                    {departmentBudgets.find(d => d.remaining > 100000).department_name} has an unspent balance of {formatCurrency(departmentBudgets.find(d => d.remaining > 100000).remaining)}.
+                                </p>
+                            </div>
+                        )}
+
+                        {approvedTicketsRaw.filter(t => t.status === 'in_transit' || t.status === 'acknowledged').length > 0 ? (
+                            <div className="flex items-start gap-2">
+                                <AlertTriangle className="h-4 w-4 text-yellow-500 shrink-0 mt-0.5" />
+                                <p className="text-xs text-slate-300">
+                                    {approvedTicketsRaw.filter(t => t.status === 'in_transit' || t.status === 'acknowledged').length} transaction(s) require verification.
+                                </p>
+                            </div>
+                        ) : (
+                            <div className="flex items-start gap-2">
+                                <CheckCircle className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />
+                                <p className="text-xs text-slate-300">
+                                    All recent transactions are verified.
+                                </p>
+                            </div>
+                        )}
+
                         <div className="flex items-start gap-2">
                             <CheckCircle className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />
                             <p className="text-xs text-slate-300">All departments are within their budget limits.</p>
@@ -599,7 +634,6 @@ const MayorDashboard = () => {
                         </h3>
                         <p className="text-[11px] text-blue-200/70">Monitoring public funds for a more accountable LGU.</p>
                     </div>
-                    {/* Subtle Background Icon */}
                     <Building2 className="absolute -bottom-4 -right-4 h-32 w-32 text-blue-500/10 pointer-events-none z-0" />
                 </Card>
             </div>
