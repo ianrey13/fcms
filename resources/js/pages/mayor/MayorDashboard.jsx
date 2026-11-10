@@ -1,5 +1,3 @@
-// src/pages/mayor/MayorDashboard.jsx
-
 import React, { useMemo, useCallback, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
@@ -9,7 +7,7 @@ import { useAutoRefresh } from "../../hooks/useAutoRefresh";
 import { useRealtime } from "../../contexts/RealtimeContext";
 import { SkeletonPage } from "../../components/ui/SkeletonCard";
 import api, { mayorsOfficeAPI } from "../../services/api";
-import { startOfWeek, endOfWeek, startOfMonth, endOfMonth, subWeeks, isWithinInterval } from "date-fns";
+import { startOfWeek, endOfWeek, startOfMonth, endOfMonth, subDays, isWithinInterval } from "date-fns";
 
 import {
     Clock, BarChart3, ArrowRight, Activity, PieChart,
@@ -56,17 +54,17 @@ const formatCompact = (amount) => {
 
 const formatDateShort = (ds) => ds ? new Date(ds).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" }) : "—";
 
-// ✅ UPDATED STATUS BADGE
+// ✅ UPDATED STATUS BADGE (Colored text only, no background button look)
 const StatusBadge = ({ status }) => {
     let displayStatus = "Funds Issued";
-    let colorClass = "bg-blue-500";
+    let textColor = "text-blue-600 dark:text-blue-400";
 
     if (status === "acknowledged") {
-        displayStatus = "Acknowledged";
-        colorClass = "bg-cyan-500";
+        displayStatus = "Received"; // ✅ Changed from Acknowledged
+        textColor = "text-yellow-600 dark:text-yellow-400";
     } else if (status === "in_transit") {
-        displayStatus = "In Transit";
-        colorClass = "bg-indigo-500";
+        displayStatus = "For Verification"; // ✅ Changed from In Transit
+        textColor = "text-purple-600 dark:text-purple-400";
     } else if (
         status === "completed" || 
         status === "closed" || 
@@ -74,14 +72,16 @@ const StatusBadge = ({ status }) => {
         status === "pending_reconciliation"
     ) {
         displayStatus = "Verified";
-        colorClass = "bg-emerald-500";
+        textColor = "text-emerald-600 dark:text-emerald-400";
+    } else if (status === "rejected") {
+        displayStatus = "Rejected";
+        textColor = "text-red-600 dark:text-red-400";
     }
 
     return (
-        <Badge className={`${colorClass} text-white flex items-center justify-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-medium whitespace-nowrap`}>
-            <CheckCircle className="h-3 w-3" />
+        <span className={`font-bold text-[11px] whitespace-nowrap ${textColor}`}>
             {displayStatus}
-        </Badge>
+        </span>
     );
 };
 
@@ -215,7 +215,7 @@ const MayorDashboard = () => {
     // ============ TIME FILTERING ============
     const timeFilterLabel = useMemo(() => {
         if (timeFilter === "this_week") return "This Week";
-        if (timeFilter === "two_weeks_ago") return "Two Weeks Ago";
+        if (timeFilter === "two_weeks_ago") return "Past 2 Weeks"; // ✅ Label change
         if (timeFilter === "all_time") return "All Time";
         return "This Month";
     }, [timeFilter]);
@@ -230,9 +230,9 @@ const MayorDashboard = () => {
             start = startOfWeek(today, { weekStartsOn: 1 });
             end = endOfWeek(today, { weekStartsOn: 1 });
         } else if (timeFilter === "two_weeks_ago") {
-            const twoWeeksAgo = subWeeks(today, 2);
-            start = startOfWeek(twoWeeksAgo, { weekStartsOn: 1 });
-            end = endOfWeek(twoWeeksAgo, { weekStartsOn: 1 });
+            // ✅ FIX: 2 weeks ago up to Present
+            start = subDays(today, 14);
+            end = today;
         } else {
             start = startOfMonth(today);
             end = endOfMonth(today);
@@ -334,6 +334,7 @@ const MayorDashboard = () => {
 
             {/* 1. Top Stat Cards */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                {/* ... (Keep Top Cards the same) ... */}
                 <Card className="dark:bg-slate-800 border-none shadow-sm">
                     <CardContent className="p-4 flex items-center gap-4">
                         <div className="p-3 bg-blue-100 dark:bg-blue-900/30 rounded-xl">
@@ -489,7 +490,7 @@ const MayorDashboard = () => {
                                 <button onClick={() => setTimeFilter("all_time")} className={cn("w-full text-left px-4 py-2 text-xs hover:bg-slate-100 dark:hover:bg-slate-700", timeFilter === "all_time" && "font-bold text-blue-600 bg-blue-50 dark:bg-blue-900/20")}>All Time</button>
                                 <button onClick={() => setTimeFilter("this_month")} className={cn("w-full text-left px-4 py-2 text-xs hover:bg-slate-100 dark:hover:bg-slate-700", timeFilter === "this_month" && "font-bold text-blue-600 bg-blue-50 dark:bg-blue-900/20")}>This Month</button>
                                 <button onClick={() => setTimeFilter("this_week")} className={cn("w-full text-left px-4 py-2 text-xs hover:bg-slate-100 dark:hover:bg-slate-700", timeFilter === "this_week" && "font-bold text-blue-600 bg-blue-50 dark:bg-blue-900/20")}>This Week</button>
-                                <button onClick={() => setTimeFilter("two_weeks_ago")} className={cn("w-full text-left px-4 py-2 text-xs hover:bg-slate-100 dark:hover:bg-slate-700", timeFilter === "two_weeks_ago" && "font-bold text-blue-600 bg-blue-50 dark:bg-blue-900/20")}>Two Weeks Ago</button>
+                                <button onClick={() => setTimeFilter("two_weeks_ago")} className={cn("w-full text-left px-4 py-2 text-xs hover:bg-slate-100 dark:hover:bg-slate-700", timeFilter === "two_weeks_ago" && "font-bold text-blue-600 bg-blue-50 dark:bg-blue-900/20")}>Past 2 Weeks</button>
                             </div>
                         </div>
                     </div>
@@ -518,7 +519,6 @@ const MayorDashboard = () => {
                         {activeTab === "transactions" && (
                             <div className="flex-1 animate-in fade-in slide-in-from-bottom-2 duration-300">
                                 
-                                {/* ✅ Gi-remove ang Fuel ug Avg Cost. Karon kay Amount Released na lang ang mabilin */}
                                 <div className="mb-4 bg-slate-50 dark:bg-slate-900/50 p-3 rounded-lg flex flex-col">
                                     <p className="text-[10px] text-slate-500 uppercase font-semibold">Total Amount Released</p>
                                     <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 mt-1">{formatCurrency(dynamicPanelData.stats.amountReleased)}</p>
