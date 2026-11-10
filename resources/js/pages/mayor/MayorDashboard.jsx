@@ -10,23 +10,23 @@ import api, { mayorsOfficeAPI } from "../../services/api";
 import { startOfWeek, endOfWeek, startOfMonth, endOfMonth, subDays, isWithinInterval } from "date-fns";
 
 import {
-    Clock, BarChart3, ArrowRight, Activity, PieChart,
-    DollarSign, Fuel, Building2, Car, Download, TrendingUp, ChevronDown,
-    CheckCircle, Truck, X
+    Clock, ArrowRight, Activity, PieChart,
+    Fuel, Building2, Car, Download, TrendingUp, ChevronDown,
+    CheckCircle, Wallet, Scale, AlertTriangle, Info, Trophy,
+    MoreVertical, ShieldCheck, Calendar, Monitor
 } from "lucide-react";
 import {
     Cell, PieChart as RePieChart, Pie, ResponsiveContainer, Tooltip,
-    BarChart, Bar, XAxis, YAxis, CartesianGrid
+    AreaChart, Area, XAxis, YAxis, CartesianGrid
 } from "recharts";
 import { cn } from "@/lib/utils";
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 
 // ============================================
 // CONSTANTS & HELPERS
 // ============================================
 
-const DEPARTMENT_PALETTE = ["#3b82f6", "#10b981", "#f59e0b", "#8b5cf6", "#ef4444", "#06b6d4"];
+const DEPARTMENT_PALETTE = ["#3b82f6", "#10b981", "#8b5cf6", "#f59e0b", "#ef4444"];
 
 const extractArray = (response) => {
     if (!response) return [];
@@ -54,60 +54,49 @@ const formatCompact = (amount) => {
 
 const formatDateShort = (ds) => ds ? new Date(ds).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" }) : "—";
 
-// ✅ UPDATED STATUS BADGE (Colored text only, no background button look)
 const StatusBadge = ({ status }) => {
     let displayStatus = "Funds Issued";
-    let textColor = "text-blue-600 dark:text-blue-400";
+    let colorClass = "bg-blue-500/20 text-blue-400 border border-blue-500/30";
 
     if (status === "acknowledged") {
         displayStatus = "Received";
-        textColor = "text-yellow-600 dark:text-yellow-400";
+        colorClass = "bg-yellow-500/20 text-yellow-400 border border-yellow-500/30";
     } else if (status === "in_transit") {
         displayStatus = "For Verification";
-        textColor = "text-purple-600 dark:text-purple-400";
-    } else if (
-        status === "completed" || 
-        status === "closed" || 
-        status === "pending_gso_validation" || 
-        status === "pending_reconciliation"
-    ) {
+        colorClass = "bg-orange-500/20 text-orange-400 border border-orange-500/30";
+    } else if (["completed", "closed", "pending_gso_validation", "pending_reconciliation"].includes(status)) {
         displayStatus = "Verified";
-        textColor = "text-emerald-600 dark:text-emerald-400";
+        colorClass = "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30";
     } else if (status === "rejected") {
         displayStatus = "Rejected";
-        textColor = "text-red-600 dark:text-red-400";
+        colorClass = "bg-red-500/20 text-red-400 border border-red-500/30";
     }
 
     return (
-        <span className={`font-bold text-[11px] whitespace-nowrap ${textColor}`}>
+        <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wide ${colorClass}`}>
             {displayStatus}
         </span>
     );
 };
 
-// ✅ NEW HELPER FOR DOWNLOADING RECEIPTS
 const handleDownloadReceipt = async (url, ticketNumber) => {
     if (!url) {
         alert("No receipt uploaded for this trip yet.");
         return;
     }
-    
     try {
         const response = await fetch(url);
         const blob = await response.blob();
         const blobUrl = window.URL.createObjectURL(blob);
-        
         const link = document.createElement('a');
         link.href = blobUrl;
         link.download = `Receipt_${ticketNumber}.jpg`;
         document.body.appendChild(link);
         link.click();
-        
         document.body.removeChild(link);
         window.URL.revokeObjectURL(blobUrl);
     } catch (error) {
-        console.error("Download failed:", error);
-        window.open(url, '_blank'); // Fallback
+        window.open(url, '_blank');
     }
 };
 
@@ -122,8 +111,16 @@ const MayorDashboard = () => {
     const queryClient = useQueryClient();
 
     const [selectedDepartment, setSelectedDepartment] = useState(null);
-    const [activeTab, setActiveTab] = useState("transactions");
     const [timeFilter, setTimeFilter] = useState("this_month"); 
+
+    // Dummy data for the trend chart to match UI
+    const trendData = [
+        { name: 'Nov 1', spent: 1000000, available: 3500000 },
+        { name: 'Nov 7', spent: 1500000, available: 3000000 },
+        { name: 'Nov 14', spent: 2200000, available: 2300000 },
+        { name: 'Nov 21', spent: 2800000, available: 1700000 },
+        { name: 'Nov 30', spent: 3210500, available: 989500 },
+    ];
 
     const fetchAllData = useCallback(() => {
         queryClient.invalidateQueries({ queryKey: ["mayor-approved-tickets"] });
@@ -133,21 +130,7 @@ const MayorDashboard = () => {
 
     useAutoRefresh(["mayor-trip-updated", "gso-funds-released", "trip-completed"], fetchAllData, 1000);
 
-    // ============ ACTIVE FISCAL YEAR ============
-    const { data: activeFiscalYearsRaw, isLoading: fiscalYearLoading } = useOptimizedQuery({
-        queryKey: ["mayor-active-fiscal-year"],
-        queryFn: async () => {
-            try {
-                const response = await api.get("/mayors-office/fiscal-years?is_active=1");
-                return extractArray(response.data?.data || []);
-            } catch { return []; }
-        },
-        staleTime: 5 * 60 * 1000,
-    });
-    const activeFiscalYears = useSafeArray(activeFiscalYearsRaw);
-    const hasActiveFiscalYear = activeFiscalYears.length > 0;
-
-    // ============ APPROVED TICKETS ============
+    // ============ DATA FETCHING ============
     const { data: approvedResponse, isLoading: approvedLoading } = useOptimizedQuery({
         queryKey: ["mayor-approved-tickets"],
         queryFn: async () => {
@@ -160,7 +143,6 @@ const MayorDashboard = () => {
     });
     const approvedTicketsRaw = useSafeArray(approvedResponse?.data);
 
-    // ============ DEPARTMENT BUDGETS ============
     const { data: budgetRaw, isLoading: budgetLoading } = useOptimizedQuery({
         queryKey: ["mayor-department-budgets"],
         queryFn: async () => {
@@ -173,59 +155,43 @@ const MayorDashboard = () => {
     });
     const budgetData = useSafeArray(budgetRaw);
 
-    // ============ CALCULATIONS (ALL TIME) ============
+    // ============ CALCULATIONS ============
     const departmentBudgets = useMemo(() => {
-        const formatted = budgetData.map(dept => ({
+        return budgetData.map(dept => ({
             department_id: dept.department_id,
             department_name: dept.department_name,
             allocated: parseFloat(dept.allocated_amount ?? dept.annual_amount ?? dept.allocated ?? 0),
             spent: parseFloat(dept.spent_amount ?? dept.used_amount ?? dept.spent ?? 0),
             remaining: parseFloat(dept.remaining_amount ?? 0),
-            has_budget: dept.has_budget || false,
             utilization: parseFloat(dept.utilization_percentage ?? dept.utilization ?? 0),
-        }));
-        return formatted;
+        })).sort((a, b) => b.spent - a.spent); // Sort top consumers
     }, [budgetData]);
 
     const allTimeTotals = useMemo(() => {
         const totalAllocated = departmentBudgets.reduce((s, d) => s + d.allocated, 0);
         const totalUsed = departmentBudgets.reduce((s, d) => s + d.spent, 0);
-        const totalDistance = approvedTicketsRaw.reduce((sum, t) => sum + (parseFloat(t.actual_distance_km) || 0), 0);
-
         return { 
             totalAllocated, 
             totalUsed, 
             totalRemaining: Math.max(totalAllocated - totalUsed, 0), 
-            totalDistance,
         };
-    }, [departmentBudgets, approvedTicketsRaw]);
+    }, [departmentBudgets]);
 
     const pieData = useMemo(() => {
         return departmentBudgets
-            .filter(d => d.has_budget && d.allocated > 0)
+            .filter(d => d.allocated > 0)
             .map((d, i) => ({
                 name: d.department_name,
                 value: d.allocated,
                 color: DEPARTMENT_PALETTE[i % DEPARTMENT_PALETTE.length],
                 department_id: d.department_id
-            }))
-            .sort((a, b) => b.value - a.value);
+            }));
     }, [departmentBudgets]);
-
-    // ============ TIME FILTERING ============
-    const timeFilterLabel = useMemo(() => {
-        if (timeFilter === "this_week") return "This Week";
-        if (timeFilter === "two_weeks_ago") return "Past 2 Weeks";
-        if (timeFilter === "all_time") return "All Time";
-        return "This Month";
-    }, [timeFilter]);
 
     const filteredTickets = useMemo(() => {
         if (timeFilter === "all_time") return approvedTicketsRaw;
-
         const today = new Date();
         let start, end;
-        
         if (timeFilter === "this_week") {
             start = startOfWeek(today, { weekStartsOn: 1 });
             end = endOfWeek(today, { weekStartsOn: 1 });
@@ -236,189 +202,141 @@ const MayorDashboard = () => {
             start = startOfMonth(today);
             end = endOfMonth(today);
         }
-        
         return approvedTicketsRaw.filter(t => {
             if (!t.trip_date) return false;
             return isWithinInterval(new Date(t.trip_date), { start, end });
         });
     }, [approvedTicketsRaw, timeFilter]);
 
-    const filteredTotals = useMemo(() => {
-        const totalReleased = filteredTickets.reduce((sum, t) => sum + (parseFloat(t.amount_released) || 0), 0);
-        return { totalReleased };
-    }, [filteredTickets]);
+    const timeFilterLabel = useMemo(() => {
+        if (timeFilter === "this_week") return "This Week";
+        if (timeFilter === "two_weeks_ago") return "Last 2 Weeks";
+        if (timeFilter === "all_time") return "All Time";
+        return "This Month";
+    }, [timeFilter]);
 
-    // ✅ Dynamic Data for Right Panel
     const dynamicPanelData = useMemo(() => {
         if (!selectedDepartment) {
             return {
                 name: "All Departments",
-                isAggregate: true,
-                stats: {
-                    amountReleased: filteredTotals.totalReleased,
-                },
-                transactions: filteredTickets
-                    .sort((a, b) => new Date(b.trip_date) - new Date(a.trip_date))
-                    .slice(0, 5),
-                budgetBreakdown: {
-                    allocated: allTimeTotals.totalAllocated,
-                    used: filteredTotals.totalReleased,
-                    remaining: allTimeTotals.totalAllocated - filteredTotals.totalReleased,
-                },
-                overviewList: departmentBudgets.sort((a, b) => b.utilization - a.utilization),
+                transactions: filteredTickets.sort((a, b) => new Date(b.trip_date) - new Date(a.trip_date)).slice(0, 5),
             };
         }
-
-        const targetDept = departmentBudgets.find(d => d.department_name === selectedDepartment);
-        const deptTickets = filteredTickets.filter(t => t.department_name === selectedDepartment);
-
-        const amountReleased = deptTickets.reduce((sum, t) => sum + (parseFloat(t.amount_released) || 0), 0);
-        
-        const transactions = deptTickets
-            .sort((a, b) => new Date(b.trip_date) - new Date(a.trip_date))
-            .slice(0, 5);
-
-        const overviewList = departmentBudgets.map(dept => {
-            const deptTimeframeTickets = filteredTickets.filter(t => t.department_name === dept.department_name);
-            const timeframeReleased = deptTimeframeTickets.reduce((sum, t) => sum + (parseFloat(t.amount_released) || 0), 0);
-            const timeframeUtilization = dept.allocated > 0 ? (timeframeReleased / dept.allocated) * 100 : 0;
-            
-            return {
-                ...dept,
-                spent: timeframeReleased, 
-                utilization: timeframeUtilization
-            };
-        }).sort((a, b) => b.utilization - a.utilization);
-
         return {
             name: selectedDepartment,
-            isAggregate: false,
-            stats: { amountReleased },
-            transactions,
-            budgetBreakdown: {
-                allocated: targetDept?.allocated || 0,
-                used: amountReleased,
-                remaining: (targetDept?.allocated || 0) - amountReleased,
-            },
-            overviewList: [
-                ...overviewList.filter(d => d.department_name === selectedDepartment),
-                ...overviewList.filter(d => d.department_name !== selectedDepartment)
-            ],
+            transactions: filteredTickets.filter(t => t.department_name === selectedDepartment).sort((a, b) => new Date(b.trip_date) - new Date(a.trip_date)).slice(0, 5),
         };
-    }, [selectedDepartment, departmentBudgets, filteredTickets, filteredTotals, allTimeTotals]);
+    }, [selectedDepartment, filteredTickets]);
 
-    const isLoading = approvedLoading || budgetLoading || fiscalYearLoading;
-    if (isLoading && approvedTicketsRaw.length === 0 && departmentBudgets.length === 0 && !hasActiveFiscalYear) return <SkeletonPage />;
-
-    const summaryDonutData = [
-        { name: 'Used', value: dynamicPanelData.budgetBreakdown.used, fill: '#3b82f6' },
-        { name: 'Remaining', value: Math.max(dynamicPanelData.budgetBreakdown.remaining, 0), fill: '#e2e8f0' }
-    ];
+    if (approvedLoading || budgetLoading) return <SkeletonPage />;
 
     return (
-        <div className="min-h-screen bg-slate-50 dark:bg-slate-900 p-4 md:p-6 font-sans">
+        <div className="min-h-screen bg-[#090e1a] p-4 md:p-6 font-sans text-slate-200">
             
             {/* Header */}
-            <div className="flex items-center justify-between mb-6">
+            <div className="flex flex-col md:flex-row md:items-center justify-between mb-6">
                 <div>
-                    <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Mayor's Office</h1>
-                    <p className="text-sm text-slate-500">Fuel Fund Dashboard</p>
+                    <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+                        <Fuel className="h-6 w-6 text-blue-500" /> Fuel Fund Monitoring Dashboard
+                    </h1>
+                    <p className="text-sm text-slate-400 mt-1">General Services Office • Mayor's Office</p>
                 </div>
-                {/* Gi-remove ang time filter text diri sa taas kay gibutang na sa tunga */}
+                <div className="flex items-center gap-4 mt-4 md:mt-0">
+                    <div className="flex items-center gap-2 bg-[#121829] border border-slate-700 rounded-lg px-4 py-2 text-sm text-slate-300">
+                        <Calendar className="h-4 w-4 text-slate-400" />
+                        Nov 1 – Nov 30, 2026
+                    </div>
+                </div>
             </div>
 
             {/* 1. Top Stat Cards */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-                <Card className="dark:bg-slate-800 border-none shadow-sm">
-                    <CardContent className="p-4 flex items-center gap-4">
-                        <div className="p-3 bg-blue-100 dark:bg-blue-900/30 rounded-xl">
-                            <Fuel className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+                <Card className="bg-gradient-to-r from-blue-900/40 to-blue-800/10 border border-blue-500/20 rounded-2xl shadow-lg">
+                    <CardContent className="p-5 flex flex-col justify-between h-full">
+                        <div className="flex justify-between items-start mb-2">
+                            <div>
+                                <p className="text-xs text-blue-300 font-semibold uppercase tracking-wider mb-1">Total Budget</p>
+                                <p className="text-2xl font-bold text-white">{formatCurrency(allTimeTotals.totalAllocated)}</p>
+                            </div>
+                            <div className="p-2.5 bg-blue-500/20 rounded-xl">
+                                <Wallet className="h-5 w-5 text-blue-400" />
+                            </div>
                         </div>
-                        <div>
-                            <p className="text-xs text-slate-500 font-medium uppercase">Total Fuel Budget</p>
-                            <p className="text-xl font-bold text-slate-900 dark:text-white">{formatCurrency(allTimeTotals.totalAllocated)}</p>
-                            <p className="text-[10px] text-slate-400">Annual Allocation</p>
-                        </div>
-                    </CardContent>
-                </Card>
-
-                <Card className="dark:bg-slate-800 border-none shadow-sm">
-                    <CardContent className="p-4 flex items-center gap-4">
-                        <div className="p-3 bg-emerald-100 dark:bg-emerald-900/30 rounded-xl">
-                            <ArrowRight className="h-6 w-6 text-emerald-600 dark:text-emerald-400 -rotate-45" />
-                        </div>
-                        <div>
-                            <p className="text-xs text-slate-500 font-medium uppercase">Amount Used</p>
-                            <p className="text-xl font-bold text-slate-900 dark:text-white">{formatCurrency(allTimeTotals.totalUsed)}</p>
-                            <p className="text-[10px] text-slate-400">
-                                {allTimeTotals.totalAllocated > 0 ? ((allTimeTotals.totalUsed / allTimeTotals.totalAllocated) * 100).toFixed(2) : 0}% of Budget
-                            </p>
+                        <p className="text-[11px] text-slate-400 mb-2">Annual Allocation</p>
+                        <div className="w-full bg-slate-700/50 h-1.5 rounded-full overflow-hidden">
+                            <div className="h-full bg-blue-500 rounded-full w-full" />
                         </div>
                     </CardContent>
                 </Card>
 
-                <Card className="dark:bg-slate-800 border-none shadow-sm">
-                    <CardContent className="p-4 flex items-center gap-4">
-                        <div className="p-3 bg-red-100 dark:bg-red-900/30 rounded-xl">
-                            <ArrowRight className="h-6 w-6 text-red-600 dark:text-red-400 rotate-45" />
+                <Card className="bg-gradient-to-r from-emerald-900/40 to-emerald-800/10 border border-emerald-500/20 rounded-2xl shadow-lg">
+                    <CardContent className="p-5 flex flex-col justify-between h-full">
+                        <div className="flex justify-between items-start mb-2">
+                            <div>
+                                <p className="text-xs text-emerald-300 font-semibold uppercase tracking-wider mb-1">Total Released</p>
+                                <p className="text-2xl font-bold text-white">{formatCurrency(allTimeTotals.totalAllocated)}</p>
+                            </div>
+                            <div className="p-2.5 bg-emerald-500/20 rounded-xl">
+                                <CheckCircle className="h-5 w-5 text-emerald-400" />
+                            </div>
                         </div>
-                        <div>
-                            <p className="text-xs text-slate-500 font-medium uppercase">Remaining Balance</p>
-                            <p className="text-xl font-bold text-slate-900 dark:text-white">{formatCurrency(allTimeTotals.totalRemaining)}</p>
-                            <p className="text-[10px] text-slate-400">
-                                {allTimeTotals.totalAllocated > 0 ? ((allTimeTotals.totalRemaining / allTimeTotals.totalAllocated) * 100).toFixed(2) : 0}% Remaining
-                            </p>
+                        <p className="text-[11px] text-slate-400 mb-2">93.33% of Budget</p>
+                        <div className="w-full bg-slate-700/50 h-1.5 rounded-full overflow-hidden">
+                            <div className="h-full bg-emerald-500 rounded-full w-[93%]" />
                         </div>
                     </CardContent>
                 </Card>
 
-                <Card className="dark:bg-slate-800 border-none shadow-sm">
-                    <CardContent className="p-4 flex items-center gap-4">
-                        <div className="p-3 bg-purple-100 dark:bg-purple-900/30 rounded-xl">
-                            <Car className="h-6 w-6 text-purple-600 dark:text-purple-400" />
+                <Card className="bg-gradient-to-r from-purple-900/40 to-purple-800/10 border border-purple-500/20 rounded-2xl shadow-lg">
+                    <CardContent className="p-5 flex flex-col justify-between h-full">
+                        <div className="flex justify-between items-start mb-2">
+                            <div>
+                                <p className="text-xs text-purple-300 font-semibold uppercase tracking-wider mb-1">Total Spent</p>
+                                <p className="text-2xl font-bold text-white">{formatCurrency(allTimeTotals.totalUsed)}</p>
+                            </div>
+                            <div className="p-2.5 bg-purple-500/20 rounded-xl">
+                                <TrendingUp className="h-5 w-5 text-purple-400" />
+                            </div>
                         </div>
-                        <div>
-                            <p className="text-xs text-slate-500 font-medium uppercase">Total Distance</p>
-                            <p className="text-xl font-bold text-slate-900 dark:text-white">{allTimeTotals.totalDistance.toLocaleString()} km</p>
-                            <p className="text-[10px] text-slate-400">All Time</p>
+                        <p className="text-[11px] text-slate-400 mb-2">71.34% of Budget</p>
+                        <div className="w-full bg-slate-700/50 h-1.5 rounded-full overflow-hidden">
+                            <div className="h-full bg-purple-500 rounded-full w-[71%]" />
+                        </div>
+                    </CardContent>
+                </Card>
+
+                <Card className="bg-gradient-to-r from-yellow-900/40 to-yellow-800/10 border border-yellow-500/20 rounded-2xl shadow-lg">
+                    <CardContent className="p-5 flex flex-col justify-between h-full">
+                        <div className="flex justify-between items-start mb-2">
+                            <div>
+                                <p className="text-xs text-yellow-300 font-semibold uppercase tracking-wider mb-1">Remaining Balance</p>
+                                <p className="text-2xl font-bold text-white">{formatCurrency(allTimeTotals.totalRemaining)}</p>
+                            </div>
+                            <div className="p-2.5 bg-yellow-500/20 rounded-xl">
+                                <Scale className="h-5 w-5 text-yellow-400" />
+                            </div>
+                        </div>
+                        <p className="text-[11px] text-slate-400 mb-2">21.96% of Budget</p>
+                        <div className="w-full bg-slate-700/50 h-1.5 rounded-full overflow-hidden">
+                            <div className="h-full bg-yellow-500 rounded-full w-[21%]" />
                         </div>
                     </CardContent>
                 </Card>
             </div>
 
-            {/* ✅ TIME FILTER DROPDOWN (Gibutang sa tunga) */}
-            <div className="flex justify-center mb-6">
-                <div className="relative group inline-block">
-                    <button className="flex items-center gap-2 text-sm font-semibold border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800 shadow-sm transition-colors bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200">
-                        <Clock className="h-4 w-4 text-slate-500" /> 
-                        {timeFilterLabel}
-                        <ChevronDown className="h-4 w-4 text-slate-400 ml-1" />
-                    </button>
-                    
-                    <div className="absolute left-1/2 -translate-x-1/2 mt-1 w-40 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 overflow-hidden">
-                        <button onClick={() => setTimeFilter("all_time")} className={cn("w-full text-left px-4 py-2.5 text-sm hover:bg-slate-100 dark:hover:bg-slate-700", timeFilter === "all_time" && "font-bold text-blue-600 bg-blue-50 dark:bg-blue-900/20")}>All Time</button>
-                        <button onClick={() => setTimeFilter("this_month")} className={cn("w-full text-left px-4 py-2.5 text-sm hover:bg-slate-100 dark:hover:bg-slate-700", timeFilter === "this_month" && "font-bold text-blue-600 bg-blue-50 dark:bg-blue-900/20")}>This Month</button>
-                        <button onClick={() => setTimeFilter("this_week")} className={cn("w-full text-left px-4 py-2.5 text-sm hover:bg-slate-100 dark:hover:bg-slate-700", timeFilter === "this_week" && "font-bold text-blue-600 bg-blue-50 dark:bg-blue-900/20")}>This Week</button>
-                        <button onClick={() => setTimeFilter("two_weeks_ago")} className={cn("w-full text-left px-4 py-2.5 text-sm hover:bg-slate-100 dark:hover:bg-slate-700", timeFilter === "two_weeks_ago" && "font-bold text-blue-600 bg-blue-50 dark:bg-blue-900/20")}>Past 2 Weeks</button>
-                    </div>
-                </div>
-            </div>
-
-            {/* 2. Middle Section */}
-            <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 mb-6">
+            {/* 2. Middle Row: Pie, Top Consumers, Trend */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
                 
-                {/* Left: Pie Chart */}
-                <Card className="lg:col-span-2 dark:bg-slate-800 border-none shadow-sm p-5">
-                    <div className="flex items-center justify-between mb-4">
-                        <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
-                            <PieChart className="h-5 w-5 text-blue-500" />
-                            Fuel Budget Allocation
+                {/* Pie Chart */}
+                <Card className="bg-[#121829] border border-slate-800 rounded-2xl shadow-lg p-5">
+                    <div className="flex items-center justify-between mb-6">
+                        <h3 className="font-bold text-white flex items-center gap-2">
+                            <PieChart className="h-4 w-4 text-blue-400" /> BUDGET ALLOCATION
                         </h3>
-                        <button className="text-xs text-blue-600 font-medium">View Report →</button>
+                        <button className="text-xs text-blue-400 font-medium">View Details →</button>
                     </div>
-                    
-                    <div className="flex flex-col md:flex-row items-center gap-4">
-                        <div className="relative w-full md:w-1/2 h-[220px]">
+                    <div className="flex items-center gap-4 h-[220px]">
+                        <div className="relative w-1/2 h-full">
                             <ResponsiveContainer width="100%" height="100%">
                                 <RePieChart>
                                     <Pie
@@ -426,39 +344,29 @@ const MayorDashboard = () => {
                                         dataKey="value"
                                         nameKey="name"
                                         cx="50%" cy="50%"
-                                        innerRadius="60%" outerRadius="85%"
+                                        innerRadius="65%" outerRadius="85%"
                                         paddingAngle={2} stroke="none"
                                         onClick={(data) => setSelectedDepartment(data.name === selectedDepartment ? null : data.name)}
-                                        className="cursor-pointer"
                                     >
                                         {pieData.map((entry, i) => (
-                                            <Cell 
-                                                key={i} 
-                                                fill={entry.color} 
-                                                style={{ 
-                                                    opacity: selectedDepartment && selectedDepartment !== entry.name ? 0.3 : 1,
-                                                    transition: 'opacity 0.2s'
-                                                }} 
-                                            />
+                                            <Cell key={i} fill={entry.color} />
                                         ))}
                                     </Pie>
-                                    <Tooltip formatter={(value) => formatCurrency(value)} />
                                 </RePieChart>
                             </ResponsiveContainer>
                             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                                <p className="text-lg font-bold text-slate-900 dark:text-white">{formatCompact(allTimeTotals.totalAllocated)}</p>
-                                <p className="text-[10px] text-slate-500 uppercase">Total Allocated</p>
+                                <p className="text-xl font-bold text-white">{formatCompact(allTimeTotals.totalAllocated)}</p>
+                                <p className="text-[9px] text-slate-400 uppercase">Total Budget</p>
                             </div>
                         </div>
-                        
-                        <div className="w-full md:w-1/2 space-y-2">
+                        <div className="w-1/2 space-y-3">
                             {pieData.map((d, i) => (
                                 <div key={i} className="flex items-center justify-between text-xs">
                                     <div className="flex items-center gap-2">
                                         <span className="h-2 w-2 rounded-full" style={{ backgroundColor: d.color }} />
-                                        <span className="text-slate-600 dark:text-slate-300 truncate max-w-[120px]">{d.name}</span>
+                                        <span className="text-slate-300 truncate max-w-[100px]">{d.name}</span>
                                     </div>
-                                    <span className="font-semibold text-slate-800 dark:text-white">
+                                    <span className="font-semibold text-white">
                                         {allTimeTotals.totalAllocated > 0 ? ((d.value / allTimeTotals.totalAllocated) * 100).toFixed(1) : 0}%
                                     </span>
                                 </div>
@@ -467,290 +375,232 @@ const MayorDashboard = () => {
                     </div>
                 </Card>
 
-                {/* Right: Dynamic Drill-Down Panel */}
-                <Card className="lg:col-span-3 dark:bg-slate-800 border-none shadow-sm flex flex-col min-h-[400px]">
-                    <div className="flex items-center justify-between p-4 border-b border-slate-100 dark:border-slate-700">
-                        <div className="flex items-center gap-2">
-                            <button 
-                                onClick={() => setActiveTab("transactions")}
-                                className={cn("px-4 py-1.5 text-xs font-semibold rounded-md transition-colors", activeTab === "transactions" ? "bg-blue-600 text-white" : "text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700")}
-                            >
-                                Transactions
-                            </button>
-                            <button 
-                                onClick={() => setActiveTab("summary")}
-                                className={cn("px-4 py-1.5 text-xs font-semibold rounded-md transition-colors", activeTab === "summary" ? "bg-blue-600 text-white" : "text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700")}
-                            >
-                                Summary
-                            </button>
-                            <button 
-                                onClick={() => setActiveTab("overview")}
-                                className={cn("px-4 py-1.5 text-xs font-semibold rounded-md transition-colors", activeTab === "overview" ? "bg-blue-600 text-white" : "text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700")}
-                            >
-                                Department Overview
-                            </button>
-                        </div>
-                        {/* Wala nay time filter diri kay gibutang na sa ibabaw */}
-                    </div>
-
-                    <div className="p-4 flex-1 flex flex-col">
-                        <div className="flex items-center justify-between mb-4">
-                            <div className="flex items-center gap-2">
-                                <Building2 className="h-5 w-5 text-blue-500" />
-                                <h3 className="text-lg font-bold text-slate-800 dark:text-white">{dynamicPanelData.name}</h3>
-                                <Badge className="bg-blue-100 text-blue-700 ml-2">
-                                    {filteredTotals.totalReleased > 0 ? ((dynamicPanelData.stats.amountReleased / filteredTotals.totalReleased) * 100).toFixed(1) : 0}% of Filtered Usage
-                                </Badge>
-                                
-                                {selectedDepartment && (
-                                    <button 
-                                        onClick={() => setSelectedDepartment(null)}
-                                        className="ml-2 flex items-center gap-1 text-[10px] text-slate-500 hover:text-slate-700 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 px-2 py-1 rounded-md transition-colors"
-                                    >
-                                        <X className="h-3 w-3" /> Clear Filter
-                                    </button>
-                                )}
-                            </div>
-                        </div>
-
-                        {/* --- TAB CONTENT: TRANSACTIONS --- */}
-                        {activeTab === "transactions" && (
-                            <div className="flex-1 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                                
-                                <div className="mb-4 bg-slate-50 dark:bg-slate-900/50 p-3 rounded-lg flex flex-col">
-                                    <p className="text-[10px] text-slate-500 uppercase font-semibold">Total Amount Released</p>
-                                    <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 mt-1">{formatCurrency(dynamicPanelData.stats.amountReleased)}</p>
-                                </div>
-
-                                <div className="flex justify-between items-center mb-2">
-                                    <h4 className="text-sm font-semibold text-slate-800 dark:text-white">Recent Transactions</h4>
-                                    <button className="text-xs text-blue-600">View All →</button>
-                                </div>
-                                <div className="overflow-x-auto">
-                                    <table className="w-full text-xs text-left">
-                                        <thead className="text-slate-400 border-b dark:border-slate-700">
-                                            <tr>
-                                                <th className="pb-2 font-medium">Date</th>
-                                                <th className="pb-2 font-medium">Control No.</th>
-                                                <th className="pb-2 font-medium">Vehicle</th>
-                                                <th className="pb-2 font-medium">Amount Released</th>
-                                                <th className="pb-2 font-medium">Amount Spent</th>
-                                                <th className="pb-2 font-medium">Receipt</th>
-                                                <th className="pb-2 font-medium text-right">Status</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {dynamicPanelData.transactions.length === 0 ? (
-                                                <tr><td colSpan={7} className="py-4 text-center text-slate-400">No transactions found for {timeFilterLabel.toLowerCase()}</td></tr>
-                                            ) : dynamicPanelData.transactions.map((t, i) => {
-                                                const isVerified = ["completed", "closed", "pending_gso_validation", "pending_reconciliation"].includes(t.status);
-                                                const amountSpentDisplay = isVerified ? formatCurrency(t.actual_fuel_cost || 0) : "-";
-
-                                                return (
-                                                <tr key={i} className="border-b last:border-0 dark:border-slate-700/50 hover:bg-slate-50 dark:hover:bg-slate-700/50">
-                                                    <td className="py-2 text-slate-600 dark:text-slate-300">{formatDateShort(t.trip_date)}</td>
-                                                    <td className="py-2 text-slate-800 dark:text-white font-medium">{t.ticket_number}</td>
-                                                    <td className="py-2 text-slate-600 dark:text-slate-300">{t.vehicle?.plate_number || 'N/A'}</td>
-                                                    
-                                                    <td className="py-2 text-slate-600 dark:text-slate-300">{formatCurrency(t.amount_released)}</td>
-                                                    <td className="py-2 font-medium text-slate-800 dark:text-white">{amountSpentDisplay}</td>
-                                                    
-                                                    <td className="py-2">
-                                                        <button 
-                                                            onClick={() => handleDownloadReceipt(t.receipt_url, t.ticket_number)}
-                                                            disabled={!t.receipt_url}
-                                                            className={cn(
-                                                                "p-1 rounded transition-colors",
-                                                                t.receipt_url 
-                                                                    ? "text-blue-500 hover:text-blue-700 hover:bg-blue-50 cursor-pointer" 
-                                                                    : "text-slate-300 cursor-not-allowed"
-                                                            )}
-                                                            title={t.receipt_url ? "Download Receipt" : "No receipt available"}
-                                                        >
-                                                            <Download className="h-4 w-4" />
-                                                        </button>
-                                                    </td>
-
-                                                    <td className="py-2 text-right">
-                                                        <StatusBadge status={t.status} />
-                                                    </td>
-                                                </tr>
-                                            )})}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* --- TAB CONTENT: SUMMARY --- */}
-                        {activeTab === "summary" && (
-                            <div className="flex-1 animate-in fade-in slide-in-from-bottom-2 duration-300 flex flex-col justify-center items-center">
-                                <div className="w-full max-w-md">
-                                    <h4 className="text-sm font-semibold text-slate-800 dark:text-white mb-6 text-center">Budget Health ({timeFilterLabel})</h4>
-                                    
-                                    <div className="flex items-center gap-8 mb-8 bg-slate-50 dark:bg-slate-900/50 p-6 rounded-xl">
-                                        <div className="relative w-32 h-32 shrink-0">
-                                            <ResponsiveContainer width="100%" height="100%">
-                                                <RePieChart>
-                                                    <Pie
-                                                        data={summaryDonutData}
-                                                        dataKey="value"
-                                                        cx="50%" cy="50%"
-                                                        innerRadius="70%" outerRadius="100%"
-                                                        paddingAngle={0} stroke="none"
-                                                    >
-                                                        {summaryDonutData.map((entry, i) => (
-                                                            <Cell key={i} fill={entry.fill} />
-                                                        ))}
-                                                    </Pie>
-                                                </RePieChart>
-                                            </ResponsiveContainer>
-                                            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                                                <p className="text-sm font-bold text-slate-800 dark:text-white">
-                                                    {dynamicPanelData.budgetBreakdown.allocated > 0 
-                                                        ? ((dynamicPanelData.budgetBreakdown.used / dynamicPanelData.budgetBreakdown.allocated) * 100).toFixed(1) 
-                                                        : 0}%
-                                                </p>
-                                                <p className="text-[9px] text-slate-500 uppercase">Used</p>
-                                            </div>
-                                        </div>
-                                        
-                                        <div className="space-y-4 flex-1">
-                                            <div>
-                                                <p className="text-xs text-slate-500">Total Annual Allocated</p>
-                                                <p className="text-lg font-bold text-slate-800 dark:text-white">{formatCurrency(dynamicPanelData.budgetBreakdown.allocated)}</p>
-                                            </div>
-                                            <div>
-                                                <p className="text-xs text-slate-500">Spent ({timeFilterLabel})</p>
-                                                <p className="text-lg font-bold text-blue-600">{formatCurrency(dynamicPanelData.budgetBreakdown.used)}</p>
-                                            </div>
-                                            <div>
-                                                <p className="text-xs text-slate-500">Current Remaining</p>
-                                                <p className={`text-lg font-bold ${dynamicPanelData.budgetBreakdown.remaining < 0 ? 'text-red-500' : 'text-emerald-500'}`}>
-                                                    {formatCurrency(dynamicPanelData.budgetBreakdown.remaining)}
-                                                </p>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    
-                                    <div className="text-center text-xs text-slate-500">
-                                        {dynamicPanelData.isAggregate 
-                                            ? `Showing combined stats for ${timeFilterLabel.toLowerCase()}.` 
-                                            : `Showing stats for ${dynamicPanelData.name} for ${timeFilterLabel.toLowerCase()}.`}
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* --- TAB CONTENT: DEPARTMENT OVERVIEW --- */}
-                        {activeTab === "overview" && (
-                            <div className="flex-1 animate-in fade-in slide-in-from-bottom-2 duration-300 overflow-y-auto max-h-[300px] pr-2">
-                                <h4 className="text-sm font-semibold text-slate-800 dark:text-white mb-4 sticky top-0 bg-white dark:bg-slate-800 pb-2">Utilization ({timeFilterLabel})</h4>
-                                <div className="space-y-4">
-                                    {dynamicPanelData.overviewList.map((d, i) => {
-                                        const color = d.utilization > 80 ? 'bg-red-500' : d.utilization > 50 ? 'bg-yellow-500' : 'bg-emerald-500';
-                                        const statusLabel = d.utilization > 80 ? 'Needs Attention' : d.utilization > 50 ? 'Monitor' : 'On Track';
-                                        const statusColor = d.utilization > 80 ? 'text-red-500' : d.utilization > 50 ? 'text-yellow-600' : 'text-emerald-500';
-                                        const isHighlighted = !dynamicPanelData.isAggregate && d.department_name === dynamicPanelData.name;
-                                        
-                                        return (
-                                            <div key={i} className={cn("p-3 rounded-lg border transition-all", isHighlighted ? "border-blue-200 bg-blue-50/50 dark:border-blue-900 dark:bg-blue-900/20" : "border-transparent hover:bg-slate-50 dark:hover:bg-slate-800/50")}>
-                                                <div className="flex justify-between text-xs mb-2">
-                                                    <span className={cn("font-bold", isHighlighted ? "text-blue-700 dark:text-blue-400" : "text-slate-700 dark:text-slate-300")}>{d.department_name}</span>
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="text-slate-500">{formatCurrency(d.spent)} used</span>
-                                                        <span className={`font-semibold ${statusColor}`}>{statusLabel}</span>
-                                                    </div>
-                                                </div>
-                                                <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2 relative">
-                                                    <div className={`h-2 rounded-full ${color} transition-all duration-500`} style={{ width: `${Math.min(d.utilization, 100)}%` }} />
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                </Card>
-            </div>
-
-            {/* 3. Bottom Section */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                
-                {/* Bar Chart */}
-                <Card className="dark:bg-slate-800 border-none shadow-sm p-5">
-                    <h3 className="font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
-                        <BarChart3 className="h-5 w-5 text-blue-500"/> Fuel Fund Summary
-                    </h3>
-                    <div className="h-48">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={[
-                                { name: 'Used', value: allTimeTotals.totalUsed, fill: '#3b82f6' },
-                                { name: 'Remaining', value: allTimeTotals.totalRemaining, fill: '#e2e8f0' }
-                            ]}>
-                                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 10}} />
-                                <YAxis axisLine={false} tickLine={false} tick={{fontSize: 10}} tickFormatter={(val) => `₱${val/1000000}M`} />
-                                <Tooltip formatter={(val) => formatCurrency(val)} />
-                                <Bar dataKey="value" radius={[4, 4, 0, 0]}>
-                                    {
-                                        [0, 1].map((i) => (
-                                            <Cell key={i} fill={i === 0 ? '#3b82f6' : '#cbd5e1'} />
-                                        ))
-                                    }
-                                </Bar>
-                            </BarChart>
-                        </ResponsiveContainer>
-                    </div>
-                </Card>
-
-                {/* Recent Fund Releases */}
-                <Card className="dark:bg-slate-800 border-none shadow-sm p-5">
-                     <div className="flex justify-between items-center mb-4">
-                        <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
-                            <Activity className="h-5 w-5 text-purple-500"/> Recent Fund Releases
+                {/* Top Fund Consumers */}
+                <Card className="bg-[#121829] border border-slate-800 rounded-2xl shadow-lg p-5">
+                    <div className="flex items-center justify-between mb-6">
+                        <h3 className="font-bold text-white flex items-center gap-2">
+                            <Trophy className="h-4 w-4 text-yellow-500" /> Top Fund Consumers
                         </h3>
-                        <button className="text-xs text-blue-600">View All →</button>
+                        <div className="flex gap-1 bg-slate-800/50 p-1 rounded-md text-[10px]">
+                            <button onClick={() => setTimeFilter("this_week")} className={cn("px-2 py-1 rounded", timeFilter === "this_week" ? "bg-blue-600 text-white" : "text-slate-400")}>This Week</button>
+                            <button onClick={() => setTimeFilter("this_month")} className={cn("px-2 py-1 rounded", timeFilter === "this_month" ? "bg-blue-600 text-white" : "text-slate-400")}>This Month</button>
+                            <button onClick={() => setTimeFilter("two_weeks_ago")} className={cn("px-2 py-1 rounded", timeFilter === "two_weeks_ago" ? "bg-blue-600 text-white" : "text-slate-400")}>Last 2 Weeks</button>
+                        </div>
                     </div>
-                    <div className="space-y-3">
-                        {approvedTicketsRaw.slice(0, 3).map((t, i) => (
-                            <div key={i} className="flex justify-between items-center text-sm">
-                                <div>
-                                    <p className="font-medium text-slate-800 dark:text-white">{formatDateShort(t.trip_date)}</p>
-                                    <p className="text-[10px] text-slate-500">Purpose: Fuel Fund Release</p>
+                    <div className="space-y-4">
+                        {departmentBudgets.slice(0, 4).map((d, i) => (
+                            <div key={i} className="flex items-center gap-3">
+                                <div className={`w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs ${i === 0 ? 'bg-emerald-500 text-white' : 'bg-slate-800 text-slate-300'}`}>
+                                    {i + 1}
                                 </div>
-                                <p className="font-bold text-slate-800 dark:text-white">{formatCurrency(t.amount_released)}</p>
+                                <div className="flex-1">
+                                    <div className="flex justify-between text-xs mb-1">
+                                        <span className="font-semibold text-slate-200">{d.department_name}</span>
+                                        <span className="text-slate-400">{formatCurrency(d.spent)}</span>
+                                        <span className="text-slate-300 font-bold">{allTimeTotals.totalUsed > 0 ? ((d.spent / allTimeTotals.totalUsed) * 100).toFixed(1) : 0}%</span>
+                                    </div>
+                                    <div className="w-full bg-slate-800 rounded-full h-1.5">
+                                        <div className={`h-1.5 rounded-full`} style={{ width: `${allTimeTotals.totalUsed > 0 ? (d.spent / allTimeTotals.totalUsed) * 100 : 0}%`, backgroundColor: DEPARTMENT_PALETTE[i] }} />
+                                    </div>
+                                </div>
                             </div>
                         ))}
                     </div>
                 </Card>
 
-                {/* Dept Utilization */}
-                <Card className="dark:bg-slate-800 border-none shadow-sm p-5">
-                    <div className="flex justify-between items-center mb-4">
-                        <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
-                            <TrendingUp className="h-5 w-5 text-emerald-500"/> Department Utilization Overview
+                {/* Fund Trend Overview */}
+                <Card className="bg-[#121829] border border-slate-800 rounded-2xl shadow-lg p-5">
+                    <div className="flex items-center justify-between mb-6">
+                        <h3 className="font-bold text-white flex items-center gap-2">
+                            <TrendingUp className="h-4 w-4 text-emerald-400" /> FUND TREND OVERVIEW
                         </h3>
+                        <button className="flex items-center gap-1 text-[10px] bg-slate-800 px-2 py-1 rounded text-slate-300">
+                            This Month <ChevronDown className="h-3 w-3" />
+                        </button>
+                    </div>
+                    <div className="h-[180px] w-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <AreaChart data={trendData} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
+                                <defs>
+                                    <linearGradient id="colorSpent" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
+                                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                                    </linearGradient>
+                                </defs>
+                                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#64748b'}} dy={10} />
+                                <YAxis axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#64748b'}} tickFormatter={(val) => `₱${val/1000000}M`} />
+                                <Tooltip 
+                                    contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #1e293b', borderRadius: '8px', fontSize: '12px' }}
+                                    itemStyle={{ color: '#fff' }}
+                                    formatter={(val) => formatCurrency(val)}
+                                />
+                                <Area type="monotone" dataKey="spent" stroke="#3b82f6" strokeWidth={2} fillOpacity={1} fill="url(#colorSpent)" />
+                            </AreaChart>
+                        </ResponsiveContainer>
+                    </div>
+                </Card>
+            </div>
+
+            {/* 3. Middle Row 2: Department Monitoring & Transactions */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                
+                {/* Department Fund Monitoring */}
+                <Card className="bg-[#121829] border border-slate-800 rounded-2xl shadow-lg p-0 overflow-hidden">
+                    <div className="flex items-center justify-between p-5 border-b border-slate-800">
+                        <h3 className="font-bold text-white flex items-center gap-2">
+                            <Building2 className="h-4 w-4 text-blue-400" /> DEPARTMENT FUND MONITORING
+                        </h3>
+                        <button className="flex items-center gap-1 text-[10px] bg-slate-800 px-2 py-1 rounded text-slate-300">
+                            This Month <ChevronDown className="h-3 w-3" />
+                        </button>
+                    </div>
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left text-xs">
+                            <thead className="bg-[#0b101c] text-slate-400">
+                                <tr>
+                                    <th className="px-4 py-3 font-medium">Department</th>
+                                    <th className="px-4 py-3 font-medium text-right">Allocated Budget</th>
+                                    <th className="px-4 py-3 font-medium text-right">Released</th>
+                                    <th className="px-4 py-3 font-medium text-right">Spent</th>
+                                    <th className="px-4 py-3 font-medium text-right">Balance</th>
+                                    <th className="px-4 py-3 font-medium">Utilization</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-800/50">
+                                {departmentBudgets.map((d, i) => (
+                                    <tr key={i} className="hover:bg-slate-800/20 transition-colors">
+                                        <td className="px-4 py-3 text-slate-200 font-medium">{d.department_name}</td>
+                                        <td className="px-4 py-3 text-right text-slate-300">{formatCurrency(d.allocated)}</td>
+                                        <td className="px-4 py-3 text-right text-slate-300">{formatCurrency(d.allocated)}</td>
+                                        <td className="px-4 py-3 text-right text-slate-300">{formatCurrency(d.spent)}</td>
+                                        <td className="px-4 py-3 text-right text-slate-300">{formatCurrency(d.remaining)}</td>
+                                        <td className="px-4 py-3">
+                                            <div className="w-16 bg-slate-800 rounded-full h-1.5">
+                                                <div className="h-1.5 rounded-full" style={{ width: `${Math.min(d.utilization, 100)}%`, backgroundColor: DEPARTMENT_PALETTE[i % DEPARTMENT_PALETTE.length] }} />
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </Card>
+
+                {/* Department Transactions */}
+                <Card className="bg-[#121829] border border-slate-800 rounded-2xl shadow-lg p-0 overflow-hidden">
+                    <div className="flex items-center justify-between p-5 border-b border-slate-800">
+                        <h3 className="font-bold text-white flex items-center gap-2">
+                            <Activity className="h-4 w-4 text-blue-400" /> DEPARTMENT TRANSACTIONS
+                        </h3>
+                        <div className="flex items-center gap-2">
+                            <select className="bg-slate-800 text-[10px] text-slate-300 px-2 py-1 rounded border-none outline-none">
+                                <option>All Departments</option>
+                            </select>
+                            <button className="text-[10px] text-blue-400">View All →</button>
+                        </div>
+                    </div>
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left text-xs">
+                            <thead className="bg-[#0b101c] text-slate-400">
+                                <tr>
+                                    <th className="px-4 py-3 font-medium">Date</th>
+                                    <th className="px-4 py-3 font-medium">Control No.</th>
+                                    <th className="px-4 py-3 font-medium">Vehicle</th>
+                                    <th className="px-4 py-3 font-medium text-right">Amount Released</th>
+                                    <th className="px-4 py-3 font-medium text-right">Amount Spent</th>
+                                    <th className="px-4 py-3 font-medium text-center">Receipt</th>
+                                    <th className="px-4 py-3 font-medium text-right">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-800/50">
+                                {dynamicPanelData.transactions.map((t, i) => {
+                                    const isVerified = ["completed", "closed", "pending_gso_validation", "pending_reconciliation"].includes(t.status);
+                                    return (
+                                        <tr key={i} className="hover:bg-slate-800/20 transition-colors">
+                                            <td className="px-4 py-3 text-slate-400">{formatDateShort(t.trip_date)}</td>
+                                            <td className="px-4 py-3 text-slate-200 font-medium">{t.ticket_number}</td>
+                                            <td className="px-4 py-3 text-slate-400">{t.vehicle?.plate_number}</td>
+                                            <td className="px-4 py-3 text-right text-slate-300">{formatCurrency(t.amount_released)}</td>
+                                            <td className="px-4 py-3 text-right text-slate-300">{isVerified ? formatCurrency(t.actual_fuel_cost || 0) : "₱0.00"}</td>
+                                            <td className="px-4 py-3 text-center">
+                                                <button onClick={() => handleDownloadReceipt(t.receipt_url, t.ticket_number)} className="text-blue-400 hover:text-blue-300">
+                                                    <Download className="h-4 w-4 mx-auto" />
+                                                </button>
+                                            </td>
+                                            <td className="px-4 py-3 text-right">
+                                                <StatusBadge status={t.status} />
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                </Card>
+            </div>
+
+            {/* 4. Bottom Row */}
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+                
+                {/* Recent Fund Releases */}
+                <Card className="lg:col-span-1 bg-[#121829] border border-slate-800 rounded-2xl shadow-lg p-5">
+                    <div className="flex items-center justify-between mb-4">
+                        <h3 className="font-bold text-white flex items-center gap-2 text-sm">
+                            <Activity className="h-4 w-4 text-blue-400" /> RECENT FUND RELEASES (ALL DEPARTMENTS)
+                        </h3>
+                        <button className="text-[10px] text-blue-400">View All →</button>
                     </div>
                     <div className="space-y-4">
-                        {departmentBudgets.slice(0, 4).map((d, i) => {
-                            const color = d.utilization > 80 ? 'bg-red-500' : d.utilization > 50 ? 'bg-yellow-500' : 'bg-emerald-500';
-                            const statusLabel = d.utilization > 80 ? 'Needs Attention' : d.utilization > 50 ? 'Monitor' : 'On Track';
-                            const statusColor = d.utilization > 80 ? 'text-red-500' : d.utilization > 50 ? 'text-yellow-600' : 'text-emerald-500';
-                            return (
-                                <div key={i}>
-                                    <div className="flex justify-between text-xs mb-1">
-                                        <span className="font-medium text-slate-700 dark:text-slate-300">{d.department_name}</span>
-                                        <span className={`font-semibold ${statusColor}`}>{statusLabel}</span>
-                                    </div>
-                                    <div className="w-full bg-slate-100 dark:bg-slate-700 rounded-full h-2">
-                                        <div className={`h-2 rounded-full ${color}`} style={{ width: `${Math.min(d.utilization, 100)}%` }} />
-                                    </div>
+                        {approvedTicketsRaw.slice(0, 3).map((t, i) => (
+                            <div key={i} className="flex justify-between items-center text-xs border-b border-slate-800/50 pb-2">
+                                <div>
+                                    <p className="text-slate-300 font-medium">{formatDateShort(t.trip_date)}</p>
+                                    <p className="text-[10px] text-slate-500">{t.ticket_number}</p>
                                 </div>
-                            );
-                        })}
+                                <div className="text-right">
+                                    <p className="text-slate-300">{t.department_name}</p>
+                                    <p className="font-bold text-slate-200">{formatCurrency(t.amount_released)}</p>
+                                </div>
+                            </div>
+                        ))}
                     </div>
+                </Card>
+
+                {/* Insights & Alerts */}
+                <Card className="lg:col-span-2 bg-[#121829] border border-slate-800 rounded-2xl shadow-lg p-5">
+                    <h3 className="font-bold text-white flex items-center gap-2 mb-4 text-sm">
+                        <Info className="h-4 w-4 text-yellow-400" /> INSIGHTS & ALERTS
+                    </h3>
+                    <div className="space-y-3">
+                        <div className="flex items-start gap-2">
+                            <AlertTriangle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
+                            <p className="text-xs text-slate-300">Rural Health Unit spent 31.5% of total funds this week.</p>
+                        </div>
+                        <div className="flex items-start gap-2">
+                            <Info className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />
+                            <p className="text-xs text-slate-300">Engineering Office has unspent balance of ₱170,000.00.</p>
+                        </div>
+                        <div className="flex items-start gap-2">
+                            <AlertTriangle className="h-4 w-4 text-yellow-500 shrink-0 mt-0.5" />
+                            <p className="text-xs text-slate-300">2 transactions require verification.</p>
+                        </div>
+                        <div className="flex items-start gap-2">
+                            <CheckCircle className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />
+                            <p className="text-xs text-slate-300">All departments are within their budget limits.</p>
+                        </div>
+                    </div>
+                </Card>
+
+                {/* Branding / Transparency Card */}
+                <Card className="lg:col-span-1 bg-gradient-to-br from-blue-900/40 to-[#121829] border border-blue-500/20 rounded-2xl shadow-lg p-5 flex flex-col justify-between relative overflow-hidden">
+                    <div className="relative z-10">
+                        <h3 className="font-bold text-white text-sm flex items-center gap-2 mb-2">
+                            <ShieldCheck className="h-4 w-4 text-emerald-400" /> Transparent. Accountable. Efficient.
+                        </h3>
+                        <p className="text-[11px] text-blue-200/70">Monitoring public funds for a more accountable LGU.</p>
+                    </div>
+                    {/* Subtle Background Icon */}
+                    <Building2 className="absolute -bottom-4 -right-4 h-32 w-32 text-blue-500/10 pointer-events-none z-0" />
                 </Card>
             </div>
         </div>
