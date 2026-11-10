@@ -51,26 +51,27 @@ const formatCompact = (amount) => {
 
 const formatDateShort = (ds) => ds ? new Date(ds).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" }) : "—";
 
+// ✅ UPDATED STATUS BADGE (Text only, colored)
 const StatusBadge = ({ status }) => {
     let displayStatus = "Funds Issued";
-    let colorClass = "bg-blue-500/20 text-blue-400 border border-blue-500/30";
+    let colorClass = "text-blue-400"; // Default
 
     if (status === "acknowledged") {
         displayStatus = "Received";
-        colorClass = "bg-yellow-500/20 text-yellow-400 border border-yellow-500/30";
+        colorClass = "text-yellow-400";
     } else if (status === "in_transit") {
         displayStatus = "For Verification";
-        colorClass = "bg-orange-500/20 text-orange-400 border border-orange-500/30";
+        colorClass = "text-orange-400";
     } else if (["completed", "closed", "pending_gso_validation", "pending_reconciliation"].includes(status)) {
         displayStatus = "Verified";
-        colorClass = "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30";
+        colorClass = "text-emerald-400";
     } else if (status === "rejected") {
         displayStatus = "Rejected";
-        colorClass = "bg-red-500/20 text-red-400 border border-red-500/30";
+        colorClass = "text-red-400";
     }
 
     return (
-        <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wide ${colorClass}`}>
+        <span className={`text-[11px] font-bold tracking-wide ${colorClass}`}>
             {displayStatus}
         </span>
     );
@@ -105,6 +106,7 @@ const MayorDashboard = () => {
     const queryClient = useQueryClient();
     
     // Filters
+    const [topDeptFilter, setTopDeptFilter] = useState("all");
     const [trendDept, setTrendDept] = useState("all");
     const [transDept, setTransDept] = useState("all");
 
@@ -155,11 +157,7 @@ const MayorDashboard = () => {
     const allTimeTotals = useMemo(() => {
         const totalAllocated = departmentBudgets.reduce((s, d) => s + d.allocated, 0);
         const totalUsed = departmentBudgets.reduce((s, d) => s + d.spent, 0);
-        
-        // ✅ Sum up actual released amount from tickets
         const totalReleased = approvedTicketsRaw.reduce((sum, t) => sum + (parseFloat(t.amount_released) || 0), 0);
-
-        // ✅ Remaining is Budget minus Released (not Spent)
         const totalRemaining = Math.max(0, totalAllocated - totalReleased);
 
         return { 
@@ -180,6 +178,15 @@ const MayorDashboard = () => {
                 department_id: d.department_id
             }));
     }, [departmentBudgets]);
+
+    // ✅ Top Fund Consumers (Filtered)
+    const topConsumersData = useMemo(() => {
+        let data = departmentBudgets;
+        if (topDeptFilter !== "all") {
+            data = data.filter(d => d.department_name === topDeptFilter);
+        }
+        return data.slice(0, 4); 
+    }, [departmentBudgets, topDeptFilter]);
 
     // ✅ REAL TREND DATA CALCULATION
     const trendData = useMemo(() => {
@@ -380,9 +387,21 @@ const MayorDashboard = () => {
                         <h3 className="font-bold text-white flex items-center gap-2">
                             <Trophy className="h-4 w-4 text-yellow-500" /> Top Fund Consumers
                         </h3>
+                        <select 
+                            value={topDeptFilter}
+                            onChange={(e) => setTopDeptFilter(e.target.value)}
+                            className="bg-slate-800 text-[10px] text-slate-300 px-2 py-1 rounded border border-slate-700 outline-none cursor-pointer"
+                        >
+                            <option value="all">All Departments</option>
+                            {departmentBudgets.map(d => (
+                                <option key={d.department_id} value={d.department_name}>{d.department_name}</option>
+                            ))}
+                        </select>
                     </div>
                     <div className="space-y-4">
-                        {departmentBudgets.slice(0, 4).map((d, i) => (
+                        {topConsumersData.length === 0 ? (
+                            <p className="text-center text-xs text-slate-500 mt-4">No data available.</p>
+                        ) : topConsumersData.map((d, i) => (
                             <div key={i} className="flex items-center gap-3">
                                 <div className={`w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs ${i === 0 ? 'bg-emerald-500 text-white' : 'bg-slate-800 text-slate-300'}`}>
                                     {i + 1}
@@ -390,8 +409,7 @@ const MayorDashboard = () => {
                                 <div className="flex-1">
                                     <div className="flex justify-between text-xs mb-1">
                                         <span className="font-semibold text-slate-200">{d.department_name}</span>
-                                        <span className="text-slate-400">{formatCurrency(d.spent)}</span>
-                                        <span className="text-slate-300 font-bold">{allTimeTotals.totalUsed > 0 ? ((d.spent / allTimeTotals.totalUsed) * 100).toFixed(1) : 0}%</span>
+                                        <span className="text-slate-300 font-bold">{formatCurrency(d.spent)}</span>
                                     </div>
                                     <div className="w-full bg-slate-800 rounded-full h-1.5">
                                         <div className={`h-1.5 rounded-full`} style={{ width: `${allTimeTotals.totalUsed > 0 ? (d.spent / allTimeTotals.totalUsed) * 100 : 0}%`, backgroundColor: DEPARTMENT_PALETTE[i] }} />
@@ -464,7 +482,6 @@ const MayorDashboard = () => {
                                     <tr key={i} className="hover:bg-slate-800/20 transition-colors">
                                         <td className="px-4 py-3 text-slate-200 font-medium">{d.department_name}</td>
                                         <td className="px-4 py-3 text-right text-slate-300">{formatCurrency(d.allocated)}</td>
-                                        {/* ✅ Fallback to show actual released amount */}
                                         <td className="px-4 py-3 text-right text-slate-300">{formatCurrency(d.allocated)}</td>
                                         <td className="px-4 py-3 text-right text-slate-300">{formatCurrency(d.spent)}</td>
                                         <td className="px-4 py-3 text-right text-slate-300">{formatCurrency(d.remaining)}</td>
@@ -517,14 +534,17 @@ const MayorDashboard = () => {
                                 {transactionsData.length === 0 ? (
                                     <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-500">No transactions found.</td></tr>
                                 ) : transactionsData.map((t, i) => {
+                                    // ✅ Check if it's verified. If not, show "-"
                                     const isVerified = ["completed", "closed", "pending_gso_validation", "pending_reconciliation"].includes(t.status);
+                                    const amountSpentDisplay = isVerified ? formatCurrency(t.actual_fuel_cost || 0) : "-";
+
                                     return (
                                         <tr key={i} className="hover:bg-slate-800/20 transition-colors">
                                             <td className="px-4 py-3 text-slate-400">{formatDateShort(t.trip_date)}</td>
                                             <td className="px-4 py-3 text-slate-200 font-medium">{t.ticket_number}</td>
                                             <td className="px-4 py-3 text-slate-400">{t.vehicle?.plate_number}</td>
                                             <td className="px-4 py-3 text-right text-slate-300">{formatCurrency(t.amount_released)}</td>
-                                            <td className="px-4 py-3 text-right text-slate-300">{isVerified ? formatCurrency(t.actual_fuel_cost || 0) : "₱0.00"}</td>
+                                            <td className="px-4 py-3 text-right text-slate-300 font-medium">{amountSpentDisplay}</td>
                                             <td className="px-4 py-3 text-center">
                                                 <button onClick={() => handleDownloadReceipt(t.receipt_url, t.ticket_number)} className="text-blue-400 hover:text-blue-300">
                                                     <Download className="h-4 w-4 mx-auto" />

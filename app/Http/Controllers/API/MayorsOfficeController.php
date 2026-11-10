@@ -312,6 +312,7 @@ class MayorsOfficeController extends Controller
                         ] : null,
                         'department_name' => $ticket->department ? $ticket->department->department_name : null,
                         'amount_released' => $ticket->gasSlip ? $ticket->gasSlip->amount_released : 0,
+                        'actual_fuel_cost' => (float) $actualCost,
 
                         // ✅ ADDED FIELDS HERE:
                         'actual_fuel_used' => (float) $ticket->actual_fuel_used,
