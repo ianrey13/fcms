@@ -45,7 +45,7 @@ import {
     Gauge,
     Calendar,
     AlertTriangle,
-    Eye, // ✅ Imported for View button
+    Eye,
     MoreHorizontal,
     Users,
     Clock,
@@ -96,35 +96,30 @@ const StatsCard = ({ title, value, icon: Icon, color, subtitle }) => (
 );
 
 // ============================================
-// STATUS BADGE COMPONENT
+// ✅ UPDATED STATUS BADGE (Text only, no background)
 // ============================================
 
 const StatusBadge = ({ status, maintenanceFlag }) => {
     let displayStatus = "Serviceable";
-    let color =
-        "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800";
+    let textColor = "text-emerald-600 dark:text-emerald-400";
     let icon = CheckCircle;
 
     if (status === "inactive") {
         displayStatus = "Unserviceable";
-        color =
-            "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 border-red-200 dark:border-red-800";
+        textColor = "text-red-600 dark:text-red-400";
         icon = XCircle;
     } else if (maintenanceFlag) {
         displayStatus = "Under Maintenance";
-        color =
-            "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400 border-yellow-200 dark:border-yellow-800";
+        textColor = "text-yellow-600 dark:text-yellow-400";
         icon = Wrench;
     }
 
     const Icon = icon;
     return (
-        <Badge
-            className={`${color} flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-medium`}
-        >
-            <Icon className="h-3 w-3" />
+        <span className={`flex items-center gap-1.5 text-[11px] font-bold ${textColor} whitespace-nowrap`}>
+            <Icon className="h-3.5 w-3.5" />
             {displayStatus}
-        </Badge>
+        </span>
     );
 };
 
@@ -840,6 +835,7 @@ const VehicleManagement = () => {
                                                         />
                                                     </td>
                                                     <td className="px-4 py-3">
+                                                        {/* ✅ Renders text only, no bg */}
                                                         <StatusBadge
                                                             status={
                                                                 vehicle.status

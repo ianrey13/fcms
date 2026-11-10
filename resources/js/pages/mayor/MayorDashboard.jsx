@@ -60,10 +60,10 @@ const StatusBadge = ({ status }) => {
     let textColor = "text-blue-600 dark:text-blue-400";
 
     if (status === "acknowledged") {
-        displayStatus = "Received"; // ✅ Changed from Acknowledged
+        displayStatus = "Received";
         textColor = "text-yellow-600 dark:text-yellow-400";
     } else if (status === "in_transit") {
-        displayStatus = "For Verification"; // ✅ Changed from In Transit
+        displayStatus = "For Verification";
         textColor = "text-purple-600 dark:text-purple-400";
     } else if (
         status === "completed" || 
@@ -215,7 +215,7 @@ const MayorDashboard = () => {
     // ============ TIME FILTERING ============
     const timeFilterLabel = useMemo(() => {
         if (timeFilter === "this_week") return "This Week";
-        if (timeFilter === "two_weeks_ago") return "Past 2 Weeks"; // ✅ Label change
+        if (timeFilter === "two_weeks_ago") return "Past 2 Weeks";
         if (timeFilter === "all_time") return "All Time";
         return "This Month";
     }, [timeFilter]);
@@ -230,7 +230,6 @@ const MayorDashboard = () => {
             start = startOfWeek(today, { weekStartsOn: 1 });
             end = endOfWeek(today, { weekStartsOn: 1 });
         } else if (timeFilter === "two_weeks_ago") {
-            // ✅ FIX: 2 weeks ago up to Present
             start = subDays(today, 14);
             end = today;
         } else {
@@ -325,16 +324,11 @@ const MayorDashboard = () => {
                     <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Mayor's Office</h1>
                     <p className="text-sm text-slate-500">Fuel Fund Dashboard</p>
                 </div>
-                <div className="flex items-center gap-4">
-                    <span className="text-sm font-medium text-slate-600 dark:text-slate-300">
-                        {timeFilterLabel}
-                    </span>
-                </div>
+                {/* Gi-remove ang time filter text diri sa taas kay gibutang na sa tunga */}
             </div>
 
             {/* 1. Top Stat Cards */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-                {/* ... (Keep Top Cards the same) ... */}
                 <Card className="dark:bg-slate-800 border-none shadow-sm">
                     <CardContent className="p-4 flex items-center gap-4">
                         <div className="p-3 bg-blue-100 dark:bg-blue-900/30 rounded-xl">
@@ -390,6 +384,24 @@ const MayorDashboard = () => {
                         </div>
                     </CardContent>
                 </Card>
+            </div>
+
+            {/* ✅ TIME FILTER DROPDOWN (Gibutang sa tunga) */}
+            <div className="flex justify-center mb-6">
+                <div className="relative group inline-block">
+                    <button className="flex items-center gap-2 text-sm font-semibold border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800 shadow-sm transition-colors bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200">
+                        <Clock className="h-4 w-4 text-slate-500" /> 
+                        {timeFilterLabel}
+                        <ChevronDown className="h-4 w-4 text-slate-400 ml-1" />
+                    </button>
+                    
+                    <div className="absolute left-1/2 -translate-x-1/2 mt-1 w-40 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 overflow-hidden">
+                        <button onClick={() => setTimeFilter("all_time")} className={cn("w-full text-left px-4 py-2.5 text-sm hover:bg-slate-100 dark:hover:bg-slate-700", timeFilter === "all_time" && "font-bold text-blue-600 bg-blue-50 dark:bg-blue-900/20")}>All Time</button>
+                        <button onClick={() => setTimeFilter("this_month")} className={cn("w-full text-left px-4 py-2.5 text-sm hover:bg-slate-100 dark:hover:bg-slate-700", timeFilter === "this_month" && "font-bold text-blue-600 bg-blue-50 dark:bg-blue-900/20")}>This Month</button>
+                        <button onClick={() => setTimeFilter("this_week")} className={cn("w-full text-left px-4 py-2.5 text-sm hover:bg-slate-100 dark:hover:bg-slate-700", timeFilter === "this_week" && "font-bold text-blue-600 bg-blue-50 dark:bg-blue-900/20")}>This Week</button>
+                        <button onClick={() => setTimeFilter("two_weeks_ago")} className={cn("w-full text-left px-4 py-2.5 text-sm hover:bg-slate-100 dark:hover:bg-slate-700", timeFilter === "two_weeks_ago" && "font-bold text-blue-600 bg-blue-50 dark:bg-blue-900/20")}>Past 2 Weeks</button>
+                    </div>
+                </div>
             </div>
 
             {/* 2. Middle Section */}
@@ -478,21 +490,7 @@ const MayorDashboard = () => {
                                 Department Overview
                             </button>
                         </div>
-
-                        <div className="relative group">
-                            <button className="flex items-center gap-2 text-xs font-medium border border-slate-200 dark:border-slate-600 rounded-lg px-3 py-1.5 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
-                                <Clock className="h-3.5 w-3.5 text-slate-500" /> 
-                                {timeFilterLabel}
-                                <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
-                            </button>
-                            
-                            <div className="absolute right-0 mt-1 w-36 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10 overflow-hidden">
-                                <button onClick={() => setTimeFilter("all_time")} className={cn("w-full text-left px-4 py-2 text-xs hover:bg-slate-100 dark:hover:bg-slate-700", timeFilter === "all_time" && "font-bold text-blue-600 bg-blue-50 dark:bg-blue-900/20")}>All Time</button>
-                                <button onClick={() => setTimeFilter("this_month")} className={cn("w-full text-left px-4 py-2 text-xs hover:bg-slate-100 dark:hover:bg-slate-700", timeFilter === "this_month" && "font-bold text-blue-600 bg-blue-50 dark:bg-blue-900/20")}>This Month</button>
-                                <button onClick={() => setTimeFilter("this_week")} className={cn("w-full text-left px-4 py-2 text-xs hover:bg-slate-100 dark:hover:bg-slate-700", timeFilter === "this_week" && "font-bold text-blue-600 bg-blue-50 dark:bg-blue-900/20")}>This Week</button>
-                                <button onClick={() => setTimeFilter("two_weeks_ago")} className={cn("w-full text-left px-4 py-2 text-xs hover:bg-slate-100 dark:hover:bg-slate-700", timeFilter === "two_weeks_ago" && "font-bold text-blue-600 bg-blue-50 dark:bg-blue-900/20")}>Past 2 Weeks</button>
-                            </div>
-                        </div>
+                        {/* Wala nay time filter diri kay gibutang na sa ibabaw */}
                     </div>
 
                     <div className="p-4 flex-1 flex flex-col">
