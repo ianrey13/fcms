@@ -7,6 +7,7 @@ import { useAutoRefresh } from "../../hooks/useAutoRefresh";
 import { useRealtime } from "../../contexts/RealtimeContext";
 import { SkeletonPage } from "../../components/ui/SkeletonCard";
 import api, { mayorsOfficeAPI } from "../../services/api";
+import { isWithinInterval, subDays, startOfMonth, endOfMonth, startOfWeek, endOfWeek } from "date-fns";
 
 import {
     ArrowRight, Activity, PieChart, Fuel, Building2, Car, Download, TrendingUp, 
@@ -52,18 +53,20 @@ const formatCompact = (amount) => {
 const formatDateShort = (ds) => ds ? new Date(ds).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" }) : "—";
 
 // ✅ UPDATED STATUS BADGE
-const StatusBadge = ({ status }) => {
+const StatusBadge = ({ status, actualCost }) => {
     let displayStatus = "Funds Issued";
     let colorClass = "text-blue-400"; // Default
 
-    // If the status is in_transit, it means the receipt is uploaded but not yet verified by DO
+    // Check if there's actual fuel cost recorded (meaning it's verified)
+    const hasCost = actualCost !== null && actualCost !== undefined && parseFloat(actualCost) > 0;
+
     if (status === "acknowledged") {
         displayStatus = "Received";
         colorClass = "text-yellow-400";
-    } else if (status === "in_transit") {
+    } else if (status === "in_transit" || (!hasCost && status !== 'closed' && status !== 'completed')) {
         displayStatus = "For Verification";
         colorClass = "text-orange-400";
-    } else if (["completed", "closed", "pending_gso_validation", "pending_reconciliation"].includes(status)) {
+    } else if (hasCost || ["completed", "closed", "pending_gso_validation", "pending_reconciliation"].includes(status)) {
         displayStatus = "Verified";
         colorClass = "text-emerald-400";
     } else if (status === "rejected") {
@@ -107,6 +110,7 @@ const MayorDashboard = () => {
     const queryClient = useQueryClient();
     
     // Filters
+    const [topTimeFilter, setTopTimeFilter] = useState("all_time");
     const [topDeptFilter, setTopDeptFilter] = useState("all");
     const [trendDept, setTrendDept] = useState("all");
     const [transDept, setTransDept] = useState("all");
@@ -180,14 +184,53 @@ const MayorDashboard = () => {
             }));
     }, [departmentBudgets]);
 
-    // ✅ Top Fund Consumers (Filtered)
+    // ✅ Top Fund Consumers (Filtered by Date & Dept)
     const topConsumersData = useMemo(() => {
-        let data = departmentBudgets;
+        // 1. Filter tickets based on selected date range
+        let filteredTickets = approvedTicketsRaw;
+        if (topTimeFilter !== "all_time") {
+            const today = new Date();
+            let start, end;
+            
+            if (topTimeFilter === "this_week") {
+                start = startOfWeek(today, { weekStartsOn: 1 });
+                end = endOfWeek(today, { weekStartsOn: 1 });
+            } else if (topTimeFilter === "this_month") {
+                start = startOfMonth(today);
+                end = endOfMonth(today);
+            } else if (topTimeFilter === "two_weeks_ago") {
+                start = subDays(today, 14);
+                end = today;
+            }
+
+            filteredTickets = filteredTickets.filter(t => {
+                if (!t.trip_date) return false;
+                return isWithinInterval(new Date(t.trip_date), { start, end });
+            });
+        }
+
+        // 2. Aggregate spent per department based on filtered tickets
+        const deptSpent = {};
+        filteredTickets.forEach(t => {
+            if (t.status === 'rejected') return; // exclude rejected
+            const cost = parseFloat(t.actual_fuel_cost) || 0;
+            if (!deptSpent[t.department_name]) deptSpent[t.department_name] = 0;
+            deptSpent[t.department_name] += cost;
+        });
+
+        // 3. Map back to department objects and sort
+        let data = departmentBudgets.map(d => ({
+            ...d,
+            filteredSpent: deptSpent[d.department_name] || 0
+        })).sort((a, b) => b.filteredSpent - a.filteredSpent);
+
+        // 4. Apply department filter
         if (topDeptFilter !== "all") {
             data = data.filter(d => d.department_name === topDeptFilter);
         }
+
         return data.slice(0, 4); 
-    }, [departmentBudgets, topDeptFilter]);
+    }, [departmentBudgets, approvedTicketsRaw, topTimeFilter, topDeptFilter]);
 
     // ✅ REAL TREND DATA CALCULATION
     const trendData = useMemo(() => {
@@ -382,22 +425,26 @@ const MayorDashboard = () => {
                     </div>
                 </Card>
 
-                {/* Top Fund Consumers */}
+                {/* ✅ Top Fund Consumers (Added Date Filter) */}
                 <Card className="bg-[#121829] border border-slate-800 rounded-2xl shadow-lg p-5">
                     <div className="flex items-center justify-between mb-6">
                         <h3 className="font-bold text-white flex items-center gap-2">
                             <Trophy className="h-4 w-4 text-yellow-500" /> Top Fund Consumers
                         </h3>
-                        <select 
-                            value={topDeptFilter}
-                            onChange={(e) => setTopDeptFilter(e.target.value)}
-                            className="bg-slate-800 text-[10px] text-slate-300 px-2 py-1 rounded border border-slate-700 outline-none cursor-pointer"
-                        >
-                            <option value="all">All Departments</option>
-                            {departmentBudgets.map(d => (
-                                <option key={d.department_id} value={d.department_name}>{d.department_name}</option>
-                            ))}
-                        </select>
+                        <div className="flex gap-1 bg-slate-800/50 p-1 rounded-md text-[10px]">
+                            <button 
+                                onClick={() => setTopTimeFilter("this_week")} 
+                                className={cn("px-2 py-1 rounded", topTimeFilter === "this_week" ? "bg-blue-600 text-white" : "text-slate-400 hover:text-slate-200")}
+                            >
+                                This Week
+                            </button>
+                            <button 
+                                onClick={() => setTopTimeFilter("this_month")} 
+                                className={cn("px-2 py-1 rounded", topTimeFilter === "this_month" ? "bg-blue-600 text-white" : "text-slate-400 hover:text-slate-200")}
+                            >
+                                This Month
+                            </button>
+                        </div>
                     </div>
                     <div className="space-y-4">
                         {topConsumersData.length === 0 ? (
@@ -410,10 +457,11 @@ const MayorDashboard = () => {
                                 <div className="flex-1">
                                     <div className="flex justify-between text-xs mb-1">
                                         <span className="font-semibold text-slate-200">{d.department_name}</span>
-                                        <span className="text-slate-300 font-bold">{formatCurrency(d.spent)}</span>
+                                        {/* ✅ Gigamit ang filteredSpent base sa date filter */}
+                                        <span className="text-slate-300 font-bold">{formatCurrency(d.filteredSpent)}</span>
                                     </div>
                                     <div className="w-full bg-slate-800 rounded-full h-1.5">
-                                        <div className={`h-1.5 rounded-full`} style={{ width: `${allTimeTotals.totalUsed > 0 ? (d.spent / allTimeTotals.totalUsed) * 100 : 0}%`, backgroundColor: DEPARTMENT_PALETTE[i] }} />
+                                        <div className={`h-1.5 rounded-full`} style={{ width: `${d.filteredSpent > 0 ? 100 : 0}%`, backgroundColor: DEPARTMENT_PALETTE[i] }} />
                                     </div>
                                 </div>
                             </div>
@@ -535,10 +583,9 @@ const MayorDashboard = () => {
                                 {transactionsData.length === 0 ? (
                                     <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-500">No transactions found.</td></tr>
                                 ) : transactionsData.map((t, i) => {
-                                    // ✅ Check if it's verified. If not, show "-"
-                                    // Adding "pending_gso_validation" to the verified list as per current backend logic
-                                    const isVerified = ["completed", "closed", "pending_gso_validation", "pending_reconciliation"].includes(t.status);
-                                    const amountSpentDisplay = isVerified ? formatCurrency(t.actual_fuel_cost || 0) : "-";
+                                    // ✅ FIX: Only show amount if it's greater than 0 (Verified na)
+                                    const hasCost = t.actual_fuel_cost && parseFloat(t.actual_fuel_cost) > 0;
+                                    const amountSpentDisplay = hasCost ? formatCurrency(t.actual_fuel_cost) : "-";
 
                                     return (
                                         <tr key={i} className="hover:bg-slate-800/20 transition-colors">
@@ -553,7 +600,8 @@ const MayorDashboard = () => {
                                                 </button>
                                             </td>
                                             <td className="px-4 py-3 text-right">
-                                                <StatusBadge status={t.status} />
+                                                {/* ✅ Gi-pass ang actualCost aron makabalo ang badge kung Verified ba jud */}
+                                                <StatusBadge status={t.status} actualCost={t.actual_fuel_cost} />
                                             </td>
                                         </tr>
                                     );
