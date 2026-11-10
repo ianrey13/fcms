@@ -51,11 +51,12 @@ const formatCompact = (amount) => {
 
 const formatDateShort = (ds) => ds ? new Date(ds).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" }) : "—";
 
-// ✅ UPDATED STATUS BADGE (Text only, colored)
+// ✅ UPDATED STATUS BADGE
 const StatusBadge = ({ status }) => {
     let displayStatus = "Funds Issued";
     let colorClass = "text-blue-400"; // Default
 
+    // If the status is in_transit, it means the receipt is uploaded but not yet verified by DO
     if (status === "acknowledged") {
         displayStatus = "Received";
         colorClass = "text-yellow-400";
@@ -535,6 +536,7 @@ const MayorDashboard = () => {
                                     <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-500">No transactions found.</td></tr>
                                 ) : transactionsData.map((t, i) => {
                                     // ✅ Check if it's verified. If not, show "-"
+                                    // Adding "pending_gso_validation" to the verified list as per current backend logic
                                     const isVerified = ["completed", "closed", "pending_gso_validation", "pending_reconciliation"].includes(t.status);
                                     const amountSpentDisplay = isVerified ? formatCurrency(t.actual_fuel_cost || 0) : "-";
 
