@@ -76,6 +76,27 @@ const StatusBadge = ({ status }) => {
     );
 };
 
+const handleDownloadReceipt = async (url, ticketNumber) => {
+    if (!url) {
+        alert("No receipt uploaded for this trip yet.");
+        return;
+    }
+    try {
+        const response = await fetch(url);
+        const blob = await response.blob();
+        const blobUrl = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = blobUrl;
+        link.download = `Receipt_${ticketNumber}.jpg`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(blobUrl);
+    } catch (error) {
+        window.open(url, '_blank');
+    }
+};
+
 // ============================================
 // MAIN COMPONENT
 // ============================================
@@ -134,12 +155,20 @@ const MayorDashboard = () => {
     const allTimeTotals = useMemo(() => {
         const totalAllocated = departmentBudgets.reduce((s, d) => s + d.allocated, 0);
         const totalUsed = departmentBudgets.reduce((s, d) => s + d.spent, 0);
+        
+        // ✅ Sum up actual released amount from tickets
+        const totalReleased = approvedTicketsRaw.reduce((sum, t) => sum + (parseFloat(t.amount_released) || 0), 0);
+
+        // ✅ Remaining is Budget minus Released (not Spent)
+        const totalRemaining = Math.max(0, totalAllocated - totalReleased);
+
         return { 
             totalAllocated, 
             totalUsed, 
-            totalRemaining: Math.max(totalAllocated - totalUsed, 0), 
+            totalReleased,
+            totalRemaining, 
         };
-    }, [departmentBudgets]);
+    }, [departmentBudgets, approvedTicketsRaw]);
 
     const pieData = useMemo(() => {
         return departmentBudgets
@@ -154,17 +183,15 @@ const MayorDashboard = () => {
 
     // ✅ REAL TREND DATA CALCULATION
     const trendData = useMemo(() => {
-        // 1. Filter tickets based on selected department
         const filtered = approvedTicketsRaw.filter(t => 
             trendDept === "all" || t.department_name === trendDept
         );
 
-        // 2. Group by Month
         const monthlyGroups = {};
         filtered.forEach(t => {
             if (!t.trip_date) return;
             const date = new Date(t.trip_date);
-            const monthYear = date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }); // e.g., "Nov 2026"
+            const monthYear = date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
             
             if (!monthlyGroups[monthYear]) {
                 monthlyGroups[monthYear] = { released: 0, dateObj: date };
@@ -172,7 +199,6 @@ const MayorDashboard = () => {
             monthlyGroups[monthYear].released += parseFloat(t.amount_released) || 0;
         });
 
-        // 3. Calculate the Baseline (Weekly Suggested)
         let totalWeeklySuggested = 0;
         if (trendDept === "all") {
             totalWeeklySuggested = departmentBudgets.reduce((sum, d) => sum + (d.allocated / 52), 0);
@@ -181,10 +207,8 @@ const MayorDashboard = () => {
             totalWeeklySuggested = dept ? (dept.allocated / 52) : 0;
         }
 
-        // 4. Convert object to sorted array for the chart
         const sortedKeys = Object.keys(monthlyGroups).sort((a, b) => monthlyGroups[a].dateObj - monthlyGroups[b].dateObj);
 
-        // If there's no data, just return an empty state to avoid chart errors
         if (sortedKeys.length === 0) {
             return [{ name: "No Data", released: 0, suggested: totalWeeklySuggested * 4.33 }];
         }
@@ -192,7 +216,6 @@ const MayorDashboard = () => {
         return sortedKeys.map(key => ({
             name: key,
             released: monthlyGroups[key].released,
-            // Approximate monthly baseline by multiplying weekly suggested by ~4.33 weeks
             suggested: Math.round(totalWeeklySuggested * 4.33) 
         }));
     }, [approvedTicketsRaw, trendDept, departmentBudgets]);
@@ -245,15 +268,17 @@ const MayorDashboard = () => {
                         <div className="flex justify-between items-start mb-2">
                             <div>
                                 <p className="text-xs text-emerald-300 font-semibold uppercase tracking-wider mb-1">Total Released</p>
-                                <p className="text-2xl font-bold text-white">{formatCurrency(allTimeTotals.totalAllocated)}</p>
+                                <p className="text-2xl font-bold text-white">{formatCurrency(allTimeTotals.totalReleased)}</p>
                             </div>
                             <div className="p-2.5 bg-emerald-500/20 rounded-xl">
                                 <CheckCircle className="h-5 w-5 text-emerald-400" />
                             </div>
                         </div>
-                        <p className="text-[11px] text-slate-400 mb-2">100% of Budget</p>
+                        <p className="text-[11px] text-slate-400 mb-2">
+                            {allTimeTotals.totalAllocated > 0 ? ((allTimeTotals.totalReleased / allTimeTotals.totalAllocated) * 100).toFixed(2) : 0}% of Budget
+                        </p>
                         <div className="w-full bg-slate-700/50 h-1.5 rounded-full overflow-hidden">
-                            <div className="h-full bg-emerald-500 rounded-full w-full" />
+                            <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${allTimeTotals.totalAllocated > 0 ? (allTimeTotals.totalReleased / allTimeTotals.totalAllocated) * 100 : 0}%` }} />
                         </div>
                     </CardContent>
                 </Card>
@@ -439,6 +464,7 @@ const MayorDashboard = () => {
                                     <tr key={i} className="hover:bg-slate-800/20 transition-colors">
                                         <td className="px-4 py-3 text-slate-200 font-medium">{d.department_name}</td>
                                         <td className="px-4 py-3 text-right text-slate-300">{formatCurrency(d.allocated)}</td>
+                                        {/* ✅ Fallback to show actual released amount */}
                                         <td className="px-4 py-3 text-right text-slate-300">{formatCurrency(d.allocated)}</td>
                                         <td className="px-4 py-3 text-right text-slate-300">{formatCurrency(d.spent)}</td>
                                         <td className="px-4 py-3 text-right text-slate-300">{formatCurrency(d.remaining)}</td>
