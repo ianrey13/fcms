@@ -266,123 +266,116 @@ class MayorsOfficeController extends Controller
     /**
      * Get approved/funds issued tickets
      */
-    public function getApprovedTickets(Request $request)
-    {
-        try {
-            $user = $request->user();
+   public function getApprovedTickets(Request $request)
+{
+    try {
+        $user = $request->user();
 
-            if (!$user->isMayorsOffice()) {
-                return response()->json(['message' => 'Unauthorized'], 403);
-            }
-
-            //  Active fiscal year (still used for meta / stat cards)
-            $activeYear = $this->budgetService->getActiveFiscalYear();
-
-            // ── 1. Query ALL released tickets — no FY filter ────────
-          $tickets = TripTicket::with(['vehicle', 'department', 'gasSlip.fuelReceipt', 'driver', 'driver.user'])
-                ->whereIn('status', [
-                    'funds_issued',
-                    'acknowledged',
-                    'pending_reconciliation',
-                    'in_transit',
-                    'pending_gso_validation',
-                    'completed',
-                    'closed',
-                ])
-                ->orderBy('submitted_at', 'desc')
-                ->get()
-                ->map(function ($ticket) {
-                    $driverName = null;
-                    if ($ticket->driver && $ticket->driver->user) {
-                        $driverName = $ticket->driver->user->full_name;
-                    } elseif ($ticket->driver) {
-                        $driverName = $ticket->driver->name ?? null;
-                    }
-
-                    return [
-                        'id' => $ticket->trip_ticket_id,
-                        'ticket_number' => $ticket->trip_ticket_number,
-                        'trip_date' => $ticket->trip_date,
-                        'destination' => $ticket->destination,
-                        'status' => $ticket->status,
-                        'vehicle' => $ticket->vehicle ? [
-                            'plate_number' => $ticket->vehicle->plate_number,
-                            'vehicle_model' => $ticket->vehicle->vehicle_model,
-                            'fuel_type' => $ticket->vehicle->fuel_type,
-                        ] : null,
-                        'department_name' => $ticket->department ? $ticket->department->department_name : null,
-                        'amount_released' => $ticket->gasSlip ? $ticket->gasSlip->amount_released : 0,
-                        'actual_fuel_cost' => (float) $actualCost,
-
-                        // ✅ ADDED FIELDS HERE:
-                        'actual_fuel_used' => (float) $ticket->actual_fuel_used,
-                        'actual_distance_km' => (float) $ticket->actual_distance_km,
-
-                         'receipt_url' => $ticket->gasSlip?->fuelReceipt?->receipt_photo_path 
-                            ? asset($ticket->gasSlip->fuelReceipt->receipt_photo_path) 
-                            : null,
-
-                        'is_mo_funded' => $ticket->created_by_mo_user_id !== null,
-                        'charged_to_department' => $ticket->charge_to_department_id ?
-                            Department::find($ticket->charge_to_department_id)?->department_name : null,
-                        'driver_name' => $driverName,
-                        'driver' => $ticket->driver ? [
-                            'driver_id' => $ticket->driver->driver_id,
-                            'name' => $driverName,
-                            'user' => $ticket->driver->user ? [
-                                'full_name' => $ticket->driver->user->full_name,
-                            ] : null,
-                        ] : null,
-                        'purpose' => $ticket->purpose,
-                        'created_at' => $ticket->created_at,
-                        'is_cross_department' => $ticket->gasSlip?->is_cross_department ?? false,
-                        'cross_department_reason' => $ticket->gasSlip?->cross_department_reason ?? null,
-                    ];
-                });
-
-            // ── 2. Meta for stat cards ──────────────────────────────
-            $allTimeCount = $tickets->count();
-            $allTimeAmount = (float) $tickets->sum('amount_released');
-
-            // ✅ FIXED N+1 QUERY BUG HERE
-            // FY-scoped counts (still useful for stat card subtitle)
-            $validPeriodIds = DeptBudgetPeriod::where('fiscal_year', $activeYear)
-                ->pluck('period_id')
-                ->toArray();
-
-            // Get all trip IDs that belong to this FY via a single query
-            $fyTicketIds = DB::table('trip_ticket')
-                ->join('gas_slip', 'trip_ticket.trip_ticket_id', '=', 'gas_slip.trip_ticket_id')
-                ->whereIn('gas_slip.period_id', $validPeriodIds)
-                ->pluck('trip_ticket.trip_ticket_id')
-                ->toArray();
-
-            // Count how many of our current tickets are in that list
-            $fyCount = $tickets->filter(function ($t) use ($fyTicketIds) {
-                // If no gas slip, it counts in FY by default (matching your original logic)
-                return in_array($t['id'], $fyTicketIds) || !TripTicket::find($t['id'])->gasSlip;
-            })->count();
-
-            return response()->json([
-                'success' => true,
-                'data' => $tickets,
-                'meta' => [
-                    'fiscal_year'      => $activeYear,
-                    'fy_count'         => $fyCount,
-                    'fy_amount'        => round($allTimeAmount, 2), // kept for compat
-                    'all_time_count'   => $allTimeCount,
-                    'all_time_amount'  => round($allTimeAmount, 2),
-                ],
-            ]);
-        } catch (\Exception $e) {
-            Log::error('Get approved tickets error: ' . $e->getMessage());
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to fetch approved tickets: ' . $e->getMessage()
-            ], 500);
+        if (!$user->isMayorsOffice()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
         }
-    }
 
+        $activeYear = $this->budgetService->getActiveFiscalYear();
+
+        $tickets = TripTicket::with(['vehicle', 'department', 'gasSlip.fuelReceipt', 'driver', 'driver.user'])
+            ->whereIn('status', [
+                'funds_issued',
+                'acknowledged',
+                'pending_reconciliation',
+                'in_transit',
+                'pending_gso_validation',
+                'completed',
+                'closed',
+            ])
+            ->orderBy('submitted_at', 'desc')
+            ->get()
+            ->map(function ($ticket) {
+                $driverName = null;
+                if ($ticket->driver && $ticket->driver->user) {
+                    $driverName = $ticket->driver->user->full_name;
+                } elseif ($ticket->driver) {
+                    $driverName = $ticket->driver->name ?? null;
+                }
+
+                // ✅ FIX: Declare $actualCost here
+                $actualCost = $ticket->gasSlip?->fuelReceipt?->amount_on_receipt ?? 0;
+
+                return [
+                    'id' => $ticket->trip_ticket_id,
+                    'ticket_number' => $ticket->trip_ticket_number,
+                    'trip_date' => $ticket->trip_date,
+                    'destination' => $ticket->destination,
+                    'status' => $ticket->status,
+                    'vehicle' => $ticket->vehicle ? [
+                        'plate_number' => $ticket->vehicle->plate_number,
+                        'vehicle_model' => $ticket->vehicle->vehicle_model,
+                        'fuel_type' => $ticket->vehicle->fuel_type,
+                    ] : null,
+                    'department_name' => $ticket->department ? $ticket->department->department_name : null,
+                    'amount_released' => $ticket->gasSlip ? $ticket->gasSlip->amount_released : 0,
+                    'actual_fuel_cost' => (float) $actualCost, // ✅ Now it works
+
+                    'actual_fuel_used' => (float) $ticket->actual_fuel_used,
+                    'actual_distance_km' => (float) $ticket->actual_distance_km,
+
+                    'receipt_url' => $ticket->gasSlip?->fuelReceipt?->receipt_photo_path 
+                        ? asset($ticket->gasSlip->fuelReceipt->receipt_photo_path) 
+                        : null,
+
+                    'is_mo_funded' => $ticket->created_by_mo_user_id !== null,
+                    'charged_to_department' => $ticket->charge_to_department_id ?
+                        Department::find($ticket->charge_to_department_id)?->department_name : null,
+                    'driver_name' => $driverName,
+                    'driver' => $ticket->driver ? [
+                        'driver_id' => $ticket->driver->driver_id,
+                        'name' => $driverName,
+                        'user' => $ticket->driver->user ? [
+                            'full_name' => $ticket->driver->user->full_name,
+                        ] : null,
+                    ] : null,
+                    'purpose' => $ticket->purpose,
+                    'created_at' => $ticket->created_at,
+                    'is_cross_department' => $ticket->gasSlip?->is_cross_department ?? false,
+                    'cross_department_reason' => $ticket->gasSlip?->cross_department_reason ?? null,
+                ];
+            });
+
+        $allTimeCount = $tickets->count();
+        $allTimeAmount = (float) $tickets->sum('amount_released');
+
+        $validPeriodIds = DeptBudgetPeriod::where('fiscal_year', $activeYear)
+            ->pluck('period_id')
+            ->toArray();
+
+        $fyTicketIds = DB::table('trip_ticket')
+            ->join('gas_slip', 'trip_ticket.trip_ticket_id', '=', 'gas_slip.trip_ticket_id')
+            ->whereIn('gas_slip.period_id', $validPeriodIds)
+            ->pluck('trip_ticket.trip_ticket_id')
+            ->toArray();
+
+        $fyCount = $tickets->filter(function ($t) use ($fyTicketIds) {
+            return in_array($t['id'], $fyTicketIds) || !TripTicket::find($t['id'])->gasSlip;
+        })->count();
+
+        return response()->json([
+            'success' => true,
+            'data' => $tickets,
+            'meta' => [
+                'fiscal_year'      => $activeYear,
+                'fy_count'         => $fyCount,
+                'fy_amount'        => round($allTimeAmount, 2),
+                'all_time_count'   => $allTimeCount,
+                'all_time_amount'  => round($allTimeAmount, 2),
+            ],
+        ]);
+    } catch (\Exception $e) {
+        Log::error('Get approved tickets error: ' . $e->getMessage());
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to fetch approved tickets: ' . $e->getMessage()
+        ], 500);
+    }
+}
 
     /**
      * Approve ticket and release funds and gaslip generation
