@@ -11,10 +11,6 @@ class FallbackLocationService
     public function __construct()
     {
         $this->locations = [
-
-            // ================================================================
-            // ORIGIN — Laguindingan reference points (distance = 0)
-            // ================================================================
             'laguindingan_municipal_hall' => [
                 'name' => 'Laguindingan Municipal Hall',
                 'distance_km' => 0,
@@ -35,10 +31,6 @@ class FallbackLocationService
                 'region' => 'Misamis Oriental',
                 'aliases' => ['laguindingan poblacion'],
             ],
-
-            // ================================================================
-            // LAGUINDINGAN BARANGAYS (11)
-            // ================================================================
             'aromahon' => [
                 'name' => 'Aromahon, Laguindingan',
                 'distance_km' => 2.3,
@@ -149,15 +141,11 @@ class FallbackLocationService
                 'region' => 'Laguindingan, Misamis Oriental',
                 'aliases' => ['tubajon barangay hall'],
             ],
-
-            // ================================================================
-            // LAGUINDINGAN LANDMARKS
-            // ================================================================
             'gk_heights' => [
                 'name' => 'GK Heights',
-                'distance_km' => 5.0,        // ⚠️ PLACEHOLDER — verify against Google Maps
-                'lat' => 8.6100,             // ⚠️ PLACEHOLDER — verify against Google Maps
-                'lng' => 124.4500,           // ⚠️ PLACEHOLDER — verify against Google Maps
+                'distance_km' => 5.0,
+                'lat' => 8.6100,
+                'lng' => 124.4500,
                 'type' => 'landmark',
                 'priority' => 1,
                 'region' => 'Laguindingan, Misamis Oriental',
@@ -173,10 +161,6 @@ class FallbackLocationService
                 'region' => 'Laguindingan, Misamis Oriental',
                 'aliases' => ['airport', 'laguindingan airport terminal'],
             ],
-
-            // ================================================================
-            // GROUP ENTRIES — selectable, return max-group distance (Tubajon = 11.4 km)
-            // ================================================================
             'all_barangay' => [
                 'name' => 'All Barangay',
                 'distance_km' => 11.4,
@@ -207,10 +191,6 @@ class FallbackLocationService
                 'region' => 'Laguindingan, Misamis Oriental',
                 'aliases' => ['aor', 'area of responsibility', 'laguindingan aor'],
             ],
-
-            // ================================================================
-            // MISAMIS ORIENTAL — NEARBY MUNICIPALITIES
-            // ================================================================
             'alubijid' => [
                 'name' => 'Alubijid',
                 'distance_km' => 3.6,
@@ -301,10 +281,6 @@ class FallbackLocationService
                 'region' => 'Misamis Oriental',
                 'aliases' => ['lugait municipal hall'],
             ],
-
-            // ================================================================
-            // CAGAYAN DE ORO — LANDMARKS
-            // ================================================================
             'polymedic' => [
                 'name' => 'Cagayan de Oro Polymedic Medical Plaza',
                 'distance_km' => 25.5,
@@ -355,10 +331,6 @@ class FallbackLocationService
                 'region' => 'Cagayan de Oro, Misamis Oriental',
                 'aliases' => ['capitol', 'misamis oriental capitol'],
             ],
-
-            // ================================================================
-            // REGION 10 — CITIES
-            // ================================================================
             'gingoog' => [
                 'name' => 'Gingoog City',
                 'distance_km' => 60.0,
@@ -409,10 +381,6 @@ class FallbackLocationService
                 'region' => 'Bukidnon',
                 'aliases' => ['valencia city hall'],
             ],
-
-            // ================================================================
-            // MINDANAO — MAJOR CITIES
-            // ================================================================
             'butuan' => [
                 'name' => 'Butuan City',
                 'distance_km' => 202.0,
@@ -453,7 +421,6 @@ class FallbackLocationService
                 'region' => 'Zamboanga',
                 'aliases' => ['zamboanga city hall'],
             ],
-
         ];
     }
 
@@ -549,66 +516,140 @@ class FallbackLocationService
     }
 
     /**
-     * Calculate distance — uses hard-coded distances when available, haversine as last resort
+     * Calculate distance — MULTI-LOCATION support with Fallback Haversine
      */
-    public function calculateDistance($origin, $destination)
+    public function calculateDistance($origin, $destinations)
     {
         $originData = $this->findLocation($origin) ?? $this->findLocationByPartialMatch($origin);
         if (!$originData) return ['success' => false, 'message' => 'Origin not found: ' . $origin];
 
-        $destData = $this->findLocation($destination) ?? $this->findLocationByPartialMatch($destination);
-        if (!$destData) return ['success' => false, 'message' => 'Destination not found: ' . $destination];
-
-        $distanceKm = 0.0;
-        $source = '';
-
-        // BEST: origin is Laguindingan AND destination has known distance
-        if ($this->isOriginLaguindingan($originData) && ($destData['distance_km'] ?? 0) > 0) {
-            $distanceKm = (float) $destData['distance_km'];
-            $source = 'known_from_laguindingan';
-        }
-        // GOOD: both have known distances → difference
-        elseif (($destData['distance_km'] ?? 0) > 0 && ($originData['distance_km'] ?? 0) > 0) {
-            $distanceKm = abs((float) $destData['distance_km'] - (float) $originData['distance_km']);
-            $source = 'known_difference';
-        }
-        // FALLBACK: haversine with road factor
-        else {
-            $straightKm = $this->haversineDistance(
-                $originData['lat'], $originData['lng'],
-                $destData['lat'], $destData['lng']
-            );
-            $distanceKm = $straightKm * 1.25;
-            $source = 'haversine_road_factor';
-
-            Log::warning('FallbackLocationService: haversine fallback used', [
-                'origin' => $originData['name'] ?? $origin,
-                'destination' => $destData['name'] ?? $destination,
-                'straight_km' => round($straightKm, 2),
-            ]);
+        // Convert single destination to array if it's a string
+        if (is_string($destinations)) {
+            $destinations = [$destinations];
         }
 
-        if ($distanceKm < 0.1) {
-            $distanceKm = 0.1;
+        $totalDistance = 0;
+        $routeNames = [];
+        $points = [$originData];
+
+        // Resolve all destinations
+        foreach ($destinations as $dest) {
+            $destData = $this->findLocation($dest) ?? $this->findLocationByPartialMatch($dest);
+            if (!$destData) continue;
+            $points[] = $destData;
+            $routeNames[] = $destData['name'];
         }
+
+        if (count($points) < 2) return ['success' => false, 'message' => 'No valid destinations found.'];
+
+        // Calculate distance between each consecutive point in the route
+        for ($i = 0; $i < count($points) - 1; $i++) {
+            $from = $points[$i];
+            $to = $points[$i + 1];
+
+            // 1. If both are in Laguindingan, use the difference in their distance_from_town_hall
+            if ($this->isWithinLaguindingan($from) && $this->isWithinLaguindingan($to)) {
+                $totalDistance += abs(($to['distance_km'] ?? 0) - ($from['distance_km'] ?? 0));
+                continue;
+            }
+
+            // 2. If moving from Laguindingan to a known outside point
+            if ($this->isOriginLaguindingan($from) && ($to['distance_km'] ?? 0) > 0) {
+                $totalDistance += (float) $to['distance_km'];
+                continue;
+            }
+            
+            // 3. If moving from a known point back to Laguindingan
+            if ($this->isOriginLaguindingan($to) && ($from['distance_km'] ?? 0) > 0) {
+                $totalDistance += (float) $from['distance_km'];
+                continue;
+            }
+
+            // 4. Haversine fallback for other combinations (Point A to Point B)
+            $straightKm = $this->haversineDistance($from['lat'], $from['lng'], $to['lat'], $to['lng']);
+            $totalDistance += $straightKm * 1.25; // Add 25% road factor
+        }
+
+        if ($totalDistance < 0.1) $totalDistance = 0.1;
 
         return [
             'success' => true,
-            'distance_km' => round($distanceKm, 2),
-            'duration_minutes' => $this->estimateDuration($distanceKm, $destData),
+            'distance_km' => round($totalDistance, 2),
+            'duration_minutes' => $this->estimateDuration($totalDistance, $points[count($points)-1]),
             'origin' => $originData['name'],
-            'destination' => $destData['name'],
-            'source' => $source,
+            'destinations' => $routeNames,
+            'source' => 'multi_location_fallback',
         ];
     }
 
     /**
-     * Speed estimation by destination type
+     * Calculate Trip Estimate for MULTI-LOCATION
      */
+    public function calculateTripEstimate($originAddress, $destinationAddresses, $vehicleId = null, $roundTrip = true)
+    {
+        // 1. Calculate one-way distance
+        $result = $this->calculateDistance($originAddress, $destinationAddresses);
+        if (!$result['success']) return $result;
+
+        // 2. Multiply for Round Trip if needed
+        $multiplier = $roundTrip ? 2 : 1;
+        $distanceKm = $result['distance_km'] * $multiplier;
+        $durationMinutes = $result['duration_minutes'] * $multiplier;
+
+        // 3. Get Vehicle details
+        $efficiency = 10;
+        $fuelType = 'gasoline';
+        if ($vehicleId) {
+            try {
+                $vehicle = \App\Models\Vehicle::find($vehicleId);
+                if ($vehicle) {
+                    $efficiency = $vehicle->fuel_efficiency ?? 10;
+                    $fuelType = $vehicle->fuel_type ?? 'gasoline';
+                }
+            } catch (\Exception $e) {
+                Log::error('Error getting vehicle: ' . $e->getMessage());
+            }
+        }
+
+        // 4. Calculate fuel
+        $fuelPrice = $this->getFuelPrice($fuelType);
+        $estimatedLiters = round($distanceKm / $efficiency, 2);
+        $estimatedCost = round($estimatedLiters * $fuelPrice, 2);
+
+        // 5. Add 10% buffer for safety
+        $estimatedLitersWithBuffer = round($estimatedLiters * 1.1, 2);
+        $estimatedCostWithBuffer = round($estimatedCost * 1.1, 2);
+
+        return [
+            'success' => true,
+            'origin' => $result['origin'],
+            'destinations' => $result['destinations'],
+            'distance_km' => round($distanceKm, 2),
+            'duration_minutes' => round($durationMinutes, 1),
+            'estimated_liters' => $estimatedLitersWithBuffer,
+            'estimated_cost' => $estimatedCostWithBuffer,
+            'fuel_efficiency_km_per_liter' => $efficiency,
+            'fuel_price_per_liter' => $fuelPrice,
+            'fuel_type' => $fuelType,
+            'is_round_trip' => $roundTrip,
+            'source' => $result['source'],
+        ];
+    }
+
+    // ================================================================
+    // HELPERS
+    // ================================================================
+
+    private function isWithinLaguindingan($location)
+    {
+        $name = strtolower($location['name'] ?? '');
+        $region = strtolower($location['region'] ?? '');
+        return strpos($name, 'laguindingan') !== false || strpos($region, 'laguindingan') !== false;
+    }
+
     private function estimateDuration($distanceKm, $destination)
     {
         $type = $destination['type'] ?? 'municipality';
-
         $avgSpeedKmh = match($type) {
             'barangay'     => 30,
             'municipality' => 40,
@@ -618,21 +659,14 @@ class FallbackLocationService
             'group'        => 30,
             default        => 35,
         };
-
         return round($distanceKm / $avgSpeedKmh * 60, 1);
     }
 
-    /**
-     * Check if the location is Laguindingan (reference origin)
-     */
     private function isOriginLaguindingan($location)
     {
         $name = strtolower($location['name'] ?? '');
         $type = $location['type'] ?? '';
-
-        return $type === 'origin'
-            || strpos($name, 'laguindingan municipal') !== false
-            || ($type === 'municipality' && strpos($name, 'laguindingan') !== false);
+        return $type === 'origin' || strpos($name, 'laguindingan municipal') !== false || ($type === 'municipality' && strpos($name, 'laguindingan') !== false);
     }
 
     private function haversineDistance($lat1, $lon1, $lat2, $lon2)
@@ -649,56 +683,38 @@ class FallbackLocationService
         $query = strtolower(trim($query));
         $bestMatch = null;
         $bestScore = 0;
-
         foreach ($this->locations as $key => $location) {
             $name = strtolower($location['name'] ?? '');
             $score = 0;
-            if (strpos($name, $query) !== false) {
-                $score = strlen($query) / max(strlen($name), 1) * 100;
-            }
-            if (strpos($query, $name) !== false && strlen($name) > 3) {
-                $score = strlen($name) / max(strlen($query), 1) * 100;
-            }
-            if (strpos(strtolower($key), $query) !== false) {
-                $score = max($score, 50);
-            }
-            if ($score > $bestScore) {
-                $bestScore = $score;
-                $bestMatch = $location;
-            }
+            if (strpos($name, $query) !== false) $score = strlen($query) / max(strlen($name), 1) * 100;
+            if (strpos($query, $name) !== false && strlen($name) > 3) $score = strlen($name) / max(strlen($query), 1) * 100;
+            if (strpos(strtolower($key), $query) !== false) $score = max($score, 50);
+            if ($score > $bestScore) { $bestScore = $score; $bestMatch = $location; }
         }
-
         return $bestMatch;
     }
 
     private function findLocation($query)
     {
         $query = strtolower(trim($query));
-
         foreach ($this->locations as $key => $location) {
             $name = strtolower($location['name'] ?? '');
             $aliases = array_map('strtolower', $location['aliases'] ?? []);
-            if (strpos($name, $query) !== false || strpos(strtolower($key), $query) !== false) {
-                return $location;
-            }
+            if (strpos($name, $query) !== false || strpos(strtolower($key), $query) !== false) return $location;
             foreach ($aliases as $alias) {
                 if (strpos($alias, $query) !== false) return $location;
             }
         }
-
         $parts = array_map('trim', explode(',', $query));
         if (count($parts) > 1) {
             foreach ($parts as $part) {
                 if (strlen($part) < 3) continue;
                 foreach ($this->locations as $key => $location) {
                     $name = strtolower($location['name'] ?? '');
-                    if (strpos($name, $part) !== false || strpos(strtolower($key), $part) !== false) {
-                        return $location;
-                    }
+                    if (strpos($name, $part) !== false || strpos(strtolower($key), $part) !== false) return $location;
                 }
             }
         }
-
         return null;
     }
 
@@ -706,74 +722,14 @@ class FallbackLocationService
     {
         $location = $this->findLocation($address) ?? $this->findLocationByPartialMatch($address);
         if ($location) {
-            return [
-                'success' => true,
-                'lat' => $location['lat'],
-                'lng' => $location['lng'],
-                'display_name' => $location['name'],
-                'source' => 'fallback',
-            ];
+            return ['success' => true, 'lat' => $location['lat'], 'lng' => $location['lng'], 'display_name' => $location['name'], 'source' => 'fallback'];
         }
         return ['success' => false, 'message' => 'Location not found in fallback data'];
     }
 
-    public function calculateTripEstimate($originAddress, $destinationAddress, $vehicleId = null, $roundTrip = true)
-    {
-        $result = $this->calculateDistance($originAddress, $destinationAddress);
-        if (!$result['success']) return $result;
-
-        $efficiency = 10;
-        $fuelType = 'gasoline';
-
-        if ($vehicleId) {
-            try {
-                $vehicle = \App\Models\Vehicle::find($vehicleId);
-                if ($vehicle) {
-                    $efficiency = $vehicle->fuel_efficiency ?? 10;
-                    $fuelType = $vehicle->fuel_type ?? 'gasoline';
-                }
-            } catch (\Exception $e) {
-                Log::error('Error getting vehicle: ' . $e->getMessage());
-            }
-        }
-
-        $fuelPrice = $this->getFuelPrice($fuelType);
-        $multiplier = $roundTrip ? 2 : 1;
-        $distanceKm = $result['distance_km'] * $multiplier;
-        $durationMinutes = $result['duration_minutes'] * $multiplier;
-        $estimatedLiters = round($distanceKm / $efficiency, 2);
-        $estimatedCost = round($estimatedLiters * $fuelPrice, 2);
-
-        $estimatedLitersWithBuffer = round($estimatedLiters * 1.1, 2);
-        $estimatedCostWithBuffer = round($estimatedCost * 1.1, 2);
-
-        return [
-            'success' => true,
-            'origin' => $result['origin'],
-            'destination' => $result['destination'],
-            'distance_km' => round($distanceKm, 2),
-            'duration_minutes' => round($durationMinutes, 1),
-            'estimated_liters' => $estimatedLitersWithBuffer,
-            'estimated_cost' => $estimatedCostWithBuffer,
-            'fuel_efficiency_km_per_liter' => $efficiency,
-            'fuel_price_per_liter' => $fuelPrice,
-            'fuel_type' => $fuelType,
-            'is_round_trip' => $roundTrip,
-            'one_way_distance_km' => $result['distance_km'],
-            'one_way_duration_minutes' => $result['duration_minutes'],
-            'round_trip_multiplier' => $multiplier,
-            'buffer_percentage' => 10,
-            'source' => $result['source'],
-        ];
-    }
-
     private function getFuelPrice($fuelType = null)
     {
-        $map = [
-            'diesel'   => 'diesel_price_per_liter',
-            'premium'  => 'premium_price_per_liter',
-            'gasoline' => 'regular_price_per_liter',
-        ];
+        $map = ['diesel' => 'diesel_price_per_liter', 'premium' => 'premium_price_per_liter', 'gasoline' => 'regular_price_per_liter'];
         $key = $map[strtolower($fuelType ?? '')] ?? 'regular_price_per_liter';
         try {
             $setting = \App\Models\SystemSetting::where('setting_key', $key)->first();
