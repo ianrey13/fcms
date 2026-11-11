@@ -165,8 +165,12 @@ const MayorDashboard = () => {
     const [topTimeFilter, setTopTimeFilter] = useState("this_month");
     const [topDeptFilter, setTopDeptFilter] = useState("all");
     const [trendDept, setTrendDept] = useState("all");
+    
+    // Transaction Filters
     const [transDept, setTransDept] = useState("all");
     const [transStatusFilter, setTransStatusFilter] = useState("all"); 
+    const [transTimeFilter, setTransTimeFilter] = useState("this_month"); // ✅ NEW Date Filter
+    
     const [monitorDept, setMonitorDept] = useState(""); 
 
     const fetchAllData = useCallback(() => {
@@ -311,12 +315,14 @@ const MayorDashboard = () => {
         }));
     }, [approvedTicketsRaw, trendDept, departmentBudgets]);
 
-    // ✅ UPDATED: Transactions Data with Status Filter (Including "Received")
+    // ✅ UPDATED: Transactions Data with Date Filter
     const transactionsData = useMemo(() => {
         return approvedTicketsRaw
             .filter(t => {
+                // 1. Filter by Department
                 const matchesDept = transDept === "all" || t.department_name === transDept;
                 
+                // 2. Filter by Status
                 let matchesStatus = true;
                 const hasCost = t.actual_fuel_cost && parseFloat(t.actual_fuel_cost) > 0;
                 
@@ -332,11 +338,30 @@ const MayorDashboard = () => {
                     matchesStatus = t.status === "rejected";
                 }
 
-                return matchesDept && matchesStatus;
+                // 3. Filter by Date
+                let matchesDate = true;
+                if (transTimeFilter !== "all_time") {
+                    const today = new Date();
+                    let start, end;
+                    if (transTimeFilter === "this_week") {
+                        start = startOfWeek(today, { weekStartsOn: 1 });
+                        end = endOfWeek(today, { weekStartsOn: 1 });
+                    } else if (transTimeFilter === "this_month") {
+                        start = startOfMonth(today);
+                        end = endOfMonth(today);
+                    } else if (transTimeFilter === "two_weeks_ago") {
+                        start = subDays(today, 14);
+                        end = today;
+                    }
+                    if (!t.trip_date) return false;
+                    matchesDate = isWithinInterval(new Date(t.trip_date), { start, end });
+                }
+
+                return matchesDept && matchesStatus && matchesDate;
             })
             .sort((a, b) => new Date(b.trip_date) - new Date(a.trip_date))
             .slice(0, 5);
-    }, [approvedTicketsRaw, transDept, transStatusFilter]);
+    }, [approvedTicketsRaw, transDept, transStatusFilter, transTimeFilter]);
 
     // ✅ MONTHLY FUND MONITORING
     const monthlyMonitoringData = useMemo(() => {
@@ -684,7 +709,7 @@ const MayorDashboard = () => {
                     </div>
                 </Card>
 
-                {/* ✅ Department Transactions with Status Filter */}
+                {/* ✅ Department Transactions with Date & Status Filters */}
                 <Card className="bg-[#121829] border border-slate-800 rounded-2xl shadow-lg p-0 overflow-hidden">
                     <div className="flex items-center justify-between p-5 border-b border-slate-800">
                         <h3 className="font-bold text-white flex items-center gap-2">
@@ -704,7 +729,7 @@ const MayorDashboard = () => {
                                     }))
                                 ]}
                             />
-                            {/* ✅ Status Filter with Received */}
+                            {/* Status Filter */}
                             <CustomSelect 
                                 value={transStatusFilter}
                                 onChange={(val) => setTransStatusFilter(val)}
@@ -716,6 +741,17 @@ const MayorDashboard = () => {
                                     { value: "for_verification", label: "For Verification" },
                                     { value: "verified", label: "Verified" },
                                     { value: "rejected", label: "Rejected" }
+                                ]}
+                            />
+                            {/* ✅ Date Filter */}
+                            <CustomSelect 
+                                value={transTimeFilter}
+                                onChange={(val) => setTransTimeFilter(val)}
+                                placeholder="This Month"
+                                options={[
+                                    { value: "this_month", label: "This Month" },
+                                    { value: "this_week", label: "This Week" },
+                                    { value: "two_weeks_ago", label: "Last 2 Weeks" }
                                 ]}
                             />
                             <button className="text-[10px] text-blue-400 ml-2">View All →</button>
