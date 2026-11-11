@@ -57,7 +57,7 @@ const StatusBadge = ({ status, actualCost }) => {
     let displayStatus = "Funds Issued";
     let colorClass = "text-blue-400";
 
-    // Check if there is an actual cost (meaning it's verified)
+    // Check kung naay actual cost (Amount on Receipt) nga na-verify na
     const hasCost = actualCost && parseFloat(actualCost) > 0;
 
     if (status === "funds_issued") {
@@ -66,10 +66,12 @@ const StatusBadge = ({ status, actualCost }) => {
     } else if (status === "acknowledged") {
         displayStatus = "Received";
         colorClass = "text-yellow-400";
-    } else if (status === "in_transit" && !hasCost) {
+    } else if (!hasCost) {
+        // ✅ Kung wala pay verified amount, For Verification jud ni (dash ang amount)
         displayStatus = "For Verification";
         colorClass = "text-orange-400";
-    } else if (hasCost || ["completed", "closed", "pending_gso_validation", "pending_reconciliation"].includes(status)) {
+    } else if (hasCost) {
+        // ✅ Kung naay verified amount, Verified na
         displayStatus = "Verified";
         colorClass = "text-emerald-400";
     } else if (status === "rejected") {
@@ -189,7 +191,6 @@ const MayorDashboard = () => {
 
     // ✅ Top Fund Consumers (Filtered by Date & Dept)
     const topConsumersData = useMemo(() => {
-        // 1. Filter tickets based on selected date range
         let filteredTickets = approvedTicketsRaw;
         if (topTimeFilter !== "all_time") {
             const today = new Date();
@@ -212,22 +213,19 @@ const MayorDashboard = () => {
             });
         }
 
-        // 2. Aggregate spent per department based on filtered tickets
         const deptSpent = {};
         filteredTickets.forEach(t => {
-            if (t.status === 'rejected') return; // exclude rejected
+            if (t.status === 'rejected') return;
             const cost = parseFloat(t.actual_fuel_cost) || 0;
             if (!deptSpent[t.department_name]) deptSpent[t.department_name] = 0;
             deptSpent[t.department_name] += cost;
         });
 
-        // 3. Map back to department objects and sort
         let data = departmentBudgets.map(d => ({
             ...d,
             filteredSpent: deptSpent[d.department_name] || 0
         })).sort((a, b) => b.filteredSpent - a.filteredSpent);
 
-        // 4. Apply department filter
         if (topDeptFilter !== "all") {
             data = data.filter(d => d.department_name === topDeptFilter);
         }
@@ -585,7 +583,7 @@ const MayorDashboard = () => {
                                 {transactionsData.length === 0 ? (
                                     <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-500">No transactions found.</td></tr>
                                 ) : transactionsData.map((t, i) => {
-                                    // ✅ Check if amount_spent exists
+                                    // ✅ Check kung naay amount spent (Amount on Receipt)
                                     const hasCost = t.actual_fuel_cost && parseFloat(t.actual_fuel_cost) > 0;
                                     const amountSpentDisplay = hasCost ? formatCurrency(t.actual_fuel_cost) : "-";
 
