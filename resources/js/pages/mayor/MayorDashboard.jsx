@@ -103,7 +103,7 @@ const handleDownloadReceipt = async (url, ticketNumber) => {
     }
 };
 
-// ✅ Custom Dropdown Component to fix overlapping issues
+// ✅ Custom Dropdown Component
 const CustomSelect = ({ value, onChange, options, placeholder = "Select..." }) => {
     const [isOpen, setIsOpen] = useState(false);
     const dropdownRef = useRef(null);
@@ -166,7 +166,9 @@ const MayorDashboard = () => {
     const [topDeptFilter, setTopDeptFilter] = useState("all");
     const [trendDept, setTrendDept] = useState("all");
     const [transDept, setTransDept] = useState("all");
-    const [monitorDept, setMonitorDept] = useState("all");
+    
+    // ✅ Removed the "all" default for monitoring, use empty string instead
+    const [monitorDept, setMonitorDept] = useState(""); 
 
     const fetchAllData = useCallback(() => {
         queryClient.invalidateQueries({ queryKey: ["mayor-approved-tickets"] });
@@ -318,24 +320,20 @@ const MayorDashboard = () => {
             .slice(0, 5);
     }, [approvedTicketsRaw, transDept]);
 
-    // ✅ MONTHLY FUND MONITORING (Fixed Logic with History)
+    // ✅ MONTHLY FUND MONITORING (Strictly for specific department)
     const monthlyMonitoringData = useMemo(() => {
-        const tickets = monitorDept === "all" 
-            ? approvedTicketsRaw 
-            : approvedTicketsRaw.filter(t => t.department_name === monitorDept);
-            
-        const history = monitorDept === "all"
-            ? budgetHistoryRaw
-            : budgetHistoryRaw.filter(h => h.department_name === monitorDept);
+        // If no department selected, return empty array
+        if (!monitorDept) return [];
 
-        // 1. Find the Starting Annual Budget (from "Annual Created" record)
+        const tickets = approvedTicketsRaw.filter(t => t.department_name === monitorDept);
+        const history = budgetHistoryRaw.filter(h => h.department_name === monitorDept);
+
+        // Find the Starting Annual Budget
         const createdRecord = history.find(h => h.action === 'annual_created');
         let startingAnnualBudget = createdRecord ? parseFloat(createdRecord.new_amount) : 0;
         
         if (startingAnnualBudget === 0) {
-            startingAnnualBudget = monitorDept === "all" 
-                ? departmentBudgets.reduce((sum, d) => sum + d.allocated, 0)
-                : (departmentBudgets.find(d => d.department_name === monitorDept)?.allocated || 0);
+            startingAnnualBudget = departmentBudgets.find(d => d.department_name === monitorDept)?.allocated || 0;
         }
 
         const months = [
@@ -348,7 +346,7 @@ const MayorDashboard = () => {
         let currentBalance = 0; 
 
         months.forEach((monthName, index) => {
-            // 2. Additional Funds: Look for "annual_added" entries this month
+            // Additional Funds
             const monthHistory = history.filter(h => {
                 if (h.action !== 'annual_added') return false;
                 const d = new Date(h.created_at);
@@ -356,7 +354,7 @@ const MayorDashboard = () => {
             });
             const additionalFunds = monthHistory.reduce((sum, h) => sum + (parseFloat(h.added_amount) || 0), 0);
 
-            // 3. Consumed: Verified tickets this month
+            // Consumed
             const monthTickets = tickets.filter(t => {
                 if (!t.trip_date) return false;
                 const d = new Date(t.trip_date);
@@ -367,17 +365,16 @@ const MayorDashboard = () => {
                 return sum + (hasCost ? parseFloat(t.actual_fuel_cost) : 0);
             }, 0);
 
-            // 4. Beginning Balance logic
+            // Beginning & Ending Balance
             let beginningBalance;
             if (index === 0) {
-                beginningBalance = startingAnnualBudget; // January starts with the base annual budget
+                beginningBalance = startingAnnualBudget; 
             } else {
-                beginningBalance = currentBalance; // Succeeding months start with last month's ending
+                beginningBalance = currentBalance; 
             }
 
             const endingBalance = beginningBalance + additionalFunds - consumed;
 
-            // Push data if there's activity OR we are in the current/past month
             if (additionalFunds > 0 || consumed > 0 || index <= new Date().getMonth()) {
                 monthlyData.push({
                     month: monthName,
@@ -590,7 +587,6 @@ const MayorDashboard = () => {
                             <TrendingUp className="h-4 w-4 text-emerald-400" /> FUND TREND OVERVIEW
                         </h3>
                         
-                        {/* ✅ FIXED: Custom Dropdown to prevent overlap */}
                         <CustomSelect 
                             value={trendDept}
                             onChange={(val) => setTrendDept(val)}
@@ -632,17 +628,18 @@ const MayorDashboard = () => {
                         <h3 className="font-bold text-white flex items-center gap-2">
                             <Building2 className="h-4 w-4 text-blue-400" /> DEPARTMENT MONTHLY FUND MONITORING
                         </h3>
+                        
+                        {/* ✅ Removed the "all" option entirely */}
                         <CustomSelect 
                             value={monitorDept}
                             onChange={(val) => setMonitorDept(val)}
-                            placeholder="All Departments"
-                            options={[
-                                { value: "all", label: "All Departments" },
-                                ...departmentBudgets.map(d => ({ 
+                            placeholder="Select Department"
+                            options={
+                                departmentBudgets.map(d => ({ 
                                     value: d.department_name, 
                                     label: d.department_name 
                                 }))
-                            ]}
+                            }
                         />
                     </div>
                     <div className="overflow-x-auto">
@@ -657,7 +654,9 @@ const MayorDashboard = () => {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-800/50">
-                                {monthlyMonitoringData.length === 0 ? (
+                                {!monitorDept ? (
+                                    <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-500">Please select a department to view data.</td></tr>
+                                ) : monthlyMonitoringData.length === 0 ? (
                                     <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-500">No monthly data available.</td></tr>
                                 ) : monthlyMonitoringData.map((d, i) => (
                                     <tr key={i} className="hover:bg-slate-800/20 transition-colors">
