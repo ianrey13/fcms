@@ -166,7 +166,7 @@ const MayorDashboard = () => {
     const [topDeptFilter, setTopDeptFilter] = useState("all");
     const [trendDept, setTrendDept] = useState("all");
     const [transDept, setTransDept] = useState("all");
-    const [transStatusFilter, setTransStatusFilter] = useState("all"); // ✅ New status filter
+    const [transStatusFilter, setTransStatusFilter] = useState("all"); 
     const [monitorDept, setMonitorDept] = useState(""); 
 
     const fetchAllData = useCallback(() => {
@@ -311,19 +311,19 @@ const MayorDashboard = () => {
         }));
     }, [approvedTicketsRaw, trendDept, departmentBudgets]);
 
-    // ✅ UPDATED: Transactions Data with Status Filter
+    // ✅ UPDATED: Transactions Data with Status Filter (Including "Received")
     const transactionsData = useMemo(() => {
         return approvedTicketsRaw
             .filter(t => {
-                // 1. Filter by Department
                 const matchesDept = transDept === "all" || t.department_name === transDept;
                 
-                // 2. Filter by Status
                 let matchesStatus = true;
                 const hasCost = t.actual_fuel_cost && parseFloat(t.actual_fuel_cost) > 0;
                 
                 if (transStatusFilter === "funds_issued") {
                     matchesStatus = t.status === "funds_issued";
+                } else if (transStatusFilter === "received") {
+                    matchesStatus = t.status === "acknowledged";
                 } else if (transStatusFilter === "for_verification") {
                     matchesStatus = t.status === "in_transit" && !hasCost;
                 } else if (transStatusFilter === "verified") {
@@ -338,7 +338,7 @@ const MayorDashboard = () => {
             .slice(0, 5);
     }, [approvedTicketsRaw, transDept, transStatusFilter]);
 
-    // ✅ MONTHLY FUND MONITORING (Strictly for specific department)
+    // ✅ MONTHLY FUND MONITORING
     const monthlyMonitoringData = useMemo(() => {
         if (!monitorDept) return [];
 
@@ -704,7 +704,7 @@ const MayorDashboard = () => {
                                     }))
                                 ]}
                             />
-                            {/* ✅ Status Filter */}
+                            {/* ✅ Status Filter with Received */}
                             <CustomSelect 
                                 value={transStatusFilter}
                                 onChange={(val) => setTransStatusFilter(val)}
@@ -712,6 +712,7 @@ const MayorDashboard = () => {
                                 options={[
                                     { value: "all", label: "All Statuses" },
                                     { value: "funds_issued", label: "Funds Issued" },
+                                    { value: "received", label: "Received" },
                                     { value: "for_verification", label: "For Verification" },
                                     { value: "verified", label: "Verified" },
                                     { value: "rejected", label: "Rejected" }
