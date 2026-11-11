@@ -55,7 +55,6 @@ const formatDateShort = (ds) => ds ? new Date(ds).toLocaleDateString("en-PH", { 
 const StatusBadge = ({ status, actualCost }) => {
     let displayStatus = "Funds Issued";
     let colorClass = "text-blue-400";
-
     const hasCost = actualCost && parseFloat(actualCost) > 0;
 
     if (status === "funds_issued") {
@@ -115,11 +114,12 @@ const MayorDashboard = () => {
     const [topDeptFilter, setTopDeptFilter] = useState("all");
     const [trendDept, setTrendDept] = useState("all");
     const [transDept, setTransDept] = useState("all");
-    const [monitorDept, setMonitorDept] = useState("all"); // ✅ New filter for Monthly Monitoring
+    const [monitorDept, setMonitorDept] = useState("all"); 
 
     const fetchAllData = useCallback(() => {
         queryClient.invalidateQueries({ queryKey: ["mayor-approved-tickets"] });
         queryClient.invalidateQueries({ queryKey: ["mayor-department-budgets"] });
+        queryClient.invalidateQueries({ queryKey: ["mayor-budget-history"] }); // Invalidate history
     }, [queryClient]);
 
     useAutoRefresh(["mayor-trip-updated", "gso-funds-released", "trip-completed"], fetchAllData, 1000);
@@ -148,6 +148,20 @@ const MayorDashboard = () => {
         refetchOnMount: "always",
     });
     const budgetData = useSafeArray(budgetRaw);
+
+    // ✅ Fetch Budget History for Monthly logic
+    const { data: historyRaw } = useOptimizedQuery({
+        queryKey: ["mayor-budget-history"],
+        queryFn: async () => {
+            try {
+                // Assume we fetch all history. We will filter by department later.
+                const response = await api.get(`/mayors-office/budget-history`);
+                return extractArray(response);
+            } catch { return []; }
+        },
+        staleTime: 5 * 60 * 1000,
+    });
+    const budgetHistoryRaw = useSafeArray(historyRaw);
 
     // ============ CALCULATIONS ============
     const departmentBudgets = useMemo(() => {
@@ -253,21 +267,27 @@ const MayorDashboard = () => {
             .slice(0, 5);
     }, [approvedTicketsRaw, transDept]);
 
-    // ✅ NEW: Monthly Fund Monitoring Data
+    // ✅ NEW: Monthly Fund Monitoring Data (Fixed Logic with History)
     const monthlyMonitoringData = useMemo(() => {
-        let tickets = approvedTicketsRaw;
-        if (monitorDept !== "all") {
-            tickets = tickets.filter(t => t.department_name === monitorDept);
-        }
+        // 1. Filter Tickets & History by Department
+        const tickets = monitorDept === "all" 
+            ? approvedTicketsRaw 
+            : approvedTicketsRaw.filter(t => t.department_name === monitorDept);
+            
+        const history = monitorDept === "all"
+            ? budgetHistoryRaw
+            : budgetHistoryRaw.filter(h => h.department_name === monitorDept);
 
-        // For now, let's base the Annual Budget on the sum of the selected department(s)
-        // or the specific department's annual budget.
-        let annualBudget = 0;
-        if (monitorDept === "all") {
-            annualBudget = departmentBudgets.reduce((sum, d) => sum + d.allocated, 0);
-        } else {
-            const dept = departmentBudgets.find(d => d.department_name === monitorDept);
-            annualBudget = dept ? dept.allocated : 0;
+        // 2. Find the Starting Balance (Annual Created at the beginning of the year)
+        // We look for the first "annual_created" record.
+        const createdRecord = history.find(h => h.action === 'annual_created');
+        let startingAnnualBudget = createdRecord ? parseFloat(createdRecord.new_amount) : 0;
+        
+        // If no history found, fallback to current total budget (just in case)
+        if (startingAnnualBudget === 0) {
+            startingAnnualBudget = monitorDept === "all" 
+                ? departmentBudgets.reduce((sum, d) => sum + d.allocated, 0)
+                : (departmentBudgets.find(d => d.department_name === monitorDept)?.allocated || 0);
         }
 
         const months = [
@@ -275,37 +295,47 @@ const MayorDashboard = () => {
             "July", "August", "September", "October", "November", "December"
         ];
 
-        let currentBalance = annualBudget;
-        const monthlyData = [];
-
-        // Assuming the active year is the current year for simplicity
         const currentYear = new Date().getFullYear();
+        const monthlyData = [];
+        
+        // Variable to hold the running balance
+        let currentBalance = 0; 
 
         months.forEach((monthName, index) => {
-            const monthIndex = index; // 0-11
+            // 3. Calculate Additional Funds for this specific month
+            // Look for "annual_added" history entries within this month
+            const monthHistory = history.filter(h => {
+                if (h.action !== 'annual_added') return false;
+                const d = new Date(h.created_at);
+                return d.getMonth() === index && d.getFullYear() === currentYear;
+            });
+            const additionalFunds = monthHistory.reduce((sum, h) => sum + (parseFloat(h.added_amount) || 0), 0);
 
-            // Get tickets for this month
+            // 4. Calculate Consumed for this specific month
             const monthTickets = tickets.filter(t => {
                 if (!t.trip_date) return false;
                 const d = new Date(t.trip_date);
-                return d.getMonth() === monthIndex && d.getFullYear() === currentYear;
+                return d.getMonth() === index && d.getFullYear() === currentYear;
             });
-
-            // Additional Funds = Sum of amount_released for this month
-            const additionalFunds = monthTickets.reduce((sum, t) => sum + (parseFloat(t.amount_released) || 0), 0);
-
-            // Consumed = Sum of actual_fuel_cost (Amount Spent/Verified) for this month
             const consumed = monthTickets.reduce((sum, t) => {
-                // Only count if verified (has actual cost)
                 const hasCost = t.actual_fuel_cost && parseFloat(t.actual_fuel_cost) > 0;
                 return sum + (hasCost ? parseFloat(t.actual_fuel_cost) : 0);
             }, 0);
 
-            const beginningBalance = currentBalance;
+            // 5. Logic for Beginning Balance
+            // If it's January, use the Starting Annual Budget. 
+            // Else, use the Ending Balance of the previous month.
+            let beginningBalance;
+            if (index === 0) {
+                beginningBalance = startingAnnualBudget;
+            } else {
+                beginningBalance = currentBalance;
+            }
+
             const endingBalance = beginningBalance + additionalFunds - consumed;
 
-            // Only push months that have data OR the current month
-            if (additionalFunds > 0 || consumed > 0 || monthIndex <= new Date().getMonth()) {
+            // Only push if there's activity OR we are in the current/past month
+            if (additionalFunds > 0 || consumed > 0 || index <= new Date().getMonth()) {
                 monthlyData.push({
                     month: monthName,
                     beginning: beginningBalance,
@@ -315,11 +345,12 @@ const MayorDashboard = () => {
                 });
             }
 
+            // Update running balance for the next loop
             currentBalance = endingBalance;
         });
 
         return monthlyData;
-    }, [approvedTicketsRaw, departmentBudgets, monitorDept]);
+    }, [approvedTicketsRaw, budgetHistoryRaw, departmentBudgets, monitorDept]);
 
     if (approvedLoading || budgetLoading) return <SkeletonPage />;
 
