@@ -1,4 +1,4 @@
-import React, { useMemo, useCallback, useState } from "react";
+import React, { useMemo, useCallback, useState, useRef, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
@@ -11,7 +11,8 @@ import { isWithinInterval, subDays, startOfMonth, endOfMonth, startOfWeek, endOf
 
 import {
     ArrowRight, Activity, PieChart, Fuel, Building2, Car, Download, TrendingUp, 
-    CheckCircle, Wallet, Scale, AlertTriangle, Info, Trophy, ShieldCheck, Calendar
+    CheckCircle, Wallet, Scale, AlertTriangle, Info, Trophy, ShieldCheck, Calendar,
+    ChevronDown
 } from "lucide-react";
 import {
     Cell, PieChart as RePieChart, Pie, ResponsiveContainer, Tooltip,
@@ -102,6 +103,57 @@ const handleDownloadReceipt = async (url, ticketNumber) => {
     }
 };
 
+// ✅ Custom Dropdown Component to fix overlapping issues
+const CustomSelect = ({ value, onChange, options, placeholder = "Select..." }) => {
+    const [isOpen, setIsOpen] = useState(false);
+    const dropdownRef = useRef(null);
+
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+                setIsOpen(false);
+            }
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
+
+    const selectedLabel = options.find(o => o.value === value)?.label || placeholder;
+
+    return (
+        <div className="relative z-50" ref={dropdownRef}>
+            <button 
+                type="button"
+                onClick={() => setIsOpen(!isOpen)}
+                className="bg-slate-800 text-[10px] text-slate-300 px-2 py-1.5 rounded border border-slate-700 outline-none cursor-pointer flex items-center justify-between min-w-[120px] hover:bg-slate-700 transition-colors"
+            >
+                {selectedLabel}
+                <ChevronDown className="h-3 w-3 ml-2 text-slate-400" />
+            </button>
+            
+            {isOpen && (
+                <div className="absolute right-0 mt-1 w-48 bg-[#1e293b] border border-slate-700 rounded-lg shadow-2xl z-[100] max-h-60 overflow-y-auto">
+                    {options.map((option) => (
+                        <div 
+                            key={option.value}
+                            onClick={() => {
+                                onChange(option.value);
+                                setIsOpen(false);
+                            }}
+                            className={cn(
+                                "px-3 py-2 text-xs cursor-pointer hover:bg-slate-700 transition-colors",
+                                value === option.value ? "bg-blue-600/20 text-blue-400 font-bold" : "text-slate-300"
+                            )}
+                        >
+                            {option.label}
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
+
 // ============================================
 // MAIN COMPONENT
 // ============================================
@@ -110,16 +162,16 @@ const MayorDashboard = () => {
     const queryClient = useQueryClient();
     
     // Filters
-    const [topTimeFilter, setTopTimeFilter] = useState("all_time");
+    const [topTimeFilter, setTopTimeFilter] = useState("this_month");
     const [topDeptFilter, setTopDeptFilter] = useState("all");
     const [trendDept, setTrendDept] = useState("all");
     const [transDept, setTransDept] = useState("all");
-    const [monitorDept, setMonitorDept] = useState("all"); 
+    const [monitorDept, setMonitorDept] = useState("all");
 
     const fetchAllData = useCallback(() => {
         queryClient.invalidateQueries({ queryKey: ["mayor-approved-tickets"] });
         queryClient.invalidateQueries({ queryKey: ["mayor-department-budgets"] });
-        queryClient.invalidateQueries({ queryKey: ["mayor-budget-history"] }); // Invalidate history
+        queryClient.invalidateQueries({ queryKey: ["mayor-budget-history"] });
     }, [queryClient]);
 
     useAutoRefresh(["mayor-trip-updated", "gso-funds-released", "trip-completed"], fetchAllData, 1000);
@@ -154,7 +206,6 @@ const MayorDashboard = () => {
         queryKey: ["mayor-budget-history"],
         queryFn: async () => {
             try {
-                // Assume we fetch all history. We will filter by department later.
                 const response = await api.get(`/mayors-office/budget-history`);
                 return extractArray(response);
             } catch { return []; }
@@ -267,9 +318,8 @@ const MayorDashboard = () => {
             .slice(0, 5);
     }, [approvedTicketsRaw, transDept]);
 
-    // ✅ NEW: Monthly Fund Monitoring Data (Fixed Logic with History)
+    // ✅ MONTHLY FUND MONITORING (Fixed Logic with History)
     const monthlyMonitoringData = useMemo(() => {
-        // 1. Filter Tickets & History by Department
         const tickets = monitorDept === "all" 
             ? approvedTicketsRaw 
             : approvedTicketsRaw.filter(t => t.department_name === monitorDept);
@@ -278,12 +328,10 @@ const MayorDashboard = () => {
             ? budgetHistoryRaw
             : budgetHistoryRaw.filter(h => h.department_name === monitorDept);
 
-        // 2. Find the Starting Balance (Annual Created at the beginning of the year)
-        // We look for the first "annual_created" record.
+        // 1. Find the Starting Annual Budget (from "Annual Created" record)
         const createdRecord = history.find(h => h.action === 'annual_created');
         let startingAnnualBudget = createdRecord ? parseFloat(createdRecord.new_amount) : 0;
         
-        // If no history found, fallback to current total budget (just in case)
         if (startingAnnualBudget === 0) {
             startingAnnualBudget = monitorDept === "all" 
                 ? departmentBudgets.reduce((sum, d) => sum + d.allocated, 0)
@@ -297,13 +345,10 @@ const MayorDashboard = () => {
 
         const currentYear = new Date().getFullYear();
         const monthlyData = [];
-        
-        // Variable to hold the running balance
         let currentBalance = 0; 
 
         months.forEach((monthName, index) => {
-            // 3. Calculate Additional Funds for this specific month
-            // Look for "annual_added" history entries within this month
+            // 2. Additional Funds: Look for "annual_added" entries this month
             const monthHistory = history.filter(h => {
                 if (h.action !== 'annual_added') return false;
                 const d = new Date(h.created_at);
@@ -311,7 +356,7 @@ const MayorDashboard = () => {
             });
             const additionalFunds = monthHistory.reduce((sum, h) => sum + (parseFloat(h.added_amount) || 0), 0);
 
-            // 4. Calculate Consumed for this specific month
+            // 3. Consumed: Verified tickets this month
             const monthTickets = tickets.filter(t => {
                 if (!t.trip_date) return false;
                 const d = new Date(t.trip_date);
@@ -322,19 +367,17 @@ const MayorDashboard = () => {
                 return sum + (hasCost ? parseFloat(t.actual_fuel_cost) : 0);
             }, 0);
 
-            // 5. Logic for Beginning Balance
-            // If it's January, use the Starting Annual Budget. 
-            // Else, use the Ending Balance of the previous month.
+            // 4. Beginning Balance logic
             let beginningBalance;
             if (index === 0) {
-                beginningBalance = startingAnnualBudget;
+                beginningBalance = startingAnnualBudget; // January starts with the base annual budget
             } else {
-                beginningBalance = currentBalance;
+                beginningBalance = currentBalance; // Succeeding months start with last month's ending
             }
 
             const endingBalance = beginningBalance + additionalFunds - consumed;
 
-            // Only push if there's activity OR we are in the current/past month
+            // Push data if there's activity OR we are in the current/past month
             if (additionalFunds > 0 || consumed > 0 || index <= new Date().getMonth()) {
                 monthlyData.push({
                     month: monthName,
@@ -345,7 +388,6 @@ const MayorDashboard = () => {
                 });
             }
 
-            // Update running balance for the next loop
             currentBalance = endingBalance;
         });
 
@@ -369,7 +411,6 @@ const MayorDashboard = () => {
 
             {/* 1. Top Stat Cards */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-                {/* ... (Keep Stat Cards) ... */}
                 <Card className="bg-gradient-to-r from-blue-900/40 to-blue-800/10 border border-blue-500/20 rounded-2xl shadow-lg">
                     <CardContent className="p-5 flex flex-col justify-between h-full">
                         <div className="flex justify-between items-start mb-2">
@@ -543,23 +584,28 @@ const MayorDashboard = () => {
                 </Card>
 
                 {/* Fund Trend Overview */}
-                <Card className="bg-[#121829] border border-slate-800 rounded-2xl shadow-lg p-5">
-                    <div className="flex items-center justify-between mb-6">
+                <Card className="bg-[#121829] border border-slate-800 rounded-2xl shadow-lg p-5 relative">
+                    <div className="flex items-center justify-between mb-6 z-20 relative">
                         <h3 className="font-bold text-white flex items-center gap-2">
                             <TrendingUp className="h-4 w-4 text-emerald-400" /> FUND TREND OVERVIEW
                         </h3>
-                        <select 
+                        
+                        {/* ✅ FIXED: Custom Dropdown to prevent overlap */}
+                        <CustomSelect 
                             value={trendDept}
-                            onChange={(e) => setTrendDept(e.target.value)}
-                            className="bg-slate-800 text-[10px] text-slate-300 px-2 py-1 rounded border border-slate-700 outline-none cursor-pointer"
-                        >
-                            <option value="all">All Departments</option>
-                            {departmentBudgets.map(d => (
-                                <option key={d.department_id} value={d.department_name}>{d.department_name}</option>
-                            ))}
-                        </select>
+                            onChange={(val) => setTrendDept(val)}
+                            placeholder="All Departments"
+                            options={[
+                                { value: "all", label: "All Departments" },
+                                ...departmentBudgets.map(d => ({ 
+                                    value: d.department_name, 
+                                    label: d.department_name 
+                                }))
+                            ]}
+                        />
                     </div>
-                    <div className="h-[180px] w-full">
+                    
+                    <div className="h-[180px] w-full relative z-10">
                         <ResponsiveContainer width="100%" height="100%">
                             <LineChart data={trendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                                 <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#64748b'}} dy={10} />
@@ -586,16 +632,18 @@ const MayorDashboard = () => {
                         <h3 className="font-bold text-white flex items-center gap-2">
                             <Building2 className="h-4 w-4 text-blue-400" /> DEPARTMENT MONTHLY FUND MONITORING
                         </h3>
-                        <select 
+                        <CustomSelect 
                             value={monitorDept}
-                            onChange={(e) => setMonitorDept(e.target.value)}
-                            className="bg-slate-800 text-[10px] text-slate-300 px-2 py-1 rounded border border-slate-700 outline-none cursor-pointer"
-                        >
-                            <option value="all">All Departments</option>
-                            {departmentBudgets.map(d => (
-                                <option key={d.department_id} value={d.department_name}>{d.department_name}</option>
-                            ))}
-                        </select>
+                            onChange={(val) => setMonitorDept(val)}
+                            placeholder="All Departments"
+                            options={[
+                                { value: "all", label: "All Departments" },
+                                ...departmentBudgets.map(d => ({ 
+                                    value: d.department_name, 
+                                    label: d.department_name 
+                                }))
+                            ]}
+                        />
                     </div>
                     <div className="overflow-x-auto">
                         <table className="w-full text-left text-xs">
@@ -632,16 +680,18 @@ const MayorDashboard = () => {
                             <Activity className="h-4 w-4 text-blue-400" /> DEPARTMENT TRANSACTIONS
                         </h3>
                         <div className="flex items-center gap-2">
-                            <select 
+                            <CustomSelect 
                                 value={transDept}
-                                onChange={(e) => setTransDept(e.target.value)}
-                                className="bg-slate-800 text-[10px] text-slate-300 px-2 py-1 rounded border border-slate-700 outline-none cursor-pointer"
-                            >
-                                <option value="all">All Departments</option>
-                                {departmentBudgets.map(d => (
-                                    <option key={d.department_id} value={d.department_name}>{d.department_name}</option>
-                                ))}
-                            </select>
+                                onChange={(val) => setTransDept(val)}
+                                placeholder="All Departments"
+                                options={[
+                                    { value: "all", label: "All Departments" },
+                                    ...departmentBudgets.map(d => ({ 
+                                        value: d.department_name, 
+                                        label: d.department_name 
+                                    }))
+                                ]}
+                            />
                             <button className="text-[10px] text-blue-400">View All →</button>
                         </div>
                     </div>
