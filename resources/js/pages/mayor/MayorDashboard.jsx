@@ -52,13 +52,13 @@ const formatCompact = (amount) => {
 
 const formatDateShort = (ds) => ds ? new Date(ds).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" }) : "—";
 
-// ✅ UPDATED STATUS BADGE
+// ✅ FIXED STATUS BADGE LOGIC
 const StatusBadge = ({ status, actualCost }) => {
     let displayStatus = "Funds Issued";
-    let colorClass = "text-blue-400"; // Default
+    let colorClass = "text-blue-400";
 
-    // ✅ Check if there's a verified amount spent
-    const hasCost = actualCost !== null && actualCost !== undefined && parseFloat(actualCost) > 0;
+    // Check if there is an actual cost (meaning it's verified)
+    const hasCost = actualCost && parseFloat(actualCost) > 0;
 
     if (status === "funds_issued") {
         displayStatus = "Funds Issued";
@@ -83,7 +83,6 @@ const StatusBadge = ({ status, actualCost }) => {
         </span>
     );
 };
-
 
 const handleDownloadReceipt = async (url, ticketNumber) => {
     if (!url) {
@@ -429,7 +428,7 @@ const MayorDashboard = () => {
                     </div>
                 </Card>
 
-                {/* ✅ Top Fund Consumers (Added Date Filter) */}
+                {/* Top Fund Consumers */}
                 <Card className="bg-[#121829] border border-slate-800 rounded-2xl shadow-lg p-5">
                     <div className="flex items-center justify-between mb-6">
                         <h3 className="font-bold text-white flex items-center gap-2">
@@ -461,7 +460,6 @@ const MayorDashboard = () => {
                                 <div className="flex-1">
                                     <div className="flex justify-between text-xs mb-1">
                                         <span className="font-semibold text-slate-200">{d.department_name}</span>
-                                        {/* ✅ Gigamit ang filteredSpent base sa date filter */}
                                         <span className="text-slate-300 font-bold">{formatCurrency(d.filteredSpent)}</span>
                                     </div>
                                     <div className="w-full bg-slate-800 rounded-full h-1.5">
@@ -587,7 +585,7 @@ const MayorDashboard = () => {
                                 {transactionsData.length === 0 ? (
                                     <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-500">No transactions found.</td></tr>
                                 ) : transactionsData.map((t, i) => {
-                                    // ✅ FIX: If status is funds_issued OR no actual cost, show "-"
+                                    // ✅ Check if amount_spent exists
                                     const hasCost = t.actual_fuel_cost && parseFloat(t.actual_fuel_cost) > 0;
                                     const amountSpentDisplay = hasCost ? formatCurrency(t.actual_fuel_cost) : "-";
 
@@ -604,7 +602,6 @@ const MayorDashboard = () => {
                                                 </button>
                                             </td>
                                             <td className="px-4 py-3 text-right">
-                                                {/* ✅ I-pass ang status ug actualCost */}
                                                 <StatusBadge status={t.status} actualCost={t.actual_fuel_cost} />
                                             </td>
                                         </tr>
