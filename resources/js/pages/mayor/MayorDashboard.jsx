@@ -52,12 +52,10 @@ const formatCompact = (amount) => {
 
 const formatDateShort = (ds) => ds ? new Date(ds).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" }) : "—";
 
-// ✅ FIXED STATUS BADGE LOGIC
 const StatusBadge = ({ status, actualCost }) => {
     let displayStatus = "Funds Issued";
     let colorClass = "text-blue-400";
 
-    // Check kung naay actual cost (Amount on Receipt) nga na-verify na
     const hasCost = actualCost && parseFloat(actualCost) > 0;
 
     if (status === "funds_issued") {
@@ -67,11 +65,9 @@ const StatusBadge = ({ status, actualCost }) => {
         displayStatus = "Received";
         colorClass = "text-yellow-400";
     } else if (!hasCost) {
-        // ✅ Kung wala pay verified amount, For Verification jud ni (dash ang amount)
         displayStatus = "For Verification";
         colorClass = "text-orange-400";
     } else if (hasCost) {
-        // ✅ Kung naay verified amount, Verified na
         displayStatus = "Verified";
         colorClass = "text-emerald-400";
     } else if (status === "rejected") {
@@ -119,6 +115,7 @@ const MayorDashboard = () => {
     const [topDeptFilter, setTopDeptFilter] = useState("all");
     const [trendDept, setTrendDept] = useState("all");
     const [transDept, setTransDept] = useState("all");
+    const [monitorDept, setMonitorDept] = useState("all"); // ✅ New filter for Monthly Monitoring
 
     const fetchAllData = useCallback(() => {
         queryClient.invalidateQueries({ queryKey: ["mayor-approved-tickets"] });
@@ -170,12 +167,7 @@ const MayorDashboard = () => {
         const totalReleased = approvedTicketsRaw.reduce((sum, t) => sum + (parseFloat(t.amount_released) || 0), 0);
         const totalRemaining = Math.max(0, totalAllocated - totalReleased);
 
-        return { 
-            totalAllocated, 
-            totalUsed, 
-            totalReleased,
-            totalRemaining, 
-        };
+        return { totalAllocated, totalUsed, totalReleased, totalRemaining };
     }, [departmentBudgets, approvedTicketsRaw]);
 
     const pieData = useMemo(() => {
@@ -189,13 +181,11 @@ const MayorDashboard = () => {
             }));
     }, [departmentBudgets]);
 
-    // ✅ Top Fund Consumers (Filtered by Date & Dept)
     const topConsumersData = useMemo(() => {
         let filteredTickets = approvedTicketsRaw;
         if (topTimeFilter !== "all_time") {
             const today = new Date();
             let start, end;
-            
             if (topTimeFilter === "this_week") {
                 start = startOfWeek(today, { weekStartsOn: 1 });
                 end = endOfWeek(today, { weekStartsOn: 1 });
@@ -206,11 +196,7 @@ const MayorDashboard = () => {
                 start = subDays(today, 14);
                 end = today;
             }
-
-            filteredTickets = filteredTickets.filter(t => {
-                if (!t.trip_date) return false;
-                return isWithinInterval(new Date(t.trip_date), { start, end });
-            });
+            filteredTickets = filteredTickets.filter(t => t.trip_date && isWithinInterval(new Date(t.trip_date), { start, end }));
         }
 
         const deptSpent = {};
@@ -226,28 +212,19 @@ const MayorDashboard = () => {
             filteredSpent: deptSpent[d.department_name] || 0
         })).sort((a, b) => b.filteredSpent - a.filteredSpent);
 
-        if (topDeptFilter !== "all") {
-            data = data.filter(d => d.department_name === topDeptFilter);
-        }
+        if (topDeptFilter !== "all") data = data.filter(d => d.department_name === topDeptFilter);
 
         return data.slice(0, 4); 
     }, [departmentBudgets, approvedTicketsRaw, topTimeFilter, topDeptFilter]);
 
-    // ✅ REAL TREND DATA CALCULATION
     const trendData = useMemo(() => {
-        const filtered = approvedTicketsRaw.filter(t => 
-            trendDept === "all" || t.department_name === trendDept
-        );
-
+        const filtered = approvedTicketsRaw.filter(t => trendDept === "all" || t.department_name === trendDept);
         const monthlyGroups = {};
         filtered.forEach(t => {
             if (!t.trip_date) return;
             const date = new Date(t.trip_date);
             const monthYear = date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
-            
-            if (!monthlyGroups[monthYear]) {
-                monthlyGroups[monthYear] = { released: 0, dateObj: date };
-            }
+            if (!monthlyGroups[monthYear]) monthlyGroups[monthYear] = { released: 0, dateObj: date };
             monthlyGroups[monthYear].released += parseFloat(t.amount_released) || 0;
         });
 
@@ -260,10 +237,7 @@ const MayorDashboard = () => {
         }
 
         const sortedKeys = Object.keys(monthlyGroups).sort((a, b) => monthlyGroups[a].dateObj - monthlyGroups[b].dateObj);
-
-        if (sortedKeys.length === 0) {
-            return [{ name: "No Data", released: 0, suggested: totalWeeklySuggested * 4.33 }];
-        }
+        if (sortedKeys.length === 0) return [{ name: "No Data", released: 0, suggested: totalWeeklySuggested * 4.33 }];
 
         return sortedKeys.map(key => ({
             name: key,
@@ -272,13 +246,80 @@ const MayorDashboard = () => {
         }));
     }, [approvedTicketsRaw, trendDept, departmentBudgets]);
 
-    // ✅ TRANSACTIONS DATA
     const transactionsData = useMemo(() => {
         return approvedTicketsRaw
             .filter(t => transDept === "all" || t.department_name === transDept)
             .sort((a, b) => new Date(b.trip_date) - new Date(a.trip_date))
             .slice(0, 5);
     }, [approvedTicketsRaw, transDept]);
+
+    // ✅ NEW: Monthly Fund Monitoring Data
+    const monthlyMonitoringData = useMemo(() => {
+        let tickets = approvedTicketsRaw;
+        if (monitorDept !== "all") {
+            tickets = tickets.filter(t => t.department_name === monitorDept);
+        }
+
+        // For now, let's base the Annual Budget on the sum of the selected department(s)
+        // or the specific department's annual budget.
+        let annualBudget = 0;
+        if (monitorDept === "all") {
+            annualBudget = departmentBudgets.reduce((sum, d) => sum + d.allocated, 0);
+        } else {
+            const dept = departmentBudgets.find(d => d.department_name === monitorDept);
+            annualBudget = dept ? dept.allocated : 0;
+        }
+
+        const months = [
+            "January", "February", "March", "April", "May", "June",
+            "July", "August", "September", "October", "November", "December"
+        ];
+
+        let currentBalance = annualBudget;
+        const monthlyData = [];
+
+        // Assuming the active year is the current year for simplicity
+        const currentYear = new Date().getFullYear();
+
+        months.forEach((monthName, index) => {
+            const monthIndex = index; // 0-11
+
+            // Get tickets for this month
+            const monthTickets = tickets.filter(t => {
+                if (!t.trip_date) return false;
+                const d = new Date(t.trip_date);
+                return d.getMonth() === monthIndex && d.getFullYear() === currentYear;
+            });
+
+            // Additional Funds = Sum of amount_released for this month
+            const additionalFunds = monthTickets.reduce((sum, t) => sum + (parseFloat(t.amount_released) || 0), 0);
+
+            // Consumed = Sum of actual_fuel_cost (Amount Spent/Verified) for this month
+            const consumed = monthTickets.reduce((sum, t) => {
+                // Only count if verified (has actual cost)
+                const hasCost = t.actual_fuel_cost && parseFloat(t.actual_fuel_cost) > 0;
+                return sum + (hasCost ? parseFloat(t.actual_fuel_cost) : 0);
+            }, 0);
+
+            const beginningBalance = currentBalance;
+            const endingBalance = beginningBalance + additionalFunds - consumed;
+
+            // Only push months that have data OR the current month
+            if (additionalFunds > 0 || consumed > 0 || monthIndex <= new Date().getMonth()) {
+                monthlyData.push({
+                    month: monthName,
+                    beginning: beginningBalance,
+                    additional: additionalFunds,
+                    consumed: consumed,
+                    ending: endingBalance
+                });
+            }
+
+            currentBalance = endingBalance;
+        });
+
+        return monthlyData;
+    }, [approvedTicketsRaw, departmentBudgets, monitorDept]);
 
     if (approvedLoading || budgetLoading) return <SkeletonPage />;
 
@@ -297,6 +338,7 @@ const MayorDashboard = () => {
 
             {/* 1. Top Stat Cards */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                {/* ... (Keep Stat Cards) ... */}
                 <Card className="bg-gradient-to-r from-blue-900/40 to-blue-800/10 border border-blue-500/20 rounded-2xl shadow-lg">
                     <CardContent className="p-5 flex flex-col justify-between h-full">
                         <div className="flex justify-between items-start mb-2">
@@ -507,38 +549,44 @@ const MayorDashboard = () => {
             {/* 3. Middle Row 2: Department Monitoring & Transactions */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
                 
-                {/* Department Fund Monitoring */}
+                {/* ✅ Department Monthly Fund Monitoring */}
                 <Card className="bg-[#121829] border border-slate-800 rounded-2xl shadow-lg p-0 overflow-hidden">
                     <div className="flex items-center justify-between p-5 border-b border-slate-800">
                         <h3 className="font-bold text-white flex items-center gap-2">
-                            <Building2 className="h-4 w-4 text-blue-400" /> DEPARTMENT FUND MONITORING
+                            <Building2 className="h-4 w-4 text-blue-400" /> DEPARTMENT MONTHLY FUND MONITORING
                         </h3>
+                        <select 
+                            value={monitorDept}
+                            onChange={(e) => setMonitorDept(e.target.value)}
+                            className="bg-slate-800 text-[10px] text-slate-300 px-2 py-1 rounded border border-slate-700 outline-none cursor-pointer"
+                        >
+                            <option value="all">All Departments</option>
+                            {departmentBudgets.map(d => (
+                                <option key={d.department_id} value={d.department_name}>{d.department_name}</option>
+                            ))}
+                        </select>
                     </div>
                     <div className="overflow-x-auto">
                         <table className="w-full text-left text-xs">
                             <thead className="bg-[#0b101c] text-slate-400">
                                 <tr>
-                                    <th className="px-4 py-3 font-medium">Department</th>
-                                    <th className="px-4 py-3 font-medium text-right">Allocated Budget</th>
-                                    <th className="px-4 py-3 font-medium text-right">Released</th>
-                                    <th className="px-4 py-3 font-medium text-right">Spent</th>
-                                    <th className="px-4 py-3 font-medium text-right">Balance</th>
-                                    <th className="px-4 py-3 font-medium">Utilization</th>
+                                    <th className="px-4 py-3 font-medium">Month</th>
+                                    <th className="px-4 py-3 font-medium text-right">Beginning Balance</th>
+                                    <th className="px-4 py-3 font-medium text-right">Additional Funds</th>
+                                    <th className="px-4 py-3 font-medium text-right">Consumed</th>
+                                    <th className="px-4 py-3 font-medium text-right">Ending Balance</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-800/50">
-                                {departmentBudgets.map((d, i) => (
+                                {monthlyMonitoringData.length === 0 ? (
+                                    <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-500">No monthly data available.</td></tr>
+                                ) : monthlyMonitoringData.map((d, i) => (
                                     <tr key={i} className="hover:bg-slate-800/20 transition-colors">
-                                        <td className="px-4 py-3 text-slate-200 font-medium">{d.department_name}</td>
-                                        <td className="px-4 py-3 text-right text-slate-300">{formatCurrency(d.allocated)}</td>
-                                        <td className="px-4 py-3 text-right text-slate-300">{formatCurrency(d.allocated)}</td>
-                                        <td className="px-4 py-3 text-right text-slate-300">{formatCurrency(d.spent)}</td>
-                                        <td className="px-4 py-3 text-right text-slate-300">{formatCurrency(d.remaining)}</td>
-                                        <td className="px-4 py-3">
-                                            <div className="w-16 bg-slate-800 rounded-full h-1.5">
-                                                <div className="h-1.5 rounded-full" style={{ width: `${Math.min(d.utilization, 100)}%`, backgroundColor: DEPARTMENT_PALETTE[i % DEPARTMENT_PALETTE.length] }} />
-                                            </div>
-                                        </td>
+                                        <td className="px-4 py-3 text-slate-200 font-medium">{d.month}</td>
+                                        <td className="px-4 py-3 text-right text-slate-300">{formatCurrency(d.beginning)}</td>
+                                        <td className="px-4 py-3 text-right text-slate-300">{formatCurrency(d.additional)}</td>
+                                        <td className="px-4 py-3 text-right text-slate-300">{formatCurrency(d.consumed)}</td>
+                                        <td className="px-4 py-3 text-right font-bold text-emerald-400">{formatCurrency(d.ending)}</td>
                                     </tr>
                                 ))}
                             </tbody>
@@ -583,7 +631,6 @@ const MayorDashboard = () => {
                                 {transactionsData.length === 0 ? (
                                     <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-500">No transactions found.</td></tr>
                                 ) : transactionsData.map((t, i) => {
-                                    // ✅ Check kung naay amount spent (Amount on Receipt)
                                     const hasCost = t.actual_fuel_cost && parseFloat(t.actual_fuel_cost) > 0;
                                     const amountSpentDisplay = hasCost ? formatCurrency(t.actual_fuel_cost) : "-";
 
