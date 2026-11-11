@@ -166,8 +166,7 @@ const MayorDashboard = () => {
     const [topDeptFilter, setTopDeptFilter] = useState("all");
     const [trendDept, setTrendDept] = useState("all");
     const [transDept, setTransDept] = useState("all");
-    
-    // ✅ Removed the "all" default for monitoring, use empty string instead
+    const [transStatusFilter, setTransStatusFilter] = useState("all"); // ✅ New status filter
     const [monitorDept, setMonitorDept] = useState(""); 
 
     const fetchAllData = useCallback(() => {
@@ -203,7 +202,6 @@ const MayorDashboard = () => {
     });
     const budgetData = useSafeArray(budgetRaw);
 
-    // ✅ Fetch Budget History for Monthly logic
     const { data: historyRaw } = useOptimizedQuery({
         queryKey: ["mayor-budget-history"],
         queryFn: async () => {
@@ -313,22 +311,40 @@ const MayorDashboard = () => {
         }));
     }, [approvedTicketsRaw, trendDept, departmentBudgets]);
 
+    // ✅ UPDATED: Transactions Data with Status Filter
     const transactionsData = useMemo(() => {
         return approvedTicketsRaw
-            .filter(t => transDept === "all" || t.department_name === transDept)
+            .filter(t => {
+                // 1. Filter by Department
+                const matchesDept = transDept === "all" || t.department_name === transDept;
+                
+                // 2. Filter by Status
+                let matchesStatus = true;
+                const hasCost = t.actual_fuel_cost && parseFloat(t.actual_fuel_cost) > 0;
+                
+                if (transStatusFilter === "funds_issued") {
+                    matchesStatus = t.status === "funds_issued";
+                } else if (transStatusFilter === "for_verification") {
+                    matchesStatus = t.status === "in_transit" && !hasCost;
+                } else if (transStatusFilter === "verified") {
+                    matchesStatus = hasCost || ["completed", "closed", "pending_gso_validation", "pending_reconciliation"].includes(t.status);
+                } else if (transStatusFilter === "rejected") {
+                    matchesStatus = t.status === "rejected";
+                }
+
+                return matchesDept && matchesStatus;
+            })
             .sort((a, b) => new Date(b.trip_date) - new Date(a.trip_date))
             .slice(0, 5);
-    }, [approvedTicketsRaw, transDept]);
+    }, [approvedTicketsRaw, transDept, transStatusFilter]);
 
     // ✅ MONTHLY FUND MONITORING (Strictly for specific department)
     const monthlyMonitoringData = useMemo(() => {
-        // If no department selected, return empty array
         if (!monitorDept) return [];
 
         const tickets = approvedTicketsRaw.filter(t => t.department_name === monitorDept);
         const history = budgetHistoryRaw.filter(h => h.department_name === monitorDept);
 
-        // Find the Starting Annual Budget
         const createdRecord = history.find(h => h.action === 'annual_created');
         let startingAnnualBudget = createdRecord ? parseFloat(createdRecord.new_amount) : 0;
         
@@ -346,7 +362,6 @@ const MayorDashboard = () => {
         let currentBalance = 0; 
 
         months.forEach((monthName, index) => {
-            // Additional Funds
             const monthHistory = history.filter(h => {
                 if (h.action !== 'annual_added') return false;
                 const d = new Date(h.created_at);
@@ -354,7 +369,6 @@ const MayorDashboard = () => {
             });
             const additionalFunds = monthHistory.reduce((sum, h) => sum + (parseFloat(h.added_amount) || 0), 0);
 
-            // Consumed
             const monthTickets = tickets.filter(t => {
                 if (!t.trip_date) return false;
                 const d = new Date(t.trip_date);
@@ -365,7 +379,6 @@ const MayorDashboard = () => {
                 return sum + (hasCost ? parseFloat(t.actual_fuel_cost) : 0);
             }, 0);
 
-            // Beginning & Ending Balance
             let beginningBalance;
             if (index === 0) {
                 beginningBalance = startingAnnualBudget; 
@@ -622,14 +635,13 @@ const MayorDashboard = () => {
             {/* 3. Middle Row 2: Department Monitoring & Transactions */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
                 
-                {/* ✅ Department Monthly Fund Monitoring */}
+                {/* Department Monthly Fund Monitoring */}
                 <Card className="bg-[#121829] border border-slate-800 rounded-2xl shadow-lg p-0 overflow-hidden">
                     <div className="flex items-center justify-between p-5 border-b border-slate-800">
                         <h3 className="font-bold text-white flex items-center gap-2">
                             <Building2 className="h-4 w-4 text-blue-400" /> DEPARTMENT MONTHLY FUND MONITORING
                         </h3>
                         
-                        {/* ✅ Removed the "all" option entirely */}
                         <CustomSelect 
                             value={monitorDept}
                             onChange={(val) => setMonitorDept(val)}
@@ -672,13 +684,14 @@ const MayorDashboard = () => {
                     </div>
                 </Card>
 
-                {/* Department Transactions */}
+                {/* ✅ Department Transactions with Status Filter */}
                 <Card className="bg-[#121829] border border-slate-800 rounded-2xl shadow-lg p-0 overflow-hidden">
                     <div className="flex items-center justify-between p-5 border-b border-slate-800">
                         <h3 className="font-bold text-white flex items-center gap-2">
                             <Activity className="h-4 w-4 text-blue-400" /> DEPARTMENT TRANSACTIONS
                         </h3>
                         <div className="flex items-center gap-2">
+                            {/* Dept Filter */}
                             <CustomSelect 
                                 value={transDept}
                                 onChange={(val) => setTransDept(val)}
@@ -691,7 +704,20 @@ const MayorDashboard = () => {
                                     }))
                                 ]}
                             />
-                            <button className="text-[10px] text-blue-400">View All →</button>
+                            {/* ✅ Status Filter */}
+                            <CustomSelect 
+                                value={transStatusFilter}
+                                onChange={(val) => setTransStatusFilter(val)}
+                                placeholder="All Statuses"
+                                options={[
+                                    { value: "all", label: "All Statuses" },
+                                    { value: "funds_issued", label: "Funds Issued" },
+                                    { value: "for_verification", label: "For Verification" },
+                                    { value: "verified", label: "Verified" },
+                                    { value: "rejected", label: "Rejected" }
+                                ]}
+                            />
+                            <button className="text-[10px] text-blue-400 ml-2">View All →</button>
                         </div>
                     </div>
                     <div className="overflow-x-auto">
