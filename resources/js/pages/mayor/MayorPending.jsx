@@ -202,8 +202,10 @@ const MayorPending = () => {
   const [rejectionNote, setRejectionNote] = useState("");
   const [amountReleased, setAmountReleased] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
-  
+  const [departmentFilter, setDepartmentFilter] = useState("all");
+
   const [showCancelDialog, setShowCancelDialog] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
   const [cancelling, setCancelling] = useState(false);
@@ -268,12 +270,14 @@ const MayorPending = () => {
   // Derived Data
   const filteredTickets = useMemo(() => {
     return tickets.filter((ticket) => {
-      return searchTerm === "" || 
+      const matchesSearch = searchTerm === "" || 
         ticket.ticket_number?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         ticket.destination?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         ticket.department_name?.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesDepartment = departmentFilter === "all" || ticket.department_id?.toString() === departmentFilter;
+      return matchesSearch && matchesDepartment;
     });
-  }, [tickets, searchTerm]);
+  }, [tickets, searchTerm, departmentFilter]);
 
   const releasedFiltered = useMemo(() => {
     return releasedTickets.filter(t => t.department_name?.toLowerCase().includes(searchTerm.toLowerCase()) || t.ticket_number?.toLowerCase().includes(searchTerm.toLowerCase()));
@@ -425,6 +429,8 @@ const MayorPending = () => {
     setShowReceiptModal(true);
   };
 
+  const suggestion = null; // Placeholder if you need to re-add it
+
   return (
     <div className="min-h-screen bg-[#090e1a] p-4 md:p-6 font-sans text-slate-200 flex flex-col">
       
@@ -469,15 +475,20 @@ const MayorPending = () => {
         {/* Left Panel: Table */}
         <div className={cn("bg-[#121829] border border-slate-800 rounded-2xl shadow-lg flex flex-col transition-all duration-300", showRightPanel ? "w-full lg:w-3/5" : "w-full")}>
           
-          {/* Toolbar (Removed Filter Button) */}
-          <div className="p-4 border-b border-slate-800 flex justify-between items-center gap-4">
-            <div className="relative flex-1">
+          {/* Toolbar */}
+          <div className="p-4 border-b border-slate-800 flex flex-col sm:flex-row justify-between items-center gap-4">
+            <div className="relative flex-1 w-full">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
               <Input placeholder="Search by Trip Ticket No., Department, or Vehicle..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-10 bg-[#0b101c] border-slate-700 text-white placeholder:text-slate-500 rounded-xl h-10" />
             </div>
-            <Button variant="outline" size="icon" onClick={() => fetchTickets()} className="border-slate-700 text-slate-400 bg-[#0b101c] hover:bg-slate-800 rounded-xl h-10 w-10 flex-shrink-0">
-              <RefreshCw className="h-4 w-4" />
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="icon" onClick={() => setShowFilters(!showFilters)} className="border-slate-700 text-slate-400 bg-[#0b101c] hover:bg-slate-800 rounded-xl h-10 w-10">
+                <Filter className="h-4 w-4" />
+              </Button>
+              <Button variant="outline" size="icon" onClick={() => fetchTickets()} className="border-slate-700 text-slate-400 bg-[#0b101c] hover:bg-slate-800 rounded-xl h-10 w-10">
+                <RefreshCw className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
 
           {/* Table */}
@@ -527,23 +538,14 @@ const MayorPending = () => {
 
             <div className="p-5 flex-1 overflow-y-auto space-y-6">
               
-              {/* Basic Info Box (Added Name & Destination) */}
+              {/* Basic Info Box */}
               <div className="bg-[#0b101c] rounded-xl p-4 border border-slate-800 text-sm">
                 <div className="grid grid-cols-3 gap-y-3">
                   <span className="text-slate-500">Date</span><span className="col-span-2 text-white">: {formatDate(selectedTicket.trip_date)}</span>
-                  
-                  {/* ✅ Name (Passenger / Driver) */}
-                  <span className="text-slate-500">Name</span>
-                  <span className="col-span-2 text-white">: {selectedTicket.passenger_name || selectedTicket.driver_name || selectedTicket.driver?.full_name || "N/A"}</span>
-                  
                   <span className="text-slate-500">Trip Ticket No.</span><span className="col-span-2 text-white">: {selectedTicket.ticket_number}</span>
                   <span className="text-slate-500">Department</span><span className="col-span-2 text-white">: {selectedTicket.department_name}</span>
                   <span className="text-slate-500">Vehicle</span><span className="col-span-2 text-white">: {selectedTicket.vehicle?.plate_number}</span>
                   <span className="text-slate-500">Purpose</span><span className="col-span-2 text-white">: {selectedTicket.purpose}</span>
-                  
-                  {/* ✅ Destination */}
-                  <span className="text-slate-500">Destination</span>
-                  <span className="col-span-2 text-white">: {selectedTicket.destination}</span>
                 </div>
               </div>
 
