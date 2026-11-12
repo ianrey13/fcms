@@ -100,7 +100,6 @@ const VehicleDetails = () => {
         
         const tankCap = parseFloat(vehicle.tank_capacity || 60);
         const eff = parseFloat(vehicle.reference_efficiency || 10);
-        const currentBal = parseFloat(vehicle.current_fuel_balance || 0);
 
         let events = [];
 
@@ -127,8 +126,16 @@ const VehicleDetails = () => {
             });
         });
 
-        // Sort Chronologically (Oldest to Newest for the Table)
-        events.sort((a, b) => a.date - b.date);
+        // ✅ FIX: Sort by Date, then prioritize Refuel if on the same day/time
+        events.sort((a, b) => {
+            const dateDiff = a.date - b.date;
+            if (dateDiff !== 0) return dateDiff;
+            
+            // If exactly same timestamp, Refuel first
+            if (a.type === 'Refuel' && b.type === 'Trip') return -1;
+            if (a.type === 'Trip' && b.type === 'Refuel') return 1;
+            return 0;
+        });
 
         // Build the Ledger for the Table
         let runningBal = parseFloat(vehicle.initial_estimated_fuel || 0);
@@ -161,7 +168,7 @@ const VehicleDetails = () => {
 
         return { 
             chartData: { labels: Object.keys(grouped), values: Object.values(grouped), max: tankCap },
-            // Show the latest events first in the table
+            // Show the latest events first in the table (Reversed ledger)
             tableData: [...ledger].reverse()
         };
     }, [vehicle, fuelReceipts, historyData, chartRange]);
@@ -598,4 +605,4 @@ const VehicleDetails = () => {
     );
 };
 
-export default VehicleDetails;
+export default VehicleDetails;g
