@@ -605,4 +605,4 @@ const VehicleDetails = () => {
     );
 };
 
-export default VehicleDetails;g
+export default VehicleDetails;
