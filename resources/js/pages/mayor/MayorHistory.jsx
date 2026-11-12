@@ -22,13 +22,13 @@ import {
   Car,
   PhilippinePeso,
   RefreshCw,
-  ChevronDown,
   ChevronRight,
   ChevronLeft,
   CheckCircle,
   Clock,
   XCircle,
-  History
+  History,
+  X
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -59,7 +59,7 @@ const getAmount = (ticket) => {
 };
 
 // ============================================
-// STATUS BADGE (Matching Image)
+// STATUS BADGE
 // ============================================
 const StatusBadge = ({ status }) => {
   const configs = {
@@ -103,6 +103,9 @@ const MayorHistory = () => {
   // Filters
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [showDateFilter, setShowDateFilter] = useState(false);
 
   const fetchAllData = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ["mayor-history-tickets"] });
@@ -142,12 +145,14 @@ const MayorHistory = () => {
   }, [fetchTickets]);
 
   // ============================================
-  // FILTERED RESULTS
+  // FILTERED RESULTS (Includes Date Range)
   // ============================================
   const filtered = useMemo(() => {
     return tickets.filter((t) => {
+      // 1. Status Filter
       if (statusFilter !== "all" && t.status !== statusFilter) return false;
 
+      // 2. Search Filter
       if (search) {
         const q = search.toLowerCase();
         const haystack = [
@@ -159,11 +164,29 @@ const MayorHistory = () => {
         if (!haystack.includes(q)) return false;
       }
 
+      // 3. Date Range Filter
+      if (dateFrom) {
+        const ticketDate = new Date(t.trip_date).setHours(0, 0, 0, 0);
+        const fromDate = new Date(dateFrom).setHours(0, 0, 0, 0);
+        if (ticketDate < fromDate) return false;
+      }
+      if (dateTo) {
+        const ticketDate = new Date(t.trip_date).setHours(0, 0, 0, 0);
+        const toDate = new Date(dateTo).setHours(0, 0, 0, 0);
+        if (ticketDate > toDate) return false;
+      }
+
       return true;
     });
-  }, [tickets, statusFilter, search]);
+  }, [tickets, statusFilter, search, dateFrom, dateTo]);
 
   const totalAmount = filtered.reduce((s, t) => s + getAmount(t), 0);
+
+  const clearDateFilter = () => {
+    setDateFrom("");
+    setDateTo("");
+    setShowDateFilter(false);
+  };
 
   return (
     <div className="min-h-screen bg-[#090e1a] font-sans text-slate-200">
@@ -192,8 +215,8 @@ const MayorHistory = () => {
           </Button>
         </div>
 
-        {/* FILTER BAR (No Vehicle Filter) */}
-        <div className="flex flex-col md:flex-row items-center gap-3 bg-[#121829] p-3 rounded-2xl border border-slate-800 shadow-lg">
+        {/* FILTER BAR */}
+        <div className="flex flex-col md:flex-row items-center gap-3 bg-[#121829] p-3 rounded-2xl border border-slate-800 shadow-lg relative">
           <div className="relative flex-1 w-full">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
             <Input
@@ -205,9 +228,69 @@ const MayorHistory = () => {
           </div>
 
           <div className="flex items-center gap-2 w-full md:w-auto">
-            <Button variant="outline" className="bg-[#0b101c] border-slate-700 text-slate-300 h-11 rounded-xl px-4 w-[160px] justify-between">
-              <span className="flex items-center gap-2"><Calendar className="h-4 w-4" /> Date Range</span>
-            </Button>
+            {/* CALENDAR DATE RANGE BUTTON */}
+            <div className="relative">
+              <Button 
+                onClick={() => setShowDateFilter(!showDateFilter)}
+                variant="outline" 
+                className={cn(
+                  "bg-[#0b101c] border-slate-700 h-11 rounded-xl px-4 w-[160px] justify-between text-slate-300 hover:bg-slate-800 hover:text-white",
+                  (dateFrom || dateTo) && "border-blue-500 text-blue-400"
+                )}
+              >
+                <span className="flex items-center gap-2">
+                  <Calendar className="h-4 w-4" /> 
+                  {(dateFrom || dateTo) ? "Custom Range" : "Date Range"}
+                </span>
+              </Button>
+
+              {/* Date Range Popup */}
+              {showDateFilter && (
+                <div className="absolute top-14 right-0 md:left-0 z-50 bg-[#121829] border border-slate-700 rounded-xl shadow-2xl p-4 w-[300px] animate-in fade-in slide-in-from-top-2">
+                  <div className="flex justify-between items-center mb-4">
+                    <h4 className="text-sm font-semibold text-white">Select Date Range</h4>
+                    <button onClick={() => setShowDateFilter(false)} className="text-slate-400 hover:text-white"><X className="h-4 w-4"/></button>
+                  </div>
+                  
+                  <div className="space-y-3">
+                    <div>
+                      <label className="text-xs text-slate-400 mb-1 block">From Date</label>
+                      <Input 
+                        type="date" 
+                        value={dateFrom}
+                        onChange={(e) => setDateFrom(e.target.value)}
+                        className="bg-[#0b101c] border-slate-700 text-white h-10 text-sm [color-scheme:dark]"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-slate-400 mb-1 block">To Date</label>
+                      <Input 
+                        type="date" 
+                        value={dateTo}
+                        onChange={(e) => setDateTo(e.target.value)}
+                        className="bg-[#0b101c] border-slate-700 text-white h-10 text-sm [color-scheme:dark]"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2 mt-4 pt-3 border-t border-slate-800">
+                    <Button 
+                      onClick={() => setShowDateFilter(false)} 
+                      className="flex-1 bg-blue-600 hover:bg-blue-700 text-white h-9 text-xs"
+                    >
+                      Apply Filter
+                    </Button>
+                    <Button 
+                      onClick={clearDateFilter} 
+                      variant="outline" 
+                      className="flex-1 border-slate-700 text-slate-300 hover:bg-slate-800 h-9 text-xs"
+                    >
+                      Clear
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
 
             <select
               value={statusFilter}
@@ -262,7 +345,7 @@ const MayorHistory = () => {
                 {filtered.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={7} className="text-center py-12 text-slate-500">
-                      No tickets found.
+                      No tickets found for the selected filters.
                     </TableCell>
                   </TableRow>
                 ) : (
