@@ -46,6 +46,32 @@ const safeAmount = (amount) => {
   return 0;
 };
 
+// ✅ ADDED: Helper to check if a date is within the current week (Monday - Sunday)
+const isDateInCurrentWeek = (dateString) => {
+  if (!dateString) return false;
+  
+  const date = new Date(dateString);
+  const today = new Date();
+  
+  // Get today's day (0 = Sunday, 1 = Monday, etc.)
+  const dayOfWeek = today.getDay();
+  
+  // Calculate distance to Monday (if today is Sunday, go back 6 days)
+  const diffToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+  
+  // Get this week's Monday at 00:00:00
+  const startOfWeek = new Date(today);
+  startOfWeek.setDate(today.getDate() - diffToMonday);
+  startOfWeek.setHours(0, 0, 0, 0);
+  
+  // Get this week's Sunday at 23:59:59
+  const endOfWeek = new Date(startOfWeek);
+  endOfWeek.setDate(startOfWeek.getDate() + 6);
+  endOfWeek.setHours(23, 59, 59, 999);
+  
+  return date >= startOfWeek && date <= endOfWeek;
+};
+
 const FormField = ({ label, icon: Icon, required, error, touched, helper, children, className }) => {
   const hasError = touched && error;
   return (
@@ -279,14 +305,24 @@ const MayorPending = () => {
     return releasedTickets.filter(t => t.department_name?.toLowerCase().includes(searchTerm.toLowerCase()) || t.ticket_number?.toLowerCase().includes(searchTerm.toLowerCase()));
   }, [releasedTickets, searchTerm]);
 
-  // Status Counts
+  // ✅ UPDATED: Status Counts (Scoped to Current Week)
   const counts = useMemo(() => {
+    // 1. Filter both arrays to ONLY include tickets from the current week
+    const weeklyFilteredTickets = filteredTickets.filter(t => 
+      isDateInCurrentWeek(t.trip_date || t.submitted_at || t.created_at)
+    );
+    
+    const weeklyReleasedFiltered = releasedFiltered.filter(t => 
+      isDateInCurrentWeek(t.trip_date || t.submitted_at || t.created_at)
+    );
+
+    // 2. Calculate counts based on the weekly filtered arrays
     return {
-      pending: filteredTickets.length,
-      funds_issued: releasedFiltered.filter(t => t.status === 'funds_issued').length,
-      for_verification: releasedFiltered.filter(t => t.status === 'in_transit' && !t.actual_fuel_cost).length,
-      verified: releasedFiltered.filter(t => ["completed", "closed", "pending_gso_validation"].includes(t.status) || t.actual_fuel_cost > 0).length,
-      rejected: releasedFiltered.filter(t => t.status === 'rejected').length,
+      pending: weeklyFilteredTickets.length,
+      funds_issued: weeklyReleasedFiltered.filter(t => t.status === 'funds_issued').length,
+      for_verification: weeklyReleasedFiltered.filter(t => t.status === 'in_transit' && !t.actual_fuel_cost).length,
+      verified: weeklyReleasedFiltered.filter(t => ["completed", "closed", "pending_gso_validation"].includes(t.status) || t.actual_fuel_cost > 0).length,
+      rejected: weeklyReleasedFiltered.filter(t => t.status === 'rejected').length,
     };
   }, [filteredTickets, releasedFiltered]);
 
@@ -298,13 +334,16 @@ const MayorPending = () => {
     setShowRightPanel(false);
   };
 
-  // Filtered based on active tab
+  // ✅ UPDATED: Filtered based on active tab (Scoped to Current Week)
   const currentDisplayList = useMemo(() => {
-    if (activeTab === "pending") return filteredTickets;
-    if (activeTab === "funds_issued") return releasedFiltered.filter(t => t.status === 'funds_issued');
-    if (activeTab === "for_verification") return releasedFiltered.filter(t => t.status === 'in_transit' && !t.actual_fuel_cost);
-    if (activeTab === "verified") return releasedFiltered.filter(t => ["completed", "closed", "pending_gso_validation"].includes(t.status) || t.actual_fuel_cost > 0);
-    if (activeTab === "rejected") return releasedFiltered.filter(t => t.status === 'rejected');
+    // Helper to filter by current week
+    const byWeek = (arr) => arr.filter(t => isDateInCurrentWeek(t.trip_date || t.submitted_at || t.created_at));
+
+    if (activeTab === "pending") return byWeek(filteredTickets);
+    if (activeTab === "funds_issued") return byWeek(releasedFiltered.filter(t => t.status === 'funds_issued'));
+    if (activeTab === "for_verification") return byWeek(releasedFiltered.filter(t => t.status === 'in_transit' && !t.actual_fuel_cost));
+    if (activeTab === "verified") return byWeek(releasedFiltered.filter(t => ["completed", "closed", "pending_gso_validation"].includes(t.status) || t.actual_fuel_cost > 0));
+    if (activeTab === "rejected") return byWeek(releasedFiltered.filter(t => t.status === 'rejected'));
     return [];
   }, [activeTab, filteredTickets, releasedFiltered]);
 
@@ -408,7 +447,9 @@ const MayorPending = () => {
       fetchTickets();
     } catch (error) {
       toast.error(error.response?.data?.message || "Failed to reject ticket");
-    } finally { setSubmitting(false); }
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const openReceiptModal = (ticket) => {
