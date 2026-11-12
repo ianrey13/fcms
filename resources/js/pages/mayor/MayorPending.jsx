@@ -425,19 +425,6 @@ const MayorPending = () => {
     setShowReceiptModal(true);
   };
 
-  const selectedTicketId = selectedTicket?.id || selectedTicket?.trip_ticket_id;
-
-  // ✅ Fetch Suggestion
-  const { data: suggestionResponse, isLoading: loadingSuggestion } = useQuery({
-    queryKey: ["suggest-release", selectedTicketId],
-    queryFn: () => mayorsOfficeAPI.getSuggestedRelease(selectedTicketId),
-    enabled: !!selectedTicketId && showRightPanel && activeTab === "pending",
-    staleTime: 60_000,
-    retry: 1,
-  });
-
-  const suggestion = suggestionResponse?.data?.data;
-
   return (
     <div className="min-h-screen bg-[#090e1a] p-4 md:p-6 font-sans text-slate-200 flex flex-col">
       
@@ -482,7 +469,7 @@ const MayorPending = () => {
         {/* Left Panel: Table */}
         <div className={cn("bg-[#121829] border border-slate-800 rounded-2xl shadow-lg flex flex-col transition-all duration-300", showRightPanel ? "w-full lg:w-3/5" : "w-full")}>
           
-          {/* Toolbar */}
+          {/* Toolbar (Removed Filter Button) */}
           <div className="p-4 border-b border-slate-800 flex justify-between items-center gap-4">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
@@ -540,16 +527,23 @@ const MayorPending = () => {
 
             <div className="p-5 flex-1 overflow-y-auto space-y-6">
               
-              {/* Basic Info Box */}
+              {/* Basic Info Box (Added Name & Destination) */}
               <div className="bg-[#0b101c] rounded-xl p-4 border border-slate-800 text-sm">
                 <div className="grid grid-cols-3 gap-y-3">
                   <span className="text-slate-500">Date</span><span className="col-span-2 text-white">: {formatDate(selectedTicket.trip_date)}</span>
-                  <span className="text-slate-500">Name</span><span className="col-span-2 text-white">: {selectedTicket.passenger_name || selectedTicket.driver_name || selectedTicket.driver?.full_name || "N/A"}</span>
+                  
+                  {/* ✅ Name (Passenger / Driver) */}
+                  <span className="text-slate-500">Name</span>
+                  <span className="col-span-2 text-white">: {selectedTicket.passenger_name || selectedTicket.driver_name || selectedTicket.driver?.full_name || "N/A"}</span>
+                  
                   <span className="text-slate-500">Trip Ticket No.</span><span className="col-span-2 text-white">: {selectedTicket.ticket_number}</span>
                   <span className="text-slate-500">Department</span><span className="col-span-2 text-white">: {selectedTicket.department_name}</span>
                   <span className="text-slate-500">Vehicle</span><span className="col-span-2 text-white">: {selectedTicket.vehicle?.plate_number}</span>
                   <span className="text-slate-500">Purpose</span><span className="col-span-2 text-white">: {selectedTicket.purpose}</span>
-                  <span className="text-slate-500">Destination</span><span className="col-span-2 text-white">: {selectedTicket.destination}</span>
+                  
+                  {/* ✅ Destination */}
+                  <span className="text-slate-500">Destination</span>
+                  <span className="col-span-2 text-white">: {selectedTicket.destination}</span>
                 </div>
               </div>
 
@@ -562,51 +556,6 @@ const MayorPending = () => {
                     <p className="text-xs text-slate-400 mb-1">Department Balance</p>
                     <p className="text-2xl font-bold text-emerald-400">{formatCurrency(requestingDeptBalance?.remaining || 0)}</p>
                   </div>
-
-                  {/* ✅ Added Suggestion Card here */}
-                  {loadingSuggestion && (
-                    <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-800/50 border border-slate-700">
-                      <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />
-                      <span className="text-xs text-slate-400">Analyzing trip history…</span>
-                    </div>
-                  )}
-
-                  {suggestion && suggestion.available && (
-                    <div className={cn(
-                      "rounded-xl border p-3 space-y-2",
-                      suggestion.confidence === "high" ? "bg-emerald-950/20 border-emerald-800/50" :
-                      suggestion.confidence === "medium" ? "bg-blue-950/20 border-blue-800/50" :
-                      "bg-amber-950/20 border-amber-800/50"
-                    )}>
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <Sparkles className={cn("h-4 w-4 flex-shrink-0", suggestion.confidence === "high" ? "text-emerald-500" : suggestion.confidence === "medium" ? "text-blue-500" : "text-amber-500")} />
-                          <span className="text-xs font-semibold text-white">Suggested Release</span>
-                          <Badge className={cn("text-[9px] px-1.5 py-0 h-4 font-bold", suggestion.confidence === "high" ? "bg-emerald-600" : suggestion.confidence === "medium" ? "bg-blue-600" : "bg-amber-600")}>
-                            {suggestion.confidence.toUpperCase()}
-                          </Badge>
-                        </div>
-                        <span className="text-[10px] text-slate-400 flex-shrink-0">{suggestion.sample_size} trip(s)</span>
-                      </div>
-
-                      <div className="flex items-baseline gap-2">
-                        <span className="text-lg font-bold text-white">{formatCurrency(suggestion.suggested_amount)}</span>
-                        {suggestion.suggested_liters != null && <span className="text-[10px] text-slate-400">≈ {suggestion.suggested_liters.toFixed(1)} L</span>}
-                      </div>
-
-                      <p className="text-[10px] text-slate-400 leading-snug">{suggestion.message}</p>
-
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setAmountReleased(String(suggestion.suggested_amount))}
-                        className="w-full h-7 text-[10px] border-slate-600 text-slate-300 hover:bg-slate-800"
-                      >
-                        <Brain className="h-3 w-3 mr-1" /> Use Suggested Amount
-                      </Button>
-                    </div>
-                  )}
 
                   <div>
                     <p className="text-xs text-slate-400 mb-2">Amount to Release (₱)</p>
