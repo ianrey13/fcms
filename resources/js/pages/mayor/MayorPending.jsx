@@ -46,30 +46,6 @@ const safeAmount = (amount) => {
   return 0;
 };
 
-// ✅ FIXED: Better date parsing (handles both ISO and standard formats)
-const isDateInCurrentWeek = (dateString) => {
-  if (!dateString) return false;
-  
-  // Some backends send "2026-11-12 14:00:00", some send "2026-11-12T14:00:00.000Z"
-  // Replacing space with 'T' ensures cross-browser compatibility
-  const date = new Date(dateString.replace(" ", "T"));
-  if (isNaN(date.getTime())) return false; // Fallback if invalid date
-  
-  const today = new Date();
-  const dayOfWeek = today.getDay();
-  const diffToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
-  
-  const startOfWeek = new Date(today);
-  startOfWeek.setDate(today.getDate() - diffToMonday);
-  startOfWeek.setHours(0, 0, 0, 0);
-  
-  const endOfWeek = new Date(startOfWeek);
-  endOfWeek.setDate(startOfWeek.getDate() + 6);
-  endOfWeek.setHours(23, 59, 59, 999);
-  
-  return date >= startOfWeek && date <= endOfWeek;
-};
-
 const FormField = ({ label, icon: Icon, required, error, touched, helper, children, className }) => {
   const hasError = touched && error;
   return (
@@ -303,21 +279,14 @@ const MayorPending = () => {
     return releasedTickets.filter(t => t.department_name?.toLowerCase().includes(searchTerm.toLowerCase()) || t.ticket_number?.toLowerCase().includes(searchTerm.toLowerCase()));
   }, [releasedTickets, searchTerm]);
 
-  // ✅ FIXED: Status Counts (Scoped to Current Week with Fallback)
+  // Status Counts
   const counts = useMemo(() => {
-    const byWeek = (arr) => arr.filter(t => isDateInCurrentWeek(t.trip_date || t.submitted_at || t.created_at));
-    
-    // Fallback: If no tickets match the week (maybe API date is weird), fallback to all to prevent 0 counts
-    const hasWeeklyMatches = byWeek(filteredTickets).length > 0 || byWeek(releasedFiltered).length > 0;
-    const finalPending = hasWeeklyMatches ? byWeek(filteredTickets) : filteredTickets;
-    const finalReleased = hasWeeklyMatches ? byWeek(releasedFiltered) : releasedFiltered;
-
     return {
-      pending: finalPending.length,
-      funds_issued: finalReleased.filter(t => t.status === 'funds_issued').length,
-      for_verification: finalReleased.filter(t => t.status === 'in_transit' && !t.actual_fuel_cost).length,
-      verified: finalReleased.filter(t => ["completed", "closed", "pending_gso_validation"].includes(t.status) || t.actual_fuel_cost > 0).length,
-      rejected: finalReleased.filter(t => t.status === 'rejected').length,
+      pending: filteredTickets.length,
+      funds_issued: releasedFiltered.filter(t => t.status === 'funds_issued').length,
+      for_verification: releasedFiltered.filter(t => t.status === 'in_transit' && !t.actual_fuel_cost).length,
+      verified: releasedFiltered.filter(t => ["completed", "closed", "pending_gso_validation"].includes(t.status) || t.actual_fuel_cost > 0).length,
+      rejected: releasedFiltered.filter(t => t.status === 'rejected').length,
     };
   }, [filteredTickets, releasedFiltered]);
 
@@ -329,33 +298,13 @@ const MayorPending = () => {
     setShowRightPanel(false);
   };
 
-  // ✅ FIXED: Filtered based on active tab (Scoped to Current Week with Fallback)
+  // Filtered based on active tab
   const currentDisplayList = useMemo(() => {
-    const byWeek = (arr) => arr.filter(t => isDateInCurrentWeek(t.trip_date || t.submitted_at || t.created_at));
-    
-    // Check if the week filter is actually catching anything. If not, fallback to all data.
-    const hasAnyWeeklyData = byWeek(filteredTickets).length > 0 || byWeek(releasedFiltered).length > 0;
-
-    if (activeTab === "pending") {
-      const data = byWeek(filteredTickets);
-      return hasAnyWeeklyData && data.length > 0 ? data : filteredTickets;
-    }
-    if (activeTab === "funds_issued") {
-      const data = byWeek(releasedFiltered.filter(t => t.status === 'funds_issued'));
-      return hasAnyWeeklyData && data.length > 0 ? data : releasedFiltered.filter(t => t.status === 'funds_issued');
-    }
-    if (activeTab === "for_verification") {
-      const data = byWeek(releasedFiltered.filter(t => t.status === 'in_transit' && !t.actual_fuel_cost));
-      return hasAnyWeeklyData && data.length > 0 ? data : releasedFiltered.filter(t => t.status === 'in_transit' && !t.actual_fuel_cost);
-    }
-    if (activeTab === "verified") {
-      const data = byWeek(releasedFiltered.filter(t => ["completed", "closed", "pending_gso_validation"].includes(t.status) || t.actual_fuel_cost > 0));
-      return hasAnyWeeklyData && data.length > 0 ? data : releasedFiltered.filter(t => ["completed", "closed", "pending_gso_validation"].includes(t.status) || t.actual_fuel_cost > 0);
-    }
-    if (activeTab === "rejected") {
-      const data = byWeek(releasedFiltered.filter(t => t.status === 'rejected'));
-      return hasAnyWeeklyData && data.length > 0 ? data : releasedFiltered.filter(t => t.status === 'rejected');
-    }
+    if (activeTab === "pending") return filteredTickets;
+    if (activeTab === "funds_issued") return releasedFiltered.filter(t => t.status === 'funds_issued');
+    if (activeTab === "for_verification") return releasedFiltered.filter(t => t.status === 'in_transit' && !t.actual_fuel_cost);
+    if (activeTab === "verified") return releasedFiltered.filter(t => ["completed", "closed", "pending_gso_validation"].includes(t.status) || t.actual_fuel_cost > 0);
+    if (activeTab === "rejected") return releasedFiltered.filter(t => t.status === 'rejected');
     return [];
   }, [activeTab, filteredTickets, releasedFiltered]);
 
@@ -459,9 +408,7 @@ const MayorPending = () => {
       fetchTickets();
     } catch (error) {
       toast.error(error.response?.data?.message || "Failed to reject ticket");
-    } finally {
-      setSubmitting(false);
-    }
+    } finally { setSubmitting(false); }
   };
 
   const openReceiptModal = (ticket) => {
