@@ -16,14 +16,12 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
-  Eye,
   Calendar,
   Truck,
   Search,
   Car,
   PhilippinePeso,
   RefreshCw,
-  Filter,
   ChevronDown,
   ChevronRight,
   ChevronLeft,
@@ -194,80 +192,12 @@ const MayorHistory = () => {
           </Button>
         </div>
 
-        {/* 4 STAT CARDS (Matching Image) */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {/* Card 1 */}
-          <div className="bg-gradient-to-br from-blue-900/40 to-blue-800/20 border border-blue-800/50 rounded-2xl p-5 flex items-center justify-between shadow-lg">
-            <div className="space-y-1">
-              <p className="text-sm font-medium text-blue-200">Total Trips</p>
-              <div className="flex items-baseline gap-2">
-                <h3 className="text-3xl font-bold text-white">{tickets.length}</h3>
-                <span className="text-xs font-semibold text-emerald-400 flex items-center">
-                  ↑ 12%
-                </span>
-              </div>
-              <p className="text-[10px] text-blue-300/70">vs. previous month</p>
-            </div>
-            <div className="p-3.5 bg-blue-600 rounded-xl shadow-[0_0_15px_rgba(37,99,235,0.5)]">
-              <Car className="h-6 w-6 text-white" />
-            </div>
-          </div>
-
-          {/* Card 2 */}
-          <div className="bg-gradient-to-br from-emerald-900/40 to-emerald-800/20 border border-emerald-800/50 rounded-2xl p-5 flex items-center justify-between shadow-lg">
-            <div className="space-y-1">
-              <p className="text-sm font-medium text-emerald-200">Total Cash Released</p>
-              <div className="flex items-baseline gap-2">
-                <h3 className="text-2xl font-bold text-white">{formatCurrency(totalAmount)}</h3>
-                <span className="text-xs font-semibold text-emerald-400 flex items-center">
-                  ↑ 8%
-                </span>
-              </div>
-            </div>
-            <div className="p-3.5 bg-emerald-500 rounded-xl shadow-[0_0_15px_rgba(16,185,129,0.4)]">
-              <PhilippinePeso className="h-6 w-6 text-white" />
-            </div>
-          </div>
-
-          {/* Card 3 */}
-          <div className="bg-gradient-to-br from-purple-900/40 to-purple-800/20 border border-purple-800/50 rounded-2xl p-5 flex items-center justify-between shadow-lg">
-            <div className="space-y-1">
-              <p className="text-sm font-medium text-purple-200">Total Expenses</p>
-              <div className="flex items-baseline gap-2">
-                <h3 className="text-2xl font-bold text-white">{formatCurrency(totalAmount * 0.8)}</h3>
-                <span className="text-xs font-semibold text-emerald-400 flex items-center">
-                  ↑ 10%
-                </span>
-              </div>
-            </div>
-            <div className="p-3.5 bg-purple-500 rounded-xl shadow-[0_0_15px_rgba(168,85,247,0.4)]">
-              <History className="h-6 w-6 text-white" />
-            </div>
-          </div>
-
-          {/* Card 4 */}
-          <div className="bg-gradient-to-br from-amber-900/40 to-amber-800/20 border border-amber-800/50 rounded-2xl p-5 flex items-center justify-between shadow-lg">
-            <div className="space-y-1">
-              <p className="text-sm font-medium text-amber-200">Pending Liquidation</p>
-              <div className="flex items-baseline gap-2">
-                <h3 className="text-2xl font-bold text-white">{formatCurrency(totalAmount * 0.2)}</h3>
-                <span className="text-xs font-semibold text-red-400 flex items-center">
-                  ↓ 5%
-                </span>
-              </div>
-            </div>
-            <div className="p-3.5 bg-amber-500 rounded-xl shadow-[0_0_15px_rgba(245,158,11,0.4)]">
-              <Clock className="h-6 w-6 text-white" />
-            </div>
-          </div>
-        </div>
-
-        {/* FILTER BAR (Matching Image) */}
+        {/* FILTER BAR (No Vehicle Filter) */}
         <div className="flex flex-col md:flex-row items-center gap-3 bg-[#121829] p-3 rounded-2xl border border-slate-800 shadow-lg">
           <div className="relative flex-1 w-full">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
             <Input
-              placeholder="Search by Department..."
+              placeholder="Search by Department, Trip No., or Vehicle..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="pl-9 bg-[#0b101c] border-slate-700 text-white placeholder:text-slate-500 h-11 rounded-xl"
@@ -275,18 +205,14 @@ const MayorHistory = () => {
           </div>
 
           <div className="flex items-center gap-2 w-full md:w-auto">
-            <Button variant="outline" className="bg-[#0b101c] border-slate-700 text-slate-300 h-11 rounded-xl px-4 w-[150px] justify-between">
+            <Button variant="outline" className="bg-[#0b101c] border-slate-700 text-slate-300 h-11 rounded-xl px-4 w-[160px] justify-between">
               <span className="flex items-center gap-2"><Calendar className="h-4 w-4" /> Date Range</span>
-            </Button>
-
-            <Button variant="outline" className="bg-[#0b101c] border-slate-700 text-slate-300 h-11 rounded-xl px-4 w-[150px] justify-between">
-              <span className="flex items-center gap-2"><Car className="h-4 w-4" /> All Vehicles</span>
             </Button>
 
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="h-11 rounded-xl border border-slate-700 bg-[#0b101c] px-4 text-sm text-slate-300 focus:outline-none focus:ring-1 focus:ring-blue-500 w-[150px] appearance-none"
+              className="h-11 rounded-xl border border-slate-700 bg-[#0b101c] px-4 text-sm text-slate-300 focus:outline-none focus:ring-1 focus:ring-blue-500 w-[160px] appearance-none"
             >
               <option value="all">All Status</option>
               <option value="funds_issued">Funds Issued</option>
@@ -297,7 +223,7 @@ const MayorHistory = () => {
           </div>
         </div>
 
-        {/* MAIN TABLE (Matching Image) */}
+        {/* MAIN TABLE */}
         <div className="bg-[#121829] border border-slate-800 rounded-2xl shadow-xl shadow-black/20 overflow-hidden">
           
           {/* Table Header Area */}
@@ -329,14 +255,13 @@ const MayorHistory = () => {
                   <TableHead className="text-xs font-semibold text-slate-400 py-4">Purpose</TableHead>
                   <TableHead className="text-xs font-semibold text-slate-400 py-4">Status</TableHead>
                   <TableHead className="text-xs font-semibold text-slate-400 py-4 text-right">Amount Released</TableHead>
-                  <TableHead className="text-xs font-semibold text-slate-400 py-4 text-right">Released By</TableHead>
                 </TableRow>
               </TableHeader>
 
               <TableBody>
                 {filtered.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center py-12 text-slate-500">
+                    <TableCell colSpan={7} className="text-center py-12 text-slate-500">
                       No tickets found.
                     </TableCell>
                   </TableRow>
@@ -363,9 +288,6 @@ const MayorHistory = () => {
                       </TableCell>
                       <TableCell className="text-sm text-white font-medium text-right py-4">
                         {formatCurrency(getAmount(ticket))}
-                      </TableCell>
-                      <TableCell className="text-sm text-slate-300 text-right py-4">
-                        {ticket.released_by_name || "Maria Santos"}
                       </TableCell>
                     </TableRow>
                   ))
