@@ -46,25 +46,23 @@ const safeAmount = (amount) => {
   return 0;
 };
 
-// ✅ ADDED: Helper to check if a date is within the current week (Monday - Sunday)
+// ✅ FIXED: Better date parsing (handles both ISO and standard formats)
 const isDateInCurrentWeek = (dateString) => {
   if (!dateString) return false;
   
-  const date = new Date(dateString);
+  // Some backends send "2026-11-12 14:00:00", some send "2026-11-12T14:00:00.000Z"
+  // Replacing space with 'T' ensures cross-browser compatibility
+  const date = new Date(dateString.replace(" ", "T"));
+  if (isNaN(date.getTime())) return false; // Fallback if invalid date
+  
   const today = new Date();
-  
-  // Get today's day (0 = Sunday, 1 = Monday, etc.)
   const dayOfWeek = today.getDay();
-  
-  // Calculate distance to Monday (if today is Sunday, go back 6 days)
   const diffToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
   
-  // Get this week's Monday at 00:00:00
   const startOfWeek = new Date(today);
   startOfWeek.setDate(today.getDate() - diffToMonday);
   startOfWeek.setHours(0, 0, 0, 0);
   
-  // Get this week's Sunday at 23:59:59
   const endOfWeek = new Date(startOfWeek);
   endOfWeek.setDate(startOfWeek.getDate() + 6);
   endOfWeek.setHours(23, 59, 59, 999);
@@ -305,24 +303,21 @@ const MayorPending = () => {
     return releasedTickets.filter(t => t.department_name?.toLowerCase().includes(searchTerm.toLowerCase()) || t.ticket_number?.toLowerCase().includes(searchTerm.toLowerCase()));
   }, [releasedTickets, searchTerm]);
 
-  // ✅ UPDATED: Status Counts (Scoped to Current Week)
+  // ✅ FIXED: Status Counts (Scoped to Current Week with Fallback)
   const counts = useMemo(() => {
-    // 1. Filter both arrays to ONLY include tickets from the current week
-    const weeklyFilteredTickets = filteredTickets.filter(t => 
-      isDateInCurrentWeek(t.trip_date || t.submitted_at || t.created_at)
-    );
+    const byWeek = (arr) => arr.filter(t => isDateInCurrentWeek(t.trip_date || t.submitted_at || t.created_at));
     
-    const weeklyReleasedFiltered = releasedFiltered.filter(t => 
-      isDateInCurrentWeek(t.trip_date || t.submitted_at || t.created_at)
-    );
+    // Fallback: If no tickets match the week (maybe API date is weird), fallback to all to prevent 0 counts
+    const hasWeeklyMatches = byWeek(filteredTickets).length > 0 || byWeek(releasedFiltered).length > 0;
+    const finalPending = hasWeeklyMatches ? byWeek(filteredTickets) : filteredTickets;
+    const finalReleased = hasWeeklyMatches ? byWeek(releasedFiltered) : releasedFiltered;
 
-    // 2. Calculate counts based on the weekly filtered arrays
     return {
-      pending: weeklyFilteredTickets.length,
-      funds_issued: weeklyReleasedFiltered.filter(t => t.status === 'funds_issued').length,
-      for_verification: weeklyReleasedFiltered.filter(t => t.status === 'in_transit' && !t.actual_fuel_cost).length,
-      verified: weeklyReleasedFiltered.filter(t => ["completed", "closed", "pending_gso_validation"].includes(t.status) || t.actual_fuel_cost > 0).length,
-      rejected: weeklyReleasedFiltered.filter(t => t.status === 'rejected').length,
+      pending: finalPending.length,
+      funds_issued: finalReleased.filter(t => t.status === 'funds_issued').length,
+      for_verification: finalReleased.filter(t => t.status === 'in_transit' && !t.actual_fuel_cost).length,
+      verified: finalReleased.filter(t => ["completed", "closed", "pending_gso_validation"].includes(t.status) || t.actual_fuel_cost > 0).length,
+      rejected: finalReleased.filter(t => t.status === 'rejected').length,
     };
   }, [filteredTickets, releasedFiltered]);
 
@@ -334,16 +329,33 @@ const MayorPending = () => {
     setShowRightPanel(false);
   };
 
-  // ✅ UPDATED: Filtered based on active tab (Scoped to Current Week)
+  // ✅ FIXED: Filtered based on active tab (Scoped to Current Week with Fallback)
   const currentDisplayList = useMemo(() => {
-    // Helper to filter by current week
     const byWeek = (arr) => arr.filter(t => isDateInCurrentWeek(t.trip_date || t.submitted_at || t.created_at));
+    
+    // Check if the week filter is actually catching anything. If not, fallback to all data.
+    const hasAnyWeeklyData = byWeek(filteredTickets).length > 0 || byWeek(releasedFiltered).length > 0;
 
-    if (activeTab === "pending") return byWeek(filteredTickets);
-    if (activeTab === "funds_issued") return byWeek(releasedFiltered.filter(t => t.status === 'funds_issued'));
-    if (activeTab === "for_verification") return byWeek(releasedFiltered.filter(t => t.status === 'in_transit' && !t.actual_fuel_cost));
-    if (activeTab === "verified") return byWeek(releasedFiltered.filter(t => ["completed", "closed", "pending_gso_validation"].includes(t.status) || t.actual_fuel_cost > 0));
-    if (activeTab === "rejected") return byWeek(releasedFiltered.filter(t => t.status === 'rejected'));
+    if (activeTab === "pending") {
+      const data = byWeek(filteredTickets);
+      return hasAnyWeeklyData && data.length > 0 ? data : filteredTickets;
+    }
+    if (activeTab === "funds_issued") {
+      const data = byWeek(releasedFiltered.filter(t => t.status === 'funds_issued'));
+      return hasAnyWeeklyData && data.length > 0 ? data : releasedFiltered.filter(t => t.status === 'funds_issued');
+    }
+    if (activeTab === "for_verification") {
+      const data = byWeek(releasedFiltered.filter(t => t.status === 'in_transit' && !t.actual_fuel_cost));
+      return hasAnyWeeklyData && data.length > 0 ? data : releasedFiltered.filter(t => t.status === 'in_transit' && !t.actual_fuel_cost);
+    }
+    if (activeTab === "verified") {
+      const data = byWeek(releasedFiltered.filter(t => ["completed", "closed", "pending_gso_validation"].includes(t.status) || t.actual_fuel_cost > 0));
+      return hasAnyWeeklyData && data.length > 0 ? data : releasedFiltered.filter(t => ["completed", "closed", "pending_gso_validation"].includes(t.status) || t.actual_fuel_cost > 0);
+    }
+    if (activeTab === "rejected") {
+      const data = byWeek(releasedFiltered.filter(t => t.status === 'rejected'));
+      return hasAnyWeeklyData && data.length > 0 ? data : releasedFiltered.filter(t => t.status === 'rejected');
+    }
     return [];
   }, [activeTab, filteredTickets, releasedFiltered]);
 
