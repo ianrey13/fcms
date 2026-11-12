@@ -36,56 +36,34 @@ import {
   ChevronUp,
   Activity,
   DollarSign,
-  Navigation,
+  RefreshCw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-// ============================================
-// STATS CARD
-// ============================================
-const StatsCard = ({ title, value, icon: Icon, color, subtitle }) => (
-  <Card className="dark:bg-slate-800/80 dark:border-slate-700 hover:shadow-lg transition-all duration-300">
-    <CardContent className="pt-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">{title}</p>
-          <p className="text-2xl font-bold text-slate-900 dark:text-white mt-1">{value}</p>
-          {subtitle && (
-            <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">{subtitle}</p>
-          )}
-        </div>
-        <div className={`p-3 rounded-xl bg-gradient-to-br ${color} shadow-lg`}>
-          <Icon className="h-6 w-6 text-white" />
-        </div>
-      </div>
-    </CardContent>
-  </Card>
-);
 
 // ============================================
 // STATUS BADGE
 // ============================================
 const StatusBadge = ({ status }) => {
   const configs = {
-    funds_issued: { color: "bg-blue-500", label: "Funds Issued", icon: CheckCircle },
-    acknowledged: { color: "bg-cyan-500", label: "Acknowledged", icon: CheckCircle },
-    in_transit: { color: "bg-indigo-500", label: "In Transit", icon: Truck },
-    pending_gso_validation: { color: "bg-amber-500", label: "Awaiting Validation", icon: Clock },
-    pending_reconciliation: { color: "bg-orange-500", label: "Pending Recon", icon: Clock },
+    funds_issued: { color: "bg-blue-600", label: "Funds Issued", icon: CheckCircle },
+    acknowledged: { color: "bg-cyan-600", label: "Received", icon: CheckCircle },
+    in_transit: { color: "bg-indigo-600", label: "In Transit", icon: Truck },
+    pending_gso_validation: { color: "bg-amber-600", label: "Awaiting Validation", icon: Clock },
+    pending_reconciliation: { color: "bg-orange-600", label: "Pending Recon", icon: Clock },
     completed: { color: "bg-teal-600", label: "Completed", icon: CheckCircle },
-    closed: { color: "bg-emerald-600", label: "Closed", icon: CheckCircle },
-    cancelled: { color: "bg-red-500", label: "Cancelled", icon: XCircle },
-    rejected: { color: "bg-rose-500", label: "Rejected", icon: XCircle },
+    closed: { color: "bg-emerald-600", label: "Verified", icon: CheckCircle },
+    cancelled: { color: "bg-red-600", label: "Cancelled", icon: XCircle },
+    rejected: { color: "bg-rose-600", label: "Rejected", icon: XCircle },
     returned_for_revision: { color: "bg-orange-600", label: "Returned", icon: Clock },
   };
   const config = configs[status] || {
-    color: "bg-slate-500",
+    color: "bg-slate-600",
     label: status?.replace(/_/g, " ") || "Unknown",
     icon: CheckCircle,
   };
   const Icon = config.icon;
   return (
-    <Badge className={`${config.color} text-white flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-medium`}>
+    <Badge className={`${config.color} text-white flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-medium shadow-sm`}>
       <Icon className="h-3 w-3" />
       {config.label}
     </Badge>
@@ -96,14 +74,10 @@ const StatusBadge = ({ status }) => {
 // LOADING SKELETON
 // ============================================
 const LoadingSkeleton = () => (
-  <div className="space-y-6 p-4 md:p-6 bg-slate-50 dark:bg-slate-900 min-h-screen">
-    <div className="h-12 w-64 bg-slate-200 dark:bg-slate-700 rounded animate-pulse" />
-    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-      {[1, 2, 3, 4].map((i) => (
-        <div key={i} className="h-28 bg-slate-200 dark:bg-slate-700 rounded-xl animate-pulse" />
-      ))}
-    </div>
-    <div className="h-96 bg-slate-200 dark:bg-slate-700 rounded-xl animate-pulse" />
+  <div className="space-y-6 p-4 md:p-6 bg-[#090e1a] min-h-screen">
+    <div className="h-12 w-64 bg-slate-800 rounded animate-pulse" />
+    <div className="h-16 bg-slate-800 rounded-xl animate-pulse" />
+    <div className="h-96 bg-slate-800 rounded-xl animate-pulse" />
   </div>
 );
 
@@ -155,23 +129,23 @@ const VehicleCashBreakdown = ({ vehicle, trips, formatCurrency, formatDate }) =>
 
   return (
     <div className="mt-4 space-y-6">
-      <Card className="dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm">
-        <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <Card className="bg-[#121829] border-slate-800 shadow-sm">
+        <div className="p-4 border-b border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
+            <h3 className="font-bold text-white flex items-center gap-2">
               <Activity className="h-5 w-5 text-blue-500"/> Cash Release History
             </h3>
-            <p className="text-xs text-slate-500 mt-1">Money released for {vehicle.plate} over time</p>
+            <p className="text-xs text-slate-400 mt-1">Money released for {vehicle.plate} over time</p>
           </div>
           <div className="flex items-center gap-3">
-            <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
-              <button onClick={() => setViewMode('table')} className={cn("px-3 py-1 text-xs font-medium rounded-md transition-colors", viewMode === 'table' ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" : "text-slate-500")}>Table</button>
-              <button onClick={() => setViewMode('chart')} className={cn("px-3 py-1 text-xs font-medium rounded-md transition-colors", viewMode === 'chart' ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" : "text-slate-500")}>Chart</button>
+            <div className="flex bg-[#0b101c] p-1 rounded-lg border border-slate-800">
+              <button onClick={() => setViewMode('table')} className={cn("px-3 py-1 text-xs font-medium rounded-md transition-colors", viewMode === 'table' ? "bg-[#121829] text-blue-400 shadow-sm" : "text-slate-500")}>Table</button>
+              <button onClick={() => setViewMode('chart')} className={cn("px-3 py-1 text-xs font-medium rounded-md transition-colors", viewMode === 'chart' ? "bg-[#121829] text-blue-400 shadow-sm" : "text-slate-500")}>Chart</button>
             </div>
-            <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
-              <button onClick={() => setRange('7d')} className={cn("px-3 py-1 text-xs font-medium rounded-md transition-colors", range === '7d' ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" : "text-slate-500")}>7 Days</button>
-              <button onClick={() => setRange('30d')} className={cn("px-3 py-1 text-xs font-medium rounded-md transition-colors", range === '30d' ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" : "text-slate-500")}>30 Days</button>
-              <button onClick={() => setRange('3m')} className={cn("px-3 py-1 text-xs font-medium rounded-md transition-colors", range === '3m' ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" : "text-slate-500")}>3 Months</button>
+            <div className="flex bg-[#0b101c] p-1 rounded-lg border border-slate-800">
+              <button onClick={() => setRange('7d')} className={cn("px-3 py-1 text-xs font-medium rounded-md transition-colors", range === '7d' ? "bg-[#121829] text-blue-400 shadow-sm" : "text-slate-500")}>7 Days</button>
+              <button onClick={() => setRange('30d')} className={cn("px-3 py-1 text-xs font-medium rounded-md transition-colors", range === '30d' ? "bg-[#121829] text-blue-400 shadow-sm" : "text-slate-500")}>30 Days</button>
+              <button onClick={() => setRange('3m')} className={cn("px-3 py-1 text-xs font-medium rounded-md transition-colors", range === '3m' ? "bg-[#121829] text-blue-400 shadow-sm" : "text-slate-500")}>3 Months</button>
             </div>
           </div>
         </div>
@@ -181,12 +155,12 @@ const VehicleCashBreakdown = ({ vehicle, trips, formatCurrency, formatDate }) =>
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
-                  <TableRow className="bg-slate-50 dark:bg-slate-800/50">
-                    <TableHead className="text-xs">Date</TableHead>
-                    <TableHead className="text-xs">Ticket #</TableHead>
-                    <TableHead className="text-xs">Driver</TableHead>
-                    <TableHead className="text-xs">Destination</TableHead>
-                    <TableHead className="text-right text-xs">Amount Released</TableHead>
+                  <TableRow className="bg-[#0b101c] border-slate-800">
+                    <TableHead className="text-xs text-slate-400">Date</TableHead>
+                    <TableHead className="text-xs text-slate-400">Ticket #</TableHead>
+                    <TableHead className="text-xs text-slate-400">Driver</TableHead>
+                    <TableHead className="text-xs text-slate-400">Destination</TableHead>
+                    <TableHead className="text-right text-xs text-slate-400">Amount Released</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -194,12 +168,12 @@ const VehicleCashBreakdown = ({ vehicle, trips, formatCurrency, formatDate }) =>
                     <TableRow><TableCell colSpan={5} className="text-center py-6 text-slate-500">No releases found.</TableCell></TableRow>
                   ) : (
                     trips.sort((a, b) => new Date(b.trip_date) - new Date(a.trip_date)).map(t => (
-                      <TableRow key={t.trip_ticket_id}>
-                        <TableCell className="text-sm">{formatDate(t.trip_date)}</TableCell>
-                        <TableCell className="font-mono text-sm">{t.trip_ticket_number}</TableCell>
-                        <TableCell className="text-sm">{t.driver?.user?.full_name || t.driver?.name || 'N/A'}</TableCell>
-                        <TableCell className="text-sm truncate max-w-[200px]">{t.destination}</TableCell>
-                        <TableCell className="text-right font-semibold text-emerald-600">{formatCurrency(t.amount_released || t.gas_slip?.amount_released)}</TableCell>
+                      <TableRow key={t.trip_ticket_id} className="border-slate-800/50">
+                        <TableCell className="text-sm text-slate-300">{formatDate(t.trip_date)}</TableCell>
+                        <TableCell className="font-mono text-sm text-white">{t.trip_ticket_number}</TableCell>
+                        <TableCell className="text-sm text-slate-300">{t.driver?.user?.full_name || t.driver?.name || 'N/A'}</TableCell>
+                        <TableCell className="text-sm truncate max-w-[200px] text-slate-300">{t.destination}</TableCell>
+                        <TableCell className="text-right font-semibold text-emerald-400">{formatCurrency(t.amount_released || t.gas_slip?.amount_released)}</TableCell>
                       </TableRow>
                     ))
                   )}
@@ -209,13 +183,13 @@ const VehicleCashBreakdown = ({ vehicle, trips, formatCurrency, formatDate }) =>
           ) : (
             <div>
               {chartData.values.length === 0 ? (
-                <div className="h-64 flex flex-col items-center justify-center text-slate-400">
+                <div className="h-64 flex flex-col items-center justify-center text-slate-500">
                   <DollarSign className="h-10 w-10 mb-2 opacity-50" />
                   <p>No releases found for this range.</p>
                 </div>
               ) : (
                 <div className="flex">
-                  <div className="flex flex-col justify-between text-[10px] text-slate-400 h-64 pr-2 py-1 font-mono text-right">
+                  <div className="flex flex-col justify-between text-[10px] text-slate-500 h-64 pr-2 py-1 font-mono text-right">
                     <span>₱{Math.round(chartData.max).toLocaleString()}</span>
                     <span>₱{Math.round(chartData.max * 0.75).toLocaleString()}</span>
                     <span>₱{Math.round(chartData.max * 0.5).toLocaleString()}</span>
@@ -225,10 +199,10 @@ const VehicleCashBreakdown = ({ vehicle, trips, formatCurrency, formatDate }) =>
                   <div className="flex-1 relative">
                     <div className="h-64 w-full">
                       <svg viewBox="0 0 700 200" className="w-full h-full overflow-visible preserve-3d">
-                        <line x1="0" y1="50" x2="700" y2="50" stroke="#e2e8f0" strokeWidth="1" strokeDasharray="4"/>
-                        <line x1="0" y1="100" x2="700" y2="100" stroke="#e2e8f0" strokeWidth="1" strokeDasharray="4"/>
-                        <line x1="0" y1="150" x2="700" y2="150" stroke="#e2e8f0" strokeWidth="1" strokeDasharray="4"/>
-                        <line x1="0" y1="200" x2="700" y2="200" stroke="#cbd5e1" strokeWidth="1" />
+                        <line x1="0" y1="50" x2="700" y2="50" stroke="#334155" strokeWidth="1" strokeDasharray="4"/>
+                        <line x1="0" y1="100" x2="700" y2="100" stroke="#334155" strokeWidth="1" strokeDasharray="4"/>
+                        <line x1="0" y1="150" x2="700" y2="150" stroke="#334155" strokeWidth="1" strokeDasharray="4"/>
+                        <line x1="0" y1="200" x2="700" y2="200" stroke="#475569" strokeWidth="1" />
                         
                         <path d={`${generatePath(chartData.values, 700, 200, chartData.max)} L ${chartData.values.length === 1 ? 350 : 700} 200 L 0 200 Z`} fill="url(#gradient)" opacity="0.2" />
                         <path d={generatePath(chartData.values, 700, 200, chartData.max)} fill="none" stroke="#10b981" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
@@ -238,9 +212,9 @@ const VehicleCashBreakdown = ({ vehicle, trips, formatCurrency, formatDate }) =>
                           const y = 200 - (val / chartData.max) * 200;
                           return (
                             <g key={i}>
-                              <circle cx={x} cy={y} r="4" fill="white" stroke="#10b981" strokeWidth="2" />
+                              <circle cx={x} cy={y} r="4" fill="#121829" stroke="#10b981" strokeWidth="2" />
                               <foreignObject x={Math.min(Math.max(x - 40, 0), 620)} y={y - 35} width="100" height="30">
-                                <div className="bg-slate-800 text-white text-[10px] font-semibold px-2 py-1 rounded shadow-md text-center opacity-0 hover:opacity-100 transition-opacity">
+                                <div className="bg-slate-800 border border-slate-700 text-white text-[10px] font-semibold px-2 py-1 rounded shadow-md text-center opacity-0 hover:opacity-100 transition-opacity">
                                   {formatCurrency(val)}
                                 </div>
                               </foreignObject>
@@ -255,7 +229,7 @@ const VehicleCashBreakdown = ({ vehicle, trips, formatCurrency, formatDate }) =>
                         </defs>
                       </svg>
                     </div>
-                    <div className="flex justify-between text-xs text-slate-400 px-2 font-medium mt-1">
+                    <div className="flex justify-between text-xs text-slate-500 px-2 font-medium mt-1">
                       {chartData.labels.map((label, i) => <span key={i}>{label}</span>)}
                     </div>
                   </div>
@@ -290,6 +264,7 @@ const MayorHistory = () => {
 
   const fetchAllData = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ["mayor-history-tickets"] });
+    fetchTickets();
   }, [queryClient]);
 
   useAutoRefresh(
@@ -348,7 +323,6 @@ const MayorHistory = () => {
 
    const getDriverName = (ticket) => {
     if (!ticket) return "N/A";
-    // Check direct driver_name first, then fallback to nested
     return ticket.driver_name || ticket.driver?.user?.full_name || ticket.driver?.name || "N/A";
   };
 
@@ -412,200 +386,141 @@ const MayorHistory = () => {
     setExpandedVehicle(prev => prev === plate ? null : plate);
   };
 
-  // ============================================
-  // STATS
-  // ============================================
+  // Computed Total for Header
   const totalAmount = filtered.reduce((s, t) => s + getAmount(t), 0);
-  const closedCount = tickets.filter((t) => t.status === "closed").length;
-  const activeCount = tickets.filter((t) =>
-    ["funds_issued", "acknowledged", "in_transit"].includes(t.status)
-  ).length;
-  const cancelledCount = tickets.filter((t) => t.status === "cancelled").length;
-
-  const stats = [
-    {
-      title: "Total Records",
-      value: filtered.length,
-      icon: History,
-      color: "from-slate-500 to-slate-600",
-      subtitle: `${tickets.length} total`,
-    },
-    {
-      title: "Total Cash Released",
-      value: formatCurrency(totalAmount),
-      icon: TrendingUp,
-      color: "from-emerald-500 to-emerald-600",
-      subtitle: "Funds released",
-    },
-    {
-      title: "Active",
-      value: activeCount,
-      icon: Truck,
-      color: "from-indigo-500 to-indigo-600",
-      subtitle: "In progress",
-    },
-    {
-      title: "Closed",
-      value: closedCount,
-      icon: CheckCircle,
-      color: "from-teal-500 to-teal-600",
-      subtitle: `${cancelledCount} cancelled`,
-    },
-  ];
 
   const statusOptions = [
     { value: "all", label: "All Statuses" },
     { value: "funds_issued", label: "Funds Issued" },
-    { value: "acknowledged", label: "Acknowledged" },
-    { value: "in_transit", label: "In Transit" },
-    { value: "pending_gso_validation", label: "Awaiting Validation" },
-    { value: "completed", label: "Completed" },
-    { value: "closed", label: "Closed" },
+    { value: "acknowledged", label: "Received" },
+    { value: "in_transit", label: "For Verification" },
+    { value: "closed", label: "Verified" },
     { value: "cancelled", label: "Cancelled" },
     { value: "rejected", label: "Rejected" },
-    { value: "returned_for_revision", label: "Returned for Revision" },
   ];
 
   if (loading) return <LoadingSkeleton />;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
-      <div className="space-y-6 p-4 md:p-6 animate-fade-in-up">
+    <div className="min-h-screen bg-[#090e1a] font-sans text-slate-200">
+      <div className="space-y-6 p-4 md:p-6 animate-fade-in-up max-w-[1600px] mx-auto">
 
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div className="p-3.5 rounded-2xl bg-blue-600 shadow-[0_0_20px_rgba(37,99,235,0.4)]">
+              <Car className="h-7 w-7 text-white" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-white">Trip History & Cash Releases</h1>
+              <p className="text-sm text-slate-400 mt-0.5">
+                Track trip records and monitor fund releases per vehicle and department.
+              </p>
+            </div>
+          </div>
           <div className="flex items-center gap-3">
             <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => navigate("/mo/dashboard")}
-              className="rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 h-10 w-10"
+              variant="outline"
+              onClick={fetchTickets}
+              className="border-slate-700 bg-transparent text-slate-300 hover:bg-slate-800 rounded-xl"
             >
-              <ArrowLeft className="h-5 w-5" />
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Refresh
             </Button>
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 rounded-xl bg-gradient-to-br from-slate-600 to-slate-700 shadow-lg shadow-slate-500/20">
-                <History className="h-5 w-5 text-white" />
-              </div>
-              <div>
-                <h1 className="text-2xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 bg-clip-text text-transparent">
-                  Trip History
-                </h1>
-                <p className="text-sm text-slate-500 dark:text-slate-400">
-                  Complete trip record — approved, closed, cancelled, and returned
-                  <span className="ml-2 text-xs opacity-70">
-                    {isConnected ? "🟢 Live" : "🔴 Offline"}
-                  </span>
-                </p>
-              </div>
-            </div>
           </div>
         </div>
 
-        {/* Stats */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {stats.map((s, i) => (
-            <StatsCard key={i} {...s} />
-          ))}
-        </div>
+        {/* Dark Mode Filters */}
+        <div className="flex flex-col md:flex-row items-center gap-3 bg-[#121829] p-3 rounded-2xl border border-slate-800 shadow-lg">
+          <div className="relative flex-1 w-full">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+            <Input
+              placeholder="Search by Department, Ticket #, or Vehicle..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9 bg-[#0b101c] border-slate-700 text-white placeholder:text-slate-500 h-11 rounded-xl"
+            />
+          </div>
 
-        {/* Filters */}
-        <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-          <CardContent className="pt-6">
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-              <div className="relative md:col-span-2">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                <Input
-                  placeholder="Search ticket #, destination, driver, plate..."
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="pl-9 dark:bg-slate-900 dark:border-slate-700"
-                />
-              </div>
-
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="h-10 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-sm text-slate-700 dark:text-slate-300"
-              >
-                {statusOptions.map((o) => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
-              </select>
-
+          <div className="flex items-center gap-2 w-full md:w-auto">
+            <div className="relative">
+              <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500 z-10" />
               <Input
                 type="date"
                 value={dateFrom}
                 onChange={(e) => setDateFrom(e.target.value)}
-                className="dark:bg-slate-900 dark:border-slate-700"
-                placeholder="From"
+                className="pl-9 bg-[#0b101c] border-slate-700 text-white h-11 rounded-xl w-[160px]"
               />
             </div>
 
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="h-11 rounded-xl border border-slate-700 bg-[#0b101c] px-3 text-sm text-slate-300 focus:outline-none focus:ring-1 focus:ring-blue-500 w-[180px]"
+            >
+              {statusOptions.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+
             {(search || statusFilter !== "all" || dateFrom || dateTo) && (
-              <div className="mt-3 flex items-center justify-between text-xs">
-                <span className="text-slate-500 dark:text-slate-400">
-                  {filtered.length} of {tickets.length} records match
-                </span>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    setSearch("");
-                    setStatusFilter("all");
-                    setDateFrom("");
-                    setDateTo("");
-                  }}
-                  className="text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 h-7"
-                >
-                  Clear filters
-                </Button>
-              </div>
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setSearch("");
+                  setStatusFilter("all");
+                  setDateFrom("");
+                  setDateTo("");
+                }}
+                className="text-slate-400 hover:text-white h-11 px-3"
+              >
+                Clear
+              </Button>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
         {/* ✅ CASH PER VEHICLE SUMMARY WITH EXPANDABLE DETAILED VIEW */}
         {vehicleSummary.length > 0 && (
-          <Card className="dark:bg-slate-800/80 dark:border-slate-700 shadow-sm border-l-4 border-l-emerald-500">
-            <CardHeader className="pb-3 border-b border-slate-200/60 dark:border-slate-700/60">
-              <CardTitle className="flex items-center gap-2 text-slate-800 dark:text-white text-base">
+          <Card className="bg-[#121829] border-slate-800 shadow-lg">
+            <CardHeader className="pb-3 border-b border-slate-800">
+              <CardTitle className="flex items-center gap-2 text-white text-base">
                 <PhilippinePeso className="h-5 w-5 text-emerald-500" />
                 Cash Released per Vehicle
               </CardTitle>
-              <CardDescription className="dark:text-slate-400">
+              <CardDescription className="text-slate-400">
                 Click a vehicle to see the daily breakdown of released funds.
               </CardDescription>
             </CardHeader>
-            <CardContent className="pt-4 p-0">
+            <CardContent className="pt-0 p-0">
               
               {vehicleSummary.map((v) => {
                 const isExpanded = expandedVehicle === v.plate;
                 
                 return (
-                  <div key={v.plate} className="border-b last:border-0 border-slate-200 dark:border-slate-700/60">
+                  <div key={v.plate} className="border-b last:border-0 border-slate-800">
                     
                     {/* Vehicle Summary Row (Clickable) */}
                     <div 
                       onClick={() => toggleVehicle(v.plate)}
-                      className="flex items-center justify-between p-4 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
+                      className="flex items-center justify-between p-4 cursor-pointer hover:bg-[#1a2235] transition-colors"
                     >
                       <div className="flex items-center gap-3">
-                        <div className="p-2 bg-emerald-100 dark:bg-emerald-900/30 rounded-lg">
-                          <Car className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+                        <div className="p-2 bg-emerald-950/30 rounded-lg border border-emerald-900/50">
+                          <Car className="h-5 w-5 text-emerald-400" />
                         </div>
                         <div>
-                          <p className="font-mono font-bold text-slate-800 dark:text-white">{v.plate}</p>
-                          <p className="text-xs text-slate-500 dark:text-slate-400 truncate max-w-[200px]">{v.model}</p>
+                          <p className="font-mono font-bold text-white">{v.plate}</p>
+                          <p className="text-xs text-slate-400 truncate max-w-[200px]">{v.model}</p>
                         </div>
                       </div>
                       
                       <div className="flex items-center gap-6">
                         <div className="text-right">
-                          <p className="font-bold text-emerald-600 dark:text-emerald-400">{formatCurrency(v.totalAmount)}</p>
-                          <p className="text-[10px] text-slate-400">{v.tripCount} trips</p>
+                          <p className="font-bold text-emerald-400">{formatCurrency(v.totalAmount)}</p>
+                          <p className="text-[10px] text-slate-500">{v.tripCount} trips</p>
                         </div>
-                        <div className="text-slate-400">
+                        <div className="text-slate-500">
                           {isExpanded ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
                         </div>
                       </div>
@@ -613,7 +528,7 @@ const MayorHistory = () => {
 
                     {/* Expanded Detailed View */}
                     {isExpanded && (
-                      <div className="bg-slate-50 dark:bg-slate-900/50 p-4 border-t border-slate-200 dark:border-slate-700/60">
+                      <div className="bg-[#0b101c] p-4 border-t border-slate-800">
                         <VehicleCashBreakdown 
                           vehicle={v} 
                           trips={v.trips} 
@@ -629,28 +544,38 @@ const MayorHistory = () => {
           </Card>
         )}
 
-        {/* Table */}
-        <Card className="dark:bg-slate-800/80 dark:border-slate-700 shadow-xl shadow-black/5">
-          <CardHeader className="border-b border-slate-200/60 dark:border-slate-700/60">
-            <CardTitle className="flex items-center gap-2 text-slate-800 dark:text-white">
-              <History className="h-5 w-5 text-slate-500" />
-              Ticket History
-            </CardTitle>
-            <CardDescription className="dark:text-slate-400">
-              {filtered.length} record{filtered.length !== 1 ? "s" : ""}
-            </CardDescription>
+        {/* Main Table */}
+        <Card className="bg-[#121829] border-slate-800 shadow-xl shadow-black/20">
+          <CardHeader className="border-b border-slate-800 flex flex-row items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2 text-white text-base">
+                <History className="h-5 w-5 text-blue-500" />
+                Trip History Records
+              </CardTitle>
+              <CardDescription className="text-slate-400 mt-1">
+                Showing {filtered.length} record{filtered.length !== 1 ? "s" : ""}
+              </CardDescription>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="p-2 bg-emerald-500/20 rounded-lg">
+                <PhilippinePeso className="h-4 w-4 text-emerald-400" />
+              </div>
+              <span className="text-sm font-bold text-white">
+                Total Released: <span className="text-emerald-400">{formatCurrency(totalAmount)}</span>
+              </span>
+            </div>
           </CardHeader>
 
-          <CardContent className="pt-6 p-0">
+          <CardContent className="p-0">
             {filtered.length === 0 ? (
               <div className="text-center py-16">
-                <div className="w-20 h-20 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto mb-4">
-                  <History className="h-10 w-10 text-slate-400 dark:text-slate-500" />
+                <div className="w-20 h-20 rounded-2xl bg-[#0b101c] border border-slate-800 flex items-center justify-center mx-auto mb-4">
+                  <History className="h-10 w-10 text-slate-600" />
                 </div>
-                <p className="text-slate-600 dark:text-slate-400 font-medium text-lg">
+                <p className="text-slate-400 font-medium text-lg">
                   {tickets.length === 0 ? "No history yet" : "No records match your filters"}
                 </p>
-                <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">
+                <p className="text-sm text-slate-500 mt-1">
                   {tickets.length === 0
                     ? "Released, closed, and cancelled tickets will appear here"
                     : "Try adjusting your search or filters"}
@@ -660,15 +585,15 @@ const MayorHistory = () => {
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
-                    <TableRow className="bg-slate-50 dark:bg-slate-900/50">
-                      <TableHead className="text-xs uppercase tracking-wider">Ticket #</TableHead>
-                      <TableHead className="text-xs uppercase tracking-wider">Date</TableHead>
-                      <TableHead className="text-xs uppercase tracking-wider">Destination</TableHead>
-                      <TableHead className="text-xs uppercase tracking-wider">Department</TableHead>
-                      <TableHead className="text-xs uppercase tracking-wider">Driver</TableHead>
-                      <TableHead className="text-right text-xs uppercase tracking-wider">Amount</TableHead>
-                      <TableHead className="text-xs uppercase tracking-wider">Status</TableHead>
-                      <TableHead className="text-right text-xs uppercase tracking-wider">Actions</TableHead>
+                    <TableRow className="bg-[#0b101c] border-slate-800 hover:bg-[#0b101c]">
+                      <TableHead className="text-xs uppercase tracking-wider text-slate-500 font-semibold">Date</TableHead>
+                      <TableHead className="text-xs uppercase tracking-wider text-slate-500 font-semibold">Trip Ticket No.</TableHead>
+                      <TableHead className="text-xs uppercase tracking-wider text-slate-500 font-semibold">Department</TableHead>
+                      <TableHead className="text-xs uppercase tracking-wider text-slate-500 font-semibold">Vehicle</TableHead>
+                      <TableHead className="text-xs uppercase tracking-wider text-slate-500 font-semibold">Purpose</TableHead>
+                      <TableHead className="text-xs uppercase tracking-wider text-slate-500 font-semibold">Status</TableHead>
+                      <TableHead className="text-right text-xs uppercase tracking-wider text-slate-500 font-semibold">Amount Released</TableHead>
+                      <TableHead className="text-right text-xs uppercase tracking-wider text-slate-500 font-semibold">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
 
@@ -679,54 +604,48 @@ const MayorHistory = () => {
                       return (
                         <TableRow
                           key={id}
-                          className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors"
+                          className="border-slate-800/50 hover:bg-[#1a2235] transition-colors"
                         >
                           <TableCell>
-                            <span className="font-mono font-semibold text-slate-800 dark:text-white">
+                            <div className="flex items-center gap-1.5 text-slate-400">
+                              <Calendar className="h-3.5 w-3.5" />
+                              <span className="text-sm whitespace-nowrap">{formatDate(ticket.trip_date)}</span>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <span className="font-mono font-medium text-white">
                               {ticketNumber || "N/A"}
                             </span>
                           </TableCell>
                           <TableCell>
-                            <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-400">
-                              <Calendar className="h-3.5 w-3.5" />
-                              <span className="text-sm">{formatDate(ticket.trip_date)}</span>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-400">
-                              <MapPin className="h-3.5 w-3.5" />
-                              <span className="text-sm truncate max-w-[160px]">
-                                {ticket.destination || "N/A"}
-                              </span>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-400">
-                              <Building2 className="h-3.5 w-3.5" />
-                              <span className="text-sm truncate max-w-[140px]">
-                                {ticket.department?.department_name || "N/A"}
-                              </span>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                              {getDriverName(ticket)}
+                            <span className="text-sm text-slate-300 truncate max-w-[140px] block">
+                              {ticket.department?.department_name || "N/A"}
                             </span>
                           </TableCell>
-                          <TableCell className="text-right">
-                            <span className="font-semibold text-emerald-600 dark:text-emerald-400">
-                              {formatCurrency(getAmount(ticket))}
+                          <TableCell>
+                            <span className="text-sm text-slate-300">
+                              {ticket.vehicle?.plate_number || "N/A"}
+                            </span>
+                          </TableCell>
+                          <TableCell>
+                            <span className="text-sm text-slate-300 truncate max-w-[150px] block">
+                              {ticket.purpose || ticket.destination || "N/A"}
                             </span>
                           </TableCell>
                           <TableCell>
                             <StatusBadge status={ticket.status} />
                           </TableCell>
                           <TableCell className="text-right">
+                            <span className="font-semibold text-white">
+                              {formatCurrency(getAmount(ticket))}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-right">
                             <Button
                               variant="outline"
                               size="sm"
                               onClick={() => navigate(`/mayor/trip-ticket/${id}`)}
-                              className="border-blue-300 text-blue-700 hover:bg-blue-50 dark:border-blue-700 dark:text-blue-400 dark:hover:bg-blue-950/30 h-8 px-3"
+                              className="border-slate-700 bg-transparent text-slate-300 hover:bg-slate-800 h-8 px-3 rounded-lg"
                             >
                               <Eye className="h-3.5 w-3.5 mr-1" />
                               View
@@ -741,13 +660,15 @@ const MayorHistory = () => {
             )}
           </CardContent>
         </Card>
-
-        {/* Footer */}
-        <div className="text-center text-xs text-slate-400 dark:text-slate-500 pt-2 border-t border-slate-200 dark:border-slate-700">
-          <p>FCMS - Mayor's Office • Trip History</p>
-          <p className="mt-0.5">
-            {filtered.length} record{filtered.length !== 1 ? "s" : ""} • {formatCurrency(totalAmount)} total
-          </p>
+        
+        {/* Footer Pagination Placeholder */}
+        <div className="flex items-center justify-between text-xs text-slate-500 pt-2">
+          <p>Showing 1-{filtered.length} of {filtered.length} records</p>
+          <div className="flex gap-1">
+            <Button variant="outline" size="icon" className="h-8 w-8 bg-transparent border-slate-700 text-slate-500 rounded-lg" disabled><ChevronDown className="h-4 w-4 rotate-90"/></Button>
+            <Button size="icon" className="h-8 w-8 bg-blue-600 text-white rounded-lg hover:bg-blue-700">1</Button>
+            <Button variant="outline" size="icon" className="h-8 w-8 bg-transparent border-slate-700 text-slate-500 rounded-lg" disabled><ChevronDown className="h-4 w-4 -rotate-90"/></Button>
+          </div>
         </div>
       </div>
     </div>
