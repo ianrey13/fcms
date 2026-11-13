@@ -981,7 +981,7 @@ class MayorsOfficeController extends Controller
 
     // ============ RECEIPT VERIFICATION METHODS ============
 
-    public function getReceiptsForVerification(Request $request)
+   public function getReceiptsForVerification(Request $request)
     {
         try {
             $user = $request->user();
@@ -1015,7 +1015,9 @@ class MayorsOfficeController extends Controller
                     'fr.verification_status as status',
                     'fr.verified_at',
                     'tt.trip_date',
-                    'v.fuel_type'
+                    'v.fuel_type',
+                    'tt.purpose',      // ✅ GIDUGANG
+                    'tt.destination'   // ✅ GIDUGANG
                 )
                 ->whereNotNull('fr.receipt_photo_path')
                 ->where('fr.verification_status', 'pending')
