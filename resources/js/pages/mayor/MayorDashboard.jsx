@@ -12,7 +12,7 @@ import { isWithinInterval, subDays, startOfMonth, endOfMonth, startOfWeek, endOf
 import {
     ArrowRight, Activity, PieChart, Fuel, Building2, Car, Download, TrendingUp, 
     CheckCircle, Wallet, Scale, AlertTriangle, Info, Trophy, ShieldCheck, Calendar,
-    ChevronDown
+    ChevronDown, Search, X
 } from "lucide-react";
 import {
     Cell, PieChart as RePieChart, Pie, ResponsiveContainer, Tooltip,
@@ -195,7 +195,20 @@ const MayorDashboard = () => {
     const [transStatusFilter, setTransStatusFilter] = useState("all"); 
     const [transTimeFilter, setTransTimeFilter] = useState("this_month"); 
     
-    const [monitorDept, setMonitorDept] = useState(""); 
+    // ✅ Monthly Monitoring Search State
+    const [monitorSearch, setMonitorSearch] = useState("");
+    const [showMonitorDropdown, setShowMonitorDropdown] = useState(false);
+    const monitorDropdownRef = useRef(null);
+
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (monitorDropdownRef.current && !monitorDropdownRef.current.contains(event.target)) {
+                setShowMonitorDropdown(false);
+            }
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
 
     const fetchAllData = useCallback(() => {
         queryClient.invalidateQueries({ queryKey: ["mayor-approved-tickets"] });
@@ -247,6 +260,7 @@ const MayorDashboard = () => {
         return budgetData.map(dept => ({
             department_id: dept.department_id,
             department_name: dept.department_name,
+            department_code: dept.department_code || "", // For search
             allocated: parseFloat(dept.allocated_amount ?? dept.annual_amount ?? dept.allocated ?? 0),
             spent: parseFloat(dept.spent_amount ?? dept.used_amount ?? dept.spent ?? 0),
             remaining: parseFloat(dept.remaining_amount ?? 0),
@@ -269,7 +283,7 @@ const MayorDashboard = () => {
             .map((d, i) => ({
                 name: d.department_name,
                 value: d.allocated,
-                spent: d.spent, // Added spent for tooltip
+                spent: d.spent,
                 color: DEPARTMENT_PALETTE[i % DEPARTMENT_PALETTE.length],
                 department_id: d.department_id
             }));
@@ -340,7 +354,6 @@ const MayorDashboard = () => {
         }));
     }, [approvedTicketsRaw, trendDept, departmentBudgets]);
 
-    // ✅ UPDATED: Transactions Data with Date Filter (Including Last Month)
     const transactionsData = useMemo(() => {
         return approvedTicketsRaw
             .filter(t => {
@@ -389,18 +402,31 @@ const MayorDashboard = () => {
             .slice(0, 5);
     }, [approvedTicketsRaw, transDept, transStatusFilter, transTimeFilter]);
 
-    // ✅ MONTHLY FUND MONITORING
-    const monthlyMonitoringData = useMemo(() => {
-        if (!monitorDept) return [];
+    // ✅ MONTHLY FUND MONITORING SEARCH FILTER
+    const filteredMonitorDepts = useMemo(() => {
+        if (!monitorSearch) return departmentBudgets;
+        const lowerSearch = monitorSearch.toLowerCase();
+        return departmentBudgets.filter(d => 
+            d.department_name.toLowerCase().includes(lowerSearch) || 
+            (d.department_code && d.department_code.toLowerCase().includes(lowerSearch))
+        );
+    }, [departmentBudgets, monitorSearch]);
 
-        const tickets = approvedTicketsRaw.filter(t => t.department_name === monitorDept);
-        const history = budgetHistoryRaw.filter(h => h.department_name === monitorDept);
+    const activeMonitorDept = useMemo(() => {
+        return departmentBudgets.find(d => d.department_name === monitorSearch);
+    }, [departmentBudgets, monitorSearch]);
+
+    const monthlyMonitoringData = useMemo(() => {
+        if (!activeMonitorDept) return [];
+
+        const tickets = approvedTicketsRaw.filter(t => t.department_name === activeMonitorDept.department_name);
+        const history = budgetHistoryRaw.filter(h => h.department_name === activeMonitorDept.department_name);
 
         const createdRecord = history.find(h => h.action === 'annual_created');
         let startingAnnualBudget = createdRecord ? parseFloat(createdRecord.new_amount) : 0;
         
         if (startingAnnualBudget === 0) {
-            startingAnnualBudget = departmentBudgets.find(d => d.department_name === monitorDept)?.allocated || 0;
+            startingAnnualBudget = activeMonitorDept.allocated || 0;
         }
 
         const months = [
@@ -453,7 +479,7 @@ const MayorDashboard = () => {
         });
 
         return monthlyData;
-    }, [approvedTicketsRaw, budgetHistoryRaw, departmentBudgets, monitorDept]);
+    }, [approvedTicketsRaw, budgetHistoryRaw, activeMonitorDept]);
 
     if (approvedLoading || budgetLoading) return <SkeletonPage />;
 
@@ -607,7 +633,7 @@ const MayorDashboard = () => {
 
             {/* 3. Middle Row: Top Consumers & Trend (Below Pie) */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-                {/* Top Fund Consumers */}
+                {/* ✅ Top Fund Consumers (Removed Progress Bars) */}
                 <Card className="bg-[#121829] border border-slate-800 rounded-2xl shadow-lg p-5">
                     <div className="flex items-center justify-between mb-6">
                         <h3 className="font-bold text-white flex items-center gap-2">
@@ -632,19 +658,14 @@ const MayorDashboard = () => {
                         {topConsumersData.length === 0 ? (
                             <p className="text-center text-xs text-slate-500 mt-4">No data available.</p>
                         ) : topConsumersData.map((d, i) => (
-                            <div key={i} className="flex items-center gap-3">
-                                <div className={`w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs ${i === 0 ? 'bg-emerald-500 text-white' : 'bg-slate-800 text-slate-300'}`}>
-                                    {i + 1}
-                                </div>
-                                <div className="flex-1">
-                                    <div className="flex justify-between text-xs mb-1">
-                                        <span className="font-semibold text-slate-200">{d.department_name}</span>
-                                        <span className="text-slate-300 font-bold">{formatCurrency(d.filteredSpent)}</span>
+                            <div key={i} className="flex items-center justify-between text-xs py-2 border-b border-slate-800/50 last:border-0">
+                                <div className="flex items-center gap-3">
+                                    <div className={`w-6 h-6 rounded-full flex items-center justify-center font-bold text-[10px] ${i === 0 ? 'bg-emerald-500 text-white' : 'bg-slate-800 text-slate-300'}`}>
+                                        {i + 1}
                                     </div>
-                                    <div className="w-full bg-slate-800 rounded-full h-1.5">
-                                        <div className={`h-1.5 rounded-full`} style={{ width: `${d.filteredSpent > 0 ? 100 : 0}%`, backgroundColor: DEPARTMENT_PALETTE[i] }} />
-                                    </div>
+                                    <span className="font-semibold text-slate-200">{d.department_name}</span>
                                 </div>
+                                <span className="text-slate-300 font-bold">{formatCurrency(d.filteredSpent)}</span>
                             </div>
                         ))}
                     </div>
@@ -692,24 +713,59 @@ const MayorDashboard = () => {
             {/* 4. Bottom Rows: Monthly Monitoring & Transactions (Stacked) */}
             <div className="grid grid-cols-1 gap-6 mb-6">
                 
-                {/* Department Monthly Fund Monitoring */}
-                <Card className="bg-[#121829] border border-slate-800 rounded-2xl shadow-lg p-0 overflow-hidden">
-                    <div className="flex items-center justify-between p-5 border-b border-slate-800">
+                {/* ✅ Department Monthly Fund Monitoring (Search Bar) */}
+                <Card className="bg-[#121829] border border-slate-800 rounded-2xl shadow-lg p-0 overflow-visible">
+                    <div className="flex flex-col md:flex-row md:items-center justify-between p-5 border-b border-slate-800 gap-4">
                         <h3 className="font-bold text-white flex items-center gap-2">
                             <Building2 className="h-4 w-4 text-blue-400" /> DEPARTMENT MONTHLY FUND MONITORING
                         </h3>
                         
-                        <CustomSelect 
-                            value={monitorDept}
-                            onChange={(val) => setMonitorDept(val)}
-                            placeholder="Select Department"
-                            options={
-                                departmentBudgets.map(d => ({ 
-                                    value: d.department_name, 
-                                    label: d.department_name 
-                                }))
-                            }
-                        />
+                        {/* Search Bar for Department */}
+                        <div className="relative z-[100] w-full md:w-[300px]" ref={monitorDropdownRef}>
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+                            <Input 
+                                type="text"
+                                placeholder="Search department name/code..."
+                                value={monitorSearch}
+                                onChange={(e) => {
+                                    setMonitorSearch(e.target.value);
+                                    setShowMonitorDropdown(true);
+                                }}
+                                onFocus={() => setShowMonitorDropdown(true)}
+                                className="pl-9 pr-8 bg-slate-800/80 border-slate-700 text-white h-10 rounded-lg text-sm placeholder:text-slate-500 w-full"
+                            />
+                            {monitorSearch && (
+                                <button 
+                                    onClick={() => { setMonitorSearch(""); setShowMonitorDropdown(false); }}
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                                >
+                                    <X className="h-4 w-4" />
+                                </button>
+                            )}
+
+                            {/* Dropdown results for search */}
+                            {showMonitorDropdown && (
+                                <div className="absolute left-0 right-0 mt-1 bg-[#1e293b] border border-slate-700 rounded-lg shadow-2xl max-h-60 overflow-y-auto z-[999]">
+                                    {filteredMonitorDepts.length === 0 ? (
+                                        <div className="px-3 py-2 text-xs text-slate-400 text-center">No departments found.</div>
+                                    ) : (
+                                        filteredMonitorDepts.map((d) => (
+                                            <div 
+                                                key={d.department_id}
+                                                onClick={() => {
+                                                    setMonitorSearch(d.department_name);
+                                                    setShowMonitorDropdown(false);
+                                                }}
+                                                className="px-3 py-2 text-xs cursor-pointer hover:bg-slate-700 transition-colors flex items-center justify-between"
+                                            >
+                                                <span className="text-slate-200">{d.department_name}</span>
+                                                {d.department_code && <span className="text-[10px] text-slate-500 bg-slate-800 px-1.5 py-0.5 rounded">{d.department_code}</span>}
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                            )}
+                        </div>
                     </div>
                     <div className="overflow-x-auto">
                         <table className="w-full text-left text-xs">
@@ -723,8 +779,8 @@ const MayorDashboard = () => {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-800/50">
-                                {!monitorDept ? (
-                                    <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-500">Please select a department to view data.</td></tr>
+                                {!activeMonitorDept ? (
+                                    <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-500">Please search and select a department to view data.</td></tr>
                                 ) : monthlyMonitoringData.length === 0 ? (
                                     <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-500">No monthly data available.</td></tr>
                                 ) : monthlyMonitoringData.map((d, i) => (
