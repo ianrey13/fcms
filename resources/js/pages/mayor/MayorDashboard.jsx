@@ -9,6 +9,10 @@ import { SkeletonPage } from "../../components/ui/SkeletonCard";
 import api, { mayorsOfficeAPI } from "../../services/api";
 import { isWithinInterval, subDays, startOfMonth, endOfMonth, startOfWeek, endOfWeek, subMonths } from "date-fns";
 
+// ✅ GIDUGANG ANG INPUT UG CARD
+import { Input } from "@/components/ui/input";
+import { Card, CardContent } from "@/components/ui/card";
+
 import {
     ArrowRight, Activity, PieChart, Fuel, Building2, Car, Download, TrendingUp, 
     CheckCircle, Wallet, Scale, AlertTriangle, Info, Trophy, ShieldCheck, Calendar,
@@ -19,7 +23,6 @@ import {
     LineChart, Line, XAxis, YAxis
 } from "recharts";
 import { cn } from "@/lib/utils";
-import { Card, CardContent } from "@/components/ui/card";
 
 // ============================================
 // HELPERS
