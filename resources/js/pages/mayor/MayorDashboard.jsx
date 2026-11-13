@@ -154,6 +154,30 @@ const CustomSelect = ({ value, onChange, options, placeholder = "Select..." }) =
     );
 };
 
+// ✅ Custom Pie Tooltip
+const CustomPieTooltip = ({ active, payload }) => {
+    if (active && payload && payload.length) {
+        const data = payload[0].payload;
+        return (
+            <div className="bg-[#0f172a] border border-slate-700 p-3 rounded-xl shadow-2xl text-xs">
+                <p className="font-bold text-white mb-2 flex items-center gap-2">
+                    <span className="h-2 w-2 rounded-full" style={{ backgroundColor: data.color }} />
+                    {data.name}
+                </p>
+                <div className="space-y-1">
+                    <p className="text-slate-400 flex justify-between gap-4">
+                        Allocated: <span className="font-semibold text-white">{formatCurrency(data.value)}</span>
+                    </p>
+                    <p className="text-slate-400 flex justify-between gap-4">
+                        Used: <span className="font-semibold text-emerald-400">{formatCurrency(data.spent)}</span>
+                    </p>
+                </div>
+            </div>
+        );
+    }
+    return null;
+};
+
 // ============================================
 // MAIN COMPONENT
 // ============================================
@@ -245,6 +269,7 @@ const MayorDashboard = () => {
             .map((d, i) => ({
                 name: d.department_name,
                 value: d.allocated,
+                spent: d.spent, // Added spent for tooltip
                 color: DEPARTMENT_PALETTE[i % DEPARTMENT_PALETTE.length],
                 department_id: d.department_id
             }));
@@ -526,7 +551,7 @@ const MayorDashboard = () => {
                 </Card>
             </div>
 
-            {/* 2. NEW: Budget Allocation Pie Chart (Full Width Section) */}
+            {/* 2. Budget Allocation Pie Chart (Full Width Section) */}
             <div className="mb-6">
                 <Card className="bg-[#121829] border border-slate-800 rounded-2xl shadow-lg p-6">
                     <div className="flex items-center justify-between mb-4">
@@ -553,6 +578,7 @@ const MayorDashboard = () => {
                                             <Cell key={i} fill={entry.color} />
                                         ))}
                                     </Pie>
+                                    <Tooltip content={<CustomPieTooltip />} />
                                 </RePieChart>
                             </ResponsiveContainer>
                             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
@@ -808,20 +834,18 @@ const MayorDashboard = () => {
                 </Card>
             </div>
 
-            {/* 5. Bottom Row: Recent, Insights, Transparency */}
-            <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-                
-                {/* Recent Fund Releases */}
-                <Card className="lg:col-span-1 bg-[#121829] border border-slate-800 rounded-2xl shadow-lg p-5">
+            {/* 5. Recent Fund Releases (Full Width Section) */}
+            <div className="mb-6">
+                <Card className="bg-[#121829] border border-slate-800 rounded-2xl shadow-lg p-5">
                     <div className="flex items-center justify-between mb-4">
                         <h3 className="font-bold text-white flex items-center gap-2 text-sm">
                             <Activity className="h-4 w-4 text-blue-400" /> RECENT FUND RELEASES
                         </h3>
                         <button className="text-[10px] text-blue-400">View All →</button>
                     </div>
-                    <div className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         {approvedTicketsRaw.slice(0, 3).map((t, i) => (
-                            <div key={i} className="flex justify-between items-center text-xs border-b border-slate-800/50 pb-2">
+                            <div key={i} className="flex justify-between items-center text-xs bg-slate-800/40 p-3 rounded-lg border border-slate-700/50">
                                 <div>
                                     <p className="text-slate-300 font-medium">{formatDateShort(t.trip_date)}</p>
                                     <p className="text-[10px] text-slate-500">{t.ticket_number}</p>
@@ -833,64 +857,6 @@ const MayorDashboard = () => {
                             </div>
                         ))}
                     </div>
-                </Card>
-
-                {/* Insights & Alerts (Dynamic) */}
-                <Card className="lg:col-span-2 bg-[#121829] border border-slate-800 rounded-2xl shadow-lg p-5">
-                    <h3 className="font-bold text-white flex items-center gap-2 mb-4 text-sm">
-                        <Info className="h-4 w-4 text-yellow-400" /> INSIGHTS & ALERTS
-                    </h3>
-                    <div className="space-y-3">
-                        {departmentBudgets.length > 0 && (
-                            <div className="flex items-start gap-2">
-                                <AlertTriangle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
-                                <p className="text-xs text-slate-300">
-                                    {departmentBudgets[0].department_name} spent {allTimeTotals.totalUsed > 0 ? ((departmentBudgets[0].spent / allTimeTotals.totalUsed) * 100).toFixed(1) : 0}% of total funds.
-                                </p>
-                            </div>
-                        )}
-                        
-                        {departmentBudgets.find(d => d.remaining > 100000) && (
-                            <div className="flex items-start gap-2">
-                                <Info className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />
-                                <p className="text-xs text-slate-300">
-                                    {departmentBudgets.find(d => d.remaining > 100000).department_name} has an unspent balance of {formatCurrency(departmentBudgets.find(d => d.remaining > 100000).remaining)}.
-                                </p>
-                            </div>
-                        )}
-
-                        {approvedTicketsRaw.filter(t => t.status === 'in_transit' || t.status === 'acknowledged').length > 0 ? (
-                            <div className="flex items-start gap-2">
-                                <AlertTriangle className="h-4 w-4 text-yellow-500 shrink-0 mt-0.5" />
-                                <p className="text-xs text-slate-300">
-                                    {approvedTicketsRaw.filter(t => t.status === 'in_transit' || t.status === 'acknowledged').length} transaction(s) require verification.
-                                </p>
-                            </div>
-                        ) : (
-                            <div className="flex items-start gap-2">
-                                <CheckCircle className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />
-                                <p className="text-xs text-slate-300">
-                                    All recent transactions are verified.
-                                </p>
-                            </div>
-                        )}
-
-                        <div className="flex items-start gap-2">
-                            <CheckCircle className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />
-                            <p className="text-xs text-slate-300">All departments are within their budget limits.</p>
-                        </div>
-                    </div>
-                </Card>
-
-                {/* Branding / Transparency Card */}
-                <Card className="lg:col-span-1 bg-gradient-to-br from-blue-900/40 to-[#121829] border border-blue-500/20 rounded-2xl shadow-lg p-5 flex flex-col justify-between relative overflow-hidden">
-                    <div className="relative z-10">
-                        <h3 className="font-bold text-white text-sm flex items-center gap-2 mb-2">
-                            <ShieldCheck className="h-4 w-4 text-emerald-400" /> Transparent. Accountable. Efficient.
-                        </h3>
-                        <p className="text-[11px] text-blue-200/70">Monitoring public funds for a more accountable LGU.</p>
-                    </div>
-                    <Building2 className="absolute -bottom-4 -right-4 h-32 w-32 text-blue-500/10 pointer-events-none z-0" />
                 </Card>
             </div>
         </div>
