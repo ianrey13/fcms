@@ -1,273 +1,24 @@
 // src/pages/mayor/MayorReceiptVerification.jsx
-import React, { useState, useCallback, useMemo } from "react";
+import React, { useState, useCallback, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAutoRefresh } from "../../hooks/useAutoRefresh";
-import { useRealtime } from "../../contexts/RealtimeContext";
 import { mayorsOfficeAPI } from "../../services/api";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import {
-  Search,
-  Receipt,
-  CheckCircle,
-  Loader2,
-  AlertTriangle,
-  Eye,
-  Image as ImageIcon,
-  User,
-  Truck,
-  Fuel,
-  DollarSign,
-  Clock,
-  Building2,
-  Edit,
-  X,
-  AlertCircle,
-  FileText,
-  Calendar,
-  ArrowLeft,
-  Zap,
-  TrendingUp,
-  TrendingDown,
-  Minus,
-  Info,
-  History,
+  Search, Receipt, CheckCircle, Loader2, AlertTriangle, Image as ImageIcon, 
+  User, Truck, Clock, Building2, Info, FileText, RefreshCw, 
+  ChevronRight, ChevronLeft, X, Zap, Scale
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 
 // ============================================
-// HELPER FUNCTIONS - PRIORITIZE PUBLIC FOLDER
+// HELPERS
 // ============================================
-
-const getReceiptImageUrls = (receipt) => {
-    let url = receipt?.receipt_url || receipt?.receipt_photo_path || null;
-
-    if (!url) {
-        return [];
-    }
-
-    const baseUrl = window.location.origin;
-    const urlsList = [];
-
-    if (url.startsWith('http://') || url.startsWith('https://')) {
-        urlsList.push(url);
-        const filename = url.split('/').pop();
-        if (filename) {
-            urlsList.push(`${baseUrl}/receipts/${filename}`);
-            urlsList.push(`${baseUrl}/storage/receipts/${filename}`);
-        }
-        return [...new Set(urlsList)];
-    }
-
-    const filename = url.split('/').pop();
-
-    if (!filename) {
-        return [];
-    }
-
-    urlsList.push(`${baseUrl}/receipts/${filename}`);
-    urlsList.push(`${baseUrl}/storage/receipts/${filename}`);
-
-    if (url.startsWith('/')) {
-        urlsList.push(`${baseUrl}${url}`);
-    } else if (!url.startsWith('receipts/') && !url.startsWith('storage/')) {
-        urlsList.push(`${baseUrl}/${url}`);
-    } else if (url.startsWith('receipts/')) {
-        urlsList.push(`${baseUrl}/${url}`);
-    }
-
-    return [...new Set(urlsList)];
-};
-
-// ============================================
-// RECEIPT IMAGE COMPONENT
-// ============================================
-
-const ReceiptImage = ({ receipt }) => {
-    const [imageError, setImageError] = useState(false);
-    const [currentUrlIndex, setCurrentUrlIndex] = useState(0);
-    const [imageLoaded, setImageLoaded] = useState(false);
-
-    const urls = React.useMemo(() => getReceiptImageUrls(receipt), [receipt]);
-
-    React.useEffect(() => {
-        setImageError(false);
-        setCurrentUrlIndex(0);
-        setImageLoaded(false);
-    }, [receipt]);
-
-    if (urls.length === 0) {
-        return (
-            <div className="border rounded-xl p-8 text-center bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700">
-                <div className="w-16 h-16 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto mb-3">
-                    <ImageIcon className="h-8 w-8 text-slate-400 dark:text-slate-500" />
-                </div>
-                <p className="text-slate-600 dark:text-slate-400 font-medium">No receipt image uploaded</p>
-                <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">Driver did not attach a photo</p>
-            </div>
-        );
-    }
-
-    const currentUrl = urls[currentUrlIndex];
-    const hasMoreUrls = currentUrlIndex < urls.length - 1;
-
-    const handleImageError = () => {
-        if (hasMoreUrls) {
-            setCurrentUrlIndex(prev => prev + 1);
-        } else {
-            setImageError(true);
-        }
-    };
-
-    if (imageError) {
-        return (
-            <div className="border rounded-xl p-8 text-center bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700">
-                <div className="w-16 h-16 rounded-2xl bg-red-100 dark:bg-red-900/30 flex items-center justify-center mx-auto mb-3">
-                    <AlertTriangle className="h-8 w-8 text-red-500" />
-                </div>
-                <p className="text-red-600 dark:text-red-400 font-medium">Cannot load receipt image</p>
-                <p className="text-xs text-slate-400 dark:text-slate-500 mt-1 break-all">
-                    Tried: {urls.join(' → ')}
-                </p>
-                <button
-                    onClick={() => {
-                        setImageError(false);
-                        setCurrentUrlIndex(0);
-                        setImageLoaded(false);
-                    }}
-                    className="mt-3 text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 underline"
-                >
-                    Retry
-                </button>
-            </div>
-        );
-    }
-
-    return (
-        <div className="relative border rounded-xl overflow-hidden bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700">
-            {!imageLoaded && (
-                <div className="absolute inset-0 flex items-center justify-center bg-slate-50 dark:bg-slate-900/50">
-                    <Loader2 className="h-8 w-8 text-blue-500 animate-spin" />
-                </div>
-            )}
-            <img
-                src={currentUrl}
-                alt="Fuel Receipt"
-                className={`w-full max-h-80 object-contain transition-all duration-300 hover:scale-105 ${
-                    imageLoaded ? 'opacity-100' : 'opacity-0'
-                }`}
-                onError={handleImageError}
-                onLoad={() => setImageLoaded(true)}
-                loading="lazy"
-            />
-            {urls.length > 1 && !imageError && (
-                <div className="absolute bottom-2 right-2 bg-black/50 backdrop-blur-sm text-white text-[10px] px-2 py-1 rounded-lg">
-                    Trying {currentUrlIndex + 1}/{urls.length}
-                </div>
-            )}
-        </div>
-    );
-};
-
-// ============================================
-// STATS CARD
-// ============================================
-
-const StatsCard = ({ title, value, icon: Icon, color, subtitle, trend }) => (
-  <Card className="dark:bg-slate-800/80 dark:border-slate-700 hover:shadow-lg transition-all duration-300">
-    <CardContent className="pt-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">{title}</p>
-          <p className="text-2xl font-bold text-slate-900 dark:text-white mt-1">{value}</p>
-          {subtitle && (
-            <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">{subtitle}</p>
-          )}
-          {trend !== undefined && (
-            <div className="flex items-center gap-1 mt-1 text-[10px]">
-              {trend > 0 ? (
-                <TrendingUp className="h-3 w-3 text-emerald-500" />
-              ) : trend < 0 ? (
-                <TrendingDown className="h-3 w-3 text-red-500" />
-              ) : (
-                <Minus className="h-3 w-3 text-slate-400" />
-              )}
-              <span className={trend > 0 ? 'text-emerald-600 dark:text-emerald-400' : trend < 0 ? 'text-red-600 dark:text-red-400' : 'text-slate-400'}>
-                {trend > 0 ? '+' : ''}{trend}%
-              </span>
-            </div>
-          )}
-        </div>
-        <div className={`p-3 rounded-xl bg-gradient-to-br ${color} shadow-lg`}>
-          <Icon className="h-6 w-6 text-white" />
-        </div>
-      </div>
-    </CardContent>
-  </Card>
-);
-
-// ============================================
-// STATUS BADGE
-// ============================================
-
-const StatusBadge = ({ status }) => {
-  const configs = {
-    verified: { color: "bg-green-500", label: "Verified", icon: CheckCircle },
-    pending: { color: "bg-yellow-500", label: "Pending", icon: Clock },
-    discrepancy: { color: "bg-red-500", label: "Discrepancy", icon: AlertCircle },
-    rejected: { color: "bg-rose-500", label: "Rejected", icon: X },
-  };
-  const config = configs[status] || configs.pending;
-  const Icon = config.icon;
-  return (
-    <Badge className={`${config.color} text-white flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-medium`}>
-      <Icon className="h-3 w-3" />
-      {config.label}
-    </Badge>
-  );
-};
-
-// ============================================
-// FORMATTING HELPERS
-// ============================================
-
-const formatDate = (date) => {
-  if (!date) return "N/A";
-  try {
-    return format(new Date(date), "MMM dd, yyyy hh:mm a");
-  } catch {
-    return "N/A";
-  }
-};
 
 const formatDateShort = (date) => {
   if (!date) return "N/A";
@@ -280,7 +31,7 @@ const formatDateShort = (date) => {
 
 const formatCurrency = (amount) => {
   const numAmount = parseFloat(amount);
-  if (isNaN(numAmount) || numAmount === 0) return "₱0.00";
+  if (isNaN(numAmount)) return "₱0.00";
   return new Intl.NumberFormat("en-PH", {
     style: "currency",
     currency: "PHP",
@@ -288,24 +39,112 @@ const formatCurrency = (amount) => {
   }).format(numAmount);
 };
 
+const getReceiptImageUrls = (receipt) => {
+    let url = receipt?.receipt_url || receipt?.receipt_photo_path || null;
+    if (!url) return [];
+    const baseUrl = window.location.origin;
+    const urlsList = [];
+    
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+        urlsList.push(url);
+        const filename = url.split('/').pop();
+        if (filename) {
+            urlsList.push(`${baseUrl}/receipts/${filename}`);
+            urlsList.push(`${baseUrl}/storage/receipts/${filename}`);
+        }
+        return [...new Set(urlsList)];
+    }
+
+    const filename = url.split('/').pop();
+    if (!filename) return [];
+
+    urlsList.push(`${baseUrl}/receipts/${filename}`);
+    urlsList.push(`${baseUrl}/storage/receipts/${filename}`);
+    
+    if (url.startsWith('/')) urlsList.push(`${baseUrl}${url}`);
+    else if (!url.startsWith('receipts/') && !url.startsWith('storage/')) urlsList.push(`${baseUrl}/${url}`);
+    else if (url.startsWith('receipts/')) urlsList.push(`${baseUrl}/${url}`);
+
+    return [...new Set(urlsList)];
+};
+
 // ============================================
-// LOADING SKELETON
+// COMPONENTS
 // ============================================
 
-const LoadingSkeleton = () => (
-  <div className="space-y-6 p-4 md:p-6 bg-slate-50 dark:bg-slate-900 min-h-screen">
-    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-      <div className="h-12 w-48 bg-slate-200 dark:bg-slate-700 rounded animate-pulse" />
-      <div className="h-10 w-32 bg-slate-200 dark:bg-slate-700 rounded animate-pulse" />
-    </div>
-    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-      {[1, 2, 3, 4].map((i) => (
-        <div key={i} className="h-28 bg-slate-200 dark:bg-slate-700 rounded-xl animate-pulse" />
-      ))}
-    </div>
-    <div className="h-96 bg-slate-200 dark:bg-slate-700 rounded-xl animate-pulse" />
-  </div>
-);
+const ReceiptImage = ({ receipt }) => {
+    const [imageError, setImageError] = useState(false);
+    const [currentUrlIndex, setCurrentUrlIndex] = useState(0);
+    const [imageLoaded, setImageLoaded] = useState(false);
+    const urls = useMemo(() => getReceiptImageUrls(receipt), [receipt]);
+
+    useEffect(() => {
+        setImageError(false);
+        setCurrentUrlIndex(0);
+        setImageLoaded(false);
+    }, [receipt]);
+
+    if (urls.length === 0) {
+        return (
+            <div className="w-full h-full min-h-[300px] flex flex-col items-center justify-center bg-[#0b101c] rounded-xl border border-slate-700">
+                <ImageIcon className="h-10 w-10 text-slate-600 mb-2" />
+                <p className="text-slate-400 text-sm">No receipt image</p>
+            </div>
+        );
+    }
+
+    const currentUrl = urls[currentUrlIndex];
+    const hasMoreUrls = currentUrlIndex < urls.length - 1;
+
+    const handleImageError = () => {
+        if (hasMoreUrls) setCurrentUrlIndex(prev => prev + 1);
+        else setImageError(true);
+    };
+
+    if (imageError) {
+        return (
+            <div className="w-full h-full min-h-[300px] flex flex-col items-center justify-center bg-[#0b101c] rounded-xl border border-slate-700">
+                <AlertTriangle className="h-10 w-10 text-red-500 mb-2" />
+                <p className="text-red-400 text-sm">Cannot load image</p>
+            </div>
+        );
+    }
+
+    return (
+        <div className="relative w-full h-full min-h-[300px] bg-[#0b101c] rounded-xl border border-slate-700 overflow-hidden flex items-center justify-center">
+            {!imageLoaded && <Loader2 className="absolute h-8 w-8 text-blue-500 animate-spin" />}
+            <img
+                src={currentUrl}
+                alt="Receipt"
+                className={cn("max-w-full max-h-[400px] object-contain transition-opacity duration-300", imageLoaded ? "opacity-100" : "opacity-0")}
+                onError={handleImageError}
+                onLoad={() => setImageLoaded(true)}
+            />
+        </div>
+    );
+};
+
+const StatusPill = ({ status, discrepancy }) => {
+    if (status === "verified") {
+        return (
+            <span className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-3 py-1 rounded-full text-[11px] font-bold flex items-center gap-1.5 w-fit">
+                <CheckCircle className="h-3 w-3" /> Verified
+            </span>
+        );
+    }
+    if (discrepancy) {
+        return (
+            <span className="bg-amber-500/20 text-amber-400 border border-amber-500/30 px-3 py-1 rounded-full text-[11px] font-bold flex items-center gap-1.5 w-fit">
+                <Scale className="h-3 w-3" /> With Discrepancy
+            </span>
+        );
+    }
+    return (
+        <span className="bg-orange-500/20 text-orange-400 border border-orange-500/30 px-3 py-1 rounded-full text-[11px] font-bold flex items-center gap-1.5 w-fit">
+            <Clock className="h-3 w-3" /> Pending
+        </span>
+    );
+};
 
 // ============================================
 // MAIN COMPONENT
@@ -313,35 +152,20 @@ const LoadingSkeleton = () => (
 
 const MayorReceiptVerification = () => {
   const queryClient = useQueryClient();
-  const { isConnected } = useRealtime();
+  const [activeTab, setActiveTab] = useState("pending"); // pending, verified, discrepancy
   const [searchTerm, setSearchTerm] = useState("");
-  const [activeTab, setActiveTab] = useState("pending");
   const [selectedReceipt, setSelectedReceipt] = useState(null);
-  const [showReceiptModal, setShowReceiptModal] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
-  const [showConfirmVerify, setShowConfirmVerify] = useState(false);
 
-  // ✅ NEW: inline field errors
-  const [fieldErrors, setFieldErrors] = useState({
-    invoice_number: "",
-    unit_price: "",
-    amount_on_receipt: "",
-  });
-
+  // Form State
   const [editData, setEditData] = useState({
     invoice_number: "",
     unit_price: "",
     amount_on_receipt: "",
+    remarks: "",
   });
 
-  // ============================================
-  // QUERIES
-  // ============================================
-
-  const {
-    data: pendingReceipts = [],
-    isLoading: isLoadingPending,
-  } = useQuery({
+  // Fetch Data
+  const { data: pendingReceipts = [], isLoading: loadingPending } = useQuery({
     queryKey: ["mayor-receipt-verification", "pending"],
     queryFn: async () => {
       const response = await mayorsOfficeAPI.getReceiptsForVerification();
@@ -349,10 +173,7 @@ const MayorReceiptVerification = () => {
     },
   });
 
-  const {
-    data: verifiedReceipts = [],
-    isLoading: isLoadingVerified,
-  } = useQuery({
+  const { data: verifiedReceipts = [], isLoading: loadingVerified } = useQuery({
     queryKey: ["mayor-receipt-verification", "verified"],
     queryFn: async () => {
       const response = await mayorsOfficeAPI.getVerifiedReceipts();
@@ -360,925 +181,346 @@ const MayorReceiptVerification = () => {
     },
   });
 
-  // ============================================
-  // AUTO-REFRESH
-  // ============================================
+  useAutoRefresh(["mayor-trip-updated", "new-notification", "trip-completed"], () => {
+    queryClient.invalidateQueries({ queryKey: ["mayor-receipt-verification"] });
+  });
 
-  useAutoRefresh(
-    ["mayor-trip-updated", "new-notification", "trip-completed"],
-    () => {
-      queryClient.invalidateQueries({ queryKey: ["mayor-receipt-verification"] });
-    }
-  );
-
-  // ============================================
-  // MUTATION
-  // ============================================
-
+  // Verify Mutation
   const verifyMutation = useMutation({
     mutationFn: async ({ receiptId, data }) => {
-      const response = await mayorsOfficeAPI.verifyReceipt(receiptId, data);
-      return response.data;
+      return await mayorsOfficeAPI.verifyReceipt(receiptId, data);
     },
     onSuccess: () => {
-      toast.success("Receipt verified and updated successfully!");
+      toast.success("Receipt verified successfully!");
       queryClient.invalidateQueries({ queryKey: ["mayor-receipt-verification"] });
-
-      setShowConfirmVerify(false);
-      setShowReceiptModal(false);
-
-      setTimeout(() => {
+      
+      // Reset selection to next pending if available
+      const nextPending = pendingReceipts.find(r => r.id !== selectedReceipt?.id);
+      if (nextPending) {
+        handleSelectReceipt(nextPending);
+      } else {
         setSelectedReceipt(null);
-        setIsEditing(false);
-        setEditData({ invoice_number: "", unit_price: "", amount_on_receipt: "" });
-        setFieldErrors({ invoice_number: "", unit_price: "", amount_on_receipt: "" });
-      }, 200);
+        setActiveTab("verified");
+      }
     },
     onError: (error) => {
-      let message = "Failed to verify receipt";
-      if (error.response?.data?.errors) {
-        const errors = error.response.data.errors;
-        if (typeof errors === 'object') {
-          message = Object.values(errors).flat().join('\n');
-        }
-      } else if (error.response?.data?.message) {
-        message = error.response.data.message;
-      }
-      toast.error(message);
-      setShowConfirmVerify(false);
-      // ✅ reopen receipt modal so user can fix the problem inline
-      setTimeout(() => {
-        setShowReceiptModal(true);
-      }, 150);
+      toast.error(error.response?.data?.message || "Failed to verify receipt");
     },
   });
 
-  // ============================================
-  // VALIDATION
-  // ============================================
-
-  const validateField = useCallback((field, value, releasedAmount) => {
-    if (field === 'invoice_number') {
-      if (!value || !value.trim()) return "Charge Invoice No. is required.";
-      return "";
-    }
-    if (field === 'unit_price') {
-      const num = parseFloat(value);
-      if (!value || isNaN(num) || num <= 0) return "Unit price must be greater than 0.";
-      return "";
-    }
-    if (field === 'amount_on_receipt') {
-      const num = parseFloat(value);
-      if (!value || isNaN(num) || num <= 0) return "Amount must be greater than 0.";
-      if (releasedAmount > 0 && num > releasedAmount) {
-        return `Amount cannot exceed ₱${releasedAmount.toFixed(2)}.`;
-      }
-      return "";
-    }
-    return "";
-  }, []);
-
-  const validateAll = useCallback(() => {
-    const released = parseFloat(selectedReceipt?.amount_released) || 0;
-    const errors = {
-      invoice_number: validateField('invoice_number', editData.invoice_number, released),
-      unit_price: validateField('unit_price', editData.unit_price, released),
-      amount_on_receipt: validateField('amount_on_receipt', editData.amount_on_receipt, released),
-    };
-    setFieldErrors(errors);
-    return !Object.values(errors).some(Boolean);
-  }, [editData, selectedReceipt, validateField]);
-
-  // ============================================
-  // HANDLERS
-  // ============================================
-
-  const openReceiptModal = (receipt) => {
+  // Handlers
+  const handleSelectReceipt = (receipt) => {
     setSelectedReceipt(receipt);
     setEditData({
       invoice_number: receipt.invoice_number || "",
       unit_price: receipt.unit_price || "",
       amount_on_receipt: receipt.amount || "",
+      remarks: receipt.remarks || "",
     });
-    setFieldErrors({ invoice_number: "", unit_price: "", amount_on_receipt: "" });
-    setIsEditing(receipt.status !== "verified");
-    setShowReceiptModal(true);
   };
 
-  const handleEditToggle = () => {
-    if (isEditing) {
-      setEditData({
-        invoice_number: selectedReceipt?.invoice_number || "",
-        unit_price: selectedReceipt?.unit_price || "",
-        amount_on_receipt: selectedReceipt?.amount || "",
-      });
-      setFieldErrors({ invoice_number: "", unit_price: "", amount_on_receipt: "" });
-    }
-    setIsEditing(!isEditing);
-  };
-
-  // ✅ update value + clear error on typing
-  const handleInputChange = useCallback((field, value) => {
+  const handleInputChange = (field, value) => {
     setEditData(prev => ({ ...prev, [field]: value }));
-    // clear error for this field as user types
-    if (fieldErrors[field]) {
-      setFieldErrors(prev => ({ ...prev, [field]: "" }));
-    }
-  }, [fieldErrors]);
-
-  // ✅ validate on blur
-  const handleBlur = useCallback((field) => {
-    const released = parseFloat(selectedReceipt?.amount_released) || 0;
-    const error = validateField(field, editData[field], released);
-    setFieldErrors(prev => ({ ...prev, [field]: error }));
-  }, [editData, selectedReceipt, validateField]);
-
-  const handleVerifyClick = () => {
-    if (!validateAll()) {
-      toast.error("Please fix the highlighted fields before verifying.");
-      return;
-    }
-
-    setShowReceiptModal(false);
-    setTimeout(() => {
-      setShowConfirmVerify(true);
-    }, 150);
   };
 
-  const handleConfirmVerify = () => {
-    const amount = parseFloat(editData.amount_on_receipt) || 0;
-    const unitPrice = parseFloat(editData.unit_price) || 0;
+  const handleVerify = (isDiscrepancy = false) => {
+    if (!editData.invoice_number) return toast.error("Invoice Number is required");
+    if (!editData.amount_on_receipt) return toast.error("Amount is required");
 
-    const payload = {
-      invoice_number: editData.invoice_number || null,
-      unit_price: unitPrice > 0 ? unitPrice : null,
-      amount_on_receipt: amount,
-    };
+    const amount = parseFloat(editData.amount_on_receipt) || 0;
+    const released = parseFloat(selectedReceipt.amount_released) || 0;
+
+    if (!isDiscrepancy && amount > released) {
+      return toast.error("Amount exceeds released amount. Please flag as discrepancy.");
+    }
+    if (isDiscrepancy && !editData.remarks) {
+      return toast.error("Please provide remarks for the discrepancy.");
+    }
 
     verifyMutation.mutate({
       receiptId: selectedReceipt.id || selectedReceipt.fuel_receipt_id,
-      data: payload,
+      data: {
+        invoice_number: editData.invoice_number,
+        unit_price: parseFloat(editData.unit_price) || null,
+        amount_on_receipt: amount,
+        remarks: editData.remarks,
+        status: isDiscrepancy ? 'discrepancy' : 'verified',
+      }
     });
   };
 
-  const handleCancelConfirm = () => {
-    setShowConfirmVerify(false);
-    setTimeout(() => {
-      setShowReceiptModal(true);
-    }, 150);
+  // Filtered Lists
+  const filteredList = useMemo(() => {
+    let list = [];
+    if (activeTab === "pending") list = pendingReceipts;
+    else if (activeTab === "verified") list = verifiedReceipts.filter(r => r.status === 'verified');
+    else if (activeTab === "discrepancy") list = verifiedReceipts.filter(r => r.status === 'discrepancy');
+
+    if (!searchTerm) return list;
+    
+    const q = searchTerm.toLowerCase();
+    return list.filter(r => 
+      r.ticket_number?.toLowerCase().includes(q) ||
+      r.plate_number?.toLowerCase().includes(q) ||
+      r.department_name?.toLowerCase().includes(q)
+    );
+  }, [activeTab, pendingReceipts, verifiedReceipts, searchTerm]);
+
+  const counts = {
+    pending: pendingReceipts.length,
+    verified: verifiedReceipts.filter(r => r.status === 'verified').length,
+    discrepancy: verifiedReceipts.filter(r => r.status === 'discrepancy').length,
   };
 
-  // ============================================
-  // DERIVED
-  // ============================================
+  const isLoading = loadingPending || loadingVerified;
 
-  const activeList = activeTab === "pending" ? pendingReceipts : verifiedReceipts;
-
-  const filteredReceipts = useMemo(() => {
-    const search = searchTerm.toLowerCase();
-    return activeList.filter((receipt) => {
-      return (
-        receipt.ticket_number?.toLowerCase().includes(search) ||
-        receipt.driver_name?.toLowerCase().includes(search) ||
-        receipt.plate_number?.toLowerCase().includes(search) ||
-        receipt.department_name?.toLowerCase().includes(search)
-      );
-    });
-  }, [activeList, searchTerm]);
-
-  const pendingCount = pendingReceipts.length;
-  const verifiedCount = verifiedReceipts.length;
-  const totalCount = pendingCount + verifiedCount;
-  const totalAmount = useMemo(
-    () =>
-      [...pendingReceipts, ...verifiedReceipts].reduce(
-        (sum, r) => sum + parseFloat(r.amount || 0),
-        0
-      ),
-    [pendingReceipts, verifiedReceipts]
-  );
-
-  const connectionStatus = isConnected ? "🟢 Live" : "🔴 Offline";
-  const isRealTime = isConnected;
-
-  const stats = [
-    {
-      title: "Total Receipts",
-      value: totalCount,
-      icon: Receipt,
-      color: "from-blue-500 to-blue-600",
-      subtitle: "Pending + verified",
-      trend: totalCount > 0 ? 5 : 0,
-    },
-    {
-      title: "Pending",
-      value: pendingCount,
-      icon: Clock,
-      color: "from-yellow-500 to-yellow-600",
-      subtitle: "Awaiting verification",
-      trend: pendingCount > 0 ? 8 : 0,
-    },
-    {
-      title: "Verified",
-      value: verifiedCount,
-      icon: CheckCircle,
-      color: "from-green-500 to-emerald-600",
-      subtitle: "Approved receipts",
-      trend: verifiedCount > 0 ? 12 : 0,
-    },
-    {
-      title: "Total Amount",
-      value: formatCurrency(totalAmount),
-      icon: DollarSign,
-      color: "from-purple-500 to-purple-600",
-      subtitle: "All fuel cost",
-      trend: totalAmount > 0 ? 3 : 0,
-    },
-  ];
-
-  const isLoading =
-    (activeTab === "pending" && isLoadingPending) ||
-    (activeTab === "verified" && isLoadingVerified);
-
-  if (isLoading && activeList.length === 0) {
-    return <LoadingSkeleton />;
-  }
-
-  const isVerifiedView = activeTab === "verified";
-
-  const modalPlateCombined = selectedReceipt
-    ? [
-        selectedReceipt.vehicle_model,
-        selectedReceipt.plate_number,
-      ].filter(Boolean).join(' - ') || 'N/A'
-    : 'N/A';
-
-  const modalUnitPrice =
-    selectedReceipt?.unit_price !== null &&
-    selectedReceipt?.unit_price !== undefined &&
-    parseFloat(selectedReceipt.unit_price) > 0
-      ? formatCurrency(selectedReceipt.unit_price)
-      : null;
+  // Derived values for the selected receipt
+  const releasedAmount = parseFloat(selectedReceipt?.amount_released) || 0;
+  const receiptAmount = parseFloat(editData.amount_on_receipt) || 0;
+  const difference = receiptAmount - releasedAmount;
+  const isDiscrepancy = difference !== 0;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
-      <div className="space-y-6 p-4 md:p-6 animate-fade-in-up">
-        {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => window.history.back()}
-              className="rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 h-10 w-10"
-            >
-              <ArrowLeft className="h-5 w-5 text-slate-600 dark:text-slate-300" />
-            </Button>
-            <div>
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 rounded-xl bg-gradient-to-br from-green-500 to-emerald-600 shadow-lg shadow-green-500/20">
-                  <Receipt className="h-5 w-5 text-white" />
-                </div>
-                <div>
-                  <h1 className="text-2xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 bg-clip-text text-transparent">
-                    Receipt Verification
-                  </h1>
-                  <p className="text-sm text-slate-500 dark:text-slate-400">
-                    Verify driver uploaded fuel receipts
-                    <span className="ml-2 text-xs opacity-70">{connectionStatus}</span>
-                    {isRealTime && (
-                      <span className="ml-2 text-xs text-emerald-400 animate-pulse">
-                        ● Auto-refresh
-                      </span>
-                    )}
-                  </p>
-                </div>
+    <div className="min-h-screen bg-[#090e1a] p-4 md:p-6 font-sans text-slate-200 flex flex-col">
+      
+      {/* Header */}
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-4">
+          <div className="p-4 rounded-2xl bg-blue-600 shadow-[0_0_20px_rgba(37,99,235,0.4)]">
+            <Receipt className="h-8 w-8 text-white" />
+          </div>
+          <div>
+            <h1 className="text-3xl font-bold text-white">Fuel Receipt Verification</h1>
+            <p className="text-slate-400 mt-1">Review and encode fuel receipt details from submitted trip tickets.</p>
+          </div>
+        </div>
+        <Button onClick={() => queryClient.invalidateQueries()} variant="outline" className="border-slate-700 bg-[#121829] hover:bg-slate-800 text-slate-300 rounded-xl h-10 px-4">
+          <RefreshCw className={cn("h-4 w-4 mr-2", isLoading && "animate-spin")} /> Refresh
+        </Button>
+      </div>
+
+      {/* Main Content Layout */}
+      <div className="flex flex-col lg:flex-row gap-6 flex-1">
+        
+        {/* LEFT PANEL: List */}
+        <div className="w-full lg:w-[55%] flex flex-col gap-4">
+          
+          {/* Tabs */}
+          <div className="flex gap-2">
+            <button onClick={() => setActiveTab("pending")} className={cn("flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl border transition-all text-sm font-semibold", activeTab === "pending" ? "bg-blue-600 border-blue-500 text-white" : "bg-[#121829] border-slate-800 text-slate-400 hover:bg-[#1a2235]")}>
+              <Clock className="h-4 w-4" /> Pending ({counts.pending})
+            </button>
+            <button onClick={() => setActiveTab("verified")} className={cn("flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl border transition-all text-sm font-semibold", activeTab === "verified" ? "bg-emerald-600 border-emerald-500 text-white" : "bg-[#121829] border-slate-800 text-slate-400 hover:bg-[#1a2235]")}>
+              <CheckCircle className="h-4 w-4" /> Verified ({counts.verified})
+            </button>
+            <button onClick={() => setActiveTab("discrepancy")} className={cn("flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl border transition-all text-sm font-semibold", activeTab === "discrepancy" ? "bg-amber-600 border-amber-500 text-white" : "bg-[#121829] border-slate-800 text-slate-400 hover:bg-[#1a2235]")}>
+              <Scale className="h-4 w-4" /> With Discrepancy ({counts.discrepancy})
+            </button>
+          </div>
+
+          {/* List Table */}
+          <div className="bg-[#121829] border border-slate-800 rounded-2xl flex-1 flex flex-col overflow-hidden">
+            <div className="p-4 border-b border-slate-800">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+                <Input 
+                  placeholder="Search by Ticket No., Department, or Plate..." 
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-9 bg-[#0b101c] border-slate-700 text-white h-10 rounded-xl"
+                />
+              </div>
+            </div>
+            
+            <div className="overflow-x-auto flex-1">
+              <table className="w-full text-left text-sm text-slate-300">
+                <thead className="bg-[#0b101c] text-slate-500">
+                  <tr>
+                    <th className="px-4 py-3 font-medium">Date</th>
+                    <th className="px-4 py-3 font-medium">Trip Ticket No.</th>
+                    <th className="px-4 py-3 font-medium">Department</th>
+                    <th className="px-4 py-3 font-medium">Vehicle</th>
+                    <th className="px-4 py-3 font-medium">Purpose</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/50">
+                  {filteredList.length === 0 ? (
+                    <tr><td colSpan={5} className="text-center py-10 text-slate-500">No records found.</td></tr>
+                  ) : filteredList.map((r) => {
+                    const isSelected = selectedReceipt?.id === r.id || selectedReceipt?.fuel_receipt_id === r.fuel_receipt_id;
+                    return (
+                      <tr 
+                        key={r.id || r.fuel_receipt_id} 
+                        onClick={() => handleSelectReceipt(r)}
+                        className={cn("cursor-pointer transition-colors", isSelected ? "bg-blue-600/20" : "hover:bg-[#1a2235]")}
+                      >
+                        <td className="px-4 py-4 whitespace-nowrap">{formatDateShort(r.trip_date)}</td>
+                        <td className="px-4 py-4 font-mono text-white">{r.ticket_number}</td>
+                        <td className="px-4 py-4">{r.department_name}</td>
+                        <td className="px-4 py-4">{r.plate_number}</td>
+                        <td className="px-4 py-4 truncate max-w-[120px]">{r.purpose || "Fuel Purchase"}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pagination Footer (Mock) */}
+            <div className="p-4 border-t border-slate-800 flex items-center justify-between text-xs text-slate-500 bg-[#0b101c]">
+              <span>Showing 1-{filteredList.length} of {filteredList.length} records</span>
+              <div className="flex gap-1">
+                <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-500 hover:text-white"><ChevronLeft className="h-4 w-4"/></Button>
+                <Button size="icon" className="h-7 w-7 bg-blue-600 text-white rounded text-[10px]">1</Button>
+                <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-500 hover:text-white"><ChevronRight className="h-4 w-4"/></Button>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {stats.map((stat, index) => (
-            <StatsCard key={index} {...stat} />
-          ))}
-        </div>
-
-        {/* Tabs */}
-        <div className="flex items-center gap-2 p-1 rounded-xl bg-slate-100 dark:bg-slate-800/60 w-fit">
-          <button
-            onClick={() => setActiveTab("pending")}
-            className={cn(
-              "px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2",
-              activeTab === "pending"
-                ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm"
-                : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
-            )}
-          >
-            <Clock className="h-4 w-4" />
-            Pending
-            {pendingCount > 0 && (
-              <Badge className="bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 border-0 text-[10px] h-5 px-1.5">
-                {pendingCount}
-              </Badge>
-            )}
-          </button>
-          <button
-            onClick={() => setActiveTab("verified")}
-            className={cn(
-              "px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2",
-              activeTab === "verified"
-                ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm"
-                : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
-            )}
-          >
-            <History className="h-4 w-4" />
-            Verified
-            {verifiedCount > 0 && (
-              <Badge className="bg-green-500/20 text-green-600 dark:text-green-400 border-0 text-[10px] h-5 px-1.5">
-                {verifiedCount}
-              </Badge>
-            )}
-          </button>
-        </div>
-
-        {/* Search */}
-        <div className="relative">
-          <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
-          <Input
-            placeholder="Search by ticket number, driver, plate, or department..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-11 h-12 bg-white dark:bg-slate-800 dark:border-slate-700 rounded-xl shadow-sm text-slate-800 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500"
-          />
-        </div>
-
-        {/* Receipts Table */}
-        <Card className="dark:bg-slate-800/80 dark:border-slate-700 shadow-xl shadow-black/5">
-          <CardHeader className="border-b border-slate-200/60 dark:border-slate-700/60">
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="flex items-center gap-2 text-slate-800 dark:text-white">
-                  {isVerifiedView ? (
-                    <>
-                      <CheckCircle className="h-5 w-5 text-green-500" />
-                      Verified Receipts History
-                    </>
-                  ) : (
-                    <>
-                      <Receipt className="h-5 w-5 text-green-500" />
-                      Fuel Receipts for Verification
-                    </>
-                  )}
-                </CardTitle>
-                <CardDescription className="dark:text-slate-400">
-                  {filteredReceipts.length} receipt{filteredReceipts.length !== 1 ? 's' : ''} found
-                  {filteredReceipts.length !== activeList.length && ` (filtered from ${activeList.length} total)`}
-                  {isRealTime && (
-                    <span className="ml-2 text-xs text-emerald-500 animate-pulse">
-                      ● Live updates
-                    </span>
-                  )}
-                </CardDescription>
-              </div>
-              {filteredReceipts.length > 0 && (
-                <Badge className="bg-green-500/20 text-green-600 dark:text-green-400 border-green-500/30">
-                  <Zap className="h-3 w-3 mr-1" />
-                  {filteredReceipts.length} records
-                </Badge>
-              )}
+        {/* RIGHT PANEL: Details */}
+        <div className="w-full lg:w-[45%] bg-[#121829] border border-slate-800 rounded-2xl shadow-lg flex flex-col relative">
+          {!selectedReceipt ? (
+            <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-slate-500">
+              <FileText className="h-12 w-12 mb-3 opacity-50" />
+              <p>Select a receipt from the list to view details.</p>
             </div>
-          </CardHeader>
-          <CardContent className="pt-6 p-0">
-            {filteredReceipts.length === 0 ? (
-              <div className="text-center py-16">
-                <div className="w-20 h-20 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto mb-4">
-                  {isVerifiedView ? (
-                    <History className="h-10 w-10 text-slate-400 dark:text-slate-500" />
-                  ) : (
-                    <Receipt className="h-10 w-10 text-slate-400 dark:text-slate-500" />
-                  )}
-                </div>
-                <p className="text-slate-600 dark:text-slate-400 font-medium text-lg">
-                  {isVerifiedView ? "No verified receipts yet" : "No receipts found"}
-                </p>
-                <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">
-                  {searchTerm
-                    ? 'Try adjusting your search'
-                    : isVerifiedView
-                      ? 'Verified receipts will appear here'
-                      : 'Receipts will appear here when uploaded'}
-                </p>
+          ) : (
+            <>
+              {/* Right Panel Header */}
+              <div className="p-5 border-b border-slate-800 flex justify-between items-center">
+                <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                  <FileText className="h-5 w-5 text-blue-500" /> Receipt Details
+                </h2>
+                <StatusPill status={selectedReceipt.status} discrepancy={isDiscrepancy && selectedReceipt.status === 'pending'} />
               </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="bg-slate-50 dark:bg-slate-900/50">
-                      <TableHead className="font-semibold text-slate-600 dark:text-slate-300 text-xs uppercase tracking-wider">
-                        Ticket #
-                      </TableHead>
-                      <TableHead className="font-semibold text-slate-600 dark:text-slate-300 text-xs uppercase tracking-wider">
-                        Driver
-                      </TableHead>
-                      <TableHead className="font-semibold text-slate-600 dark:text-slate-300 text-xs uppercase tracking-wider">
-                        Vehicle
-                      </TableHead>
-                      <TableHead className="font-semibold text-slate-600 dark:text-slate-300 text-xs uppercase tracking-wider">
-                        Department
-                      </TableHead>
-                      <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-300 text-xs uppercase tracking-wider">
-                        Amount Released
-                      </TableHead>
-                      <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-300 text-xs uppercase tracking-wider">
-                        Amount
-                      </TableHead>
-                      <TableHead className="font-semibold text-slate-600 dark:text-slate-300 text-xs uppercase tracking-wider">
-                        {isVerifiedView ? "Verified On" : "Status"}
-                      </TableHead>
-                      <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-300 text-xs uppercase tracking-wider">
-                        Actions
-                      </TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredReceipts.map((receipt) => (
-                      <TableRow
-                        key={receipt.id || receipt.fuel_receipt_id}
-                        className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors group cursor-pointer"
-                        onClick={() => openReceiptModal(receipt)}
-                      >
-                        <TableCell className="font-mono font-semibold text-slate-800 dark:text-white">
-                          {receipt.ticket_number}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <User className="h-3.5 w-3.5 text-slate-400 flex-shrink-0" />
-                            <span className="text-slate-700 dark:text-slate-300 truncate max-w-[100px]">
-                              {receipt.driver_name}
-                            </span>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <Truck className="h-3.5 w-3.5 text-slate-400 flex-shrink-0" />
-                            <span className="text-slate-700 dark:text-slate-300">{receipt.plate_number}</span>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <Building2 className="h-3.5 w-3.5 text-slate-400 flex-shrink-0" />
-                            <span className="text-slate-700 dark:text-slate-300 truncate max-w-[100px]">
-                              {receipt.department_name}
-                            </span>
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-right font-medium text-slate-700 dark:text-slate-300">
-                          {formatCurrency(receipt.amount_released)}
-                        </TableCell>
-                        <TableCell className="text-right font-semibold text-emerald-600 dark:text-emerald-400">
-                          {formatCurrency(receipt.amount)}
-                        </TableCell>
-                        <TableCell>
-                          {isVerifiedView ? (
-                            <div className="flex flex-col gap-0.5">
-                              <span className="text-xs text-slate-600 dark:text-slate-400">
-                                {formatDate(receipt.verified_at)}
-                              </span>
-                              {receipt.verified_by_name && (
-                                <span className="text-[10px] text-slate-400 dark:text-slate-500">
-                                  by {receipt.verified_by_name}
-                                </span>
-                              )}
-                            </div>
-                          ) : (
-                            <StatusBadge status={receipt.status} />
-                          )}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            <Button
-                              size="sm"
-                              variant={isVerifiedView ? "outline" : "default"}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openReceiptModal(receipt);
-                              }}
-                              className={cn(
-                                "h-8 px-3 rounded-lg shadow-sm transition-all duration-200 hover:scale-105 active:scale-95",
-                                !isVerifiedView &&
-                                  "bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700 text-white shadow-emerald-500/20"
-                              )}
-                            >
-                              <Eye className="h-3.5 w-3.5 mr-1" />
-                              {isVerifiedView ? "View" : "Review"}
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
 
-        {/* Receipt Detail Modal */}
-        <Dialog open={showReceiptModal} onOpenChange={setShowReceiptModal}>
-          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto dark:bg-slate-800 dark:border-slate-700">
-            <DialogHeader>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="p-2.5 rounded-xl bg-green-500/10">
-                    <Receipt className="h-5 w-5 text-green-600 dark:text-green-400" />
-                  </div>
-                  <div>
-                    <DialogTitle className="text-slate-900 dark:text-white">
-                      Fuel Receipt Details
-                    </DialogTitle>
-                    <DialogDescription className="dark:text-slate-400">
-                      {selectedReceipt?.ticket_number} • {formatDate(selectedReceipt?.trip_date)}
-                    </DialogDescription>
-                  </div>
-                </div>
-                {selectedReceipt?.status !== "verified" && !isVerifiedView && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={handleEditToggle}
-                    className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
-                  >
-                    {isEditing ? (
-                      <>
-                        <X className="h-4 w-4 mr-1" />
-                        Cancel Edit
-                      </>
-                    ) : (
-                      <>
-                        <Edit className="h-4 w-4 mr-1" />
-                        Edit
-                      </>
-                    )}
-                  </Button>
-                )}
-              </div>
-            </DialogHeader>
-
-            {selectedReceipt && (
-              <div className="space-y-4">
-                {/* Status Bar */}
-                <div className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700">
-                  <div className="flex-1">
-                    <p className="text-xs text-slate-500 dark:text-slate-400">Current Status</p>
-                    <div className="mt-1">
-                      <StatusBadge status={selectedReceipt.status} />
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-xs text-slate-500 dark:text-slate-400">
-                      {selectedReceipt.status === "verified" && selectedReceipt.verified_at
-                        ? "Verified On"
-                        : "Uploaded"}
-                    </p>
-                    <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                      {selectedReceipt.status === "verified" && selectedReceipt.verified_at
-                        ? formatDate(selectedReceipt.verified_at)
-                        : formatDate(selectedReceipt.uploaded_at)}
-                    </p>
-                    {selectedReceipt.status === "verified" && selectedReceipt.verified_by_name && (
-                      <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">
-                        by {selectedReceipt.verified_by_name}
-                      </p>
-                    )}
+              <div className="p-5 flex-1 overflow-y-auto space-y-5">
+                
+                {/* Ticket Info Grid */}
+                <div className="space-y-2 text-sm">
+                  <div className="grid grid-cols-3 gap-2">
+                    <span className="text-slate-500">Trip Ticket No.</span>
+                    <span className="col-span-2 text-white font-mono">: {selectedReceipt.ticket_number}</span>
+                    
+                    <span className="text-slate-500">Department</span>
+                    <span className="col-span-2 text-white">: {selectedReceipt.department_name}</span>
+                    
+                    <span className="text-slate-500">Vehicle</span>
+                    <span className="col-span-2 text-white">: {selectedReceipt.plate_number}</span>
+                    
+                    <span className="text-slate-500">Driver</span>
+                    <span className="col-span-2 text-white flex items-center gap-2"><User className="h-3 w-3 text-slate-400"/> {selectedReceipt.driver_name}</span>
+                    
+                    <span className="text-slate-500">Destination</span>
+                    <span className="col-span-2 text-white flex items-center gap-2"><Truck className="h-3 w-3 text-slate-400"/> {selectedReceipt.destination}</span>
+                    
+                    <span className="text-slate-500">Purpose</span>
+                    <span className="col-span-2 text-white flex items-center gap-2"><Info className="h-3 w-3 text-slate-400"/> {selectedReceipt.purpose}</span>
                   </div>
                 </div>
 
                 {/* Receipt Image */}
-                <ReceiptImage receipt={selectedReceipt} />
-
-                {/* ✅ Table-style receipt info with inline validation */}
-                <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
-                  <table className="w-full text-sm">
-                    <thead className="bg-slate-50 dark:bg-slate-900/50">
-                      <tr>
-                        <th className="px-3 py-2 text-left text-[11px] font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider align-top">
-                          Charge Invoice No.
-                          {isEditing && !isVerifiedView && <span className="text-red-500 ml-0.5">*</span>}
-                        </th>
-                        <th className="px-3 py-2 text-left text-[11px] font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider align-top">
-                          Plate No.
-                        </th>
-                        <th className="px-3 py-2 text-left text-[11px] font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider align-top">
-                          Date
-                        </th>
-                        <th className="px-3 py-2 text-left text-[11px] font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider align-top">
-                          Control No.
-                        </th>
-                        <th className="px-3 py-2 text-left text-[11px] font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider align-top">
-                          Lubricant
-                        </th>
-                        <th className="px-3 py-2 text-right text-[11px] font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider align-top">
-                          Unit Price
-                          {isEditing && !isVerifiedView && <span className="text-red-500 ml-0.5">*</span>}
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white dark:bg-slate-800">
-                      <tr>
-                        <td className="px-3 py-3 align-top font-mono text-slate-800 dark:text-slate-200">
-                          {isEditing && !isVerifiedView ? (
-                            <div>
-                              <Input
-                                value={editData.invoice_number}
-                                onChange={(e) => handleInputChange('invoice_number', e.target.value)}
-                                onBlur={() => handleBlur('invoice_number')}
-                                aria-invalid={!!fieldErrors.invoice_number}
-                                className={cn(
-                                  "h-8 text-xs dark:bg-slate-900 dark:border-slate-700 dark:text-white",
-                                  fieldErrors.invoice_number && "border-red-500 focus-visible:ring-red-500 dark:border-red-500"
-                                )}
-                                placeholder="Invoice #"
-                              />
-                              {fieldErrors.invoice_number && (
-                                <p className="mt-1 text-[11px] text-red-600 dark:text-red-400 flex items-center gap-1 font-sans">
-                                  <AlertCircle className="h-3 w-3 flex-shrink-0" />
-                                  {fieldErrors.invoice_number}
-                                </p>
-                              )}
-                            </div>
-                          ) : (
-                            selectedReceipt.invoice_number || "N/A"
-                          )}
-                        </td>
-                        <td className="px-3 py-3 align-top text-slate-800 dark:text-slate-200">
-                          {modalPlateCombined}
-                        </td>
-                        <td className="px-3 py-3 align-top text-slate-800 dark:text-slate-200">
-                          {formatDateShort(selectedReceipt.trip_date)}
-                        </td>
-                        <td className="px-3 py-3 align-top font-mono text-slate-800 dark:text-slate-200">
-                          {selectedReceipt.ticket_number || selectedReceipt.trip_ticket_number || "N/A"}
-                        </td>
-                        <td className="px-3 py-3 align-top text-slate-800 dark:text-slate-200">
-                          {selectedReceipt.fuel_type
-                            ? String(selectedReceipt.fuel_type).toUpperCase()
-                            : "N/A"}
-                        </td>
-                        <td className="px-3 py-3 align-top text-right text-slate-800 dark:text-slate-200">
-                          {isEditing && !isVerifiedView ? (
-                            <div>
-                              <div className="relative">
-                                <span className="absolute left-2 top-1/2 transform -translate-y-1/2 text-slate-500 dark:text-slate-400 text-xs font-medium">
-                                  ₱
-                                </span>
-                                <Input
-                                  type="number"
-                                  step="0.01"
-                                  min="0"
-                                  value={editData.unit_price}
-                                  onChange={(e) => handleInputChange('unit_price', e.target.value)}
-                                  onBlur={() => handleBlur('unit_price')}
-                                  aria-invalid={!!fieldErrors.unit_price}
-                                  className={cn(
-                                    "pl-6 h-8 text-xs font-semibold bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-right",
-                                    fieldErrors.unit_price
-                                      ? "border-red-500 focus-visible:ring-red-500 dark:border-red-500"
-                                      : "border-blue-300 dark:border-blue-700"
-                                  )}
-                                  placeholder="0.00"
-                                />
-                              </div>
-                              {fieldErrors.unit_price && (
-                                <p className="mt-1 text-[11px] text-red-600 dark:text-red-400 flex items-center gap-1 justify-end font-sans">
-                                  <AlertCircle className="h-3 w-3 flex-shrink-0" />
-                                  {fieldErrors.unit_price}
-                                </p>
-                              )}
-                            </div>
-                          ) : (
-                            modalUnitPrice || (
-                              <span className="text-slate-400 dark:text-slate-500 italic">N/A</span>
-                            )
-                          )}
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
+                <div className="relative rounded-xl border border-slate-700 overflow-hidden bg-[#0b101c]">
+                  <ReceiptImage receipt={selectedReceipt} />
+                  <button className="absolute top-2 right-2 p-1.5 bg-black/50 hover:bg-black/80 rounded-lg text-white transition-colors">
+                    <ImageIcon className="h-4 w-4" />
+                  </button>
                 </div>
 
-                {/* Amount Released + Amount on Receipt */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {/* Amount Released (read-only) */}
-                  <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700">
-                    <p className="text-xs text-slate-500 dark:text-slate-400">Amount Released</p>
-                    <p className="font-semibold text-slate-800 dark:text-white text-base mt-0.5">
-                      {formatCurrency(selectedReceipt.amount_released)}
-                    </p>
-                    <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">
-                      From fund issuance
-                    </p>
+                {/* Amounts Section */}
+                <div className="space-y-4 pt-2">
+                  <h3 className="font-bold text-white flex items-center gap-2 text-sm">
+                    <FileText className="h-4 w-4 text-blue-500" /> Fuel Receipt Amounts
+                  </h3>
+                  
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-xs text-slate-400">Invoice Number <span className="text-red-500">*</span></Label>
+                      <Input 
+                        value={editData.invoice_number} 
+                        onChange={(e) => handleInputChange('invoice_number', e.target.value)}
+                        className="bg-[#0b101c] border-slate-700 text-white mt-1 h-10"
+                        placeholder="e.g. 12345678"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs text-slate-400">Unit Price (₱/L) <span className="text-red-500">*</span></Label>
+                      <Input 
+                        type="number"
+                        value={editData.unit_price} 
+                        onChange={(e) => handleInputChange('unit_price', e.target.value)}
+                        className="bg-[#0b101c] border-slate-700 text-white mt-1 h-10"
+                        placeholder="0.00"
+                      />
+                    </div>
                   </div>
 
-                  {/* Amount on Receipt (editable) with inline validation */}
-                  <div className={cn(
-                    "p-3 rounded-lg border",
-                    isEditing && !isVerifiedView
-                      ? fieldErrors.amount_on_receipt
-                        ? 'bg-red-50 dark:bg-red-950/30 border-red-300 dark:border-red-800'
-                        : 'bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800'
-                      : 'bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700'
-                  )}>
-                    <p className={cn(
-                      "text-xs font-semibold",
-                      isEditing && !isVerifiedView
-                        ? fieldErrors.amount_on_receipt
-                          ? 'text-red-600 dark:text-red-400'
-                          : 'text-blue-600 dark:text-blue-400'
-                        : 'text-slate-500 dark:text-slate-400'
-                    )}>
-                      Amount on Receipt {isEditing && !isVerifiedView && '*'}
-                    </p>
-                    {isEditing && !isVerifiedView ? (
-                      <div>
-                        <div className="relative mt-1">
-                          <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-500 dark:text-slate-400 text-sm font-medium">
-                            ₱
-                          </span>
-                          <Input
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            value={editData.amount_on_receipt}
-                            onChange={(e) => handleInputChange('amount_on_receipt', e.target.value)}
-                            onBlur={() => handleBlur('amount_on_receipt')}
-                            aria-invalid={!!fieldErrors.amount_on_receipt}
-                            className={cn(
-                              "pl-7 h-9 text-sm font-semibold bg-white dark:bg-slate-900 text-slate-900 dark:text-white",
-                              fieldErrors.amount_on_receipt
-                                ? "border-red-500 focus-visible:ring-red-500 dark:border-red-500"
-                                : "border-blue-300 dark:border-blue-700"
-                            )}
-                            placeholder="0.00"
-                          />
-                        </div>
-                        {fieldErrors.amount_on_receipt && (
-                          <p className="mt-1 text-[11px] text-red-600 dark:text-red-400 flex items-center gap-1 font-sans">
-                            <AlertCircle className="h-3 w-3 flex-shrink-0" />
-                            {fieldErrors.amount_on_receipt}
-                          </p>
-                        )}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-xs text-slate-400">Amount Based on Receipt (₱) <span className="text-red-500">*</span></Label>
+                      <Input 
+                        type="number"
+                        value={editData.amount_on_receipt} 
+                        onChange={(e) => handleInputChange('amount_on_receipt', e.target.value)}
+                        className="bg-[#0b101c] border-slate-700 text-white mt-1 h-10"
+                        placeholder="0.00"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs text-slate-400">Amount Released</Label>
+                      <div className="bg-blue-600/10 border border-blue-900/50 rounded-lg mt-1 h-10 px-3 flex items-center font-bold text-blue-400">
+                        {formatCurrency(releasedAmount)}
                       </div>
-                    ) : (
-                      <p className="font-semibold text-emerald-600 dark:text-emerald-400 text-base mt-0.5">
-                        {formatCurrency(selectedReceipt.amount)}
-                      </p>
-                    )}
+                    </div>
+                  </div>
+
+                  <div>
+                    <Label className="text-xs text-slate-400 flex justify-between">
+                      <span>Difference</span>
+                    </Label>
+                    <div className={cn(
+                      "mt-1 h-10 px-3 flex items-center font-bold rounded-lg border",
+                      isDiscrepancy ? "bg-amber-600/10 border-amber-900/50 text-amber-400" : "bg-emerald-600/10 border-emerald-900/50 text-emerald-400"
+                    )}>
+                      {formatCurrency(difference)}
+                    </div>
+                  </div>
+
+                  <div>
+                    <Label className="text-xs text-slate-400">Remarks (Optional)</Label>
+                    <Textarea 
+                      value={editData.remarks}
+                      onChange={(e) => handleInputChange('remarks', e.target.value)}
+                      className="bg-[#0b101c] border-slate-700 text-white mt-1 text-sm resize-none h-16"
+                      placeholder="e.g. Fuel amount higher than released amount."
+                    />
                   </div>
                 </div>
 
-                {/* Edit Help */}
-                {isEditing && !isVerifiedView && (
-                  <div className="text-xs text-slate-600 dark:text-slate-300 bg-blue-50 dark:bg-blue-950/30 p-3 rounded-lg border border-blue-200 dark:border-blue-800">
-                    <Info className="h-4 w-4 inline mr-1 text-blue-500 dark:text-blue-400" />
-                    <strong>All three fields are required:</strong> Charge Invoice No., Unit Price,
-                    and Amount on Receipt (from the physical receipt).
-                    Amount must not exceed the <strong>Amount Released</strong> of{' '}
-                    <strong>{formatCurrency(selectedReceipt.amount_released)}</strong>.
-                  </div>
-                )}
-
-                {/* Actions */}
-                <div className="flex flex-wrap items-center justify-between pt-4 border-t dark:border-slate-700 gap-3">
-                  <div className="flex items-center gap-2">
-                    {isEditing && !isVerifiedView && (
-                      <Badge variant="outline" className="border-blue-500 text-blue-600 dark:text-blue-400">
-                        <Edit className="h-3 w-3 mr-1" />
-                        Editing
-                      </Badge>
-                    )}
-                  </div>
-
-                  <div className="flex gap-2">
-                    {isEditing && !isVerifiedView && (
-                      <Button
-                        variant="outline"
-                        onClick={handleEditToggle}
-                        className="dark:border-slate-600 dark:text-slate-300"
-                      >
-                        <X className="h-4 w-4 mr-2" />
-                        Cancel
-                      </Button>
-                    )}
-
-                    {!isVerifiedView && selectedReceipt.status !== "verified" && (
-                      <Button
-                        onClick={handleVerifyClick}
-                        className="bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700 shadow-lg shadow-emerald-500/20 transition-all duration-300 hover:scale-[1.02] active:scale-[0.98] text-white"
-                        disabled={verifyMutation.isPending}
-                      >
-                        {verifyMutation.isPending ? (
-                          <>
-                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                            {isEditing ? 'Saving & Verifying...' : 'Verifying...'}
-                          </>
-                        ) : (
-                          <>
-                            <CheckCircle className="h-4 w-4 mr-2" />
-                            {isEditing ? 'Save & Verify' : 'Verify Receipt'}
-                          </>
-                        )}
-                      </Button>
-                    )}
-
-                    {isVerifiedView && (
-                      <Button variant="outline" disabled className="dark:border-slate-700 dark:text-slate-400">
-                        <CheckCircle className="h-4 w-4 mr-2 text-green-500" />
-                        Already Verified
-                      </Button>
-                    )}
-                  </div>
-                </div>
               </div>
-            )}
-          </DialogContent>
-        </Dialog>
 
-        {/* ✅ CONFIRMATION: Verify Receipt */}
-        <AlertDialog
-          open={showConfirmVerify}
-          onOpenChange={(open) => {
-            if (!open) {
-              handleCancelConfirm();
-            }
-          }}
-        >
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle className="flex items-center gap-2">
-                <CheckCircle className="h-5 w-5 text-emerald-500" />
-                Confirm Receipt Verification
-              </AlertDialogTitle>
-              <AlertDialogDescription>
-                You are about to <strong>verify</strong> the fuel receipt for ticket{' '}
-                <strong className="text-slate-900 dark:text-white">
-                  {selectedReceipt?.ticket_number || 'N/A'}
-                </strong>
-                .
-                <br /><br />
-                Amount Released:{' '}
-                <strong className="text-slate-900 dark:text-white">
-                  {formatCurrency(selectedReceipt?.amount_released)}
-                </strong>
-                <br />
-                Amount on Receipt:{' '}
-                <strong className="text-emerald-600 dark:text-emerald-400">
-                  {formatCurrency(editData.amount_on_receipt)}
-                </strong>
-                {editData.unit_price && (
-                  <>
-                    <br />
-                    Unit Price:{' '}
-                    <strong className="text-slate-900 dark:text-white">
-                      {formatCurrency(editData.unit_price)}
-                    </strong>
-                  </>
-                )}
-                <br /><br />
-                This action cannot be undone. Continue?
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel onClick={handleCancelConfirm}>Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={handleConfirmVerify}
-                disabled={verifyMutation.isPending}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white"
-              >
-                {verifyMutation.isPending ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Verifying...
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle className="h-4 w-4 mr-2" />
-                    Confirm Verify
-                  </>
-                )}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-
-        {/* Footer */}
-        <div className="text-center text-xs text-slate-400 dark:text-slate-500 pt-2 border-t border-slate-200 dark:border-slate-700">
-          <p>FCMS - Mayor's Office • Receipt Verification</p>
-          <p className="mt-0.5">
-            {totalCount} total receipts • {verifiedCount} verified • {pendingCount} pending
-          </p>
+              {/* Action Buttons */}
+              <div className="p-5 border-t border-slate-800 flex gap-3">
+                <Button 
+                  onClick={() => handleVerify(false)}
+                  disabled={verifyMutation.isPending || selectedReceipt.status !== 'pending'}
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold h-12 rounded-xl"
+                >
+                  <CheckCircle className="h-5 w-5 mr-2" /> Mark as Verified
+                </Button>
+                <Button 
+                  onClick={() => handleVerify(true)}
+                  disabled={verifyMutation.isPending || selectedReceipt.status !== 'pending'}
+                  className="flex-1 bg-amber-600 hover:bg-amber-700 text-white font-bold h-12 rounded-xl"
+                >
+                  <Scale className="h-5 w-5 mr-2" /> Mark as Verified (with Discrepancy)
+                </Button>
+              </div>
+            </>
+          )}
         </div>
+
       </div>
     </div>
   );
