@@ -7,7 +7,7 @@ import { useAutoRefresh } from "../../hooks/useAutoRefresh";
 import { useRealtime } from "../../contexts/RealtimeContext";
 import { SkeletonPage } from "../../components/ui/SkeletonCard";
 import api, { mayorsOfficeAPI } from "../../services/api";
-import { isWithinInterval, subDays, startOfMonth, endOfMonth, startOfWeek, endOfWeek } from "date-fns";
+import { isWithinInterval, subDays, startOfMonth, endOfMonth, startOfWeek, endOfWeek, subMonths } from "date-fns";
 
 import {
     ArrowRight, Activity, PieChart, Fuel, Building2, Car, Download, TrendingUp, 
@@ -103,7 +103,7 @@ const handleDownloadReceipt = async (url, ticketNumber) => {
     }
 };
 
-// ✅ Custom Dropdown Component
+// ✅ Custom Dropdown Component (Fixed Z-Index and Dropdown placement)
 const CustomSelect = ({ value, onChange, options, placeholder = "Select..." }) => {
     const [isOpen, setIsOpen] = useState(false);
     const dropdownRef = useRef(null);
@@ -121,18 +121,18 @@ const CustomSelect = ({ value, onChange, options, placeholder = "Select..." }) =
     const selectedLabel = options.find(o => o.value === value)?.label || placeholder;
 
     return (
-        <div className="relative z-50" ref={dropdownRef}>
+        <div className="relative z-[100]" ref={dropdownRef}>
             <button 
                 type="button"
                 onClick={() => setIsOpen(!isOpen)}
-                className="bg-slate-800 text-[10px] text-slate-300 px-2 py-1.5 rounded border border-slate-700 outline-none cursor-pointer flex items-center justify-between min-w-[120px] hover:bg-slate-700 transition-colors"
+                className="bg-slate-800/80 text-[10px] text-slate-300 px-3 py-1.5 rounded-lg border border-slate-700 outline-none cursor-pointer flex items-center justify-between min-w-[120px] hover:bg-slate-700 transition-colors"
             >
                 {selectedLabel}
                 <ChevronDown className="h-3 w-3 ml-2 text-slate-400" />
             </button>
             
             {isOpen && (
-                <div className="absolute right-0 mt-1 w-48 bg-[#1e293b] border border-slate-700 rounded-lg shadow-2xl z-[100] max-h-60 overflow-y-auto">
+                <div className="absolute right-0 mt-1 w-40 bg-[#1e293b] border border-slate-700 rounded-lg shadow-2xl z-[999] max-h-60 overflow-y-auto">
                     {options.map((option) => (
                         <div 
                             key={option.value}
@@ -169,7 +169,7 @@ const MayorDashboard = () => {
     // Transaction Filters
     const [transDept, setTransDept] = useState("all");
     const [transStatusFilter, setTransStatusFilter] = useState("all"); 
-    const [transTimeFilter, setTransTimeFilter] = useState("this_month"); // ✅ NEW Date Filter
+    const [transTimeFilter, setTransTimeFilter] = useState("this_month"); 
     
     const [monitorDept, setMonitorDept] = useState(""); 
 
@@ -315,7 +315,7 @@ const MayorDashboard = () => {
         }));
     }, [approvedTicketsRaw, trendDept, departmentBudgets]);
 
-    // ✅ UPDATED: Transactions Data with Date Filter
+    // ✅ UPDATED: Transactions Data with Date Filter (Including Last Month)
     const transactionsData = useMemo(() => {
         return approvedTicketsRaw
             .filter(t => {
@@ -349,6 +349,10 @@ const MayorDashboard = () => {
                     } else if (transTimeFilter === "this_month") {
                         start = startOfMonth(today);
                         end = endOfMonth(today);
+                    } else if (transTimeFilter === "last_month") {
+                        const lastMonth = subMonths(today, 1);
+                        start = startOfMonth(lastMonth);
+                        end = endOfMonth(lastMonth);
                     } else if (transTimeFilter === "two_weeks_ago") {
                         start = subDays(today, 14);
                         end = today;
@@ -710,12 +714,12 @@ const MayorDashboard = () => {
                 </Card>
 
                 {/* ✅ Department Transactions with Date & Status Filters */}
-                <Card className="bg-[#121829] border border-slate-800 rounded-2xl shadow-lg p-0 overflow-hidden">
+                <Card className="bg-[#121829] border border-slate-800 rounded-2xl shadow-lg p-0 overflow-hidden relative">
                     <div className="flex items-center justify-between p-5 border-b border-slate-800">
                         <h3 className="font-bold text-white flex items-center gap-2">
                             <Activity className="h-4 w-4 text-blue-400" /> DEPARTMENT TRANSACTIONS
                         </h3>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 relative z-[50]">
                             {/* Dept Filter */}
                             <CustomSelect 
                                 value={transDept}
@@ -743,13 +747,14 @@ const MayorDashboard = () => {
                                     { value: "rejected", label: "Rejected" }
                                 ]}
                             />
-                            {/* ✅ Date Filter */}
+                            {/* ✅ Date Filter (Added Last Month) */}
                             <CustomSelect 
                                 value={transTimeFilter}
                                 onChange={(val) => setTransTimeFilter(val)}
                                 placeholder="This Month"
                                 options={[
                                     { value: "this_month", label: "This Month" },
+                                    { value: "last_month", label: "Last Month" },
                                     { value: "this_week", label: "This Week" },
                                     { value: "two_weeks_ago", label: "Last 2 Weeks" }
                                 ]}
