@@ -103,7 +103,7 @@ const handleDownloadReceipt = async (url, ticketNumber) => {
     }
 };
 
-// ✅ Custom Dropdown Component (Fixed Z-Index and Dropdown placement)
+// ✅ Custom Dropdown Component
 const CustomSelect = ({ value, onChange, options, placeholder = "Select..." }) => {
     const [isOpen, setIsOpen] = useState(false);
     const dropdownRef = useRef(null);
@@ -319,10 +319,8 @@ const MayorDashboard = () => {
     const transactionsData = useMemo(() => {
         return approvedTicketsRaw
             .filter(t => {
-                // 1. Filter by Department
                 const matchesDept = transDept === "all" || t.department_name === transDept;
                 
-                // 2. Filter by Status
                 let matchesStatus = true;
                 const hasCost = t.actual_fuel_cost && parseFloat(t.actual_fuel_cost) > 0;
                 
@@ -338,7 +336,6 @@ const MayorDashboard = () => {
                     matchesStatus = t.status === "rejected";
                 }
 
-                // 3. Filter by Date
                 let matchesDate = true;
                 if (transTimeFilter !== "all_time") {
                     const today = new Date();
@@ -529,19 +526,19 @@ const MayorDashboard = () => {
                 </Card>
             </div>
 
-            {/* 2. Middle Row: Pie, Top Consumers, Trend */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-                
-                {/* Pie Chart */}
-                <Card className="bg-[#121829] border border-slate-800 rounded-2xl shadow-lg p-5">
-                    <div className="flex items-center justify-between mb-6">
-                        <h3 className="font-bold text-white flex items-center gap-2">
-                            <PieChart className="h-4 w-4 text-blue-400" /> BUDGET ALLOCATION
+            {/* 2. NEW: Budget Allocation Pie Chart (Full Width Section) */}
+            <div className="mb-6">
+                <Card className="bg-[#121829] border border-slate-800 rounded-2xl shadow-lg p-6">
+                    <div className="flex items-center justify-between mb-4">
+                        <h3 className="font-bold text-white text-lg flex items-center gap-2">
+                            <PieChart className="h-5 w-5 text-blue-400" /> BUDGET ALLOCATION
                         </h3>
                         <button className="text-xs text-blue-400 font-medium">View Details →</button>
                     </div>
-                    <div className="flex items-center gap-4 h-[220px]">
-                        <div className="relative w-1/2 h-full">
+                    
+                    <div className="flex flex-col items-center">
+                        {/* Larger Pie Chart */}
+                        <div className="relative w-[300px] h-[300px] md:w-[350px] md:h-[350px]">
                             <ResponsiveContainer width="100%" height="100%">
                                 <RePieChart>
                                     <Pie
@@ -549,7 +546,7 @@ const MayorDashboard = () => {
                                         dataKey="value"
                                         nameKey="name"
                                         cx="50%" cy="50%"
-                                        innerRadius="65%" outerRadius="85%"
+                                        innerRadius="65%" outerRadius="90%"
                                         paddingAngle={2} stroke="none"
                                     >
                                         {pieData.map((entry, i) => (
@@ -559,18 +556,20 @@ const MayorDashboard = () => {
                                 </RePieChart>
                             </ResponsiveContainer>
                             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                                <p className="text-xl font-bold text-white">{formatCompact(allTimeTotals.totalAllocated)}</p>
-                                <p className="text-[9px] text-slate-400 uppercase">Total Budget</p>
+                                <p className="text-2xl font-bold text-white">{formatCompact(allTimeTotals.totalAllocated)}</p>
+                                <p className="text-xs text-slate-400 uppercase tracking-widest mt-1">Total Budget</p>
                             </div>
                         </div>
-                        <div className="w-1/2 space-y-3">
+
+                        {/* Legend Below Pie */}
+                        <div className="mt-6 grid grid-cols-2 md:grid-cols-4 gap-4 w-full max-w-4xl">
                             {pieData.map((d, i) => (
-                                <div key={i} className="flex items-center justify-between text-xs">
-                                    <div className="flex items-center gap-2">
-                                        <span className="h-2 w-2 rounded-full" style={{ backgroundColor: d.color }} />
-                                        <span className="text-slate-300 truncate max-w-[100px]">{d.name}</span>
+                                <div key={i} className="flex items-center justify-between bg-slate-800/40 p-2 rounded-lg border border-slate-700/50">
+                                    <div className="flex items-center gap-2 truncate">
+                                        <span className="h-2.5 w-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: d.color }} />
+                                        <span className="text-xs text-slate-300 truncate">{d.name}</span>
                                     </div>
-                                    <span className="font-semibold text-white">
+                                    <span className="text-xs font-semibold text-white ml-2">
                                         {allTimeTotals.totalAllocated > 0 ? ((d.value / allTimeTotals.totalAllocated) * 100).toFixed(1) : 0}%
                                     </span>
                                 </div>
@@ -578,7 +577,10 @@ const MayorDashboard = () => {
                         </div>
                     </div>
                 </Card>
+            </div>
 
+            {/* 3. Middle Row: Top Consumers & Trend (Below Pie) */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
                 {/* Top Fund Consumers */}
                 <Card className="bg-[#121829] border border-slate-800 rounded-2xl shadow-lg p-5">
                     <div className="flex items-center justify-between mb-6">
@@ -661,8 +663,8 @@ const MayorDashboard = () => {
                 </Card>
             </div>
 
-            {/* 3. Middle Row 2: Department Monitoring & Transactions */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+            {/* 4. Bottom Rows: Monthly Monitoring & Transactions (Stacked) */}
+            <div className="grid grid-cols-1 gap-6 mb-6">
                 
                 {/* Department Monthly Fund Monitoring */}
                 <Card className="bg-[#121829] border border-slate-800 rounded-2xl shadow-lg p-0 overflow-hidden">
@@ -715,11 +717,11 @@ const MayorDashboard = () => {
 
                 {/* ✅ Department Transactions with Date & Status Filters */}
                 <Card className="bg-[#121829] border border-slate-800 rounded-2xl shadow-lg p-0 overflow-hidden relative">
-                    <div className="flex items-center justify-between p-5 border-b border-slate-800">
+                    <div className="flex flex-col md:flex-row md:items-center justify-between p-5 border-b border-slate-800 gap-4">
                         <h3 className="font-bold text-white flex items-center gap-2">
                             <Activity className="h-4 w-4 text-blue-400" /> DEPARTMENT TRANSACTIONS
                         </h3>
-                        <div className="flex items-center gap-2 relative z-[50]">
+                        <div className="flex flex-wrap items-center gap-2 relative z-[50]">
                             {/* Dept Filter */}
                             <CustomSelect 
                                 value={transDept}
@@ -806,7 +808,7 @@ const MayorDashboard = () => {
                 </Card>
             </div>
 
-            {/* 4. Bottom Row */}
+            {/* 5. Bottom Row: Recent, Insights, Transparency */}
             <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
                 
                 {/* Recent Fund Releases */}
