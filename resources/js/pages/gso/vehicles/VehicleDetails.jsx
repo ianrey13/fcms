@@ -11,14 +11,11 @@ import { cn } from '@/lib/utils';
 import {
     ArrowLeft, Car, Fuel, Gauge, MapPin, Clock, User, 
     Building2, Activity, Navigation, Play, Square, Loader2,
-    Maximize2, Minimize2, FileText, ChevronLeft, ChevronRight, ArrowUpDown
+    Maximize2, Minimize2, ChevronLeft, ChevronRight, ArrowUpDown
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
-import {
-    Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
-} from "@/components/ui/dialog";
 import { format, startOfWeek } from 'date-fns';
 
 // ============================================
@@ -63,25 +60,24 @@ const MapBoundsUpdater = ({ bounds }) => {
 const VehicleDetails = () => {
     const { id } = useParams();
     const navigate = useNavigate();
-    const [activeTab, setActiveTab] = useState('overview');
     const [chartRange, setChartRange] = useState('7d');
     
     // Table State
     const [page, setPage] = useState(1);
     const [sortOrder, setSortOrder] = useState('desc');
-    const rowsPerPage = 5; // Pila ka rows per page
+    const rowsPerPage = 5; 
 
     const { data: vehicles = [], isLoading } = useVehicles();
     const vehicle = vehicles.find(v => v.vehicle_id === parseInt(id));
 
-    // State for History Modal
+    // State for Route Map
     const [selectedHistoryTrip, setSelectedHistoryTrip] = useState(null);
-    const [isMapModalOpen, setIsMapModalOpen] = useState(false);
     const [routeCoordinates, setRouteCoordinates] = useState([]);
     const [loadingRoute, setLoadingRoute] = useState(false);
     const [isReplaying, setIsReplaying] = useState(false);
     const [replayIndex, setReplayIndex] = useState(0);
     const replayIntervalRef = useRef(null);
+    const [isMapExpanded, setIsMapExpanded] = useState(false);
 
     useEffect(() => {
         return () => {
@@ -99,6 +95,13 @@ const VehicleDetails = () => {
         },
         enabled: !!vehicle
     });
+
+    // Auto-select the latest trip when data loads
+    useEffect(() => {
+        if (historyData.length > 0 && !selectedHistoryTrip) {
+            handleViewRoute(historyData[0]);
+        }
+    }, [historyData]);
 
     const assignedDriver = historyData?.[0]?.driver_name || "Unassigned";
 
@@ -172,7 +175,6 @@ const VehicleDetails = () => {
 
     const handleViewRoute = async (trip) => {
         setSelectedHistoryTrip(trip);
-        setIsMapModalOpen(true);
         setLoadingRoute(true);
         setRouteCoordinates([]); 
         handleStopReplay();
@@ -225,18 +227,18 @@ const VehicleDetails = () => {
     const fuelPct = vehicle.fuel_percentage || 0;
 
     return (
-        <div className="min-h-screen bg-slate-50 dark:bg-slate-950 p-4 md:p-6 font-sans">
+        <div className="min-h-screen bg-slate-50 dark:bg-slate-950 p-4 md:p-6 font-sans flex flex-col gap-6">
             
             {/* Header */}
-            <div className="mb-6">
+            <div>
                 <button onClick={() => navigate('/admin/vehicles')} className="flex items-center text-sm text-slate-500 hover:text-blue-600 mb-2 transition-colors">
                     <ArrowLeft className="h-4 w-4 mr-1" /> Back to Vehicles
                 </button>
                 <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Vehicle Details</h1>
             </div>
 
-            {/* Top Hero Section */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+            {/* 1. Top Hero Section */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <Card className="lg:col-span-2 dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm flex flex-col md:flex-row overflow-hidden">
                     <div className="p-6 bg-slate-100/50 dark:bg-slate-800/30 flex items-center justify-center md:w-1/3">
                         <Car className="h-20 w-20 text-slate-300 dark:text-slate-700" />
@@ -298,229 +300,110 @@ const VehicleDetails = () => {
                 </Card>
             </div>
 
-            {/* Tabs */}
-            <div className="flex border-b border-slate-200 dark:border-slate-800 mb-6">
-                {['overview', 'fuel', 'history'].map(tab => (
-                    <button
-                        key={tab}
-                        onClick={() => setActiveTab(tab)}
-                        className={cn(
-                            "px-6 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 capitalize",
-                            activeTab === tab ? "border-blue-600 text-blue-600 dark:text-blue-400" : "border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
-                        )}
-                    >
-                        {tab === 'overview' && <Car className="h-4 w-4" />}
-                        {tab === 'fuel' && <Fuel className="h-4 w-4" />}
-                        {tab === 'history' && <MapPin className="h-4 w-4" />}
-                        {tab === 'history' ? 'Trip History & Routes' : tab}
-                    </button>
-                ))}
-            </div>
-
-            {/* TAB CONTENT: OVERVIEW */}
-            {activeTab === 'overview' && (
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    <Card className="lg:col-span-2 dark:bg-slate-900 border-slate-200 dark:border-slate-800 p-6">
-                        <h3 className="font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2"><Car className="h-5 w-5"/> Vehicle Information</h3>
-                        <div className="grid grid-cols-2 gap-y-4 text-sm">
-                            <div><span className="text-slate-500">Plate No.</span><p className="font-semibold text-slate-800 dark:text-white">{vehicle.plate_number}</p></div>
-                            <div><span className="text-slate-500">Make / Model</span><p className="font-semibold text-slate-800 dark:text-white">{vehicle.vehicle_model}</p></div>
-                            <div><span className="text-slate-500">Fuel Type</span><p className="font-semibold text-slate-800 dark:text-white capitalize">{vehicle.fuel_type}</p></div>
-                            <div><span className="text-slate-500">Assigned Department</span><p className="font-semibold text-slate-800 dark:text-white">{vehicle.department?.department_name}</p></div>
-                        </div>
-                    </Card>
+            {/* 2. Fuel Balance History Chart */}
+            <Card className="dark:bg-slate-900 border-slate-200 dark:border-slate-800 p-6">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+                    <div>
+                        <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2 text-lg">
+                            <Activity className="h-5 w-5 text-blue-500"/> Fuel Balance History
+                        </h3>
+                        <p className="text-xs text-slate-500 mt-1">Weekly summary of fuel added and consumed.</p>
+                    </div>
+                    <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
+                        <button onClick={() => setChartRange('7d')} className={cn("px-3 py-1 text-xs font-medium rounded-md transition-colors", chartRange === '7d' ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" : "text-slate-500")}>Last 2 Weeks</button>
+                        <button onClick={() => setChartRange('30d')} className={cn("px-3 py-1 text-xs font-medium rounded-md transition-colors", chartRange === '30d' ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" : "text-slate-500")}>Last 4 Weeks</button>
+                        <button onClick={() => setChartRange('3m')} className={cn("px-3 py-1 text-xs font-medium rounded-md transition-colors", chartRange === '3m' ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" : "text-slate-500")}>All Time</button>
+                    </div>
                 </div>
-            )}
 
-            {/* TAB CONTENT: FUEL */}
-            {activeTab === 'fuel' && (
-                <div className="space-y-6">
-                    <Card className="dark:bg-slate-900 border-slate-200 dark:border-slate-800 p-6">
-                        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
-                            <div>
-                                <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2 text-lg">
-                                    <Activity className="h-5 w-5 text-blue-500"/> Fuel Balance History
-                                </h3>
-                                <p className="text-xs text-slate-500 mt-1">Weekly summary of fuel added and consumed.</p>
-                            </div>
-                            <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
-                                <button onClick={() => setChartRange('7d')} className={cn("px-3 py-1 text-xs font-medium rounded-md transition-colors", chartRange === '7d' ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" : "text-slate-500")}>Last 2 Weeks</button>
-                                <button onClick={() => setChartRange('30d')} className={cn("px-3 py-1 text-xs font-medium rounded-md transition-colors", chartRange === '30d' ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" : "text-slate-500")}>Last 4 Weeks</button>
-                                <button onClick={() => setChartRange('3m')} className={cn("px-3 py-1 text-xs font-medium rounded-md transition-colors", chartRange === '3m' ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" : "text-slate-500")}>All Time</button>
-                            </div>
+                {fuelLoading || historyLoading ? (
+                    <div className="h-64 flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-blue-500" /></div>
+                ) : chartData.labels.length === 0 ? (
+                    <div className="h-64 flex flex-col items-center justify-center text-slate-400">
+                        <Fuel className="h-10 w-10 mb-2 opacity-50" />
+                        <p>No fuel or trip history found for this range.</p>
+                    </div>
+                ) : (
+                    <div className="h-72 w-full mt-4 flex items-end justify-around gap-2 md:gap-8 pb-8 border-b border-slate-200 dark:border-slate-700 relative">
+                        <div className="absolute left-0 top-0 bottom-8 flex flex-col justify-between text-[10px] text-slate-400 font-mono">
+                            <span>{Math.round(chartData.max)} L</span>
+                            <span>0 L</span>
                         </div>
-
-                        {fuelLoading || historyLoading ? (
-                            <div className="h-64 flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-blue-500" /></div>
-                        ) : chartData.labels.length === 0 ? (
-                            <div className="h-64 flex flex-col items-center justify-center text-slate-400">
-                                <Fuel className="h-10 w-10 mb-2 opacity-50" />
-                                <p>No fuel or trip history found for this range.</p>
-                            </div>
-                        ) : (
-                            <div className="h-72 w-full mt-4 flex items-end justify-around gap-2 md:gap-8 pb-8 border-b border-slate-200 dark:border-slate-700 relative">
-                                <div className="absolute left-0 top-0 bottom-8 flex flex-col justify-between text-[10px] text-slate-400 font-mono">
-                                    <span>{Math.round(chartData.max)} L</span>
-                                    <span>0 L</span>
-                                </div>
-                                <div className="flex-1 flex justify-around items-end h-full ml-8">
-                                    {chartData.labels.map((label, idx) => {
-                                        const inVal = chartData.fuelIn[idx];
-                                        const outVal = chartData.fuelOut[idx];
-                                        const inPct = (inVal / chartData.max) * 100;
-                                        const outPct = (outVal / chartData.max) * 100;
-                                        return (
-                                            <div key={idx} className="flex flex-col items-center group w-1/3 max-w-[100px]">
-                                                <div className="flex items-end justify-center gap-1 h-full w-full">
-                                                    <div className="relative w-1/2 flex justify-center group-hover:opacity-80 transition-opacity" style={{ height: `${inPct}%` }}>
-                                                        <div className="w-full bg-emerald-500 rounded-t-md relative">
-                                                            {inVal > 0 && <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] font-bold text-emerald-500">+{inVal.toFixed(1)}</span>}
-                                                        </div>
-                                                    </div>
-                                                    <div className="relative w-1/2 flex justify-center group-hover:opacity-80 transition-opacity" style={{ height: `${outPct}%` }}>
-                                                        <div className="w-full bg-orange-500 rounded-t-md relative">
-                                                            {outVal > 0 && <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] font-bold text-orange-500">-{outVal.toFixed(1)}</span>}
-                                                        </div>
-                                                    </div>
+                        <div className="flex-1 flex justify-around items-end h-full ml-8">
+                            {chartData.labels.map((label, idx) => {
+                                const inVal = chartData.fuelIn[idx];
+                                const outVal = chartData.fuelOut[idx];
+                                const inPct = (inVal / chartData.max) * 100;
+                                const outPct = (outVal / chartData.max) * 100;
+                                return (
+                                    <div key={idx} className="flex flex-col items-center group w-1/3 max-w-[100px]">
+                                        <div className="flex items-end justify-center gap-1 h-full w-full">
+                                            <div className="relative w-1/2 flex justify-center group-hover:opacity-80 transition-opacity" style={{ height: `${inPct}%` }}>
+                                                <div className="w-full bg-emerald-500 rounded-t-md relative">
+                                                    {inVal > 0 && <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] font-bold text-emerald-500">+{inVal.toFixed(1)}</span>}
                                                 </div>
-                                                <span className="text-[10px] text-slate-500 font-medium mt-4 text-center">{label}</span>
                                             </div>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-                        )}
-                        <div className="flex justify-center gap-6 mt-4">
-                            <div className="flex items-center gap-2 text-xs font-medium text-slate-600 dark:text-slate-400">
-                                <span className="w-3 h-3 rounded-sm bg-emerald-500"></span> Fuel In (+) 
-                            </div>
-                            <div className="flex items-center gap-2 text-xs font-medium text-slate-600 dark:text-slate-400">
-                                <span className="w-3 h-3 rounded-sm bg-orange-500"></span> Fuel Out (-)
-                            </div>
-                        </div>
-                    </Card>
-                </div>
-            )}
-
-            {/* ✅ TAB CONTENT: HISTORY (TABLE + PAGINATION) */}
-            {activeTab === 'history' && (
-                <Card className="dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden flex flex-col">
-                    <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-800/20">
-                        <h3 className="font-bold text-slate-800 dark:text-white text-lg">Trip History</h3>
-                        <Badge variant="outline" className="bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400 border-blue-200">
-                            {sortedHistory.length} Records
-                        </Badge>
-                    </div>
-
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-left text-sm">
-                            <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-800">
-                                <tr>
-                                    <th className="px-5 py-4 font-semibold cursor-pointer hover:text-slate-800 dark:hover:text-slate-200" onClick={toggleSortDate}>
-                                        <div className="flex items-center gap-1">
-                                            Date <ArrowUpDown className="h-3 w-3" />
+                                            <div className="relative w-1/2 flex justify-center group-hover:opacity-80 transition-opacity" style={{ height: `${outPct}%` }}>
+                                                <div className="w-full bg-orange-500 rounded-t-md relative">
+                                                    {outVal > 0 && <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] font-bold text-orange-500">-{outVal.toFixed(1)}</span>}
+                                                </div>
+                                            </div>
                                         </div>
-                                    </th>
-                                    <th className="px-5 py-4 font-semibold">Trip Ticket No.</th>
-                                    <th className="px-5 py-4 font-semibold">Destination</th>
-                                    <th className="px-5 py-4 font-semibold text-right">Distance</th>
-                                    <th className="px-5 py-4 font-semibold text-center">Action</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300">
-                                {historyLoading ? (
-                                    <tr>
-                                        <td colSpan={5} className="px-5 py-12 text-center text-slate-500">
-                                            <Loader2 className="h-6 w-6 animate-spin text-blue-500 mx-auto mb-2" /> Loading...
-                                        </td>
-                                    </tr>
-                                ) : currentTableData.length === 0 ? (
-                                    <tr>
-                                        <td colSpan={5} className="px-5 py-12 text-center text-slate-500">No trip records found.</td>
-                                    </tr>
-                                ) : (
-                                    currentTableData.map(trip => (
-                                        <tr key={trip.trip_id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
-                                            <td className="px-5 py-4 whitespace-nowrap font-medium text-slate-900 dark:text-white">
-                                                {format(new Date(trip.trip_date), 'MMM dd, yyyy')}
-                                            </td>
-                                            <td className="px-5 py-4 font-mono">{trip.ticket_number}</td>
-                                            <td className="px-5 py-4">{trip.destination}</td>
-                                            <td className="px-5 py-4 text-right font-semibold">{trip.actual_distance_km ? `${trip.actual_distance_km} km` : '—'}</td>
-                                            <td className="px-5 py-4 text-center">
-                                                <Button 
-                                                    size="sm" 
-                                                    variant="outline" 
-                                                    onClick={() => handleViewRoute(trip)}
-                                                    className="h-8 border-blue-200 text-blue-600 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-400 dark:hover:bg-blue-900/30"
-                                                >
-                                                    View Route
-                                                </Button>
-                                            </td>
-                                        </tr>
-                                    ))
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
-
-                    {/* Pagination Controls */}
-                    <div className="p-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between text-sm text-slate-500 bg-slate-50 dark:bg-slate-900/50 mt-auto">
-                        <span>
-                            Showing {((page - 1) * rowsPerPage) + 1} to {Math.min(page * rowsPerPage, sortedHistory.length)} of {sortedHistory.length} records
-                        </span>
-                        <div className="flex gap-1">
-                            <Button 
-                                variant="outline" 
-                                size="icon" 
-                                className="h-8 w-8 dark:border-slate-700"
-                                onClick={() => setPage(p => Math.max(1, p - 1))}
-                                disabled={page === 1}
-                            >
-                                <ChevronLeft className="h-4 w-4" />
-                            </Button>
-                            <div className="flex items-center px-4 font-medium text-slate-700 dark:text-slate-300">
-                                Page {page} of {totalPages}
-                            </div>
-                            <Button 
-                                variant="outline" 
-                                size="icon" 
-                                className="h-8 w-8 dark:border-slate-700"
-                                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                                disabled={page === totalPages}
-                            >
-                                <ChevronRight className="h-4 w-4" />
-                            </Button>
+                                        <span className="text-[10px] text-slate-500 font-medium mt-4 text-center">{label}</span>
+                                    </div>
+                                );
+                            })}
                         </div>
                     </div>
-                </Card>
-            )}
+                )}
+                <div className="flex justify-center gap-6 mt-4">
+                    <div className="flex items-center gap-2 text-xs font-medium text-slate-600 dark:text-slate-400">
+                        <span className="w-3 h-3 rounded-sm bg-emerald-500"></span> Fuel In (+) 
+                    </div>
+                    <div className="flex items-center gap-2 text-xs font-medium text-slate-600 dark:text-slate-400">
+                        <span className="w-3 h-3 rounded-sm bg-orange-500"></span> Fuel Out (-)
+                    </div>
+                </div>
+            </Card>
 
-            {/* ✅ MAP MODAL (Mugawas kung i-click ang "View Route") */}
-            <Dialog open={isMapModalOpen} onOpenChange={setIsMapModalOpen}>
-                <DialogContent className="max-w-5xl h-[85vh] p-0 overflow-hidden dark:bg-slate-900 dark:border-slate-700 flex flex-col">
-                    <DialogHeader className="p-4 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 z-10">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <DialogTitle className="text-lg font-bold text-slate-900 dark:text-white">Route for Selected Trip</DialogTitle>
-                                <DialogDescription className="text-xs text-slate-500">
-                                    {selectedHistoryTrip?.ticket_number} • {selectedHistoryTrip?.destination}
-                                </DialogDescription>
-                            </div>
-                            
-                            {/* Replay Controls */}
-                            {routeCoordinates.length > 1 && (
-                                <div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-800 px-4 py-2 rounded-full border border-slate-200 dark:border-slate-700">
-                                    <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">Replay Trip</span>
-                                    <div className="h-4 w-px bg-slate-300 dark:bg-slate-600" />
-                                    <button onClick={handleReplay} className={cn("p-1.5 rounded-full transition-colors flex items-center justify-center", isReplaying ? "bg-red-100 text-red-600 hover:bg-red-200" : "bg-blue-100 text-blue-600 hover:bg-blue-200")}>
-                                        {isReplaying ? <Square className="h-4 w-4 fill-current" /> : <Play className="h-4 w-4 fill-current ml-0.5" />}
+            {/* 3. Bottom Row: Map & Table */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                
+                {/* MAP CARD (Left) */}
+                <Card className={cn(
+                    "dark:bg-slate-900 border-slate-200 dark:border-slate-800 flex flex-col overflow-hidden transition-all duration-300",
+                    isMapExpanded ? "fixed inset-4 z-[9999] h-auto" : "h-[500px]"
+                )}>
+                    <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-800/20">
+                        <div>
+                            <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                                <MapPin className="h-4 w-4 text-blue-500" /> Route for Selected Trip
+                            </h3>
+                            <p className="text-[10px] text-slate-500 mt-1">{selectedHistoryTrip ? selectedHistoryTrip.ticket_number : 'Select a trip'}</p>
+                        </div>
+                        
+                        <div className="flex items-center gap-2">
+                            {/* Replay Controls (Inline) */}
+                            {selectedHistoryTrip && routeCoordinates.length > 1 && !isMapExpanded && (
+                                <div className="flex items-center gap-2 bg-white dark:bg-slate-800 px-3 py-1.5 rounded-full shadow-sm border border-slate-200 dark:border-slate-700">
+                                    <button onClick={handleReplay} className={cn("p-1 rounded-full flex items-center justify-center", isReplaying ? "bg-red-100 text-red-600" : "bg-blue-100 text-blue-600")}>
+                                        {isReplaying ? <Square className="h-3 w-3 fill-current" /> : <Play className="h-3 w-3 fill-current ml-0.5" />}
                                     </button>
-                                    <span className="text-[10px] text-slate-500 font-mono">{isReplaying ? `${replayIndex} / ${routeCoordinates.length}` : `${routeCoordinates.length} pings`}</span>
+                                    <span className="text-[10px] text-slate-500 font-mono">{isReplaying ? `${replayIndex} / ${routeCoordinates.length}` : 'Replay'}</span>
                                 </div>
                             )}
+
+                            {/* Expand Button */}
+                            <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                onClick={() => setIsMapExpanded(!isMapExpanded)}
+                                className="h-8 w-8 text-slate-500 hover:text-slate-800 dark:hover:text-white"
+                            >
+                                {isMapExpanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+                            </Button>
                         </div>
-                    </DialogHeader>
+                    </div>
 
                     <div className="flex-1 relative bg-slate-100 dark:bg-slate-950">
                         {loadingRoute ? (
@@ -528,12 +411,11 @@ const VehicleDetails = () => {
                                 <Loader2 className="h-8 w-8 animate-spin text-blue-500 mb-2" />
                                 <p className="text-sm font-medium text-slate-600 dark:text-slate-400">Loading route...</p>
                             </div>
-                        ) : routeCoordinates.length > 0 ? (
+                        ) : selectedHistoryTrip && routeCoordinates.length > 0 ? (
                             <MapContainer bounds={routeCoordinates} style={{ height: '100%', width: '100%' }} zoomControl={true}>
                                 <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
                                 <MapBoundsUpdater bounds={routeCoordinates} />
                                 
-                                {/* ✅ POLYLINE NGA NAAY FILTER */}
                                 <Polyline 
                                     positions={routeCoordinates.filter((coord, idx, arr) => {
                                         if (idx === 0) return true;
@@ -549,7 +431,7 @@ const VehicleDetails = () => {
                                         return dist < 500; 
                                     })} 
                                     color="#3b82f6" 
-                                    weight={5} 
+                                    weight={4} 
                                     opacity={0.8} 
                                 />
 
@@ -559,13 +441,104 @@ const VehicleDetails = () => {
                             </MapContainer>
                         ) : (
                             <div className="absolute inset-0 flex flex-col items-center justify-center">
-                                <MapPin className="h-10 w-10 text-slate-300 mb-3" />
-                                <p className="text-slate-500 text-sm">No GPS data available for this trip.</p>
+                                <MapPin className="h-10 w-10 text-slate-300 dark:text-slate-700 mb-3" />
+                                <p className="text-slate-500 text-sm">Select a trip from the table.</p>
                             </div>
                         )}
                     </div>
-                </DialogContent>
-            </Dialog>
+                </Card>
+
+                {/* TRIP HISTORY TABLE (Right) */}
+                <Card className="dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden flex flex-col h-[500px]">
+                    <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-800/20">
+                        <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                            <Car className="h-4 w-4 text-blue-500" /> Trip History
+                        </h3>
+                        <Badge variant="outline" className="bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400 border-blue-200 text-[10px]">
+                            {sortedHistory.length} Records
+                        </Badge>
+                    </div>
+
+                    <div className="flex-1 overflow-x-auto">
+                        <table className="w-full text-left text-sm">
+                            <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-800 sticky top-0">
+                                <tr>
+                                    <th className="px-4 py-3 font-semibold cursor-pointer hover:text-slate-800 dark:hover:text-slate-200" onClick={toggleSortDate}>
+                                        <div className="flex items-center gap-1">
+                                            Date <ArrowUpDown className="h-3 w-3" />
+                                        </div>
+                                    </th>
+                                    <th className="px-4 py-3 font-semibold">Trip Ticket No.</th>
+                                    <th className="px-4 py-3 font-semibold">Destination</th>
+                                    <th className="px-4 py-3 font-semibold text-right">Distance</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300">
+                                {historyLoading ? (
+                                    <tr>
+                                        <td colSpan={4} className="px-4 py-12 text-center text-slate-500">
+                                            <Loader2 className="h-6 w-6 animate-spin text-blue-500 mx-auto mb-2" /> Loading...
+                                        </td>
+                                    </tr>
+                                ) : currentTableData.length === 0 ? (
+                                    <tr>
+                                        <td colSpan={4} className="px-4 py-12 text-center text-slate-500">No trip records found.</td>
+                                    </tr>
+                                ) : (
+                                    currentTableData.map(trip => {
+                                        const isSelected = selectedHistoryTrip?.trip_id === trip.trip_id;
+                                        return (
+                                            <tr 
+                                                key={trip.trip_id} 
+                                                onClick={() => handleViewRoute(trip)}
+                                                className={cn(
+                                                    "cursor-pointer transition-colors",
+                                                    isSelected ? "bg-blue-50 dark:bg-blue-900/20" : "hover:bg-slate-50 dark:hover:bg-slate-800/30"
+                                                )}
+                                            >
+                                                <td className="px-4 py-3 whitespace-nowrap font-medium text-slate-900 dark:text-white">
+                                                    {format(new Date(trip.trip_date), 'MMM dd, yyyy')}
+                                                </td>
+                                                <td className="px-4 py-3 font-mono">{trip.ticket_number}</td>
+                                                <td className="px-4 py-3 truncate max-w-[150px]">{trip.destination}</td>
+                                                <td className="px-4 py-3 text-right font-semibold">{trip.actual_distance_km ? `${trip.actual_distance_km} km` : '—'}</td>
+                                            </tr>
+                                        );
+                                    })
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    {/* Pagination */}
+                    <div className="p-3 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500 bg-slate-50 dark:bg-slate-900/50">
+                        <span>
+                            {((page - 1) * rowsPerPage) + 1}-{Math.min(page * rowsPerPage, sortedHistory.length)} of {sortedHistory.length}
+                        </span>
+                        <div className="flex gap-1">
+                            <Button 
+                                variant="outline" 
+                                size="icon" 
+                                className="h-7 w-7 dark:border-slate-700"
+                                onClick={() => setPage(p => Math.max(1, p - 1))}
+                                disabled={page === 1}
+                            >
+                                <ChevronLeft className="h-3 w-3" />
+                            </Button>
+                            <Button 
+                                variant="outline" 
+                                size="icon" 
+                                className="h-7 w-7 dark:border-slate-700"
+                                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                                disabled={page === totalPages}
+                            >
+                                <ChevronRight className="h-3 w-3" />
+                            </Button>
+                        </div>
+                    </div>
+                </Card>
+            </div>
+
         </div>
     );
 };
