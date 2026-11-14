@@ -11,11 +11,14 @@ import { cn } from '@/lib/utils';
 import {
     ArrowLeft, Car, Fuel, Gauge, MapPin, Clock, User, 
     Building2, Activity, Navigation, Play, Square, Loader2,
-    Maximize2, Minimize2, ChevronLeft, ChevronRight, ArrowUpDown
+    Maximize2, Minimize2, FileText, ChevronLeft, ChevronRight, ArrowUpDown
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
+import {
+    Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
+} from "@/components/ui/dialog";
 import { format, startOfWeek } from 'date-fns';
 
 // ============================================
@@ -70,14 +73,16 @@ const VehicleDetails = () => {
     const { data: vehicles = [], isLoading } = useVehicles();
     const vehicle = vehicles.find(v => v.vehicle_id === parseInt(id));
 
-    // State for Route Map
+    // State for Map Modal
     const [selectedHistoryTrip, setSelectedHistoryTrip] = useState(null);
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [isMapMaximized, setIsMapMaximized] = useState(false);
+    
     const [routeCoordinates, setRouteCoordinates] = useState([]);
     const [loadingRoute, setLoadingRoute] = useState(false);
     const [isReplaying, setIsReplaying] = useState(false);
     const [replayIndex, setReplayIndex] = useState(0);
     const replayIntervalRef = useRef(null);
-    const [isMapExpanded, setIsMapExpanded] = useState(false);
 
     useEffect(() => {
         return () => {
@@ -95,13 +100,6 @@ const VehicleDetails = () => {
         },
         enabled: !!vehicle
     });
-
-    // Auto-select the latest trip when data loads
-    useEffect(() => {
-        if (historyData.length > 0 && !selectedHistoryTrip) {
-            handleViewRoute(historyData[0]);
-        }
-    }, [historyData]);
 
     const assignedDriver = historyData?.[0]?.driver_name || "Unassigned";
 
@@ -175,6 +173,7 @@ const VehicleDetails = () => {
 
     const handleViewRoute = async (trip) => {
         setSelectedHistoryTrip(trip);
+        setIsModalOpen(true);
         setLoadingRoute(true);
         setRouteCoordinates([]); 
         handleStopReplay();
@@ -366,44 +365,140 @@ const VehicleDetails = () => {
                 </div>
             </Card>
 
-            {/* 3. Bottom Row: Map & Table */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                
-                {/* MAP CARD (Left) */}
-                <Card className={cn(
-                    "dark:bg-slate-900 border-slate-200 dark:border-slate-800 flex flex-col overflow-hidden transition-all duration-300",
-                    isMapExpanded ? "fixed inset-4 z-[9999] h-auto" : "h-[500px]"
-                )}>
-                    <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-800/20">
-                        <div>
-                            <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
-                                <MapPin className="h-4 w-4 text-blue-500" /> Route for Selected Trip
-                            </h3>
-                            <p className="text-[10px] text-slate-500 mt-1">{selectedHistoryTrip ? selectedHistoryTrip.ticket_number : 'Select a trip'}</p>
-                        </div>
-                        
-                        <div className="flex items-center gap-2">
-                            {/* Replay Controls (Inline) */}
-                            {selectedHistoryTrip && routeCoordinates.length > 1 && !isMapExpanded && (
-                                <div className="flex items-center gap-2 bg-white dark:bg-slate-800 px-3 py-1.5 rounded-full shadow-sm border border-slate-200 dark:border-slate-700">
-                                    <button onClick={handleReplay} className={cn("p-1 rounded-full flex items-center justify-center", isReplaying ? "bg-red-100 text-red-600" : "bg-blue-100 text-blue-600")}>
-                                        {isReplaying ? <Square className="h-3 w-3 fill-current" /> : <Play className="h-3 w-3 fill-current ml-0.5" />}
-                                    </button>
-                                    <span className="text-[10px] text-slate-500 font-mono">{isReplaying ? `${replayIndex} / ${routeCoordinates.length}` : 'Replay'}</span>
-                                </div>
-                            )}
+            {/* 3. Trip History Table */}
+            <Card className="dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden flex flex-col">
+                <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-800/20">
+                    <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                        <Car className="h-4 w-4 text-blue-500" /> Trip History
+                    </h3>
+                    <Badge variant="outline" className="bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400 border-blue-200 text-[10px]">
+                        {sortedHistory.length} Records
+                    </Badge>
+                </div>
 
-                            {/* Expand Button */}
-                            <Button 
-                                variant="ghost" 
-                                size="icon" 
-                                onClick={() => setIsMapExpanded(!isMapExpanded)}
-                                className="h-8 w-8 text-slate-500 hover:text-slate-800 dark:hover:text-white"
-                            >
-                                {isMapExpanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-                            </Button>
+                <div className="overflow-x-auto">
+                    <table className="w-full text-left text-sm">
+                        <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-800">
+                            <tr>
+                                <th className="px-4 py-3 font-semibold cursor-pointer hover:text-slate-800 dark:hover:text-slate-200" onClick={toggleSortDate}>
+                                    <div className="flex items-center gap-1">
+                                        Date <ArrowUpDown className="h-3 w-3" />
+                                    </div>
+                                </th>
+                                <th className="px-4 py-3 font-semibold">Trip Ticket No.</th>
+                                <th className="px-4 py-3 font-semibold">Destination</th>
+                                <th className="px-4 py-3 font-semibold text-right">Distance</th>
+                                <th className="px-4 py-3 font-semibold text-center">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300">
+                            {historyLoading ? (
+                                <tr>
+                                    <td colSpan={5} className="px-4 py-12 text-center text-slate-500">
+                                        <Loader2 className="h-6 w-6 animate-spin text-blue-500 mx-auto mb-2" /> Loading...
+                                    </td>
+                                </tr>
+                            ) : currentTableData.length === 0 ? (
+                                <tr>
+                                    <td colSpan={5} className="px-4 py-12 text-center text-slate-500">No trip records found.</td>
+                                </tr>
+                            ) : (
+                                currentTableData.map(trip => (
+                                    <tr key={trip.trip_id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
+                                        <td className="px-4 py-3 whitespace-nowrap font-medium text-slate-900 dark:text-white">
+                                            {format(new Date(trip.trip_date), 'MMM dd, yyyy')}
+                                        </td>
+                                        <td className="px-4 py-3 font-mono">{trip.ticket_number}</td>
+                                        <td className="px-4 py-3">{trip.destination}</td>
+                                        <td className="px-4 py-3 text-right font-semibold">{trip.actual_distance_km ? `${trip.actual_distance_km} km` : '—'}</td>
+                                        <td className="px-4 py-3 text-center">
+                                            <Button 
+                                                size="sm" 
+                                                variant="outline" 
+                                                onClick={() => handleViewRoute(trip)}
+                                                className="h-8 border-blue-200 text-blue-600 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-400 dark:hover:bg-blue-900/30"
+                                            >
+                                                View Route
+                                            </Button>
+                                        </td>
+                                    </tr>
+                                ))
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+
+                {/* Pagination Controls */}
+                <div className="p-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between text-sm text-slate-500 bg-slate-50 dark:bg-slate-900/50 mt-auto">
+                    <span>
+                        Showing {((page - 1) * rowsPerPage) + 1} to {Math.min(page * rowsPerPage, sortedHistory.length)} of {sortedHistory.length} records
+                    </span>
+                    <div className="flex gap-1">
+                        <Button 
+                            variant="outline" 
+                            size="icon" 
+                            className="h-8 w-8 dark:border-slate-700"
+                            onClick={() => setPage(p => Math.max(1, p - 1))}
+                            disabled={page === 1}
+                        >
+                            <ChevronLeft className="h-4 w-4" />
+                        </Button>
+                        <div className="flex items-center px-4 font-medium text-slate-700 dark:text-slate-300">
+                            Page {page} of {totalPages}
                         </div>
+                        <Button 
+                            variant="outline" 
+                            size="icon" 
+                            className="h-8 w-8 dark:border-slate-700"
+                            onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                            disabled={page === totalPages}
+                        >
+                            <ChevronRight className="h-4 w-4" />
+                        </Button>
                     </div>
+                </div>
+            </Card>
+
+            {/* ✅ MAP MODAL (Mugawas kung i-click ang "View Route") */}
+            <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+                <DialogContent className={cn(
+                    "p-0 overflow-hidden dark:bg-slate-900 dark:border-slate-700 flex flex-col transition-all duration-300",
+                    isMapMaximized ? "max-w-[95vw] w-[95vw] h-[95vh]" : "max-w-5xl h-[85vh]"
+                )}>
+                    <DialogHeader className="p-4 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 z-10">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <DialogTitle className="text-lg font-bold text-slate-900 dark:text-white">Route for Selected Trip</DialogTitle>
+                                <DialogDescription className="text-xs text-slate-500">
+                                    {selectedHistoryTrip?.ticket_number} • {selectedHistoryTrip?.destination}
+                                </DialogDescription>
+                            </div>
+                            
+                            <div className="flex items-center gap-3">
+                                {/* Replay Controls */}
+                                {routeCoordinates.length > 1 && (
+                                    <div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-800 px-4 py-2 rounded-full border border-slate-200 dark:border-slate-700">
+                                        <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">Replay Trip</span>
+                                        <div className="h-4 w-px bg-slate-300 dark:bg-slate-600" />
+                                        <button onClick={handleReplay} className={cn("p-1.5 rounded-full transition-colors flex items-center justify-center", isReplaying ? "bg-red-100 text-red-600 hover:bg-red-200" : "bg-blue-100 text-blue-600 hover:bg-blue-200")}>
+                                            {isReplaying ? <Square className="h-4 w-4 fill-current" /> : <Play className="h-4 w-4 fill-current ml-0.5" />}
+                                        </button>
+                                        <span className="text-[10px] text-slate-500 font-mono">{isReplaying ? `${replayIndex} / ${routeCoordinates.length}` : `${routeCoordinates.length} pings`}</span>
+                                    </div>
+                                )}
+                                
+                                {/* Expand Toggle */}
+                                <Button
+                                    variant="outline"
+                                    size="icon"
+                                    onClick={() => setIsMapMaximized(!isMapMaximized)}
+                                    className="h-8 w-8 border-slate-200 dark:border-slate-700"
+                                >
+                                    {isMapMaximized ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+                                </Button>
+                            </div>
+                        </div>
+                    </DialogHeader>
 
                     <div className="flex-1 relative bg-slate-100 dark:bg-slate-950">
                         {loadingRoute ? (
@@ -411,7 +506,7 @@ const VehicleDetails = () => {
                                 <Loader2 className="h-8 w-8 animate-spin text-blue-500 mb-2" />
                                 <p className="text-sm font-medium text-slate-600 dark:text-slate-400">Loading route...</p>
                             </div>
-                        ) : selectedHistoryTrip && routeCoordinates.length > 0 ? (
+                        ) : routeCoordinates.length > 0 ? (
                             <MapContainer bounds={routeCoordinates} style={{ height: '100%', width: '100%' }} zoomControl={true}>
                                 <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
                                 <MapBoundsUpdater bounds={routeCoordinates} />
@@ -431,7 +526,7 @@ const VehicleDetails = () => {
                                         return dist < 500; 
                                     })} 
                                     color="#3b82f6" 
-                                    weight={4} 
+                                    weight={5} 
                                     opacity={0.8} 
                                 />
 
@@ -441,104 +536,13 @@ const VehicleDetails = () => {
                             </MapContainer>
                         ) : (
                             <div className="absolute inset-0 flex flex-col items-center justify-center">
-                                <MapPin className="h-10 w-10 text-slate-300 dark:text-slate-700 mb-3" />
-                                <p className="text-slate-500 text-sm">Select a trip from the table.</p>
+                                <MapPin className="h-10 w-10 text-slate-300 mb-3" />
+                                <p className="text-slate-500 text-sm">No GPS data available for this trip.</p>
                             </div>
                         )}
                     </div>
-                </Card>
-
-                {/* TRIP HISTORY TABLE (Right) */}
-                <Card className="dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden flex flex-col h-[500px]">
-                    <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-800/20">
-                        <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
-                            <Car className="h-4 w-4 text-blue-500" /> Trip History
-                        </h3>
-                        <Badge variant="outline" className="bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400 border-blue-200 text-[10px]">
-                            {sortedHistory.length} Records
-                        </Badge>
-                    </div>
-
-                    <div className="flex-1 overflow-x-auto">
-                        <table className="w-full text-left text-sm">
-                            <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-800 sticky top-0">
-                                <tr>
-                                    <th className="px-4 py-3 font-semibold cursor-pointer hover:text-slate-800 dark:hover:text-slate-200" onClick={toggleSortDate}>
-                                        <div className="flex items-center gap-1">
-                                            Date <ArrowUpDown className="h-3 w-3" />
-                                        </div>
-                                    </th>
-                                    <th className="px-4 py-3 font-semibold">Trip Ticket No.</th>
-                                    <th className="px-4 py-3 font-semibold">Destination</th>
-                                    <th className="px-4 py-3 font-semibold text-right">Distance</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300">
-                                {historyLoading ? (
-                                    <tr>
-                                        <td colSpan={4} className="px-4 py-12 text-center text-slate-500">
-                                            <Loader2 className="h-6 w-6 animate-spin text-blue-500 mx-auto mb-2" /> Loading...
-                                        </td>
-                                    </tr>
-                                ) : currentTableData.length === 0 ? (
-                                    <tr>
-                                        <td colSpan={4} className="px-4 py-12 text-center text-slate-500">No trip records found.</td>
-                                    </tr>
-                                ) : (
-                                    currentTableData.map(trip => {
-                                        const isSelected = selectedHistoryTrip?.trip_id === trip.trip_id;
-                                        return (
-                                            <tr 
-                                                key={trip.trip_id} 
-                                                onClick={() => handleViewRoute(trip)}
-                                                className={cn(
-                                                    "cursor-pointer transition-colors",
-                                                    isSelected ? "bg-blue-50 dark:bg-blue-900/20" : "hover:bg-slate-50 dark:hover:bg-slate-800/30"
-                                                )}
-                                            >
-                                                <td className="px-4 py-3 whitespace-nowrap font-medium text-slate-900 dark:text-white">
-                                                    {format(new Date(trip.trip_date), 'MMM dd, yyyy')}
-                                                </td>
-                                                <td className="px-4 py-3 font-mono">{trip.ticket_number}</td>
-                                                <td className="px-4 py-3 truncate max-w-[150px]">{trip.destination}</td>
-                                                <td className="px-4 py-3 text-right font-semibold">{trip.actual_distance_km ? `${trip.actual_distance_km} km` : '—'}</td>
-                                            </tr>
-                                        );
-                                    })
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
-
-                    {/* Pagination */}
-                    <div className="p-3 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500 bg-slate-50 dark:bg-slate-900/50">
-                        <span>
-                            {((page - 1) * rowsPerPage) + 1}-{Math.min(page * rowsPerPage, sortedHistory.length)} of {sortedHistory.length}
-                        </span>
-                        <div className="flex gap-1">
-                            <Button 
-                                variant="outline" 
-                                size="icon" 
-                                className="h-7 w-7 dark:border-slate-700"
-                                onClick={() => setPage(p => Math.max(1, p - 1))}
-                                disabled={page === 1}
-                            >
-                                <ChevronLeft className="h-3 w-3" />
-                            </Button>
-                            <Button 
-                                variant="outline" 
-                                size="icon" 
-                                className="h-7 w-7 dark:border-slate-700"
-                                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                                disabled={page === totalPages}
-                            >
-                                <ChevronRight className="h-3 w-3" />
-                            </Button>
-                        </div>
-                    </div>
-                </Card>
-            </div>
-
+                </DialogContent>
+            </Dialog>
         </div>
     );
 };
