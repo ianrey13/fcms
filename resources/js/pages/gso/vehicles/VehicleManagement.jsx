@@ -25,10 +25,7 @@ import {
 import {
     Car,
     Plus,
-    Edit,
-    Trash2,
     Search,
-    RefreshCw,
     Fuel,
     Loader2,
     Building2,
@@ -38,21 +35,11 @@ import {
     Check,
     ArrowLeft,
     Zap,
-    Shield,
     Filter,
     ChevronDown,
     ChevronUp,
     Gauge,
-    Calendar,
-    AlertTriangle,
-    Eye,
-    MoreHorizontal,
-    Users,
-    Clock,
-    MapPin,
-    X,
     AlertCircle,
-    Droplet,
 } from "lucide-react";
 import {
     useVehicles,
@@ -96,7 +83,7 @@ const StatsCard = ({ title, value, icon: Icon, color, subtitle }) => (
 );
 
 // ============================================
-// ✅ UPDATED STATUS BADGE (Text only, no background)
+// STATUS BADGE
 // ============================================
 
 const StatusBadge = ({ status, maintenanceFlag }) => {
@@ -723,16 +710,13 @@ const VehicleManagement = () => {
                                             <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
                                                 Fuel
                                             </th>
-                                            {/* ✅ Fuel Level column */}
                                             <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
                                                 Fuel Level
                                             </th>
                                             <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
                                                 Status
                                             </th>
-                                            <th className="px-4 py-3 text-right text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
-                                                Actions
-                                            </th>
+                                            {/* ✅ WALA NAY ACTIONS COLUMN */}
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
@@ -748,7 +732,6 @@ const VehicleManagement = () => {
                                                 vehicle.fuel_type,
                                             );
 
-                                            // ✅ Safely parse values to prevent "NaN"
                                             const tankCapacity =
                                                 parseFloat(
                                                     vehicle.tank_capacity ??
@@ -765,7 +748,8 @@ const VehicleManagement = () => {
                                             return (
                                                 <tr
                                                     key={vehicle.vehicle_id}
-                                                    className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors group"
+                                                    onClick={() => navigate(`/admin/vehicles/details/${vehicle.vehicle_id}`)}
+                                                    className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors group cursor-pointer"
                                                 >
                                                     <td className="px-4 py-3">
                                                         <div className="flex items-center gap-3">
@@ -774,15 +758,11 @@ const VehicleManagement = () => {
                                                             </div>
                                                             <div>
                                                                 <span className="font-semibold text-slate-700 dark:text-slate-300">
-                                                                    {
-                                                                        vehicle.vehicle_model
-                                                                    }
+                                                                    {vehicle.vehicle_model}
                                                                 </span>
                                                                 {vehicle.vehicle_type && (
                                                                     <p className="text-xs text-slate-400 dark:text-slate-500">
-                                                                        {
-                                                                            vehicle.vehicle_type
-                                                                        }
+                                                                        {vehicle.vehicle_type}
                                                                     </p>
                                                                 )}
                                                             </div>
@@ -790,19 +770,14 @@ const VehicleManagement = () => {
                                                     </td>
                                                     <td className="px-4 py-3">
                                                         <span className="font-mono text-sm font-semibold text-slate-800 dark:text-white">
-                                                            {
-                                                                vehicle.plate_number
-                                                            }
+                                                            {vehicle.plate_number}
                                                         </span>
-                                                        {/* ✅ Only show efficiency if it's a valid number greater than 0 */}
-                                                        {!isNaN(refEff) &&
-                                                            refEff > 0 && (
-                                                                <p className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1">
-                                                                    <Gauge className="h-2.5 w-2.5" />
-                                                                    {refEff}{" "}
-                                                                    km/L
-                                                                </p>
-                                                            )}
+                                                        {!isNaN(refEff) && refEff > 0 && (
+                                                            <p className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1">
+                                                                <Gauge className="h-2.5 w-2.5" />
+                                                                {refEff} km/L
+                                                            </p>
+                                                        )}
                                                     </td>
                                                     <td className="px-4 py-3">
                                                         <div className="flex items-center gap-1.5">
@@ -819,65 +794,20 @@ const VehicleManagement = () => {
                                                             className={`${fuelColor} flex items-center gap-1 text-[10px] font-medium`}
                                                         >
                                                             <Fuel className="h-3 w-3" />
-                                                            {vehicle.fuel_type ||
-                                                                "N/A"}
+                                                            {vehicle.fuel_type || "N/A"}
                                                         </Badge>
                                                     </td>
-                                                    {/* ✅ Fuel Level cell */}
                                                     <td className="px-4 py-3">
                                                         <FuelLevelBar
-                                                            balance={
-                                                                currentBalance
-                                                            }
-                                                            tankCapacity={
-                                                                tankCapacity
-                                                            }
+                                                            balance={currentBalance}
+                                                            tankCapacity={tankCapacity}
                                                         />
                                                     </td>
                                                     <td className="px-4 py-3">
-                                                        {/* ✅ Renders text only, no bg */}
                                                         <StatusBadge
-                                                            status={
-                                                                vehicle.status
-                                                            }
-                                                            maintenanceFlag={
-                                                                vehicle.maintenance_flag
-                                                            }
+                                                            status={vehicle.status}
+                                                            maintenanceFlag={vehicle.maintenance_flag}
                                                         />
-                                                    </td>
-                                                    <td className="px-4 py-3 text-right">
-                                                        <div className="flex items-center justify-end gap-1">
-                                                            
-                                                            {/* ✅ NEW: View Details Button */}
-                                                            <Button
-                                                                variant="ghost"
-                                                                size="sm"
-                                                                onClick={() =>
-                                                                    navigate(
-                                                                        `/admin/vehicles/details/${vehicle.vehicle_id}`,
-                                                                    )
-                                                                }
-                                                                className="text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:text-emerald-300 dark:hover:bg-emerald-950/30 h-9 w-9 p-0 rounded-lg transition-all duration-200 group-hover:scale-110"
-                                                                title="View Details"
-                                                            >
-                                                                <Eye className="h-4 w-4" />
-                                                            </Button>
-
-                                                            {/* Edit Button */}
-                                                            <Button
-                                                                variant="ghost"
-                                                                size="sm"
-                                                                onClick={() =>
-                                                                    navigate(
-                                                                        `/admin/vehicles/edit/${vehicle.vehicle_id}`,
-                                                                    )
-                                                                }
-                                                                className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:text-blue-300 dark:hover:bg-blue-950/30 h-9 w-9 p-0 rounded-lg transition-all duration-200 group-hover:scale-110"
-                                                                title="Edit Vehicle"
-                                                            >
-                                                                <Edit className="h-4 w-4" />
-                                                            </Button>
-                                                        </div>
                                                     </td>
                                                 </tr>
                                             );
@@ -894,18 +824,9 @@ const VehicleManagement = () => {
                     <p>FCMS - Vehicle Management • Laguindingan Municipality</p>
                     <p className="mt-0.5">
                         {vehicles.length} total vehicles •
-                        {
-                            vehicles.filter(
-                                (v) =>
-                                    v.status === "active" &&
-                                    !v.maintenance_flag,
-                            ).length
-                        }{" "}
-                        serviceable •
-                        {vehicles.filter((v) => v.maintenance_flag).length}{" "}
-                        maintenance •
-                        {vehicles.filter((v) => v.status === "inactive").length}{" "}
-                        unserviceable
+                        {vehicles.filter((v) => v.status === "active" && !v.maintenance_flag).length} serviceable •
+                        {vehicles.filter((v) => v.maintenance_flag).length} maintenance •
+                        {vehicles.filter((v) => v.status === "inactive").length} unserviceable
                     </p>
                 </div>
             </div>
