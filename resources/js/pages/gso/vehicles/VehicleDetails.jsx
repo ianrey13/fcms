@@ -4,8 +4,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useVehicles } from '../../../hooks/useVehicleManagement';
 import { gpsAPI, gsoAPI } from '../../../services/api';
-// ✅ GIBALIK ANG POLYLINE
-import { MapContainer, TileLayer, Marker, Polyline, useMap } from 'react-leaflet'; 
+// ✅ GIDUGANG ANG POLYLINE
+import { MapContainer, TileLayer, Marker, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { cn } from '@/lib/utils';
@@ -468,9 +468,27 @@ const VehicleDetails = () => {
                                 <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
                                 <MapBoundsUpdater bounds={routeCoordinates} />
                                 
-                                {/* ✅ GIBALIK ANG POLYLINE PERO MAY FILTER PARA DILI MAG-GUBOT */}
+                                {/* ✅ POLYLINE NGA NAAY FILTER PARA DILI MAG-STRAIGHT LINE KUNG MAG-JUMP ANG GPS */}
                                 <Polyline 
-                                    positions={routeCoordinates} 
+                                    positions={routeCoordinates.filter((coord, idx, arr) => {
+                                        if (idx === 0) return true;
+                                        const prev = arr[idx - 1];
+                                        // Haversine formula para sa distance calculation
+                                        const R = 6371e3; 
+                                        const lat1 = prev[0] * Math.PI / 180;
+                                        const lat2 = coord[0] * Math.PI / 180;
+                                        const deltaLat = (coord[0] - prev[0]) * Math.PI / 180;
+                                        const deltaLon = (coord[1] - prev[1]) * Math.PI / 180;
+                                        
+                                        const a = Math.sin(deltaLat/2) * Math.sin(deltaLat/2) +
+                                                  Math.cos(lat1) * Math.cos(lat2) *
+                                                  Math.sin(deltaLon/2) * Math.sin(deltaLon/2);
+                                        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+                                        const dist = R * c;
+                                        
+                                        // Kung lapas sa 500 meters, i-skip ang pag-connect (guba nga ping)
+                                        return dist < 500; 
+                                    })} 
                                     color="#3b82f6" 
                                     weight={4} 
                                     opacity={0.8} 
