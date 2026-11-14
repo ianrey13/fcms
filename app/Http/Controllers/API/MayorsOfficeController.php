@@ -1016,9 +1016,8 @@ class MayorsOfficeController extends Controller
                 'fr.verified_at',
                 'tt.trip_date',
                 'v.fuel_type',
-                // ✅ SIGURADUHA NGA NA.A NI SILA
-                'tt.purpose',      
-                'tt.destination'   
+                'tt.purpose',      // ✅ SIGURADUHA NGA NA.A NI
+                'tt.destination'   // ✅ SIGURADUHA NGA NA.A NI
             )
             ->whereNotNull('fr.receipt_photo_path')
             ->where('fr.verification_status', 'pending')
@@ -1680,78 +1679,80 @@ class MayorsOfficeController extends Controller
         }
     }
 
-    public function getVerifiedReceipts(Request $request)
-    {
-        try {
-            $user = $request->user();
-            if (!$user->isMayorsOffice()) {
-                return response()->json(['message' => 'Unauthorized'], 403);
-            }
-
-            $query = DB::table('fuel_receipt as fr')
-                ->join('gas_slip as gs', 'fr.gas_slip_id', '=', 'gs.gas_slip_id')
-                ->join('trip_ticket as tt', 'gs.trip_ticket_id', '=', 'tt.trip_ticket_id')
-                ->join('vehicles as v', 'tt.vehicle_id', '=', 'v.vehicle_id')
-                ->join('drivers as d', 'tt.driver_id', '=', 'd.driver_id')
-                ->join('users as u_driver', 'd.user_id', '=', 'u_driver.user_id')
-                ->join('departments as dept', 'tt.department_id', '=', 'dept.department_id')
-                ->leftJoin('users as u_verifier', 'fr.verified_by', '=', 'u_verifier.user_id')
-                ->select(
-                    'fr.fuel_receipt_id as id',
-                    'fr.invoice_number',
-                    'fr.unit_price',
-                    'gs.amount_released',
-                    'tt.trip_ticket_number as ticket_number',
-                    DB::raw("CONCAT(u_driver.first_name, ' ', u_driver.last_name) as driver_name"),
-                    'v.plate_number',
-                    'v.fuel_type',
-                    'dept.department_name',
-                    'fr.liters_availed as liters',
-                    'fr.amount_on_receipt as amount',
-                    'fr.receipt_photo_path',
-                    'fr.receipt_uploaded_at as uploaded_at',
-                    'fr.gps_distance_km',
-                    'fr.verification_status as status',
-                    'fr.verified_at',
-                    DB::raw("CONCAT(u_verifier.first_name, ' ', u_verifier.last_name) as verified_by_name"),
-                    'tt.trip_date'
-                )
-                ->whereNotNull('fr.receipt_photo_path')
-                ->where('fr.verification_status', 'verified');
-
-            if ($request->filled('start_date') && $request->filled('end_date')) {
-                $query->whereBetween('fr.verified_at', [
-                    Carbon::parse($request->start_date)->startOfDay(),
-                    Carbon::parse($request->end_date)->endOfDay(),
-                ]);
-            }
-
-            if ($request->filled('department_id')) {
-                $query->where('tt.department_id', $request->department_id);
-            }
-
-            $receipts = $query->orderBy('fr.verified_at', 'desc')
-                ->get()
-                ->map(function ($receipt) {
-                    $receipt->receipt_url = $receipt->receipt_photo_path
-                        ? asset('receipts/' . basename($receipt->receipt_photo_path))
-                        : null;
-                    return $receipt;
-                });
-
-            return response()->json([
-                'success' => true,
-                'data'    => $receipts,
-                'total'   => $receipts->count(),
-            ]);
-        } catch (\Exception $e) {
-            Log::error('MO get verified receipts error: ' . $e->getMessage());
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to fetch verified receipts: ' . $e->getMessage(),
-            ], 500);
+  public function getVerifiedReceipts(Request $request)
+{
+    try {
+        $user = $request->user();
+        if (!$user->isMayorsOffice()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
         }
+
+        $query = DB::table('fuel_receipt as fr')
+            ->join('gas_slip as gs', 'fr.gas_slip_id', '=', 'gs.gas_slip_id')
+            ->join('trip_ticket as tt', 'gs.trip_ticket_id', '=', 'tt.trip_ticket_id')
+            ->join('vehicles as v', 'tt.vehicle_id', '=', 'v.vehicle_id')
+            ->join('drivers as d', 'tt.driver_id', '=', 'd.driver_id')
+            ->join('users as u_driver', 'd.user_id', '=', 'u_driver.user_id')
+            ->join('departments as dept', 'tt.department_id', '=', 'dept.department_id')
+            ->leftJoin('users as u_verifier', 'fr.verified_by', '=', 'u_verifier.user_id')
+            ->select(
+                'fr.fuel_receipt_id as id',
+                'fr.invoice_number',
+                'fr.unit_price',
+                'gs.amount_released',
+                'tt.trip_ticket_number as ticket_number',
+                DB::raw("CONCAT(u_driver.first_name, ' ', u_driver.last_name) as driver_name"),
+                'v.plate_number',
+                'v.fuel_type',
+                'dept.department_name',
+                'fr.liters_availed as liters',
+                'fr.amount_on_receipt as amount',
+                'fr.receipt_photo_path',
+                'fr.receipt_uploaded_at as uploaded_at',
+                'fr.gps_distance_km',
+                'fr.verification_status as status',
+                'fr.verified_at',
+                DB::raw("CONCAT(u_verifier.first_name, ' ', u_verifier.last_name) as verified_by_name"),
+                'tt.trip_date',
+                'tt.purpose',      // ✅ GIDUGANG
+                'tt.destination'   // ✅ GIDUGANG
+            )
+            ->whereNotNull('fr.receipt_photo_path')
+            ->whereIn('fr.verification_status', ['verified', 'discrepancy']); // ✅ GIDUGANG ANG DISCREPANCY
+
+        if ($request->filled('start_date') && $request->filled('end_date')) {
+            $query->whereBetween('fr.verified_at', [
+                Carbon::parse($request->start_date)->startOfDay(),
+                Carbon::parse($request->end_date)->endOfDay(),
+            ]);
+        }
+
+        if ($request->filled('department_id')) {
+            $query->where('tt.department_id', $request->department_id);
+        }
+
+        $receipts = $query->orderBy('fr.verified_at', 'desc')
+            ->get()
+            ->map(function ($receipt) {
+                $receipt->receipt_url = $receipt->receipt_photo_path
+                    ? asset('receipts/' . basename($receipt->receipt_photo_path))
+                    : null;
+                return $receipt;
+            });
+
+        return response()->json([
+            'success' => true,
+            'data'    => $receipts,
+            'total'   => $receipts->count(),
+        ]);
+    } catch (\Exception $e) {
+        Log::error('MO get verified receipts error: ' . $e->getMessage());
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to fetch verified receipts: ' . $e->getMessage(),
+        ], 500);
     }
+}
 
 
 
