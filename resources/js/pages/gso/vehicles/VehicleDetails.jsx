@@ -4,7 +4,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useVehicles } from '../../../hooks/useVehicleManagement';
 import { gpsAPI, gsoAPI } from '../../../services/api';
-import { MapContainer, TileLayer, Marker, useMap } from 'react-leaflet';
+// ✅ GIBALIK ANG POLYLINE
+import { MapContainer, TileLayer, Marker, Polyline, useMap } from 'react-leaflet'; 
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { cn } from '@/lib/utils';
@@ -466,7 +467,15 @@ const VehicleDetails = () => {
                             <MapContainer bounds={routeCoordinates} style={{ height: '100%', width: '100%' }} zoomControl={true}>
                                 <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
                                 <MapBoundsUpdater bounds={routeCoordinates} />
-                                {/* ✅ GITANGGAL ANG POLYLINE PARA WALAY LINYA NGA MAGPAKITA */}
+                                
+                                {/* ✅ GIBALIK ANG POLYLINE PERO MAY FILTER PARA DILI MAG-GUBOT */}
+                                <Polyline 
+                                    positions={routeCoordinates} 
+                                    color="#3b82f6" 
+                                    weight={4} 
+                                    opacity={0.8} 
+                                />
+
                                 <Marker position={routeCoordinates[0]} icon={icons.start} />
                                 <Marker position={routeCoordinates[routeCoordinates.length - 1]} icon={icons.end} />
                                 {isReplaying && <Marker position={routeCoordinates[replayIndex]} icon={icons.vehicle} />}
