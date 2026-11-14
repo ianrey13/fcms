@@ -1,20 +1,22 @@
+// src/pages/gso/vehicles/VehicleDetails.jsx
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useVehicles } from '../../../hooks/useVehicleManagement';
 import { gpsAPI, gsoAPI } from '../../../services/api';
-import { MapContainer, TileLayer, Polyline, Marker } from 'react-leaflet';
+import { MapContainer, TileLayer, Polyline, Marker, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { cn } from '@/lib/utils';
 import {
     ArrowLeft, Car, Fuel, Gauge, MapPin, Clock, User, 
     Building2, Activity, Navigation, Play, Square, Loader2,
-    ArrowDownRight, ArrowUpRight, List
+    Maximize2, Minimize2, Info, FileText
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
+import { format, startOfWeek, addDays } from 'date-fns';
 
 // ============================================
 // CUSTOM MAP ICONS
@@ -45,12 +47,21 @@ const icons = {
     end: createSvgIcon('#ef4444', '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><line x1="4" y1="22" x2="4" y2="15"></line>'),
 };
 
+const MapBoundsUpdater = ({ bounds }) => {
+    const map = useMap();
+    useEffect(() => {
+        if (bounds && bounds.length > 0) {
+            map.fitBounds(bounds, { padding: [50, 50] });
+        }
+    }, [bounds, map]);
+    return null;
+};
+
 const VehicleDetails = () => {
     const { id } = useParams();
     const navigate = useNavigate();
     const [activeTab, setActiveTab] = useState('overview');
     const [chartRange, setChartRange] = useState('7d');
-    const [fuelViewMode, setFuelViewMode] = useState('chart'); // 'chart' or 'table'
     
     const { data: vehicles = [], isLoading } = useVehicles();
     const vehicle = vehicles.find(v => v.vehicle_id === parseInt(id));
@@ -62,7 +73,7 @@ const VehicleDetails = () => {
     const [isReplaying, setIsReplaying] = useState(false);
     const [replayIndex, setReplayIndex] = useState(0);
     const replayIntervalRef = useRef(null);
-    const [hoveredPoint, setHoveredPoint] = useState(null);
+    const [isMapExpanded, setIsMapExpanded] = useState(false);
 
     useEffect(() => {
         return () => {
@@ -94,83 +105,47 @@ const VehicleDetails = () => {
         enabled: !!vehicle
     });
 
-    // ✅ Calculate Historical Fuel Balance AND Build Table Ledger
-    const { chartData, tableData } = useMemo(() => {
-        if (!vehicle) return { chartData: { labels: [], values: [], max: 60 }, tableData: [] };
+    // ✅ SIMPLIFIED WEEKLY CHART DATA
+    const chartData = useMemo(() => {
+        if (!vehicle) return { labels: [], fuelIn: [], fuelOut: [], max: 100 };
         
-        const tankCap = parseFloat(vehicle.tank_capacity || 60);
         const eff = parseFloat(vehicle.reference_efficiency || 10);
-
-        let events = [];
-
-        // Add Receipts
-        fuelReceipts.forEach(r => {
-            events.push({
-                date: new Date(r.uploaded_at),
-                type: 'Refuel',
-                description: `Receipt ${r.ticket_number || ''}`,
-                fuelChange: parseFloat(r.liters || 0), // Positive
-                distance: 0
-            });
-        });
-
-        // Add Trips
-        historyData.forEach(t => {
-            const dist = parseFloat(t.actual_distance_km || 0);
-            events.push({
-                date: new Date(t.updated_at || t.trip_date),
-                type: 'Trip',
-                description: `${t.ticket_number} (${t.destination})`,
-                fuelChange: -(dist / eff), // Negative
-                distance: dist
-            });
-        });
-
-        // ✅ FIX: Sort by Date, then prioritize Refuel if on the same day/time
-        events.sort((a, b) => {
-            const dateDiff = a.date - b.date;
-            if (dateDiff !== 0) return dateDiff;
-            
-            // If exactly same timestamp, Refuel first
-            if (a.type === 'Refuel' && b.type === 'Trip') return -1;
-            if (a.type === 'Trip' && b.type === 'Refuel') return 1;
-            return 0;
-        });
-
-        // Build the Ledger for the Table
-        let runningBal = parseFloat(vehicle.initial_estimated_fuel || 0);
-        const ledger = events.map(e => {
-            runningBal += e.fuelChange;
-            runningBal = Math.min(Math.max(runningBal, 0), tankCap); // Clamp
-            return {
-                ...e,
-                balance: runningBal
-            };
-        });
-
-        // Filter based on range for the Chart
-        const ranges = { '7d': 7, '30d': 30, '3m': 90 };
-        const cutoff = new Date();
-        cutoff.setDate(cutoff.getDate() - ranges[chartRange]);
-
-        let chartPoints = ledger.filter(e => e.date >= cutoff);
         
-        // If no events in range, just use the last few
-        if (chartPoints.length === 0) {
-            chartPoints = ledger.slice(-7);
-        }
+        const weeklyData = {};
 
-        let grouped = {};
-        chartPoints.forEach(e => {
-            const dateStr = e.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-            grouped[dateStr] = e.balance;
+        // Process Receipts (Fuel In)
+        fuelReceipts.forEach(r => {
+            const d = new Date(r.uploaded_at);
+            const weekStart = startOfWeek(d, { weekStartsOn: 1 });
+            const weekLabel = format(weekStart, 'MMM dd');
+            
+            if (!weeklyData[weekLabel]) weeklyData[weekLabel] = { in: 0, out: 0, date: weekStart };
+            weeklyData[weekLabel].in += parseFloat(r.liters || 0);
         });
 
-        return { 
-            chartData: { labels: Object.keys(grouped), values: Object.values(grouped), max: tankCap },
-            // Show the latest events first in the table (Reversed ledger)
-            tableData: [...ledger].reverse()
-        };
+        // Process Trips (Fuel Out)
+        historyData.forEach(t => {
+            const d = new Date(t.updated_at || t.trip_date);
+            const weekStart = startOfWeek(d, { weekStartsOn: 1 });
+            const weekLabel = format(weekStart, 'MMM dd');
+            const dist = parseFloat(t.actual_distance_km || 0);
+            
+            if (!weeklyData[weekLabel]) weeklyData[weekLabel] = { in: 0, out: 0, date: weekStart };
+            weeklyData[weekLabel].out += (dist / eff);
+        });
+
+        // Sort weeks and limit based on range
+        let weeks = Object.keys(weeklyData).sort((a, b) => weeklyData[a].date - weeklyData[b].date);
+        
+        if (chartRange === '7d') weeks = weeks.slice(-2);
+        else if (chartRange === '30d') weeks = weeks.slice(-4);
+        
+        const labels = weeks;
+        const fuelIn = weeks.map(w => weeklyData[w].in);
+        const fuelOut = weeks.map(w => weeklyData[w].out);
+        const max = Math.max(...fuelIn, ...fuelOut, 10) * 1.2;
+
+        return { labels, fuelIn, fuelOut, max };
     }, [vehicle, fuelReceipts, historyData, chartRange]);
 
     const handleViewRoute = async (trip) => {
@@ -225,20 +200,6 @@ const VehicleDetails = () => {
     const currentFuel = parseFloat(vehicle.current_fuel_balance || 0);
     const tankCap = parseFloat(vehicle.tank_capacity || 60);
     const refEff = parseFloat(vehicle.reference_efficiency || 10);
-
-    const generatePath = (data, width, height, max) => {
-        if (!data || data.length === 0) return '';
-        if (data.length === 1) {
-            const y = height - (data[0] / max) * height;
-            return `M ${width/2} ${y}`;
-        }
-        const xStep = width / (data.length - 1);
-        return data.map((val, i) => {
-            const x = i * xStep;
-            const y = height - (val / max) * height;
-            return `${i === 0 ? 'M' : 'L'} ${x} ${y}`;
-        }).join(' ');
-    };
 
     return (
         <div className="min-h-screen bg-slate-50 dark:bg-slate-950 p-4 md:p-6 font-sans">
@@ -348,193 +309,97 @@ const VehicleDetails = () => {
                 </div>
             )}
 
-            {/* ✅ TAB CONTENT: FUEL (CHART + TABLE TOGGLE) */}
+            {/* ✅ TAB CONTENT: FUEL (WEEKLY CHART ONLY) */}
             {activeTab === 'fuel' && (
                 <div className="space-y-6">
                     <Card className="dark:bg-slate-900 border-slate-200 dark:border-slate-800 p-6">
-                        <div className="flex justify-between items-center mb-6">
+                        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
                             <div>
-                                <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                                <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2 text-lg">
                                     <Activity className="h-5 w-5 text-blue-500"/> Fuel Balance History
                                 </h3>
+                                <p className="text-xs text-slate-500 mt-1">Weekly summary of fuel added and consumed.</p>
                             </div>
-                            <div className="flex items-center gap-3">
-                                {/* View Mode Toggle */}
-                                <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
-                                    <button onClick={() => setFuelViewMode('chart')} className={cn("px-3 py-1 text-xs font-medium rounded-md transition-colors", fuelViewMode === 'chart' ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" : "text-slate-500")}>Chart</button>
-                                    <button onClick={() => setFuelViewMode('table')} className={cn("px-3 py-1 text-xs font-medium rounded-md transition-colors", fuelViewMode === 'table' ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" : "text-slate-500")}>Table</button>
-                                </div>
-                                {/* Range Toggle */}
-                                <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
-                                    <button onClick={() => setChartRange('7d')} className={cn("px-3 py-1 text-xs font-medium rounded-md transition-colors", chartRange === '7d' ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" : "text-slate-500")}>7 Days</button>
-                                    <button onClick={() => setChartRange('30d')} className={cn("px-3 py-1 text-xs font-medium rounded-md transition-colors", chartRange === '30d' ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" : "text-slate-500")}>30 Days</button>
-                                    <button onClick={() => setChartRange('3m')} className={cn("px-3 py-1 text-xs font-medium rounded-md transition-colors", chartRange === '3m' ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" : "text-slate-500")}>3 Months</button>
-                                </div>
+                            <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
+                                <button onClick={() => setChartRange('7d')} className={cn("px-3 py-1 text-xs font-medium rounded-md transition-colors", chartRange === '7d' ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" : "text-slate-500")}>Last 2 Weeks</button>
+                                <button onClick={() => setChartRange('30d')} className={cn("px-3 py-1 text-xs font-medium rounded-md transition-colors", chartRange === '30d' ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" : "text-slate-500")}>Last 4 Weeks</button>
+                                <button onClick={() => setChartRange('3m')} className={cn("px-3 py-1 text-xs font-medium rounded-md transition-colors", chartRange === '3m' ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" : "text-slate-500")}>All Time</button>
                             </div>
                         </div>
 
                         {fuelLoading || historyLoading ? (
                             <div className="h-64 flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-blue-500" /></div>
-                        ) : fuelViewMode === 'chart' ? (
-                            // CHART VIEW
-                            chartData.values.length === 0 ? (
-                                <div className="h-64 flex flex-col items-center justify-center text-slate-400">
-                                    <Fuel className="h-10 w-10 mb-2 opacity-50" />
-                                    <p>No fuel or trip history found for this range.</p>
-                                </div>
-                            ) : (
-                                <div className="flex">
-                                    <div className="flex flex-col justify-between text-[10px] text-slate-400 h-64 pr-2 py-1 font-mono text-right">
-                                        <span>{Math.round(chartData.max).toFixed(0)}L</span>
-                                        <span>{Math.round(chartData.max * 0.75).toFixed(0)}L</span>
-                                        <span>{Math.round(chartData.max * 0.5).toFixed(0)}L</span>
-                                        <span>{Math.round(chartData.max * 0.25).toFixed(0)}L</span>
-                                        <span>0L</span>
-                                    </div>
-
-                                    <div className="flex-1 relative">
-                                        <div className="h-64 w-full">
-                                            <svg viewBox="0 0 700 200" className="w-full h-full overflow-visible preserve-3d">
-                                                <line x1="0" y1="50" x2="700" y2="50" stroke="#e2e8f0" strokeWidth="1" strokeDasharray="4"/>
-                                                <line x1="0" y1="100" x2="700" y2="100" stroke="#e2e8f0" strokeWidth="1" strokeDasharray="4"/>
-                                                <line x1="0" y1="150" x2="700" y2="150" stroke="#e2e8f0" strokeWidth="1" strokeDasharray="4"/>
-                                                <line x1="0" y1="200" x2="700" y2="200" stroke="#cbd5e1" strokeWidth="1" />
-
-                                                <path 
-                                                    d={`${generatePath(chartData.values, 700, 200, chartData.max)} L ${chartData.values.length === 1 ? 350 : 700} 200 L 0 200 Z`} 
-                                                    fill="url(#gradient)" 
-                                                    opacity="0.2" 
-                                                />
-                                                
-                                                <path 
-                                                    d={generatePath(chartData.values, 700, 200, chartData.max)} 
-                                                    fill="none" 
-                                                    stroke="#3b82f6" 
-                                                    strokeWidth="3" 
-                                                    strokeLinecap="round" 
-                                                    strokeLinejoin="round" 
-                                                />
-
-                                                {chartData.values.map((val, i) => {
-                                                    const x = chartData.values.length === 1 ? 350 : (i / (chartData.values.length - 1)) * 700;
-                                                    const y = 200 - (val / chartData.max) * 200;
-                                                    return (
-                                                        <g 
-                                                            key={i} 
-                                                            onMouseEnter={() => setHoveredPoint({ x, y, label: chartData.labels[i], value: val })}
-                                                            onMouseLeave={() => setHoveredPoint(null)}
-                                                            className="cursor-pointer"
-                                                        >
-                                                            <circle cx={x} cy={y} r="6" fill="transparent" />
-                                                            <circle cx={x} cy={y} r="4" fill="white" stroke="#3b82f6" strokeWidth="2" />
-                                                            
-                                                            {hoveredPoint?.label === chartData.labels[i] && (
-                                                                <foreignObject x={Math.min(Math.max(x - 40, 0), 620)} y={y - 35} width="100" height="30">
-                                                                    <div className="bg-slate-800 text-white text-[10px] font-semibold px-2 py-1 rounded shadow-md text-center">
-                                                                        {val.toFixed(1)} L
-                                                                    </div>
-                                                                </foreignObject>
-                                                            )}
-                                                        </g>
-                                                    );
-                                                })}
-
-                                                <defs>
-                                                    <linearGradient id="gradient" x1="0" y1="0" x2="0" y2="1">
-                                                        <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.8"/>
-                                                        <stop offset="100%" stopColor="#3b82f6" stopOpacity="0"/>
-                                                    </linearGradient>
-                                                </defs>
-                                            </svg>
-                                        </div>
-
-                                        <div className="flex justify-between text-xs text-slate-400 px-2 font-medium mt-1">
-                                            {chartData.labels.map((label, i) => <span key={i}>{label}</span>)}
-                                        </div>
-                                    </div>
-                                </div>
-                            )
+                        ) : chartData.labels.length === 0 ? (
+                            <div className="h-64 flex flex-col items-center justify-center text-slate-400">
+                                <Fuel className="h-10 w-10 mb-2 opacity-50" />
+                                <p>No fuel or trip history found for this range.</p>
+                            </div>
                         ) : (
-                            // TABLE VIEW
-                            <div className="overflow-x-auto border border-slate-200 dark:border-slate-800 rounded-xl">
-                                <table className="w-full text-sm text-left">
-                                    <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-800">
-                                        <tr>
-                                            <th className="px-4 py-3 font-semibold">Date</th>
-                                            <th className="px-4 py-3 font-semibold">Event</th>
-                                            <th className="px-4 py-3 font-semibold">Reference</th>
-                                            <th className="px-4 py-3 font-semibold text-right">Distance</th>
-                                            <th className="px-4 py-3 font-semibold text-right">Fuel +/-</th>
-                                            <th className="px-4 py-3 font-semibold text-right">Balance</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300">
-                                        {tableData.map((row, i) => (
-                                            <tr key={i} className="hover:bg-slate-50 dark:hover:bg-slate-800/30">
-                                                <td className="px-4 py-3 whitespace-nowrap">
-                                                    {row.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                                                </td>
-                                                <td className="px-4 py-3">
-                                                    {row.type === 'Refuel' ? (
-                                                        <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-100 border-none shadow-none"><Fuel className="h-3 w-3 mr-1"/> Refuel</Badge>
-                                                    ) : (
-                                                        <Badge className="bg-orange-100 text-orange-700 hover:bg-orange-100 border-none shadow-none"><Navigation className="h-3 w-3 mr-1"/> Trip</Badge>
-                                                    )}
-                                                </td>
-                                                <td className="px-4 py-3 font-medium">{row.description}</td>
-                                                <td className="px-4 py-3 text-right">{row.distance > 0 ? `${row.distance.toFixed(1)} km` : '-'}</td>
-                                                <td className={cn("px-4 py-3 text-right font-semibold", row.fuelChange > 0 ? "text-emerald-500" : "text-red-500")}>
-                                                    {row.fuelChange > 0 ? '+' : ''}{row.fuelChange.toFixed(1)} L
-                                                </td>
-                                                <td className="px-4 py-3 text-right font-bold text-slate-900 dark:text-white">
-                                                    {row.balance.toFixed(1)} L
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
+                            <div className="h-72 w-full mt-4 flex items-end justify-around gap-2 md:gap-8 pb-8 border-b border-slate-200 dark:border-slate-700 relative">
+                                {/* Y-Axis Labels (Simplified) */}
+                                <div className="absolute left-0 top-0 bottom-8 flex flex-col justify-between text-[10px] text-slate-400 font-mono">
+                                    <span>{Math.round(chartData.max)} L</span>
+                                    <span>0 L</span>
+                                </div>
+
+                                {/* Bars */}
+                                <div className="flex-1 flex justify-around items-end h-full ml-8">
+                                    {chartData.labels.map((label, idx) => {
+                                        const inVal = chartData.fuelIn[idx];
+                                        const outVal = chartData.fuelOut[idx];
+                                        const inPct = (inVal / chartData.max) * 100;
+                                        const outPct = (outVal / chartData.max) * 100;
+
+                                        return (
+                                            <div key={idx} className="flex flex-col items-center group w-1/3 max-w-[100px]">
+                                                <div className="flex items-end justify-center gap-1 h-full w-full">
+                                                    {/* Fuel In Bar */}
+                                                    <div className="relative w-1/2 flex justify-center group-hover:opacity-80 transition-opacity" style={{ height: `${inPct}%` }}>
+                                                        <div className="w-full bg-emerald-500 rounded-t-md relative">
+                                                            {inVal > 0 && (
+                                                                <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] font-bold text-emerald-500">
+                                                                    +{inVal.toFixed(1)}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                    
+                                                    {/* Fuel Out Bar */}
+                                                    <div className="relative w-1/2 flex justify-center group-hover:opacity-80 transition-opacity" style={{ height: `${outPct}%` }}>
+                                                        <div className="w-full bg-orange-500 rounded-t-md relative">
+                                                            {outVal > 0 && (
+                                                                <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] font-bold text-orange-500">
+                                                                    -{outVal.toFixed(1)}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <span className="text-[10px] text-slate-500 font-medium mt-4 text-center">{label}</span>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
                             </div>
                         )}
+                        
+                        {/* Legend */}
+                        <div className="flex justify-center gap-6 mt-4">
+                            <div className="flex items-center gap-2 text-xs font-medium text-slate-600 dark:text-slate-400">
+                                <span className="w-3 h-3 rounded-sm bg-emerald-500"></span> Fuel In (+) 
+                            </div>
+                            <div className="flex items-center gap-2 text-xs font-medium text-slate-600 dark:text-slate-400">
+                                <span className="w-3 h-3 rounded-sm bg-orange-500"></span> Fuel Out (-)
+                            </div>
+                        </div>
                     </Card>
-
-                    {/* Stat Cards */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <Card className="dark:bg-slate-900 border-slate-200 dark:border-slate-800 p-4 flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                                <div className="p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg"><Fuel className="h-5 w-5 text-blue-500" /></div>
-                                <div>
-                                    <p className="text-xs text-slate-500 uppercase tracking-wider font-semibold">Current Balance</p>
-                                    <p className="text-xl font-bold text-slate-900 dark:text-white">{currentFuel.toFixed(1)} L</p>
-                                </div>
-                            </div>
-                        </Card>
-
-                        <Card className="dark:bg-slate-900 border-slate-200 dark:border-slate-800 p-4 flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                                <div className="p-2 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg"><MapPin className="h-5 w-5 text-emerald-500" /></div>
-                                <div>
-                                    <p className="text-xs text-slate-500 uppercase tracking-wider font-semibold">Tank Capacity</p>
-                                    <p className="text-xl font-bold text-slate-900 dark:text-white">{tankCap.toFixed(1)} L</p>
-                                </div>
-                            </div>
-                        </Card>
-
-                        <Card className="dark:bg-slate-900 border-slate-200 dark:border-slate-800 p-4 flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                                <div className="p-2 bg-purple-50 dark:bg-purple-900/20 rounded-lg"><Gauge className="h-5 w-5 text-purple-500" /></div>
-                                <div>
-                                    <p className="text-xs text-slate-500 uppercase tracking-wider font-semibold">Ref. Efficiency</p>
-                                    <p className="text-xl font-bold text-slate-900 dark:text-white">{refEff} km/L</p>
-                                </div>
-                            </div>
-                        </Card>
-                    </div>
                 </div>
             )}
 
             {/* TAB CONTENT: HISTORY */}
             {activeTab === 'history' && (
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    {/* Trip List Sidebar */}
                     <Card className="dark:bg-slate-900 border-slate-200 dark:border-slate-800 flex flex-col h-[600px] overflow-hidden">
                         <div className="p-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/20">
                             <h3 className="font-bold text-slate-800 dark:text-white">Past Trips</h3>
@@ -566,8 +431,26 @@ const VehicleDetails = () => {
                         </div>
                     </Card>
 
-                    <Card className="lg:col-span-2 dark:bg-slate-900 border-slate-200 dark:border-slate-800 h-[600px] overflow-hidden relative">
-                        {selectedHistoryTrip && routeCoordinates.length > 1 && (
+                    {/* Map Area */}
+                    <Card className={cn(
+                        "dark:bg-slate-900 border-slate-200 dark:border-slate-800 h-[600px] overflow-hidden relative transition-all duration-300",
+                        isMapExpanded ? "fixed inset-4 z-[9999] h-auto" : "lg:col-span-2"
+                    )}>
+                        
+                        {/* Expand / Collapse Button */}
+                        {selectedHistoryTrip && (
+                            <Button 
+                                variant="secondary" 
+                                size="icon" 
+                                onClick={() => setIsMapExpanded(!isMapExpanded)}
+                                className="absolute top-4 right-4 z-[1000] shadow-md rounded-full bg-white/90 hover:bg-white dark:bg-slate-800/90 dark:hover:bg-slate-800"
+                            >
+                                {isMapExpanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+                            </Button>
+                        )}
+
+                        {/* Replay Controls */}
+                        {selectedHistoryTrip && routeCoordinates.length > 1 && !isMapExpanded && (
                             <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000] flex items-center gap-3 bg-white dark:bg-slate-800 px-4 py-2 rounded-full shadow-lg border border-slate-200 dark:border-slate-700">
                                 <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">Route Replay</span>
                                 <div className="h-4 w-px bg-slate-300 dark:bg-slate-600" />
@@ -579,8 +462,9 @@ const VehicleDetails = () => {
                         )}
 
                         {selectedHistoryTrip && routeCoordinates.length > 0 ? (
-                            <MapContainer bounds={routeCoordinates} boundsOptions={{ padding: [50, 50] }} style={{ height: '100%', width: '100%' }} zoomControl={true}>
+                            <MapContainer bounds={routeCoordinates} style={{ height: '100%', width: '100%' }} zoomControl={true}>
                                 <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                                <MapBoundsUpdater bounds={routeCoordinates} />
                                 <Polyline positions={routeCoordinates} color="#3b82f6" weight={5} opacity={0.8} />
                                 <Marker position={routeCoordinates[0]} icon={icons.start} />
                                 <Marker position={routeCoordinates[routeCoordinates.length - 1]} icon={icons.end} />
@@ -592,6 +476,38 @@ const VehicleDetails = () => {
                                 <p className="text-slate-500 text-sm">Select a trip to view its GPS route.</p>
                             </div>
                         )}
+                        
+                        {/* ✅ FULL DETAILS PANEL (Only shown when expanded) */}
+                        {isMapExpanded && selectedHistoryTrip && (
+                            <div className="absolute top-4 left-4 z-[1000] bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl p-5 w-[320px]">
+                                <div className="flex items-center gap-2 mb-4 border-b border-slate-200 dark:border-slate-700 pb-2">
+                                    <FileText className="h-5 w-5 text-blue-500" />
+                                    <h3 className="font-bold text-slate-900 dark:text-white">Trip Ticket Details</h3>
+                                </div>
+                                <div className="space-y-3 text-sm">
+                                    <div className="flex justify-between"><span className="text-slate-500">Ticket No.</span><span className="font-mono text-slate-900 dark:text-white">{selectedHistoryTrip.ticket_number}</span></div>
+                                    <div className="flex justify-between"><span className="text-slate-500">Vehicle</span><span className="font-semibold text-slate-900 dark:text-white">{selectedHistoryTrip.plate_number} ({selectedHistoryTrip.vehicle_model})</span></div>
+                                    <div className="flex justify-between"><span className="text-slate-500">Driver</span><span className="text-slate-900 dark:text-white">{selectedHistoryTrip.driver_name}</span></div>
+                                    <div className="flex justify-between"><span className="text-slate-500">Destination</span><span className="text-slate-900 dark:text-white text-right max-w-[180px]">{selectedHistoryTrip.destination}</span></div>
+                                    <div className="flex justify-between"><span className="text-slate-500">Purpose</span><span className="text-slate-900 dark:text-white text-right max-w-[180px]">{selectedHistoryTrip.purpose}</span></div>
+                                    <div className="flex justify-between"><span className="text-slate-500">Distance</span><span className="text-slate-900 dark:text-white">{selectedHistoryTrip.actual_distance_km} km</span></div>
+                                    <div className="flex justify-between"><span className="text-slate-500">Date</span><span className="text-slate-900 dark:text-white">{selectedHistoryTrip.trip_date}</span></div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Replay Controls (Expanded Mode) */}
+                        {isMapExpanded && selectedHistoryTrip && routeCoordinates.length > 1 && (
+                            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-[1000] flex items-center gap-3 bg-white dark:bg-slate-800 px-6 py-3 rounded-full shadow-2xl border border-slate-200 dark:border-slate-700">
+                                <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">Replay Trip</span>
+                                <div className="h-4 w-px bg-slate-300 dark:bg-slate-600" />
+                                <button onClick={handleReplay} className={cn("p-2 rounded-full transition-colors flex items-center justify-center", isReplaying ? "bg-red-100 text-red-600 hover:bg-red-200" : "bg-blue-100 text-blue-600 hover:bg-blue-200")}>
+                                    {isReplaying ? <Square className="h-5 w-5 fill-current" /> : <Play className="h-5 w-5 fill-current ml-1" />}
+                                </button>
+                                <span className="text-xs text-slate-500 font-mono">{isReplaying ? `${replayIndex} / ${routeCoordinates.length}` : `${routeCoordinates.length} pings`}</span>
+                            </div>
+                        )}
+
                         {loadingRoute && (
                             <div className="absolute inset-0 bg-white/70 dark:bg-slate-900/70 backdrop-blur-sm z-[1000] flex flex-col items-center justify-center">
                                 <Loader2 className="h-8 w-8 animate-spin text-blue-500 mb-2" />
