@@ -50,7 +50,8 @@ const icons = {
     end: createSvgIcon('#ef4444', '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><line x1="4" y1="22" x2="4" y2="15"></line>'),
 };
 
-const MapBoundsUpdater = ({ bounds }) => {
+// ✅ SEPARATED COMPONENT FOR MAP UPDATES (Prevents blinking)
+const MapUpdater = ({ bounds, markerPos, isReplaying }) => {
     const map = useMap();
     useEffect(() => {
         if (bounds && bounds.length > 0) {
@@ -105,8 +106,6 @@ const VehicleDetails = () => {
             handleViewRoute(historyData[0]);
         }
     }, [historyData]);
-
-    const assignedDriver = historyData?.[0]?.driver_name || "Unassigned";
 
     // Fetch Fuel Receipts
     const { data: fuelReceipts = [], isLoading: fuelLoading } = useQuery({
@@ -229,41 +228,12 @@ const VehicleDetails = () => {
     const refEff = parseFloat(vehicle.reference_efficiency || 10);
     const fuelPct = vehicle.fuel_percentage || 0;
 
-    // Reusable Map Content Component
-    const MapContent = () => (
-        <>
-            <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-            <MapBoundsUpdater bounds={routeCoordinates} />
-            <Polyline 
-                positions={routeCoordinates.filter((coord, idx, arr) => {
-                    if (idx === 0) return true;
-                    const prev = arr[idx - 1];
-                    const R = 6371e3; 
-                    const lat1 = prev[0] * Math.PI / 180;
-                    const lat2 = coord[0] * Math.PI / 180;
-                    const deltaLat = (coord[0] - prev[0]) * Math.PI / 180;
-                    const deltaLon = (coord[1] - prev[1]) * Math.PI / 180;
-                    const a = Math.sin(deltaLat/2) * Math.sin(deltaLat/2) + Math.cos(lat1) * Math.cos(lat2) * Math.sin(deltaLon/2) * Math.sin(deltaLon/2);
-                    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-                    const dist = R * c;
-                    return dist < 500; 
-                })} 
-                color="#3b82f6" 
-                weight={5} 
-                opacity={0.8} 
-            />
-            <Marker position={routeCoordinates[0]} icon={icons.start} />
-            <Marker position={routeCoordinates[routeCoordinates.length - 1]} icon={icons.end} />
-            {isReplaying && <Marker position={routeCoordinates[replayIndex]} icon={icons.vehicle} />}
-        </>
-    );
-
     return (
         <div className="min-h-screen bg-slate-50 dark:bg-slate-950 p-4 md:p-6 font-sans flex flex-col gap-6">
             
             {/* Header */}
             <div>
-                <button onClick={() => navigate('/admin/vehicles')} className="flex items-center text-sm text-slate-500 hover:text-blue-600 mb-2 transition-colors">
+                <button onClick={() => navigate('/admin/vehicles')} className="flex items-center text-sm font-medium text-slate-500 hover:text-blue-600 mb-2 transition-colors">
                     <ArrowLeft className="h-4 w-4 mr-1" /> Back to Vehicles
                 </button>
                 <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Vehicle Details</h1>
@@ -279,31 +249,24 @@ const VehicleDetails = () => {
                         <div className="flex justify-between items-start mb-4">
                             <div>
                                 <div className="flex items-center gap-3 mb-1">
-                                    <h2 className="text-3xl font-bold text-slate-900 dark:text-white font-mono">{vehicle.plate_number}</h2>
-                                    <Badge className={cn("px-2 py-1", vehicle.status === 'active' ? "bg-green-100 text-green-700 hover:bg-green-100" : "bg-red-100 text-red-700 hover:bg-red-100")}>
+                                    <h2 className="text-3xl font-extrabold text-slate-900 dark:text-white font-mono">{vehicle.plate_number}</h2>
+                                    <Badge className={cn("px-2.5 py-1 text-xs font-bold", vehicle.status === 'active' ? "bg-emerald-500 hover:bg-emerald-600 text-white" : "bg-red-500 hover:bg-red-600 text-white")}>
                                         ● {vehicle.status === 'active' ? 'Active' : 'Inactive'}
                                     </Badge>
                                 </div>
-                                <p className="text-slate-500 text-sm">
+                                <p className="text-slate-600 dark:text-slate-400 font-medium text-sm">
                                     {vehicle.vehicle_model} • {vehicle.fuel_type} • {vehicle.maintenance_flag ? 'Under Maintenance' : 'Serviceable'}
                                 </p>
                             </div>
-                            <Button variant="outline" size="sm" onClick={() => navigate(`/admin/vehicles/edit/${id}`)}>Edit</Button>
+                            <Button variant="outline" size="sm" onClick={() => navigate(`/admin/vehicles/edit/${id}`)} className="font-medium border-slate-300 dark:border-slate-700">Edit Details</Button>
                         </div>
-                        <div className="grid grid-cols-2 gap-4 mt-2 border-t border-slate-100 dark:border-slate-800 pt-4">
-                            <div className="flex items-center gap-2">
-                                <User className="h-8 w-8 p-1.5 bg-slate-100 dark:bg-slate-800 text-slate-500 rounded-full" />
-                                <div>
-                                    <p className="text-xs text-slate-400 uppercase tracking-wider">Assigned Driver</p>
-                                    <p className="font-medium text-slate-800 dark:text-slate-200">{assignedDriver}</p>
-                                </div>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <Building2 className="h-8 w-8 p-1.5 bg-slate-100 dark:bg-slate-800 text-slate-500 rounded-full" />
-                                <div>
-                                    <p className="text-xs text-slate-400 uppercase tracking-wider">Department</p>
-                                    <p className="font-medium text-slate-800 dark:text-slate-200">{vehicle.department?.department_name || 'Engineering Office'}</p>
-                                </div>
+                        
+                        {/* Department Info (Driver Removed) */}
+                        <div className="flex items-center gap-3 mt-2 border-t border-slate-100 dark:border-slate-800 pt-4">
+                            <Building2 className="h-10 w-10 p-2 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-xl" />
+                            <div>
+                                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Department</p>
+                                <p className="font-bold text-slate-800 dark:text-slate-100 text-sm mt-0.5">{vehicle.department?.department_name || 'General Services Office'}</p>
                             </div>
                         </div>
                     </div>
@@ -312,39 +275,41 @@ const VehicleDetails = () => {
                 <Card className="dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm p-6 flex flex-col items-center justify-center relative">
                     <div className="absolute top-4 left-4 flex items-center gap-2">
                         <Fuel className="h-4 w-4 text-blue-500" />
-                        <h3 className="font-bold text-slate-800 dark:text-white">Fuel Information</h3>
+                        <h3 className="font-bold text-slate-800 dark:text-white text-sm">Fuel Information</h3>
                     </div>
+                    
                     <div className="relative w-32 h-32 mt-6">
                         <svg className="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
                             <path className="text-slate-100 dark:text-slate-800" strokeWidth="4" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
                             <path className="text-blue-500" strokeDasharray={`${fuelPct}, 100`} strokeWidth="4" strokeLinecap="round" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
                         </svg>
                         <div className="absolute inset-0 flex flex-col items-center justify-center">
-                            <span className="text-2xl font-bold text-slate-900 dark:text-white">{currentFuel.toFixed(1)} L</span>
-                            <span className="text-[10px] text-slate-400 uppercase">Current Fuel</span>
+                            <span className="text-2xl font-extrabold text-slate-900 dark:text-white">{currentFuel.toFixed(1)} L</span>
+                            <span className="text-[10px] font-semibold text-slate-400 uppercase">Current Fuel</span>
                         </div>
                     </div>
-                    <div className="w-full mt-6 space-y-2">
-                        <div className="flex justify-between text-sm"><span className="text-slate-500 flex items-center gap-1"><Fuel className="h-3 w-3"/> Tank Capacity</span><span className="font-semibold text-slate-800 dark:text-white">{tankCap.toFixed(1)} L</span></div>
-                        <div className="flex justify-between text-sm"><span className="text-slate-500 flex items-center gap-1"><Activity className="h-3 w-3"/> Fuel Efficiency</span><span className="font-semibold text-slate-800 dark:text-white">{refEff} km/L</span></div>
-                        <div className="flex justify-between text-sm"><span className="text-slate-500 flex items-center gap-1"><Navigation className="h-3 w-3"/> Estimated Range</span><span className="font-semibold text-slate-800 dark:text-white">~ {Math.round(currentFuel * refEff)} km</span></div>
+
+                    <div className="w-full mt-6 space-y-2.5">
+                        <div className="flex justify-between items-center text-sm"><span className="text-slate-500 font-medium flex items-center gap-1.5"><Fuel className="h-3.5 w-3.5"/> Tank Capacity</span><span className="font-bold text-slate-800 dark:text-white">{tankCap.toFixed(1)} L</span></div>
+                        <div className="flex justify-between items-center text-sm"><span className="text-slate-500 font-medium flex items-center gap-1.5"><Activity className="h-3.5 w-3.5"/> Fuel Efficiency</span><span className="font-bold text-slate-800 dark:text-white">{refEff} km/L</span></div>
+                        <div className="flex justify-between items-center text-sm"><span className="text-slate-500 font-medium flex items-center gap-1.5"><Navigation className="h-3.5 w-3.5"/> Est. Range</span><span className="font-bold text-slate-800 dark:text-white">~ {Math.round(currentFuel * refEff)} km</span></div>
                     </div>
                 </Card>
             </div>
 
             {/* 2. Fuel Balance History Chart */}
-            <Card className="dark:bg-slate-900 border-slate-200 dark:border-slate-800 p-6">
+            <Card className="dark:bg-slate-900 border-slate-200 dark:border-slate-800 p-6 shadow-sm">
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
                     <div>
                         <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2 text-lg">
                             <Activity className="h-5 w-5 text-blue-500"/> Fuel Balance History
                         </h3>
-                        <p className="text-xs text-slate-500 mt-1">Weekly summary of fuel added and consumed.</p>
+                        <p className="text-xs text-slate-500 mt-1 font-medium">Weekly summary of fuel added and consumed.</p>
                     </div>
-                    <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
-                        <button onClick={() => setChartRange('7d')} className={cn("px-3 py-1 text-xs font-medium rounded-md transition-colors", chartRange === '7d' ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" : "text-slate-500")}>Last 2 Weeks</button>
-                        <button onClick={() => setChartRange('30d')} className={cn("px-3 py-1 text-xs font-medium rounded-md transition-colors", chartRange === '30d' ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" : "text-slate-500")}>Last 4 Weeks</button>
-                        <button onClick={() => setChartRange('3m')} className={cn("px-3 py-1 text-xs font-medium rounded-md transition-colors", chartRange === '3m' ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" : "text-slate-500")}>All Time</button>
+                    <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-lg border border-slate-200 dark:border-slate-700">
+                        <button onClick={() => setChartRange('7d')} className={cn("px-3 py-1.5 text-xs font-bold rounded-md transition-colors", chartRange === '7d' ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300")}>Last 2 Weeks</button>
+                        <button onClick={() => setChartRange('30d')} className={cn("px-3 py-1.5 text-xs font-bold rounded-md transition-colors", chartRange === '30d' ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300")}>Last 4 Weeks</button>
+                        <button onClick={() => setChartRange('3m')} className={cn("px-3 py-1.5 text-xs font-bold rounded-md transition-colors", chartRange === '3m' ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300")}>All Time</button>
                     </div>
                 </div>
 
@@ -353,11 +318,11 @@ const VehicleDetails = () => {
                 ) : chartData.labels.length === 0 ? (
                     <div className="h-64 flex flex-col items-center justify-center text-slate-400">
                         <Fuel className="h-10 w-10 mb-2 opacity-50" />
-                        <p>No fuel or trip history found for this range.</p>
+                        <p className="font-medium">No fuel or trip history found for this range.</p>
                     </div>
                 ) : (
                     <div className="h-72 w-full mt-4 flex items-end justify-around gap-2 md:gap-8 pb-8 border-b border-slate-200 dark:border-slate-700 relative">
-                        <div className="absolute left-0 top-0 bottom-8 flex flex-col justify-between text-[10px] text-slate-400 font-mono">
+                        <div className="absolute left-0 top-0 bottom-8 flex flex-col justify-between text-[11px] font-bold text-slate-400">
                             <span>{Math.round(chartData.max)} L</span>
                             <span>0 L</span>
                         </div>
@@ -369,30 +334,30 @@ const VehicleDetails = () => {
                                 const outPct = (outVal / chartData.max) * 100;
                                 return (
                                     <div key={idx} className="flex flex-col items-center group w-1/3 max-w-[100px]">
-                                        <div className="flex items-end justify-center gap-1 h-full w-full">
+                                        <div className="flex items-end justify-center gap-1.5 h-full w-full">
                                             <div className="relative w-1/2 flex justify-center group-hover:opacity-80 transition-opacity" style={{ height: `${inPct}%` }}>
-                                                <div className="w-full bg-emerald-500 rounded-t-md relative">
-                                                    {inVal > 0 && <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] font-bold text-emerald-500">+{inVal.toFixed(1)}</span>}
+                                                <div className="w-full bg-emerald-500 rounded-t-md relative shadow-sm">
+                                                    {inVal > 0 && <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-xs font-bold text-emerald-500">+{inVal.toFixed(1)}</span>}
                                                 </div>
                                             </div>
                                             <div className="relative w-1/2 flex justify-center group-hover:opacity-80 transition-opacity" style={{ height: `${outPct}%` }}>
-                                                <div className="w-full bg-orange-500 rounded-t-md relative">
-                                                    {outVal > 0 && <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] font-bold text-orange-500">-{outVal.toFixed(1)}</span>}
+                                                <div className="w-full bg-orange-500 rounded-t-md relative shadow-sm">
+                                                    {outVal > 0 && <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-xs font-bold text-orange-500">-{outVal.toFixed(1)}</span>}
                                                 </div>
                                             </div>
                                         </div>
-                                        <span className="text-[10px] text-slate-500 font-medium mt-4 text-center">{label}</span>
+                                        <span className="text-xs font-bold text-slate-600 dark:text-slate-400 mt-4 text-center">{label}</span>
                                     </div>
                                 );
                             })}
                         </div>
                     </div>
                 )}
-                <div className="flex justify-center gap-6 mt-4">
-                    <div className="flex items-center gap-2 text-xs font-medium text-slate-600 dark:text-slate-400">
+                <div className="flex justify-center gap-8 mt-4">
+                    <div className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-300">
                         <span className="w-3 h-3 rounded-sm bg-emerald-500"></span> Fuel In (+) 
                     </div>
-                    <div className="flex items-center gap-2 text-xs font-medium text-slate-600 dark:text-slate-400">
+                    <div className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-300">
                         <span className="w-3 h-3 rounded-sm bg-orange-500"></span> Fuel Out (-)
                     </div>
                 </div>
@@ -402,13 +367,13 @@ const VehicleDetails = () => {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 
                 {/* MAP CARD (Left - Mini Version) */}
-                <Card className="dark:bg-slate-900 border-slate-200 dark:border-slate-800 flex flex-col overflow-hidden h-[500px]">
+                <Card className="dark:bg-slate-900 border-slate-200 dark:border-slate-800 flex flex-col overflow-hidden h-[500px] shadow-sm">
                     <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-800/20">
                         <div>
-                            <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                            <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2 text-sm">
                                 <MapPin className="h-4 w-4 text-blue-500" /> Route for Selected Trip
                             </h3>
-                            <p className="text-[10px] text-slate-500 mt-1">{selectedHistoryTrip ? selectedHistoryTrip.ticket_number : 'Select a trip'}</p>
+                            <p className="text-xs text-slate-500 mt-1 font-medium">{selectedHistoryTrip ? selectedHistoryTrip.ticket_number : 'Select a trip'}</p>
                         </div>
                         <div className="flex items-center gap-2">
                             {selectedHistoryTrip && routeCoordinates.length > 1 && (
@@ -416,14 +381,14 @@ const VehicleDetails = () => {
                                     <button onClick={handleReplay} className={cn("p-1 rounded-full flex items-center justify-center", isReplaying ? "bg-red-100 text-red-600" : "bg-blue-100 text-blue-600")}>
                                         {isReplaying ? <Square className="h-3 w-3 fill-current" /> : <Play className="h-3 w-3 fill-current ml-0.5" />}
                                     </button>
-                                    <span className="text-[10px] text-slate-500 font-mono">{isReplaying ? `${replayIndex} / ${routeCoordinates.length}` : 'Replay'}</span>
+                                    <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300">{isReplaying ? `${replayIndex} / ${routeCoordinates.length}` : 'Replay'}</span>
                                 </div>
                             )}
                             <Button 
-                                variant="ghost" 
+                                variant="outline" 
                                 size="icon" 
                                 onClick={() => setIsMapExpanded(true)}
-                                className="h-8 w-8 text-slate-500 hover:text-slate-800 dark:hover:text-white"
+                                className="h-8 w-8 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300"
                             >
                                 <Maximize2 className="h-4 w-4" />
                             </Button>
@@ -437,12 +402,34 @@ const VehicleDetails = () => {
                             </div>
                         ) : selectedHistoryTrip && routeCoordinates.length > 0 ? (
                             <MapContainer bounds={routeCoordinates} style={{ height: '100%', width: '100%' }} zoomControl={false}>
-                                <MapContent />
+                                <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                                <MapUpdater bounds={routeCoordinates} />
+                                <Polyline 
+                                    positions={routeCoordinates.filter((coord, idx, arr) => {
+                                        if (idx === 0) return true;
+                                        const prev = arr[idx - 1];
+                                        const R = 6371e3; 
+                                        const lat1 = prev[0] * Math.PI / 180;
+                                        const lat2 = coord[0] * Math.PI / 180;
+                                        const deltaLat = (coord[0] - prev[0]) * Math.PI / 180;
+                                        const deltaLon = (coord[1] - prev[1]) * Math.PI / 180;
+                                        const a = Math.sin(deltaLat/2) * Math.sin(deltaLat/2) + Math.cos(lat1) * Math.cos(lat2) * Math.sin(deltaLon/2) * Math.sin(deltaLon/2);
+                                        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+                                        const dist = R * c;
+                                        return dist < 500; 
+                                    })} 
+                                    color="#3b82f6" 
+                                    weight={4} 
+                                    opacity={0.8} 
+                                />
+                                <Marker position={routeCoordinates[0]} icon={icons.start} />
+                                <Marker position={routeCoordinates[routeCoordinates.length - 1]} icon={icons.end} />
+                                {isReplaying && <Marker position={routeCoordinates[replayIndex]} icon={icons.vehicle} />}
                             </MapContainer>
                         ) : (
                             <div className="absolute inset-0 flex flex-col items-center justify-center">
                                 <MapPin className="h-10 w-10 text-slate-300 dark:text-slate-700 mb-3" />
-                                <p className="text-slate-500 text-sm">Select a trip from the table.</p>
+                                <p className="text-slate-500 font-medium text-sm">Select a trip from the table.</p>
                             </div>
                         )}
                     </div>
@@ -451,10 +438,10 @@ const VehicleDetails = () => {
                 {/* TRIP HISTORY TABLE (Right) */}
                 <Card className="dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden flex flex-col h-[500px]">
                     <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-800/20">
-                        <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                        <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2 text-sm">
                             <Car className="h-4 w-4 text-blue-500" /> Trip History
                         </h3>
-                        <Badge variant="outline" className="bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400 border-blue-200 text-[10px]">
+                        <Badge className="bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 border-blue-200 dark:border-blue-800 text-xs font-bold">
                             {sortedHistory.length} Records
                         </Badge>
                     </div>
@@ -463,14 +450,14 @@ const VehicleDetails = () => {
                         <table className="w-full text-left text-sm">
                             <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-800 sticky top-0">
                                 <tr>
-                                    <th className="px-4 py-3 font-semibold cursor-pointer hover:text-slate-800 dark:hover:text-slate-200" onClick={toggleSortDate}>
+                                    <th className="px-4 py-3 font-bold cursor-pointer hover:text-slate-800 dark:hover:text-slate-200" onClick={toggleSortDate}>
                                         <div className="flex items-center gap-1">
-                                            Date <ArrowUpDown className="h-3 w-3" />
+                                            Date <ArrowUpDown className="h-3.5 w-3.5" />
                                         </div>
                                     </th>
-                                    <th className="px-4 py-3 font-semibold">Trip Ticket No.</th>
-                                    <th className="px-4 py-3 font-semibold">Destination</th>
-                                    <th className="px-4 py-3 font-semibold text-right">Distance</th>
+                                    <th className="px-4 py-3 font-bold">Trip Ticket No.</th>
+                                    <th className="px-4 py-3 font-bold">Destination</th>
+                                    <th className="px-4 py-3 font-bold text-right">Distance</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300">
@@ -496,12 +483,12 @@ const VehicleDetails = () => {
                                                     isSelected ? "bg-blue-50 dark:bg-blue-900/20" : "hover:bg-slate-50 dark:hover:bg-slate-800/30"
                                                 )}
                                             >
-                                                <td className="px-4 py-3 whitespace-nowrap font-medium text-slate-900 dark:text-white">
+                                                <td className="px-4 py-3 whitespace-nowrap font-bold text-slate-900 dark:text-white">
                                                     {format(new Date(trip.trip_date), 'MMM dd, yyyy')}
                                                 </td>
-                                                <td className="px-4 py-3 font-mono">{trip.ticket_number}</td>
-                                                <td className="px-4 py-3 truncate max-w-[150px]">{trip.destination}</td>
-                                                <td className="px-4 py-3 text-right font-semibold">{trip.actual_distance_km ? `${trip.actual_distance_km} km` : '—'}</td>
+                                                <td className="px-4 py-3 font-mono font-medium">{trip.ticket_number}</td>
+                                                <td className="px-4 py-3 truncate max-w-[150px] font-medium">{trip.destination}</td>
+                                                <td className="px-4 py-3 text-right font-bold text-slate-900 dark:text-white">{trip.actual_distance_km ? `${trip.actual_distance_km} km` : '—'}</td>
                                             </tr>
                                         );
                                     })
@@ -512,7 +499,7 @@ const VehicleDetails = () => {
 
                     {/* Pagination */}
                     <div className="p-3 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500 bg-slate-50 dark:bg-slate-900/50">
-                        <span>
+                        <span className="font-medium">
                             {((page - 1) * rowsPerPage) + 1}-{Math.min(page * rowsPerPage, sortedHistory.length)} of {sortedHistory.length}
                         </span>
                         <div className="flex gap-1">
@@ -523,7 +510,7 @@ const VehicleDetails = () => {
                                 onClick={() => setPage(p => Math.max(1, p - 1))}
                                 disabled={page === 1}
                             >
-                                <ChevronLeft className="h-3 w-3" />
+                                <ChevronLeft className="h-3.5 w-3.5" />
                             </Button>
                             <Button 
                                 variant="outline" 
@@ -532,21 +519,21 @@ const VehicleDetails = () => {
                                 onClick={() => setPage(p => Math.min(totalPages, p + 1))}
                                 disabled={page === totalPages}
                             >
-                                <ChevronRight className="h-3 w-3" />
+                                <ChevronRight className="h-3.5 w-3.5" />
                             </Button>
                         </div>
                     </div>
                 </Card>
             </div>
 
-            {/* ✅ FULLSCREEN MAP MODAL (Mugawas kung i-click ang Maximize) */}
+            {/* ✅ FULLSCREEN MAP MODAL */}
             <Dialog open={isMapExpanded} onOpenChange={setIsMapExpanded}>
                 <DialogContent className="max-w-[95vw] w-[95vw] h-[95vh] p-0 overflow-hidden dark:bg-slate-900 dark:border-slate-700 flex flex-col">
                     <DialogHeader className="p-4 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 z-10">
                         <div className="flex items-center justify-between">
                             <div>
                                 <DialogTitle className="text-lg font-bold text-slate-900 dark:text-white">Route for Selected Trip</DialogTitle>
-                                <DialogDescription className="text-xs text-slate-500">
+                                <DialogDescription className="text-sm font-medium text-slate-500 mt-1">
                                     {selectedHistoryTrip?.ticket_number} • {selectedHistoryTrip?.destination}
                                 </DialogDescription>
                             </div>
@@ -554,12 +541,12 @@ const VehicleDetails = () => {
                             {/* Replay Controls */}
                             {routeCoordinates.length > 1 && (
                                 <div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-800 px-4 py-2 rounded-full border border-slate-200 dark:border-slate-700">
-                                    <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">Replay Trip</span>
+                                    <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Replay Trip</span>
                                     <div className="h-4 w-px bg-slate-300 dark:bg-slate-600" />
                                     <button onClick={handleReplay} className={cn("p-1.5 rounded-full transition-colors flex items-center justify-center", isReplaying ? "bg-red-100 text-red-600 hover:bg-red-200" : "bg-blue-100 text-blue-600 hover:bg-blue-200")}>
                                         {isReplaying ? <Square className="h-4 w-4 fill-current" /> : <Play className="h-4 w-4 fill-current ml-0.5" />}
                                     </button>
-                                    <span className="text-[10px] text-slate-500 font-mono">{isReplaying ? `${replayIndex} / ${routeCoordinates.length}` : `${routeCoordinates.length} pings`}</span>
+                                    <span className="text-xs font-bold text-slate-600 dark:text-slate-300">{isReplaying ? `${replayIndex} / ${routeCoordinates.length}` : `${routeCoordinates.length} pings`}</span>
                                 </div>
                             )}
                         </div>
@@ -568,17 +555,39 @@ const VehicleDetails = () => {
                     <div className="flex-1 relative bg-slate-100 dark:bg-slate-950">
                         {loadingRoute ? (
                             <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/50 dark:bg-slate-900/50 z-50">
-                                <Loader2 className="h-8 w-8 animate-spin text-blue-500 mb-2" />
-                                <p className="text-sm font-medium text-slate-600 dark:text-slate-400">Loading route...</p>
+                                <Loader2 className="h-10 w-10 animate-spin text-blue-500 mb-3" />
+                                <p className="text-sm font-bold text-slate-600 dark:text-slate-400">Loading route...</p>
                             </div>
                         ) : routeCoordinates.length > 0 ? (
                             <MapContainer bounds={routeCoordinates} style={{ height: '100%', width: '100%' }} zoomControl={true}>
-                                <MapContent />
+                                <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                                <MapUpdater bounds={routeCoordinates} />
+                                <Polyline 
+                                    positions={routeCoordinates.filter((coord, idx, arr) => {
+                                        if (idx === 0) return true;
+                                        const prev = arr[idx - 1];
+                                        const R = 6371e3; 
+                                        const lat1 = prev[0] * Math.PI / 180;
+                                        const lat2 = coord[0] * Math.PI / 180;
+                                        const deltaLat = (coord[0] - prev[0]) * Math.PI / 180;
+                                        const deltaLon = (coord[1] - prev[1]) * Math.PI / 180;
+                                        const a = Math.sin(deltaLat/2) * Math.sin(deltaLat/2) + Math.cos(lat1) * Math.cos(lat2) * Math.sin(deltaLon/2) * Math.sin(deltaLon/2);
+                                        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+                                        const dist = R * c;
+                                        return dist < 500; 
+                                    })} 
+                                    color="#3b82f6" 
+                                    weight={5} 
+                                    opacity={0.8} 
+                                />
+                                <Marker position={routeCoordinates[0]} icon={icons.start} />
+                                <Marker position={routeCoordinates[routeCoordinates.length - 1]} icon={icons.end} />
+                                {isReplaying && <Marker position={routeCoordinates[replayIndex]} icon={icons.vehicle} />}
                             </MapContainer>
                         ) : (
                             <div className="absolute inset-0 flex flex-col items-center justify-center">
                                 <MapPin className="h-10 w-10 text-slate-300 mb-3" />
-                                <p className="text-slate-500 text-sm">No GPS data available for this trip.</p>
+                                <p className="text-slate-500 font-medium">No GPS data available for this trip.</p>
                             </div>
                         )}
                     </div>
