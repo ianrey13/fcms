@@ -146,8 +146,8 @@ const MayorReceiptVerification = () => {
   const handleVerify = (isDiscrepancy = false) => {
     if (!editData.invoice_number) return toast.error("Invoice Number is required");
     if (!editData.amount_on_receipt) return toast.error("Amount is required");
-    const amount = parseFloat(editData.amount_on_receipt) || 0;
     
+    // Kung discrepancy, required ang remarks
     if (isDiscrepancy && !editData.remarks) return toast.error("Please provide remarks for the discrepancy.");
 
     verifyMutation.mutate({
@@ -155,18 +155,30 @@ const MayorReceiptVerification = () => {
       data: {
         invoice_number: editData.invoice_number,
         unit_price: parseFloat(editData.unit_price) || null,
-        amount_on_receipt: amount,
+        amount_on_receipt: parseFloat(editData.amount_on_receipt) || 0,
         remarks: editData.remarks,
         status: isDiscrepancy ? 'discrepancy' : 'verified',
       }
     });
   };
 
+  // ✅ FILTER LOGIC PARA SA TABS (Base sa Amount Difference)
   const filteredList = useMemo(() => {
     let list = [];
-    if (activeTab === "pending") list = pendingReceipts;
-    else if (activeTab === "verified") list = verifiedReceipts.filter(r => r.status === 'verified');
-    else if (activeTab === "discrepancy") list = verifiedReceipts.filter(r => r.status === 'discrepancy');
+    
+    if (activeTab === "pending") {
+      list = pendingReceipts;
+    } else if (activeTab === "verified") {
+      // Verified tab: Verified status ug WALAY discrepancy (Variance = 0)
+      list = verifiedReceipts.filter(r => 
+        r.status === 'verified' && (parseFloat(r.amount) - parseFloat(r.amount_released) === 0)
+      );
+    } else if (activeTab === "discrepancy") {
+      // Discrepancy tab: Verified status PERO NAAY discrepancy (Variance != 0) o kaha gi-flag as discrepancy
+      list = verifiedReceipts.filter(r => 
+        r.status === 'discrepancy' || (parseFloat(r.amount) - parseFloat(r.amount_released) !== 0)
+      );
+    }
 
     if (!searchTerm) return list;
     const q = searchTerm.toLowerCase();
@@ -175,16 +187,16 @@ const MayorReceiptVerification = () => {
     );
   }, [activeTab, pendingReceipts, verifiedReceipts, searchTerm]);
 
+  // ✅ COUNTS PARA SA TABS
   const counts = {
     pending: pendingReceipts.length,
-    verified: verifiedReceipts.filter(r => r.status === 'verified').length,
-    discrepancy: verifiedReceipts.filter(r => r.status === 'discrepancy').length,
+    verified: verifiedReceipts.filter(r => r.status === 'verified' && (parseFloat(r.amount) - parseFloat(r.amount_released) === 0)).length,
+    discrepancy: verifiedReceipts.filter(r => r.status === 'discrepancy' || (parseFloat(r.amount) - parseFloat(r.amount_released) !== 0)).length,
   };
 
   const releasedAmount = parseFloat(selectedReceipt?.amount_released) || 0;
   const receiptAmount = parseFloat(editData.amount_on_receipt) || 0;
   const difference = receiptAmount - releasedAmount;
-  const isDiscrepancy = difference !== 0;
 
   return (
     <div className="min-h-screen bg-[#090e1a] p-4 md:p-6 font-sans text-slate-200 flex flex-col">
@@ -227,7 +239,7 @@ const MayorReceiptVerification = () => {
                       <th className="px-4 py-3 font-medium">Department</th>
                       <th className="px-4 py-3 font-medium">Vehicle</th>
                       <th className="px-4 py-3 font-medium text-right">Amount Released</th>
-                      <th className="px-4 py-3 font-medium text-right">Actual Amount Paid</th>
+                      <th className="px-4 py-3 font-medium text-right">Actual Paid</th>
                       <th className="px-4 py-3 font-medium text-right">Variance</th>
                     </tr>
                   ) : (
@@ -245,6 +257,8 @@ const MayorReceiptVerification = () => {
                     <tr><td colSpan={6} className="text-center py-10 text-slate-500">No records found.</td></tr>
                   ) : filteredList.map((r) => {
                     const isSelected = selectedReceipt?.id === r.id || selectedReceipt?.fuel_receipt_id === r.fuel_receipt_id;
+                    const variance = parseFloat(r.amount) - parseFloat(r.amount_released);
+                    
                     return (
                       <tr key={r.id || r.fuel_receipt_id} onClick={() => handleSelectReceipt(r)} className={cn("cursor-pointer transition-colors", isSelected ? "bg-blue-600/20" : "hover:bg-[#1a2235]")}>
                         {activeTab === "discrepancy" ? (
@@ -254,8 +268,8 @@ const MayorReceiptVerification = () => {
                             <td className="px-4 py-4">{r.plate_number}</td>
                             <td className="px-4 py-4 text-right">{formatCurrency(r.amount_released)}</td>
                             <td className="px-4 py-4 text-right text-amber-400 font-bold">{formatCurrency(r.amount)}</td>
-                            <td className={cn("px-4 py-4 text-right font-bold", (parseFloat(r.amount) - parseFloat(r.amount_released)) !== 0 ? "text-red-400" : "text-slate-400")}>
-                              {formatCurrency(parseFloat(r.amount) - parseFloat(r.amount_released))}
+                            <td className={cn("px-4 py-4 text-right font-bold", variance !== 0 ? "text-red-400" : "text-slate-400")}>
+                              {formatCurrency(variance)}
                             </td>
                           </>
                         ) : (
@@ -287,7 +301,7 @@ const MayorReceiptVerification = () => {
             <>
               <div className="p-5 border-b border-slate-800 flex justify-between items-center">
                 <h2 className="text-lg font-bold text-white flex items-center gap-2"><FileText className="h-5 w-5 text-blue-500" /> Receipt Details</h2>
-                <StatusPill status={selectedReceipt.status} discrepancy={isDiscrepancy && selectedReceipt.status === 'pending'} />
+                <StatusPill status={selectedReceipt.status} discrepancy={difference !== 0 && selectedReceipt.status === 'pending'} />
               </div>
 
               <div className="p-5 flex-1 overflow-y-auto space-y-5">
@@ -301,16 +315,10 @@ const MayorReceiptVerification = () => {
                     <span className="col-span-2 text-white">: {selectedReceipt.plate_number}</span>
                     <span className="text-slate-500">Driver</span>
                     <span className="col-span-2 text-white flex items-center gap-2"><User className="h-3 w-3 text-slate-400"/> {selectedReceipt.driver_name || "N/A"}</span>
-                    
-                    {/* ✅ FIXED DESTINATION & PURPOSE */}
                     <span className="text-slate-500">Destination</span>
-                    <span className="col-span-2 text-white flex items-center gap-2">
-                      <Truck className="h-3 w-3 text-slate-400"/> {selectedReceipt.destination || "N/A"}
-                    </span>
+                    <span className="col-span-2 text-white flex items-center gap-2"><Truck className="h-3 w-3 text-slate-400"/> {selectedReceipt.destination || "N/A"}</span>
                     <span className="text-slate-500">Purpose</span>
-                    <span className="col-span-2 text-white flex items-center gap-2">
-                      <Info className="h-3 w-3 text-slate-400"/> {selectedReceipt.purpose || "N/A"}
-                    </span>
+                    <span className="col-span-2 text-white flex items-center gap-2"><Info className="h-3 w-3 text-slate-400"/> {selectedReceipt.purpose || "N/A"}</span>
                   </div>
                 </div>
 
@@ -343,7 +351,7 @@ const MayorReceiptVerification = () => {
                   </div>
                   <div>
                     <Label className="text-xs text-slate-400 flex justify-between"><span>Difference</span></Label>
-                    <div className={cn("mt-1 h-10 px-3 flex items-center font-bold rounded-lg border", isDiscrepancy ? "bg-amber-600/10 border-amber-900/50 text-amber-400" : "bg-emerald-600/10 border-emerald-900/50 text-emerald-400")}>
+                    <div className={cn("mt-1 h-10 px-3 flex items-center font-bold rounded-lg border", difference !== 0 ? "bg-amber-600/10 border-amber-900/50 text-amber-400" : "bg-emerald-600/10 border-emerald-900/50 text-emerald-400")}>
                       {formatCurrency(difference)}
                     </div>
                   </div>

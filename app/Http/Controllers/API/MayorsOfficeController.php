@@ -1714,16 +1714,17 @@ class MayorsOfficeController extends Controller
                 'fr.verified_at',
                 DB::raw("CONCAT(u_verifier.first_name, ' ', u_verifier.last_name) as verified_by_name"),
                 'tt.trip_date',
-                'tt.purpose',      // ✅ GIDUGANG
-                'tt.destination'   // ✅ GIDUGANG
+                'tt.purpose',      
+                'tt.destination'   
             )
             ->whereNotNull('fr.receipt_photo_path')
-            ->whereIn('fr.verification_status', ['verified', 'discrepancy']); // ✅ GIDUGANG ANG DISCREPANCY
+            // ✅ KUHAON TANAN NGA VERIFIED UG DISCREPANCY
+            ->whereIn('fr.verification_status', ['verified', 'discrepancy']); 
 
         if ($request->filled('start_date') && $request->filled('end_date')) {
             $query->whereBetween('fr.verified_at', [
-                Carbon::parse($request->start_date)->startOfDay(),
-                Carbon::parse($request->end_date)->endOfDay(),
+                \Carbon\Carbon::parse($request->start_date)->startOfDay(),
+                \Carbon\Carbon::parse($request->end_date)->endOfDay(),
             ]);
         }
 
@@ -1737,6 +1738,10 @@ class MayorsOfficeController extends Controller
                 $receipt->receipt_url = $receipt->receipt_photo_path
                     ? asset('receipts/' . basename($receipt->receipt_photo_path))
                     : null;
+                
+                // ✅ COMPUTE ANG VARIANCE SA BACKEND PARA SAYON SA FRONTEND
+                $receipt->variance = (float)$receipt->amount - (float)$receipt->amount_released;
+                
                 return $receipt;
             });
 
@@ -1753,7 +1758,6 @@ class MayorsOfficeController extends Controller
         ], 500);
     }
 }
-
 
 
     /**
