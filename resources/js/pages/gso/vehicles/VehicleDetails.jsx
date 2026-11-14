@@ -4,7 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useVehicles } from '../../../hooks/useVehicleManagement';
 import { gpsAPI, gsoAPI } from '../../../services/api';
-import { MapContainer, TileLayer, Polyline, Marker, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { cn } from '@/lib/utils';
@@ -16,7 +16,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
-import { format, startOfWeek, addDays } from 'date-fns';
+import { format, startOfWeek } from 'date-fns';
 
 // ============================================
 // CUSTOM MAP ICONS
@@ -47,6 +47,7 @@ const icons = {
     end: createSvgIcon('#ef4444', '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><line x1="4" y1="22" x2="4" y2="15"></line>'),
 };
 
+// Map Component to Fit Bounds
 const MapBoundsUpdater = ({ bounds }) => {
     const map = useMap();
     useEffect(() => {
@@ -465,7 +466,7 @@ const VehicleDetails = () => {
                             <MapContainer bounds={routeCoordinates} style={{ height: '100%', width: '100%' }} zoomControl={true}>
                                 <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
                                 <MapBoundsUpdater bounds={routeCoordinates} />
-                                <Polyline positions={routeCoordinates} color="#3b82f6" weight={5} opacity={0.8} />
+                                {/* ✅ GITANGGAL ANG POLYLINE PARA WALAY LINYA NGA MAGPAKITA */}
                                 <Marker position={routeCoordinates[0]} icon={icons.start} />
                                 <Marker position={routeCoordinates[routeCoordinates.length - 1]} icon={icons.end} />
                                 {isReplaying && <Marker position={routeCoordinates[replayIndex]} icon={icons.vehicle} />}

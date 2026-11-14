@@ -8,7 +8,7 @@ import { useOptimizedQuery } from '../../hooks/useOptimizedQuery';
 import { gpsAPI, gsoAPI } from '../../services/api'; 
 import echo from '../../services/echo';
 import {
-    MapContainer, TileLayer, Marker, Polyline, ZoomControl,
+    MapContainer, TileLayer, Marker, ZoomControl,
 } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -23,7 +23,6 @@ import { Button } from '@/components/ui/button';
 // CUSTOM MAP ICONS (SVG)
 // ============================================
 
-// ✅ Vehicle Icon with Plate & Name Label
 const createVehicleIcon = (plateNumber, vehicleModel) => {
     return L.divIcon({
         className: 'custom-vehicle-icon',
@@ -34,9 +33,8 @@ const createVehicleIcon = (plateNumber, vehicleModel) => {
             justify-content: center;
             transform: translate(-50%, -50%);
             position: relative;
-            width: 120px; /* Allow space for text */
+            width: 120px;
         ">
-            <!-- The Car Circle -->
             <div style="
                 background-color: #3b82f6;
                 width: 32px; height: 32px;
@@ -50,7 +48,6 @@ const createVehicleIcon = (plateNumber, vehicleModel) => {
                     <path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/>
                 </svg>
             </div>
-            <!-- The Label -->
             <div style="
                 position: absolute;
                 top: 38px;
@@ -245,8 +242,6 @@ const LiveTracking = () => {
         const currentBalance = parseFloat(selectedTrip.vehicle.current_fuel_balance) || 0;
         const initialFuel = parseFloat(selectedTrip.vehicle.initial_estimated_fuel) || tankCap;
         
-        // Calculate consumed based on initial + purchases - current
-        // Assuming API passes purchases if we had them, or we just use difference from initial
         const consumed = Math.max(0, initialFuel - currentBalance);
         const percent = tankCap > 0 ? Math.min(100, Math.max(0, (currentBalance / tankCap) * 100)) : 0;
 
@@ -401,14 +396,7 @@ const LiveTracking = () => {
 
                                 return (
                                     <React.Fragment key={trip.trip_id}>
-                                        {trip.route && trip.route.length > 1 && (
-                                            <Polyline 
-                                                positions={trip.route.map(p => [p.latitude, p.longitude])} 
-                                                color="#3b82f6" 
-                                                weight={4} 
-                                                opacity={0.8} 
-                                            />
-                                        )}
+                                        {/* ✅ GITANGGAL ANG POLYLINE PARA WALAY MAG-GUBOT NGA LINYA */}
                                         
                                         {trip.route && trip.route.length > 0 && (
                                             <Marker position={[trip.route[0].latitude, trip.route[0].longitude]} icon={icons.start} />
