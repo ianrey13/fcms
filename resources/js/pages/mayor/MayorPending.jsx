@@ -6,7 +6,6 @@ import { useAutoRefresh } from "../../hooks/useAutoRefresh";
 import { useRealtime } from "../../contexts/RealtimeContext";
 import { mayorsOfficeAPI } from "../../services/api";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   Clock, RefreshCw, Loader2, Truck, XCircle, Info, 
@@ -75,7 +74,7 @@ const MayorPending = () => {
   
   const [requestingDeptBalance, setRequestingDeptBalance] = useState(null);
   
-  // ✅ New states for Warning
+  // ✅ States for Warning
   const [showTankWarning, setShowTankWarning] = useState(false);
   const [pendingPayload, setPendingPayload] = useState(null);
 
@@ -85,8 +84,7 @@ const MayorPending = () => {
     queryClient.invalidateQueries({ queryKey: ["mayor-pending-tickets"] });
     queryClient.invalidateQueries({ queryKey: ["mayor-approved-tickets"] });
     fetchTicketsRef.current?.();
-    if (activeTab === "released") fetchTicketsRef.current?.();
-  }, [queryClient, activeTab]);
+  }, [queryClient]);
 
   useAutoRefresh(["mayor-trip-updated", "mayor-new-pending", "gso-funds-released", "trip-completed"], fetchAllData);
 
@@ -180,32 +178,21 @@ const MayorPending = () => {
 
   const suggestion = suggestionResponse?.data?.data;
 
-  // ✅ Approve Click (With Tank Capacity Warning)
+  // ✅ Approve Click (With Warning if Exceeds Suggestion)
   const handleApprove = async () => {
     if (!amountReleased || parseFloat(amountReleased) <= 0) {
       return toast.error("Please enter a valid amount");
     }
     const amount = parseFloat(amountReleased);
 
-    // Check Tank Capacity Warning
-    if (suggestion && suggestion.available) {
-        const estimatedLiters = suggestion.suggested_liters || 0;
-        const weightedPrice = suggestion.unit_price_hint || 1; 
-        
-        const currentFuelBalance = parseFloat(selectedTicket.vehicle?.current_fuel_balance) || 0;
-        const tankCapacity = parseFloat(selectedTicket.vehicle?.tank_capacity) || 60;
-
-        const litersToBuy = amount / weightedPrice;
-        const totalLitersAfterRelease = currentFuelBalance + litersToBuy;
-
-        if (totalLitersAfterRelease > tankCapacity) {
-            setPendingPayload({
-                amount_released: amount,
-                charge_to_department_id: selectedTicket.department_id,
-            });
-            setShowTankWarning(true);
-            return;
-        }
+    // Check if the entered amount exceeds the suggested amount
+    if (suggestion && suggestion.available && amount > suggestion.suggested_amount) {
+        setPendingPayload({
+            amount_released: amount,
+            charge_to_department_id: selectedTicket.department_id,
+        });
+        setShowTankWarning(true);
+        return;
     }
 
     submitApprove({
@@ -241,7 +228,6 @@ const MayorPending = () => {
     } finally { setSubmitting(false); }
   };
 
-  // For Gauge UI
   const currentFuel = parseFloat(selectedTicket?.vehicle?.current_fuel_balance || 0);
   const tankCap = parseFloat(selectedTicket?.vehicle?.tank_capacity || 60);
   const fuelPercent = Math.min(100, Math.max(0, (currentFuel / tankCap) * 100));
@@ -487,7 +473,7 @@ const MayorPending = () => {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-amber-400">
               <AlertTriangle className="h-5 w-5" />
-              Warning: Fuel Exceeds Tank Capacity
+              Warning: Fuel Exceeds Suggestion
             </DialogTitle>
             <DialogDescription className="text-slate-400 pt-2">
               Fuel may exceed to tank capacity with that amount. Continue anyway?
