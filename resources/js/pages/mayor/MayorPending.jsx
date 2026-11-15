@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   Clock, RefreshCw, Loader2, Truck, XCircle, Info, 
   CheckCircle, FileText, Check, ArrowRight, 
-  Sparkles, Fuel, AlertTriangle, Activity, Edit
+  Sparkles, Fuel, AlertTriangle, Activity, Edit, User, Users, Building2
 } from "lucide-react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter
@@ -63,6 +63,11 @@ const MayorPending = () => {
   const [submitting, setSubmitting] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   
+  // ✅ States for Cross-Department (Charge To)
+  const [isCrossDepartment, setIsCrossDepartment] = useState(false);
+  const [availableDepartments, setAvailableDepartments] = useState([]);
+  const [chargeToDepartmentId, setChargeToDepartmentId] = useState("");
+
   const [requestingDeptBalance, setRequestingDeptBalance] = useState(null);
   const [showTankWarning, setShowTankWarning] = useState(false);
   const [pendingPayload, setPendingPayload] = useState(null);
@@ -134,9 +139,12 @@ const MayorPending = () => {
     setSelectedTicket(ticket);
     setShowRightPanel(true);
     setAmountReleased("");
+    setIsCrossDepartment(false);
     
     if (activeTab === "pending") {
       await fetchDepartmentBalance(ticket.department_id);
+      await fetchAllDepartments();
+      setChargeToDepartmentId(ticket.department_id?.toString() || "");
     }
   };
 
@@ -152,6 +160,13 @@ const MayorPending = () => {
         });
       } else { setRequestingDeptBalance(null); }
     } catch (error) { setRequestingDeptBalance(null); }
+  }, []);
+
+  const fetchAllDepartments = useCallback(async () => {
+    try {
+      const response = await mayorsOfficeAPI.getAllDepartmentsForSelector();
+      setAvailableDepartments(response.data?.data || []);
+    } catch (error) {}
   }, []);
 
   const selectedTicketId = selectedTicket?.id || selectedTicket?.trip_ticket_id;
@@ -175,7 +190,8 @@ const MayorPending = () => {
     if (suggestion && suggestion.available && amount > suggestion.suggested_amount) {
         setPendingPayload({
             amount_released: amount,
-            charge_to_department_id: selectedTicket.department_id,
+            charge_to_department_id: chargeToDepartmentId,
+            is_cross_department: isCrossDepartment,
         });
         setShowTankWarning(true);
         return;
@@ -183,7 +199,8 @@ const MayorPending = () => {
 
     submitApprove({
         amount_released: amount,
-        charge_to_department_id: selectedTicket.department_id,
+        charge_to_department_id: chargeToDepartmentId,
+        is_cross_department: isCrossDepartment,
     });
   };
 
@@ -265,7 +282,6 @@ const MayorPending = () => {
                   <th className="px-4 py-4 font-medium">Department</th>
                   <th className="px-4 py-4 font-medium">Vehicle</th>
                   <th className="px-4 py-4 font-medium">Status</th>
-                  {/* ✅ Gi-remove ang Actions column header */}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/50">
@@ -276,7 +292,6 @@ const MayorPending = () => {
                     <td className="px-4 py-4">{ticket.department_name}</td>
                     <td className="px-4 py-4">{ticket.vehicle?.plate_number || 'N/A'}</td>
                     <td className="px-4 py-4"><StatusPill status={ticket.status} /></td>
-                    {/* ✅ Gi-remove ang Actions column data */}
                   </tr>
                 ))}
               </tbody>
@@ -294,6 +309,7 @@ const MayorPending = () => {
 
             <div className="p-5 flex-1 overflow-y-auto space-y-5">
               
+              {/* ✅ FIXED: Trip Details Box with Driver and Passenger Name */}
               <div className="bg-[#0b101c] rounded-xl p-4 border border-slate-800 text-sm">
                 <div className="flex items-center gap-2 mb-3 pb-2 border-b border-slate-800">
                   <Truck className="h-4 w-4 text-blue-500" />
@@ -301,7 +317,15 @@ const MayorPending = () => {
                 </div>
                 <div className="grid grid-cols-3 gap-y-2">
                   <span className="text-slate-500">Date</span><span className="col-span-2 text-slate-200">: {formatDate(selectedTicket.trip_date)}</span>
-                  <span className="text-slate-500">Name</span><span className="col-span-2 text-slate-200">: {selectedTicket.passenger_name || selectedTicket.driver_name || "N/A"}</span>
+                  
+                  {/* Driver Name */}
+                  <span className="text-slate-500 flex items-center gap-1"><User className="h-3 w-3"/> Driver</span>
+                  <span className="col-span-2 text-slate-200">: {selectedTicket.driver_name || selectedTicket.driver?.full_name || "N/A"}</span>
+                  
+                  {/* Passenger Name */}
+                  <span className="text-slate-500 flex items-center gap-1"><Users className="h-3 w-3"/> Passenger</span>
+                  <span className="col-span-2 text-slate-200">: {selectedTicket.passenger_name || "N/A"}</span>
+                  
                   <span className="text-slate-500">Trip Ticket No.</span><span className="col-span-2 text-slate-200">: {selectedTicket.ticket_number}</span>
                   <span className="text-slate-500">Department</span><span className="col-span-2 text-slate-200">: {selectedTicket.department_name}</span>
                   <span className="text-slate-500">Vehicle</span><span className="col-span-2 text-slate-200">: {selectedTicket.vehicle?.plate_number}</span>
@@ -386,6 +410,38 @@ const MayorPending = () => {
                     </div>
                   ) : null}
 
+                  {/* ✅ RE-ADDED: Charge To Section */}
+                  <div className="bg-[#0b101c] rounded-xl p-4 border border-slate-800 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-bold text-white flex items-center gap-2">
+                        <Building2 className="h-4 w-4 text-slate-400" /> Charge To
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input 
+                          type="checkbox" 
+                          id="crossDept"
+                          checked={isCrossDepartment}
+                          onChange={(e) => setIsCrossDepartment(e.target.checked)}
+                          className="rounded border-slate-700 bg-[#0b101c] text-blue-600 focus:ring-blue-500"
+                        />
+                        <label htmlFor="crossDept" className="text-xs text-slate-300 cursor-pointer">Mayor's Office (Cross-Dept)</label>
+                      </div>
+                    </div>
+
+                    {isCrossDepartment && (
+                      <select 
+                        value={chargeToDepartmentId}
+                        onChange={(e) => setChargeToDepartmentId(e.target.value)}
+                        className="w-full bg-[#121829] border border-slate-700 text-white text-sm rounded-lg p-2.5 outline-none focus:ring-1 focus:ring-blue-500"
+                      >
+                        <option value="">-- Select Department --</option>
+                        {availableDepartments.map(d => (
+                          <option key={d.department_id} value={d.department_id}>{d.department_name}</option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+
                   <div>
                     <label className="text-sm font-bold text-white mb-2 flex items-center gap-2">
                         Amount to Release (₱)
@@ -403,7 +459,6 @@ const MayorPending = () => {
                   </div>
                 </>
               ) : (
-                /* ✅ Edit Details Button kung Funds Issued na (o uban pa) */
                 <div className="pt-4 border-t border-slate-800">
                    <Button 
                      onClick={() => {/* Logic for editing here */}} 
@@ -417,7 +472,6 @@ const MayorPending = () => {
 
             </div>
 
-            {/* Action Buttons (Only show for Pending) */}
             {activeTab === 'pending' && (
               <div className="p-5 border-t border-slate-800 flex gap-3">
                 <Button onClick={handleApprove} disabled={submitting} className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white font-bold h-12 rounded-xl text-md">
