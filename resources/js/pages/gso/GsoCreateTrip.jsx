@@ -37,27 +37,20 @@ const SearchableSelect = ({
     const selectedOption = options.find(o => getOptionValue(o).toString() === value?.toString());
 
     useEffect(() => {
-        if (selectedOption) {
-            setSearchTerm(getOptionLabel(selectedOption));
-        } else {
-            setSearchTerm("");
-        }
+        if (selectedOption) setSearchTerm(getOptionLabel(selectedOption));
+        else setSearchTerm("");
     }, [selectedOption, getOptionLabel]);
 
     useEffect(() => {
         const handleClickOutside = (event) => {
-            if (wrapperRef.current && !wrapperRef.current.contains(event.target)) {
-                setIsOpen(false);
-            }
+            if (wrapperRef.current && !wrapperRef.current.contains(event.target)) setIsOpen(false);
         };
         document.addEventListener("mousedown", handleClickOutside);
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
     const filteredOptions = useMemo(() => {
-        if (!searchTerm || (selectedOption && searchTerm === getOptionLabel(selectedOption))) {
-            return []; 
-        }
+        if (!searchTerm || (selectedOption && searchTerm === getOptionLabel(selectedOption))) return []; 
         const lowerSearch = searchTerm.toLowerCase();
         return options.filter(o => 
             getOptionLabel(o)?.toLowerCase().includes(lowerSearch) ||
@@ -65,9 +58,7 @@ const SearchableSelect = ({
         );
     }, [options, searchTerm, selectedOption, getOptionLabel, getOptionSubLabel]);
 
-    const handleFocus = () => {
-        if (!disabled) setIsOpen(true);
-    };
+    const handleFocus = () => { if (!disabled) setIsOpen(true); };
 
     const handleSelect = (option) => {
         onChange(getOptionValue(option).toString());
@@ -104,10 +95,7 @@ const SearchableSelect = ({
                     {Icon ? <Icon className="h-4 w-4" /> : <Search className="h-4 w-4" />}
                 </div>
                 {selectedOption && !disabled && (
-                    <button 
-                        onClick={() => { onChange(""); setSearchTerm(""); }}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
-                    >
+                    <button onClick={() => { onChange(""); setSearchTerm(""); }} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white">
                         <X className="h-4 w-4" />
                     </button>
                 )}
@@ -119,25 +107,15 @@ const SearchableSelect = ({
                         <div className="px-4 py-3 text-sm text-slate-400 text-center">No results found</div>
                     ) : (
                         filteredOptions.map((option, idx) => (
-                            <div
-                                key={idx}
-                                onClick={() => handleSelect(option)}
-                                className="px-4 py-3 hover:bg-slate-700 cursor-pointer border-b border-slate-700/50 last:border-0"
-                            >
+                            <div key={idx} onClick={() => handleSelect(option)} className="px-4 py-3 hover:bg-slate-700 cursor-pointer border-b border-slate-700/50 last:border-0">
                                 <p className="text-sm font-medium text-white">{getOptionLabel(option)}</p>
-                                {getOptionSubLabel && (
-                                    <p className="text-xs text-slate-400 mt-0.5">{getOptionSubLabel(option)}</p>
-                                )}
+                                {getOptionSubLabel && <p className="text-xs text-slate-400 mt-0.5">{getOptionSubLabel(option)}</p>}
                             </div>
                         ))
                     )}
                 </div>
             )}
-            {error && (
-                <p className="text-red-400 text-xs flex items-center gap-1 mt-1">
-                    <AlertTriangle className="h-3 w-3" /> {error}
-                </p>
-            )}
+            {error && <p className="text-red-400 text-xs flex items-center gap-1 mt-1"><AlertTriangle className="h-3 w-3" /> {error}</p>}
         </div>
     );
 };
@@ -149,8 +127,6 @@ const MultiStopDestination = ({ stops, onChange, vehicleId, onEstimateChange }) 
     const [suggestions, setSuggestions] = useState([]);
     const [activeIndex, setActiveIndex] = useState(null);
     const [searching, setSearching] = useState(false);
-    const [calculating, setCalculating] = useState(false);
-    const wrapperRef = useRef(null);
 
     const searchDestinations = useCallback(
         debounce(async (query) => {
@@ -163,45 +139,29 @@ const MultiStopDestination = ({ stops, onChange, vehicleId, onEstimateChange }) 
                     let predictions = data.predictions || data.data || [];
                     setSuggestions(predictions.slice(0, 5));
                 }
-            } catch (error) {
-                setSuggestions([]);
-            } finally {
-                setSearching(false);
-            }
+            } catch (error) { setSuggestions([]); } 
+            finally { setSearching(false); }
         }, SEARCH_DEBOUNCE_MS), []
     );
 
-    // ✅ CALCULATE ESTIMATE LOGIC (Ibalik)
     const calculateTotal = useCallback(async (currentStops, currentVehicleId) => {
         const validStops = currentStops.filter(s => s.address && s.lat && s.lng);
-        if (validStops.length === 0) {
-            onEstimateChange(null);
-            return;
-        }
+        if (validStops.length === 0) { onEstimateChange(null); return; }
 
-        setCalculating(true);
         try {
             let totalDistance = 0;
             let efficiency = 10;
             let fuelPrice = 78;
-            let fuelType = "gasoline";
 
             for (let i = 0; i < validStops.length; i++) {
                 const stop = validStops[i];
                 const legOrigin = i === 0 ? ORIGIN_ADDRESS : validStops[i - 1].address;
-
                 const params = {
-                    origin: legOrigin,
-                    destination: stop.address,
-                    vehicle_id: currentVehicleId || undefined,
-                    round_trip: false,
-                    dest_lat: stop.lat,
-                    dest_lng: stop.lng,
+                    origin: legOrigin, destination: stop.address,
+                    vehicle_id: currentVehicleId || undefined, round_trip: false,
+                    dest_lat: stop.lat, dest_lng: stop.lng,
                 };
-                if (i > 0) {
-                    params.origin_lat = validStops[i - 1].lat;
-                    params.origin_lng = validStops[i - 1].lng;
-                }
+                if (i > 0) { params.origin_lat = validStops[i - 1].lat; params.origin_lng = validStops[i - 1].lng; }
 
                 try {
                     const response = await locationAPI.calculateDistance(params);
@@ -209,40 +169,24 @@ const MultiStopDestination = ({ stops, onChange, vehicleId, onEstimateChange }) 
                         totalDistance += parseFloat(response.data.distance_km) || 0;
                         if (response.data.fuel_efficiency_km_per_liter) efficiency = parseFloat(response.data.fuel_efficiency_km_per_liter);
                         if (response.data.fuel_price_per_liter) fuelPrice = parseFloat(response.data.fuel_price_per_liter);
-                        if (response.data.fuel_type) fuelType = response.data.fuel_type;
                     }
-                } catch (err) {
-                    console.error("Distance calc error:", err);
-                }
+                } catch (err) { console.error(err); }
             }
 
-            if (totalDistance === 0) {
-                onEstimateChange(null);
-                return;
-            }
+            if (totalDistance === 0) { onEstimateChange(null); return; }
 
             const roundTripDistance = Math.round(totalDistance * 2 * 100) / 100;
             const estimatedLiters = Math.round((roundTripDistance / efficiency) * 1.1 * 100) / 100;
             const estimatedCost = Math.round(estimatedLiters * fuelPrice * 100) / 100;
 
-            onEstimateChange({
-                distance_km: roundTripDistance,
-                estimated_liters: estimatedLiters,
-                estimated_cost: estimatedCost,
-                fuel_type: fuelType
-            });
-        } finally {
-            setCalculating(false);
-        }
+            onEstimateChange({ distance_km: roundTripDistance, estimated_liters: estimatedLiters, estimated_cost: estimatedCost });
+        } catch (error) { onEstimateChange(null); }
     }, [onEstimateChange]);
 
     const debouncedCalcRef = useRef(null);
-    if (!debouncedCalcRef.current) {
-        debouncedCalcRef.current = debounce((s, v) => calculateTotal(s, v), 600);
-    }
+    if (!debouncedCalcRef.current) debouncedCalcRef.current = debounce((s, v) => calculateTotal(s, v), 600);
     const debouncedCalc = debouncedCalcRef.current;
 
-    // ✅ Trigger calculate kung mausab ang stops o vehicle
     const stopsKey = stops.map(s => `${s.address}|${s.lat}|${s.lng}`).join("::");
     useEffect(() => {
         debouncedCalc(stops, vehicleId);
@@ -259,11 +203,7 @@ const MultiStopDestination = ({ stops, onChange, vehicleId, onEstimateChange }) 
 
     const handleSelectSuggestion = (index, suggestion) => {
         const newStops = [...stops];
-        newStops[index] = { 
-            address: suggestion.description, 
-            lat: parseFloat(suggestion.lat), 
-            lng: parseFloat(suggestion.lng) 
-        };
+        newStops[index] = { address: suggestion.description, lat: parseFloat(suggestion.lat), lng: parseFloat(suggestion.lng) };
         onChange(newStops);
         setSuggestions([]);
         setActiveIndex(null);
@@ -293,9 +233,7 @@ const MultiStopDestination = ({ stops, onChange, vehicleId, onEstimateChange }) 
                                 onFocus={() => setActiveIndex(index)}
                                 className="pl-10 pr-10 bg-[#0b101c] border-slate-700 text-white h-12"
                             />
-                            {searching && activeIndex === index && (
-                                <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-blue-500" />
-                            )}
+                            {searching && activeIndex === index && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-blue-500" />}
                         </div>
                         {stops.length > 1 && (
                             <Button variant="ghost" size="icon" onClick={() => removeStop(index)} className="text-red-400 hover:text-red-300">
@@ -315,11 +253,7 @@ const MultiStopDestination = ({ stops, onChange, vehicleId, onEstimateChange }) 
                     )}
                 </div>
             ))}
-            <Button 
-                variant="outline" 
-                onClick={(e) => { e.preventDefault(); addStop(); }} 
-                className="w-full border-dashed border-slate-700 text-slate-300 hover:bg-slate-800 h-12"
-            >
+            <Button variant="outline" onClick={(e) => { e.preventDefault(); addStop(); }} className="w-full border-dashed border-slate-700 text-slate-300 hover:bg-slate-800 h-12">
                 <Plus className="h-4 w-4 mr-2" /> Add Destination
             </Button>
         </div>
@@ -342,13 +276,13 @@ const GsoCreateTrip = () => {
         trip_date: new Date().toISOString().split("T")[0],
         purpose: "",
         passenger_name: "",
+        charge_to: "", // ✅ Gi-apil balik
     });
 
     const [stops, setStops] = useState([{ address: "", lat: null, lng: null }]);
     const [tripEstimate, setTripEstimate] = useState(null);
     const [errors, setErrors] = useState({});
 
-    // QUERIES
     const { data: departments = [] } = useOptimizedQuery({
         queryKey: ["departments"],
         queryFn: async () => (await adminDepartmentAPI.getSelector()).data?.data || [],
@@ -380,15 +314,18 @@ const GsoCreateTrip = () => {
         const driver = drivers.find(d => (d.driver_id || d.id).toString() === driverId);
         if (driver) {
             const deptId = driver.department_id || driver.user?.department_id;
+            const deptCode = departments.find(d => d.department_id === parseInt(deptId))?.department_code || "";
+            
             setFormData(prev => ({
                 ...prev,
                 driver_id: driverId,
                 department_id: deptId?.toString() || "",
                 vehicle_id: "", 
+                charge_to: deptCode, // ✅ Set charge_to based sa driver's dept
             }));
-            setErrors(prev => ({ ...prev, driver_id: "", department_id: "", vehicle_id: "" }));
+            setErrors(prev => ({ ...prev, driver_id: "", department_id: "", vehicle_id: "", charge_to: "" }));
         } else {
-            setFormData(prev => ({ ...prev, driver_id: "", department_id: "", vehicle_id: "" }));
+            setFormData(prev => ({ ...prev, driver_id: "", department_id: "", vehicle_id: "", charge_to: "" }));
         }
     };
 
@@ -396,7 +333,6 @@ const GsoCreateTrip = () => {
         setTripEstimate(estimate);
     }, []);
 
-    // ✅ CREATE TRIP MUTATION
     const createTripMutation = useMutation({
         mutationFn: async (data) => {
             const response = await gsoAPI.createTrip(data);
@@ -437,7 +373,6 @@ const GsoCreateTrip = () => {
             estimated_cost: tripEstimate?.estimated_cost || 0,
         };
 
-        // ✅ Tawgon na ang mutation
         createTripMutation.mutate(payload);
     };
 
@@ -447,30 +382,21 @@ const GsoCreateTrip = () => {
         <div className="min-h-screen bg-[#090e1a] p-4 md:p-6 font-sans text-slate-200">
             <div className="max-w-7xl mx-auto space-y-6">
                 
-                {/* Header */}
                 <div className="flex items-center gap-4 mb-6">
-                    <div className="p-4 rounded-2xl bg-blue-600 shadow-[0_0_20px_rgba(37,99,235,0.4)]">
-                        <Truck className="h-8 w-8 text-white" />
-                    </div>
+                    <div className="p-4 rounded-2xl bg-blue-600 shadow-[0_0_20px_rgba(37,99,235,0.4)]"><Truck className="h-8 w-8 text-white" /></div>
                     <div>
                         <h1 className="text-3xl font-bold text-white">Create Trip Ticket</h1>
                         <p className="text-slate-400 mt-1">Fill in the details to create a new trip ticket.</p>
                     </div>
-                    <Button onClick={() => navigate("/gso/dashboard")} variant="ghost" className="ml-auto text-slate-400 hover:text-white">
-                        <X className="h-6 w-6" />
-                    </Button>
+                    <Button onClick={() => navigate("/gso/dashboard")} variant="ghost" className="ml-auto text-slate-400 hover:text-white"><X className="h-6 w-6" /></Button>
                 </div>
 
                 <form onSubmit={handleSubmit} className="space-y-6">
                     
-                    {/* Top Section: Details & Gauge */}
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                         
-                        {/* Left Side: Form Details */}
                         <div className="lg:col-span-2 bg-[#121829] border border-slate-800 rounded-2xl p-6 space-y-4 shadow-lg">
-                            <h2 className="text-lg font-bold text-white flex items-center gap-2 mb-2">
-                                <Truck className="h-5 w-5 text-blue-500" /> Trip Details
-                            </h2>
+                            <h2 className="text-lg font-bold text-white flex items-center gap-2 mb-2"><Truck className="h-5 w-5 text-blue-500" /> Trip Details</h2>
 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <SearchableSelect 
@@ -489,12 +415,7 @@ const GsoCreateTrip = () => {
                                     <label className="text-sm font-medium text-slate-300 flex items-center gap-2">
                                         <Calendar className="h-4 w-4 text-slate-400" /> Trip Date <span className="text-red-500">*</span>
                                     </label>
-                                    <Input
-                                        type="date"
-                                        value={formData.trip_date}
-                                        onChange={(e) => setFormData(prev => ({ ...prev, trip_date: e.target.value }))}
-                                        className="bg-[#0b101c] border-slate-700 text-white h-12 [color-scheme:dark]"
-                                    />
+                                    <Input type="date" value={formData.trip_date} onChange={(e) => setFormData(prev => ({ ...prev, trip_date: e.target.value }))} className="bg-[#0b101c] border-slate-700 text-white h-12 [color-scheme:dark]" />
                                 </div>
 
                                 <div className="space-y-1.5">
@@ -503,11 +424,7 @@ const GsoCreateTrip = () => {
                                     </label>
                                     <div className="relative">
                                         <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-                                        <Input
-                                            disabled
-                                            value={departments.find(d => d.department_id === parseInt(formData.department_id))?.department_name || "Auto-filled based on driver"}
-                                            className="pl-10 bg-[#0b101c] border-slate-700 text-slate-400 h-12 cursor-not-allowed"
-                                        />
+                                        <Input disabled value={departments.find(d => d.department_id === parseInt(formData.department_id))?.department_name || "Auto-filled based on driver"} className="pl-10 bg-[#0b101c] border-slate-700 text-slate-400 h-12 cursor-not-allowed" />
                                     </div>
                                 </div>
 
@@ -528,29 +445,18 @@ const GsoCreateTrip = () => {
                                     <label className="text-sm font-medium text-slate-300 flex items-center gap-2">
                                         <FileText className="h-4 w-4 text-slate-400" /> Purpose <span className="text-red-500">*</span>
                                     </label>
-                                    <Input
-                                        placeholder="Enter purpose"
-                                        value={formData.purpose}
-                                        onChange={(e) => setFormData(prev => ({ ...prev, purpose: e.target.value }))}
-                                        className={cn("bg-[#0b101c] border-slate-700 text-white h-12", errors.purpose && "border-red-500")}
-                                    />
+                                    <Input placeholder="Enter purpose" value={formData.purpose} onChange={(e) => setFormData(prev => ({ ...prev, purpose: e.target.value }))} className={cn("bg-[#0b101c] border-slate-700 text-white h-12", errors.purpose && "border-red-500")} />
                                 </div>
 
                                 <div className="space-y-1.5 md:col-span-2">
                                     <label className="text-sm font-medium text-slate-300 flex items-center gap-2">
                                         <User className="h-4 w-4 text-slate-400" /> Passenger Name (Optional)
                                     </label>
-                                    <Input
-                                        placeholder="Enter passenger name"
-                                        value={formData.passenger_name}
-                                        onChange={(e) => setFormData(prev => ({ ...prev, passenger_name: e.target.value }))}
-                                        className="bg-[#0b101c] border-slate-700 text-white h-12"
-                                    />
+                                    <Input placeholder="Enter passenger name" value={formData.passenger_name} onChange={(e) => setFormData(prev => ({ ...prev, passenger_name: e.target.value }))} className="bg-[#0b101c] border-slate-700 text-white h-12" />
                                 </div>
                             </div>
                         </div>
 
-                        {/* Right Side: Gauge */}
                         <div className="bg-[#121829] border border-slate-800 rounded-2xl p-6 flex flex-col items-center justify-center shadow-lg relative">
                             <div className="absolute top-4 left-4 flex items-center gap-2">
                                 <MapPin className="h-4 w-4 text-blue-500" />
@@ -564,59 +470,36 @@ const GsoCreateTrip = () => {
                                 </svg>
                                 <div className="absolute inset-0 flex flex-col items-center justify-center">
                                     <Navigation className="h-6 w-6 text-blue-500 mb-1" />
-                                    <span className="text-3xl font-extrabold text-white">
-                                        {tripEstimate ? tripEstimate.distance_km : 0} <span className="text-lg">km</span>
-                                    </span>
+                                    <span className="text-3xl font-extrabold text-white">{tripEstimate ? tripEstimate.distance_km : 0} <span className="text-lg">km</span></span>
                                     <span className="text-xs text-slate-400">Estimate</span>
                                 </div>
                             </div>
                         </div>
                     </div>
 
-                    {/* Middle Section: Destinations */}
                     <div className="bg-[#121829] border border-slate-800 rounded-2xl p-6 shadow-lg">
                         <div className="flex items-center justify-between mb-4">
-                            <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                                <MapPin className="h-5 w-5 text-blue-500" /> Destinations
-                            </h2>
+                            <h2 className="text-lg font-bold text-white flex items-center gap-2"><MapPin className="h-5 w-5 text-blue-500" /> Destinations</h2>
                             <Badge variant="outline" className="border-slate-700 text-slate-400">{stops.length}/{MAX_STOPS}</Badge>
                         </div>
-                        <MultiStopDestination 
-                            stops={stops} 
-                            onChange={setStops} 
-                            vehicleId={formData.vehicle_id} 
-                            onEstimateChange={handleEstimateChange} 
-                        />
+                        <MultiStopDestination stops={stops} onChange={setStops} vehicleId={formData.vehicle_id} onEstimateChange={handleEstimateChange} />
                         {errors.destination && <p className="text-red-400 text-xs mt-2">{errors.destination}</p>}
                     </div>
 
-                    {/* Bottom Section: Charge To (Static) */}
                     <div className="bg-[#121829] border border-slate-800 rounded-2xl p-6 shadow-lg">
-                        <h2 className="text-lg font-bold text-white flex items-center gap-2 mb-4">
-                            <Building2 className="h-5 w-5 text-blue-500" /> Charged To Department
-                        </h2>
+                        <h2 className="text-lg font-bold text-white flex items-center gap-2 mb-4"><Building2 className="h-5 w-5 text-blue-500" /> Charged To Department</h2>
                         <div className="relative">
                             <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-                            <Input
-                                disabled
-                                placeholder="Auto-filled based on driver's department"
-                                value={departments.find(d => d.department_id === parseInt(formData.department_id))?.department_name || ""}
-                                className="pl-10 bg-[#0b101c] border-slate-700 text-slate-400 h-12 cursor-not-allowed"
-                            />
+                            <Input disabled placeholder="Auto-filled based on driver's department" value={departments.find(d => d.department_id === parseInt(formData.department_id))?.department_name || ""} className="pl-10 bg-[#0b101c] border-slate-700 text-slate-400 h-12 cursor-not-allowed" />
                         </div>
                     </div>
 
-                    {/* Action Buttons */}
                     <div className="flex justify-end gap-3 pt-4">
                         <Button type="button" variant="outline" onClick={() => navigate("/gso/dashboard")} className="border-slate-700 text-slate-300 h-12 px-6 rounded-xl">
                             <X className="h-5 w-5 mr-2" /> Cancel
                         </Button>
                         <Button type="submit" disabled={createTripMutation.isPending} className="bg-blue-600 hover:bg-blue-700 text-white font-bold h-12 px-8 rounded-xl">
-                            {createTripMutation.isPending ? (
-                                <><Loader2 className="h-5 w-5 animate-spin mr-2" /> Creating...</>
-                            ) : (
-                                <><CheckCircle className="h-5 w-5 mr-2" /> Create Trip Ticket</>
-                            )}
+                            {createTripMutation.isPending ? <><Loader2 className="h-5 w-5 animate-spin mr-2" /> Creating...</> : <><CheckCircle className="h-5 w-5 mr-2" /> Create Trip Ticket</>}
                         </Button>
                     </div>
 
