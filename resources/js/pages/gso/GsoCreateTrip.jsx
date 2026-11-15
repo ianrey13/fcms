@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { cn } from "@/lib/utils";
+import { debounce } from "lodash";
 
 // ============================================
 // CONSTANTS
@@ -35,7 +36,6 @@ const SearchableSelect = ({
 
     const selectedOption = options.find(o => getOptionValue(o).toString() === value?.toString());
 
-    // Sync search term with selected option
     useEffect(() => {
         if (selectedOption) {
             setSearchTerm(getOptionLabel(selectedOption));
@@ -54,10 +54,9 @@ const SearchableSelect = ({
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
-    // Filter options based on search term
     const filteredOptions = useMemo(() => {
         if (!searchTerm || (selectedOption && searchTerm === getOptionLabel(selectedOption))) {
-            return []; // Don't show all by default if nothing typed
+            return []; 
         }
         const lowerSearch = searchTerm.toLowerCase();
         return options.filter(o => 
@@ -79,7 +78,7 @@ const SearchableSelect = ({
     const handleInputChange = (e) => {
         setSearchTerm(e.target.value);
         setIsOpen(true);
-        if (value) onChange(""); // Clear selection if user types something else
+        if (value) onChange(""); 
     };
 
     return (
@@ -114,7 +113,6 @@ const SearchableSelect = ({
                 )}
             </div>
 
-            {/* Dropdown Options */}
             {isOpen && searchTerm && !selectedOption && (
                 <div className="absolute z-50 w-full mt-1 bg-[#1e293b] border border-slate-700 rounded-xl shadow-2xl max-h-60 overflow-auto">
                     {filteredOptions.length === 0 ? (
@@ -145,15 +143,17 @@ const SearchableSelect = ({
 };
 
 // ============================================
-// MULTI-STOP DESTINATION COMPONENT (Simplified for UI)
+// MULTI-STOP DESTINATION COMPONENT
 // ============================================
 const MultiStopDestination = ({ stops, onChange, vehicleId, onEstimateChange }) => {
     const [suggestions, setSuggestions] = useState([]);
     const [activeIndex, setActiveIndex] = useState(null);
     const [searching, setSearching] = useState(false);
+    const [calculating, setCalculating] = useState(false);
+    const wrapperRef = useRef(null);
 
     const searchDestinations = useCallback(
-        async (query) => {
+        debounce(async (query) => {
             if (query.length < 2) { setSuggestions([]); return; }
             setSearching(true);
             try {
@@ -168,8 +168,86 @@ const MultiStopDestination = ({ stops, onChange, vehicleId, onEstimateChange }) 
             } finally {
                 setSearching(false);
             }
-        }, []
+        }, SEARCH_DEBOUNCE_MS), []
     );
+
+    // ✅ CALCULATE ESTIMATE LOGIC (Ibalik)
+    const calculateTotal = useCallback(async (currentStops, currentVehicleId) => {
+        const validStops = currentStops.filter(s => s.address && s.lat && s.lng);
+        if (validStops.length === 0) {
+            onEstimateChange(null);
+            return;
+        }
+
+        setCalculating(true);
+        try {
+            let totalDistance = 0;
+            let efficiency = 10;
+            let fuelPrice = 78;
+            let fuelType = "gasoline";
+
+            for (let i = 0; i < validStops.length; i++) {
+                const stop = validStops[i];
+                const legOrigin = i === 0 ? ORIGIN_ADDRESS : validStops[i - 1].address;
+
+                const params = {
+                    origin: legOrigin,
+                    destination: stop.address,
+                    vehicle_id: currentVehicleId || undefined,
+                    round_trip: false,
+                    dest_lat: stop.lat,
+                    dest_lng: stop.lng,
+                };
+                if (i > 0) {
+                    params.origin_lat = validStops[i - 1].lat;
+                    params.origin_lng = validStops[i - 1].lng;
+                }
+
+                try {
+                    const response = await locationAPI.calculateDistance(params);
+                    if (response.data?.success) {
+                        totalDistance += parseFloat(response.data.distance_km) || 0;
+                        if (response.data.fuel_efficiency_km_per_liter) efficiency = parseFloat(response.data.fuel_efficiency_km_per_liter);
+                        if (response.data.fuel_price_per_liter) fuelPrice = parseFloat(response.data.fuel_price_per_liter);
+                        if (response.data.fuel_type) fuelType = response.data.fuel_type;
+                    }
+                } catch (err) {
+                    console.error("Distance calc error:", err);
+                }
+            }
+
+            if (totalDistance === 0) {
+                onEstimateChange(null);
+                return;
+            }
+
+            const roundTripDistance = Math.round(totalDistance * 2 * 100) / 100;
+            const estimatedLiters = Math.round((roundTripDistance / efficiency) * 1.1 * 100) / 100;
+            const estimatedCost = Math.round(estimatedLiters * fuelPrice * 100) / 100;
+
+            onEstimateChange({
+                distance_km: roundTripDistance,
+                estimated_liters: estimatedLiters,
+                estimated_cost: estimatedCost,
+                fuel_type: fuelType
+            });
+        } finally {
+            setCalculating(false);
+        }
+    }, [onEstimateChange]);
+
+    const debouncedCalcRef = useRef(null);
+    if (!debouncedCalcRef.current) {
+        debouncedCalcRef.current = debounce((s, v) => calculateTotal(s, v), 600);
+    }
+    const debouncedCalc = debouncedCalcRef.current;
+
+    // ✅ Trigger calculate kung mausab ang stops o vehicle
+    const stopsKey = stops.map(s => `${s.address}|${s.lat}|${s.lng}`).join("::");
+    useEffect(() => {
+        debouncedCalc(stops, vehicleId);
+        return () => debouncedCalc.cancel();
+    }, [stopsKey, vehicleId, debouncedCalc]);
 
     const handleStopInputChange = (index, value) => {
         const newStops = [...stops];
@@ -239,7 +317,7 @@ const MultiStopDestination = ({ stops, onChange, vehicleId, onEstimateChange }) 
             ))}
             <Button 
                 variant="outline" 
-                onClick={addStop} 
+                onClick={(e) => { e.preventDefault(); addStop(); }} 
                 className="w-full border-dashed border-slate-700 text-slate-300 hover:bg-slate-800 h-12"
             >
                 <Plus className="h-4 w-4 mr-2" /> Add Destination
@@ -255,6 +333,7 @@ const MultiStopDestination = ({ stops, onChange, vehicleId, onEstimateChange }) 
 const GsoCreateTrip = () => {
     const navigate = useNavigate();
     const queryClient = useQueryClient();
+    const toastIdRef = useRef(null);
 
     const [formData, setFormData] = useState({
         department_id: "",
@@ -305,7 +384,7 @@ const GsoCreateTrip = () => {
                 ...prev,
                 driver_id: driverId,
                 department_id: deptId?.toString() || "",
-                vehicle_id: "", // Reset vehicle when driver changes
+                vehicle_id: "", 
             }));
             setErrors(prev => ({ ...prev, driver_id: "", department_id: "", vehicle_id: "" }));
         } else {
@@ -317,20 +396,37 @@ const GsoCreateTrip = () => {
         setTripEstimate(estimate);
     }, []);
 
+    // ✅ CREATE TRIP MUTATION
+    const createTripMutation = useMutation({
+        mutationFn: async (data) => {
+            const response = await gsoAPI.createTrip(data);
+            return response.data;
+        },
+        onSuccess: () => {
+            if (toastIdRef.current) toast.dismiss(toastIdRef.current);
+            toastIdRef.current = toast.success("✅ Trip ticket created successfully!");
+            queryClient.invalidateQueries({ queryKey: ["gso"] });
+            navigate("/gso/dashboard");
+        },
+        onError: (error) => {
+            if (toastIdRef.current) toast.dismiss(toastIdRef.current);
+            toastIdRef.current = toast.error(error.response?.data?.message || "Failed to create trip");
+        },
+    });
+
     const handleSubmit = (e) => {
         e.preventDefault();
         const newErrors = {};
         if (!formData.driver_id) newErrors.driver_id = "Required";
         if (!formData.vehicle_id) newErrors.vehicle_id = "Required";
         if (!formData.purpose) newErrors.purpose = "Required";
-        if (stops.filter(s => s.address).length === 0) newErrors.destination = "Required";
+        if (stops.filter(s => s.address && s.lat).length === 0) newErrors.destination = "Required";
 
         if (Object.keys(newErrors).length > 0) {
             setErrors(newErrors);
             return toast.error("Please fill in all required fields.");
         }
 
-        // Combine multiple destinations
         const destString = stops.filter(s => s.address).map(s => s.address.split(',')[0]).join(', ');
 
         const payload = {
@@ -341,9 +437,8 @@ const GsoCreateTrip = () => {
             estimated_cost: tripEstimate?.estimated_cost || 0,
         };
 
-        // Simulate API call
-        toast.success("Trip Ticket Created!");
-        navigate("/gso/dashboard");
+        // ✅ Tawgon na ang mutation
+        createTripMutation.mutate(payload);
     };
 
     const gaugePercent = tripEstimate ? Math.min(100, (tripEstimate.distance_km / 500) * 100) : 0;
@@ -469,7 +564,9 @@ const GsoCreateTrip = () => {
                                 </svg>
                                 <div className="absolute inset-0 flex flex-col items-center justify-center">
                                     <Navigation className="h-6 w-6 text-blue-500 mb-1" />
-                                    <span className="text-3xl font-extrabold text-white">{tripEstimate ? tripEstimate.distance_km : 0} <span className="text-lg">km</span></span>
+                                    <span className="text-3xl font-extrabold text-white">
+                                        {tripEstimate ? tripEstimate.distance_km : 0} <span className="text-lg">km</span>
+                                    </span>
                                     <span className="text-xs text-slate-400">Estimate</span>
                                 </div>
                             </div>
@@ -514,8 +611,12 @@ const GsoCreateTrip = () => {
                         <Button type="button" variant="outline" onClick={() => navigate("/gso/dashboard")} className="border-slate-700 text-slate-300 h-12 px-6 rounded-xl">
                             <X className="h-5 w-5 mr-2" /> Cancel
                         </Button>
-                        <Button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white font-bold h-12 px-8 rounded-xl">
-                            <CheckCircle className="h-5 w-5 mr-2" /> Create Trip Ticket
+                        <Button type="submit" disabled={createTripMutation.isPending} className="bg-blue-600 hover:bg-blue-700 text-white font-bold h-12 px-8 rounded-xl">
+                            {createTripMutation.isPending ? (
+                                <><Loader2 className="h-5 w-5 animate-spin mr-2" /> Creating...</>
+                            ) : (
+                                <><CheckCircle className="h-5 w-5 mr-2" /> Create Trip Ticket</>
+                            )}
                         </Button>
                     </div>
 
