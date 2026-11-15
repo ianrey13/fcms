@@ -1,1924 +1,462 @@
 // src/pages/gso/GsoDashboard.jsx
-import React, {
-    useState,
-    useMemo,
-    useCallback,
-    useEffect,
-    lazy,
-    Suspense,
-} from "react";
+import React, { useState, useMemo, useCallback, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { useOptimizedQuery } from "../../hooks/useOptimizedQuery";
 import { useAutoRefresh } from "../../hooks/useAutoRefresh";
 import { useRealtime } from "../../contexts/RealtimeContext";
-import { useQuery } from "@tanstack/react-query";
+import { gsoAPI, vehicleAPI, gpsAPI } from "../../services/api";
 import {
-    SkeletonPage,
-    SkeletonStats,
-    SkeletonTable,
-} from "../../components/ui/SkeletonCard";
-import {
-    gsoAPI,
-    userAPI,
-    vehicleAPI,
-    departmentAPI,
-    auditAPI,
-    gpsAPI,
-} from "../../services/api";
-import {
-    Clock,
-    CheckCircle,
-    XCircle,
-    Eye,
-    Calendar,
-    MapPin,
-    Truck,
-    AlertCircle,
-    Loader2,
-    RefreshCw,
-    Check,
-    Search,
-    Building2,
-    FileCheck,
-    PlusCircle,
-    Users,
-    Car,
-    DollarSign,
-    TrendingUp,
-    History,
-    Activity,
-    User,
-    Database,
-    Shield,
-    Clock as ClockIcon,
-    ChevronDown,
-    ChevronUp,
-    ArrowUpRight,
-    ArrowDownRight,
-    ArrowRight,
-    Minus,
-    Ban,
-    AlertTriangle,
-    Fuel,
+    Car, CheckCircle, AlertTriangle, Wrench, RefreshCw, MapPin, Search,
+    ChevronDown, Activity, PlusCircle, ArrowRight, Fuel, Clock
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-    Card,
-    CardContent,
-    CardHeader,
-    CardTitle,
-    CardDescription,
-} from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import {
-    Table,
-    TableBody,
-    TableCell,
-    TableHead,
-    TableHeader,
-    TableRow,
-} from "@/components/ui/table";
-import {
-    Dialog,
-    DialogContent,
-    DialogDescription,
-    DialogFooter,
-    DialogHeader,
-    DialogTitle,
-} from "@/components/ui/dialog";
-import { Textarea } from "@/components/ui/textarea";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { toast } from "react-hot-toast";
 import { cn } from "@/lib/utils";
 
 // ============================================
-// ✅ LAZY CHART + PREFETCH HELPER
+// HELPERS
 // ============================================
-
-const TripTrendsChart = lazy(
-    () => import("../../components/charts/TripTrendsChart"),
-);
-
-const prefetchChart = () => {
-    import("../../components/charts/TripTrendsChart");
-};
-
-// ============================================
-// ✅ SAFE ARRAY EXTRACTION HELPER
-// ============================================
-
 const extractArray = (response) => {
     if (!response) return [];
     if (Array.isArray(response)) return response;
     if (Array.isArray(response.data)) return response.data;
-    if (response.data && Array.isArray(response.data.data))
-        return response.data.data;
-
-    const keys = [
-        "items",
-        "results",
-        "records",
-        "rows",
-        "list",
-        "tickets",
-        "trips",
-        "logs",
-        "activities",
-        "activity_logs",
-    ];
-    for (const key of keys) {
-        if (Array.isArray(response[key])) return response[key];
-        if (response.data && Array.isArray(response.data[key])) {
-            return response.data[key];
-        }
-    }
-
-    if (response.data?.data?.data && Array.isArray(response.data.data.data)) {
-        return response.data.data.data;
-    }
-
-    console.warn("⚠️ extractArray: unexpected response shape:", response);
+    if (response.data && Array.isArray(response.data.data)) return response.data.data;
     return [];
-};
-
-const useSafeArray = (value) => {
-    return useMemo(() => (Array.isArray(value) ? value : []), [value]);
-};
-
-// ============================================
-// CONSTANTS & HELPERS
-// ============================================
-
-const CANCELLABLE_STATUSES = ["pending_mayors_office", "returned_for_revision"];
-
-const canCancelTicket = (status) => CANCELLABLE_STATUSES.includes(status);
-
-const getStatusConfig = (status) => {
-    const configs = {
-        pending_mayors_office: {
-            color: "bg-yellow-500",
-            label: "Submitted",
-            icon: Clock,
-        },
-        funds_issued: {
-            color: "bg-blue-500",
-            label: "Funds Issued",
-            icon: DollarSign,
-        },
-        acknowledged: {
-            color: "bg-cyan-500",
-            label: "Acknowledged",
-            icon: CheckCircle,
-        },
-        in_transit: {
-            color: "bg-indigo-500",
-            label: "In Transit",
-            icon: Truck,
-        },
-        closed: { color: "bg-green-600", label: "Closed", icon: CheckCircle },
-        rejected: { color: "bg-red-500", label: "Rejected", icon: XCircle },
-        cancelled: { color: "bg-slate-600", label: "Cancelled", icon: Ban },
-        returned_for_revision: {
-            color: "bg-purple-500",
-            label: "Returned",
-            icon: AlertCircle,
-        },
-        draft: { color: "bg-slate-400", label: "Draft", icon: AlertCircle },
-        pending_gso_validation: {
-            color: "bg-indigo-500",
-            label: "Pending Validation",
-            icon: FileCheck,
-        },
-        completed: {
-            color: "bg-amber-500",
-            label: "Ready for Validation",
-            icon: FileCheck,
-        },
-        pending_reconciliation: {
-            color: "bg-orange-500",
-            label: "Pending Recon",
-            icon: Clock,
-        },
-        pending_gso_ticket: {
-            color: "bg-amber-600",
-            label: "Pending GSO Ticket",
-            icon: Fuel,
-        },
-    };
-    return (
-        configs[status] || {
-            color: "bg-slate-500",
-            label: status || "Unknown",
-            icon: Clock,
-        }
-    );
 };
 
 const formatDateShort = (dateString) => {
     if (!dateString) return "N/A";
-    try {
-        return new Date(dateString).toLocaleDateString("en-US", {
-            month: "short",
-            day: "numeric",
-            year: "numeric",
-        });
-    } catch {
-        return "N/A";
-    }
-};
-
-const formatLogTimestamp = (dateString) => {
-    if (!dateString) return "";
-    try {
-        const date = new Date(dateString);
-        const day = String(date.getDate()).padStart(2, "0");
-        const month = String(date.getMonth() + 1).padStart(2, "0");
-        const year = date.getFullYear();
-        const time = date.toLocaleTimeString("en-US", {
-            hour: "numeric",
-            minute: "2-digit",
-            hour12: true,
-        });
-        return `${day}/${month}/${year}, ${time}`;
-    } catch {
-        return "";
-    }
-};
-
-const formatTime = (dateString) => {
-    if (!dateString) return "Just now";
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffMs = now - date;
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 3600000);
-    const diffDays = Math.floor(diffMs / 86400000);
-
-    if (diffMins < 1) return "Just now";
-    if (diffMins < 60) return `${diffMins}m ago`;
-    if (diffHours < 24) {
-        const remainingMins = diffMins % 60;
-        if (remainingMins === 0) return `${diffHours}h ago`;
-        return `${diffHours}h ${remainingMins}m ago`;
-    }
-    if (diffDays < 7) return `${diffDays}d ago`;
-    return date.toLocaleDateString("en-PH", {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-    });
-};
-
-const getTicketId = (ticket) =>
-    ticket?.trip_ticket_id || ticket?.id || ticket?.ticket_id;
-const getTicketNumber = (ticket) =>
-    ticket?.trip_ticket_number || ticket?.ticket_number || "N/A";
-
-const getAuditActionColor = (action) => {
-    const colors = {
-        login: "bg-emerald-500",
-        logout: "bg-red-500",
-        created: "bg-blue-500",
-        updated: "bg-amber-500",
-        deleted: "bg-red-600",
-        fund_released: "bg-green-500",
-        status_change: "bg-purple-500",
-        mo_approved: "bg-indigo-500",
-        gso_created_trip: "bg-cyan-500",
-        profile_updated: "bg-teal-500",
-        password_changed: "bg-orange-500",
-        receipt_verified: "bg-emerald-500",
-        trip_cancelled: "bg-slate-600",
-    };
-    return colors[action] || "bg-slate-500";
-};
-
-const getAuditActionIcon = (action) => {
-    const icons = {
-        login: User,
-        logout: XCircle,
-        created: PlusCircle,
-        updated: RefreshCw,
-        deleted: XCircle,
-        fund_released: DollarSign,
-        status_change: Activity,
-        mo_approved: CheckCircle,
-        gso_created_trip: Truck,
-        profile_updated: User,
-        password_changed: Shield,
-        receipt_verified: FileCheck,
-        trip_cancelled: Ban,
-    };
-    return icons[action] || ClockIcon;
-};
-
-// ============================================
-// STATUS BADGE
-// ============================================
-
-const StatusBadge = ({ status }) => {
-    const config = getStatusConfig(status);
-    const Icon = config.icon;
-    return (
-        <Badge
-            className={`${config.color} text-white flex items-center gap-1 px-2.5 py-1.5 rounded-lg`}
-        >
-            <Icon className="h-3 w-3" />
-            {config.label}
-        </Badge>
-    );
-};
-
-// ============================================
-// STATS CARD
-// ============================================
-
-const StatsCard = ({
-    title,
-    value,
-    icon: Icon,
-    gradient,
-    subtitle,
-    onClick,
-    trend,
-}) => {
-    const getTrendIcon = () => {
-        if (!trend) return null;
-        if (trend > 0)
-            return <ArrowUpRight className="h-3 w-3 text-emerald-500" />;
-        if (trend < 0)
-            return <ArrowDownRight className="h-3 w-3 text-red-500" />;
-        return <Minus className="h-3 w-3 text-slate-400" />;
-    };
-
-    return (
-        <div
-            className="cursor-pointer transform transition-all duration-300 hover:scale-105 hover:shadow-xl"
-            onClick={onClick}
-        >
-            <Card className="relative overflow-hidden group dark:bg-slate-800/80 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 transition-all duration-300">
-                <div
-                    className={`absolute top-0 right-0 w-32 h-32 bg-gradient-to-br ${gradient} opacity-10 rounded-full -translate-y-1/2 translate-x-1/2 group-hover:scale-150 transition-transform duration-500`}
-                />
-                <CardContent className="p-5">
-                    <div className="flex items-start justify-between mb-3">
-                        <div
-                            className={`p-2.5 rounded-xl bg-gradient-to-br ${gradient} shadow-lg shadow-blue-500/20`}
-                        >
-                            <Icon className="h-5 w-5 text-white" />
-                        </div>
-                        {trend !== undefined && (
-                            <div className="flex items-center gap-1 text-xs font-medium">
-                                {getTrendIcon()}
-                                <span
-                                    className={
-                                        trend > 0
-                                            ? "text-emerald-600 dark:text-emerald-400"
-                                            : trend < 0
-                                              ? "text-red-600 dark:text-red-400"
-                                              : "text-slate-400"
-                                    }
-                                >
-                                    {trend > 0 ? "+" : ""}
-                                    {trend}%
-                                </span>
-                            </div>
-                        )}
-                    </div>
-                    <div>
-                        <p className="text-2xl font-bold text-slate-900 dark:text-white">
-                            {value}
-                        </p>
-                        <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-                            {title}
-                        </p>
-                        <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
-                            {subtitle}
-                        </p>
-                    </div>
-                </CardContent>
-            </Card>
-        </div>
-    );
-};
-
-// ============================================
-// TICKET TABLE
-// ============================================
-
-const TicketTable = ({
-    tickets,
-    showValidate = false,
-    showCancel = false,
-    onView,
-    onValidate,
-    onCancel,
-    isLoading: tableLoading,
-    showActions = true,
-    maxHeight = "400px",
-}) => {
-    const safeTickets = Array.isArray(tickets) ? tickets : [];
-
-    if (tableLoading) {
-        return (
-            <div className="flex justify-center py-16">
-                <div className="text-center">
-                    <Loader2 className="h-8 w-8 animate-spin text-blue-600 dark:text-blue-400 mx-auto mb-3" />
-                    <p className="text-slate-500 dark:text-slate-400 text-sm">
-                        Loading tickets...
-                    </p>
-                </div>
-            </div>
-        );
-    }
-
-    if (safeTickets.length === 0) {
-        return (
-            <div className="text-center py-16">
-                <div className="w-16 h-16 bg-slate-100 dark:bg-slate-800 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                    <CheckCircle className="h-8 w-8 text-slate-400 dark:text-slate-500" />
-                </div>
-                <p className="text-slate-600 dark:text-slate-400 font-medium">
-                    No tickets found
-                </p>
-                <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">
-                    Tickets will appear here once available
-                </p>
-            </div>
-        );
-    }
-
-    return (
-        <div
-            className="overflow-x-auto overflow-y-auto border rounded-lg dark:border-slate-700"
-            style={{ maxHeight }}
-        >
-            <Table>
-                <TableHeader className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-900/50 shadow-sm">
-                    <TableRow className="border-b dark:border-slate-700">
-                        <TableHead className="font-semibold text-slate-600 dark:text-slate-400 whitespace-nowrap">
-                            Ticket #
-                        </TableHead>
-                        <TableHead className="font-semibold text-slate-600 dark:text-slate-400 whitespace-nowrap">
-                            Date
-                        </TableHead>
-                        <TableHead className="font-semibold text-slate-600 dark:text-slate-400 whitespace-nowrap">
-                            Destination
-                        </TableHead>
-                        <TableHead className="font-semibold text-slate-600 dark:text-slate-400 whitespace-nowrap">
-                            Department
-                        </TableHead>
-                        <TableHead className="font-semibold text-slate-600 dark:text-slate-400 whitespace-nowrap">
-                            Status
-                        </TableHead>
-                        {showActions && (
-                            <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-right whitespace-nowrap">
-                                Actions
-                            </TableHead>
-                        )}
-                    </TableRow>
-                </TableHeader>
-                <TableBody>
-                    {safeTickets.map((ticket, index) => {
-                        const ticketId = getTicketId(ticket);
-                        const needsValidation =
-                            ticket?.status === "pending_gso_validation" ||
-                            ticket?.status === "completed";
-                        const cancellable = canCancelTicket(ticket?.status);
-
-                        return (
-                            <TableRow
-                                key={ticketId || index}
-                                className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors"
-                            >
-                                <TableCell className="font-medium">
-                                    <span className="font-mono text-sm font-semibold text-slate-800 dark:text-white">
-                                        {getTicketNumber(ticket)}
-                                    </span>
-                                </TableCell>
-                                <TableCell>
-                                    <div className="flex items-center gap-1.5">
-                                        <Calendar className="h-3.5 w-3.5 text-slate-400" />
-                                        <span className="text-sm text-slate-600 dark:text-slate-400">
-                                            {formatDateShort(ticket?.trip_date)}
-                                        </span>
-                                    </div>
-                                </TableCell>
-                                <TableCell>
-                                    <div className="flex items-center gap-1.5">
-                                        <MapPin className="h-3.5 w-3.5 text-slate-400" />
-                                        <span className="text-sm text-slate-600 dark:text-slate-400 truncate max-w-[200px]">
-                                            {ticket?.destination || "N/A"}
-                                        </span>
-                                    </div>
-                                </TableCell>
-                                <TableCell>
-                                    <div className="flex items-center gap-1.5">
-                                        <Building2 className="h-3.5 w-3.5 text-slate-400" />
-                                        <span className="text-sm text-slate-600 dark:text-slate-400">
-                                            {ticket?.department_name ||
-                                                ticket?.department
-                                                    ?.department_name ||
-                                                "N/A"}
-                                        </span>
-                                    </div>
-                                </TableCell>
-                                <TableCell>
-                                    <StatusBadge status={ticket?.status} />
-                                </TableCell>
-                                {showActions && (
-                                    <TableCell className="text-right">
-                                        <div className="flex items-center justify-end gap-1">
-                                            {onView && (
-                                                <Button
-                                                    variant="outline"
-                                                    size="sm"
-                                                    onClick={() =>
-                                                        onView(ticketId)
-                                                    }
-                                                    className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:text-blue-300 dark:hover:bg-blue-950/30 h-8 px-3 border-blue-200 dark:border-blue-800"
-                                                    title="View Details"
-                                                >
-                                                    <Eye className="h-3.5 w-3.5 mr-1" />{" "}
-                                                    View
-                                                </Button>
-                                            )}
-                                            {showCancel &&
-                                                cancellable &&
-                                                onCancel && (
-                                                    <Button
-                                                        variant="outline"
-                                                        size="sm"
-                                                        onClick={() =>
-                                                            onCancel(ticket)
-                                                        }
-                                                        className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:text-red-300 dark:hover:bg-red-950/30 h-8 px-3 border-red-200 dark:border-red-800"
-                                                        title="Cancel Ticket"
-                                                    >
-                                                        <Ban className="h-3.5 w-3.5 mr-1" />{" "}
-                                                        Cancel
-                                                    </Button>
-                                                )}
-                                            {showValidate &&
-                                                needsValidation && (
-                                                    <Button
-                                                        size="sm"
-                                                        className={`${
-                                                            ticket?.status ===
-                                                            "pending_gso_validation"
-                                                                ? "bg-indigo-600 hover:bg-indigo-700"
-                                                                : "bg-amber-600 hover:bg-amber-700"
-                                                        } text-white shadow-sm h-8 px-3`}
-                                                        onClick={() =>
-                                                            onValidate?.(ticket)
-                                                        }
-                                                    >
-                                                        <FileCheck className="h-3.5 w-3.5 mr-1" />
-                                                        {ticket?.status ===
-                                                        "pending_gso_validation"
-                                                            ? "Validate"
-                                                            : "Review & Close"}
-                                                    </Button>
-                                                )}
-                                        </div>
-                                    </TableCell>
-                                )}
-                            </TableRow>
-                        );
-                    })}
-                </TableBody>
-            </Table>
-        </div>
-    );
-};
-
-// ============================================
-// ✅ CHART SKELETON FALLBACK
-// ============================================
-
-const ChartFallback = () => (
-    <div className="h-full w-full flex items-end justify-around gap-2 px-4 pb-10 pt-4">
-        {[40, 65, 45, 80, 55, 70].map((height, i) => (
-            <div
-                key={i}
-                className="w-full bg-gradient-to-t from-blue-500/30 to-blue-500/5 rounded-t animate-pulse"
-                style={{
-                    height: `${height}%`,
-                    animationDelay: `${i * 100}ms`,
-                }}
-            />
-        ))}
-    </div>
-);
-
-// ============================================
-// ✅ TRIP HISTORY WIDGET
-// ============================================
-
-const TripHistoryWidget = ({ isLoading }) => {
-    const { data: activityRaw, isLoading: activityLoading } = useOptimizedQuery({
-        queryKey: ["gso-activity-logs-trip-widget"],
-        queryFn: async () => {
-            try {
-                const res = await gsoAPI.getActivityLogs();
-                const logs = res?.data?.data?.logs || res?.data?.logs || [];
-                return Array.isArray(logs) ? logs : [];
-            } catch (error) {
-                console.error("Error fetching activity logs:", error);
-                return [];
-            }
-        },
-        staleTime: 0,
-        refetchOnMount: true,
-        refetchOnReconnect: true,
-        refetchOnWindowFocus: false,
-        placeholderData: (prev) => prev,
-    });
-
-    const activityLogs = useSafeArray(activityRaw);
-
-    const recent = useMemo(() => {
-        const trips = activityLogs.filter(
-            (log) => log?.source === "trip_history",
-        );
-        return trips.slice(0, 5);
-    }, [activityLogs]);
-
-    const formatLogText = (log) => {
-        const userName = log.user_name || "Unknown User";
-        const tripNo = log.trip_number ?? "?";
-        const ticket = log.trip_ticket_number || "N/A";
-        const vehicle =
-            log.vehicle_plate && log.vehicle_plate !== "N/A"
-                ? ` (${log.vehicle_plate})`
-                : "";
-        const dest =
-            log.destination && log.destination !== "N/A"
-                ? ` (${log.destination})`
-                : "";
-
-        if (log.action === "started") {
-            return `Driver ${userName} started trip #${tripNo} on ticket ${ticket}${vehicle}${dest}`;
-        }
-        if (log.action === "completed") {
-            const dist =
-                log.distance_km != null && log.distance_km > 0
-                    ? ` — ${log.distance_km} km`
-                    : "";
-            return `Driver ${userName} completed trip #${tripNo} on ticket ${ticket}${vehicle}${dist}`;
-        }
-        return `Driver ${userName} trip #${tripNo} on ticket ${ticket}`;
-    };
-
-    const loading = isLoading || activityLoading;
-
-    return (
-        <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-            <CardHeader className="border-b dark:border-slate-700 pb-4">
-                <CardTitle className="flex items-center gap-2 text-slate-800 dark:text-white">
-                    <History className="h-5 w-5 text-purple-500" />
-                    Trip History
-                </CardTitle>
-                <CardDescription className="dark:text-slate-400 mt-1">
-                    Latest 5 trip events across all departments
-                </CardDescription>
-            </CardHeader>
-            <CardContent className="pt-4">
-                {loading ? (
-                    <div className="flex justify-center py-10">
-                        <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
-                    </div>
-                ) : recent.length === 0 ? (
-                    <div className="py-10 text-center">
-                        <History className="h-10 w-10 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
-                        <p className="text-sm text-slate-500 dark:text-slate-400">
-                            No trip activity yet
-                        </p>
-                    </div>
-                ) : (
-                    <div className="divide-y divide-slate-100 dark:divide-slate-700/60">
-                        {recent.map((log, i) => (
-                            <div
-                                key={log.id || log.log_id || i}
-                                className="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0"
-                            >
-                                <div className="flex items-start gap-2 flex-1 min-w-0">
-                                    <Truck className="h-4 w-4 text-blue-500 mt-0.5 flex-shrink-0" />
-                                    <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
-                                        {formatLogText(log)}
-                                    </p>
-                                </div>
-                                <span className="text-xs text-slate-400 dark:text-slate-500 whitespace-nowrap flex-shrink-0">
-                                    {log.created_at
-                                        ? formatLogTimestamp(log.created_at)
-                                        : "N/A"}
-                                </span>
-                            </div>
-                        ))}
-                    </div>
-                )}
-            </CardContent>
-        </Card>
-    );
+    return new Date(dateString).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 };
 
 // ============================================
 // MAIN COMPONENT
 // ============================================
-
 const GsoDashboard = () => {
     const { user } = useAuth();
     const navigate = useNavigate();
     const queryClient = useQueryClient();
     const { isConnected } = useRealtime();
-    const [selectedTicket, setSelectedTicket] = useState(null);
-    const [showValidateDialog, setShowValidateDialog] = useState(false);
-    const [showCancelDialog, setShowCancelDialog] = useState(false);
-    const [cancelReason, setCancelReason] = useState("");
-    const [allTripsFilter, setAllTripsFilter] = useState("all");
-    const [searchQuery, setSearchQuery] = useState("");
-    const [validationNote, setValidationNote] = useState("");
 
-    // ✅ Gas Slip modal state
-    const [gasSlipModalTicket, setGasSlipModalTicket] = useState(null);
-    const [gasSlipForm, setGasSlipForm] = useState({
-        estimated_distance_km: "",
-        estimated_fuel_liters: "",
-        passenger_name: "",
-        validation_note: "",
-    });
-
-    const departmentName =
-        user?.department_name
-            ?.replace("Philippine National Police - ", "")
-            .replace("PNP - ", "") || "General Services Office";
-
-    useEffect(() => {
-        prefetchChart();
-    }, []);
+    const [selectedVehicle, setSelectedVehicle] = useState(null);
+    const [searchTerm, setSearchTerm] = useState("");
 
     const fetchAllData = useCallback(() => {
-        queryClient.invalidateQueries({ queryKey: ["gso-pending-mo"] });
-        queryClient.invalidateQueries({ queryKey: ["gso-pending-validation"] });
-        queryClient.invalidateQueries({ queryKey: ["gso-all-trips"] });
-        queryClient.invalidateQueries({ queryKey: ["gso-cancelled-trips"] });
-        queryClient.invalidateQueries({ queryKey: ["admin-users-stats"] });
-        queryClient.invalidateQueries({ queryKey: ["admin-vehicles-stats"] });
-        queryClient.invalidateQueries({ queryKey: ["admin-departments-stats"] });
-        queryClient.invalidateQueries({ queryKey: ["gso-activity-logs-trip-widget"] });
-        queryClient.invalidateQueries({ queryKey: ["gso-pending-gas-slips"] });
+        queryClient.invalidateQueries({ queryKey: ["gso-dashboard-vehicles"] });
+        queryClient.invalidateQueries({ queryKey: ["gso-dashboard-trips"] });
+        queryClient.invalidateQueries({ queryKey: ["gps-active-trips"] });
     }, [queryClient]);
 
-    useAutoRefresh(
-        [
-            "gso-trip-updated",
-            "gso-trip-status-changed",
-            "gso-funds-released",
-            "trip-completed",
-            "trip-started",
-            "new-notification",
-            "gso-trip-created",
-            "trip-cancelled",
-            "gas-slip-created",
-        ],
-        fetchAllData,
-        1000,
-    );
+    useAutoRefresh(["gso-trip-updated", "gps-active-trips", "trip-completed"], fetchAllData);
 
     // ============ QUERIES ============
-
-    const { data: pendingTicketsRaw, isLoading: pendingLoading } =
-        useOptimizedQuery({
-            queryKey: ["gso-pending-mo"],
-            queryFn: async () => {
-                try {
-                    const response = await gsoAPI.getPendingMO();
-                    return extractArray(response);
-                } catch (error) {
-                    if (error.response?.status === 429) return [];
-                    console.error("Error fetching pending tickets:", error);
-                    return [];
-                }
-            },
-            staleTime: 0,
-            refetchOnMount: true,
-            refetchOnReconnect: true,
-            refetchOnWindowFocus: false,
-            placeholderData: (prev) => prev,
-        });
-    const pendingTickets = useSafeArray(pendingTicketsRaw);
-
-    const { data: pendingValidationRaw, isLoading: validationLoading } =
-        useOptimizedQuery({
-            queryKey: ["gso-pending-validation"],
-            queryFn: async () => {
-                try {
-                    const response = await gsoAPI.getPendingValidation();
-                    return extractArray(response);
-                } catch (error) {
-                    console.error("Error fetching pending validation:", error);
-                    return [];
-                }
-            },
-            staleTime: 0,
-            refetchOnMount: true,
-            refetchOnReconnect: true,
-            refetchOnWindowFocus: false,
-            placeholderData: (prev) => prev,
-        });
-    const pendingValidation = useSafeArray(pendingValidationRaw);
-
-    const { data: allTripsRaw, isLoading: allTripsLoading } = useOptimizedQuery(
-        {
-            queryKey: ["gso-all-trips"],
-            queryFn: async () => {
-                try {
-                    const response = await gsoAPI.getAllTrips();
-                    return extractArray(response);
-                } catch (error) {
-                    console.error("Error fetching all trips:", error);
-                    return [];
-                }
-            },
-            staleTime: 0,
-            refetchOnMount: true,
-            refetchOnReconnect: true,
-            refetchOnWindowFocus: false,
-            placeholderData: (prev) => prev,
-        },
-    );
-    const allTrips = useSafeArray(allTripsRaw);
-
-    const { data: cancelledTripsRaw, isLoading: cancelledLoading } =
-        useOptimizedQuery({
-            queryKey: ["gso-cancelled-trips"],
-            queryFn: async () => {
-                try {
-                    if (typeof gsoAPI.getCancelledTrips !== "function")
-                        return [];
-                    const response = await gsoAPI.getCancelledTrips();
-                    return extractArray(response);
-                } catch (error) {
-                    console.error("Error fetching cancelled trips:", error);
-                    return [];
-                }
-            },
-            staleTime: 0,
-            refetchOnMount: true,
-            refetchOnReconnect: true,
-            refetchOnWindowFocus: false,
-            placeholderData: (prev) => prev,
-        });
-    const cancelledTrips = useSafeArray(cancelledTripsRaw);
-
-    const { data: usersRaw } = useOptimizedQuery({
-        queryKey: ["admin-users-stats"],
-        queryFn: async () => {
-            try {
-                const response = await userAPI.getAll();
-                return extractArray(response);
-            } catch {
-                return [];
-            }
-        },
-        staleTime: 0,
-        refetchOnMount: true,
-        refetchOnReconnect: true,
-        refetchOnWindowFocus: false,
-        placeholderData: (prev) => prev,
+    
+    // 1. Vehicles (Para sa Stats ug Fuel Balance Monitoring)
+    const { data: vehiclesRaw = [], isLoading: vehiclesLoading } = useOptimizedQuery({
+        queryKey: ["gso-dashboard-vehicles"],
+        queryFn: async () => extractArray(await vehicleAPI.getAll()),
     });
-    const users = useSafeArray(usersRaw);
+    const vehicles = useMemo(() => Array.isArray(vehiclesRaw) ? vehiclesRaw : [], [vehiclesRaw]);
 
-    const { data: vehiclesRaw } = useOptimizedQuery({
-        queryKey: ["admin-vehicles-stats"],
-        queryFn: async () => {
-            try {
-                const response = await vehicleAPI.getAll();
-                return extractArray(response);
-            } catch {
-                return [];
-            }
-        },
-        staleTime: 0,
-        refetchOnMount: true,
-        refetchOnReconnect: true,
-        refetchOnWindowFocus: false,
-        placeholderData: (prev) => prev,
-    });
-    const vehicles = useSafeArray(vehiclesRaw);
-
-    useOptimizedQuery({
-        queryKey: ["admin-departments-stats"],
-        queryFn: async () => {
-            try {
-                const response = await departmentAPI.getAll();
-                return extractArray(response);
-            } catch {
-                return [];
-            }
-        },
-        staleTime: 0,
-        refetchOnMount: true,
-        refetchOnReconnect: true,
-        refetchOnWindowFocus: false,
-        placeholderData: (prev) => prev,
-    });
-
-    const { data: activeTrips = [] } = useQuery({
+    // 2. Active Trips (Para sa Map ug Utilization)
+    const { data: activeTrips = [], isLoading: activeTripsLoading } = useQuery({
         queryKey: ["gps-active-trips"],
         queryFn: async () => {
             try {
                 const res = await gpsAPI.getActiveTrips();
-                const data = res.data?.data;
-                return Array.isArray(data) ? data : [];
-            } catch (err) {
-                console.error(err);
-                return [];
-            }
+                return Array.isArray(res.data?.data) ? res.data.data : [];
+            } catch { return []; }
         },
-        refetchInterval: 30000,
+        refetchInterval: 15000,
     });
 
-    // ============ MUTATIONS ============
-
-    const validateMutation = useMutation({
-        mutationFn: async ({ ticketId, data }) => {
-            const response = await gsoAPI.validateTrip(ticketId, data);
-            return response.data;
-        },
-        onSuccess: (data) => {
-            toast.success(data.message || "Trip validated successfully!");
-            queryClient.invalidateQueries({
-                queryKey: ["gso-pending-validation"],
-            });
-            queryClient.invalidateQueries({ queryKey: ["gso-all-trips"] });
-            setShowValidateDialog(false);
-            setSelectedTicket(null);
-            setValidationNote("");
-        },
-        onError: (error) => {
-            toast.error(
-                error?.response?.data?.message || "Failed to validate trip",
-            );
-        },
+    // 3. Recent Trips (Para sa Recent Trip Tickets table)
+    const { data: allTripsRaw = [], isLoading: tripsLoading } = useOptimizedQuery({
+        queryKey: ["gso-dashboard-trips"],
+        queryFn: async () => extractArray(await gsoAPI.getAllTrips()),
     });
+    const allTrips = useMemo(() => Array.isArray(allTripsRaw) ? allTripsRaw : [], [allTripsRaw]);
 
-    const cancelMutation = useMutation({
-        mutationFn: async ({ ticketId, reason }) => {
-            const response = await gsoAPI.cancelTrip(ticketId, { reason });
-            return response.data;
-        },
-        onSuccess: (data) => {
-            toast.success(data.message || "Trip cancelled successfully!");
-            queryClient.invalidateQueries({ queryKey: ["gso-pending-mo"] });
-            queryClient.invalidateQueries({
-                queryKey: ["gso-cancelled-trips"],
-            });
-            queryClient.invalidateQueries({ queryKey: ["gso-all-trips"] });
-            setShowCancelDialog(false);
-            setSelectedTicket(null);
-            setCancelReason("");
-        },
-        onError: (error) => {
-            toast.error(
-                error?.response?.data?.message || "Failed to cancel trip",
-            );
-        },
-    });
+    // ============ DERIVED DATA ============
+    
+    // Stats
+    const totalVehicles = vehicles.length;
+    const serviceable = vehicles.filter(v => v.status === 'active' && !v.maintenance_flag).length;
+    const unserviceable = vehicles.filter(v => v.status !== 'active').length;
+    const maintenance = vehicles.filter(v => v.maintenance_flag).length;
 
-    const completeGasSlipMutation = useMutation({
-        mutationFn: async ({ ticketId, payload }) => {
-            const res = await gsoAPI.completeGasSlipTicket(ticketId, payload);
-            return res.data;
-        },
-        onSuccess: (data) => {
-            toast.success(data.message || "Gas Slip ticket completed");
-            queryClient.invalidateQueries({
-                queryKey: ["gso-pending-gas-slips"],
-            });
-            queryClient.invalidateQueries({ queryKey: ["gso-all-trips"] });
-            setGasSlipModalTicket(null);
-            setGasSlipForm({
-                estimated_distance_km: "",
-                estimated_fuel_liters: "",
-                passenger_name: "",
-                validation_note: "",
-            });
-        },
-        onError: (error) => {
-            toast.error(
-                error?.response?.data?.message ||
-                    "Failed to complete Gas Slip ticket",
-            );
-        },
-    });
+    // Utilization
+    const inUse = activeTrips.length;
+    const available = totalVehicles - inUse;
+    const utilizationPct = totalVehicles > 0 ? Math.round((inUse / totalVehicles) * 100) : 0;
 
-    // ============ MERGED ALL TRIPS ============
+    // Recent Trips (Limit to 4)
+    const recentTrips = useMemo(() => {
+        return [...allTrips]
+            .sort((a, b) => new Date(b.created_at || b.trip_date) - new Date(a.created_at || a.trip_date))
+            .slice(0, 4);
+    }, [allTrips]);
 
-    const mergedAllTrips = useMemo(() => {
-        const map = new Map();
+    // Selected vehicle for the Map popup (defaults to the first active trip)
+    const displayVehicle = selectedVehicle || (activeTrips.length > 0 ? activeTrips[0].vehicle : null);
+    const displayTripData = activeTrips.find(t => t.vehicle?.plate_number === displayVehicle?.plate_number);
 
-        const addAll = (arr) => {
-            (Array.isArray(arr) ? arr : []).forEach((t) => {
-                const id = getTicketId(t);
-                if (id != null && !map.has(id)) {
-                    map.set(id, t);
-                }
-            });
-        };
-
-        addAll(allTrips);
-        addAll(pendingTickets);
-        addAll(cancelledTrips);
-        addAll(pendingValidation);
-
-        return Array.from(map.values()).sort((a, b) => {
-            const da = new Date(a?.submitted_at || a?.trip_date || 0);
-            const db = new Date(b?.submitted_at || b?.trip_date || 0);
-            return db - da;
-        });
-    }, [allTrips, pendingTickets, cancelledTrips, pendingValidation]);
-
-    // ============ STATS ============
-
-    const stats = useMemo(() => {
-        const safeUsers = Array.isArray(users) ? users : [];
-        const safeVehicles = Array.isArray(vehicles) ? vehicles : [];
-        const safeTrips = mergedAllTrips;
-        const safePending = Array.isArray(pendingTickets) ? pendingTickets : [];
-        const safeCancelled = Array.isArray(cancelledTrips)
-            ? cancelledTrips
-            : [];
-
-        const totalUsers = safeUsers.length;
-        const activeUsers = safeUsers.filter(
-            (u) => u?.status === "active",
-        ).length;
-        const totalVehicles = safeVehicles.length;
-        const activeVehicles = safeVehicles.filter(
-            (v) => v?.status === "active",
-        ).length;
-        const closedTrips = safeTrips.filter(
-            (t) => t?.status === "closed",
-        ).length;
-
-        return [
-            {
-                title: "Total Trips",
-                value: safeTrips.length,
-                icon: Truck,
-                gradient: "from-blue-500 to-blue-600",
-                subtitle: `${closedTrips} completed`,
-                onClick: () => {
-                    setAllTripsFilter("all");
-                },
-                trend: safeTrips.length > 0 ? 12 : 0,
-            },
-            {
-                title: "Submitted",
-                value: safePending.length,
-                icon: Clock,
-                gradient: "from-yellow-500 to-yellow-600",
-                subtitle: "Awaiting fund release",
-                onClick: () => {
-                    setAllTripsFilter("pending");
-                },
-                trend: safePending.length > 0 ? -8 : 0,
-            },
-            {
-                title: "Active Users",
-                value: activeUsers,
-                icon: Users,
-                gradient: "from-purple-500 to-purple-600",
-                subtitle: `${totalUsers} total users`,
-                onClick: () => navigate("/admin/users"),
-                trend:
-                    totalUsers > 0
-                        ? Math.round((activeUsers / totalUsers) * 100)
-                        : 0,
-            },
-            {
-                title: "Active Vehicles",
-                value: activeVehicles,
-                icon: Car,
-                gradient: "from-emerald-500 to-emerald-600",
-                subtitle: `${totalVehicles} total vehicles`,
-                onClick: () => navigate("/admin/vehicles"),
-                trend:
-                    totalVehicles > 0
-                        ? Math.round((activeVehicles / totalVehicles) * 100)
-                        : 0,
-            },
-            {
-                title: "Cancelled",
-                value: safeCancelled.length,
-                icon: Ban,
-                gradient: "from-red-500 to-rose-600",
-                subtitle: "Cancelled trips",
-                onClick: () => {
-                    setAllTripsFilter("cancelled");
-                },
-                trend: safeCancelled.length > 0 ? 3 : 0,
-            },
-        ];
-    }, [mergedAllTrips, pendingTickets, users, vehicles, cancelledTrips, navigate]);
-
-    // ============ FILTERS ============
-
-    const filterTickets = useCallback(
-        (tickets) => {
-            const safe = Array.isArray(tickets) ? tickets : [];
-            if (!searchQuery) return safe;
-            const query = searchQuery.toLowerCase();
-            return safe.filter(
-                (ticket) =>
-                    (getTicketNumber(ticket) || "")
-                        .toLowerCase()
-                        .includes(query) ||
-                    (ticket?.destination || "").toLowerCase().includes(query) ||
-                    (ticket?.department_name || "")
-                        .toLowerCase()
-                        .includes(query) ||
-                    (ticket?.vehicle?.plate_number || "")
-                        .toLowerCase()
-                        .includes(query),
-            );
-        },
-        [searchQuery],
-    );
-
-    const filteredAllTrips = useMemo(() => {
-        let list = mergedAllTrips;
-
-        if (allTripsFilter === "pending") {
-            list = list.filter(
-                (t) =>
-                    t?.status === "pending_mayors_office" ||
-                    t?.status === "returned_for_revision",
-            );
-        } else if (allTripsFilter === "validation") {
-            list = list.filter(
-                (t) =>
-                    t?.status === "pending_gso_validation" ||
-                    t?.status === "completed",
-            );
-        } else if (allTripsFilter === "cancelled") {
-            list = list.filter((t) => t?.status === "cancelled");
-        } else if (allTripsFilter === "in_progress") {
-            list = list.filter(
-                (t) =>
-                    t?.status === "funds_issued" ||
-                    t?.status === "acknowledged" ||
-                    t?.status === "in_transit",
-            );
-        }
-
-        return filterTickets(list);
-    }, [mergedAllTrips, allTripsFilter, filterTickets]);
-
-    const filterCounts = useMemo(() => {
-        const base = mergedAllTrips;
-        return {
-            all: base.length,
-            pending: base.filter(
-                (t) =>
-                    t?.status === "pending_mayors_office" ||
-                    t?.status === "returned_for_revision",
-            ).length,
-            in_progress: base.filter(
-                (t) =>
-                    t?.status === "funds_issued" ||
-                    t?.status === "acknowledged" ||
-                    t?.status === "in_transit",
-            ).length,
-            validation: base.filter(
-                (t) =>
-                    t?.status === "pending_gso_validation" ||
-                    t?.status === "completed",
-            ).length,
-            cancelled: base.filter((t) => t?.status === "cancelled").length,
-        };
-    }, [mergedAllTrips]);
-
-    // ============ CHART DATA ============
-
-    const chartData = useMemo(() => {
-        const safeTrips = mergedAllTrips;
-        if (safeTrips.length === 0) {
-            return [
-                { month: "Jan", trips: 0 },
-                { month: "Feb", trips: 0 },
-                { month: "Mar", trips: 0 },
-                { month: "Apr", trips: 0 },
-                { month: "May", trips: 0 },
-                { month: "Jun", trips: 0 },
-            ];
-        }
-
-        const monthlyMap = new Map();
-        const months = [
-            "Jan",
-            "Feb",
-            "Mar",
-            "Apr",
-            "May",
-            "Jun",
-            "Jul",
-            "Aug",
-            "Sep",
-            "Oct",
-            "Nov",
-            "Dec",
-        ];
-        months.forEach((m) => monthlyMap.set(m, 0));
-
-        safeTrips.forEach((trip) => {
-            if (trip?.trip_date) {
-                try {
-                    const date = new Date(trip.trip_date);
-                    const monthKey = months[date.getMonth()];
-                    if (monthKey) {
-                        monthlyMap.set(
-                            monthKey,
-                            (monthlyMap.get(monthKey) || 0) + 1,
-                        );
-                    }
-                } catch {
-                    /* Skip */
-                }
-            }
-        });
-
-        return Array.from(monthlyMap.entries())
-            .map(([month, trips]) => ({ month, trips }))
-            .slice(-6);
-    }, [mergedAllTrips]);
-
-    const connectionStatus = isConnected ? "🟢 Live" : "🔴 Offline";
-    const isRealTime = isConnected;
-
-    const isLoading = pendingLoading || allTripsLoading || cancelledLoading;
-
-    if (isLoading && mergedAllTrips.length === 0) {
-        return (
-            <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
-                <div className="p-4 md:p-6">
-                    <SkeletonPage />
-                </div>
-            </div>
+    // Filtered Vehicles for the Fuel Monitoring Table
+    const filteredVehicles = useMemo(() => {
+        if (!searchTerm) return vehicles;
+        const lower = searchTerm.toLowerCase();
+        return vehicles.filter(v => 
+            v.plate_number?.toLowerCase().includes(lower) ||
+            v.vehicle_model?.toLowerCase().includes(lower) ||
+            v.department?.department_name?.toLowerCase().includes(lower)
         );
-    }
+    }, [vehicles, searchTerm]);
 
-    // ============ FILTER PILLS CONFIG ============
-
-    const FILTER_PILLS = [
-        { key: "all", label: "All", count: filterCounts.all },
-        { key: "pending", label: "Submitted", count: filterCounts.pending },
-        { key: "in_progress", label: "In Progress", count: filterCounts.in_progress },
-        { key: "validation", label: "Ready to Validate", count: filterCounts.validation },
-        { key: "cancelled", label: "Cancelled", count: filterCounts.cancelled },
-    ];
-
-    // ============ RENDER ============
 
     return (
-        <div className="space-y-6 p-4 md:p-6 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 min-h-screen">
-            {/* Hero Header */}
-            <div className="relative overflow-hidden bg-gradient-to-r from-slate-900 via-slate-800 to-blue-900 rounded-2xl p-6 md:p-8 text-white shadow-xl">
-                <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/20 rounded-full blur-3xl" />
-                <div className="absolute bottom-0 left-0 w-64 h-64 bg-emerald-500/20 rounded-full blur-3xl" />
-                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl" />
-
-                <div className="relative z-10 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                    <div>
-                        <div className="flex items-center gap-2 mb-3 flex-wrap">
-                            <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/30 rounded-full px-3 py-1 backdrop-blur-sm">
-                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 mr-1.5 animate-pulse" />
-                                GSO Office
-                            </Badge>
-                            <Badge className="bg-blue-500/20 text-blue-300 border-blue-500/30 rounded-full px-3 py-1 backdrop-blur-sm">
-                                {departmentName}
-                            </Badge>
-                            <Badge className="bg-purple-500/20 text-purple-300 border-purple-500/30 rounded-full px-3 py-1 backdrop-blur-sm">
-                                <Shield className="h-3 w-3 mr-1" />
-                                Super Admin
-                            </Badge>
-                            {isRealTime && (
-                                <Badge className="bg-green-500/20 text-green-300 border-green-500/30 rounded-full px-3 py-1 backdrop-blur-sm animate-pulse">
-                                    <span className="h-1.5 w-1.5 rounded-full bg-green-400 mr-1.5 animate-pulse" />
-                                    Real-time
+        <div className="min-h-screen bg-[#090e1a] p-4 md:p-6 font-sans text-slate-200">
+            <div className="max-w-[1600px] mx-auto space-y-6">
+                
+                {/* 1. HERO HEADER */}
+                <div className="relative overflow-hidden bg-gradient-to-r from-[#0f172a] via-[#1e3a8a] to-[#0f172a] rounded-2xl p-6 md:p-8 border border-blue-900/50 shadow-2xl">
+                    <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
+                    
+                    <div className="relative z-10 flex flex-col md:flex-row md:items-end justify-between gap-6">
+                        <div>
+                            <div className="flex items-center gap-2 mb-3">
+                                <Badge className="bg-emerald-500/20 text-emerald-400 border-none rounded-full px-3 py-1 text-[10px]">
+                                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 mr-1.5 animate-pulse" /> GSO Office
                                 </Badge>
-                            )}
+                                <Badge className="bg-blue-600 text-white border-none rounded-full px-3 py-1 text-[10px]">
+                                    General Services Office
+                                </Badge>
+                                <Badge className="bg-purple-600 text-white border-none rounded-full px-3 py-1 text-[10px]">
+                                    MIS Dashboard
+                                </Badge>
+                            </div>
+                            <h1 className="text-3xl font-bold text-white tracking-tight">GSO Dashboard</h1>
+                            <p className="text-blue-200/70 text-sm mt-1 max-w-lg">
+                                Monitor vehicle status, fuel balance, and trip activities in MIS or Laguindingan.
+                            </p>
                         </div>
-                        <h1 className="text-2xl md:text-3xl font-bold bg-gradient-to-r from-white to-slate-300 bg-clip-text text-transparent">
-                            GSO Dashboard
-                        </h1>
-                        <p className="text-slate-300 mt-1 text-sm md:text-base">
-                            Manage trip tickets, users, departments, and
-                            vehicles in one place
-                            <span className="ml-2 text-xs opacity-70">
-                                {connectionStatus}
-                            </span>
-                            {isRealTime && (
-                                <span className="ml-2 text-xs text-emerald-400 animate-pulse">
-                                    ● Auto-refresh
-                                </span>
-                            )}
-                        </p>
-                    </div>
-                    <div className="flex gap-3 flex-wrap">
-                        <Button
-                            onClick={() => navigate("/gso/create-trip")}
-                            className="bg-white text-slate-900 hover:bg-slate-100 rounded-xl shadow-lg shadow-blue-500/20 transition-all duration-300 hover:scale-105 active:scale-95"
-                        >
-                            <PlusCircle className="h-4 w-4 mr-2" /> Create Trip
-                        </Button>
+                        
+                        <div className="flex gap-3">
+                            <Button 
+                                onClick={fetchAllData} 
+                                variant="outline" 
+                                className="bg-white/10 border-white/20 text-white hover:bg-white/20 rounded-xl h-10 px-4"
+                            >
+                                <RefreshCw className={cn("h-4 w-4 mr-2", (vehiclesLoading || activeTripsLoading) && "animate-spin")} /> Refresh
+                            </Button>
+                            <Button 
+                                onClick={() => navigate("/gso/create-trip")} 
+                                className="bg-blue-600 hover:bg-blue-500 text-white rounded-xl h-10 px-6 shadow-lg shadow-blue-500/20"
+                            >
+                                <PlusCircle className="h-4 w-4 mr-2" /> Create Trip
+                            </Button>
+                        </div>
                     </div>
                 </div>
-            </div>
 
-            {/* Stats Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 md:gap-5">
-                {stats.map((stat, index) => (
-                    <StatsCard key={index} {...stat} />
-                ))}
-            </div>
-
-            {/* Chart Section */}
-            <Card
-                className="dark:bg-slate-800/80 dark:border-slate-700"
-                onMouseEnter={prefetchChart}
-            >
-                <CardHeader>
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <CardTitle className="flex items-center gap-2 text-slate-800 dark:text-white">
-                                <TrendingUp className="h-5 w-5 text-blue-500" />
-                                Trip Trends
-                            </CardTitle>
-                            <CardDescription className="dark:text-slate-400">
-                                Monthly trip volume for the last 6 months
-                                {isRealTime && (
-                                    <span className="ml-2 text-xs text-emerald-500 animate-pulse">
-                                        ● Live updates
-                                    </span>
-                                )}
-                            </CardDescription>
-                        </div>
-                        <Badge className="bg-blue-500/20 text-blue-600 dark:text-blue-400 border-blue-500/30">
-                            <Activity className="h-3 w-3 mr-1" />
-                            {mergedAllTrips.length} total trips
-                        </Badge>
-                    </div>
-                </CardHeader>
-                <CardContent>
-                    <div className="h-[300px] w-full">
-                        <Suspense fallback={<ChartFallback />}>
-                            <TripTrendsChart data={chartData} />
-                        </Suspense>
-                    </div>
-                </CardContent>
-            </Card>
-
-            {/* Search Bar */}
-            <div className="relative">
-                <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
-                <Input
-                    placeholder="Search by ticket number, destination, department, or vehicle plate..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-10 bg-white dark:bg-slate-800 dark:border-slate-700 rounded-xl h-12 text-sm shadow-sm"
-                />
-                {searchQuery && (
-                    <button
-                        onClick={() => setSearchQuery("")}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
-                    >
-                        Clear
-                    </button>
-                )}
-            </div>
-
-            {/* ✅ All Trips (single section — no tabs) */}
-            <Card className="dark:bg-slate-800/80 dark:border-slate-700">
-                <CardHeader className="border-b dark:border-slate-700">
-                    <div className="flex flex-col gap-4">
-                        <div className="flex items-center justify-between">
+                {/* 2. STATS CARDS */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <Card className="bg-[#121829] border-slate-800 shadow-lg">
+                        <CardContent className="p-5 flex items-center justify-between">
                             <div>
-                                <CardTitle className="flex items-center gap-2 text-slate-800 dark:text-white">
-                                    <Truck className="h-5 w-5 text-blue-500" />
-                                    All Trips
-                                </CardTitle>
-                                <CardDescription className="dark:text-slate-400 mt-1">
-                                    Combined view of pending, in-progress, completed, and cancelled trips
-                                </CardDescription>
+                                <p className="text-3xl font-bold text-white">{totalVehicles}</p>
+                                <p className="text-sm font-medium text-slate-300 mt-1">Total Vehicles</p>
+                                <p className="text-[10px] text-slate-500 mt-0.5">Across All Departments</p>
                             </div>
-                            <Badge className="bg-blue-500/20 text-blue-600 dark:text-blue-400 border-blue-500/30">
-                                {filteredAllTrips.length} tickets
-                            </Badge>
-                        </div>
-
-                        {/* Filter pills */}
-                        <div className="flex flex-wrap gap-2">
-                            {FILTER_PILLS.map((pill) => {
-                                const active = allTripsFilter === pill.key;
-                                return (
-                                    <button
-                                        key={pill.key}
-                                        onClick={() => setAllTripsFilter(pill.key)}
-                                        className={cn(
-                                            "inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium transition-all border",
-                                            active
-                                                ? "bg-blue-600 text-white border-blue-600 shadow-sm"
-                                                : "bg-slate-100 dark:bg-slate-800/60 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700/60"
-                                        )}
-                                    >
-                                        {pill.label}
-                                        <span
-                                            className={cn(
-                                                "ml-1 rounded-full px-1.5 py-0.5 text-[10px] font-bold",
-                                                active
-                                                    ? "bg-white/20 text-white"
-                                                    : "bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400"
-                                            )}
-                                        >
-                                            {pill.count}
-                                        </span>
-                                    </button>
-                                );
-                            })}
-                        </div>
-                    </div>
-                </CardHeader>
-                <CardContent className="pt-6">
-                    <TicketTable
-                        tickets={filteredAllTrips}
-                        onView={(id) => navigate(`/gso/tickets/${id}`)}
-                        onCancel={(ticket) => {
-                            setSelectedTicket(ticket);
-                            setCancelReason("");
-                            setShowCancelDialog(true);
-                        }}
-                        onValidate={(ticket) => {
-                            setSelectedTicket(ticket);
-                            setShowValidateDialog(true);
-                        }}
-                        showCancel={true}
-                        showValidate={true}
-                        isLoading={allTripsLoading || pendingLoading || cancelledLoading}
-                        showActions={true}
-                        maxHeight="500px"
-                    />
-                </CardContent>
-            </Card>
-
-            {/* Trip History Widget */}
-            <TripHistoryWidget isLoading={isLoading} />
-
-            {/* Cancel Dialog */}
-            <Dialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
-                <DialogContent className="sm:max-w-md dark:bg-slate-800 dark:border-slate-700">
-                    <DialogHeader>
-                        <DialogTitle className="flex items-center gap-2 text-red-600 dark:text-red-400">
-                            <div className="p-2 rounded-xl bg-red-500/10">
-                                <Ban className="h-5 w-5 text-red-600" />
+                            <div className="p-3 bg-blue-600/20 rounded-xl">
+                                <Car className="h-6 w-6 text-blue-500" />
                             </div>
-                            Cancel Trip Ticket
-                        </DialogTitle>
-                        <DialogDescription className="dark:text-slate-400">
-                            This action cannot be undone. The ticket will be
-                            cancelled and you can create a new one.
-                        </DialogDescription>
-                    </DialogHeader>
+                        </CardContent>
+                    </Card>
+                    
+                    <Card className="bg-[#121829] border-slate-800 shadow-lg">
+                        <CardContent className="p-5 flex items-center justify-between">
+                            <div>
+                                <p className="text-3xl font-bold text-white">{serviceable}</p>
+                                <p className="text-sm font-medium text-slate-300 mt-1">Serviceable</p>
+                                <p className="text-[10px] text-slate-500 mt-0.5">Operational Condition</p>
+                            </div>
+                            <div className="p-3 bg-emerald-600/20 rounded-xl">
+                                <CheckCircle className="h-6 w-6 text-emerald-500" />
+                            </div>
+                        </CardContent>
+                    </Card>
 
-                    <div className="bg-red-50 dark:bg-red-950/30 rounded-xl p-4 space-y-2 border border-red-200 dark:border-red-800">
-                        <p className="text-sm font-medium text-red-800 dark:text-red-400 flex items-center gap-2">
-                            <AlertTriangle className="h-4 w-4" />
-                            Warning
-                        </p>
-                        <p className="text-sm text-red-700 dark:text-red-300">
-                            Cancelling this ticket will:
-                        </p>
-                        <ul className="text-xs text-red-600 dark:text-red-400 list-disc list-inside space-y-1 ml-2">
-                            <li>Mark the trip as cancelled</li>
-                            <li>Release any reserved budget allocation</li>
-                            <li>
-                                Allow you to create a new ticket for this trip
-                            </li>
-                        </ul>
-                    </div>
+                    <Card className="bg-[#121829] border-slate-800 shadow-lg">
+                        <CardContent className="p-5 flex items-center justify-between">
+                            <div>
+                                <p className="text-3xl font-bold text-white">{unserviceable}</p>
+                                <p className="text-sm font-medium text-slate-300 mt-1">Unserviceable</p>
+                                <p className="text-[10px] text-slate-500 mt-0.5">Not Fit for Operation</p>
+                            </div>
+                            <div className="p-3 bg-red-600/20 rounded-xl">
+                                <AlertTriangle className="h-6 w-6 text-red-500" />
+                            </div>
+                        </CardContent>
+                    </Card>
 
-                    <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-4 space-y-1 border border-slate-200 dark:border-slate-700">
-                        <div className="flex justify-between text-sm">
-                            <span className="text-slate-600 dark:text-slate-400">
-                                Ticket Number:
-                            </span>
-                            <span className="font-mono font-semibold text-slate-800 dark:text-white">
-                                {getTicketNumber(selectedTicket)}
-                            </span>
-                        </div>
-                        <div className="flex justify-between text-sm">
-                            <span className="text-slate-600 dark:text-slate-400">
-                                Destination:
-                            </span>
-                            <span className="text-slate-800 dark:text-white">
-                                {selectedTicket?.destination || "N/A"}
-                            </span>
-                        </div>
-                        <div className="flex justify-between text-sm">
-                            <span className="text-slate-600 dark:text-slate-400">
-                                Department:
-                            </span>
-                            <span className="text-slate-800 dark:text-white">
-                                {selectedTicket?.department_name || "N/A"}
-                            </span>
-                        </div>
-                    </div>
+                    <Card className="bg-[#121829] border-slate-800 shadow-lg">
+                        <CardContent className="p-5 flex items-center justify-between">
+                            <div>
+                                <p className="text-3xl font-bold text-white">{maintenance}</p>
+                                <p className="text-sm font-medium text-slate-300 mt-1">Under Maintenance</p>
+                                <p className="text-[10px] text-slate-500 mt-0.5">Currently Being Serviced</p>
+                            </div>
+                            <div className="p-3 bg-amber-600/20 rounded-xl">
+                                <Wrench className="h-6 w-6 text-amber-500" />
+                            </div>
+                        </CardContent>
+                    </Card>
+                </div>
 
-                    <div className="space-y-2">
-                        <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                            Reason for Cancellation{" "}
-                            <span className="text-red-500">*</span>
-                        </label>
-                        <Textarea
-                            placeholder="Enter reason for cancelling this ticket..."
-                            className="resize-none dark:bg-slate-900 dark:border-slate-700"
-                            rows={3}
-                            value={cancelReason}
-                            onChange={(e) => setCancelReason(e.target.value)}
-                        />
-                        {cancelReason.trim().length > 0 &&
-                            cancelReason.trim().length < 5 && (
-                                <p className="text-xs text-red-500">
-                                    Reason must be at least 5 characters
-                                </p>
+                {/* 3. LIVE TRACKING & FUEL BALANCE MONITORING */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    
+                    {/* Live Vehicle Tracking (Map) */}
+                    <Card className="lg:col-span-2 bg-[#121829] border-slate-800 shadow-lg flex flex-col overflow-hidden">
+                        <div className="p-4 border-b border-slate-800 flex justify-between items-center">
+                            <h3 className="font-bold text-white flex items-center gap-2">
+                                <MapPin className="h-4 w-4 text-blue-500" /> Live Vehicle Tracking
+                            </h3>
+                            <div className="flex items-center gap-1.5">
+                                <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                                <span className="text-[10px] text-emerald-400 font-medium">Real-time</span>
+                            </div>
+                        </div>
+                        
+                        <div className="flex-1 relative bg-[#0b101c] min-h-[350px]">
+                            {/* NOTE: Diri nimo ibutang ang imong Map Component (RouteMap or MapContainer) */}
+                            {/* Sample Placeholder para makita ang layout */}
+                            <div className="absolute inset-0 flex items-center justify-center opacity-30 bg-[url('https://tile.openstreetmap.org/10/550/375.png')] bg-cover bg-center" />
+                            
+                            {/* Floating Info Card (Same sa picture) */}
+                            {displayTripData && (
+                                <div className="absolute top-4 right-4 bg-[#121829]/95 backdrop-blur-md border border-slate-700 rounded-xl p-4 w-72 shadow-2xl">
+                                    <div className="flex items-start justify-between mb-3 border-b border-slate-700 pb-2">
+                                        <div className="flex items-center gap-2">
+                                            <Car className="h-5 w-5 text-blue-500" />
+                                            <div>
+                                                <p className="font-bold text-white text-sm">{displayVehicle?.vehicle_model}</p>
+                                                <p className="text-[10px] text-slate-400">Plate No. {displayVehicle?.plate_number}</p>
+                                            </div>
+                                        </div>
+                                        <Badge className="bg-emerald-500/20 text-emerald-400 text-[9px] px-2">In Transit</Badge>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-y-2 text-xs mb-3">
+                                        <span className="text-slate-500">Purpose</span>
+                                        <span className="text-white text-right truncate">{displayTripData.purpose || "N/A"}</span>
+                                        <span className="text-slate-500">Destination</span>
+                                        <span className="text-white text-right truncate">{displayTripData.destination || "N/A"}</span>
+                                    </div>
+
+                                    <div className="bg-[#0b101c] rounded-lg p-3 mb-3">
+                                        <p className="text-[10px] text-slate-400 mb-1 flex items-center gap-1"><Fuel className="h-3 w-3" /> Fuel Balance (Est.)</p>
+                                        <div className="flex items-end gap-2 mb-1">
+                                            <span className="text-xl font-bold text-white">{displayVehicle?.current_fuel_balance?.toFixed(1) || 0} L</span>
+                                            <span className="text-[10px] text-emerald-400 mb-1">56.3%</span>
+                                        </div>
+                                        <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                                            <div className="bg-emerald-500 h-1.5 rounded-full" style={{ width: "56%" }} />
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-2 text-[10px]">
+                                        <div className="flex items-center gap-1.5 text-slate-400"><Fuel className="h-3 w-3"/> Fuel Type: <span className="text-white">{displayVehicle?.fuel_type}</span></div>
+                                        <div className="flex items-center gap-1.5 text-slate-400"><Activity className="h-3 w-3"/> Efficiency: <span className="text-white">{displayVehicle?.reference_efficiency} km/L</span></div>
+                                    </div>
+                                </div>
                             )}
-                    </div>
+                        </div>
+                        
+                        {/* Legend */}
+                        <div className="p-3 bg-[#0b101c] border-t border-slate-800 flex gap-4 text-[10px] text-slate-400">
+                            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500"/> In Transit</span>
+                            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-500"/> Available</span>
+                            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500"/> Maintenance</span>
+                            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500"/> Unserviceable</span>
+                        </div>
+                    </Card>
 
-                    <DialogFooter className="gap-2">
-                        <Button
-                            variant="outline"
-                            onClick={() => {
-                                setShowCancelDialog(false);
-                                setSelectedTicket(null);
-                                setCancelReason("");
-                            }}
-                            className="dark:border-slate-700 dark:text-slate-300"
-                        >
-                            Keep Ticket
-                        </Button>
-                        <Button
-                            className="bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-500/20"
-                            onClick={() => {
-                                if (cancelReason.trim().length < 5) {
-                                    toast.error(
-                                        "Please provide a reason (at least 5 characters)",
-                                    );
-                                    return;
-                                }
-                                const ticketId = getTicketId(selectedTicket);
-                                if (!ticketId) {
-                                    toast.error("Invalid ticket");
-                                    return;
-                                }
-                                cancelMutation.mutate({
-                                    ticketId,
-                                    reason: cancelReason,
-                                });
-                            }}
-                            disabled={
-                                cancelMutation.isPending ||
-                                cancelReason.trim().length < 5
-                            }
-                        >
-                            {cancelMutation.isPending ? (
-                                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                            ) : (
-                                <Ban className="h-4 w-4 mr-2" />
-                            )}
-                            Cancel Ticket
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
+                    {/* Fuel Balance Monitoring (Table) */}
+                    <Card className="bg-[#121829] border-slate-800 shadow-lg flex flex-col h-full">
+                        <div className="p-4 border-b border-slate-800 flex justify-between items-center">
+                            <h3 className="font-bold text-white flex items-center gap-2">
+                                <Fuel className="h-4 w-4 text-blue-500" /> Fuel Balance Monitoring
+                            </h3>
+                            <button onClick={() => navigate('/admin/vehicles')} className="text-[10px] text-blue-400 hover:text-blue-300">View All →</button>
+                        </div>
+                        
+                        <div className="p-3 border-b border-slate-800 flex gap-2">
+                            <div className="relative flex-1">
+                                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-500" />
+                                <Input 
+                                    placeholder="Search vehicle..." 
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                    className="pl-8 h-8 text-xs bg-[#0b101c] border-slate-700 text-white rounded-lg" 
+                                />
+                            </div>
+                            <Button variant="outline" className="h-8 text-xs border-slate-700 text-slate-300 bg-[#0b101c]">
+                                All Departments <ChevronDown className="h-3 w-3 ml-1" />
+                            </Button>
+                        </div>
 
-            {/* Validation Dialog */}
-            <Dialog
-                open={showValidateDialog}
-                onOpenChange={setShowValidateDialog}
-            >
-                <DialogContent className="sm:max-w-md dark:bg-slate-800 dark:border-slate-700">
-                    <DialogHeader>
-                        <DialogTitle className="flex items-center gap-2 text-slate-800 dark:text-white">
-                            <div className="p-2 rounded-xl bg-emerald-500/10">
-                                <FileCheck className="h-5 w-5 text-emerald-600" />
-                            </div>
-                            Close Trip
-                        </DialogTitle>
-                        <DialogDescription className="dark:text-slate-400">
-                            Review trip details and close it. This action is
-                            final.
-                        </DialogDescription>
-                    </DialogHeader>
+                        <div className="overflow-x-auto flex-1">
+                            <table className="w-full text-left text-xs text-slate-300">
+                                <thead className="bg-[#0b101c] text-slate-500">
+                                    <tr>
+                                        <th className="px-3 py-2 font-medium">Department</th>
+                                        <th className="px-3 py-2 font-medium">Vehicle</th>
+                                        <th className="px-3 py-2 font-medium">Plate No.</th>
+                                        <th className="px-3 py-2 font-medium text-right">Balance</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-800/50">
+                                    {filteredVehicles.slice(0, 5).map(v => {
+                                        const balance = parseFloat(v.current_fuel_balance || 0);
+                                        const cap = parseFloat(v.tank_capacity || 60);
+                                        const pct = Math.min(100, (balance / cap) * 100);
+                                        return (
+                                            <tr key={v.vehicle_id} className="hover:bg-[#1a2235]">
+                                                <td className="px-3 py-3">{v.department?.department_name || 'GSO'}</td>
+                                                <td className="px-3 py-3 font-medium text-white">{v.vehicle_model}</td>
+                                                <td className="px-3 py-3 font-mono">{v.plate_number}</td>
+                                                <td className="px-3 py-3 text-right">
+                                                    <div className="flex flex-col items-end">
+                                                        <span className={cn("font-bold", pct < 20 ? "text-red-400" : pct < 50 ? "text-amber-400" : "text-emerald-400")}>
+                                                            {balance.toFixed(0)} L
+                                                        </span>
+                                                        <div className="w-16 h-1 bg-slate-800 rounded-full mt-1">
+                                                            <div className={cn("h-1 rounded-full", pct < 20 ? "bg-red-500" : pct < 50 ? "bg-amber-500" : "bg-emerald-500")} style={{ width: `${pct}%` }} />
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+                    </Card>
+                </div>
 
-                    <div className="bg-blue-50 dark:bg-blue-950/30 rounded-xl p-4 space-y-2 border border-blue-200 dark:border-blue-800">
-                        <p className="text-sm font-medium text-blue-800 dark:text-blue-400">
-                            Trip Details
-                        </p>
-                        <div className="space-y-1 text-sm">
-                            <div className="flex justify-between">
-                                <span className="text-slate-600 dark:text-slate-400">
-                                    Number:
-                                </span>
-                                <span className="font-mono font-semibold dark:text-white">
-                                    {getTicketNumber(selectedTicket)}
-                                </span>
+                {/* 4. BOTTOM ROW: Vehicle Status, Utilization, Recent Trips */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    
+                    {/* Vehicle Status */}
+                    <Card className="bg-[#121829] border-slate-800 shadow-lg p-4 flex flex-col">
+                        <h3 className="font-bold text-white mb-4 flex items-center gap-2">
+                            <Car className="h-4 w-4 text-blue-500" /> Vehicle Status
+                        </h3>
+                        <div className="grid grid-cols-2 gap-3 flex-1">
+                            <div className="bg-[#0b101c] rounded-xl p-3 border border-slate-800 flex flex-col justify-between items-center">
+                                <Car className="h-6 w-6 text-blue-500 mb-2" />
+                                <span className="text-2xl font-bold text-white">{totalVehicles}</span>
+                                <span className="text-[10px] text-slate-400">Total</span>
                             </div>
-                            <div className="flex justify-between">
-                                <span className="text-slate-600 dark:text-slate-400">
-                                    Destination:
-                                </span>
-                                <span className="dark:text-white">
-                                    {selectedTicket?.destination || "N/A"}
-                                </span>
+                            <div className="bg-emerald-950/20 rounded-xl p-3 border border-emerald-900/50 flex flex-col justify-between items-center">
+                                <CheckCircle className="h-6 w-6 text-emerald-500 mb-2" />
+                                <span className="text-2xl font-bold text-white">{serviceable}</span>
+                                <span className="text-[10px] text-emerald-400">Serviceable</span>
                             </div>
-                            <div className="flex justify-between">
-                                <span className="text-slate-600 dark:text-slate-400">
-                                    Department:
-                                </span>
-                                <span className="dark:text-white">
-                                    {selectedTicket?.department_name || "N/A"}
-                                </span>
+                            <div className="bg-red-950/20 rounded-xl p-3 border border-red-900/50 flex flex-col justify-between items-center">
+                                <AlertTriangle className="h-6 w-6 text-red-500 mb-2" />
+                                <span className="text-2xl font-bold text-white">{unserviceable}</span>
+                                <span className="text-[10px] text-red-400">Unserviceable</span>
                             </div>
-                            <div className="flex justify-between">
-                                <span className="text-slate-600 dark:text-slate-400">
-                                    Total Trips:
-                                </span>
-                                <span className="font-semibold dark:text-white">
-                                    {selectedTicket?.trip_count || 0}
-                                </span>
+                            <div className="bg-amber-950/20 rounded-xl p-3 border border-amber-900/50 flex flex-col justify-between items-center">
+                                <Wrench className="h-6 w-6 text-amber-500 mb-2" />
+                                <span className="text-2xl font-bold text-white">{maintenance}</span>
+                                <span className="text-[10px] text-amber-400">Maintenance</span>
                             </div>
                         </div>
-                    </div>
+                    </Card>
 
-                    <div className="space-y-2">
-                        <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                            Closing Note (Optional)
-                        </label>
-                        <Textarea
-                            placeholder="Add a closing note..."
-                            className="resize-none dark:bg-slate-900 dark:border-slate-700"
-                            rows={2}
-                            value={validationNote}
-                            onChange={(e) => setValidationNote(e.target.value)}
-                        />
-                    </div>
-
-                    <DialogFooter className="gap-2">
-                        <Button
-                            variant="outline"
-                            onClick={() => {
-                                setShowValidateDialog(false);
-                                setSelectedTicket(null);
-                                setValidationNote("");
-                            }}
-                            className="dark:border-slate-700 dark:text-slate-300"
-                        >
-                            Cancel
-                        </Button>
-                        <Button
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-500/20"
-                            onClick={() => {
-                                const ticketId = getTicketId(selectedTicket);
-                                if (!ticketId) {
-                                    toast.error("Invalid ticket");
-                                    return;
-                                }
-                                validateMutation.mutate({
-                                    ticketId,
-                                    data: {
-                                        validation_note:
-                                            validationNote ||
-                                            "Trip closed by GSO",
-                                    },
-                                });
-                                setValidationNote("");
-                            }}
-                            disabled={validateMutation.isPending}
-                        >
-                            {validateMutation.isPending ? (
-                                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                            ) : (
-                                <Check className="h-4 w-4 mr-2" />
-                            )}
-                            Close Trip
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
-
-            {/* ============ GAS SLIP COMPLETE MODAL ============ */}
-            <Dialog
-                open={!!gasSlipModalTicket}
-                onOpenChange={(open) => {
-                    if (!open && !completeGasSlipMutation.isPending) {
-                        setGasSlipModalTicket(null);
-                    }
-                }}
-            >
-                <DialogContent className="sm:max-w-lg dark:bg-slate-800 dark:border-slate-700 max-h-[90vh] overflow-y-auto">
-                    <DialogHeader>
-                        <DialogTitle className="flex items-center gap-2 text-slate-800 dark:text-white">
-                            <div className="p-2 rounded-xl bg-amber-500/10">
-                                <Fuel className="h-5 w-5 text-amber-600" />
+                    {/* Vehicle Utilization */}
+                    <Card className="bg-[#121829] border-slate-800 shadow-lg p-4">
+                        <h3 className="font-bold text-white mb-4 flex items-center gap-2">
+                            <Activity className="h-4 w-4 text-blue-500" /> Vehicle Utilization
+                        </h3>
+                        
+                        <div className="flex items-center gap-4 mb-4">
+                            <div className="flex flex-col items-center">
+                                <span className="text-2xl font-bold text-white">{inUse}</span>
+                                <span className="text-[10px] text-slate-400">In Use</span>
                             </div>
-                            Complete Trip Ticket
-                        </DialogTitle>
-                        <DialogDescription className="dark:text-slate-400">
-                            Confirm this MO-created Gas Slip. Driver will be
-                            notified to acknowledge funds and start the trip.
-                        </DialogDescription>
-                    </DialogHeader>
+                            <div className="flex-1 h-3 bg-slate-800 rounded-full overflow-hidden flex">
+                                <div className="bg-blue-600 h-full" style={{ width: `${utilizationPct}%` }} />
+                            </div>
+                            <div className="flex flex-col items-center">
+                                <span className="text-2xl font-bold text-white">{available}</span>
+                                <span className="text-[10px] text-slate-400">Available</span>
+                            </div>
+                        </div>
 
-                    <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-4 space-y-1.5 text-sm border border-slate-200 dark:border-slate-700">
-                        <div className="flex justify-between">
-                            <span className="text-slate-500 dark:text-slate-400">
-                                Control No.
-                            </span>
-                            <span className="font-mono font-semibold dark:text-white">
-                                {gasSlipModalTicket?.control_number}
-                            </span>
+                        <div className="space-y-2 mt-4">
+                            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Vehicles Currently In Use</p>
+                            <table className="w-full text-xs text-left">
+                                <tbody className="divide-y divide-slate-800/50">
+                                    {activeTrips.slice(0, 3).map((trip, idx) => (
+                                        <tr key={idx}>
+                                            <td className="py-2 text-slate-400">{trip.department || 'GSO'}</td>
+                                            <td className="py-2 text-white">{trip.vehicle?.vehicle_model}</td>
+                                            <td className="py-2 font-mono text-slate-400">{trip.vehicle?.plate_number}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
                         </div>
-                        <div className="flex justify-between">
-                            <span className="text-slate-500 dark:text-slate-400">
-                                Driver
-                            </span>
-                            <span className="dark:text-white">
-                                {gasSlipModalTicket?.driver?.full_name || "—"}
-                            </span>
-                        </div>
-                        <div className="flex justify-between">
-                            <span className="text-slate-500 dark:text-slate-400">
-                                Vehicle
-                            </span>
-                            <span className="dark:text-white">
-                                {gasSlipModalTicket?.vehicle
-                                    ? `${gasSlipModalTicket.vehicle.plate_number} — ${gasSlipModalTicket.vehicle.vehicle_model}`
-                                    : "—"}
-                            </span>
-                        </div>
-                        <div className="flex justify-between">
-                            <span className="text-slate-500 dark:text-slate-400">
-                                Department
-                            </span>
-                            <span className="dark:text-white">
-                                {gasSlipModalTicket?.department_name || "—"}
-                            </span>
-                        </div>
-                        <div className="flex justify-between">
-                            <span className="text-slate-500 dark:text-slate-400">
-                                Destination
-                            </span>
-                            <span className="dark:text-white">
-                                {gasSlipModalTicket?.destination || "—"}
-                            </span>
-                        </div>
-                        <div className="flex justify-between">
-                            <span className="text-slate-500 dark:text-slate-400">
-                                Amount Released
-                            </span>
-                            <span className="font-semibold text-emerald-600">
-                                ₱
-                                {Number(
-                                    gasSlipModalTicket?.amount_released || 0,
-                                ).toLocaleString("en-PH", {
-                                    minimumFractionDigits: 2,
-                                })}
-                            </span>
-                        </div>
-                    </div>
+                    </Card>
 
-                    <div className="space-y-3">
-                        <div>
-                            <label className="text-xs font-medium text-slate-600 dark:text-slate-400">
-                                Estimated Distance (km) — optional
-                            </label>
-                            <Input
-                                type="number"
-                                step="0.01"
-                                value={gasSlipForm.estimated_distance_km}
-                                onChange={(e) =>
-                                    setGasSlipForm({
-                                        ...gasSlipForm,
-                                        estimated_distance_km: e.target.value,
-                                    })
-                                }
-                                className="mt-1 dark:bg-slate-900 dark:border-slate-700"
-                            />
+                    {/* Recent Trip Tickets */}
+                    <Card className="bg-[#121829] border-slate-800 shadow-lg flex flex-col">
+                        <div className="p-4 border-b border-slate-800 flex justify-between items-center">
+                            <h3 className="font-bold text-white flex items-center gap-2">
+                                <Clock className="h-4 w-4 text-blue-500" /> Recent Trip Tickets
+                            </h3>
+                            <button onClick={() => navigate('/gso/trips')} className="text-[10px] text-blue-400 hover:text-blue-300">View All →</button>
                         </div>
-                        <div>
-                            <label className="text-xs font-medium text-slate-600 dark:text-slate-400">
-                                Estimated Fuel (liters) — optional
-                            </label>
-                            <Input
-                                type="number"
-                                step="0.01"
-                                value={gasSlipForm.estimated_fuel_liters}
-                                onChange={(e) =>
-                                    setGasSlipForm({
-                                        ...gasSlipForm,
-                                        estimated_fuel_liters: e.target.value,
-                                    })
-                                }
-                                className="mt-1 dark:bg-slate-900 dark:border-slate-700"
-                            />
+                        <div className="overflow-x-auto flex-1">
+                            <table className="w-full text-left text-xs text-slate-300">
+                                <thead className="bg-[#0b101c] text-slate-500">
+                                    <tr>
+                                        <th className="px-3 py-2 font-medium">Date</th>
+                                        <th className="px-3 py-2 font-medium">TT Number</th>
+                                        <th className="px-3 py-2 font-medium">Destination</th>
+                                        <th className="px-3 py-2 font-medium">Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-800/50">
+                                    {recentTrips.map(trip => (
+                                        <tr key={trip.trip_ticket_id} className="hover:bg-[#1a2235] cursor-pointer" onClick={() => navigate(`/gso/tickets/${trip.trip_ticket_id}`)}>
+                                            <td className="px-3 py-2 whitespace-nowrap">{formatDateShort(trip.trip_date)}</td>
+                                            <td className="px-3 py-2 font-mono text-white">{trip.trip_ticket_number}</td>
+                                            <td className="px-3 py-2 truncate max-w-[100px]">{trip.destination}</td>
+                                            <td className="px-3 py-2">
+                                                <Badge className={cn("text-[9px] px-1.5 py-0.5", trip.status === 'in_transit' ? "bg-emerald-600" : trip.status === 'closed' ? "bg-blue-600" : "bg-slate-600")}>
+                                                    {trip.status.replace(/_/g, ' ')}
+                                                </Badge>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
                         </div>
-                        <div>
-                            <label className="text-xs font-medium text-slate-600 dark:text-slate-400">
-                                Passenger Name — optional
-                            </label>
-                            <Input
-                                value={gasSlipForm.passenger_name}
-                                onChange={(e) =>
-                                    setGasSlipForm({
-                                        ...gasSlipForm,
-                                        passenger_name: e.target.value,
-                                    })
-                                }
-                                className="mt-1 dark:bg-slate-900 dark:border-slate-700"
-                            />
-                        </div>
-                        <div>
-                            <label className="text-xs font-medium text-slate-600 dark:text-slate-400">
-                                Validation Note — optional
-                            </label>
-                            <Textarea
-                                rows={2}
-                                value={gasSlipForm.validation_note}
-                                onChange={(e) =>
-                                    setGasSlipForm({
-                                        ...gasSlipForm,
-                                        validation_note: e.target.value,
-                                    })
-                                }
-                                placeholder="Any notes for the audit trail"
-                                className="mt-1 resize-none dark:bg-slate-900 dark:border-slate-700"
-                            />
-                        </div>
-                    </div>
+                    </Card>
 
-                    <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-xl p-3 flex items-start gap-2">
-                        <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
-                        <p className="text-xs text-amber-800 dark:text-amber-300">
-                            Once completed, the Trip Ticket moves to{" "}
-                            <b>Funds Issued</b>. The driver can then acknowledge, start the
-                            trip, and upload the receipt.
-                        </p>
-                    </div>
+                </div>
 
-                    <DialogFooter className="gap-2">
-                        <Button
-                            variant="outline"
-                            onClick={() => setGasSlipModalTicket(null)}
-                            disabled={completeGasSlipMutation.isPending}
-                            className="dark:border-slate-700 dark:text-slate-300"
-                        >
-                            Cancel
-                        </Button>
-                        <Button
-                            onClick={() => {
-                                if (!gasSlipModalTicket) return;
-                                completeGasSlipMutation.mutate({
-                                    ticketId: gasSlipModalTicket.trip_ticket_id,
-                                    payload: {
-                                        estimated_distance_km: gasSlipForm.estimated_distance_km
-                                            ? Number(gasSlipForm.estimated_distance_km)
-                                            : null,
-                                        estimated_fuel_liters: gasSlipForm.estimated_fuel_liters
-                                            ? Number(gasSlipForm.estimated_fuel_liters)
-                                            : null,
-                                        passenger_name:
-                                            gasSlipForm.passenger_name.trim() || null,
-                                        validation_note:
-                                            gasSlipForm.validation_note.trim() || null,
-                                    },
-                                });
-                            }}
-                            disabled={completeGasSlipMutation.isPending}
-                            className="bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-500/20"
-                        >
-                            {completeGasSlipMutation.isPending ? (
-                                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                            ) : (
-                                <Check className="h-4 w-4 mr-2" />
-                            )}
-                            Complete Trip Ticket
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
+            </div>
         </div>
     );
 };
