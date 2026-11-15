@@ -2,22 +2,25 @@
 import React, { useState, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
-import { useQueryClient, useQuery } from "@tanstack/react-query";
+import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
 import { useOptimizedQuery } from "../../hooks/useOptimizedQuery";
 import { useAutoRefresh } from "../../hooks/useAutoRefresh";
 import { useRealtime } from "../../contexts/RealtimeContext";
-import { gsoAPI, vehicleAPI, gpsAPI } from "../../services/api";
+import { gsoAPI, vehicleAPI, gpsAPI, departmentAPI } from "../../services/api";
 import { MapContainer, TileLayer, Marker, ZoomControl } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import {
     Car, CheckCircle, AlertTriangle, Wrench, RefreshCw, MapPin, Search,
-    ChevronDown, Activity, PlusCircle, Fuel, Clock
+    ChevronDown, Activity, PlusCircle, Fuel, Clock, FileCheck, Loader2, Check
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { toast } from "react-hot-toast";
 import { cn } from "@/lib/utils";
 
 // ============================================
@@ -39,27 +42,13 @@ const formatDateShort = (dateString) => {
 const createVehicleIcon = (plateNumber, vehicleModel) => {
     return L.divIcon({
         className: 'custom-vehicle-icon',
-        html: `<div style="
-            display: flex; flex-direction: column; align-items: center; justify-content: center;
-            transform: translate(-50%, -50%); position: relative; width: 120px;
-        ">
-            <div style="
-                background-color: #3b82f6; width: 32px; height: 32px; border-radius: 50%;
-                border: 2px solid white; display: flex; align-items: center; justify-content: center;
-                box-shadow: 0 4px 6px rgba(0,0,0,0.3); z-index: 2;
-            ">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/>
-                </svg>
+        html: `<div style="display:flex; flex-direction:column; align-items:center; justify-content:center; transform:translate(-50%,-50%); position:relative; width:120px;">
+            <div style="background-color:#3b82f6; width:32px; height:32px; border-radius:50%; border:2px solid white; display:flex; align-items:center; justify-content:center; box-shadow:0 4px 6px rgba(0,0,0,0.3); z-index:2;">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/></svg>
             </div>
-            <div style="
-                position: absolute; top: 38px; background-color: rgba(255, 255, 255, 0.95);
-                color: #0f172a; padding: 2px 6px; border-radius: 4px; font-size: 10px;
-                font-weight: 700; white-space: nowrap; box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-                border: 1px solid #cbd5e1; z-index: 1;
-            ">
+            <div style="position:absolute; top:38px; background-color:rgba(255,255,255,0.95); color:#0f172a; padding:2px 6px; border-radius:4px; font-size:10px; font-weight:700; white-space:nowrap; box-shadow:0 2px 4px rgba(0,0,0,0.2); border:1px solid #cbd5e1; z-index:1;">
                 ${plateNumber || 'Unknown'}
-                <span style="font-weight: 400; font-size: 9px; color: #64748b; display: block; text-align: center;">${vehicleModel || ''}</span>
+                <span style="font-weight:400; font-size:9px; color:#64748b; display:block; text-align:center;">${vehicleModel || ''}</span>
             </div>
         </div>`,
         iconSize: [120, 80], iconAnchor: [60, 40], popupAnchor: [0, -30],
@@ -75,12 +64,18 @@ const GsoDashboard = () => {
     const queryClient = useQueryClient();
     const { isConnected } = useRealtime();
 
+    // States
     const [searchTerm, setSearchTerm] = useState("");
+    const [deptFilter, setDeptFilter] = useState("all");
+    const [selectedTicket, setSelectedTicket] = useState(null);
+    const [showValidateDialog, setShowValidateDialog] = useState(false);
+    const [validationNote, setValidationNote] = useState("");
 
     const fetchAllData = useCallback(() => {
         queryClient.invalidateQueries({ queryKey: ["gso-dashboard-vehicles"] });
         queryClient.invalidateQueries({ queryKey: ["gso-dashboard-trips"] });
         queryClient.invalidateQueries({ queryKey: ["gps-active-trips"] });
+        queryClient.invalidateQueries({ queryKey: ["gso-pending-validation"] });
     }, [queryClient]);
 
     useAutoRefresh(["gso-trip-updated", "gps-active-trips", "trip-completed"], fetchAllData);
@@ -94,7 +89,14 @@ const GsoDashboard = () => {
     });
     const vehicles = useMemo(() => Array.isArray(vehiclesRaw) ? vehiclesRaw : [], [vehiclesRaw]);
 
-    // 2. Active Trips (Live Map)
+    // 2. Departments
+    const { data: departmentsRaw = [] } = useOptimizedQuery({
+        queryKey: ["gso-dashboard-departments"],
+        queryFn: async () => extractArray(await departmentAPI.getAll()),
+    });
+    const departments = useMemo(() => Array.isArray(departmentsRaw) ? departmentsRaw : [], [departmentsRaw]);
+
+    // 3. Active Trips (Live Map)
     const { data: activeTripsRaw = [], isLoading: activeTripsLoading } = useQuery({
         queryKey: ["gps-active-trips"],
         queryFn: async () => {
@@ -107,48 +109,74 @@ const GsoDashboard = () => {
     });
     const activeTrips = useMemo(() => Array.isArray(activeTripsRaw) ? activeTripsRaw : [], [activeTripsRaw]);
 
-    // 3. All Trips (For Recent list)
+    // 4. All Trips (For Recent list)
     const { data: allTripsRaw = [], isLoading: tripsLoading } = useOptimizedQuery({
         queryKey: ["gso-dashboard-trips"],
         queryFn: async () => extractArray(await gsoAPI.getAllTrips()),
     });
     const allTrips = useMemo(() => Array.isArray(allTripsRaw) ? allTripsRaw : [], [allTripsRaw]);
 
+    // 5. Pending Validation
+    const { data: pendingValidationRaw = [], isLoading: validationLoading } = useOptimizedQuery({
+        queryKey: ["gso-pending-validation"],
+        queryFn: async () => extractArray(await gsoAPI.getPendingValidation()),
+    });
+    const pendingValidation = useMemo(() => Array.isArray(pendingValidationRaw) ? pendingValidationRaw : [], [pendingValidationRaw]);
+
+    // ============ MUTATIONS ============
+    const validateMutation = useMutation({
+        mutationFn: async ({ ticketId, data }) => await gsoAPI.validateTrip(ticketId, data),
+        onSuccess: (data) => {
+            toast.success(data.message || "Trip validated successfully!");
+            queryClient.invalidateQueries({ queryKey: ["gso-pending-validation"] });
+            queryClient.invalidateQueries({ queryKey: ["gso-dashboard-trips"] });
+            setShowValidateDialog(false);
+            setSelectedTicket(null);
+            setValidationNote("");
+        },
+        onError: (error) => {
+            toast.error(error?.response?.data?.message || "Failed to validate trip");
+        },
+    });
+
     // ============ DERIVED DATA ============
 
-    // Vehicles Stats
+    // Stats
     const totalVehicles = vehicles.length;
     const serviceable = vehicles.filter(v => v.status === 'active' && !v.maintenance_flag).length;
     const unserviceable = vehicles.filter(v => v.status !== 'active').length;
     const maintenance = vehicles.filter(v => v.maintenance_flag).length;
 
-    // Utilization Logic (Daily Monitoring)
-    // In Use: Naa sa activeTrips list karon
+    // Utilization
     const inUse = activeTrips.length;
-    // Available: Total vehicles minus in use (kadtong walay active trip ticket karon)
     const available = totalVehicles - inUse;
-    
     const utilizationPct = totalVehicles > 0 ? Math.round((inUse / totalVehicles) * 100) : 0;
 
-    // Recent Trips (Limit to 4)
+    // Recent Trips
     const recentTrips = useMemo(() => {
         return [...allTrips]
             .sort((a, b) => new Date(b.created_at || b.trip_date) - new Date(a.created_at || a.trip_date))
             .slice(0, 4);
     }, [allTrips]);
 
-    // Fuel Monitoring Table Filter
+    // Fuel Monitoring Table Filter (Functional Search & Dept Filter)
     const filteredVehicles = useMemo(() => {
-        if (!searchTerm) return vehicles.slice(0, 5); // Show top 5 by default
-        const lower = searchTerm.toLowerCase();
-        return vehicles.filter(v => 
-            v.plate_number?.toLowerCase().includes(lower) ||
-            v.vehicle_model?.toLowerCase().includes(lower) ||
-            v.department?.department_name?.toLowerCase().includes(lower)
-        );
-    }, [vehicles, searchTerm]);
+        let result = vehicles;
+        if (deptFilter !== "all") {
+            result = result.filter(v => v.department_id?.toString() === deptFilter);
+        }
+        if (searchTerm) {
+            const lower = searchTerm.toLowerCase();
+            result = result.filter(v => 
+                v.plate_number?.toLowerCase().includes(lower) ||
+                v.vehicle_model?.toLowerCase().includes(lower) ||
+                v.department?.department_name?.toLowerCase().includes(lower)
+            );
+        }
+        return result.slice(0, 5);
+    }, [vehicles, searchTerm, deptFilter]);
 
-    // Selected vehicle for Map Popup (Default to first active)
+    // Map Popup
     const displayTripData = activeTrips.length > 0 ? activeTrips[0] : null;
     const displayVehicle = displayTripData?.vehicle;
 
@@ -166,12 +194,8 @@ const GsoDashboard = () => {
                                 <Badge className="bg-emerald-500/20 text-emerald-400 border-none rounded-full px-3 py-1 text-[10px]">
                                     <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 mr-1.5 animate-pulse" /> GSO Office
                                 </Badge>
-                                <Badge className="bg-blue-600 text-white border-none rounded-full px-3 py-1 text-[10px]">
-                                    General Services Office
-                                </Badge>
-                                <Badge className="bg-purple-600 text-white border-none rounded-full px-3 py-1 text-[10px]">
-                                    MIS Dashboard
-                                </Badge>
+                                <Badge className="bg-blue-600 text-white border-none rounded-full px-3 py-1 text-[10px]">General Services Office</Badge>
+                                <Badge className="bg-purple-600 text-white border-none rounded-full px-3 py-1 text-[10px]">MIS Dashboard</Badge>
                             </div>
                             <h1 className="text-3xl font-bold text-white tracking-tight">GSO Dashboard</h1>
                             <p className="text-blue-200/70 text-sm mt-1 max-w-lg">
@@ -180,17 +204,10 @@ const GsoDashboard = () => {
                         </div>
                         
                         <div className="flex gap-3">
-                            <Button 
-                                onClick={fetchAllData} 
-                                variant="outline" 
-                                className="bg-white/10 border-white/20 text-white hover:bg-white/20 rounded-xl h-10 px-4"
-                            >
+                            <Button onClick={fetchAllData} variant="outline" className="bg-white/10 border-white/20 text-white hover:bg-white/20 rounded-xl h-10 px-4">
                                 <RefreshCw className={cn("h-4 w-4 mr-2", (vehiclesLoading || activeTripsLoading) && "animate-spin")} /> Refresh
                             </Button>
-                            <Button 
-                                onClick={() => navigate("/gso/create-trip")} 
-                                className="bg-blue-600 hover:bg-blue-500 text-white rounded-xl h-10 px-6 shadow-lg shadow-blue-500/20"
-                            >
+                            <Button onClick={() => navigate("/gso/create-trip")} className="bg-blue-600 hover:bg-blue-500 text-white rounded-xl h-10 px-6 shadow-lg shadow-blue-500/20">
                                 <PlusCircle className="h-4 w-4 mr-2" /> Create Trip
                             </Button>
                         </div>
@@ -206,9 +223,7 @@ const GsoDashboard = () => {
                                 <p className="text-sm font-medium text-slate-300 mt-1">Total Vehicles</p>
                                 <p className="text-[10px] text-slate-500 mt-0.5">Across All Departments</p>
                             </div>
-                            <div className="p-3 bg-blue-600/20 rounded-xl">
-                                <Car className="h-6 w-6 text-blue-500" />
-                            </div>
+                            <div className="p-3 bg-blue-600/20 rounded-xl"><Car className="h-6 w-6 text-blue-500" /></div>
                         </CardContent>
                     </Card>
                     
@@ -219,9 +234,7 @@ const GsoDashboard = () => {
                                 <p className="text-sm font-medium text-slate-300 mt-1">Serviceable</p>
                                 <p className="text-[10px] text-slate-500 mt-0.5">Operational Condition</p>
                             </div>
-                            <div className="p-3 bg-emerald-600/20 rounded-xl">
-                                <CheckCircle className="h-6 w-6 text-emerald-500" />
-                            </div>
+                            <div className="p-3 bg-emerald-600/20 rounded-xl"><CheckCircle className="h-6 w-6 text-emerald-500" /></div>
                         </CardContent>
                     </Card>
 
@@ -232,9 +245,7 @@ const GsoDashboard = () => {
                                 <p className="text-sm font-medium text-slate-300 mt-1">Unserviceable</p>
                                 <p className="text-[10px] text-slate-500 mt-0.5">Not Fit for Operation</p>
                             </div>
-                            <div className="p-3 bg-red-600/20 rounded-xl">
-                                <AlertTriangle className="h-6 w-6 text-red-500" />
-                            </div>
+                            <div className="p-3 bg-red-600/20 rounded-xl"><AlertTriangle className="h-6 w-6 text-red-500" /></div>
                         </CardContent>
                     </Card>
 
@@ -245,9 +256,7 @@ const GsoDashboard = () => {
                                 <p className="text-sm font-medium text-slate-300 mt-1">Under Maintenance</p>
                                 <p className="text-[10px] text-slate-500 mt-0.5">Currently Being Serviced</p>
                             </div>
-                            <div className="p-3 bg-amber-600/20 rounded-xl">
-                                <Wrench className="h-6 w-6 text-amber-500" />
-                            </div>
+                            <div className="p-3 bg-amber-600/20 rounded-xl"><Wrench className="h-6 w-6 text-amber-500" /></div>
                         </CardContent>
                     </Card>
                 </div>
@@ -255,7 +264,7 @@ const GsoDashboard = () => {
                 {/* 3. LIVE TRACKING & FUEL BALANCE MONITORING */}
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                     
-                    {/* Live Vehicle Tracking (Map) */}
+                    {/* Live Vehicle Tracking */}
                     <Card className="lg:col-span-2 bg-[#121829] border-slate-800 shadow-lg flex flex-col overflow-hidden">
                         <div className="p-4 border-b border-slate-800 flex justify-between items-center">
                             <h3 className="font-bold text-white flex items-center gap-2">
@@ -268,33 +277,18 @@ const GsoDashboard = () => {
                         </div>
                         
                         <div className="flex-1 relative bg-[#0b101c] min-h-[350px]">
-                            {/* MAP CONTAINER (Same sa LiveTracking) */}
-                            <MapContainer
-                                center={[8.5833, 124.6667]}
-                                zoom={12}
-                                style={{ height: '100%', width: '100%' }}
-                                zoomControl={false}
-                                className="z-0"
-                            >
-                                <TileLayer
-                                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                                    attribution='&copy; OpenStreetMap'
-                                />
+                            <MapContainer center={[8.5833, 124.6667]} zoom={12} style={{ height: '100%', width: '100%' }} zoomControl={false} className="z-0">
+                                <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
                                 <ZoomControl position="bottomright" />
-
                                 {activeTrips.map(trip => {
                                     if (!trip.current_location) return null;
                                     return (
-                                        <Marker 
-                                            key={trip.trip_id}
-                                            position={[trip.current_location.latitude, trip.current_location.longitude]} 
-                                            icon={createVehicleIcon(trip.vehicle?.plate_number, trip.vehicle?.vehicle_model)}
-                                        />
+                                        <Marker key={trip.trip_id} position={[trip.current_location.latitude, trip.current_location.longitude]} icon={createVehicleIcon(trip.vehicle?.plate_number, trip.vehicle?.vehicle_model)} />
                                     );
                                 })}
                             </MapContainer>
 
-                            {/* Floating Info Card (Top Right) */}
+                            {/* Floating Info Card */}
                             {displayTripData && displayVehicle && (
                                 <div className="absolute top-4 right-4 z-[400] bg-[#121829]/95 backdrop-blur-md border border-slate-700 rounded-xl p-4 w-72 shadow-2xl">
                                     <div className="flex items-start justify-between mb-3 border-b border-slate-700 pb-2">
@@ -336,7 +330,6 @@ const GsoDashboard = () => {
                             )}
                         </div>
                         
-                        {/* Legend */}
                         <div className="p-3 bg-[#0b101c] border-t border-slate-800 flex gap-4 text-[10px] text-slate-400">
                             <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500"/> In Transit</span>
                             <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-500"/> Available</span>
@@ -345,7 +338,7 @@ const GsoDashboard = () => {
                         </div>
                     </Card>
 
-                    {/* Fuel Balance Monitoring (Table) */}
+                    {/* Fuel Balance Monitoring */}
                     <Card className="bg-[#121829] border-slate-800 shadow-lg flex flex-col h-full">
                         <div className="p-4 border-b border-slate-800 flex justify-between items-center">
                             <h3 className="font-bold text-white flex items-center gap-2">
@@ -364,10 +357,17 @@ const GsoDashboard = () => {
                                     className="pl-8 h-8 text-xs bg-[#0b101c] border-slate-700 text-white rounded-lg" 
                                 />
                             </div>
-                            {/* Dili clickable / static display */}
-                            <div className="h-8 px-3 text-xs flex items-center border border-slate-700 text-slate-400 bg-[#0b101c] rounded-lg">
-                                All Departments <ChevronDown className="h-3 w-3 ml-1" />
-                            </div>
+                            {/* ✅ FUNCTIONAL SELECTOR */}
+                            <select
+                                value={deptFilter}
+                                onChange={(e) => setDeptFilter(e.target.value)}
+                                className="h-8 text-xs bg-[#0b101c] border border-slate-700 text-slate-300 rounded-lg px-2 outline-none focus:ring-1 focus:ring-blue-500"
+                            >
+                                <option value="all">All Departments</option>
+                                {departments.map(d => (
+                                    <option key={d.department_id} value={d.department_id}>{d.department_name}</option>
+                                ))}
+                            </select>
                         </div>
 
                         <div className="overflow-x-auto flex-1">
@@ -387,8 +387,8 @@ const GsoDashboard = () => {
                                         const pct = Math.min(100, (balance / cap) * 100);
                                         return (
                                             <tr key={v.vehicle_id} className="hover:bg-[#1a2235]">
-                                                <td className="px-3 py-3">{v.department?.department_name || 'GSO'}</td>
-                                                <td className="px-3 py-3 font-medium text-white">{v.vehicle_model}</td>
+                                                <td className="px-3 py-3 truncate max-w-[80px]">{v.department?.department_name || 'GSO'}</td>
+                                                <td className="px-3 py-3 font-medium text-white truncate max-w-[100px]">{v.vehicle_model}</td>
                                                 <td className="px-3 py-3 font-mono">{v.plate_number}</td>
                                                 <td className="px-3 py-3 text-right">
                                                     <div className="flex flex-col items-end">
@@ -441,7 +441,7 @@ const GsoDashboard = () => {
                         </div>
                     </Card>
 
-                    {/* Vehicle Utilization (Daily Monitoring) */}
+                    {/* Vehicle Utilization */}
                     <Card className="bg-[#121829] border-slate-800 shadow-lg p-4">
                         <h3 className="font-bold text-white mb-4 flex items-center gap-2">
                             <Activity className="h-4 w-4 text-blue-500" /> Vehicle Utilization
@@ -522,7 +522,118 @@ const GsoDashboard = () => {
 
                 </div>
 
+                {/* 5. ✅ PENDING VALIDATION SECTION (Bag-o) */}
+                <Card className="bg-[#121829] border-slate-800 shadow-lg">
+                    <CardHeader className="border-b border-slate-800 pb-4">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <CardTitle className="text-white flex items-center gap-2">
+                                    <FileCheck className="h-5 w-5 text-blue-500" /> Pending Validation
+                                </CardTitle>
+                                <p className="text-xs text-slate-400 mt-1">Trips that are completed and ready to be closed by GSO.</p>
+                            </div>
+                            <Badge className="bg-blue-600 text-white">{pendingValidation.length} tickets</Badge>
+                        </div>
+                    </CardHeader>
+                    <CardContent className="p-0">
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left text-sm text-slate-300">
+                                <thead className="bg-[#0b101c] text-slate-500">
+                                    <tr>
+                                        <th className="px-4 py-3 font-medium">Trip Ticket No.</th>
+                                        <th className="px-4 py-3 font-medium">Date</th>
+                                        <th className="px-4 py-3 font-medium">Vehicle</th>
+                                        <th className="px-4 py-3 font-medium">Destination</th>
+                                        <th className="px-4 py-3 font-medium">Status</th>
+                                        <th className="px-4 py-3 font-medium text-right">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-800/50">
+                                    {validationLoading ? (
+                                        <tr><td colSpan={6} className="text-center py-6"><Loader2 className="h-5 w-5 animate-spin mx-auto text-blue-500"/></td></tr>
+                                    ) : pendingValidation.length === 0 ? (
+                                        <tr><td colSpan={6} className="text-center py-6 text-slate-500">No pending validations.</td></tr>
+                                    ) : pendingValidation.map(trip => (
+                                        <tr key={trip.trip_ticket_id} className="hover:bg-[#1a2235]">
+                                            <td className="px-4 py-3 font-mono text-white">{trip.trip_ticket_number}</td>
+                                            <td className="px-4 py-3">{formatDateShort(trip.trip_date)}</td>
+                                            <td className="px-4 py-3">{trip.vehicle?.plate_number || 'N/A'}</td>
+                                            <td className="px-4 py-3 truncate max-w-[150px]">{trip.destination}</td>
+                                            <td className="px-4 py-3">
+                                                <Badge className="bg-indigo-600 text-white text-[10px]">{trip.status.replace(/_/g, ' ')}</Badge>
+                                            </td>
+                                            <td className="px-4 py-3 text-right">
+                                                <Button 
+                                                    size="sm" 
+                                                    onClick={() => { setSelectedTicket(trip); setShowValidateDialog(true); }}
+                                                    className="bg-emerald-600 hover:bg-emerald-700 h-8 px-3 text-xs"
+                                                >
+                                                    <Check className="h-3.5 w-3.5 mr-1" /> Validate
+                                                </Button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </CardContent>
+                </Card>
+
             </div>
+
+            {/* VALIDATE DIALOG */}
+            <Dialog open={showValidateDialog} onOpenChange={setShowValidateDialog}>
+                <DialogContent className="sm:max-w-md bg-[#121829] border-slate-700">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2 text-white">
+                            <div className="p-2 rounded-xl bg-emerald-500/10"><FileCheck className="h-5 w-5 text-emerald-500" /></div>
+                            Validate & Close Trip
+                        </DialogTitle>
+                        <DialogDescription className="text-slate-400">
+                            Confirm this trip to close it and finalize the fuel consumption records.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="bg-[#0b101c] rounded-xl p-4 space-y-2 border border-slate-800">
+                        <div className="flex justify-between text-sm">
+                            <span className="text-slate-500">Ticket No:</span>
+                            <span className="font-mono font-semibold text-white">{selectedTicket?.trip_ticket_number}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                            <span className="text-slate-500">Destination:</span>
+                            <span className="text-white">{selectedTicket?.destination}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                            <span className="text-slate-500">Total Distance:</span>
+                            <span className="font-bold text-white">{selectedTicket?.actual_distance_km || 0} km</span>
+                        </div>
+                    </div>
+
+                    <div className="space-y-2 mt-2">
+                        <label className="text-sm font-medium text-slate-300">Validation Note (Optional)</label>
+                        <Textarea 
+                            placeholder="Add a note..." 
+                            value={validationNote} 
+                            onChange={(e) => setValidationNote(e.target.value)} 
+                            className="bg-[#0b101c] border-slate-700 text-white resize-none" 
+                            rows={3}
+                        />
+                    </div>
+
+                    <DialogFooter className="gap-2 mt-4">
+                        <Button variant="outline" onClick={() => setShowValidateDialog(false)} className="border-slate-700 text-slate-300">Cancel</Button>
+                        <Button 
+                            onClick={() => validateMutation.mutate({ ticketId: selectedTicket.trip_ticket_id, data: { validation_note: validationNote } })} 
+                            disabled={validateMutation.isPending}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                        >
+                            {validateMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2"/> : <Check className="h-4 w-4 mr-2"/>}
+                            Confirm Validation
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
         </div>
     );
 };
