@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   Clock, RefreshCw, Loader2, Truck, XCircle, Info, 
   CheckCircle, FileText, Check, ArrowRight, 
-  Sparkles, Fuel, AlertTriangle, Activity, Edit, User, Users, Building2
+  Sparkles, Fuel, AlertTriangle, Activity, Edit, User, Users, Building2, Lock
 } from "lucide-react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter
@@ -65,9 +65,6 @@ const MayorPending = () => {
   
   // ✅ States for Cross-Department (Charge To)
   const [isCrossDepartment, setIsCrossDepartment] = useState(false);
-  const [availableDepartments, setAvailableDepartments] = useState([]);
-  const [chargeToDepartmentId, setChargeToDepartmentId] = useState("");
-
   const [requestingDeptBalance, setRequestingDeptBalance] = useState(null);
   const [showTankWarning, setShowTankWarning] = useState(false);
   const [pendingPayload, setPendingPayload] = useState(null);
@@ -143,8 +140,6 @@ const MayorPending = () => {
     
     if (activeTab === "pending") {
       await fetchDepartmentBalance(ticket.department_id);
-      await fetchAllDepartments();
-      setChargeToDepartmentId(ticket.department_id?.toString() || "");
     }
   };
 
@@ -160,13 +155,6 @@ const MayorPending = () => {
         });
       } else { setRequestingDeptBalance(null); }
     } catch (error) { setRequestingDeptBalance(null); }
-  }, []);
-
-  const fetchAllDepartments = useCallback(async () => {
-    try {
-      const response = await mayorsOfficeAPI.getAllDepartmentsForSelector();
-      setAvailableDepartments(response.data?.data || []);
-    } catch (error) {}
   }, []);
 
   const selectedTicketId = selectedTicket?.id || selectedTicket?.trip_ticket_id;
@@ -190,7 +178,7 @@ const MayorPending = () => {
     if (suggestion && suggestion.available && amount > suggestion.suggested_amount) {
         setPendingPayload({
             amount_released: amount,
-            charge_to_department_id: chargeToDepartmentId,
+            charge_to_department_id: isCrossDepartment ? selectedTicket.department_id : selectedTicket.department_id, 
             is_cross_department: isCrossDepartment,
         });
         setShowTankWarning(true);
@@ -199,7 +187,7 @@ const MayorPending = () => {
 
     submitApprove({
         amount_released: amount,
-        charge_to_department_id: chargeToDepartmentId,
+        charge_to_department_id: selectedTicket.department_id,
         is_cross_department: isCrossDepartment,
     });
   };
@@ -309,7 +297,6 @@ const MayorPending = () => {
 
             <div className="p-5 flex-1 overflow-y-auto space-y-5">
               
-              {/* ✅ FIXED: Trip Details Box with Driver and Passenger Name */}
               <div className="bg-[#0b101c] rounded-xl p-4 border border-slate-800 text-sm">
                 <div className="flex items-center gap-2 mb-3 pb-2 border-b border-slate-800">
                   <Truck className="h-4 w-4 text-blue-500" />
@@ -317,15 +304,10 @@ const MayorPending = () => {
                 </div>
                 <div className="grid grid-cols-3 gap-y-2">
                   <span className="text-slate-500">Date</span><span className="col-span-2 text-slate-200">: {formatDate(selectedTicket.trip_date)}</span>
-                  
-                  {/* Driver Name */}
                   <span className="text-slate-500 flex items-center gap-1"><User className="h-3 w-3"/> Driver</span>
                   <span className="col-span-2 text-slate-200">: {selectedTicket.driver_name || selectedTicket.driver?.full_name || "N/A"}</span>
-                  
-                  {/* Passenger Name */}
                   <span className="text-slate-500 flex items-center gap-1"><Users className="h-3 w-3"/> Passenger</span>
                   <span className="col-span-2 text-slate-200">: {selectedTicket.passenger_name || "N/A"}</span>
-                  
                   <span className="text-slate-500">Trip Ticket No.</span><span className="col-span-2 text-slate-200">: {selectedTicket.ticket_number}</span>
                   <span className="text-slate-500">Department</span><span className="col-span-2 text-slate-200">: {selectedTicket.department_name}</span>
                   <span className="text-slate-500">Vehicle</span><span className="col-span-2 text-slate-200">: {selectedTicket.vehicle?.plate_number}</span>
@@ -371,7 +353,6 @@ const MayorPending = () => {
                 <p className="text-[10px] text-slate-500 mt-3 flex items-center gap-1"><Info className="h-3 w-3"/> This fuel balance is an estimate, based on GSO records.</p>
               </div>
 
-              {/* Suggestion Box & Inputs (Only show if Pending) */}
               {activeTab === 'pending' ? (
                 <>
                   {suggestion && suggestion.available && (
@@ -410,36 +391,18 @@ const MayorPending = () => {
                     </div>
                   ) : null}
 
-                  {/* ✅ RE-ADDED: Charge To Section */}
+                  {/* ✅ STATIC CHARGE TO DISPLAY (MO can cross-department) */}
                   <div className="bg-[#0b101c] rounded-xl p-4 border border-slate-800 space-y-3">
                     <div className="flex items-center justify-between">
                       <label className="text-sm font-bold text-white flex items-center gap-2">
                         <Building2 className="h-4 w-4 text-slate-400" /> Charge To
                       </label>
-                      <div className="flex items-center gap-2">
-                        <input 
-                          type="checkbox" 
-                          id="crossDept"
-                          checked={isCrossDepartment}
-                          onChange={(e) => setIsCrossDepartment(e.target.checked)}
-                          className="rounded border-slate-700 bg-[#0b101c] text-blue-600 focus:ring-blue-500"
-                        />
-                        <label htmlFor="crossDept" className="text-xs text-slate-300 cursor-pointer">Mayor's Office (Cross-Dept)</label>
-                      </div>
+                      <span className="text-xs font-semibold text-blue-400 bg-blue-900/30 px-2 py-1 rounded">Mayor's Office</span>
                     </div>
-
-                    {isCrossDepartment && (
-                      <select 
-                        value={chargeToDepartmentId}
-                        onChange={(e) => setChargeToDepartmentId(e.target.value)}
-                        className="w-full bg-[#121829] border border-slate-700 text-white text-sm rounded-lg p-2.5 outline-none focus:ring-1 focus:ring-blue-500"
-                      >
-                        <option value="">-- Select Department --</option>
-                        {availableDepartments.map(d => (
-                          <option key={d.department_id} value={d.department_id}>{d.department_name}</option>
-                        ))}
-                      </select>
-                    )}
+                    <div className="flex items-center gap-2 text-xs text-slate-400">
+                      <Lock className="h-3 w-3" />
+                      <span>Mayor's Office can cross-department release.</span>
+                    </div>
                   </div>
 
                   <div>
