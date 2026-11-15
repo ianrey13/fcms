@@ -5,6 +5,8 @@ namespace App\Services;
 use App\Models\TripTicket;
 use App\Models\FuelReceipt;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 class FuelPredictionService
 {
@@ -19,9 +21,10 @@ class FuelPredictionService
             return $this->emptyResponse('Vehicle not found.');
         }
 
-        // 1. Get Expected Round-trip Distance
-        $distanceData = $this->getExpectedDistance($trip->destination, $trip->department_id);
-        $roundTripDistance = $distanceData['distance'] * 2; // Round trip = × 2
+        // 1. Get Expected Round-trip Distance (Using OSRM/Routing)
+        $distanceData = $this->getExpectedDistance($trip->destination);
+        $oneWayDistance = $distanceData['distance'];
+        $roundTripDistance = $oneWayDistance * 2; 
 
         if ($roundTripDistance <= 0) {
             return $this->emptyResponse('Cannot calculate distance for this destination.');
@@ -49,20 +52,19 @@ class FuelPredictionService
 
         return [
             'available'          => true,
-            'confidence'         => $distanceData['source'] === 'historical' ? 'high' : 'low',
-            'tier'               => $distanceData['source'],
+            'confidence'         => 'high',
+            'tier'               => 'route',
             'sample_size'        => $weightedPriceData['sample_size'],
             'suggested_amount'   => round($suggestedAmount, 2),
             'suggested_liters'   => round($estimatedLiters, 2),
-            'range_min'          => round($suggestedAmount * 0.9, 2), // 10% margin
-            'range_max'          => round($suggestedAmount * 1.1, 2), // +10% margin
+            'range_min'          => round($suggestedAmount * 0.9, 2), 
+            'range_max'          => round($suggestedAmount * 1.1, 2), 
             'avg_amount'         => round($suggestedAmount, 2),
             'avg_liters'         => round($estimatedLiters, 2),
             'unit_price_hint'    => round($weightedPrice, 2),
             'basis'              => $basis,
             'message'            => sprintf(
-                "Based on %s distance (%.1f km round-trip) ÷ %.1f km/L × ₱%.2f/L.",
-                $distanceData['source'] === 'historical' ? 'historical' : 'default',
+                "Based on OSRM Route (%.1f km round-trip) ÷ %.1f km/L × ₱%.2f/L.",
                 $roundTripDistance,
                 $efficiency,
                 $weightedPrice
@@ -71,34 +73,56 @@ class FuelPredictionService
     }
 
     /**
-     * Get Expected Distance (1-way) based on past trips or fallback.
+     * Get Expected Distance (1-way) using OSRM API based on destination text.
      */
-    private function getExpectedDistance($destination, $departmentId): array
+    private function getExpectedDistance($destination): array
     {
-        // Try to find average distance from past trips with the same destination
-        $query = TripTicket::where('destination', 'LIKE', '%' . trim($destination) . '%')
-            ->whereIn('status', ['closed', 'completed', 'pending_gso_validation'])
-            ->whereNotNull('actual_distance_km')
-            ->where('actual_distance_km', '>', 0);
+        // Default coordinates sa Laguindingan (GSO / LGU Hall)
+        $originLat = 8.5833;
+        $originLng = 124.6667;
+        
+        // Fallback distance kung mapalpak ang API
+        $defaultDistance = 20.0;
 
-        if ($departmentId) {
-            $query->where('department_id', $departmentId);
-        }
+        try {
+            // 1. Gamit ang Nominatim (OpenStreetMap) para makuha ang Coordinates sa Destination
+            $geoResponse = Http::withHeaders([
+                'User-Agent' => 'FCMS-Laguindingan/1.0' // Required sa Nominatim
+            ])->get('https://nominatim.openstreetmap.org/search', [
+                'q' => $destination . ', Misamis Oriental, Philippines',
+                'format' => 'json',
+                'limit' => 1
+            ]);
 
-        $avgDistance = $query->avg('actual_distance_km');
+            if ($geoResponse->failed() || empty($geoResponse->json())) {
+                return ['distance' => $defaultDistance, 'source' => 'default'];
+            }
 
-        if ($avgDistance && $avgDistance > 0) {
+            $location = $geoResponse->json()[0];
+            $destLat = (float) $location['lat'];
+            $destLng = (float) $location['lon'];
+
+            // 2. Gamit ang OSRM (Open Source Routing Machine) para makuha ang Road Distance
+            // (Kini mo-follow sa coastal roads, AOR, etc.)
+            $osrmResponse = Http::get("https://router.project-osrm.org/route/v1/driving/{$originLng},{$originLat};{$destLng},{$destLat}?overview=false");
+
+            if ($osrmResponse->failed() || empty($osrmResponse->json()['routes'])) {
+                return ['distance' => $defaultDistance, 'source' => 'default'];
+            }
+
+            // OSRM returns distance in meters, i-convert sa km
+            $distanceInMeters = $osrmResponse->json()['routes'][0]['distance'];
+            $distanceInKm = $distanceInMeters / 1000;
+
             return [
-                'distance' => (float) $avgDistance,
-                'source' => 'historical'
+                'distance' => $distanceInKm,
+                'source' => 'osrm'
             ];
-        }
 
-        // Fallback: Default estimate (e.g., 20 km one-way) if no history exists
-        return [
-            'distance' => 20.0,
-            'source' => 'default'
-        ];
+        } catch (\Exception $e) {
+            Log::error('OSRM Distance Calculation Error: ' . $e->getMessage());
+            return ['distance' => $defaultDistance, 'source' => 'default'];
+        }
     }
 
     /**
