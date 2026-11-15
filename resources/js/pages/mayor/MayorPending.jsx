@@ -63,7 +63,6 @@ const MayorPending = () => {
   const [submitting, setSubmitting] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   
-  // ✅ States for Cross-Department (Charge To)
   const [isCrossDepartment, setIsCrossDepartment] = useState(false);
   const [requestingDeptBalance, setRequestingDeptBalance] = useState(null);
   const [showTankWarning, setShowTankWarning] = useState(false);
@@ -178,8 +177,9 @@ const MayorPending = () => {
     if (suggestion && suggestion.available && amount > suggestion.suggested_amount) {
         setPendingPayload({
             amount_released: amount,
-            charge_to_department_id: isCrossDepartment ? selectedTicket.department_id : selectedTicket.department_id, 
+            charge_to_department_id: selectedTicket.department_id,
             is_cross_department: isCrossDepartment,
+            cross_department_reason: isCrossDepartment ? "Mayor's Office Release" : null,
         });
         setShowTankWarning(true);
         return;
@@ -189,6 +189,7 @@ const MayorPending = () => {
         amount_released: amount,
         charge_to_department_id: selectedTicket.department_id,
         is_cross_department: isCrossDepartment,
+        cross_department_reason: isCrossDepartment ? "Mayor's Office Release" : null,
     });
   };
 
@@ -212,7 +213,6 @@ const MayorPending = () => {
   return (
     <div className="min-h-screen bg-[#090e1a] p-4 md:p-6 font-sans text-slate-200 flex flex-col">
       
-      {/* Header */}
       <div className="flex items-center gap-4 mb-6">
         <div className="p-4 rounded-full bg-blue-600 shadow-[0_0_20px_rgba(37,99,235,0.4)]">
           <ArrowRight className="h-8 w-8 text-white -rotate-45" />
@@ -223,7 +223,6 @@ const MayorPending = () => {
         </div>
       </div>
 
-      {/* TABS */}
       <div className="flex flex-wrap gap-3 mb-6">
         <button onClick={() => handleTabClick("pending")} className={cn("flex items-center justify-between px-5 py-3 rounded-xl border flex-1 transition-all", activeTab === "pending" ? "bg-blue-600/20 border-blue-500 text-blue-400" : "bg-[#121829] border-slate-800 text-slate-300 hover:bg-[#1a2235]")}>
           <div className="flex items-center gap-2"><Clock className="h-5 w-5" /><span className="font-semibold">Pending Release</span></div>
@@ -247,10 +246,8 @@ const MayorPending = () => {
         </button>
       </div>
 
-      {/* Main Content Layout */}
       <div className="flex flex-col lg:flex-row gap-6 flex-1">
         
-        {/* Left Panel: Table */}
         <div className={cn("bg-[#121829] border border-slate-800 rounded-2xl shadow-lg flex flex-col transition-all duration-300", showRightPanel ? "w-full lg:w-3/5" : "w-full")}>
           <div className="p-4 border-b border-slate-800 flex justify-between items-center gap-4">
             <div className="relative flex-1">
@@ -287,7 +284,6 @@ const MayorPending = () => {
           </div>
         </div>
 
-        {/* Right Panel: Details */}
         {showRightPanel && selectedTicket && (
           <div className="bg-[#121829] border border-slate-800 rounded-2xl shadow-lg w-full lg:w-2/5 flex flex-col flex-shrink-0 animate-in slide-in-from-right-4">
             <div className="p-5 border-b border-slate-800 flex justify-between items-center">
@@ -304,10 +300,15 @@ const MayorPending = () => {
                 </div>
                 <div className="grid grid-cols-3 gap-y-2">
                   <span className="text-slate-500">Date</span><span className="col-span-2 text-slate-200">: {formatDate(selectedTicket.trip_date)}</span>
+                  
+                  {/* ✅ DRIVER FETCH FIX */}
                   <span className="text-slate-500 flex items-center gap-1"><User className="h-3 w-3"/> Driver</span>
-                  <span className="col-span-2 text-slate-200">: {selectedTicket.driver_name || selectedTicket.driver?.full_name || "N/A"}</span>
+                  <span className="col-span-2 text-slate-200">: {selectedTicket.driver_name || selectedTicket.driver?.user?.full_name || selectedTicket.driver?.name || "N/A"}</span>
+                  
+                  {/* ✅ PASSENGER FETCH FIX */}
                   <span className="text-slate-500 flex items-center gap-1"><Users className="h-3 w-3"/> Passenger</span>
                   <span className="col-span-2 text-slate-200">: {selectedTicket.passenger_name || "N/A"}</span>
+                  
                   <span className="text-slate-500">Trip Ticket No.</span><span className="col-span-2 text-slate-200">: {selectedTicket.ticket_number}</span>
                   <span className="text-slate-500">Department</span><span className="col-span-2 text-slate-200">: {selectedTicket.department_name}</span>
                   <span className="text-slate-500">Vehicle</span><span className="col-span-2 text-slate-200">: {selectedTicket.vehicle?.plate_number}</span>
@@ -316,6 +317,7 @@ const MayorPending = () => {
                 </div>
               </div>
 
+              {/* ✅ VEHICLE FUEL INFO FETCH FIX */}
               <div className="bg-[#0b101c] rounded-xl p-4 border border-slate-800 text-sm">
                 <div className="flex items-center justify-between mb-3 pb-2 border-b border-slate-800">
                   <div className="flex items-center gap-2">
@@ -391,18 +393,29 @@ const MayorPending = () => {
                     </div>
                   ) : null}
 
-                  {/* ✅ STATIC CHARGE TO DISPLAY (MO can cross-department) */}
                   <div className="bg-[#0b101c] rounded-xl p-4 border border-slate-800 space-y-3">
                     <div className="flex items-center justify-between">
                       <label className="text-sm font-bold text-white flex items-center gap-2">
                         <Building2 className="h-4 w-4 text-slate-400" /> Charge To
                       </label>
-                      <span className="text-xs font-semibold text-blue-400 bg-blue-900/30 px-2 py-1 rounded">Mayor's Office</span>
+                      <div className="flex items-center gap-2">
+                        <input 
+                          type="checkbox" 
+                          id="crossDept"
+                          checked={isCrossDepartment}
+                          onChange={(e) => setIsCrossDepartment(e.target.checked)}
+                          className="rounded border-slate-700 bg-[#0b101c] text-blue-600 focus:ring-blue-500"
+                        />
+                        <label htmlFor="crossDept" className="text-xs text-slate-300 cursor-pointer">Mayor's Office (Cross-Dept)</label>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2 text-xs text-slate-400">
-                      <Lock className="h-3 w-3" />
-                      <span>Mayor's Office can cross-department release.</span>
-                    </div>
+
+                    {isCrossDepartment && (
+                      <div className="bg-[#121829] border border-slate-700 text-slate-300 text-sm rounded-lg p-2.5 flex items-center justify-between">
+                        <span>Mayor's Office</span>
+                        <Lock className="h-3.5 w-3.5 text-slate-500" />
+                      </div>
+                    )}
                   </div>
 
                   <div>
@@ -450,7 +463,6 @@ const MayorPending = () => {
 
       </div>
 
-      {/* Dialogs */}
       <Dialog open={showRejectDialog} onOpenChange={setShowRejectDialog}>
         <DialogContent className="bg-[#121829] border-slate-700 text-slate-200">
           <DialogHeader><DialogTitle className="text-white">Reject Trip Ticket</DialogTitle></DialogHeader>
