@@ -1,16 +1,14 @@
 // src/pages/mayor/MayorPending.jsx
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { useAutoRefresh } from "../../hooks/useAutoRefresh";
-import { useRealtime } from "../../contexts/RealtimeContext";
 import { mayorsOfficeAPI } from "../../services/api";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   Clock, RefreshCw, Loader2, Truck, XCircle, Info, 
-  AlertCircle, Building2, CheckCircle, Receipt, FileText, Check, ArrowRight, 
-  Sparkles, Fuel, AlertTriangle, Activity
+  CheckCircle, FileText, Check, ArrowRight, 
+  Sparkles, Fuel, AlertTriangle, Activity, Edit
 } from "lucide-react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter
@@ -21,9 +19,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "react-hot-toast";
 import { cn } from "@/lib/utils";
 
-// ============================================
-// HELPERS
-// ============================================
 const formatDate = (dateString) => {
   if (!dateString) return "N/A";
   return new Date(dateString).toLocaleDateString("en-PH", { year: "numeric", month: "short", day: "numeric" });
@@ -50,11 +45,7 @@ const StatusPill = ({ status }) => {
   );
 };
 
-// ============================================
-// MAIN COMPONENT
-// ============================================
 const MayorPending = () => {
-  const { isConnected } = useRealtime();
   const queryClient = useQueryClient();
 
   const [activeTab, setActiveTab] = useState("pending");
@@ -73,8 +64,6 @@ const MayorPending = () => {
   const [searchTerm, setSearchTerm] = useState("");
   
   const [requestingDeptBalance, setRequestingDeptBalance] = useState(null);
-  
-  // ✅ States for Warning
   const [showTankWarning, setShowTankWarning] = useState(false);
   const [pendingPayload, setPendingPayload] = useState(null);
 
@@ -167,7 +156,6 @@ const MayorPending = () => {
 
   const selectedTicketId = selectedTicket?.id || selectedTicket?.trip_ticket_id;
 
-  // ✅ Fetch Suggestion
   const { data: suggestionResponse, isLoading: loadingSuggestion } = useQuery({
     queryKey: ["suggest-release", selectedTicketId],
     queryFn: () => mayorsOfficeAPI.getSuggestedRelease(selectedTicketId),
@@ -178,14 +166,12 @@ const MayorPending = () => {
 
   const suggestion = suggestionResponse?.data?.data;
 
-  // ✅ Approve Click (With Warning if Exceeds Suggestion)
   const handleApprove = async () => {
     if (!amountReleased || parseFloat(amountReleased) <= 0) {
       return toast.error("Please enter a valid amount");
     }
     const amount = parseFloat(amountReleased);
 
-    // Check if the entered amount exceeds the suggested amount
     if (suggestion && suggestion.available && amount > suggestion.suggested_amount) {
         setPendingPayload({
             amount_released: amount,
@@ -211,20 +197,6 @@ const MayorPending = () => {
       fetchTickets();
     } catch (error) {
       toast.error(error.response?.data?.message || "Failed to release funds");
-    } finally { setSubmitting(false); }
-  };
-
-  const handleReject = async () => {
-    if (!rejectionNote.trim()) return toast.error("Please provide a reason");
-    setSubmitting(true);
-    try {
-      await mayorsOfficeAPI.rejectTicket(selectedTicket.id || selectedTicket.trip_ticket_id, rejectionNote);
-      toast.success("Ticket rejected");
-      setShowRejectDialog(false);
-      setShowRightPanel(false);
-      fetchTickets();
-    } catch (error) {
-      toast.error(error.response?.data?.message || "Failed to reject ticket");
     } finally { setSubmitting(false); }
   };
 
@@ -293,7 +265,7 @@ const MayorPending = () => {
                   <th className="px-4 py-4 font-medium">Department</th>
                   <th className="px-4 py-4 font-medium">Vehicle</th>
                   <th className="px-4 py-4 font-medium">Status</th>
-                  <th className="px-4 py-4 font-medium text-right">Action</th>
+                  {/* ✅ Gi-remove ang Actions column header */}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/50">
@@ -304,9 +276,7 @@ const MayorPending = () => {
                     <td className="px-4 py-4">{ticket.department_name}</td>
                     <td className="px-4 py-4">{ticket.vehicle?.plate_number || 'N/A'}</td>
                     <td className="px-4 py-4"><StatusPill status={ticket.status} /></td>
-                    <td className="px-4 py-4 text-right">
-                      <Button size="sm" className="rounded-lg h-8 px-4 bg-blue-600 hover:bg-blue-700 text-white">Review</Button>
-                    </td>
+                    {/* ✅ Gi-remove ang Actions column data */}
                   </tr>
                 ))}
               </tbody>
@@ -324,7 +294,6 @@ const MayorPending = () => {
 
             <div className="p-5 flex-1 overflow-y-auto space-y-5">
               
-              {/* 1. Trip Details Box */}
               <div className="bg-[#0b101c] rounded-xl p-4 border border-slate-800 text-sm">
                 <div className="flex items-center gap-2 mb-3 pb-2 border-b border-slate-800">
                   <Truck className="h-4 w-4 text-blue-500" />
@@ -341,7 +310,6 @@ const MayorPending = () => {
                 </div>
               </div>
 
-              {/* 2. Vehicle Fuel Information Box */}
               <div className="bg-[#0b101c] rounded-xl p-4 border border-slate-800 text-sm">
                 <div className="flex items-center justify-between mb-3 pb-2 border-b border-slate-800">
                   <div className="flex items-center gap-2">
@@ -352,7 +320,6 @@ const MayorPending = () => {
                 </div>
                 
                 <div className="flex items-center gap-6">
-                  {/* Gauge */}
                   <div className="relative w-24 h-12 overflow-hidden flex items-end justify-center pb-1">
                     <svg viewBox="0 0 100 50" className="absolute inset-0 w-full h-full">
                         <path d="M 10 50 A 40 40 0 0 1 90 50" fill="none" stroke="#1e293b" strokeWidth="10" strokeLinecap="round" />
@@ -364,7 +331,6 @@ const MayorPending = () => {
                     </div>
                   </div>
 
-                  {/* Stats */}
                   <div className="flex-1 space-y-2 border-l border-slate-800 pl-4">
                     <div className="flex items-center gap-2">
                         <Fuel className="h-4 w-4 text-slate-500" />
@@ -381,78 +347,93 @@ const MayorPending = () => {
                 <p className="text-[10px] text-slate-500 mt-3 flex items-center gap-1"><Info className="h-3 w-3"/> This fuel balance is an estimate, based on GSO records.</p>
               </div>
 
-              {/* 3. Fuel Consumption Details */}
-              {suggestion && suggestion.available && (
-                <div className="bg-[#0b101c] rounded-xl p-4 border border-slate-800 flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-sm text-slate-300">
-                    <Activity className="h-4 w-4 text-blue-500" /> Estimated Fuel Requirement
+              {/* Suggestion Box & Inputs (Only show if Pending) */}
+              {activeTab === 'pending' ? (
+                <>
+                  {suggestion && suggestion.available && (
+                    <div className="bg-[#0b101c] rounded-xl p-4 border border-slate-800 flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-sm text-slate-300">
+                        <Activity className="h-4 w-4 text-blue-500" /> Estimated Fuel Requirement
+                      </div>
+                      <span className="font-bold text-white text-lg">{suggestion.suggested_liters ? suggestion.suggested_liters.toFixed(1) : '0.0'} L</span>
+                    </div>
+                  )}
+
+                  {loadingSuggestion ? (
+                    <div className="flex justify-center py-4"><Loader2 className="h-5 w-5 animate-spin text-slate-500" /></div>
+                  ) : suggestion && suggestion.available ? (
+                    <div className="bg-amber-950/20 border border-amber-500/30 rounded-xl p-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Sparkles className="h-4 w-4 text-amber-500" />
+                        <span className="text-sm font-bold text-white">Suggested Release</span>
+                        <Badge className="bg-amber-500 text-black text-[9px] px-1.5 py-0 font-bold ml-1">LOW</Badge>
+                      </div>
+                      <div className="flex items-baseline gap-2 mb-1">
+                        <span className="text-2xl font-bold text-white">{formatCurrency(suggestion.suggested_amount)}</span>
+                        <span className="text-xs text-slate-400">≈ {suggestion.suggested_liters ? suggestion.suggested_liters.toFixed(1) : '0.0'} L × ₱{suggestion.unit_price_hint || 0} / L</span>
+                      </div>
+                      <p className="text-[11px] text-amber-200/70">{suggestion.message}</p>
+                      
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setAmountReleased(String(suggestion.suggested_amount))}
+                        className="w-full mt-3 h-8 text-xs border-amber-600 text-amber-400 hover:bg-amber-950"
+                      >
+                        <Check className="h-3 w-3 mr-1" /> Use Suggested Amount
+                      </Button>
+                    </div>
+                  ) : null}
+
+                  <div>
+                    <label className="text-sm font-bold text-white mb-2 flex items-center gap-2">
+                        Amount to Release (₱)
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">₱</span>
+                      <Input 
+                        type="number" 
+                        value={amountReleased} 
+                        onChange={(e) => setAmountReleased(e.target.value)} 
+                        placeholder="Enter amount" 
+                        className="pl-8 bg-[#0b101c] border-slate-700 text-white text-lg font-mono h-12 rounded-xl" 
+                      />
+                    </div>
                   </div>
-                  <span className="font-bold text-white text-lg">{suggestion.suggested_liters ? suggestion.suggested_liters.toFixed(1) : '0.0'} L</span>
+                </>
+              ) : (
+                /* ✅ Edit Details Button kung Funds Issued na (o uban pa) */
+                <div className="pt-4 border-t border-slate-800">
+                   <Button 
+                     onClick={() => {/* Logic for editing here */}} 
+                     variant="outline" 
+                     className="w-full h-12 rounded-xl border-blue-600 text-blue-400 hover:bg-blue-950"
+                   >
+                     <Edit className="h-5 w-5 mr-2" /> Edit Details
+                   </Button>
                 </div>
               )}
 
-              {/* 4. Suggested Release Box */}
-              {loadingSuggestion ? (
-                <div className="flex justify-center py-4"><Loader2 className="h-5 w-5 animate-spin text-slate-500" /></div>
-              ) : suggestion && suggestion.available ? (
-                <div className="bg-amber-950/20 border border-amber-500/30 rounded-xl p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Sparkles className="h-4 w-4 text-amber-500" />
-                    <span className="text-sm font-bold text-white">Suggested Release</span>
-                    <Badge className="bg-amber-500 text-black text-[9px] px-1.5 py-0 font-bold ml-1">LOW</Badge>
-                  </div>
-                  <div className="flex items-baseline gap-2 mb-1">
-                    <span className="text-2xl font-bold text-white">{formatCurrency(suggestion.suggested_amount)}</span>
-                    <span className="text-xs text-slate-400">≈ {suggestion.suggested_liters ? suggestion.suggested_liters.toFixed(1) : '0.0'} L × ₱{suggestion.unit_price_hint || 0} / L</span>
-                  </div>
-                  <p className="text-[11px] text-amber-200/70">{suggestion.message}</p>
-                  
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setAmountReleased(String(suggestion.suggested_amount))}
-                    className="w-full mt-3 h-8 text-xs border-amber-600 text-amber-400 hover:bg-amber-950"
-                  >
-                    <Check className="h-3 w-3 mr-1" /> Use Suggested Amount
-                  </Button>
-                </div>
-              ) : null}
+            </div>
 
-              {/* 5. Amount to Release Input */}
-              <div>
-                <label className="text-sm font-bold text-white mb-2 flex items-center gap-2">
-                    <Building2 className="h-4 w-4 text-slate-400" /> Amount to Release (₱)
-                </label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">₱</span>
-                  <Input 
-                    type="number" 
-                    value={amountReleased} 
-                    onChange={(e) => setAmountReleased(e.target.value)} 
-                    placeholder="Enter amount" 
-                    className="pl-8 bg-[#0b101c] border-slate-700 text-white text-lg font-mono h-12 rounded-xl" 
-                  />
-                </div>
+            {/* Action Buttons (Only show for Pending) */}
+            {activeTab === 'pending' && (
+              <div className="p-5 border-t border-slate-800 flex gap-3">
+                <Button onClick={handleApprove} disabled={submitting} className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white font-bold h-12 rounded-xl text-md">
+                  {submitting ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : <Check className="h-5 w-5 mr-2" />} Release Funds
+                </Button>
+                <Button onClick={() => setShowRejectDialog(true)} variant="destructive" className="flex-1 bg-red-500 hover:bg-red-600 text-white font-bold h-12 rounded-xl text-md">
+                  <XCircle className="h-5 w-5 mr-2" /> Reject
+                </Button>
               </div>
-
-            </div>
-
-            {/* Action Buttons */}
-            <div className="p-5 border-t border-slate-800 flex gap-3">
-              <Button onClick={handleApprove} disabled={submitting} className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white font-bold h-12 rounded-xl text-md">
-                {submitting ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : <Check className="h-5 w-5 mr-2" />} Release Funds
-              </Button>
-              <Button onClick={() => setShowRejectDialog(true)} variant="destructive" className="flex-1 bg-red-500 hover:bg-red-600 text-white font-bold h-12 rounded-xl text-md">
-                <XCircle className="h-5 w-5 mr-2" /> Reject
-              </Button>
-            </div>
+            )}
           </div>
         )}
 
       </div>
 
-      {/* Rejection Dialog */}
+      {/* Dialogs */}
       <Dialog open={showRejectDialog} onOpenChange={setShowRejectDialog}>
         <DialogContent className="bg-[#121829] border-slate-700 text-slate-200">
           <DialogHeader><DialogTitle className="text-white">Reject Trip Ticket</DialogTitle></DialogHeader>
@@ -462,30 +443,24 @@ const MayorPending = () => {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowRejectDialog(false)} className="border-slate-700 text-slate-300">Cancel</Button>
-            <Button onClick={handleReject} disabled={submitting} className="bg-red-600 hover:bg-red-700 text-white">Reject Ticket</Button>
+            <Button onClick={() => {}} className="bg-red-600 hover:bg-red-700 text-white">Reject Ticket</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* ✅ TANK CAPACITY WARNING DIALOG */}
       <Dialog open={showTankWarning} onOpenChange={setShowTankWarning}>
         <DialogContent className="max-w-md bg-[#121829] border-slate-700 text-slate-200">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-amber-400">
-              <AlertTriangle className="h-5 w-5" />
-              Warning: Fuel Exceeds Suggestion
+              <AlertTriangle className="h-5 w-5" /> Warning
             </DialogTitle>
             <DialogDescription className="text-slate-400 pt-2">
               Fuel may exceed to tank capacity with that amount. Continue anyway?
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="mt-4 gap-2">
-            <Button variant="outline" onClick={() => setShowTankWarning(false)} className="border-slate-700 text-slate-300 hover:bg-slate-800">
-              No, Cancel
-            </Button>
-            <Button onClick={() => submitApprove(pendingPayload)} className="bg-amber-600 hover:bg-amber-700 text-white">
-              Yes, Continue
-            </Button>
+            <Button variant="outline" onClick={() => setShowTankWarning(false)} className="border-slate-700 text-slate-300 hover:bg-slate-800">No, Cancel</Button>
+            <Button onClick={() => submitApprove(pendingPayload)} className="bg-amber-600 hover:bg-amber-700 text-white">Yes, Continue</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
