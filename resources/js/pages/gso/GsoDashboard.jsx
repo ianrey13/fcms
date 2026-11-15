@@ -125,7 +125,11 @@ const GsoDashboard = () => {
 
     // ============ MUTATIONS ============
     const validateMutation = useMutation({
-        mutationFn: async ({ ticketId, data }) => await gsoAPI.validateTrip(ticketId, data),
+        mutationFn: async ({ ticketId, data }) => {
+            if (!ticketId) throw new Error("Ticket ID is missing");
+            const response = await gsoAPI.validateTrip(ticketId, data);
+            return response.data;
+        },
         onSuccess: (data) => {
             toast.success(data.message || "Trip validated successfully!");
             queryClient.invalidateQueries({ queryKey: ["gso-pending-validation"] });
@@ -135,7 +139,7 @@ const GsoDashboard = () => {
             setValidationNote("");
         },
         onError: (error) => {
-            toast.error(error?.response?.data?.message || "Failed to validate trip");
+            toast.error(error?.response?.data?.message || error.message || "Failed to validate trip");
         },
     });
 
@@ -159,7 +163,7 @@ const GsoDashboard = () => {
             .slice(0, 4);
     }, [allTrips]);
 
-    // Fuel Monitoring Table Filter (Functional Search & Dept Filter)
+    // Fuel Monitoring Table Filter
     const filteredVehicles = useMemo(() => {
         let result = vehicles;
         if (deptFilter !== "all") {
@@ -357,7 +361,6 @@ const GsoDashboard = () => {
                                     className="pl-8 h-8 text-xs bg-[#0b101c] border-slate-700 text-white rounded-lg" 
                                 />
                             </div>
-                            {/* ✅ FUNCTIONAL SELECTOR */}
                             <select
                                 value={deptFilter}
                                 onChange={(e) => setDeptFilter(e.target.value)}
@@ -522,7 +525,7 @@ const GsoDashboard = () => {
 
                 </div>
 
-                {/* 5. ✅ PENDING VALIDATION SECTION (Bag-o) */}
+                {/* 5. PENDING VALIDATION SECTION */}
                 <Card className="bg-[#121829] border-slate-800 shadow-lg">
                     <CardHeader className="border-b border-slate-800 pb-4">
                         <div className="flex items-center justify-between">
@@ -554,8 +557,8 @@ const GsoDashboard = () => {
                                     ) : pendingValidation.length === 0 ? (
                                         <tr><td colSpan={6} className="text-center py-6 text-slate-500">No pending validations.</td></tr>
                                     ) : pendingValidation.map(trip => (
-                                        <tr key={trip.trip_ticket_id} className="hover:bg-[#1a2235]">
-                                            <td className="px-4 py-3 font-mono text-white">{trip.trip_ticket_number}</td>
+                                        <tr key={trip.trip_ticket_id || trip.id} className="hover:bg-[#1a2235]">
+                                            <td className="px-4 py-3 font-mono text-white">{trip.trip_ticket_number || trip.ticket_number}</td>
                                             <td className="px-4 py-3">{formatDateShort(trip.trip_date)}</td>
                                             <td className="px-4 py-3">{trip.vehicle?.plate_number || 'N/A'}</td>
                                             <td className="px-4 py-3 truncate max-w-[150px]">{trip.destination}</td>
@@ -565,7 +568,10 @@ const GsoDashboard = () => {
                                             <td className="px-4 py-3 text-right">
                                                 <Button 
                                                     size="sm" 
-                                                    onClick={() => { setSelectedTicket(trip); setShowValidateDialog(true); }}
+                                                    onClick={() => { 
+                                                        setSelectedTicket(trip); 
+                                                        setShowValidateDialog(true); 
+                                                    }}
                                                     className="bg-emerald-600 hover:bg-emerald-700 h-8 px-3 text-xs"
                                                 >
                                                     <Check className="h-3.5 w-3.5 mr-1" /> Validate
@@ -597,7 +603,7 @@ const GsoDashboard = () => {
                     <div className="bg-[#0b101c] rounded-xl p-4 space-y-2 border border-slate-800">
                         <div className="flex justify-between text-sm">
                             <span className="text-slate-500">Ticket No:</span>
-                            <span className="font-mono font-semibold text-white">{selectedTicket?.trip_ticket_number}</span>
+                            <span className="font-mono font-semibold text-white">{selectedTicket?.trip_ticket_number || selectedTicket?.ticket_number}</span>
                         </div>
                         <div className="flex justify-between text-sm">
                             <span className="text-slate-500">Destination:</span>
@@ -623,7 +629,13 @@ const GsoDashboard = () => {
                     <DialogFooter className="gap-2 mt-4">
                         <Button variant="outline" onClick={() => setShowValidateDialog(false)} className="border-slate-700 text-slate-300">Cancel</Button>
                         <Button 
-                            onClick={() => validateMutation.mutate({ ticketId: selectedTicket.trip_ticket_id, data: { validation_note: validationNote } })} 
+                            onClick={() => {
+                                const ticketId = selectedTicket?.trip_ticket_id || selectedTicket?.id;
+                                validateMutation.mutate({ 
+                                    ticketId: ticketId, 
+                                    data: { validation_note: validationNote } 
+                                });
+                            }} 
                             disabled={validateMutation.isPending}
                             className="bg-emerald-600 hover:bg-emerald-700 text-white"
                         >
