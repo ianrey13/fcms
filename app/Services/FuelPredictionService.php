@@ -4,56 +4,172 @@ namespace App\Services;
 
 use App\Models\TripTicket;
 use App\Models\FuelReceipt;
-use App\Models\GasSlip;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Carbon;
 
 class FuelPredictionService
 {
     /**
-     * Suggest a release amount for a trip based on historical fuel consumption.
-     *
-     * Tiers (highest confidence first):
-     *   route-level:    same destination + same vehicle, N >= 5
-     *   vehicle-level:  same vehicle, N >= 3
-     *   dept-level:     same department, N >= 1
-     *   none:           no history
+     * Suggest a release amount for a trip based on destination, efficiency, and weighted average price.
      */
     public function suggestFor(TripTicket $trip): array
     {
-        $vehicleId    = $trip->vehicle_id;
-        $departmentId = $trip->department_id;
-        $destination  = trim((string) $trip->destination);
-
-        // ============ TIER 1: route-level ============
-        $routeRows = $this->historyQuery()
-            ->where('tt.vehicle_id', $vehicleId)
-            ->whereRaw('LOWER(TRIM(tt.destination)) = ?', [mb_strtolower($destination)])
-            ->get();
-
-        if ($routeRows->count() >= 5) {
-            return $this->buildResponse($routeRows, 'route', 'high', $trip);
+        $vehicle = $trip->vehicle;
+        
+        if (!$vehicle) {
+            return $this->emptyResponse('Vehicle not found.');
         }
 
-        // ============ TIER 2: vehicle-level ============
-        $vehicleRows = $this->historyQuery()
-            ->where('tt.vehicle_id', $vehicleId)
-            ->get();
+        // 1. Get Expected Round-trip Distance
+        $distanceData = $this->getExpectedDistance($trip->destination, $trip->department_id);
+        $roundTripDistance = $distanceData['distance'] * 2; // Round trip = × 2
 
-        if ($vehicleRows->count() >= 3) {
-            return $this->buildResponse($vehicleRows, 'vehicle', 'medium', $trip);
+        if ($roundTripDistance <= 0) {
+            return $this->emptyResponse('Cannot calculate distance for this destination.');
         }
 
-        // ============ TIER 3: department-level ============
-        $deptRows = $this->historyQuery()
-            ->where('tt.department_id', $departmentId)
-            ->get();
+        // 2. Get Reference Efficiency (Default to 10 km/L if not set)
+        $efficiency = (float) ($vehicle->reference_efficiency ?: 10.0);
 
-        if ($deptRows->count() >= 1) {
-            return $this->buildResponse($deptRows, 'department', 'low', $trip);
+        // 3. Calculate Estimated Liters
+        $estimatedLiters = $roundTripDistance / $efficiency;
+
+        // 4. Get Weighted Average Fuel Price
+        $weightedPriceData = $this->calculateWeightedAveragePrice($vehicle->fuel_type);
+        $weightedPrice = $weightedPriceData['price'];
+
+        if ($weightedPrice <= 0) {
+            return $this->emptyResponse('No historical fuel receipts found to compute weighted average price.');
         }
 
-        // ============ NO HISTORY ============
+        // 5. Compute Suggested Release Amount
+        $suggestedAmount = $estimatedLiters * $weightedPrice;
+
+        // Build sample basis from recent receipts of this fuel type
+        $basis = $this->getRecentReceiptsBasis($vehicle->fuel_type);
+
+        return [
+            'available'          => true,
+            'confidence'         => $distanceData['source'] === 'historical' ? 'high' : 'low',
+            'tier'               => $distanceData['source'],
+            'sample_size'        => $weightedPriceData['sample_size'],
+            'suggested_amount'   => round($suggestedAmount, 2),
+            'suggested_liters'   => round($estimatedLiters, 2),
+            'range_min'          => round($suggestedAmount * 0.9, 2), // 10% margin
+            'range_max'          => round($suggestedAmount * 1.1, 2), // +10% margin
+            'avg_amount'         => round($suggestedAmount, 2),
+            'avg_liters'         => round($estimatedLiters, 2),
+            'unit_price_hint'    => round($weightedPrice, 2),
+            'basis'              => $basis,
+            'message'            => sprintf(
+                "Based on %s distance (%.1f km round-trip) ÷ %.1f km/L × ₱%.2f/L.",
+                $distanceData['source'] === 'historical' ? 'historical' : 'default',
+                $roundTripDistance,
+                $efficiency,
+                $weightedPrice
+            ),
+        ];
+    }
+
+    /**
+     * Get Expected Distance (1-way) based on past trips or fallback.
+     */
+    private function getExpectedDistance($destination, $departmentId): array
+    {
+        // Try to find average distance from past trips with the same destination
+        $query = TripTicket::where('destination', 'LIKE', '%' . trim($destination) . '%')
+            ->whereIn('status', ['closed', 'completed', 'pending_gso_validation'])
+            ->whereNotNull('actual_distance_km')
+            ->where('actual_distance_km', '>', 0);
+
+        if ($departmentId) {
+            $query->where('department_id', $departmentId);
+        }
+
+        $avgDistance = $query->avg('actual_distance_km');
+
+        if ($avgDistance && $avgDistance > 0) {
+            return [
+                'distance' => (float) $avgDistance,
+                'source' => 'historical'
+            ];
+        }
+
+        // Fallback: Default estimate (e.g., 20 km one-way) if no history exists
+        return [
+            'distance' => 20.0,
+            'source' => 'default'
+        ];
+    }
+
+    /**
+     * Calculate Weighted Average Fuel Price for a specific fuel type over the last 30 days.
+     * Formula: Σ(Quantity × Unit Price) / Σ(Quantity)
+     */
+    private function calculateWeightedAveragePrice($fuelType): array
+    {
+        // Get receipts from the last 30 days for the specific fuel type
+        $receipts = FuelReceipt::join('gas_slip as gs', 'fuel_receipt.gas_slip_id', '=', 'gs.gas_slip_id')
+            ->join('trip_ticket as tt', 'gs.trip_ticket_id', '=', 'tt.trip_ticket_id')
+            ->join('vehicles as v', 'tt.vehicle_id', '=', 'v.vehicle_id')
+            ->where('v.fuel_type', $fuelType)
+            ->whereNotNull('fuel_receipt.liters_availed')
+            ->whereNotNull('fuel_receipt.unit_price')
+            ->where('fuel_receipt.liters_availed', '>', 0)
+            ->where('fuel_receipt.unit_price', '>', 0)
+            ->where('fuel_receipt.receipt_uploaded_at', '>=', now()->subDays(30))
+            ->select('fuel_receipt.liters_availed', 'fuel_receipt.unit_price')
+            ->get();
+
+        if ($receipts->isEmpty()) {
+            return ['price' => 0, 'sample_size' => 0];
+        }
+
+        $totalCost = 0;
+        $totalLiters = 0;
+
+        foreach ($receipts as $receipt) {
+            $liters = (float) $receipt->liters_availed;
+            $price  = (float) $receipt->unit_price;
+            
+            $totalCost += ($liters * $price);
+            $totalLiters += $liters;
+        }
+
+        $weightedPrice = $totalLiters > 0 ? ($totalCost / $totalLiters) : 0;
+
+        return [
+            'price' => $weightedPrice,
+            'sample_size' => $receipts->count()
+        ];
+    }
+
+    /**
+     * Get last 5 receipts to show as "basis" in the UI.
+     */
+    private function getRecentReceiptsBasis($fuelType)
+    {
+        return FuelReceipt::join('gas_slip as gs', 'fuel_receipt.gas_slip_id', '=', 'gs.gas_slip_id')
+            ->join('trip_ticket as tt', 'gs.trip_ticket_id', '=', 'tt.trip_ticket_id')
+            ->join('vehicles as v', 'tt.vehicle_id', '=', 'v.vehicle_id')
+            ->where('v.fuel_type', $fuelType)
+            ->whereNotNull('fuel_receipt.liters_availed')
+            ->whereNotNull('fuel_receipt.unit_price')
+            ->select([
+                'tt.trip_ticket_number as ticket_number',
+                'tt.trip_date',
+                'fuel_receipt.amount_on_receipt as amount',
+                'fuel_receipt.liters_availed as liters',
+                'fuel_receipt.unit_price',
+                'tt.destination'
+            ])
+            ->orderBy('fuel_receipt.receipt_uploaded_at', 'desc')
+            ->limit(5)
+            ->get()
+            ->toArray();
+    }
+
+    private function emptyResponse($message)
+    {
         return [
             'available'          => false,
             'confidence'         => 'none',
@@ -65,160 +181,9 @@ class FuelPredictionService
             'range_max'          => null,
             'avg_amount'         => null,
             'avg_liters'         => null,
-            'unit_price_hint'    => $this->currentUnitPrice($trip),
+            'unit_price_hint'    => null,
             'basis'              => [],
-            'message'            => 'Not enough history to suggest a release amount. Enter manually.',
+            'message'            => $message,
         ];
-    }
-
-    /**
-     * Base query joining fuel_receipt → gas_slip → trip_ticket.
-     * Only verified receipts from closed/completed trips.
-     */
-    private function historyQuery()
-    {
-        return FuelReceipt::query()
-            ->join('gas_slip as gs', 'fuel_receipt.gas_slip_id', '=', 'gs.gas_slip_id')
-            ->join('trip_ticket as tt', 'gs.trip_ticket_id', '=', 'tt.trip_ticket_id')
-            ->whereIn('tt.status', ['closed', 'completed', 'pending_gso_validation'])
-            ->whereNotNull('fuel_receipt.amount_on_receipt')
-            ->where('fuel_receipt.amount_on_receipt', '>', 0)
-            ->select([
-                'fuel_receipt.fuel_receipt_id',
-                'fuel_receipt.amount_on_receipt',
-                'fuel_receipt.liters_availed',
-                'fuel_receipt.unit_price',
-                'tt.trip_ticket_id',
-                'tt.trip_ticket_number',
-                'tt.trip_date',
-                'tt.destination',
-                'tt.vehicle_id',
-                'tt.department_id',
-            ])
-            ->orderBy('tt.trip_date', 'desc')
-            ->limit(50);
-    }
-
-    /**
-     * Compute suggestion from a collection of history rows.
-     */
-    private function buildResponse($rows, string $tier, string $confidence, TripTicket $trip): array
-    {
-        $amounts = $rows->pluck('amount_on_receipt')->map(fn($v) => (float) $v)->filter(fn($v) => $v > 0)->values();
-        $liters  = $rows->pluck('liters_availed')->map(fn($v) => (float) $v)->filter(fn($v) => $v > 0)->values();
-
-        if ($amounts->isEmpty()) {
-            return [
-                'available'        => false,
-                'confidence'       => 'none',
-                'tier'             => $tier,
-                'sample_size'      => 0,
-                'suggested_amount' => null,
-                'suggested_liters' => null,
-                'range_min'        => null,
-                'range_max'        => null,
-                'avg_amount'       => null,
-                'avg_liters'       => null,
-                'unit_price_hint'  => $this->currentUnitPrice($trip),
-                'basis'            => [],
-                'message'          => 'Insufficient verified fuel data.',
-            ];
-        }
-
-        // ✅ SWITCHED TO AVERAGE (MEAN)
-        $avgAmount = round($amounts->avg(), 2);
-        $avgLiters = $liters->isNotEmpty() ? round($liters->avg(), 2) : null;
-
-        // Calculate Standard Deviation for a realistic range
-        $variance = 0;
-        if ($amounts->count() > 1) {
-            $variance = $amounts->map(fn($v) => pow($v - $avgAmount, 2))->sum() / ($amounts->count() - 1);
-        }
-        $stdDev = sqrt($variance);
-        
-        // Range is Mean ± 1 Standard Deviation (clamped to 0 to avoid negative amounts)
-        $rangeMin = max(0, round($avgAmount - $stdDev, 2));
-        $rangeMax = round($avgAmount + $stdDev, 2);
-
-        // Derive liters from average if we don't have enough liters history
-        $unitPrice = null;
-        $suggestedLiters = null;
-
-        if ($liters->isNotEmpty()) {
-            $suggestedLiters = $avgLiters;
-        }
-
-        // Fallback: derive liters from a recent unit price
-        $unitPrices = $rows->pluck('unit_price')->map(fn($v) => (float) $v)->filter(fn($v) => $v > 0)->values();
-        if ($unitPrices->isNotEmpty()) {
-            $unitPrice = round($unitPrices->avg(), 2);
-        }
-
-        if ($suggestedLiters === null && $unitPrice && $unitPrice > 0) {
-            $suggestedLiters = round($avgAmount / $unitPrice, 2);
-        }
-
-        // Basis: last 5 entries for the "why" tooltip
-        $basis = $rows->take(5)->map(fn($r) => [
-            'ticket_number'    => $r->trip_ticket_number,
-            'trip_date'        => $r->trip_date,
-            'amount'           => (float) $r->amount_on_receipt,
-            'liters'           => $r->liters_availed ? (float) $r->liters_availed : null,
-            'destination'      => $r->destination,
-        ])->values()->toArray();
-
-        return [
-            'available'        => true,
-            'confidence'       => $confidence,   // high | medium | low
-            'tier'             => $tier,         // route | vehicle | department
-            'sample_size'      => $rows->count(),
-            'suggested_amount' => $avgAmount,    // ✅ Now returns Average
-            'suggested_liters' => $suggestedLiters,
-            'range_min'        => $rangeMin,     // ✅ Now Mean - StdDev
-            'range_max'        => $rangeMax,     // ✅ Now Mean + StdDev
-            'avg_amount'       => $avgAmount,
-            'avg_liters'       => $avgLiters,
-            'unit_price_hint'  => $unitPrice,
-            'basis'            => $basis,
-            'message'          => $this->buildMessage($tier, $rows->count(), $avgAmount, $rangeMin, $rangeMax),
-        ];
-    }
-
-    private function buildMessage(string $tier, int $n, float $amount, float $min, float $max): string
-    {
-        $tierLabel = match ($tier) {
-            'route'      => "this route on this vehicle",
-            'vehicle'    => "this vehicle",
-            'department' => "this department",
-            default      => "history",
-        };
-
-        return sprintf(
-            "Based on %d prior trip%s on %s: average ₱%s (range ₱%s – ₱%s).",
-            $n,
-            $n === 1 ? '' : 's',
-            $tierLabel,
-            number_format($amount, 2),
-            number_format($min, 2),
-            number_format($max, 2)
-        );
-    }
-
-    private function currentUnitPrice(TripTicket $trip): ?float
-    {
-        // ✅ Load vehicle if it's missing to prevent null errors
-        if (!$trip->relationLoaded('vehicle')) {
-            $trip->load('vehicle');
-        }
-
-        if (!$trip->vehicle || !$trip->vehicle->fuel_type) {
-            return null;
-        }
-
-        $setting = DB::table('system_setting')
-            ->where('setting_key', $trip->vehicle->fuel_type . '_price_per_liter')
-            ->first();
-
-        return $setting ? (float) $setting->setting_value : null;
     }
 }
