@@ -34,8 +34,7 @@ php artisan view:clear || true
 php artisan cache:clear || true
 
 echo "🔧 Building production caches..."
-# ✅ GITANGGAL ANG config:cache ARON DILI MA-CACHE ANG BLANGKO NGA DB VARIABLES
-# php artisan config:cache || echo "⚠️ config:cache failed" 
+php artisan config:cache || echo "⚠️ config:cache failed"
 php artisan route:cache || echo "⚠️ route:cache failed"
 php artisan view:cache || echo "⚠️ view:cache failed"
 
