@@ -35,7 +35,7 @@ class FallbackLocationService
             // ============ LAGUINDINGAN BARANGAYS ============
             'aromahon' => [
                 'name' => 'Aromahon, Laguindingan',
-                'distance_km' => 3.2,
+                'distance_km' => 2.3,
                 'lat' => 8.568188570966955,
                 'lng' => 124.42507621024971,
                 'type' => 'barangay',
@@ -145,9 +145,10 @@ class FallbackLocationService
             ],
 
             // ============ ALUBIJID BARANGAYS ============
+            // ✅ UPDATED WITH THE ACCURATE DISTANCES YOU PROVIDED
             'alubijid_baybay' => [
                 'name' => 'Baybay, Alubijid',
-                'distance_km' => 8.2,
+                'distance_km' => 4.2,
                 'lat' => 8.5870,
                 'lng' => 124.4835,
                 'type' => 'barangay',
@@ -157,7 +158,7 @@ class FallbackLocationService
             ],
             'alubijid_benigwayan' => [
                 'name' => 'Benigwayan, Alubijid',
-                'distance_km' => 8.5,
+                'distance_km' => 5.2,
                 'lat' => 8.5458,
                 'lng' => 124.4457,
                 'type' => 'barangay',
@@ -167,7 +168,7 @@ class FallbackLocationService
             ],
             'alubijid_calatcat' => [
                 'name' => 'Calatcat, Alubijid',
-                'distance_km' => 9.1,
+                'distance_km' => 7.0,
                 'lat' => 8.5507,
                 'lng' => 124.4767,
                 'type' => 'barangay',
@@ -177,7 +178,7 @@ class FallbackLocationService
             ],
             'alubijid_lagtang' => [
                 'name' => 'Lagtang, Alubijid',
-                'distance_km' => 7.8,
+                'distance_km' => 5.4,
                 'lat' => 8.5657,
                 'lng' => 124.4846,
                 'type' => 'barangay',
@@ -187,7 +188,7 @@ class FallbackLocationService
             ],
             'alubijid_lanao' => [
                 'name' => 'Lanao, Alubijid',
-                'distance_km' => 6.5,
+                'distance_km' => 4.0,
                 'lat' => 8.5785,
                 'lng' => 124.4653,
                 'type' => 'barangay',
@@ -197,7 +198,7 @@ class FallbackLocationService
             ],
             'alubijid_loguilo' => [
                 'name' => 'Loguilo, Alubijid',
-                'distance_km' => 10.2,
+                'distance_km' => 6.9,
                 'lat' => 8.5754,
                 'lng' => 124.4993,
                 'type' => 'barangay',
@@ -207,7 +208,7 @@ class FallbackLocationService
             ],
             'alubijid_lourdes' => [
                 'name' => 'Lourdes, Alubijid',
-                'distance_km' => 9.8,
+                'distance_km' => 7.5,
                 'lat' => 8.5232,
                 'lng' => 124.4340,
                 'type' => 'barangay',
@@ -217,7 +218,7 @@ class FallbackLocationService
             ],
             'alubijid_lumbo' => [
                 'name' => 'Lumbo, Alubijid',
-                'distance_km' => 7.2,
+                'distance_km' => 2.1,
                 'lat' => 8.5719,
                 'lng' => 124.4575,
                 'type' => 'barangay',
@@ -227,7 +228,7 @@ class FallbackLocationService
             ],
             'alubijid_molocboloc' => [
                 'name' => 'Molocboloc, Alubijid',
-                'distance_km' => 7.5,
+                'distance_km' => 4.8,
                 'lat' => 8.5850,
                 'lng' => 124.4657,
                 'type' => 'barangay',
@@ -237,7 +238,7 @@ class FallbackLocationService
             ],
             'alubijid_poblacion' => [
                 'name' => 'Poblacion, Alubijid',
-                'distance_km' => 8.0,
+                'distance_km' => 4.2,
                 'lat' => 8.5745,
                 'lng' => 124.4744,
                 'type' => 'barangay',
@@ -247,7 +248,7 @@ class FallbackLocationService
             ],
             'alubijid_sampatulog' => [
                 'name' => 'Sampatulog, Alubijid',
-                'distance_km' => 9.5,
+                'distance_km' => 9.3,
                 'lat' => 8.5380,
                 'lng' => 124.4586,
                 'type' => 'barangay',
@@ -257,7 +258,7 @@ class FallbackLocationService
             ],
             'alubijid_sungay' => [
                 'name' => 'Sungay, Alubijid',
-                'distance_km' => 12.0,
+                'distance_km' => 18.1,
                 'lat' => 8.4510,
                 'lng' => 124.4070,
                 'type' => 'barangay',
@@ -267,7 +268,7 @@ class FallbackLocationService
             ],
             'alubijid_talaba' => [
                 'name' => 'Talaba, Alubijid',
-                'distance_km' => 9.6,
+                'distance_km' => 8.1,
                 'lat' => 8.5418,
                 'lng' => 124.4745,
                 'type' => 'barangay',
@@ -277,7 +278,7 @@ class FallbackLocationService
             ],
             'alubijid_taparak' => [
                 'name' => 'Taparak, Alubijid',
-                'distance_km' => 11.5,
+                'distance_km' => 13.4,
                 'lat' => 8.4791,
                 'lng' => 124.4112,
                 'type' => 'barangay',
@@ -287,7 +288,7 @@ class FallbackLocationService
             ],
             'alubijid_tugasnon' => [
                 'name' => 'Tugasnon, Alubijid',
-                'distance_km' => 10.8,
+                'distance_km' => 14.3,
                 'lat' => 8.4963,
                 'lng' => 124.4558,
                 'type' => 'barangay',
@@ -297,7 +298,7 @@ class FallbackLocationService
             ],
             'alubijid_tula' => [
                 'name' => 'Tula, Alubijid',
-                'distance_km' => 13.0,
+                'distance_km' => 20.3,
                 'lat' => 8.4334,
                 'lng' => 124.4167,
                 'type' => 'barangay',
