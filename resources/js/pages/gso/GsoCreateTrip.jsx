@@ -14,6 +14,7 @@ import {
 import { toast } from "react-hot-toast";
 import { cn } from "@/lib/utils";
 import { debounce } from "lodash";
+import RouteMap from "../../components/map/RouteMap"; // ✅ I-import balik ang RouteMap
 
 // ============================================
 // CONSTANTS
@@ -276,7 +277,7 @@ const GsoCreateTrip = () => {
         trip_date: new Date().toISOString().split("T")[0],
         purpose: "",
         passenger_name: "",
-        charge_to: "", // ✅ Gi-apil balik
+        charge_to: "", 
     });
 
     const [stops, setStops] = useState([{ address: "", lat: null, lng: null }]);
@@ -321,7 +322,7 @@ const GsoCreateTrip = () => {
                 driver_id: driverId,
                 department_id: deptId?.toString() || "",
                 vehicle_id: "", 
-                charge_to: deptCode, // ✅ Set charge_to based sa driver's dept
+                charge_to: deptCode, 
             }));
             setErrors(prev => ({ ...prev, driver_id: "", department_id: "", vehicle_id: "", charge_to: "" }));
         } else {
@@ -375,8 +376,6 @@ const GsoCreateTrip = () => {
 
         createTripMutation.mutate(payload);
     };
-
-    const gaugePercent = tripEstimate ? Math.min(100, (tripEstimate.distance_km / 500) * 100) : 0;
 
     return (
         <div className="min-h-screen bg-[#090e1a] p-4 md:p-6 font-sans text-slate-200">
@@ -457,22 +456,45 @@ const GsoCreateTrip = () => {
                             </div>
                         </div>
 
-                        <div className="bg-[#121829] border border-slate-800 rounded-2xl p-6 flex flex-col items-center justify-center shadow-lg relative">
-                            <div className="absolute top-4 left-4 flex items-center gap-2">
+                        {/* ✅ MAP CARD (GIBALIK) */}
+                        <div className="bg-[#121829] border border-slate-800 rounded-2xl p-4 flex flex-col justify-between shadow-lg relative">
+                            <div className="flex items-center gap-2 mb-2">
                                 <MapPin className="h-4 w-4 text-blue-500" />
-                                <h3 className="font-bold text-white">Round Trip Distance</h3>
+                                <h3 className="font-bold text-white">Route Preview</h3>
                             </div>
                             
-                            <div className="relative w-48 h-48 mt-8">
-                                <svg className="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
-                                    <path className="text-slate-800" strokeWidth="3" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
-                                    <path className="text-blue-500" strokeDasharray={`${gaugePercent}, 100`} strokeWidth="3" strokeLinecap="round" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
-                                </svg>
-                                <div className="absolute inset-0 flex flex-col items-center justify-center">
-                                    <Navigation className="h-6 w-6 text-blue-500 mb-1" />
-                                    <span className="text-3xl font-extrabold text-white">{tripEstimate ? tripEstimate.distance_km : 0} <span className="text-lg">km</span></span>
-                                    <span className="text-xs text-slate-400">Estimate</span>
-                                </div>
+                            <div className="flex-1 rounded-xl overflow-hidden min-h-[220px] border border-slate-700">
+                                {stops.some(s => s.lat && s.lng) ? (
+                                    <RouteMap
+                                        destination={stops[stops.length - 1]?.address || ""}
+                                        coordinates={{ lat: stops[0].lat, lng: stops[0].lng }}
+                                        waypoints={stops.filter(s => s.lat && s.lng).map(s => ({
+                                            lat: s.lat,
+                                            lng: s.lng,
+                                            address: s.address,
+                                        }))}
+                                        height="100%"
+                                        showRoute={true}
+                                        interactive={false}
+                                        className="w-full h-full"
+                                        showMarker={true}
+                                        draggableMarker={false}
+                                        vehicleId={formData.vehicle_id}
+                                        roundTrip={true}
+                                    />
+                                ) : (
+                                    <div className="w-full h-full flex flex-col items-center justify-center bg-[#0b101c]">
+                                        <MapPin className="h-8 w-8 text-slate-600 mb-2" />
+                                        <p className="text-xs text-slate-500 text-center px-4">Add a destination to preview route</p>
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="mt-4 pt-3 border-t border-slate-800">
+                                <p className="text-xs text-slate-400 mb-1">Estimated Round Trip Distance</p>
+                                <p className="text-xl font-bold text-white">
+                                    {tripEstimate ? tripEstimate.distance_km : 0} km
+                                </p>
                             </div>
                         </div>
                     </div>
