@@ -784,7 +784,7 @@ class MayorsOfficeController extends Controller
         return $period ? $period->period_id : 1;
     }
 
-    /**
+       /**
      * Reject ticket
      */
     public function rejectTicket(Request $request, $id)
@@ -834,7 +834,8 @@ class MayorsOfficeController extends Controller
 
             DB::commit();
 
-            $this->sendRejectionNotification($ticket, $request->review_note);
+            // ✅ TANGGALON O I-COMMENT OUT KINI KAY WALA SA MO CONTROLLER
+            // $this->sendRejectionNotification($ticket, $request->review_note);
 
             return response()->json([
                 'success' => true,
