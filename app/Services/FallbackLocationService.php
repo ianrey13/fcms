@@ -33,11 +33,12 @@ class FallbackLocationService
             ],
             
             // ============ LAGUINDINGAN BARANGAYS ============
+            // ✅ UPDATED FROM YOUR LATEST JSON
             'aromahon' => [
                 'name' => 'Aromahon, Laguindingan',
-                'distance_km' => 2.3,
-                'lat' => 8.568188570966955,
-                'lng' => 124.42507621024971,
+                'distance_km' => 2.7,
+                'lat' => 8.5681,
+                'lng' => 124.4247,
                 'type' => 'barangay',
                 'priority' => 1,
                 'region' => 'Laguindingan, Misamis Oriental',
@@ -45,9 +46,9 @@ class FallbackLocationService
             ],
             'gasi' => [
                 'name' => 'Gasi, Laguindingan',
-                'distance_km' => 3.5,
-                'lat' => 8.592385430506832,
-                'lng' => 124.43489460847877,
+                'distance_km' => 3.3,
+                'lat' => 8.5924,
+                'lng' => 124.4352,
                 'type' => 'barangay',
                 'priority' => 1,
                 'region' => 'Laguindingan, Misamis Oriental',
@@ -55,9 +56,9 @@ class FallbackLocationService
             ],
             'kibaghot' => [
                 'name' => 'Kibaghot, Laguindingan',
-                'distance_km' => 2.4,
-                'lat' => 8.590476453445167,
-                'lng' => 124.45143455712116,
+                'distance_km' => 3.4,
+                'lat' => 8.5905,
+                'lng' => 124.4514,
                 'type' => 'barangay',
                 'priority' => 1,
                 'region' => 'Laguindingan, Misamis Oriental',
@@ -65,9 +66,9 @@ class FallbackLocationService
             ],
             'lapad' => [
                 'name' => 'Lapad, Laguindingan',
-                'distance_km' => 3.1,
-                'lat' => 8.552553257537511,
-                'lng' => 124.43029849640729,
+                'distance_km' => 3.5,
+                'lat' => 8.5504,
+                'lng' => 124.4303,
                 'type' => 'barangay',
                 'priority' => 1,
                 'region' => 'Laguindingan, Misamis Oriental',
@@ -75,9 +76,9 @@ class FallbackLocationService
             ],
             'liberty' => [
                 'name' => 'Liberty, Laguindingan',
-                'distance_km' => 4.7,
-                'lat' => 8.605952526998712,
-                'lng' => 124.44462029289544,
+                'distance_km' => 4.6,
+                'lat' => 8.6048,
+                'lng' => 124.4447,
                 'type' => 'barangay',
                 'priority' => 1,
                 'region' => 'Laguindingan, Misamis Oriental',
@@ -85,9 +86,9 @@ class FallbackLocationService
             ],
             'mauswagon' => [
                 'name' => 'Mauswagon, Laguindingan',
-                'distance_km' => 5.3,
-                'lat' => 8.600695995707298,
-                'lng' => 124.41404409447382,
+                'distance_km' => 5.2,
+                'lat' => 8.6008,
+                'lng' => 124.4140,
                 'type' => 'barangay',
                 'priority' => 1,
                 'region' => 'Laguindingan, Misamis Oriental',
@@ -95,9 +96,9 @@ class FallbackLocationService
             ],
             'moog' => [
                 'name' => 'Moog, Laguindingan',
-                'distance_km' => 5.8,
-                'lat' => 8.60794417988988,
-                'lng' => 124.4693180377182,
+                'distance_km' => 6.4,
+                'lat' => 8.6079,
+                'lng' => 124.4695,
                 'type' => 'barangay',
                 'priority' => 1,
                 'region' => 'Laguindingan, Misamis Oriental',
@@ -105,9 +106,9 @@ class FallbackLocationService
             ],
             'poblacion' => [
                 'name' => 'Poblacion, Laguindingan',
-                'distance_km' => 0.5,
-                'lat' => 8.5755,
-                'lng' => 124.4440,
+                'distance_km' => 1.0,
+                'lat' => 8.5796,
+                'lng' => 124.4445,
                 'type' => 'barangay',
                 'priority' => 1,
                 'region' => 'Laguindingan, Misamis Oriental',
@@ -115,9 +116,9 @@ class FallbackLocationService
             ],
             'sambulawan' => [
                 'name' => 'Sambulawan, Laguindingan',
-                'distance_km' => 3.5,
-                'lat' => 8.588882207574162,
-                'lng' => 124.4198079407003,
+                'distance_km' => 3.3,
+                'lat' => 8.5889,
+                'lng' => 124.4198,
                 'type' => 'barangay',
                 'priority' => 1,
                 'region' => 'Laguindingan, Misamis Oriental',
@@ -125,9 +126,9 @@ class FallbackLocationService
             ],
             'sinai' => [
                 'name' => 'Sinai, Laguindingan',
-                'distance_km' => 2.1,
-                'lat' => 8.579140064923502,
-                'lng' => 124.42623233979945,
+                'distance_km' => 2.0,
+                'lat' => 8.5786,
+                'lng' => 124.4260,
                 'type' => 'barangay',
                 'priority' => 1,
                 'region' => 'Laguindingan, Misamis Oriental',
@@ -135,9 +136,9 @@ class FallbackLocationService
             ],
             'tubajon' => [
                 'name' => 'Tubajon, Laguindingan',
-                'distance_km' => 11.4,
-                'lat' => 8.621431183919565,
-                'lng' => 124.4619632769859,
+                'distance_km' => 11.2,
+                'lat' => 8.6214,
+                'lng' => 124.4618,
                 'type' => 'barangay',
                 'priority' => 1,
                 'region' => 'Laguindingan, Misamis Oriental',
@@ -145,7 +146,7 @@ class FallbackLocationService
             ],
 
             // ============ ALUBIJID BARANGAYS ============
-            // ✅ UPDATED WITH THE ACCURATE DISTANCES YOU PROVIDED
+            // ✅ KEPT FROM YOUR PREVIOUS FILE
             'alubijid_baybay' => [
                 'name' => 'Baybay, Alubijid',
                 'distance_km' => 4.2,
