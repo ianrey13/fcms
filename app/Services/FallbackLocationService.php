@@ -33,7 +33,6 @@ class FallbackLocationService
             ],
             
             // ============ LAGUINDINGAN BARANGAYS ============
-            // ✅ UPDATED FROM YOUR LATEST JSON
             'aromahon' => [
                 'name' => 'Aromahon, Laguindingan',
                 'distance_km' => 2.7,
@@ -145,8 +144,59 @@ class FallbackLocationService
                 'aliases' => ['tubajon barangay hall'],
             ],
 
+            // ============ SPECIAL GROUPS & LANDMARKS ============
+            'all_barangay' => [
+                'name' => 'All Barangay',
+                'distance_km' => 11.4,
+                'lat' => 8.621431183919565,
+                'lng' => 124.4619632769859,
+                'type' => 'group',
+                'priority' => 2,
+                'region' => 'Laguindingan, Misamis Oriental',
+                'aliases' => ['all barangay', 'all barangays'],
+            ],
+            'coastal_barangay' => [
+                'name' => 'Coastal Barangay',
+                'distance_km' => 11.4,
+                'lat' => 8.621427701784217,
+                'lng' => 124.46134992481697,
+                'type' => 'group',
+                'priority' => 2,
+                'region' => 'Laguindingan, Misamis Oriental',
+                'aliases' => ['coastal barangay'],
+            ],
+            'aor_laguindingan' => [
+                'name' => 'AOR Laguindingan',
+                'distance_km' => 11.4,
+                'lat' => 8.624609137625352,
+                'lng' => 124.46365073632487,
+                'type' => 'group',
+                'priority' => 2,
+                'region' => 'Laguindingan, Misamis Oriental',
+                'aliases' => ['aor', 'area of responsibility', 'laguindingan aor'],
+            ],
+            'laguindingan_airport' => [
+                'name' => 'Laguindingan Airport',
+                'distance_km' => 4.9,
+                'lat' => 8.610260789398502,
+                'lng' => 124.45795811031401,
+                'type' => 'landmark',
+                'priority' => 1,
+                'region' => 'Laguindingan, Misamis Oriental',
+                'aliases' => ['airport', 'laguindingan airport terminal'],
+            ],
+            'gk_heights' => [
+                'name' => 'GK Heights',
+                'distance_km' => 5.0,
+                'lat' => 8.6100,
+                'lng' => 124.4500,
+                'type' => 'landmark',
+                'priority' => 1,
+                'region' => 'Laguindingan, Misamis Oriental',
+                'aliases' => ['gk heights', 'gk', 'gk subdivision'],
+            ],
+
             // ============ ALUBIJID BARANGAYS ============
-            // ✅ KEPT FROM YOUR PREVIOUS FILE
             'alubijid_baybay' => [
                 'name' => 'Baybay, Alubijid',
                 'distance_km' => 4.2,
