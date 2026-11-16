@@ -205,7 +205,6 @@ class TripTicketController extends Controller
             $blockingStatuses = [
                 'draft',
                 'pending_mayors_office',
-                'returned_for_revision',
                 'funds_issued',
                 'acknowledged',
                 'in_transit',
