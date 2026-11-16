@@ -297,6 +297,8 @@ class MayorsOfficeController extends Controller
                     'pending_gso_validation',
                     'completed',
                     'closed',
+                    'returned_for_revision', 
+                'rejected',
                 ])
                 ->orderBy('submitted_at', 'desc')
                 ->get()

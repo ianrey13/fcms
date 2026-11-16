@@ -36,7 +36,7 @@ const StatusPill = ({ status }) => {
   else if (status === "acknowledged") { label = "Received"; color = "bg-yellow-500/20 text-yellow-400 border-yellow-500/30"; Icon = CheckCircle; }
   else if (status === "in_transit") { label = "For Verification"; color = "bg-purple-500/20 text-purple-400 border-purple-500/30"; Icon = Truck; }
   else if (["completed", "closed", "pending_gso_validation"].includes(status)) { label = "Verified"; color = "bg-emerald-500/20 text-emerald-400 border-emerald-500/30"; Icon = CheckCircle; }
-  else if (status === "rejected") { label = "Rejected"; color = "bg-red-500/20 text-red-400 border-red-500/30"; Icon = XCircle; }
+  else if (["rejected", "returned_for_revision"].includes(status)) { label = "Rejected"; color = "bg-red-500/20 text-red-400 border-red-500/30"; Icon = XCircle; }
 
   return (
     <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wide flex items-center gap-1.5 w-fit ${color}`}>
@@ -111,7 +111,8 @@ const MayorPending = () => {
       funds_issued: releasedFiltered.filter(t => t.status === 'funds_issued').length,
       for_verification: releasedFiltered.filter(t => t.status === 'in_transit' && !t.actual_fuel_cost).length,
       verified: releasedFiltered.filter(t => ["completed", "closed", "pending_gso_validation"].includes(t.status) || t.actual_fuel_cost > 0).length,
-      rejected: releasedFiltered.filter(t => t.status === 'rejected').length,
+      // ✅ I-APIL ANG returned_for_revision UG rejected
+      rejected: releasedFiltered.filter(t => ['rejected', 'returned_for_revision'].includes(t.status)).length,
     };
   }, [filteredTickets, releasedFiltered]);
 
@@ -127,7 +128,8 @@ const MayorPending = () => {
     if (activeTab === "funds_issued") return releasedFiltered.filter(t => t.status === 'funds_issued');
     if (activeTab === "for_verification") return releasedFiltered.filter(t => t.status === 'in_transit' && !t.actual_fuel_cost);
     if (activeTab === "verified") return releasedFiltered.filter(t => ["completed", "closed", "pending_gso_validation"].includes(t.status) || t.actual_fuel_cost > 0);
-    if (activeTab === "rejected") return releasedFiltered.filter(t => t.status === 'rejected');
+    // ✅ I-APIL ANG returned_for_revision UG rejected
+    if (activeTab === "rejected") return releasedFiltered.filter(t => ['rejected', 'returned_for_revision'].includes(t.status));
     return [];
   }, [activeTab, filteredTickets, releasedFiltered]);
 
@@ -206,7 +208,7 @@ const MayorPending = () => {
     } finally { setSubmitting(false); }
   };
 
-  // ✅ ADDED: Handle Reject Logic
+  // ✅ FIXED: Handle Reject with Hard Refresh
   const handleReject = async () => {
     if (!rejectionNote.trim() || rejectionNote.trim().length < 5) {
       return toast.error("Please provide a reason (at least 5 characters)");
@@ -214,14 +216,25 @@ const MayorPending = () => {
 
     setSubmitting(true);
     try {
-      await mayorsOfficeAPI.rejectTicket(selectedTicket.id || selectedTicket.trip_ticket_id, rejectionNote);
+      const ticketId = selectedTicket.id || selectedTicket.trip_ticket_id;
+      await mayorsOfficeAPI.rejectTicket(ticketId, rejectionNote);
+      
       toast.success("Ticket rejected successfully");
       setShowRejectDialog(false);
       setShowRightPanel(false);
       setRejectionNote("");
-      fetchTickets();
+      setSelectedTicket(null);
+
+      // Force re-fetch immediately
+      queryClient.invalidateQueries({ queryKey: ["mayor-pending-tickets"] });
+      queryClient.invalidateQueries({ queryKey: ["mayor-approved-tickets"] });
+      await fetchTickets();
+      
     } catch (error) {
-      toast.error(error.response?.data?.message || "Failed to reject ticket");
+      const errorMsg = error.response?.data?.errors?.review_note?.[0] 
+                    || error.response?.data?.message 
+                    || "Failed to reject ticket";
+      toast.error(errorMsg);
     } finally {
       setSubmitting(false);
     }
@@ -481,7 +494,6 @@ const MayorPending = () => {
 
       </div>
 
-      {/* ✅ UPDATED: Reject Dialog with Functional Button */}
       <Dialog open={showRejectDialog} onOpenChange={setShowRejectDialog}>
         <DialogContent className="bg-[#121829] border-slate-700 text-slate-200">
           <DialogHeader>
