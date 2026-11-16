@@ -136,96 +136,107 @@ class MayorsOfficeController extends Controller
      * Get pending tickets for fund release (pending_mayors_office status)
      */
     public function getPendingTickets(Request $request)
-    {
-        try {
-            $user = $request->user();
+{
+    try {
+        $user = $request->user();
 
-            if (!$user->isMayorsOffice()) {
-                return response()->json(['message' => 'Unauthorized'], 403);
+        if (!$user->isMayorsOffice()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $activeYear = $this->budgetService->getActiveFiscalYear();
+
+        // ── 1. FY-scoped query ─────────────────────────────────
+        $fyTickets = TripTicket::with(['vehicle', 'department', 'driver.user', 'gasSlip.fuelReceipt'])
+            ->where('status', 'pending_mayors_office')
+            ->whereYear('trip_date', $activeYear)
+            ->orderBy('submitted_at', 'asc')
+            ->get();
+
+        // ── 2. All-time count (lightweight) ────────────────────
+        $allTimeCount = TripTicket::where('status', 'pending_mayors_office')->count();
+
+        // ── 3. Map FY-scoped tickets ───────────────────────────
+        $tickets = $fyTickets->map(function ($ticket) {
+            $fuelReceipt = $ticket->gasSlip?->fuelReceipt;
+
+            $remainingBudget = $this->budgetService->getRemainingBudget($ticket->department_id);
+
+            $annualAmount = (float) $this->budgetService->getAnnualAmount($ticket->department_id);
+            $weeklySuggested = $annualAmount > 0 ? round($annualAmount / 52, 2) : 0;
+
+            $weeklyUsed = $this->getWeeklyUsedAmount($ticket->department_id);
+
+            $weeklyRemaining = max(0, $weeklySuggested - $weeklyUsed);
+            $weeklyExceeded = $weeklySuggested > 0 && $weeklyUsed > $weeklySuggested;
+
+            // ✅ Kuhaon ang Driver Name
+            $driverName = null;
+            if ($ticket->driver && $ticket->driver->user) {
+                $driverName = $ticket->driver->user->full_name;
             }
 
-            $activeYear = $this->budgetService->getActiveFiscalYear();
+            return [
+                'id' => $ticket->trip_ticket_id,
+                'ticket_number' => $ticket->trip_ticket_number,
+                'trip_date' => $ticket->trip_date,
+                'destination' => $ticket->destination,
+                'purpose' => $ticket->purpose,
+                'charge_to' => $ticket->charge_to,
+                'passenger_name' => $ticket->passenger_name, // ✅ Gidugang
+                'status' => $ticket->status,
+                'submitted_at' => $ticket->submitted_at,
+                'has_insufficient_budget' => $remainingBudget < ($ticket->estimated_cost ?? 0),
+                'budget_shortage' => max(0, ($ticket->estimated_cost ?? 0) - $remainingBudget),
+                'estimated_cost' => $ticket->estimated_fuel_liters
+                    ? ($ticket->estimated_fuel_liters * 88)
+                    : null,
+                'department_id' => $ticket->department_id,
+                'remaining_budget' => $remainingBudget,
+                'weekly_suggested' => $weeklySuggested,
+                'weekly_used' => $weeklyUsed,
+                'weekly_remaining' => $weeklyRemaining,
+                'weekly_exceeded' => $weeklyExceeded,
+                'weekly_ceiling' => $weeklySuggested,
+                'has_receipt' => $fuelReceipt && ($fuelReceipt->liters_availed > 0 || $fuelReceipt->amount_on_receipt > 0),
+                'receipt_status' => $ticket->gasSlip?->reconciliation_status ?? 'none',
 
-            // ── 1. FY-scoped query ─────────────────────────────────
-            $fyTickets = TripTicket::with(['vehicle', 'department', 'driver.user', 'gasSlip.fuelReceipt'])
-                ->where('status', 'pending_mayors_office')
-                ->whereYear('trip_date', $activeYear)
-                ->orderBy('submitted_at', 'asc')
-                ->get();
+                // ✅ LIVE FUEL COMPUTATION HERE
+                'vehicle' => $this->buildVehicleFuelPayload($ticket->vehicle),
 
-            // ── 2. All-time count (lightweight) ────────────────────
-            $allTimeCount = TripTicket::where('status', 'pending_mayors_office')->count();
-
-            // ── 3. Map FY-scoped tickets ───────────────────────────
-            $tickets = $fyTickets->map(function ($ticket) {
-                $fuelReceipt = $ticket->gasSlip?->fuelReceipt;
-
-                $remainingBudget = $this->budgetService->getRemainingBudget($ticket->department_id);
-
-                $annualAmount = (float) $this->budgetService->getAnnualAmount($ticket->department_id);
-                $weeklySuggested = $annualAmount > 0 ? round($annualAmount / 52, 2) : 0;
-
-                $weeklyUsed = $this->getWeeklyUsedAmount($ticket->department_id);
-
-                $weeklyRemaining = max(0, $weeklySuggested - $weeklyUsed);
-                $weeklyExceeded = $weeklySuggested > 0 && $weeklyUsed > $weeklySuggested;
-
-                return [
-                    'id' => $ticket->trip_ticket_id,
-                    'ticket_number' => $ticket->trip_ticket_number,
-                    'trip_date' => $ticket->trip_date,
-                    'destination' => $ticket->destination,
-                    'purpose' => $ticket->purpose,
-                    'charge_to' => $ticket->charge_to,
-                    'passenger_name' => $ticket->passenger_name,
-                    'status' => $ticket->status,
-                    'submitted_at' => $ticket->submitted_at,
-                    'has_insufficient_budget' => $remainingBudget < ($ticket->estimated_cost ?? 0),
-                    'budget_shortage' => max(0, ($ticket->estimated_cost ?? 0) - $remainingBudget),
-                    'estimated_cost' => $ticket->estimated_fuel_liters
-                        ? ($ticket->estimated_fuel_liters * 88)
-                        : null,
-                    'department_id' => $ticket->department_id,
-                    'remaining_budget' => $remainingBudget,
-                    'weekly_suggested' => $weeklySuggested,
-                    'weekly_used' => $weeklyUsed,
-                    'weekly_remaining' => $weeklyRemaining,
-                    'weekly_exceeded' => $weeklyExceeded,
-                    'weekly_ceiling' => $weeklySuggested,
-                    'has_receipt' => $fuelReceipt && ($fuelReceipt->liters_availed > 0 || $fuelReceipt->amount_on_receipt > 0),
-                    'receipt_status' => $ticket->gasSlip?->reconciliation_status ?? 'none',
-
-                    // ✅ LIVE FUEL COMPUTATION HERE
-                    'vehicle' => $this->buildVehicleFuelPayload($ticket->vehicle),
-
-                    'driver' => $ticket->driver && $ticket->driver->user ? [
+                // ✅ Ibutang sa top level para ma-fetch sa frontend
+                'driver_name' => $driverName,
+                'driver' => $ticket->driver ? [
+                    'driver_id' => $ticket->driver->driver_id,
+                    'name' => $driverName,
+                    'user' => $ticket->driver->user ? [
                         'full_name' => $ticket->driver->user->full_name,
                     ] : null,
-                    'department_name' => $ticket->department ? $ticket->department->department_name : null,
-                    'department_code' => $ticket->department ? $ticket->department->department_code : null,
-                    'is_mo_funded' => $ticket->created_by_mo_user_id !== null,
-                    'is_cross_department' => $ticket->gasSlip?->is_cross_department ?? false,
-                ];
-            });
+                ] : null,
+                'department_name' => $ticket->department ? $ticket->department->department_name : null,
+                'department_code' => $ticket->department ? $ticket->department->department_code : null,
+                'is_mo_funded' => $ticket->created_by_mo_user_id !== null,
+                'is_cross_department' => $ticket->gasSlip?->is_cross_department ?? false,
+            ];
+        });
 
-            return response()->json([
-                'success' => true,
-                'data' => $tickets,
-
-                'meta' => [
-                    'fiscal_year'     => $activeYear,
-                    'fy_count'        => $tickets->count(),
-                    'all_time_count'  => $allTimeCount,
-                ],
-            ]);
-        } catch (\Exception $e) {
-            Log::error('Get pending tickets error: ' . $e->getMessage());
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to fetch tickets: ' . $e->getMessage()
-            ], 500);
-        }
+        return response()->json([
+            'success' => true,
+            'data' => $tickets,
+            'meta' => [
+                'fiscal_year'     => $activeYear,
+                'fy_count'        => $tickets->count(),
+                'all_time_count'  => $allTimeCount,
+            ],
+        ]);
+    } catch (\Exception $e) {
+        Log::error('Get pending tickets error: ' . $e->getMessage());
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to fetch tickets: ' . $e->getMessage()
+        ], 500);
     }
+}
 
     /**
      *  Get weekly suggested — always annual / 52
