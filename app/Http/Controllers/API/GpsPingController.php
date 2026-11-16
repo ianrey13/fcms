@@ -976,6 +976,7 @@ class GpsPingController extends Controller
                     'trip_id' => $trip->trip_ticket_id,
                     'ticket_number' => $trip->trip_ticket_number ?? 'N/A',
                     'destination' => $trip->destination ?? 'N/A',
+                     'purpose' => $trip->purpose ?? 'N/A',
                     'status' => $trip->status ?? 'unknown',
                     'vehicle' => [
                         'plate_number' => $vehicle ? $vehicle->plate_number : 'Unknown',
