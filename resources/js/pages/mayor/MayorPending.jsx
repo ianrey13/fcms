@@ -206,6 +206,27 @@ const MayorPending = () => {
     } finally { setSubmitting(false); }
   };
 
+  // ✅ ADDED: Handle Reject Logic
+  const handleReject = async () => {
+    if (!rejectionNote.trim() || rejectionNote.trim().length < 5) {
+      return toast.error("Please provide a reason (at least 5 characters)");
+    }
+
+    setSubmitting(true);
+    try {
+      await mayorsOfficeAPI.rejectTicket(selectedTicket.id || selectedTicket.trip_ticket_id, rejectionNote);
+      toast.success("Ticket rejected successfully");
+      setShowRejectDialog(false);
+      setShowRightPanel(false);
+      setRejectionNote("");
+      fetchTickets();
+    } catch (error) {
+      toast.error(error.response?.data?.message || "Failed to reject ticket");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const currentFuel = parseFloat(selectedTicket?.vehicle?.current_fuel_balance || 0);
   const tankCap = parseFloat(selectedTicket?.vehicle?.tank_capacity || 60);
   const fuelPercent = Math.min(100, Math.max(0, (currentFuel / tankCap) * 100));
@@ -301,11 +322,9 @@ const MayorPending = () => {
                 <div className="grid grid-cols-3 gap-y-2">
                   <span className="text-slate-500">Date</span><span className="col-span-2 text-slate-200">: {formatDate(selectedTicket.trip_date)}</span>
                   
-                  {/* ✅ DRIVER FETCH FIX */}
                   <span className="text-slate-500 flex items-center gap-1"><User className="h-3 w-3"/> Driver</span>
                   <span className="col-span-2 text-slate-200">: {selectedTicket.driver_name || selectedTicket.driver?.user?.full_name || selectedTicket.driver?.name || "N/A"}</span>
                   
-                  {/* ✅ PASSENGER FETCH FIX */}
                   <span className="text-slate-500 flex items-center gap-1"><Users className="h-3 w-3"/> Passenger</span>
                   <span className="col-span-2 text-slate-200">: {selectedTicket.passenger_name || "N/A"}</span>
                   
@@ -317,7 +336,6 @@ const MayorPending = () => {
                 </div>
               </div>
 
-              {/* ✅ VEHICLE FUEL INFO FETCH FIX */}
               <div className="bg-[#0b101c] rounded-xl p-4 border border-slate-800 text-sm">
                 <div className="flex items-center justify-between mb-3 pb-2 border-b border-slate-800">
                   <div className="flex items-center gap-2">
@@ -463,16 +481,38 @@ const MayorPending = () => {
 
       </div>
 
+      {/* ✅ UPDATED: Reject Dialog with Functional Button */}
       <Dialog open={showRejectDialog} onOpenChange={setShowRejectDialog}>
         <DialogContent className="bg-[#121829] border-slate-700 text-slate-200">
-          <DialogHeader><DialogTitle className="text-white">Reject Trip Ticket</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle className="text-white">Reject Trip Ticket</DialogTitle>
+            <DialogDescription className="text-slate-400">
+              This action cannot be undone. The driver will be notified.
+            </DialogDescription>
+          </DialogHeader>
           <div className="space-y-4 py-2">
             <Label className="text-slate-300">Reason for Rejection</Label>
-            <Textarea placeholder="Enter reason..." value={rejectionNote} onChange={(e) => setRejectionNote(e.target.value)} className="bg-[#0b101c] border-slate-700 text-white" rows={4} />
+            <Textarea 
+              placeholder="Enter reason (at least 5 characters)..." 
+              value={rejectionNote} 
+              onChange={(e) => setRejectionNote(e.target.value)} 
+              className="bg-[#0b101c] border-slate-700 text-white" 
+              rows={4} 
+            />
+            {rejectionNote.trim().length > 0 && rejectionNote.trim().length < 5 && (
+              <p className="text-xs text-red-400">Reason must be at least 5 characters.</p>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowRejectDialog(false)} className="border-slate-700 text-slate-300">Cancel</Button>
-            <Button onClick={() => {}} className="bg-red-600 hover:bg-red-700 text-white">Reject Ticket</Button>
+            <Button 
+              onClick={handleReject} 
+              disabled={submitting || rejectionNote.trim().length < 5} 
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              {submitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <XCircle className="h-4 w-4 mr-2" />}
+              Confirm Reject
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
