@@ -234,7 +234,7 @@ const LiveTracking = () => {
         trip.vehicle?.vehicle_model?.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
-    // ✅ Calculate SIMULATED Fuel Info for Selected Trip
+    // ✅ Calculate SIMULATED Fuel Info based on GPS Route
     const fuelInfo = useMemo(() => {
         if (!selectedTrip?.vehicle) return null;
         
@@ -242,21 +242,37 @@ const LiveTracking = () => {
         const currentBalance = parseFloat(selectedTrip.vehicle.current_fuel_balance) || 0;
         const efficiency = parseFloat(selectedTrip.vehicle.reference_efficiency) || 10;
         
-        // Kuhanon ang aktuall nga gilay-on sa biyahe
-        // Prioridad: actual_distance_km gikan sa trip, kung wala, i-calculate gikan sa GPS route kung naa
-        let distanceTraveled = parseFloat(selectedTrip.actual_distance_km) || 0;
+        let distanceTraveled = 0;
+
+        // 1. Try to calculate distance from GPS route (if available)
+        if (selectedTrip.route && selectedTrip.route.length > 1) {
+            const R = 6371; // Earth radius in km
+            for (let i = 0; i < selectedTrip.route.length - 1; i++) {
+                const lat1 = selectedTrip.route[i].latitude;
+                const lon1 = selectedTrip.route[i].longitude;
+                const lat2 = selectedTrip.route[i + 1].latitude;
+                const lon2 = selectedTrip.route[i + 1].longitude;
+                
+                const dLat = (lat2 - lat1) * Math.PI / 180;
+                const dLon = (lon2 - lon1) * Math.PI / 180;
+                const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                          Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                          Math.sin(dLon/2) * Math.sin(dLon/2);
+                const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+                distanceTraveled += R * c; // in km
+            }
+        } 
+        // 2. Fallback to actual_distance_km if no GPS route
+        else if (selectedTrip.actual_distance_km) {
+            distanceTraveled = parseFloat(selectedTrip.actual_distance_km);
+        }
         
-        // Kung wala pay actual distance, i-estimate gikan sa start sa trip
-        // (Simulation based on latest ping timestamp vs trip start)
-        if (distanceTraveled === 0 && selectedTrip.current_location && selectedTrip.trip_started_at) {
-             // Diri nato i-apply ang logic nga magkadako ang consumed samtang nagkadugay
-             // Kani usa ka simulation: 1 km per minute (average speed)
-             const startTime = new Date(selectedTrip.trip_started_at);
-             const now = new Date(selectedTrip.current_location.recorded_at || new Date());
-             const diffMinutes = Math.max(0, (now - startTime) / 60000);
-             
-             // Estimate 60 km/h avg speed -> 1 km per minute
-             distanceTraveled = diffMinutes * 1; 
+        // 3. If wala gihapon, simulate based on time passed (para naa jud makita)
+        if (distanceTraveled === 0 && selectedTrip.trip_started_at) {
+            const startTime = new Date(selectedTrip.trip_started_at);
+            const now = new Date(selectedTrip.current_location?.recorded_at || new Date());
+            const diffMinutes = Math.max(0, (now - startTime) / 60000);
+            distanceTraveled = diffMinutes * 0.5; // assume 30km/h average speed
         }
 
         // Fuel consumed = Distance / Efficiency
@@ -502,7 +518,9 @@ const LiveTracking = () => {
                                 </div>
                                 <div>
                                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 flex items-center gap-1"><Gauge className="h-3 w-3"/> Speed</p>
-                                    <p className="text-xs font-medium text-slate-800 dark:text-slate-200">{selectedTrip.current_location?.speed_kmh || 0} km/h</p>
+                                    <p className="text-xs font-medium text-slate-800 dark:text-slate-200">
+                                        {selectedTrip.current_location?.speed_kmh ? parseFloat(selectedTrip.current_location.speed_kmh).toFixed(1) : '0.0'} km/h
+                                    </p>
                                 </div>
                                 <div>
                                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 flex items-center gap-1"><Clock className="h-3 w-3"/> Last Update</p>
