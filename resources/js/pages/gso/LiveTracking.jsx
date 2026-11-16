@@ -14,7 +14,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { cn } from '@/lib/utils';
 import {
-    Car, Gauge, Clock, MapPin, User, Search, Fuel, Droplets
+    Car, Gauge, Clock, MapPin, User, Search, Fuel, Droplets, Activity
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -234,22 +234,45 @@ const LiveTracking = () => {
         trip.vehicle?.vehicle_model?.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
-    // ✅ Calculate Fuel Info for Selected Trip
+    // ✅ Calculate SIMULATED Fuel Info for Selected Trip
     const fuelInfo = useMemo(() => {
         if (!selectedTrip?.vehicle) return null;
         
         const tankCap = parseFloat(selectedTrip.vehicle.tank_capacity) || 60;
         const currentBalance = parseFloat(selectedTrip.vehicle.current_fuel_balance) || 0;
-        const initialFuel = parseFloat(selectedTrip.vehicle.initial_estimated_fuel) || tankCap;
+        const efficiency = parseFloat(selectedTrip.vehicle.reference_efficiency) || 10;
         
-        const consumed = Math.max(0, initialFuel - currentBalance);
-        const percent = tankCap > 0 ? Math.min(100, Math.max(0, (currentBalance / tankCap) * 100)) : 0;
+        // Kuhanon ang aktuall nga gilay-on sa biyahe
+        // Prioridad: actual_distance_km gikan sa trip, kung wala, i-calculate gikan sa GPS route kung naa
+        let distanceTraveled = parseFloat(selectedTrip.actual_distance_km) || 0;
+        
+        // Kung wala pay actual distance, i-estimate gikan sa start sa trip
+        // (Simulation based on latest ping timestamp vs trip start)
+        if (distanceTraveled === 0 && selectedTrip.current_location && selectedTrip.trip_started_at) {
+             // Diri nato i-apply ang logic nga magkadako ang consumed samtang nagkadugay
+             // Kani usa ka simulation: 1 km per minute (average speed)
+             const startTime = new Date(selectedTrip.trip_started_at);
+             const now = new Date(selectedTrip.current_location.recorded_at || new Date());
+             const diffMinutes = Math.max(0, (now - startTime) / 60000);
+             
+             // Estimate 60 km/h avg speed -> 1 km per minute
+             distanceTraveled = diffMinutes * 1; 
+        }
+
+        // Fuel consumed = Distance / Efficiency
+        const consumed = distanceTraveled / efficiency;
+        
+        // Simulated remaining balance
+        const simulatedBalance = Math.max(0, currentBalance - consumed);
+        const percent = tankCap > 0 ? Math.min(100, Math.max(0, (simulatedBalance / tankCap) * 100)) : 0;
 
         return {
             tankCap,
-            currentBalance,
+            currentBalance: simulatedBalance,
+            originalBalance: currentBalance,
             consumed,
-            percent
+            percent,
+            distanceTraveled
         };
     }, [selectedTrip]);
 
@@ -396,7 +419,7 @@ const LiveTracking = () => {
 
                                 return (
                                     <React.Fragment key={trip.trip_id}>
-                                        {/* ✅ GITANGGAL ANG POLYLINE PARA WALAY MAG-GUBOT NGA LINYA */}
+                                        {/* GITANGGAL ANG POLYLINE PARA WALAY MAG-GUBOT NGA LINYA */}
                                         
                                         {trip.route && trip.route.length > 0 && (
                                             <Marker position={[trip.route[0].latitude, trip.route[0].longitude]} icon={icons.start} />
@@ -457,7 +480,7 @@ const LiveTracking = () => {
                                         <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700">
                                             <Fuel className="h-4 w-4 text-amber-500" />
                                             <div>
-                                                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider leading-none mb-0.5">Fuel Level</p>
+                                                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider leading-none mb-0.5">Simulated Fuel Level</p>
                                                 <div className="flex items-baseline gap-1">
                                                     <span className="text-sm font-bold text-slate-800 dark:text-white">{fuelInfo.currentBalance.toFixed(1)} L</span>
                                                     <span className="text-[10px] text-slate-500">/ {fuelInfo.tankCap.toFixed(0)} L</span>
@@ -493,7 +516,7 @@ const LiveTracking = () => {
                                     <div className="flex items-center gap-6">
                                         <div className="flex-1">
                                             <div className="flex items-center justify-between mb-1">
-                                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1"><Droplets className="h-3 w-3 text-blue-500"/> Remaining Fuel</p>
+                                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1"><Droplets className="h-3 w-3 text-blue-500"/> Remaining Fuel (Est.)</p>
                                                 <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400">{fuelInfo.currentBalance.toFixed(2)} L</p>
                                             </div>
                                             <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-2">
@@ -501,9 +524,13 @@ const LiveTracking = () => {
                                             </div>
                                         </div>
                                         <div className="flex-1 border-l border-slate-200 dark:border-slate-700 pl-6">
-                                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1"><Fuel className="h-3 w-3 text-red-500"/> Consumed</p>
-                                            <p className="text-xs font-bold text-red-600 dark:text-red-400 mt-1">{fuelInfo.consumed.toFixed(2)} L</p>
+                                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1"><Fuel className="h-3 w-3 text-red-500"/> Consumed (Simulated)</p>
+                                            <p className="text-xs font-bold text-red-600 dark:text-red-400 mt-1">-{fuelInfo.consumed.toFixed(2)} L</p>
                                         </div>
+                                    </div>
+                                    <div className="mt-2 flex items-center gap-1 text-[10px] text-slate-400">
+                                        <Activity className="h-3 w-3" />
+                                        <span>Est. Distance: {fuelInfo.distanceTraveled.toFixed(1)} km</span>
                                     </div>
                                 </div>
                             )}
