@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\Log;
 
 class VehicleController extends Controller
 {
-    /**
+       /**
      * Display a listing of vehicles.
      */
     public function index(Request $request)
@@ -44,7 +44,6 @@ class VehicleController extends Controller
 
             $vehicles = $query->orderBy('created_at', 'desc')->get();
 
-
             $vehiclesWithStatus = $vehicles->map(function ($vehicle) {
                 $availability = $vehicle->getAvailabilityStatus();
                 return [
@@ -56,7 +55,13 @@ class VehicleController extends Controller
                     'status' => $vehicle->status,
                     'maintenance_flag' => $vehicle->maintenance_flag,
                     'current_fuel_balance' => $vehicle->current_fuel_balance,
-                    'fuel_capacity' => $vehicle->tank_capacity ?? $vehicle->fuel_capacity, // ✅ Use the new column
+                    
+                    // ✅ GIDUGANG NATO NI PARA MA-FETCH SA FRONTEND
+                    'tank_capacity' => (float) $vehicle->tank_capacity,
+                    'reference_efficiency' => (float) $vehicle->reference_efficiency,
+                    'initial_estimated_fuel' => (float) $vehicle->initial_estimated_fuel,
+                    
+                    'fuel_capacity' => $vehicle->tank_capacity ?? $vehicle->fuel_capacity, 
                     'fuel_percentage' => $vehicle->fuel_percentage,
                     'fuel_status' => $vehicle->fuel_status,
                     'is_available' => $availability['is_available'],
@@ -156,7 +161,7 @@ class VehicleController extends Controller
         }
     }
 
-    /**
+          /**
      * Display the specified vehicle.
      */
     public function show($id)
@@ -177,7 +182,13 @@ class VehicleController extends Controller
                     'status' => $vehicle->status,
                     'maintenance_flag' => $vehicle->maintenance_flag,
                     'current_fuel_balance' => $vehicle->current_fuel_balance,
-                    'fuel_capacity' => $vehicle->fuel_capacity,
+                    
+                    // ✅ GIDUGANG NATO NI PARA MA-FETCH SA FRONTEND
+                    'tank_capacity' => (float) $vehicle->tank_capacity,
+                    'reference_efficiency' => (float) $vehicle->reference_efficiency,
+                    'initial_estimated_fuel' => (float) $vehicle->initial_estimated_fuel,
+                    
+                    'fuel_capacity' => $vehicle->tank_capacity ?? $vehicle->fuel_capacity,
                     'fuel_percentage' => $vehicle->fuel_percentage,
                     'fuel_status' => $vehicle->fuel_status,
                     'is_available' => $availability['is_available'],
