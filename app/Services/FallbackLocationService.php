@@ -31,9 +31,11 @@ class FallbackLocationService
                 'region' => 'Misamis Oriental',
                 'aliases' => ['laguindingan poblacion'],
             ],
+            
+            // ============ LAGUINDINGAN BARANGAYS ============
             'aromahon' => [
                 'name' => 'Aromahon, Laguindingan',
-                'distance_km' => 2.3,
+                'distance_km' => 3.2,
                 'lat' => 8.568188570966955,
                 'lng' => 124.42507621024971,
                 'type' => 'barangay',
@@ -141,59 +143,171 @@ class FallbackLocationService
                 'region' => 'Laguindingan, Misamis Oriental',
                 'aliases' => ['tubajon barangay hall'],
             ],
-            'gk_heights' => [
-                'name' => 'GK Heights',
-                'distance_km' => 5.0,
-                'lat' => 8.6100,
-                'lng' => 124.4500,
-                'type' => 'landmark',
-                'priority' => 1,
-                'region' => 'Laguindingan, Misamis Oriental',
-                'aliases' => ['gk heights', 'gk', 'gk subdivision'],
-            ],
-            'laguindingan_airport' => [
-                'name' => 'Laguindingan Airport',
-                'distance_km' => 4.9,
-                'lat' => 8.610260789398502,
-                'lng' => 124.45795811031401,
-                'type' => 'landmark',
-                'priority' => 1,
-                'region' => 'Laguindingan, Misamis Oriental',
-                'aliases' => ['airport', 'laguindingan airport terminal'],
-            ],
-            'all_barangay' => [
-                'name' => 'All Barangay',
-                'distance_km' => 11.4,
-                'lat' => 8.621431183919565,
-                'lng' => 124.4619632769859,
-                'type' => 'group',
+
+            // ============ ALUBIJID BARANGAYS ============
+            'alubijid_baybay' => [
+                'name' => 'Baybay, Alubijid',
+                'distance_km' => 8.2,
+                'lat' => 8.5870,
+                'lng' => 124.4835,
+                'type' => 'barangay',
                 'priority' => 2,
-                'region' => 'Laguindingan, Misamis Oriental',
-                'aliases' => ['all barangay', 'all barangays'],
+                'region' => 'Alubijid, Misamis Oriental',
+                'aliases' => ['baybay alubijid'],
             ],
-            'coastal_barangay' => [
-                'name' => 'Coastal Barangay',
-                'distance_km' => 11.4,
-                'lat' => 8.621427701784217,
-                'lng' => 124.46134992481697,
-                'type' => 'group',
+            'alubijid_benigwayan' => [
+                'name' => 'Benigwayan, Alubijid',
+                'distance_km' => 8.5,
+                'lat' => 8.5458,
+                'lng' => 124.4457,
+                'type' => 'barangay',
                 'priority' => 2,
-                'region' => 'Laguindingan, Misamis Oriental',
-                'aliases' => ['coastal barangay'],
+                'region' => 'Alubijid, Misamis Oriental',
+                'aliases' => ['benigwayan alubijid'],
             ],
-            'aor_laguindingan' => [
-                'name' => 'AOR Laguindingan',
-                'distance_km' => 11.4,
-                'lat' => 8.624609137625352,
-                'lng' => 124.46365073632487,
-                'type' => 'group',
+            'alubijid_calatcat' => [
+                'name' => 'Calatcat, Alubijid',
+                'distance_km' => 9.1,
+                'lat' => 8.5507,
+                'lng' => 124.4767,
+                'type' => 'barangay',
                 'priority' => 2,
-                'region' => 'Laguindingan, Misamis Oriental',
-                'aliases' => ['aor', 'area of responsibility', 'laguindingan aor'],
+                'region' => 'Alubijid, Misamis Oriental',
+                'aliases' => ['calatcat alubijid'],
             ],
-            'alubijid' => [
+            'alubijid_lagtang' => [
+                'name' => 'Lagtang, Alubijid',
+                'distance_km' => 7.8,
+                'lat' => 8.5657,
+                'lng' => 124.4846,
+                'type' => 'barangay',
+                'priority' => 2,
+                'region' => 'Alubijid, Misamis Oriental',
+                'aliases' => ['lagtang alubijid'],
+            ],
+            'alubijid_lanao' => [
+                'name' => 'Lanao, Alubijid',
+                'distance_km' => 6.5,
+                'lat' => 8.5785,
+                'lng' => 124.4653,
+                'type' => 'barangay',
+                'priority' => 2,
+                'region' => 'Alubijid, Misamis Oriental',
+                'aliases' => ['lanao alubijid'],
+            ],
+            'alubijid_loguilo' => [
+                'name' => 'Loguilo, Alubijid',
+                'distance_km' => 10.2,
+                'lat' => 8.5754,
+                'lng' => 124.4993,
+                'type' => 'barangay',
+                'priority' => 2,
+                'region' => 'Alubijid, Misamis Oriental',
+                'aliases' => ['loguilo alubijid'],
+            ],
+            'alubijid_lourdes' => [
+                'name' => 'Lourdes, Alubijid',
+                'distance_km' => 9.8,
+                'lat' => 8.5232,
+                'lng' => 124.4340,
+                'type' => 'barangay',
+                'priority' => 2,
+                'region' => 'Alubijid, Misamis Oriental',
+                'aliases' => ['lourdes alubijid'],
+            ],
+            'alubijid_lumbo' => [
+                'name' => 'Lumbo, Alubijid',
+                'distance_km' => 7.2,
+                'lat' => 8.5719,
+                'lng' => 124.4575,
+                'type' => 'barangay',
+                'priority' => 2,
+                'region' => 'Alubijid, Misamis Oriental',
+                'aliases' => ['lumbo alubijid'],
+            ],
+            'alubijid_molocboloc' => [
+                'name' => 'Molocboloc, Alubijid',
+                'distance_km' => 7.5,
+                'lat' => 8.5850,
+                'lng' => 124.4657,
+                'type' => 'barangay',
+                'priority' => 2,
+                'region' => 'Alubijid, Misamis Oriental',
+                'aliases' => ['molocboloc alubijid'],
+            ],
+            'alubijid_poblacion' => [
+                'name' => 'Poblacion, Alubijid',
+                'distance_km' => 8.0,
+                'lat' => 8.5745,
+                'lng' => 124.4744,
+                'type' => 'barangay',
+                'priority' => 2,
+                'region' => 'Alubijid, Misamis Oriental',
+                'aliases' => ['poblacion alubijid'],
+            ],
+            'alubijid_sampatulog' => [
+                'name' => 'Sampatulog, Alubijid',
+                'distance_km' => 9.5,
+                'lat' => 8.5380,
+                'lng' => 124.4586,
+                'type' => 'barangay',
+                'priority' => 2,
+                'region' => 'Alubijid, Misamis Oriental',
+                'aliases' => ['sampatulog alubijid'],
+            ],
+            'alubijid_sungay' => [
+                'name' => 'Sungay, Alubijid',
+                'distance_km' => 12.0,
+                'lat' => 8.4510,
+                'lng' => 124.4070,
+                'type' => 'barangay',
+                'priority' => 2,
+                'region' => 'Alubijid, Misamis Oriental',
+                'aliases' => ['sungay alubijid'],
+            ],
+            'alubijid_talaba' => [
+                'name' => 'Talaba, Alubijid',
+                'distance_km' => 9.6,
+                'lat' => 8.5418,
+                'lng' => 124.4745,
+                'type' => 'barangay',
+                'priority' => 2,
+                'region' => 'Alubijid, Misamis Oriental',
+                'aliases' => ['talaba alubijid'],
+            ],
+            'alubijid_taparak' => [
+                'name' => 'Taparak, Alubijid',
+                'distance_km' => 11.5,
+                'lat' => 8.4791,
+                'lng' => 124.4112,
+                'type' => 'barangay',
+                'priority' => 2,
+                'region' => 'Alubijid, Misamis Oriental',
+                'aliases' => ['taparak alubijid'],
+            ],
+            'alubijid_tugasnon' => [
+                'name' => 'Tugasnon, Alubijid',
+                'distance_km' => 10.8,
+                'lat' => 8.4963,
+                'lng' => 124.4558,
+                'type' => 'barangay',
+                'priority' => 2,
+                'region' => 'Alubijid, Misamis Oriental',
+                'aliases' => ['tugasnon alubijid'],
+            ],
+            'alubijid_tula' => [
+                'name' => 'Tula, Alubijid',
+                'distance_km' => 13.0,
+                'lat' => 8.4334,
+                'lng' => 124.4167,
+                'type' => 'barangay',
+                'priority' => 2,
+                'region' => 'Alubijid, Misamis Oriental',
+                'aliases' => ['tula alubijid'],
+            ],
+            'alubijid_municipality' => [
                 'name' => 'Alubijid',
-                'distance_km' => 3.6,
+                'distance_km' => 6.1, 
                 'lat' => 8.571642437832274,
                 'lng' => 124.47303079635617,
                 'type' => 'municipality',
@@ -201,19 +315,11 @@ class FallbackLocationService
                 'region' => 'Misamis Oriental',
                 'aliases' => ['alubijid municipal hall'],
             ],
-            'gitagum' => [
-                'name' => 'Gitagum',
-                'distance_km' => 5.8,
-                'lat' => 8.594809298885892,
-                'lng' => 124.40570575930317,
-                'type' => 'municipality',
-                'priority' => 2,
-                'region' => 'Misamis Oriental',
-                'aliases' => ['gitagum municipal hall'],
-            ],
+
+            // ============ NEARBY MUNICIPALITIES / CITIES ============
             'el_salvador' => [
                 'name' => 'El Salvador City',
-                'distance_km' => 10.1,
+                'distance_km' => 9.5, 
                 'lat' => 8.562529843533776,
                 'lng' => 124.52683585497097,
                 'type' => 'city',
@@ -221,25 +327,25 @@ class FallbackLocationService
                 'region' => 'Misamis Oriental',
                 'aliases' => ['elsalvador', 'el salvador', 'el salvador city hall'],
             ],
-            'libertad_mo' => [
-                'name' => 'Libertad',
-                'distance_km' => 13.5,
-                'lat' => 8.566789930377434,
-                'lng' => 124.3524752476905,
-                'type' => 'municipality',
-                'priority' => 2,
-                'region' => 'Misamis Oriental',
-                'aliases' => ['libertad municipal hall', 'libertad misamis oriental'],
-            ],
             'opol' => [
                 'name' => 'Opol',
-                'distance_km' => 18.1,
+                'distance_km' => 17.7, 
                 'lat' => 8.524410195364489,
                 'lng' => 124.57426905264148,
                 'type' => 'municipality',
                 'priority' => 2,
                 'region' => 'Misamis Oriental',
                 'aliases' => ['opol municipal hall'],
+            ],
+            'amoros' => [
+                'name' => 'Amoros, El Salvador',
+                'distance_km' => 16.3, 
+                'lat' => 8.5380, 
+                'lng' => 124.5550,
+                'type' => 'barangay',
+                'priority' => 2,
+                'region' => 'El Salvador, Misamis Oriental',
+                'aliases' => ['amoros', 'amoros el salvador'],
             ],
             'initao' => [
                 'name' => 'Initao',
@@ -468,7 +574,7 @@ class FallbackLocationService
                 if (strpos($nameLower, 'laguindingan') !== false) {
                     $description = $name . ', Misamis Oriental';
                 } else {
-                    $description = $name . ', Laguindingan, Misamis Oriental';
+                    $description = $name . ', Misamis Oriental';
                 }
             } elseif ($type === 'municipality') {
                 if (strpos($nameLower, 'misamis oriental') === false) {
@@ -516,14 +622,13 @@ class FallbackLocationService
     }
 
     /**
-     * Calculate distance — MULTI-LOCATION support with Fallback Haversine
+     * Calculate distance — Based on strictly set One-Way distances
      */
     public function calculateDistance($origin, $destinations)
     {
         $originData = $this->findLocation($origin) ?? $this->findLocationByPartialMatch($origin);
         if (!$originData) return ['success' => false, 'message' => 'Origin not found: ' . $origin];
 
-        // Convert single destination to array if it's a string
         if (is_string($destinations)) {
             $destinations = [$destinations];
         }
@@ -532,7 +637,6 @@ class FallbackLocationService
         $routeNames = [];
         $points = [$originData];
 
-        // Resolve all destinations
         foreach ($destinations as $dest) {
             $destData = $this->findLocation($dest) ?? $this->findLocationByPartialMatch($dest);
             if (!$destData) continue;
@@ -542,32 +646,26 @@ class FallbackLocationService
 
         if (count($points) < 2) return ['success' => false, 'message' => 'No valid destinations found.'];
 
-        // Calculate distance between each consecutive point in the route
         for ($i = 0; $i < count($points) - 1; $i++) {
             $from = $points[$i];
             $to = $points[$i + 1];
 
-            // 1. If both are in Laguindingan, use the difference in their distance_from_town_hall
             if ($this->isWithinLaguindingan($from) && $this->isWithinLaguindingan($to)) {
                 $totalDistance += abs(($to['distance_km'] ?? 0) - ($from['distance_km'] ?? 0));
                 continue;
             }
 
-            // 2. If moving from Laguindingan to a known outside point
             if ($this->isOriginLaguindingan($from) && ($to['distance_km'] ?? 0) > 0) {
                 $totalDistance += (float) $to['distance_km'];
                 continue;
             }
             
-            // 3. If moving from a known point back to Laguindingan
             if ($this->isOriginLaguindingan($to) && ($from['distance_km'] ?? 0) > 0) {
                 $totalDistance += (float) $from['distance_km'];
                 continue;
             }
 
-            // 4. Haversine fallback for other combinations (Point A to Point B)
-            $straightKm = $this->haversineDistance($from['lat'], $from['lng'], $to['lat'], $to['lng']);
-            $totalDistance += $straightKm * 1.25; // Add 25% road factor
+            $totalDistance += (float) ($from['distance_km'] ?? 0) + (float) ($to['distance_km'] ?? 0);
         }
 
         if ($totalDistance < 0.1) $totalDistance = 0.1;
@@ -578,7 +676,7 @@ class FallbackLocationService
             'duration_minutes' => $this->estimateDuration($totalDistance, $points[count($points)-1]),
             'origin' => $originData['name'],
             'destinations' => $routeNames,
-            'source' => 'multi_location_fallback',
+            'source' => 'multi_location_fixed',
         ];
     }
 
@@ -587,23 +685,20 @@ class FallbackLocationService
      */
     public function calculateTripEstimate($originAddress, $destinationAddresses, $vehicleId = null, $roundTrip = true)
     {
-        // 1. Calculate one-way distance
         $result = $this->calculateDistance($originAddress, $destinationAddresses);
         if (!$result['success']) return $result;
 
-        // 2. Multiply for Round Trip if needed
         $multiplier = $roundTrip ? 2 : 1;
         $distanceKm = $result['distance_km'] * $multiplier;
         $durationMinutes = $result['duration_minutes'] * $multiplier;
 
-        // 3. Get Vehicle details
         $efficiency = 10;
         $fuelType = 'gasoline';
         if ($vehicleId) {
             try {
                 $vehicle = \App\Models\Vehicle::find($vehicleId);
                 if ($vehicle) {
-                    $efficiency = $vehicle->fuel_efficiency ?? 10;
+                    $efficiency = $vehicle->reference_efficiency ?? 10;
                     $fuelType = $vehicle->fuel_type ?? 'gasoline';
                 }
             } catch (\Exception $e) {
@@ -611,12 +706,10 @@ class FallbackLocationService
             }
         }
 
-        // 4. Calculate fuel
         $fuelPrice = $this->getFuelPrice($fuelType);
         $estimatedLiters = round($distanceKm / $efficiency, 2);
         $estimatedCost = round($estimatedLiters * $fuelPrice, 2);
 
-        // 5. Add 10% buffer for safety
         $estimatedLitersWithBuffer = round($estimatedLiters * 1.1, 2);
         $estimatedCostWithBuffer = round($estimatedCost * 1.1, 2);
 
@@ -667,15 +760,6 @@ class FallbackLocationService
         $name = strtolower($location['name'] ?? '');
         $type = $location['type'] ?? '';
         return $type === 'origin' || strpos($name, 'laguindingan municipal') !== false || ($type === 'municipality' && strpos($name, 'laguindingan') !== false);
-    }
-
-    private function haversineDistance($lat1, $lon1, $lat2, $lon2)
-    {
-        $earthRadius = 6371;
-        $dLat = deg2rad($lat2 - $lat1);
-        $dLon = deg2rad($lon2 - $lon1);
-        $a = sin($dLat / 2) ** 2 + cos(deg2rad($lat1)) * cos(deg2rad($lat2)) * sin($dLon / 2) ** 2;
-        return $earthRadius * 2 * atan2(sqrt($a), sqrt(1 - $a));
     }
 
     private function findLocationByPartialMatch($query)
