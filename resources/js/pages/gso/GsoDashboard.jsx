@@ -19,11 +19,9 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { toast } from "react-hot-toast";
 import { cn } from "@/lib/utils";
-import { format, startOfWeek } from 'date-fns';
 
 // ============================================
 // HELPERS & MAP ICONS
@@ -95,7 +93,6 @@ const GsoDashboard = () => {
     // Validation Dialog States
     const [selectedTicket, setSelectedTicket] = useState(null);
     const [showValidateDialog, setShowValidateDialog] = useState(false);
-    const [validationNote, setValidationNote] = useState("");
     const [hasWatchedReplay, setHasWatchedReplay] = useState(false);
     
     // Replay States
@@ -110,6 +107,7 @@ const GsoDashboard = () => {
         queryClient.invalidateQueries({ queryKey: ["gso-dashboard-trips"] });
         queryClient.invalidateQueries({ queryKey: ["gps-active-trips"] });
         queryClient.invalidateQueries({ queryKey: ["gso-pending-validation"] });
+        queryClient.invalidateQueries({ queryKey: ["gso-fuel-ledger"] });
     }, [queryClient]);
 
     useAutoRefresh(["gso-trip-updated", "gps-active-trips", "trip-completed"], fetchAllData);
@@ -150,27 +148,35 @@ const GsoDashboard = () => {
     });
     const allTrips = useMemo(() => Array.isArray(allTripsRaw) ? allTripsRaw : [], [allTripsRaw]);
 
-    // 5. Pending Validation
+    // 5. Pending Validation (For Validation Table & Fuel Ledger)
     const { data: pendingValidationRaw = [], isLoading: validationLoading } = useOptimizedQuery({
         queryKey: ["gso-pending-validation"],
         queryFn: async () => extractArray(await gsoAPI.getPendingValidation()),
     });
     const pendingValidation = useMemo(() => Array.isArray(pendingValidationRaw) ? pendingValidationRaw : [], [pendingValidationRaw]);
 
+    // 6. Fuel Ledger (If you have a separate API for past validated trips)
+    const { data: fuelLedgerRaw = [], isLoading: ledgerLoading } = useOptimizedQuery({
+        queryKey: ["gso-fuel-ledger"],
+        queryFn: async () => extractArray(await gsoAPI.getFuelLedger()),
+    });
+    const fuelLedger = useMemo(() => Array.isArray(fuelLedgerRaw) ? fuelLedgerRaw : [], [fuelLedgerRaw]);
+
     // ============ MUTATIONS ============
     const validateMutation = useMutation({
-        mutationFn: async ({ ticketId, data }) => {
+        mutationFn: async ({ ticketId }) => {
             if (!ticketId) throw new Error("Ticket ID is missing");
-            const response = await gsoAPI.validateTrip(ticketId, data);
+            // Removed validationNote data
+            const response = await gsoAPI.validateTrip(ticketId, {});
             return response.data;
         },
         onSuccess: (data) => {
             toast.success(data.message || "Trip validated successfully!");
             queryClient.invalidateQueries({ queryKey: ["gso-pending-validation"] });
             queryClient.invalidateQueries({ queryKey: ["gso-dashboard-trips"] });
+            queryClient.invalidateQueries({ queryKey: ["gso-fuel-ledger"] });
             setShowValidateDialog(false);
             setSelectedTicket(null);
-            setValidationNote("");
             setHasWatchedReplay(false);
         },
         onError: (error) => {
@@ -180,25 +186,21 @@ const GsoDashboard = () => {
 
     // ============ DERIVED DATA ============
 
-    // Stats
     const totalVehicles = vehicles.length;
     const serviceable = vehicles.filter(v => v.status === 'active' && !v.maintenance_flag).length;
     const unserviceable = vehicles.filter(v => v.status !== 'active').length;
     const maintenance = vehicles.filter(v => v.maintenance_flag).length;
 
-    // Utilization
     const inUse = activeTrips.length;
     const available = totalVehicles - inUse;
     const utilizationPct = totalVehicles > 0 ? Math.round((inUse / totalVehicles) * 100) : 0;
 
-    // Recent Trips
     const recentTrips = useMemo(() => {
         return [...allTrips]
             .sort((a, b) => new Date(b.created_at || b.trip_date) - new Date(a.created_at || a.trip_date))
             .slice(0, 4);
     }, [allTrips]);
 
-    // Fuel Monitoring Table Filter
     const filteredVehicles = useMemo(() => {
         let result = vehicles;
         if (deptFilter !== "all") {
@@ -215,7 +217,6 @@ const GsoDashboard = () => {
         return result.slice(0, 5);
     }, [vehicles, searchTerm, deptFilter]);
 
-    // Map Popup
     const displayTripData = activeTrips.length > 0 ? activeTrips[0] : null;
     const displayVehicle = displayTripData?.vehicle;
 
@@ -227,20 +228,49 @@ const GsoDashboard = () => {
         setSelectedTicket(trip);
         setShowValidateDialog(true);
         setHasWatchedReplay(false);
-        setValidationNote("");
         setRouteCoordinates([]);
         setLoadingRoute(true);
 
         try {
             const res = await gpsAPI.getTripRoute(trip.trip_ticket_id || trip.id);
             const track = res?.data?.data?.track || [];
-            setRouteCoordinates(track.map(p => [p.latitude, p.longitude]));
+            const coords = track.map(p => [p.latitude, p.longitude]);
+            setRouteCoordinates(coords);
+            
+            // Auto-play the replay once coordinates are loaded
+            if (coords.length >= 2) {
+                setTimeout(() => {
+                    startReplay(coords);
+                }, 300); // Small delay to allow map bounds to initialize
+            }
         } catch (e) {
             console.error("Failed to load route", e);
             toast.error("Could not load route replay data.");
         } finally {
             setLoadingRoute(false);
         }
+    };
+
+    const startReplay = (coords) => {
+        if (isReplaying) handleStopReplay();
+
+        setIsReplaying(true);
+        setReplayIndex(0);
+        setHasWatchedReplay(false);
+
+        let currentIdx = 0;
+        // Increased speed to 100ms per coordinate
+        replayIntervalRef.current = setInterval(() => {
+            currentIdx++;
+            if (currentIdx >= coords.length) {
+                clearInterval(replayIntervalRef.current);
+                setIsReplaying(false);
+                setReplayIndex(0);
+                setHasWatchedReplay(true); // Enable confirm button
+                return;
+            }
+            setReplayIndex(currentIdx);
+        }, 100); 
     };
 
     const handleStopReplay = () => {
@@ -252,28 +282,6 @@ const GsoDashboard = () => {
         }
     };
 
-    const handleReplay = () => {
-        if (!routeCoordinates || routeCoordinates.length < 2) return;
-        if (isReplaying) { handleStopReplay(); return; }
-
-        setIsReplaying(true);
-        setReplayIndex(0);
-        setHasWatchedReplay(false); // Reset if they play again
-
-        let currentIdx = 0;
-        replayIntervalRef.current = setInterval(() => {
-            currentIdx++;
-            if (currentIdx >= routeCoordinates.length) {
-                clearInterval(replayIntervalRef.current);
-                setIsReplaying(false);
-                setReplayIndex(0);
-                setHasWatchedReplay(true); // ✅ Replay finished, enable validation
-                return;
-            }
-            setReplayIndex(currentIdx);
-        }, 300);
-    };
-
     useEffect(() => {
         return () => {
             if (replayIntervalRef.current) clearInterval(replayIntervalRef.current);
@@ -281,26 +289,17 @@ const GsoDashboard = () => {
     }, []);
 
     // ============================================
-    // FUEL LEDGER CALCULATION (Beginning, In, Out, Balance)
+    // FUEL LEDGER DATA MAPPING
     // ============================================
-    const fuelLedgerData = useMemo(() => {
+    const pendingValidationLedger = useMemo(() => {
         return pendingValidation.map(trip => {
             const vehicle = vehicles.find(v => v.plate_number === trip.vehicle?.plate_number);
-            
-            // 1. Beginning Fuel (Initial Estimated Fuel of the vehicle, or current balance fallback)
             const beginning = parseFloat(vehicle?.initial_estimated_fuel ?? vehicle?.current_fuel_balance ?? 0);
-            
-            // 2. Fuel In (liters input from MO receipt verification)
-            // Assume backend passes `liters_availed` in trip object
             const fuelIn = parseFloat(trip.liters_availed || trip.gas_slip?.fuel_receipt?.liters_availed || 0);
-            
-            // 3. Fuel Out (Actual Distance / Efficiency)
             const distance = parseFloat(trip.actual_distance_km || 0);
             const efficiency = parseFloat(vehicle?.reference_efficiency || 10);
             const fuelOut = distance > 0 ? (distance / efficiency) : 0;
-            
-            // 4. Balance
-            const balance = Math.max(0, beginning + fuelIn - fuelOut);
+            const balance = beginning + fuelIn - fuelOut;
 
             return {
                 ...trip,
@@ -311,7 +310,6 @@ const GsoDashboard = () => {
             };
         });
     }, [pendingValidation, vehicles]);
-
 
     return (
         <div className="min-h-screen bg-[#090e1a] p-4 md:p-6 font-sans text-slate-200">
@@ -397,7 +395,6 @@ const GsoDashboard = () => {
                 {/* 3. LIVE TRACKING & FUEL BALANCE MONITORING */}
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                     
-                    {/* Live Vehicle Tracking */}
                     <Card className="lg:col-span-2 bg-[#121829] border-slate-800 shadow-lg flex flex-col overflow-hidden">
                         <div className="p-4 border-b border-slate-800 flex justify-between items-center">
                             <h3 className="font-bold text-white flex items-center gap-2">
@@ -421,7 +418,6 @@ const GsoDashboard = () => {
                                 })}
                             </MapContainer>
 
-                            {/* Floating Info Card */}
                             {displayTripData && displayVehicle && (
                                 <div className="absolute top-4 right-4 z-[400] bg-[#121829]/95 backdrop-blur-md border border-slate-700 rounded-xl p-4 w-72 shadow-2xl">
                                     <div className="flex items-start justify-between mb-3 border-b border-slate-700 pb-2">
@@ -471,7 +467,6 @@ const GsoDashboard = () => {
                         </div>
                     </Card>
 
-                    {/* Fuel Balance Monitoring */}
                     <Card className="bg-[#121829] border-slate-800 shadow-lg flex flex-col h-full">
                         <div className="p-4 border-b border-slate-800 flex justify-between items-center">
                             <h3 className="font-bold text-white flex items-center gap-2">
@@ -541,10 +536,8 @@ const GsoDashboard = () => {
                     </Card>
                 </div>
 
-                {/* 4. BOTTOM ROW: Vehicle Status, Utilization, Recent Trips */}
+                {/* 4. BOTTOM ROW */}
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    
-                    {/* Vehicle Status */}
                     <Card className="bg-[#121829] border-slate-800 shadow-lg p-4 flex flex-col">
                         <h3 className="font-bold text-white mb-4 flex items-center gap-2">
                             <Car className="h-4 w-4 text-blue-500" /> Vehicle Status
@@ -573,7 +566,6 @@ const GsoDashboard = () => {
                         </div>
                     </Card>
 
-                    {/* Vehicle Utilization */}
                     <Card className="bg-[#121829] border-slate-800 shadow-lg p-4">
                         <h3 className="font-bold text-white mb-4 flex items-center gap-2">
                             <Activity className="h-4 w-4 text-blue-500" /> Vehicle Utilization
@@ -616,7 +608,6 @@ const GsoDashboard = () => {
                         </div>
                     </Card>
 
-                    {/* Recent Trip Tickets */}
                     <Card className="bg-[#121829] border-slate-800 shadow-lg flex flex-col">
                         <div className="p-4 border-b border-slate-800 flex justify-between items-center">
                             <h3 className="font-bold text-white flex items-center gap-2">
@@ -651,10 +642,11 @@ const GsoDashboard = () => {
                             </table>
                         </div>
                     </Card>
-
                 </div>
 
-                {/* 5. PENDING VALIDATION SECTION (Fuel Ledger) */}
+                {/* ============================================================ */}
+                {/* 5. PENDING VALIDATION SECTION (UPDATED TO MATCH SCREENSHOT) */}
+                {/* ============================================================ */}
                 <Card className="bg-[#121829] border-slate-800 shadow-lg">
                     <CardHeader className="border-b border-slate-800 pb-4">
                         <div className="flex items-center justify-between">
@@ -675,7 +667,6 @@ const GsoDashboard = () => {
                                         <th className="px-4 py-3 font-medium">Date</th>
                                         <th className="px-4 py-3 font-medium">TT No.</th>
                                         <th className="px-4 py-3 font-medium">Vehicle</th>
-                                        <th className="px-4 py-3 font-medium">Destination</th>
                                         <th className="px-4 py-3 font-medium text-right">Beginning (L)</th>
                                         <th className="px-4 py-3 font-medium text-right">Fuel In (L)</th>
                                         <th className="px-4 py-3 font-medium text-right">Fuel Out (L)</th>
@@ -685,15 +676,14 @@ const GsoDashboard = () => {
                                 </thead>
                                 <tbody className="divide-y divide-slate-800/50">
                                     {validationLoading ? (
-                                        <tr><td colSpan={9} className="text-center py-6"><Loader2 className="h-5 w-5 animate-spin mx-auto text-blue-500"/></td></tr>
-                                    ) : fuelLedgerData.length === 0 ? (
-                                        <tr><td colSpan={9} className="text-center py-6 text-slate-500">No pending validations.</td></tr>
-                                    ) : fuelLedgerData.map(trip => (
+                                        <tr><td colSpan={8} className="text-center py-6"><Loader2 className="h-5 w-5 animate-spin mx-auto text-blue-500"/></td></tr>
+                                    ) : pendingValidationLedger.length === 0 ? (
+                                        <tr><td colSpan={8} className="text-center py-6 text-slate-500">No pending validations.</td></tr>
+                                    ) : pendingValidationLedger.map(trip => (
                                         <tr key={trip.trip_ticket_id || trip.id} className="hover:bg-[#1a2235]">
                                             <td className="px-4 py-3 whitespace-nowrap">{formatDateShort(trip.trip_date)}</td>
                                             <td className="px-4 py-3 font-mono text-white">{trip.trip_ticket_number || trip.ticket_number}</td>
                                             <td className="px-4 py-3">{trip.vehicle?.plate_number || 'N/A'}</td>
-                                            <td className="px-4 py-3 truncate max-w-[150px]">{trip.destination}</td>
                                             <td className="px-4 py-3 text-right text-slate-400">{trip.beginning}</td>
                                             <td className="px-4 py-3 text-right text-emerald-400">{trip.fuelIn}</td>
                                             <td className="px-4 py-3 text-right text-red-400">{trip.fuelOut}</td>
@@ -718,12 +708,10 @@ const GsoDashboard = () => {
             </div>
 
             {/* ============================================================ */}
-            {/* VALIDATE & REPLAY DIALOG (REDESIGNED TO MATCH SCREENSHOT) */}
+            {/* VALIDATE & REPLAY DIALOG */}
             {/* ============================================================ */}
             <Dialog open={showValidateDialog} onOpenChange={setShowValidateDialog}>
                 <DialogContent className="sm:max-w-6xl bg-[#0f172a] border-slate-700 p-0 overflow-hidden rounded-2xl">
-                    
-                    {/* Header */}
                     <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800">
                         <div className="flex items-center gap-3">
                             <div className="p-2 rounded-xl bg-blue-500/20 text-blue-500 border border-blue-500/30">
@@ -739,10 +727,7 @@ const GsoDashboard = () => {
                         </button>
                     </div>
 
-                    {/* Main Content: Two Columns */}
                     <div className="flex flex-col md:flex-row h-[600px]">
-                        
-                        {/* Left Sidebar - Trip Details */}
                         <div className="w-full md:w-[320px] bg-[#121829] border-r border-slate-800 p-6 overflow-y-auto flex-shrink-0">
                             <div className="space-y-5">
                                 <div className="flex items-start gap-3">
@@ -756,36 +741,36 @@ const GsoDashboard = () => {
                                     <User className="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0" />
                                     <div>
                                         <p className="text-xs text-slate-400 font-medium">Driver</p>
-                                        <p className="text-sm font-bold text-white">{selectedTicket?.driver_name || selectedTicket?.driver?.name || 'Juan Dela Cruz'}</p>
+                                        <p className="text-sm font-bold text-white">{selectedTicket?.driver_name || selectedTicket?.driver?.name || 'N/A'}</p>
                                     </div>
                                 </div>
                                 <div className="flex items-start gap-3">
                                     <Users className="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0" />
                                     <div>
                                         <p className="text-xs text-slate-400 font-medium">Passenger</p>
-                                        <p className="text-sm font-bold text-white">{selectedTicket?.passenger_name || selectedTicket?.passenger || 'Maria Santos'}</p>
+                                        <p className="text-sm font-bold text-white">{selectedTicket?.passenger_name || selectedTicket?.passenger || 'N/A'}</p>
                                     </div>
                                 </div>
                                 <div className="flex items-start gap-3">
                                     <Car className="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0" />
                                     <div>
                                         <p className="text-xs text-slate-400 font-medium">Vehicle</p>
-                                        <p className="text-sm font-bold text-white">{selectedTicket?.vehicle?.vehicle_model || 'Nissan Navarra'}</p>
-                                        <p className="text-[10px] text-slate-400 font-mono">{selectedTicket?.vehicle?.plate_number || 'ARC-123'}</p>
+                                        <p className="text-sm font-bold text-white">{selectedTicket?.vehicle?.vehicle_model || 'N/A'}</p>
+                                        <p className="text-[10px] text-slate-400 font-mono">{selectedTicket?.vehicle?.plate_number || 'N/A'}</p>
                                     </div>
                                 </div>
                                 <div className="flex items-start gap-3">
                                     <Target className="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0" />
                                     <div>
                                         <p className="text-xs text-slate-400 font-medium">Purpose</p>
-                                        <p className="text-sm font-bold text-white">{selectedTicket?.purpose || 'Official Inspection'}</p>
+                                        <p className="text-sm font-bold text-white">{selectedTicket?.purpose || 'N/A'}</p>
                                     </div>
                                 </div>
                                 <div className="flex items-start gap-3">
                                     <Flag className="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0" />
                                     <div>
                                         <p className="text-xs text-slate-400 font-medium">Destination</p>
-                                        <p className="text-sm font-bold text-white">{selectedTicket?.destination || 'Bukidnon'}</p>
+                                        <p className="text-sm font-bold text-white">{selectedTicket?.destination || 'N/A'}</p>
                                     </div>
                                 </div>
                                 <div className="flex items-start gap-3">
@@ -798,10 +783,7 @@ const GsoDashboard = () => {
                             </div>
                         </div>
 
-                        {/* Right Content - Map & Replay */}
                         <div className="flex-1 relative bg-[#0b101c] flex flex-col">
-                            
-                            {/* Map Container */}
                             <div className="flex-1 relative">
                                 {loadingRoute ? (
                                     <div className="absolute inset-0 flex items-center justify-center bg-slate-900/50 z-10">
@@ -836,20 +818,18 @@ const GsoDashboard = () => {
                                     </div>
                                 )}
 
-                                {/* Top-Left Overlay: Replay Controls */}
                                 {routeCoordinates.length > 0 && (
                                     <div className="absolute top-4 left-4 z-[400] flex items-center gap-3 bg-[#121829]/90 backdrop-blur-sm px-4 py-2 rounded-xl border border-slate-700 shadow-xl">
-                                        <button onClick={handleReplay} className={cn("flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors", isReplaying ? "bg-red-500/20 text-red-500 hover:bg-red-500/30" : "bg-blue-500/20 text-blue-500 hover:bg-blue-500/30")}>
-                                            {isReplaying ? <Square className="h-3.5 w-3.5 fill-current" /> : <Play className="h-3.5 w-3.5 fill-current" />}
-                                            {isReplaying ? 'Stop Replay' : 'Auto Playing...'}
-                                        </button>
+                                        <div className={cn("flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors", isReplaying ? "bg-blue-500/20 text-blue-500" : "bg-slate-700 text-slate-400")}>
+                                            {isReplaying ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5 fill-current" />}
+                                            {isReplaying ? 'Auto Playing...' : 'Replay Finished'}
+                                        </div>
                                         <span className="text-[10px] text-slate-400 font-mono">
                                             {isReplaying ? `${replayIndex} / ${routeCoordinates.length}` : 'Live Tracking'}
                                         </span>
                                     </div>
                                 )}
 
-                                {/* Top-Right Overlay: Legend */}
                                 <div className="absolute top-4 right-4 z-[400] flex items-center gap-4 bg-[#121829]/90 backdrop-blur-sm px-4 py-2 rounded-xl border border-slate-700 shadow-xl text-xs text-white">
                                     <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-emerald-500"></span> Start</span>
                                     <span className="flex items-center gap-1.5"><span className="w-3 h-1 bg-blue-500 rounded-full"></span> Route</span>
@@ -857,31 +837,22 @@ const GsoDashboard = () => {
                                 </div>
                             </div>
 
-                            {/* Bottom Bar: Notes & Confirm Button */}
-                            <div className="p-4 bg-[#121829] border-t border-slate-800 flex items-center gap-4">
-                                <div className="flex-1">
-                                    <Textarea 
-                                        placeholder="Add a validation note (optional)..." 
-                                        value={validationNote} 
-                                        onChange={(e) => setValidationNote(e.target.value)} 
-                                        className="bg-[#0b101c] border-slate-700 text-white resize-none h-10 min-h-[40px] text-sm" 
-                                        rows={1}
-                                    />
-                                </div>
+                            {/* UPDATED: Removed Textarea, only Confirm button */}
+                            <div className="p-4 bg-[#121829] border-t border-slate-800 flex items-center justify-end">
                                 <Button 
                                     onClick={() => {
                                         const ticketId = selectedTicket?.trip_ticket_id || selectedTicket?.id;
-                                        validateMutation.mutate({ ticketId, data: { validation_note: validationNote } });
+                                        validateMutation.mutate({ ticketId });
                                     }} 
                                     disabled={validateMutation.isPending || !hasWatchedReplay}
                                     className={cn(
                                         "text-white font-bold h-10 px-8 rounded-xl shadow-lg transition-all",
                                         hasWatchedReplay ? "bg-emerald-600 hover:bg-emerald-500 shadow-emerald-500/20" : "bg-slate-700 text-slate-400 cursor-not-allowed shadow-none"
                                     )}
-                                    title={!hasWatchedReplay ? "You must play the replay before validating" : "Confirm Validation"}
+                                    title={!hasWatchedReplay ? "Please wait for the replay to finish" : "Confirm Validation"}
                                 >
                                     {validateMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2"/> : <Check className="h-4 w-4 mr-2"/>}
-                                    {hasWatchedReplay ? "Confirm" : "Play Replay First"}
+                                    {hasWatchedReplay ? "Confirm" : "Waiting for Replay..."}
                                 </Button>
                             </div>
                         </div>
