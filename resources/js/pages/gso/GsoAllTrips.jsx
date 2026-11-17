@@ -5,7 +5,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { gsoAPI } from '../../services/api';
 import {
   Card,
@@ -38,7 +38,9 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from '@/components/ui/dialog';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Truck,
   Search,
@@ -49,16 +51,13 @@ import {
   Loader2,
   RefreshCw,
   Filter,
-  Download,
   CheckCircle,
   XCircle,
   Clock,
   AlertCircle,
   User,
-  ChevronRight,
   ArrowLeft,
   FileSpreadsheet,
-  Printer,
   TrendingUp,
   TrendingDown,
   Minus,
@@ -69,9 +68,7 @@ import {
   Shield,
   History,
   Navigation,
-  Ruler,
-  EyeIcon,
-  FileText,
+  Ban,
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { cn } from '@/lib/utils';
@@ -124,55 +121,56 @@ const getAmountReleased = (trip) => {
          0;
 };
 
+// ✅ UNIFORM STATUS CONFIG
 const getStatusConfig = (status) => {
   const configs = {
     'pending_mayors_office': { 
-      color: 'bg-yellow-500', 
-      label: 'Pending MO',
+      color: 'bg-orange-500', 
+      label: 'Pending',
       icon: Clock,
-      dotColor: 'bg-yellow-500',
+      dotColor: 'bg-orange-500',
     },
     'funds_issued': { 
       color: 'bg-blue-500', 
-      label: 'Funds Issued',
+      label: 'Ready',
       icon: CheckCircle,
       dotColor: 'bg-blue-500',
     },
     'acknowledged': { 
-      color: 'bg-cyan-500', 
-      label: 'Acknowledged',
+      color: 'bg-blue-500', 
+      label: 'Ready',
       icon: CheckCircle,
-      dotColor: 'bg-cyan-500',
+      dotColor: 'bg-blue-500',
     },
     'in_transit': { 
-      color: 'bg-indigo-500', 
+      color: 'bg-purple-500', 
       label: 'In Transit',
       icon: Truck,
-      dotColor: 'bg-indigo-500',
-    },
-    'pending_reconciliation': { 
-      color: 'bg-orange-500', 
-      label: 'Pending Recon',
-      icon: Clock,
-      dotColor: 'bg-orange-500',
-    },
-    'pending_gso_validation': { 
-      color: 'bg-purple-500', 
-      label: 'Pending Validation',
-      icon: Shield,
       dotColor: 'bg-purple-500',
     },
-    'completed': { 
-      color: 'bg-indigo-400', 
+    'pending_reconciliation': { 
+      color: 'bg-purple-500', 
+      label: 'In Transit',
+      icon: Truck,
+      dotColor: 'bg-purple-500',
+    },
+    'pending_gso_validation': { 
+      color: 'bg-emerald-500', 
       label: 'Completed',
       icon: CheckCircle,
-      dotColor: 'bg-indigo-400',
+      dotColor: 'bg-emerald-500',
+    },
+    'completed': { 
+      color: 'bg-emerald-500', 
+      label: 'Completed',
+      icon: CheckCircle,
+      dotColor: 'bg-emerald-500',
     },
     'closed': { 
-      color: 'bg-green-600', 
+      color: 'bg-slate-600', 
       label: 'Closed',
       icon: CheckCircle,
-      dotColor: 'bg-green-600',
+      dotColor: 'bg-slate-600',
     },
     'rejected': { 
       color: 'bg-red-500', 
@@ -181,16 +179,16 @@ const getStatusConfig = (status) => {
       dotColor: 'bg-red-500',
     },
     'cancelled': { 
-      color: 'bg-slate-500', 
+      color: 'bg-red-500', 
       label: 'Cancelled',
-      icon: XCircle,
-      dotColor: 'bg-slate-500',
+      icon: Ban,
+      dotColor: 'bg-red-500',
     },
     'returned_for_revision': { 
-      color: 'bg-purple-500', 
-      label: 'Returned',
-      icon: AlertCircle,
-      dotColor: 'bg-purple-500',
+      color: 'bg-red-500', 
+      label: 'Rejected',
+      icon: XCircle,
+      dotColor: 'bg-red-500',
     },
     'draft': {
       color: 'bg-slate-400',
@@ -453,6 +451,7 @@ const TripHistoryDetailModal = ({ trip, open, onOpenChange, history, loading }) 
 
 const GsoAllTrips = () => {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [departmentFilter, setDepartmentFilter] = useState('all');
@@ -461,6 +460,10 @@ const GsoAllTrips = () => {
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [tripHistories, setTripHistories] = useState({});
   const [historyLoading, setHistoryLoading] = useState(false);
+
+  // ✅ Cancel States
+  const [showCancelDialog, setShowCancelDialog] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
 
   // ============ QUERY ============
   const { 
@@ -486,14 +489,41 @@ const GsoAllTrips = () => {
 
   const trips = Array.isArray(tripsData) ? tripsData : [];
 
+  // ✅ CANCEL MUTATION
+  const cancelMutation = useMutation({
+    mutationFn: async ({ ticketId, reason }) => {
+      const response = await gsoAPI.cancelTrip(ticketId, reason);
+      return response.data;
+    },
+    onSuccess: (data) => {
+      toast.success(data.message || "Trip cancelled successfully!");
+      queryClient.invalidateQueries({ queryKey: ["gso-all-trips"] });
+      setShowCancelDialog(false);
+      setSelectedTrip(null);
+      setCancelReason("");
+    },
+    onError: (error) => {
+      toast.error(error?.response?.data?.message || error.message || "Failed to cancel trip");
+    },
+  });
+
+  const handleCancelSubmit = () => {
+    if (!cancelReason.trim() || cancelReason.trim().length < 5) {
+      return toast.error("Please provide a reason (at least 5 characters)");
+    }
+    const ticketId = getTicketId(selectedTrip);
+    cancelMutation.mutate({ ticketId, reason: cancelReason });
+  };
+
   // ============ STATS ============
   const stats = useMemo(() => {
     const total = trips.length;
     const pending = trips.filter(t => t?.status === 'pending_mayors_office').length;
+    const ready = trips.filter(t => ['funds_issued', 'acknowledged'].includes(t?.status)).length;
     const inTransit = trips.filter(t => t?.status === 'in_transit').length;
+    const completed = trips.filter(t => ['completed', 'pending_gso_validation'].includes(t?.status)).length;
     const closed = trips.filter(t => t?.status === 'closed').length;
-    const pendingRecon = trips.filter(t => t?.status === 'pending_reconciliation').length;
-    const pendingValidation = trips.filter(t => t?.status === 'pending_gso_validation' || t?.status === 'completed').length;
+    const cancelled = trips.filter(t => t?.status === 'cancelled').length;
 
     return [
       {
@@ -502,39 +532,34 @@ const GsoAllTrips = () => {
         icon: Truck,
         color: 'from-blue-500 to-blue-600',
         subtitle: 'All time',
-        trend: total > 0 ? 12 : 0,
       },
       {
-        title: 'Pending MO',
+        title: 'Pending',
         value: pending,
         icon: Clock,
-        color: 'from-yellow-500 to-yellow-600',
-        subtitle: 'Awaiting approval',
-        trend: pending > 0 ? 8 : 0,
+        color: 'from-orange-500 to-orange-600',
+        subtitle: 'Waiting for funds',
       },
       {
         title: 'In Transit',
         value: inTransit,
         icon: Truck,
-        color: 'from-indigo-500 to-indigo-600',
+        color: 'from-purple-500 to-purple-600',
         subtitle: 'On the road',
-        trend: inTransit > 0 ? 5 : 0,
       },
       {
-        title: 'Pending Validation',
-        value: pendingValidation,
+        title: 'Completed',
+        value: completed,
         icon: Shield,
-        color: 'from-purple-500 to-purple-600',
-        subtitle: 'Need GSO closing',
-        trend: pendingValidation > 0 ? 3 : 0,
+        color: 'from-emerald-500 to-emerald-600',
+        subtitle: 'Needs closing',
       },
       {
         title: 'Closed',
         value: closed,
         icon: CheckCircle,
-        color: 'from-emerald-500 to-emerald-600',
-        subtitle: 'Completed',
-        trend: closed > 0 ? 15 : 0,
+        color: 'from-slate-500 to-slate-600',
+        subtitle: 'Finished',
       },
     ];
   }, [trips]);
@@ -621,6 +646,13 @@ const GsoAllTrips = () => {
     } finally {
       setHistoryLoading(false);
     }
+  };
+
+  // ✅ OPEN CANCEL DIALOG
+  const handleOpenCancelDialog = (trip) => {
+    setSelectedTrip(trip);
+    setCancelReason("");
+    setShowCancelDialog(true);
   };
 
   const handleExport = () => {
@@ -927,6 +959,7 @@ const GsoAllTrips = () => {
                     const ticketId = getTicketId(trip);
                     const tripCount = trip.trip_count || 0;
                     const hasHistory = tripCount > 0;
+                    const canCancel = ['pending_mayors_office', 'funds_issued', 'acknowledged'].includes(trip.status);
 
                     return (
                       <TableRow 
@@ -1016,6 +1049,19 @@ const GsoAllTrips = () => {
                               <History className="h-3.5 w-3.5" />
                               <span className="text-xs font-medium">History</span>
                             </Button>
+
+                            {/* ✅ Cancel Button (Only for Pending and Ready status) */}
+                            {canCancel && (
+                              <Button
+                                size="sm"
+                                onClick={() => handleOpenCancelDialog(trip)}
+                                className="bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 h-8 flex items-center gap-1 rounded-lg transition-all duration-200 hover:scale-105 active:scale-95 shadow-sm shadow-red-500/20"
+                                title="Cancel Trip"
+                              >
+                                <Ban className="h-3.5 w-3.5" />
+                                <span className="text-xs font-medium">Cancel</span>
+                              </Button>
+                            )}
                           </div>
                         </TableCell>
                       </TableRow>
@@ -1036,6 +1082,44 @@ const GsoAllTrips = () => {
         history={selectedTrip ? tripHistories[getTicketId(selectedTrip)] || [] : []}
         loading={historyLoading}
       />
+
+      {/* ✅ Cancel Dialog */}
+      <Dialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
+        <DialogContent className="bg-[#121829] border-slate-700 text-slate-200">
+          <DialogHeader>
+            <DialogTitle className="text-white flex items-center gap-2">
+              <Ban className="h-5 w-5 text-red-500" /> Cancel Trip Ticket
+            </DialogTitle>
+            <DialogDescription className="text-slate-400">
+              This will cancel the trip ticket. It will be removed from the DO's Pending Release list.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <label className="text-sm font-medium text-slate-300">Reason for Cancellation</label>
+            <Textarea 
+              placeholder="Enter reason (at least 5 characters)..." 
+              value={cancelReason} 
+              onChange={(e) => setCancelReason(e.target.value)} 
+              className="bg-[#0b101c] border-slate-700 text-white" 
+              rows={4} 
+            />
+            {cancelReason.trim().length > 0 && cancelReason.trim().length < 5 && (
+              <p className="text-xs text-red-400">Reason must be at least 5 characters.</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowCancelDialog(false)} className="border-slate-700 text-slate-300">Cancel</Button>
+            <Button 
+              onClick={handleCancelSubmit} 
+              disabled={cancelMutation.isPending || cancelReason.trim().length < 5} 
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              {cancelMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Ban className="h-4 w-4 mr-2" />}
+              Confirm Cancel
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
