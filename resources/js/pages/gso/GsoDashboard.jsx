@@ -107,7 +107,6 @@ const GsoDashboard = () => {
         queryClient.invalidateQueries({ queryKey: ["gso-dashboard-trips"] });
         queryClient.invalidateQueries({ queryKey: ["gps-active-trips"] });
         queryClient.invalidateQueries({ queryKey: ["gso-pending-validation"] });
-        queryClient.invalidateQueries({ queryKey: ["gso-fuel-ledger"] });
     }, [queryClient]);
 
     useAutoRefresh(["gso-trip-updated", "gps-active-trips", "trip-completed"], fetchAllData);
@@ -148,19 +147,12 @@ const GsoDashboard = () => {
     });
     const allTrips = useMemo(() => Array.isArray(allTripsRaw) ? allTripsRaw : [], [allTripsRaw]);
 
-    // 5. Pending Validation (For Validation Table & Fuel Ledger)
+    // 5. Pending Validation
     const { data: pendingValidationRaw = [], isLoading: validationLoading } = useOptimizedQuery({
         queryKey: ["gso-pending-validation"],
         queryFn: async () => extractArray(await gsoAPI.getPendingValidation()),
     });
     const pendingValidation = useMemo(() => Array.isArray(pendingValidationRaw) ? pendingValidationRaw : [], [pendingValidationRaw]);
-
-    // 6. Fuel Ledger (If you have a separate API for past validated trips)
-    const { data: fuelLedgerRaw = [], isLoading: ledgerLoading } = useOptimizedQuery({
-        queryKey: ["gso-fuel-ledger"],
-        queryFn: async () => extractArray(await gsoAPI.getFuelLedger()),
-    });
-    const fuelLedger = useMemo(() => Array.isArray(fuelLedgerRaw) ? fuelLedgerRaw : [], [fuelLedgerRaw]);
 
     // ============ MUTATIONS ============
     const validateMutation = useMutation({
@@ -174,7 +166,6 @@ const GsoDashboard = () => {
             toast.success(data.message || "Trip validated successfully!");
             queryClient.invalidateQueries({ queryKey: ["gso-pending-validation"] });
             queryClient.invalidateQueries({ queryKey: ["gso-dashboard-trips"] });
-            queryClient.invalidateQueries({ queryKey: ["gso-fuel-ledger"] });
             setShowValidateDialog(false);
             setSelectedTicket(null);
             setHasWatchedReplay(false);
@@ -289,7 +280,7 @@ const GsoDashboard = () => {
     }, []);
 
     // ============================================
-    // FUEL LEDGER DATA MAPPING
+    // FUEL LEDGER DATA MAPPING (Derived from Pending)
     // ============================================
     const pendingValidationLedger = useMemo(() => {
         return pendingValidation.map(trip => {
