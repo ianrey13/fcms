@@ -140,14 +140,14 @@ const GsoDashboard = () => {
     });
     const activeTrips = useMemo(() => Array.isArray(activeTripsRaw) ? activeTripsRaw : [], [activeTripsRaw]);
 
-    // 4. All Trips (For Recent list)
+    // 4. All Trips (For Recent list & Ledger)
     const { data: allTripsRaw = [], isLoading: tripsLoading } = useOptimizedQuery({
         queryKey: ["gso-dashboard-trips"],
         queryFn: async () => extractArray(await gsoAPI.getAllTrips()),
     });
     const allTrips = useMemo(() => Array.isArray(allTripsRaw) ? allTripsRaw : [], [allTripsRaw]);
 
-    // 5. Pending Validation
+    // 5. Pending Validation (For Validation Table)
     const { data: pendingValidationRaw = [], isLoading: validationLoading } = useOptimizedQuery({
         queryKey: ["gso-pending-validation"],
         queryFn: async () => extractArray(await gsoAPI.getPendingValidation()),
@@ -158,7 +158,6 @@ const GsoDashboard = () => {
     const validateMutation = useMutation({
         mutationFn: async ({ ticketId }) => {
             if (!ticketId) throw new Error("Ticket ID is missing");
-            // Removed validationNote data
             const response = await gsoAPI.validateTrip(ticketId, {});
             return response.data;
         },
@@ -212,6 +211,40 @@ const GsoDashboard = () => {
     const displayVehicle = displayTripData?.vehicle;
 
     // ============================================
+    // LEDGER HELPER — compute fuel columns
+    // ============================================
+    const computeLedgerRow = useCallback((trip) => {
+        const vehicle = vehicles.find(v => v.plate_number === trip.vehicle?.plate_number);
+        const beginning = parseFloat(vehicle?.initial_estimated_fuel ?? vehicle?.current_fuel_balance ?? 0);
+        const fuelIn = parseFloat(trip.liters_availed || trip.gas_slip?.fuel_receipt?.liters_availed || 0);
+        const distance = parseFloat(trip.actual_distance_km || 0);
+        const efficiency = parseFloat(vehicle?.reference_efficiency || 10);
+        const fuelOut = distance > 0 ? (distance / efficiency) : 0;
+        const balance = beginning + fuelIn - fuelOut;
+        return {
+            ...trip,
+            beginning: beginning.toFixed(1),
+            fuelIn: fuelIn.toFixed(1),
+            fuelOut: fuelOut.toFixed(1),
+            balance: balance.toFixed(1),
+        };
+    }, [vehicles]);
+
+    // Pending Validation ledger rows
+    const pendingLedgerRows = useMemo(() => {
+        return pendingValidation.map(computeLedgerRow);
+    }, [pendingValidation, computeLedgerRow]);
+
+    // Validated (Fuel Ledger history) — trips that are closed/validated
+    const validatedLedgerRows = useMemo(() => {
+        return allTrips
+            .filter(t => t.status === 'closed' || t.status === 'validated' || t.status === 'completed')
+            .sort((a, b) => new Date(b.updated_at || b.trip_date) - new Date(a.updated_at || a.trip_date))
+            .slice(0, 20)
+            .map(computeLedgerRow);
+    }, [allTrips, computeLedgerRow]);
+
+    // ============================================
     // VALIDATION & REPLAY HANDLERS
     // ============================================
     
@@ -228,11 +261,8 @@ const GsoDashboard = () => {
             const coords = track.map(p => [p.latitude, p.longitude]);
             setRouteCoordinates(coords);
             
-            // Auto-play the replay once coordinates are loaded
             if (coords.length >= 2) {
-                setTimeout(() => {
-                    startReplay(coords);
-                }, 300); // Small delay to allow map bounds to initialize
+                setTimeout(() => startReplay(coords), 300);
             }
         } catch (e) {
             console.error("Failed to load route", e);
@@ -244,20 +274,18 @@ const GsoDashboard = () => {
 
     const startReplay = (coords) => {
         if (isReplaying) handleStopReplay();
-
         setIsReplaying(true);
         setReplayIndex(0);
         setHasWatchedReplay(false);
 
         let currentIdx = 0;
-        // Increased speed to 100ms per coordinate
         replayIntervalRef.current = setInterval(() => {
             currentIdx++;
             if (currentIdx >= coords.length) {
                 clearInterval(replayIntervalRef.current);
                 setIsReplaying(false);
                 setReplayIndex(0);
-                setHasWatchedReplay(true); // Enable confirm button
+                setHasWatchedReplay(true);
                 return;
             }
             setReplayIndex(currentIdx);
@@ -278,29 +306,6 @@ const GsoDashboard = () => {
             if (replayIntervalRef.current) clearInterval(replayIntervalRef.current);
         };
     }, []);
-
-    // ============================================
-    // FUEL LEDGER DATA MAPPING (Derived from Pending)
-    // ============================================
-    const pendingValidationLedger = useMemo(() => {
-        return pendingValidation.map(trip => {
-            const vehicle = vehicles.find(v => v.plate_number === trip.vehicle?.plate_number);
-            const beginning = parseFloat(vehicle?.initial_estimated_fuel ?? vehicle?.current_fuel_balance ?? 0);
-            const fuelIn = parseFloat(trip.liters_availed || trip.gas_slip?.fuel_receipt?.liters_availed || 0);
-            const distance = parseFloat(trip.actual_distance_km || 0);
-            const efficiency = parseFloat(vehicle?.reference_efficiency || 10);
-            const fuelOut = distance > 0 ? (distance / efficiency) : 0;
-            const balance = beginning + fuelIn - fuelOut;
-
-            return {
-                ...trip,
-                beginning: beginning.toFixed(1),
-                fuelIn: fuelIn.toFixed(1),
-                fuelOut: fuelOut.toFixed(1),
-                balance: balance.toFixed(1),
-            };
-        });
-    }, [pendingValidation, vehicles]);
 
     return (
         <div className="min-h-screen bg-[#090e1a] p-4 md:p-6 font-sans text-slate-200">
@@ -636,18 +641,77 @@ const GsoDashboard = () => {
                 </div>
 
                 {/* ============================================================ */}
-                {/* 5. PENDING VALIDATION SECTION (UPDATED TO MATCH SCREENSHOT) */}
+                {/* 5. PENDING VALIDATION TABLE (Separate Table) */}
                 {/* ============================================================ */}
                 <Card className="bg-[#121829] border-slate-800 shadow-lg">
                     <CardHeader className="border-b border-slate-800 pb-4">
                         <div className="flex items-center justify-between">
                             <div>
                                 <CardTitle className="text-white flex items-center gap-2">
-                                    <FileCheck className="h-5 w-5 text-blue-500" /> Pending Validation & Fuel Ledger
+                                    <FileCheck className="h-5 w-5 text-blue-500" /> Pending Validation
                                 </CardTitle>
-                                <p className="text-xs text-slate-400 mt-1">Trips completed by the driver, awaiting GSO validation and fuel balance confirmation.</p>
+                                <p className="text-xs text-slate-400 mt-1">Trips completed by the driver, awaiting GSO validation.</p>
                             </div>
                             <Badge className="bg-blue-600 text-white">{pendingValidation.length} tickets</Badge>
+                        </div>
+                    </CardHeader>
+                    <CardContent className="p-0">
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left text-sm text-slate-300">
+                                <thead className="bg-[#0b101c] text-slate-500">
+                                    <tr>
+                                        <th className="px-4 py-3 font-medium">Date</th>
+                                        <th className="px-4 py-3 font-medium">TT No.</th>
+                                        <th className="px-4 py-3 font-medium">Vehicle</th>
+                                        <th className="px-4 py-3 font-medium">Destination</th>
+                                        <th className="px-4 py-3 font-medium">Driver</th>
+                                        <th className="px-4 py-3 font-medium text-right">Distance (km)</th>
+                                        <th className="px-4 py-3 font-medium text-center">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-800/50">
+                                    {validationLoading ? (
+                                        <tr><td colSpan={7} className="text-center py-6"><Loader2 className="h-5 w-5 animate-spin mx-auto text-blue-500"/></td></tr>
+                                    ) : pendingValidation.length === 0 ? (
+                                        <tr><td colSpan={7} className="text-center py-6 text-slate-500">No pending validations.</td></tr>
+                                    ) : pendingValidation.map(trip => (
+                                        <tr key={trip.trip_ticket_id || trip.id} className="hover:bg-[#1a2235]">
+                                            <td className="px-4 py-3 whitespace-nowrap">{formatDateShort(trip.trip_date)}</td>
+                                            <td className="px-4 py-3 font-mono text-white">{trip.trip_ticket_number || trip.ticket_number}</td>
+                                            <td className="px-4 py-3">{trip.vehicle?.plate_number || 'N/A'}</td>
+                                            <td className="px-4 py-3 truncate max-w-[150px]">{trip.destination}</td>
+                                            <td className="px-4 py-3">{trip.driver_name || trip.driver?.name || 'N/A'}</td>
+                                            <td className="px-4 py-3 text-right font-bold text-white">{trip.actual_distance_km || 0}</td>
+                                            <td className="px-4 py-3 text-center">
+                                                <Button 
+                                                    size="sm" 
+                                                    onClick={() => handleOpenValidateDialog(trip)}
+                                                    className="bg-emerald-600 hover:bg-emerald-700 h-8 px-3 text-xs"
+                                                >
+                                                    <Check className="h-3.5 w-3.5 mr-1" /> Review & Validate
+                                                </Button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </CardContent>
+                </Card>
+
+                {/* ============================================================ */}
+                {/* 6. FUEL LEDGER TABLE (Separate Table - Validated History) */}
+                {/* ============================================================ */}
+                <Card className="bg-[#121829] border-slate-800 shadow-lg">
+                    <CardHeader className="border-b border-slate-800 pb-4">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <CardTitle className="text-white flex items-center gap-2">
+                                    <Fuel className="h-5 w-5 text-blue-500" /> Fuel Ledger
+                                </CardTitle>
+                                <p className="text-xs text-slate-400 mt-1">Validated trip fuel consumption history.</p>
+                            </div>
+                            <Badge className="bg-slate-700 text-slate-200">{validatedLedgerRows.length} entries</Badge>
                         </div>
                     </CardHeader>
                     <CardContent className="p-0">
@@ -662,32 +726,22 @@ const GsoDashboard = () => {
                                         <th className="px-4 py-3 font-medium text-right">Fuel In (L)</th>
                                         <th className="px-4 py-3 font-medium text-right">Fuel Out (L)</th>
                                         <th className="px-4 py-3 font-medium text-right">Balance (L)</th>
-                                        <th className="px-4 py-3 font-medium text-center">Action</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-800/50">
-                                    {validationLoading ? (
-                                        <tr><td colSpan={8} className="text-center py-6"><Loader2 className="h-5 w-5 animate-spin mx-auto text-blue-500"/></td></tr>
-                                    ) : pendingValidationLedger.length === 0 ? (
-                                        <tr><td colSpan={8} className="text-center py-6 text-slate-500">No pending validations.</td></tr>
-                                    ) : pendingValidationLedger.map(trip => (
-                                        <tr key={trip.trip_ticket_id || trip.id} className="hover:bg-[#1a2235]">
-                                            <td className="px-4 py-3 whitespace-nowrap">{formatDateShort(trip.trip_date)}</td>
-                                            <td className="px-4 py-3 font-mono text-white">{trip.trip_ticket_number || trip.ticket_number}</td>
-                                            <td className="px-4 py-3">{trip.vehicle?.plate_number || 'N/A'}</td>
-                                            <td className="px-4 py-3 text-right text-slate-400">{trip.beginning}</td>
-                                            <td className="px-4 py-3 text-right text-emerald-400">{trip.fuelIn}</td>
-                                            <td className="px-4 py-3 text-right text-red-400">{trip.fuelOut}</td>
-                                            <td className="px-4 py-3 text-right font-bold text-white">{trip.balance}</td>
-                                            <td className="px-4 py-3 text-center">
-                                                <Button 
-                                                    size="sm" 
-                                                    onClick={() => handleOpenValidateDialog(trip)}
-                                                    className="bg-emerald-600 hover:bg-emerald-700 h-8 px-3 text-xs"
-                                                >
-                                                    <Check className="h-3.5 w-3.5 mr-1" /> Review & Validate
-                                                </Button>
-                                            </td>
+                                    {tripsLoading ? (
+                                        <tr><td colSpan={7} className="text-center py-6"><Loader2 className="h-5 w-5 animate-spin mx-auto text-blue-500"/></td></tr>
+                                    ) : validatedLedgerRows.length === 0 ? (
+                                        <tr><td colSpan={7} className="text-center py-6 text-slate-500">No validated trips yet.</td></tr>
+                                    ) : validatedLedgerRows.map(entry => (
+                                        <tr key={entry.trip_ticket_id || entry.id} className="hover:bg-[#1a2235]">
+                                            <td className="px-4 py-3 whitespace-nowrap">{formatDateShort(entry.trip_date)}</td>
+                                            <td className="px-4 py-3 font-mono text-white">{entry.trip_ticket_number || entry.ticket_number}</td>
+                                            <td className="px-4 py-3">{entry.vehicle?.plate_number || 'N/A'}</td>
+                                            <td className="px-4 py-3 text-right text-slate-400">{entry.beginning}</td>
+                                            <td className="px-4 py-3 text-right text-emerald-400">{entry.fuelIn}</td>
+                                            <td className="px-4 py-3 text-right text-red-400">{entry.fuelOut}</td>
+                                            <td className="px-4 py-3 text-right font-bold text-white">{entry.balance}</td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -828,7 +882,6 @@ const GsoDashboard = () => {
                                 </div>
                             </div>
 
-                            {/* UPDATED: Removed Textarea, only Confirm button */}
                             <div className="p-4 bg-[#121829] border-t border-slate-800 flex items-center justify-end">
                                 <Button 
                                     onClick={() => {
