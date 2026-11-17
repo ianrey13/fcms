@@ -1,17 +1,19 @@
 // src/pages/gso/GsoDashboard.jsx
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "../../contexts/AuthContext";
 import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
 import { useOptimizedQuery } from "../../hooks/useOptimizedQuery";
 import { useAutoRefresh } from "../../hooks/useAutoRefresh";
+import { useRealtime } from "../../contexts/RealtimeContext";
 import { gsoAPI, vehicleAPI, gpsAPI, departmentAPI } from "../../services/api";
-import { MapContainer, TileLayer, Marker, Polyline, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, ZoomControl, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import {
     Car, CheckCircle, AlertTriangle, Wrench, RefreshCw, MapPin, Search,
-    Activity, PlusCircle, Fuel, Clock, FileCheck, Loader2, Check,
-    Play, X, Calendar, Flag, Route
+    ChevronDown, Activity, PlusCircle, Fuel, Clock, FileCheck, Loader2, Check,
+    Play, Square, User, Users, Target, Flag, Route, Calendar, X
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -22,7 +24,7 @@ import { toast } from "react-hot-toast";
 import { cn } from "@/lib/utils";
 
 // ============================================
-// HELPERS
+// HELPERS & MAP ICONS
 // ============================================
 const extractArray = (response) => {
     if (!response) return [];
@@ -44,6 +46,10 @@ const createVehicleIcon = (plateNumber, vehicleModel) => {
             <div style="background-color:#3b82f6; width:32px; height:32px; border-radius:50%; border:2px solid white; display:flex; align-items:center; justify-content:center; box-shadow:0 4px 6px rgba(0,0,0,0.3); z-index:2;">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/></svg>
             </div>
+            <div style="position:absolute; top:38px; background-color:rgba(255,255,255,0.95); color:#0f172a; padding:2px 6px; border-radius:4px; font-size:10px; font-weight:700; white-space:nowrap; box-shadow:0 2px 4px rgba(0,0,0,0.2); border:1px solid #cbd5e1; z-index:1;">
+                ${plateNumber || 'Unknown'}
+                <span style="font-weight:400; font-size:9px; color:#64748b; display:block; text-align:center;">${vehicleModel || ''}</span>
+            </div>
         </div>`,
         iconSize: [120, 80], iconAnchor: [60, 40], popupAnchor: [0, -30],
     });
@@ -52,8 +58,14 @@ const createVehicleIcon = (plateNumber, vehicleModel) => {
 const createSvgIcon = (color, iconPath) => {
     return L.divIcon({
         className: 'custom-svg-icon',
-        html: `<div style="background-color: ${color}; width: 28px; height: 28px; border-radius: 50%; border: 2px solid white; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 6px rgba(0,0,0,0.3);">
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">${iconPath}</svg>
+        html: `<div style="
+            background-color: ${color}; width: 28px; height: 28px; border-radius: 50%;
+            border: 2px solid white; display: flex; align-items: center; justify-content: center;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        ">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                ${iconPath}
+            </svg>
         </div>`,
         iconSize: [28, 28], iconAnchor: [14, 14],
     });
@@ -65,6 +77,7 @@ const icons = {
     vehicle: createSvgIcon('#3b82f6', '<path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/>'),
 };
 
+// Helper para mo-center ang mapa sa route
 const MapBounds = ({ coords }) => {
     const map = useMap();
     useEffect(() => {
@@ -79,14 +92,21 @@ const MapBounds = ({ coords }) => {
 // MAIN COMPONENT
 // ============================================
 const GsoDashboard = () => {
+    const { user } = useAuth();
     const navigate = useNavigate();
     const queryClient = useQueryClient();
+    const { isConnected } = useRealtime();
 
+    // States
     const [searchTerm, setSearchTerm] = useState("");
     const [deptFilter, setDeptFilter] = useState("all");
+    
+    // Validation Dialog States
     const [selectedTicket, setSelectedTicket] = useState(null);
     const [showValidateDialog, setShowValidateDialog] = useState(false);
     const [hasWatchedReplay, setHasWatchedReplay] = useState(false);
+    
+    // Replay States
     const [routeCoordinates, setRouteCoordinates] = useState([]);
     const [loadingRoute, setLoadingRoute] = useState(false);
     const [isReplaying, setIsReplaying] = useState(false);
@@ -103,18 +123,22 @@ const GsoDashboard = () => {
     useAutoRefresh(["gso-trip-updated", "gps-active-trips", "trip-completed"], fetchAllData);
 
     // ============ QUERIES ============
+    
+    // 1. Vehicles
     const { data: vehiclesRaw = [], isLoading: vehiclesLoading } = useOptimizedQuery({
         queryKey: ["gso-dashboard-vehicles"],
         queryFn: async () => extractArray(await vehicleAPI.getAll()),
     });
     const vehicles = useMemo(() => Array.isArray(vehiclesRaw) ? vehiclesRaw : [], [vehiclesRaw]);
 
+    // 2. Departments
     const { data: departmentsRaw = [] } = useOptimizedQuery({
         queryKey: ["gso-dashboard-departments"],
         queryFn: async () => extractArray(await departmentAPI.getAll()),
     });
     const departments = useMemo(() => Array.isArray(departmentsRaw) ? departmentsRaw : [], [departmentsRaw]);
 
+    // 3. Active Trips (Live Map)
     const { data: activeTripsRaw = [], isLoading: activeTripsLoading } = useQuery({
         queryKey: ["gps-active-trips"],
         queryFn: async () => {
@@ -127,13 +151,14 @@ const GsoDashboard = () => {
     });
     const activeTrips = useMemo(() => Array.isArray(activeTripsRaw) ? activeTripsRaw : [], [activeTripsRaw]);
 
+    // 4. All Trips (For Recent list)
     const { data: allTripsRaw = [], isLoading: tripsLoading } = useOptimizedQuery({
         queryKey: ["gso-dashboard-trips"],
         queryFn: async () => extractArray(await gsoAPI.getAllTrips()),
     });
     const allTrips = useMemo(() => Array.isArray(allTripsRaw) ? allTripsRaw : [], [allTripsRaw]);
 
-    // ✅ Gikuha na ang data sa validation
+    // 5. Pending Validation
     const { data: pendingValidationRaw = [], isLoading: validationLoading } = useOptimizedQuery({
         queryKey: ["gso-pending-validation"],
         queryFn: async () => extractArray(await gsoAPI.getPendingValidation()),
@@ -161,6 +186,7 @@ const GsoDashboard = () => {
     });
 
     // ============ DERIVED DATA ============
+
     const totalVehicles = vehicles.length;
     const serviceable = vehicles.filter(v => v.status === 'active' && !v.maintenance_flag).length;
     const unserviceable = vehicles.filter(v => v.status !== 'active').length;
@@ -195,18 +221,15 @@ const GsoDashboard = () => {
     const displayTripData = activeTrips.length > 0 ? activeTrips[0] : null;
     const displayVehicle = displayTripData?.vehicle;
 
-    // ✅ FIXED: Pag-extract sa `liters_availed` gikan sa `gas_slip`
+    // ✅ FIXED: Pag-compute sa Fuel In gikan sa gas_slip
     const pendingValidationLedger = useMemo(() => {
         return pendingValidation.map(trip => {
             const vehicle = vehicles.find(v => v.plate_number === trip.vehicle?.plate_number) || trip.vehicle;
-            
-            // Beginning (Initial fuel)
             const beginning = parseFloat(vehicle?.initial_estimated_fuel ?? vehicle?.current_fuel_balance ?? 0);
             
-            // ✅ Gikuha gikan sa gas_slip.fuel_receipt based sa backend payload
-            const fuelIn = parseFloat(trip.gas_slip?.fuel_receipt?.liters_availed || trip.estimated_fuel_liters || 0);
+            // Gikuha ang liters gikan sa gas_slip.fuel_receipt (base sa backend)
+            const fuelIn = parseFloat(trip.gas_slip?.fuel_receipt?.liters_availed || 0);
             
-            // Distance
             const distance = parseFloat(trip.actual_distance_km || trip.gps_distance_km || 0);
             const efficiency = parseFloat(vehicle?.reference_efficiency || 10);
             const fuelOut = distance > 0 ? (distance / efficiency) : 0;
@@ -222,12 +245,14 @@ const GsoDashboard = () => {
                 vehicleString: trip.vehicle ? `${trip.vehicle.vehicle_model} - ${trip.vehicle.plate_number}` : 'N/A',
                 displayTicketNo: trip.ticket_number || trip.trip_ticket_number,
                 displayId: trip.id || trip.trip_ticket_id,
-                displayDate: trip.trip_date || trip.submitted_at,
             };
         });
     }, [pendingValidation, vehicles]);
 
-    // ============ HANDLERS ============
+    // ============================================
+    // VALIDATION & REPLAY HANDLERS
+    // ============================================
+    
     const handleOpenValidateDialog = async (trip) => {
         setSelectedTicket(trip);
         setShowValidateDialog(true);
@@ -244,7 +269,7 @@ const GsoDashboard = () => {
             if (coords.length >= 2) {
                 setTimeout(() => startReplay(coords), 500);
             } else {
-                setHasWatchedReplay(true); // Enable confirm button if walay route data
+                setHasWatchedReplay(true);
             }
         } catch (e) {
             console.error("Failed to load route", e);
@@ -268,7 +293,7 @@ const GsoDashboard = () => {
                 clearInterval(replayIntervalRef.current);
                 setIsReplaying(false);
                 setReplayIndex(0);
-                setHasWatchedReplay(true); // ✅ Replay finished
+                setHasWatchedReplay(true);
                 return;
             }
             setReplayIndex(currentIdx);
@@ -294,9 +319,10 @@ const GsoDashboard = () => {
         <div className="min-h-screen bg-[#090e1a] p-4 md:p-6 font-sans text-slate-200">
             <div className="max-w-[1600px] mx-auto space-y-6">
                 
-                {/* HERO HEADER */}
+                {/* 1. HERO HEADER */}
                 <div className="relative overflow-hidden bg-gradient-to-r from-[#0f172a] via-[#1e3a8a] to-[#0f172a] rounded-2xl p-6 md:p-8 border border-blue-900/50 shadow-2xl">
                     <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
+                    
                     <div className="relative z-10 flex flex-col md:flex-row md:items-end justify-between gap-6">
                         <div>
                             <div className="flex items-center gap-2 mb-3">
@@ -304,9 +330,14 @@ const GsoDashboard = () => {
                                     <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 mr-1.5 animate-pulse" /> GSO Office
                                 </Badge>
                                 <Badge className="bg-blue-600 text-white border-none rounded-full px-3 py-1 text-[10px]">General Services Office</Badge>
+                                <Badge className="bg-purple-600 text-white border-none rounded-full px-3 py-1 text-[10px]">MIS Dashboard</Badge>
                             </div>
                             <h1 className="text-3xl font-bold text-white tracking-tight">GSO Dashboard</h1>
+                            <p className="text-blue-200/70 text-sm mt-1 max-w-lg">
+                                Monitor vehicle status, fuel balance, and trip activities in MIS or Laguindingan.
+                            </p>
                         </div>
+                        
                         <div className="flex gap-3">
                             <Button onClick={fetchAllData} variant="outline" className="bg-white/10 border-white/20 text-white hover:bg-white/20 rounded-xl h-10 px-4">
                                 <RefreshCw className={cn("h-4 w-4 mr-2", (vehiclesLoading || activeTripsLoading) && "animate-spin")} /> Refresh
@@ -318,57 +349,71 @@ const GsoDashboard = () => {
                     </div>
                 </div>
 
-                {/* STATS CARDS */}
+                {/* 2. STATS CARDS */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                     <Card className="bg-[#121829] border-slate-800 shadow-lg">
                         <CardContent className="p-5 flex items-center justify-between">
                             <div>
                                 <p className="text-3xl font-bold text-white">{totalVehicles}</p>
                                 <p className="text-sm font-medium text-slate-300 mt-1">Total Vehicles</p>
+                                <p className="text-[10px] text-slate-500 mt-0.5">Across All Departments</p>
                             </div>
                             <div className="p-3 bg-blue-600/20 rounded-xl"><Car className="h-6 w-6 text-blue-500" /></div>
                         </CardContent>
                     </Card>
+                    
                     <Card className="bg-[#121829] border-slate-800 shadow-lg">
                         <CardContent className="p-5 flex items-center justify-between">
                             <div>
                                 <p className="text-3xl font-bold text-white">{serviceable}</p>
                                 <p className="text-sm font-medium text-slate-300 mt-1">Serviceable</p>
+                                <p className="text-[10px] text-slate-500 mt-0.5">Operational Condition</p>
                             </div>
                             <div className="p-3 bg-emerald-600/20 rounded-xl"><CheckCircle className="h-6 w-6 text-emerald-500" /></div>
                         </CardContent>
                     </Card>
+
                     <Card className="bg-[#121829] border-slate-800 shadow-lg">
                         <CardContent className="p-5 flex items-center justify-between">
                             <div>
                                 <p className="text-3xl font-bold text-white">{unserviceable}</p>
                                 <p className="text-sm font-medium text-slate-300 mt-1">Unserviceable</p>
+                                <p className="text-[10px] text-slate-500 mt-0.5">Not Fit for Operation</p>
                             </div>
                             <div className="p-3 bg-red-600/20 rounded-xl"><AlertTriangle className="h-6 w-6 text-red-500" /></div>
                         </CardContent>
                     </Card>
+
                     <Card className="bg-[#121829] border-slate-800 shadow-lg">
                         <CardContent className="p-5 flex items-center justify-between">
                             <div>
                                 <p className="text-3xl font-bold text-white">{maintenance}</p>
                                 <p className="text-sm font-medium text-slate-300 mt-1">Under Maintenance</p>
+                                <p className="text-[10px] text-slate-500 mt-0.5">Currently Being Serviced</p>
                             </div>
                             <div className="p-3 bg-amber-600/20 rounded-xl"><Wrench className="h-6 w-6 text-amber-500" /></div>
                         </CardContent>
                     </Card>
                 </div>
 
-                {/* LIVE TRACKING & FUEL BALANCE MONITORING */}
+                {/* 3. LIVE TRACKING & FUEL BALANCE MONITORING */}
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    
                     <Card className="lg:col-span-2 bg-[#121829] border-slate-800 shadow-lg flex flex-col overflow-hidden">
                         <div className="p-4 border-b border-slate-800 flex justify-between items-center">
                             <h3 className="font-bold text-white flex items-center gap-2">
                                 <MapPin className="h-4 w-4 text-blue-500" /> Live Vehicle Tracking
                             </h3>
+                            <div className="flex items-center gap-1.5">
+                                <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                                <span className="text-[10px] text-emerald-400 font-medium">Real-time</span>
+                            </div>
                         </div>
+                        
                         <div className="flex-1 relative bg-[#0b101c] min-h-[350px]">
                             <MapContainer center={[8.5833, 124.6667]} zoom={12} style={{ height: '100%', width: '100%' }} zoomControl={false} className="z-0">
                                 <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                                <ZoomControl position="bottomright" />
                                 {activeTrips.map(trip => {
                                     if (!trip.current_location) return null;
                                     return (
@@ -376,6 +421,53 @@ const GsoDashboard = () => {
                                     );
                                 })}
                             </MapContainer>
+
+                            {displayTripData && displayVehicle && (
+                                <div className="absolute top-4 right-4 z-[400] bg-[#121829]/95 backdrop-blur-md border border-slate-700 rounded-xl p-4 w-72 shadow-2xl">
+                                    <div className="flex items-start justify-between mb-3 border-b border-slate-700 pb-2">
+                                        <div className="flex items-center gap-2">
+                                            <Car className="h-5 w-5 text-blue-500" />
+                                            <div>
+                                                <p className="font-bold text-white text-sm">{displayVehicle.vehicle_model}</p>
+                                                <p className="text-[10px] text-slate-400">Plate No. {displayVehicle.plate_number}</p>
+                                            </div>
+                                        </div>
+                                        <Badge className="bg-emerald-500/20 text-emerald-400 text-[9px] px-2">In Transit</Badge>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-y-2 text-xs mb-3">
+                                        <span className="text-slate-500">Purpose</span>
+                                        <span className="text-white text-right truncate">{displayTripData.purpose || "N/A"}</span>
+                                        <span className="text-slate-500">Destination</span>
+                                        <span className="text-white text-right truncate">{displayTripData.destination || "N/A"}</span>
+                                    </div>
+
+                                    <div className="bg-[#0b101c] rounded-lg p-3 mb-3">
+                                        <p className="text-[10px] text-slate-400 mb-1 flex items-center gap-1"><Fuel className="h-3 w-3" /> Fuel Balance (Est.)</p>
+                                        <div className="flex items-end gap-2 mb-1">
+                                            <span className="text-xl font-bold text-white">{displayVehicle.current_fuel_balance?.toFixed(1) || 0} L</span>
+                                            <span className="text-[10px] text-emerald-400 mb-1">
+                                                {((displayVehicle.current_fuel_balance / displayVehicle.tank_capacity) * 100).toFixed(1)}%
+                                            </span>
+                                        </div>
+                                        <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                                            <div className="bg-emerald-500 h-1.5 rounded-full" style={{ width: `${(displayVehicle.current_fuel_balance / displayVehicle.tank_capacity) * 100}%` }} />
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-2 text-[10px]">
+                                        <div className="flex items-center gap-1.5 text-slate-400"><Fuel className="h-3 w-3"/> Fuel Type: <span className="text-white capitalize">{displayVehicle.fuel_type}</span></div>
+                                        <div className="flex items-center gap-1.5 text-slate-400"><Activity className="h-3 w-3"/> Efficiency: <span className="text-white">{displayVehicle.reference_efficiency} km/L</span></div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                        
+                        <div className="p-3 bg-[#0b101c] border-t border-slate-800 flex gap-4 text-[10px] text-slate-400">
+                            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500"/> In Transit</span>
+                            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-500"/> Available</span>
+                            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500"/> Maintenance</span>
+                            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500"/> Unserviceable</span>
                         </div>
                     </Card>
 
@@ -384,17 +476,36 @@ const GsoDashboard = () => {
                             <h3 className="font-bold text-white flex items-center gap-2">
                                 <Fuel className="h-4 w-4 text-blue-500" /> Fuel Balance Monitoring
                             </h3>
+                            <button onClick={() => navigate('/admin/vehicles')} className="text-[10px] text-blue-400 hover:text-blue-300">View All →</button>
                         </div>
+                        
                         <div className="p-3 border-b border-slate-800 flex gap-2">
                             <div className="relative flex-1">
                                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-500" />
-                                <Input placeholder="Search vehicle..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-8 h-8 text-xs bg-[#0b101c] border-slate-700 text-white rounded-lg" />
+                                <Input 
+                                    placeholder="Search vehicle..." 
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                    className="pl-8 h-8 text-xs bg-[#0b101c] border-slate-700 text-white rounded-lg" 
+                                />
                             </div>
+                            <select
+                                value={deptFilter}
+                                onChange={(e) => setDeptFilter(e.target.value)}
+                                className="h-8 text-xs bg-[#0b101c] border border-slate-700 text-slate-300 rounded-lg px-2 outline-none focus:ring-1 focus:ring-blue-500"
+                            >
+                                <option value="all">All Departments</option>
+                                {departments.map(d => (
+                                    <option key={d.department_id} value={d.department_id}>{d.department_name}</option>
+                                ))}
+                            </select>
                         </div>
+
                         <div className="overflow-x-auto flex-1">
                             <table className="w-full text-left text-xs text-slate-300">
                                 <thead className="bg-[#0b101c] text-slate-500">
                                     <tr>
+                                        <th className="px-3 py-2 font-medium">Department</th>
                                         <th className="px-3 py-2 font-medium">Vehicle</th>
                                         <th className="px-3 py-2 font-medium">Plate No.</th>
                                         <th className="px-3 py-2 font-medium text-right">Balance</th>
@@ -403,12 +514,22 @@ const GsoDashboard = () => {
                                 <tbody className="divide-y divide-slate-800/50">
                                     {filteredVehicles.map(v => {
                                         const balance = parseFloat(v.current_fuel_balance || 0);
+                                        const cap = parseFloat(v.tank_capacity || 60);
+                                        const pct = Math.min(100, (balance / cap) * 100);
                                         return (
                                             <tr key={v.vehicle_id} className="hover:bg-[#1a2235]">
+                                                <td className="px-3 py-3 truncate max-w-[80px]">{v.department?.department_name || 'GSO'}</td>
                                                 <td className="px-3 py-3 font-medium text-white truncate max-w-[100px]">{v.vehicle_model}</td>
                                                 <td className="px-3 py-3 font-mono">{v.plate_number}</td>
-                                                <td className="px-3 py-3 text-right font-bold text-emerald-400">
-                                                    {balance.toFixed(1)} L
+                                                <td className="px-3 py-3 text-right">
+                                                    <div className="flex flex-col items-end">
+                                                        <span className={cn("font-bold", pct < 20 ? "text-red-400" : pct < 50 ? "text-amber-400" : "text-emerald-400")}>
+                                                            {balance.toFixed(0)} L
+                                                        </span>
+                                                        <div className="w-16 h-1 bg-slate-800 rounded-full mt-1">
+                                                            <div className={cn("h-1 rounded-full", pct < 20 ? "bg-red-500" : pct < 50 ? "bg-amber-500" : "bg-emerald-500")} style={{ width: `${pct}%` }} />
+                                                        </div>
+                                                    </div>
                                                 </td>
                                             </tr>
                                         );
@@ -419,12 +540,13 @@ const GsoDashboard = () => {
                     </Card>
                 </div>
 
-                {/* VEHICLE UTILIZATION & RECENT TRIPS */}
+                {/* 4. BOTTOM ROW (2 cards only) */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     <Card className="bg-[#121829] border-slate-800 shadow-lg p-4">
                         <h3 className="font-bold text-white mb-4 flex items-center gap-2">
                             <Activity className="h-4 w-4 text-blue-500" /> Vehicle Utilization
                         </h3>
+                        
                         <div className="flex items-center gap-4 mb-4">
                             <div className="flex flex-col items-center">
                                 <span className="text-2xl font-bold text-white">{inUse}</span>
@@ -438,11 +560,13 @@ const GsoDashboard = () => {
                                 <span className="text-[10px] text-slate-400">Available</span>
                             </div>
                         </div>
+
                         <div className="space-y-2 mt-4">
                             <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Vehicles Currently in Use</p>
                             <table className="w-full text-xs text-left">
                                 <thead className="text-slate-500 border-b border-slate-800">
                                     <tr>
+                                        <th className="pb-2 font-medium">Department</th>
                                         <th className="pb-2 font-medium">Vehicle</th>
                                         <th className="pb-2 font-medium text-right">Destination</th>
                                     </tr>
@@ -450,6 +574,7 @@ const GsoDashboard = () => {
                                 <tbody className="divide-y divide-slate-800/50">
                                     {activeTrips.slice(0, 3).map((trip, idx) => (
                                         <tr key={idx}>
+                                            <td className="py-2 text-slate-400 truncate max-w-[80px]">{trip.department || 'GSO'}</td>
                                             <td className="py-2 text-white truncate max-w-[100px]">{trip.vehicle?.vehicle_model}</td>
                                             <td className="py-2 text-right text-slate-300 truncate max-w-[100px]">{trip.destination || 'N/A'}</td>
                                         </tr>
@@ -495,7 +620,9 @@ const GsoDashboard = () => {
                     </Card>
                 </div>
 
-                {/* ✅ PENDING VALIDATION TABLE (Saktong columns) */}
+                {/* ============================================================ */}
+                {/* 5. PENDING VALIDATION & FUEL LEDGER TABLE */}
+                {/* ============================================================ */}
                 <Card className="bg-[#121829] border-slate-800 shadow-lg">
                     <CardHeader className="border-b border-slate-800 pb-4">
                         <div className="flex items-center justify-between">
@@ -530,9 +657,9 @@ const GsoDashboard = () => {
                                         <tr><td colSpan={8} className="text-center py-6 text-slate-500">No pending validations.</td></tr>
                                     ) : pendingValidationLedger.map(trip => (
                                         <tr key={trip.displayId} className="hover:bg-[#1a2235]">
-                                            <td className="px-4 py-3 whitespace-nowrap">{formatDateShort(trip.displayDate)}</td>
+                                            <td className="px-4 py-3 whitespace-nowrap">{formatDateShort(trip.trip_date)}</td>
                                             <td className="px-4 py-3 font-mono text-white">{trip.displayTicketNo}</td>
-                                            <td className="px-4 py-3 font-medium text-white">{trip.vehicleString}</td>
+                                            <td className="px-4 py-3">{trip.vehicleString}</td>
                                             <td className="px-4 py-3 text-right text-slate-400">{trip.beginning}</td>
                                             <td className="px-4 py-3 text-right text-emerald-400">{trip.fuelIn}</td>
                                             <td className="px-4 py-3 text-right text-red-400">{trip.fuelOut}</td>
@@ -553,9 +680,12 @@ const GsoDashboard = () => {
                         </div>
                     </CardContent>
                 </Card>
+
             </div>
 
+            {/* ============================================================ */}
             {/* VALIDATE & REPLAY DIALOG */}
+            {/* ============================================================ */}
             <Dialog open={showValidateDialog} onOpenChange={setShowValidateDialog}>
                 <DialogContent className="sm:max-w-6xl bg-[#0f172a] border-slate-700 p-0 overflow-hidden rounded-2xl">
                     <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800">
@@ -584,6 +714,21 @@ const GsoDashboard = () => {
                                     </div>
                                 </div>
                                 <div className="flex items-start gap-3">
+                                    <User className="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0" />
+                                    <div>
+                                        <p className="text-xs text-slate-400 font-medium">Driver</p>
+                                        <p className="text-sm font-bold text-white">{selectedTicket?.driver_name || 'N/A'}</p>
+                                    </div>
+                                </div>
+                                <div className="flex items-start gap-3">
+                                    <Car className="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0" />
+                                    <div>
+                                        <p className="text-xs text-slate-400 font-medium">Vehicle</p>
+                                        <p className="text-sm font-bold text-white">{selectedTicket?.vehicle?.vehicle_model || 'N/A'}</p>
+                                        <p className="text-[10px] text-slate-400 font-mono">{selectedTicket?.vehicle?.plate_number || 'N/A'}</p>
+                                    </div>
+                                </div>
+                                <div className="flex items-start gap-3">
                                     <Flag className="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0" />
                                     <div>
                                         <p className="text-xs text-slate-400 font-medium">Destination</p>
@@ -607,10 +752,24 @@ const GsoDashboard = () => {
                                         <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
                                     </div>
                                 ) : routeCoordinates.length > 0 ? (
-                                    <MapContainer center={[8.5833, 124.6667]} zoom={12} style={{ height: '100%', width: '100%' }} zoomControl={false}>
+                                    <MapContainer bounds={routeCoordinates} style={{ height: '100%', width: '100%' }} zoomControl={false}>
                                         <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
                                         <MapBounds coords={routeCoordinates} />
-                                        <Polyline positions={routeCoordinates} color="#3b82f6" weight={4} opacity={0.8} />
+                                        <Polyline 
+                                            positions={routeCoordinates.filter((coord, idx, arr) => {
+                                                if (idx === 0) return true;
+                                                const prev = arr[idx - 1];
+                                                const R = 6371e3; 
+                                                const lat1 = prev[0] * Math.PI / 180;
+                                                const lat2 = coord[0] * Math.PI / 180;
+                                                const deltaLat = (coord[0] - prev[0]) * Math.PI / 180;
+                                                const deltaLon = (coord[1] - prev[1]) * Math.PI / 180;
+                                                const a = Math.sin(deltaLat/2) * Math.sin(deltaLat/2) + Math.cos(lat1) * Math.cos(lat2) * Math.sin(deltaLon/2) * Math.sin(deltaLon/2);
+                                                const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+                                                return (R * c) < 500; 
+                                            })} 
+                                            color="#3b82f6" weight={4} opacity={0.8} 
+                                        />
                                         <Marker position={routeCoordinates[0]} icon={icons.start} />
                                         <Marker position={routeCoordinates[routeCoordinates.length - 1]} icon={icons.end} />
                                         {isReplaying && <Marker position={routeCoordinates[replayIndex]} icon={icons.vehicle} />}
@@ -621,16 +780,38 @@ const GsoDashboard = () => {
                                         <p>No route data available</p>
                                     </div>
                                 )}
+
+                                {routeCoordinates.length > 0 && (
+                                    <div className="absolute top-4 left-4 z-[400] flex items-center gap-3 bg-[#121829]/90 backdrop-blur-sm px-4 py-2 rounded-xl border border-slate-700 shadow-xl">
+                                        <div className={cn("flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors", isReplaying ? "bg-blue-500/20 text-blue-500" : "bg-slate-700 text-slate-400")}>
+                                            {isReplaying ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5 fill-current" />}
+                                            {isReplaying ? 'Auto Playing...' : 'Replay Finished'}
+                                        </div>
+                                        <span className="text-[10px] text-slate-400 font-mono">
+                                            {isReplaying ? `${replayIndex} / ${routeCoordinates.length}` : 'Live Tracking'}
+                                        </span>
+                                    </div>
+                                )}
+
+                                <div className="absolute top-4 right-4 z-[400] flex items-center gap-4 bg-[#121829]/90 backdrop-blur-sm px-4 py-2 rounded-xl border border-slate-700 shadow-xl text-xs text-white">
+                                    <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-emerald-500"></span> Start</span>
+                                    <span className="flex items-center gap-1.5"><span className="w-3 h-1 bg-blue-500 rounded-full"></span> Route</span>
+                                    <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-red-500"></span> Destination</span>
+                                </div>
                             </div>
 
                             <div className="p-4 bg-[#121829] border-t border-slate-800 flex items-center justify-end">
                                 <Button 
-                                    onClick={() => validateMutation.mutate({ ticketId: selectedTicket?.displayId })}
+                                    onClick={() => {
+                                        const ticketId = selectedTicket?.displayId;
+                                        validateMutation.mutate({ ticketId });
+                                    }} 
                                     disabled={validateMutation.isPending || !hasWatchedReplay}
                                     className={cn(
                                         "text-white font-bold h-10 px-8 rounded-xl shadow-lg transition-all",
                                         hasWatchedReplay ? "bg-emerald-600 hover:bg-emerald-500 shadow-emerald-500/20" : "bg-slate-700 text-slate-400 cursor-not-allowed shadow-none"
                                     )}
+                                    title={!hasWatchedReplay ? "Please wait for the replay to finish" : "Confirm Validation"}
                                 >
                                     {validateMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2"/> : <Check className="h-4 w-4 mr-2"/>}
                                     {hasWatchedReplay ? "Confirm" : "Waiting for Replay..."}
@@ -640,6 +821,7 @@ const GsoDashboard = () => {
                     </div>
                 </DialogContent>
             </Dialog>
+
         </div>
     );
 };
