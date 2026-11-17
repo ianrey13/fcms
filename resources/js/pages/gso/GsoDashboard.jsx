@@ -215,8 +215,13 @@ const GsoDashboard = () => {
         const vehicle = vehicles.find(v => v.plate_number === trip.vehicle?.plate_number) || trip.vehicle;
         const beginning = parseFloat(vehicle?.initial_estimated_fuel ?? vehicle?.current_fuel_balance ?? 0);
         
-        // ✅ Gikuha gikan sa gas_slip.fuel_receipt
-        const fuelIn = parseFloat(trip.gas_slip?.fuel_receipt?.liters_availed || trip.liters_availed || 0);
+        // ✅ Gikuha gikan sa gas_slip.fuel_receipt (camelCase) ug fallback sa snake_case
+        const fuelIn = parseFloat(
+            trip.gasSlip?.fuelReceipt?.liters_availed || 
+            trip.gas_slip?.fuel_receipt?.liters_availed || 
+            trip.liters_availed || 
+            0
+        );
         
         const distance = parseFloat(trip.actual_distance_km || trip.gps_distance_km || 0);
         const efficiency = parseFloat(vehicle?.reference_efficiency || 10);
@@ -608,7 +613,11 @@ const GsoDashboard = () => {
                                     ) : allTrips.map(trip => {
                                         const computed = computeLedgerRow(trip);
                                         return (
-                                            <tr key={computed.displayId} className="hover:bg-[#1a2235]">
+                                            <tr 
+                                                key={computed.displayId} 
+                                                className="hover:bg-[#1a2235] cursor-pointer transition-colors"
+                                                onClick={() => handleOpenValidateDialog(computed)}
+                                            >
                                                 <td className="px-4 py-3 whitespace-nowrap">{formatDateShort(computed.displayDate)}</td>
                                                 <td className="px-4 py-3 font-mono text-white">{computed.displayTicketNo}</td>
                                                 <td className="px-4 py-3">{computed.vehicleString}</td>
@@ -654,14 +663,14 @@ const GsoDashboard = () => {
                                     <Calendar className="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0" />
                                     <div>
                                         <p className="text-xs text-slate-400 font-medium">Trip Ticket No.</p>
-                                        <p className="text-sm font-bold text-white font-mono">{selectedTicket?.displayTicketNo}</p>
+                                        <p className="text-sm font-bold text-white font-mono">{selectedTicket?.displayTicketNo || selectedTicket?.trip_ticket_number}</p>
                                     </div>
                                 </div>
                                 <div className="flex items-start gap-3">
                                     <User className="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0" />
                                     <div>
                                         <p className="text-xs text-slate-400 font-medium">Driver</p>
-                                        <p className="text-sm font-bold text-white">{selectedTicket?.driver_name || 'N/A'}</p>
+                                        <p className="text-sm font-bold text-white">{selectedTicket?.driver_name || selectedTicket?.driver?.name || 'N/A'}</p>
                                     </div>
                                 </div>
                                 <div className="flex items-start gap-3">
@@ -713,20 +722,23 @@ const GsoDashboard = () => {
                             </div>
 
                             <div className="p-4 bg-[#121829] border-t border-slate-800 flex items-center justify-end">
-                                <Button 
-                                    onClick={() => {
-                                        const ticketId = selectedTicket?.id || selectedTicket?.trip_ticket_id;
-                                        validateMutation.mutate({ ticketId });
-                                    }} 
-                                    disabled={validateMutation.isPending || !hasWatchedReplay}
-                                    className={cn(
-                                        "text-white font-bold h-10 px-8 rounded-xl shadow-lg transition-all",
-                                        hasWatchedReplay ? "bg-emerald-600 hover:bg-emerald-500 shadow-emerald-500/20" : "bg-slate-700 text-slate-400 cursor-not-allowed shadow-none"
-                                    )}
-                                >
-                                    {validateMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2"/> : <Check className="h-4 w-4 mr-2"/>}
-                                    {hasWatchedReplay ? "Confirm" : "Waiting for Replay..."}
-                                </Button>
+                                {/* Kini nga button kay mo-validate lang kung ang trip kay naa sa pendingValidation (wala pa na-validate) */}
+                                {pendingValidation.some(t => (t.id || t.trip_ticket_id) === (selectedTicket?.displayId || selectedTicket?.id || selectedTicket?.trip_ticket_id)) && (
+                                    <Button 
+                                        onClick={() => {
+                                            const ticketId = selectedTicket?.id || selectedTicket?.trip_ticket_id;
+                                            validateMutation.mutate({ ticketId });
+                                        }} 
+                                        disabled={validateMutation.isPending || !hasWatchedReplay}
+                                        className={cn(
+                                            "text-white font-bold h-10 px-8 rounded-xl shadow-lg transition-all",
+                                            hasWatchedReplay ? "bg-emerald-600 hover:bg-emerald-500 shadow-emerald-500/20" : "bg-slate-700 text-slate-400 cursor-not-allowed shadow-none"
+                                        )}
+                                    >
+                                        {validateMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2"/> : <Check className="h-4 w-4 mr-2"/>}
+                                        {hasWatchedReplay ? "Confirm" : "Waiting for Replay..."}
+                                    </Button>
+                                )}
                             </div>
                         </div>
                     </div>
