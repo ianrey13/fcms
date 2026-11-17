@@ -30,13 +30,17 @@ class MayorsOfficeController extends Controller
 {
     protected $budgetService;
     protected $fuelLevelService;
+     protected $fuelPredictionService; 
 
     public function __construct(
         BudgetService $budgetService,
-        \App\Services\FuelLevelService $fuelLevelService
+        \App\Services\FuelLevelService $fuelLevelService,
+         \App\Services\FuelPredictionService $fuelPredictionService
     ) {
         $this->budgetService = $budgetService;
         $this->fuelLevelService = $fuelLevelService;
+        $this->fuelPredictionService = $fuelPredictionService;
+        
     }
 
     /**
@@ -2478,7 +2482,7 @@ class MayorsOfficeController extends Controller
         }
     }
 
-    public function getSuggestedRelease(Request $request, $id)
+        public function getSuggestedRelease(Request $request, $id)
     {
         try {
             $user = $request->user();
@@ -2491,8 +2495,8 @@ class MayorsOfficeController extends Controller
                 return response()->json(['success' => false, 'message' => 'Trip not found'], 404);
             }
 
-            $service = new \App\Services\FuelPredictionService();
-            $suggestion = $service->suggestFor($trip);
+            // ✅ GAMITA ANG INJECTED SERVICE, DILI MAG-NEW
+            $suggestion = $this->fuelPredictionService->suggestFor($trip);
 
             return response()->json([
                 'success' => true,

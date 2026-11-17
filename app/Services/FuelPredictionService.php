@@ -16,9 +16,6 @@ class FuelPredictionService
         $this->locationService = $locationService;
     }
 
-    /**
-     * Suggest a release amount for a trip based on destination, efficiency, and weighted average price.
-     */
     public function suggestFor(TripTicket $trip): array
     {
         $vehicle = $trip->vehicle;
@@ -36,7 +33,7 @@ class FuelPredictionService
             return $this->emptyResponse('Cannot calculate distance for this destination.');
         }
 
-        // 2. Get Reference Efficiency (Default to 10 km/L if not set)
+        // 2. Get Reference Efficiency
         $efficiency = (float) ($vehicle->reference_efficiency ?: 10.0);
 
         // 3. Calculate Estimated Liters
@@ -53,7 +50,6 @@ class FuelPredictionService
         // 5. Compute Suggested Release Amount
         $suggestedAmount = $estimatedLiters * $weightedPrice;
 
-        // Build sample basis from recent receipts of this fuel type
         $basis = $this->getRecentReceiptsBasis($vehicle->fuel_type);
 
         return [
@@ -87,7 +83,7 @@ class FuelPredictionService
         $origin = 'Laguindingan Municipal Hall'; 
         
         try {
-            // Tawgon ang imong FallbackLocationService aron makuha ang hard-coded distance
+            // Tawgon ang FallbackLocationService
             $result = $this->locationService->calculateDistance($origin, [$destination]);
 
             if ($result && isset($result['success']) && $result['success'] && isset($result['distance_km'])) {
@@ -97,7 +93,6 @@ class FuelPredictionService
                 ];
             }
 
-            // Default fallback kung mapalpak
             return ['distance' => 20.0, 'source' => 'default'];
             
         } catch (\Exception $e) {
@@ -106,13 +101,8 @@ class FuelPredictionService
         }
     }
 
-    /**
-     * Calculate Weighted Average Fuel Price for a specific fuel type over the last 30 days.
-     * Formula: Σ(Quantity × Unit Price) / Σ(Quantity)
-     */
     private function calculateWeightedAveragePrice($fuelType): array
     {
-        // Get receipts from the last 30 days for the specific fuel type
         $receipts = FuelReceipt::join('gas_slip as gs', 'fuel_receipt.gas_slip_id', '=', 'gs.gas_slip_id')
             ->join('trip_ticket as tt', 'gs.trip_ticket_id', '=', 'tt.trip_ticket_id')
             ->join('vehicles as v', 'tt.vehicle_id', '=', 'v.vehicle_id')
@@ -148,9 +138,6 @@ class FuelPredictionService
         ];
     }
 
-    /**
-     * Get last 5 receipts to show as "basis" in the UI.
-     */
     private function getRecentReceiptsBasis($fuelType)
     {
         return FuelReceipt::join('gas_slip as gs', 'fuel_receipt.gas_slip_id', '=', 'gs.gas_slip_id')

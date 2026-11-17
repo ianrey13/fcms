@@ -582,19 +582,14 @@ class FallbackLocationService
         ];
     }
 
-    /**
-     * Search places — always returns success
-     */
     public function searchPlaces($query)
     {
         $query = strtolower(trim($query));
-
         if (empty($query) || strlen($query) < 2) {
             return ['success' => true, 'predictions' => [], 'total' => 0, 'source' => 'fallback'];
         }
 
         $results = [];
-
         foreach ($this->locations as $key => $location) {
             $name = strtolower($location['name'] ?? '');
             $aliases = array_map('strtolower', $location['aliases'] ?? []);
@@ -623,11 +618,7 @@ class FallbackLocationService
             if ($type === 'group') {
                 $description = $name;
             } elseif ($type === 'barangay') {
-                if (strpos($nameLower, 'laguindingan') !== false) {
-                    $description = $name . ', Misamis Oriental';
-                } else {
-                    $description = $name . ', Misamis Oriental';
-                }
+                $description = $name . ', Misamis Oriental';
             } elseif ($type === 'municipality') {
                 if (strpos($nameLower, 'misamis oriental') === false) {
                     $description = $name . ', Misamis Oriental';
@@ -673,9 +664,6 @@ class FallbackLocationService
         ];
     }
 
-    /**
-     * Calculate distance — Based on strictly set One-Way distances
-     */
     public function calculateDistance($origin, $destinations)
     {
         $originData = $this->findLocation($origin) ?? $this->findLocationByPartialMatch($origin);
@@ -732,9 +720,6 @@ class FallbackLocationService
         ];
     }
 
-    /**
-     * Calculate Trip Estimate for MULTI-LOCATION
-     */
     public function calculateTripEstimate($originAddress, $destinationAddresses, $vehicleId = null, $roundTrip = true)
     {
         $result = $this->calculateDistance($originAddress, $destinationAddresses);
@@ -780,10 +765,6 @@ class FallbackLocationService
             'source' => $result['source'],
         ];
     }
-
-    // ================================================================
-    // HELPERS
-    // ================================================================
 
     private function isWithinLaguindingan($location)
     {
