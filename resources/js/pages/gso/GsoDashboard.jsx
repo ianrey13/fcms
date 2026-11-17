@@ -212,12 +212,16 @@ const GsoDashboard = () => {
     // HELPER: Compute Ledger Row
     // ============================================
     const computeLedgerRow = useCallback((trip) => {
-        const vehicle = vehicles.find(v => v.plate_number === trip.vehicle?.plate_number);
+        const vehicle = vehicles.find(v => v.plate_number === trip.vehicle?.plate_number) || trip.vehicle;
         const beginning = parseFloat(vehicle?.initial_estimated_fuel ?? vehicle?.current_fuel_balance ?? 0);
+        
+        // ✅ Gikuha gikan sa gas_slip.fuel_receipt
         const fuelIn = parseFloat(trip.gas_slip?.fuel_receipt?.liters_availed || trip.liters_availed || 0);
+        
         const distance = parseFloat(trip.actual_distance_km || trip.gps_distance_km || 0);
         const efficiency = parseFloat(vehicle?.reference_efficiency || 10);
         const fuelOut = distance > 0 ? (distance / efficiency) : 0;
+        
         const balance = beginning + fuelIn - fuelOut;
 
         return {
@@ -568,7 +572,7 @@ const GsoDashboard = () => {
                 </Card>
 
                 {/* ============================================================ */}
-                {/* 6. FUEL LEDGER TABLE (IBALIK) */}
+                {/* 6. FUEL LEDGER TABLE */}
                 {/* ============================================================ */}
                 <Card className="bg-[#121829] border-slate-800 shadow-lg">
                     <CardHeader className="border-b border-slate-800 pb-4">
@@ -650,7 +654,7 @@ const GsoDashboard = () => {
                                     <Calendar className="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0" />
                                     <div>
                                         <p className="text-xs text-slate-400 font-medium">Trip Ticket No.</p>
-                                        <p className="text-sm font-bold text-white font-mono">{selectedTicket?.ticket_number || selectedTicket?.trip_ticket_number}</p>
+                                        <p className="text-sm font-bold text-white font-mono">{selectedTicket?.displayTicketNo}</p>
                                     </div>
                                 </div>
                                 <div className="flex items-start gap-3">

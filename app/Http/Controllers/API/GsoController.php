@@ -316,7 +316,7 @@ class GsoController extends Controller
                 'department',
                 'driver.user',
                 'vehicle',
-                'gasSlip'
+                'gasSlip.fuelReceipt'
             ])
                 ->orderBy('submitted_at', 'desc')
                 ->get();
