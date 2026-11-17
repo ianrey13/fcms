@@ -300,6 +300,13 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
                             href: "/gso/annual-budget",
                             icon: Calendar,
                         },
+                        
+                        {
+                            name: "Trip Tickets",
+                            href: "/gso/alltrips",
+                            icon: Receipt,
+                        },
+
                     ],
                 },
                 {

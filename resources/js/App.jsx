@@ -11,7 +11,7 @@ import Login from "./pages/Login";
 import Unauthorized from "./pages/Unauthorized";
 
 // ============ AUTH FLOW ============
-const ForceChangePassword = lazy(() => import("./pages/ForceChangePassword"));   // ★ NEW
+const ForceChangePassword = lazy(() => import("./pages/ForceChangePassword"));   
 
 // ============ GSO PAGES (LAZY LOADED) ============
 const GsoDashboard = lazy(() => import("./pages/gso/GsoDashboard"));
@@ -26,6 +26,7 @@ const CompletedTrips = lazy(() => import("./pages/gso/CompletedTrips"));
 const LiveTracking = lazy(() => import("./pages/gso/LiveTracking"));
 const SystemSettings = lazy(() => import("./pages/gso/SystemSettings"));
 const AnnualBudget = lazy(() => import("./pages/gso/FiscalYearManagement"));
+const AllTrips = lazy(()=> import("./pages/gso/GsoAllTrips"));
 
 const GsoActivityLogs = lazy(() => import("./pages/gso/ActivityLogs"));
 
@@ -222,6 +223,17 @@ function App() {
                                 </Layout>
                             </ProtectedRoute>
                         }
+                    />
+                    <Route
+                        path="/gso/alltrips"
+                        element={
+                            <ProtectedRoute allowedRoles={["gso_office"]}>
+                                <Layout>
+                                    <AllTrips />
+                                </Layout>
+                            </ProtectedRoute>
+                        }
+                    
                     />
                     <Route
                         path="/gso/live-tracking"
