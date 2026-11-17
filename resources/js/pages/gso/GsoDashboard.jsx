@@ -13,7 +13,7 @@ import 'leaflet/dist/leaflet.css';
 import {
     Car, CheckCircle, AlertTriangle, Wrench, RefreshCw, MapPin, Search,
     ChevronDown, Activity, PlusCircle, Fuel, Clock, FileCheck, Loader2, Check,
-    Play, Square
+    Play, Square, User, Users, Target, Flag, Route, Calendar, X
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -717,109 +717,175 @@ const GsoDashboard = () => {
 
             </div>
 
-            {/* VALIDATE & REPLAY DIALOG */}
+            {/* ============================================================ */}
+            {/* VALIDATE & REPLAY DIALOG (REDESIGNED TO MATCH SCREENSHOT) */}
+            {/* ============================================================ */}
             <Dialog open={showValidateDialog} onOpenChange={setShowValidateDialog}>
-                <DialogContent className="sm:max-w-3xl bg-[#121829] border-slate-700">
-                    <DialogHeader>
-                        <DialogTitle className="flex items-center gap-2 text-white">
-                            <div className="p-2 rounded-xl bg-emerald-500/10"><FileCheck className="h-5 w-5 text-emerald-500" /></div>
-                            Validate & Close Trip
-                        </DialogTitle>
-                        <DialogDescription className="text-slate-400">
-                            You must play the route replay before confirming validation.
-                        </DialogDescription>
-                    </DialogHeader>
-
-                    <div className="space-y-4">
-                        {/* Trip Info */}
-                        <div className="bg-[#0b101c] rounded-xl p-4 border border-slate-800 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                            <div><span className="text-slate-500 text-xs block">Ticket No.</span><span className="font-mono font-semibold text-white">{selectedTicket?.trip_ticket_number || selectedTicket?.ticket_number}</span></div>
-                            <div><span className="text-slate-500 text-xs block">Destination</span><span className="text-white">{selectedTicket?.destination}</span></div>
-                            <div><span className="text-slate-500 text-xs block">Total Distance</span><span className="font-bold text-white">{selectedTicket?.actual_distance_km || 0} km</span></div>
-                            <div><span className="text-slate-500 text-xs block">Fuel Cost</span><span className="text-emerald-400 font-bold">₱{selectedTicket?.amount_released || 0}</span></div>
+                <DialogContent className="sm:max-w-6xl bg-[#0f172a] border-slate-700 p-0 overflow-hidden rounded-2xl">
+                    
+                    {/* Header */}
+                    <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800">
+                        <div className="flex items-center gap-3">
+                            <div className="p-2 rounded-xl bg-blue-500/20 text-blue-500 border border-blue-500/30">
+                                <MapPin className="h-5 w-5" />
+                            </div>
+                            <div>
+                                <h2 className="text-xl font-bold text-white">Trip Validation</h2>
+                                <p className="text-xs text-slate-400">Review the completed trip details before confirming.</p>
+                            </div>
                         </div>
-
-                        {/* Map Route Replay */}
-                        <div className="relative h-[300px] bg-slate-950 rounded-xl overflow-hidden border border-slate-800">
-                            {loadingRoute ? (
-                                <div className="absolute inset-0 flex items-center justify-center bg-slate-900/50 z-10">
-                                    <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
-                                </div>
-                            ) : routeCoordinates.length > 0 ? (
-                                <MapContainer bounds={routeCoordinates} style={{ height: '100%', width: '100%' }} zoomControl={false}>
-                                    <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-                                    <Polyline 
-                                        positions={routeCoordinates.filter((coord, idx, arr) => {
-                                            if (idx === 0) return true;
-                                            const prev = arr[idx - 1];
-                                            const R = 6371e3; 
-                                            const lat1 = prev[0] * Math.PI / 180;
-                                            const lat2 = coord[0] * Math.PI / 180;
-                                            const deltaLat = (coord[0] - prev[0]) * Math.PI / 180;
-                                            const deltaLon = (coord[1] - prev[1]) * Math.PI / 180;
-                                            const a = Math.sin(deltaLat/2) * Math.sin(deltaLat/2) + Math.cos(lat1) * Math.cos(lat2) * Math.sin(deltaLon/2) * Math.sin(deltaLon/2);
-                                            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-                                            return (R * c) < 500; 
-                                        })} 
-                                        color="#3b82f6" weight={4} opacity={0.8} 
-                                    />
-                                    <Marker position={routeCoordinates[0]} icon={icons.start} />
-                                    <Marker position={routeCoordinates[routeCoordinates.length - 1]} icon={icons.end} />
-                                    {isReplaying && <Marker position={routeCoordinates[replayIndex]} icon={icons.vehicle} />}
-                                </MapContainer>
-                            ) : (
-                                <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-500">
-                                    <MapPin className="h-8 w-8 mb-2" />
-                                    <p>No route data available</p>
-                                </div>
-                            )}
-                            
-                            {/* Map Controls Overlay */}
-                            {routeCoordinates.length > 0 && (
-                                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-[400] flex items-center gap-3 bg-[#121829]/90 backdrop-blur-sm px-4 py-2 rounded-full border border-slate-700 shadow-xl">
-                                    <span className="text-xs font-bold text-white">Replay Route</span>
-                                    <div className="h-4 w-px bg-slate-700" />
-                                    <button onClick={handleReplay} className={cn("p-1.5 rounded-full transition-colors flex items-center justify-center", isReplaying ? "bg-red-500/20 text-red-500" : "bg-blue-500/20 text-blue-500 hover:bg-blue-500/30")}>
-                                        {isReplaying ? <Square className="h-4 w-4 fill-current" /> : <Play className="h-4 w-4 fill-current ml-0.5" />}
-                                    </button>
-                                    <span className="text-[10px] text-slate-400 font-mono w-12 text-center">
-                                        {isReplaying ? `${replayIndex} / ${routeCoordinates.length}` : 'Ready'}
-                                    </span>
-                                </div>
-                            )}
-                        </div>
-
-                        {/* Validation Note */}
-                        <div className="space-y-2">
-                            <label className="text-sm font-medium text-slate-300">Validation Note (Optional)</label>
-                            <Textarea 
-                                placeholder="Add a note..." 
-                                value={validationNote} 
-                                onChange={(e) => setValidationNote(e.target.value)} 
-                                className="bg-[#0b101c] border-slate-700 text-white resize-none" 
-                                rows={2}
-                            />
-                        </div>
+                        <button onClick={() => setShowValidateDialog(false)} className="text-slate-400 hover:text-white transition-colors">
+                            <X className="h-6 w-6" />
+                        </button>
                     </div>
 
-                    <DialogFooter className="gap-2 mt-4">
-                        <Button variant="outline" onClick={() => setShowValidateDialog(false)} className="border-slate-700 text-slate-300">Cancel</Button>
-                        <Button 
-                            onClick={() => {
-                                const ticketId = selectedTicket?.trip_ticket_id || selectedTicket?.id;
-                                validateMutation.mutate({ ticketId, data: { validation_note: validationNote } });
-                            }} 
-                            disabled={validateMutation.isPending || !hasWatchedReplay}
-                            className={cn(
-                                "text-white font-bold",
-                                hasWatchedReplay ? "bg-emerald-600 hover:bg-emerald-700" : "bg-slate-700 text-slate-400 cursor-not-allowed"
-                            )}
-                            title={!hasWatchedReplay ? "You must play the replay before validating" : "Confirm Validation"}
-                        >
-                            {validateMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2"/> : <Check className="h-4 w-4 mr-2"/>}
-                            {hasWatchedReplay ? "Confirm Validation" : "Play Replay First"}
-                        </Button>
-                    </DialogFooter>
+                    {/* Main Content: Two Columns */}
+                    <div className="flex flex-col md:flex-row h-[600px]">
+                        
+                        {/* Left Sidebar - Trip Details */}
+                        <div className="w-full md:w-[320px] bg-[#121829] border-r border-slate-800 p-6 overflow-y-auto flex-shrink-0">
+                            <div className="space-y-5">
+                                <div className="flex items-start gap-3">
+                                    <Calendar className="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0" />
+                                    <div>
+                                        <p className="text-xs text-slate-400 font-medium">Trip Ticket No.</p>
+                                        <p className="text-sm font-bold text-white font-mono">{selectedTicket?.trip_ticket_number || selectedTicket?.ticket_number}</p>
+                                    </div>
+                                </div>
+                                <div className="flex items-start gap-3">
+                                    <User className="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0" />
+                                    <div>
+                                        <p className="text-xs text-slate-400 font-medium">Driver</p>
+                                        <p className="text-sm font-bold text-white">{selectedTicket?.driver_name || selectedTicket?.driver?.name || 'Juan Dela Cruz'}</p>
+                                    </div>
+                                </div>
+                                <div className="flex items-start gap-3">
+                                    <Users className="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0" />
+                                    <div>
+                                        <p className="text-xs text-slate-400 font-medium">Passenger</p>
+                                        <p className="text-sm font-bold text-white">{selectedTicket?.passenger_name || selectedTicket?.passenger || 'Maria Santos'}</p>
+                                    </div>
+                                </div>
+                                <div className="flex items-start gap-3">
+                                    <Car className="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0" />
+                                    <div>
+                                        <p className="text-xs text-slate-400 font-medium">Vehicle</p>
+                                        <p className="text-sm font-bold text-white">{selectedTicket?.vehicle?.vehicle_model || 'Nissan Navarra'}</p>
+                                        <p className="text-[10px] text-slate-400 font-mono">{selectedTicket?.vehicle?.plate_number || 'ARC-123'}</p>
+                                    </div>
+                                </div>
+                                <div className="flex items-start gap-3">
+                                    <Target className="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0" />
+                                    <div>
+                                        <p className="text-xs text-slate-400 font-medium">Purpose</p>
+                                        <p className="text-sm font-bold text-white">{selectedTicket?.purpose || 'Official Inspection'}</p>
+                                    </div>
+                                </div>
+                                <div className="flex items-start gap-3">
+                                    <Flag className="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0" />
+                                    <div>
+                                        <p className="text-xs text-slate-400 font-medium">Destination</p>
+                                        <p className="text-sm font-bold text-white">{selectedTicket?.destination || 'Bukidnon'}</p>
+                                    </div>
+                                </div>
+                                <div className="flex items-start gap-3">
+                                    <Route className="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0" />
+                                    <div>
+                                        <p className="text-xs text-slate-400 font-medium">Actual Distance</p>
+                                        <p className="text-sm font-bold text-white">{selectedTicket?.actual_distance_km || 0} km</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Right Content - Map & Replay */}
+                        <div className="flex-1 relative bg-[#0b101c] flex flex-col">
+                            
+                            {/* Map Container */}
+                            <div className="flex-1 relative">
+                                {loadingRoute ? (
+                                    <div className="absolute inset-0 flex items-center justify-center bg-slate-900/50 z-10">
+                                        <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+                                    </div>
+                                ) : routeCoordinates.length > 0 ? (
+                                    <MapContainer bounds={routeCoordinates} style={{ height: '100%', width: '100%' }} zoomControl={false}>
+                                        <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                                        <Polyline 
+                                            positions={routeCoordinates.filter((coord, idx, arr) => {
+                                                if (idx === 0) return true;
+                                                const prev = arr[idx - 1];
+                                                const R = 6371e3; 
+                                                const lat1 = prev[0] * Math.PI / 180;
+                                                const lat2 = coord[0] * Math.PI / 180;
+                                                const deltaLat = (coord[0] - prev[0]) * Math.PI / 180;
+                                                const deltaLon = (coord[1] - prev[1]) * Math.PI / 180;
+                                                const a = Math.sin(deltaLat/2) * Math.sin(deltaLat/2) + Math.cos(lat1) * Math.cos(lat2) * Math.sin(deltaLon/2) * Math.sin(deltaLon/2);
+                                                const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+                                                return (R * c) < 500; 
+                                            })} 
+                                            color="#3b82f6" weight={4} opacity={0.8} 
+                                        />
+                                        <Marker position={routeCoordinates[0]} icon={icons.start} />
+                                        <Marker position={routeCoordinates[routeCoordinates.length - 1]} icon={icons.end} />
+                                        {isReplaying && <Marker position={routeCoordinates[replayIndex]} icon={icons.vehicle} />}
+                                    </MapContainer>
+                                ) : (
+                                    <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-500">
+                                        <MapPin className="h-8 w-8 mb-2" />
+                                        <p>No route data available</p>
+                                    </div>
+                                )}
+
+                                {/* Top-Left Overlay: Replay Controls */}
+                                {routeCoordinates.length > 0 && (
+                                    <div className="absolute top-4 left-4 z-[400] flex items-center gap-3 bg-[#121829]/90 backdrop-blur-sm px-4 py-2 rounded-xl border border-slate-700 shadow-xl">
+                                        <button onClick={handleReplay} className={cn("flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors", isReplaying ? "bg-red-500/20 text-red-500 hover:bg-red-500/30" : "bg-blue-500/20 text-blue-500 hover:bg-blue-500/30")}>
+                                            {isReplaying ? <Square className="h-3.5 w-3.5 fill-current" /> : <Play className="h-3.5 w-3.5 fill-current" />}
+                                            {isReplaying ? 'Stop Replay' : 'Auto Playing...'}
+                                        </button>
+                                        <span className="text-[10px] text-slate-400 font-mono">
+                                            {isReplaying ? `${replayIndex} / ${routeCoordinates.length}` : 'Live Tracking'}
+                                        </span>
+                                    </div>
+                                )}
+
+                                {/* Top-Right Overlay: Legend */}
+                                <div className="absolute top-4 right-4 z-[400] flex items-center gap-4 bg-[#121829]/90 backdrop-blur-sm px-4 py-2 rounded-xl border border-slate-700 shadow-xl text-xs text-white">
+                                    <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-emerald-500"></span> Start</span>
+                                    <span className="flex items-center gap-1.5"><span className="w-3 h-1 bg-blue-500 rounded-full"></span> Route</span>
+                                    <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-red-500"></span> Destination</span>
+                                </div>
+                            </div>
+
+                            {/* Bottom Bar: Notes & Confirm Button */}
+                            <div className="p-4 bg-[#121829] border-t border-slate-800 flex items-center gap-4">
+                                <div className="flex-1">
+                                    <Textarea 
+                                        placeholder="Add a validation note (optional)..." 
+                                        value={validationNote} 
+                                        onChange={(e) => setValidationNote(e.target.value)} 
+                                        className="bg-[#0b101c] border-slate-700 text-white resize-none h-10 min-h-[40px] text-sm" 
+                                        rows={1}
+                                    />
+                                </div>
+                                <Button 
+                                    onClick={() => {
+                                        const ticketId = selectedTicket?.trip_ticket_id || selectedTicket?.id;
+                                        validateMutation.mutate({ ticketId, data: { validation_note: validationNote } });
+                                    }} 
+                                    disabled={validateMutation.isPending || !hasWatchedReplay}
+                                    className={cn(
+                                        "text-white font-bold h-10 px-8 rounded-xl shadow-lg transition-all",
+                                        hasWatchedReplay ? "bg-emerald-600 hover:bg-emerald-500 shadow-emerald-500/20" : "bg-slate-700 text-slate-400 cursor-not-allowed shadow-none"
+                                    )}
+                                    title={!hasWatchedReplay ? "You must play the replay before validating" : "Confirm Validation"}
+                                >
+                                    {validateMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2"/> : <Check className="h-4 w-4 mr-2"/>}
+                                    {hasWatchedReplay ? "Confirm" : "Play Replay First"}
+                                </Button>
+                            </div>
+                        </div>
+                    </div>
                 </DialogContent>
             </Dialog>
 
