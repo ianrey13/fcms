@@ -13,7 +13,7 @@ import 'leaflet/dist/leaflet.css';
 import {
     Car, CheckCircle, AlertTriangle, Wrench, RefreshCw, MapPin, Search,
     ChevronDown, Activity, PlusCircle, Fuel, Clock, FileCheck, Loader2, Check,
-    Play, Square, User, Users, Target, Flag, Route, Calendar, X
+    Play, Square, User, Users, Target, Flag, Route, Calendar, X, Truck
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -37,6 +37,41 @@ const extractArray = (response) => {
 const formatDateShort = (dateString) => {
     if (!dateString) return "N/A";
     return new Date(dateString).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+};
+
+// ✅ UNIFORM STATUS PILL
+const StatusPill = ({ status }) => {
+    let label = "Pending";
+    let color = "bg-orange-500/20 text-orange-400 border-orange-500/30";
+    let Icon = Clock;
+
+    if (status === "pending_mayors_office") {
+        label = "Pending";
+        color = "bg-orange-500/20 text-orange-400 border-orange-500/30";
+        Icon = Clock;
+    } else if (status === "funds_issued" || status === "acknowledged") {
+        label = "Ready";
+        color = "bg-blue-500/20 text-blue-400 border-blue-500/30";
+        Icon = CheckCircle;
+    } else if (status === "in_transit") {
+        label = "In Transit";
+        color = "bg-purple-500/20 text-purple-400 border-purple-500/30";
+        Icon = Truck;
+    } else if (status === "completed" || status === "pending_gso_validation") {
+        label = "Completed";
+        color = "bg-emerald-500/20 text-emerald-400 border-emerald-500/30";
+        Icon = CheckCircle;
+    } else if (status === "closed") {
+        label = "Closed";
+        color = "bg-slate-600/50 text-slate-300 border-slate-500/50";
+        Icon = CheckCircle;
+    }
+
+    return (
+        <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wide flex items-center gap-1.5 w-fit ${color}`}>
+            <Icon className="h-3 w-3" /> {label}
+        </span>
+    );
 };
 
 const createVehicleIcon = (plateNumber, vehicleModel) => {
@@ -505,9 +540,7 @@ const GsoDashboard = () => {
                                             <td className="px-3 py-2 font-mono text-white">{trip.trip_ticket_number}</td>
                                             <td className="px-3 py-2 truncate max-w-[100px]">{trip.destination}</td>
                                             <td className="px-3 py-2">
-                                                <Badge className={cn("text-[9px] px-1.5 py-0.5", trip.status === 'in_transit' ? "bg-emerald-600" : trip.status === 'closed' ? "bg-blue-600" : "bg-slate-600")}>
-                                                    {trip.status.replace(/_/g, ' ')}
-                                                </Badge>
+                                                <StatusPill status={trip.status} />
                                             </td>
                                         </tr>
                                     ))}
