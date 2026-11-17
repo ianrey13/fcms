@@ -32,11 +32,16 @@ const formatCurrency = (amount) => {
 
 const StatusPill = ({ status }) => {
   let label = "Pending", color = "bg-orange-500/20 text-orange-400 border-orange-500/30", Icon = Clock;
-  if (status === "funds_issued") { label = "Funds Issued"; color = "bg-blue-500/20 text-blue-400 border-blue-500/30"; Icon = CheckCircle; }
-  else if (status === "acknowledged") { label = "Received"; color = "bg-yellow-500/20 text-yellow-400 border-yellow-500/30"; Icon = CheckCircle; }
-  else if (status === "in_transit") { label = "For Verification"; color = "bg-purple-500/20 text-purple-400 border-purple-500/30"; Icon = Truck; }
-  else if (["completed", "closed", "pending_gso_validation"].includes(status)) { label = "Verified"; color = "bg-emerald-500/20 text-emerald-400 border-emerald-500/30"; Icon = CheckCircle; }
-  else if (["rejected", "returned_for_revision"].includes(status)) { label = "Rejected"; color = "bg-red-500/20 text-red-400 border-red-500/30"; Icon = XCircle; }
+  
+  if (status === "pending_mayors_office") {
+    label = "Pending Release"; color = "bg-orange-500/20 text-orange-400 border-orange-500/30"; Icon = Clock;
+  } else if (status === "funds_issued") { 
+    label = "Funds Issued"; color = "bg-blue-500/20 text-blue-400 border-blue-500/30"; Icon = CheckCircle; 
+  } else if (["acknowledged", "in_transit", "completed", "closed", "pending_gso_validation"].includes(status)) { 
+    label = "Received"; color = "bg-emerald-500/20 text-emerald-400 border-emerald-500/30"; Icon = CheckCircle; 
+  } else if (["rejected", "returned_for_revision"].includes(status)) { 
+    label = "Rejected"; color = "bg-red-500/20 text-red-400 border-red-500/30"; Icon = XCircle; 
+  }
 
   return (
     <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wide flex items-center gap-1.5 w-fit ${color}`}>
@@ -105,14 +110,12 @@ const MayorPending = () => {
     return releasedTickets.filter(t => t.department_name?.toLowerCase().includes(searchTerm.toLowerCase()) || t.ticket_number?.toLowerCase().includes(searchTerm.toLowerCase()));
   }, [releasedTickets, searchTerm]);
 
+  // ✅ 3 TABS NALANG: Pending, Funds Issued, Received
   const counts = useMemo(() => {
     return {
       pending: filteredTickets.length,
       funds_issued: releasedFiltered.filter(t => t.status === 'funds_issued').length,
-      for_verification: releasedFiltered.filter(t => t.status === 'in_transit' && !t.actual_fuel_cost).length,
-      verified: releasedFiltered.filter(t => ["completed", "closed", "pending_gso_validation"].includes(t.status) || t.actual_fuel_cost > 0).length,
-      // ✅ I-APIL ANG returned_for_revision UG rejected
-      rejected: releasedFiltered.filter(t => ['rejected', 'returned_for_revision'].includes(t.status)).length,
+      received: releasedFiltered.filter(t => ["acknowledged", "in_transit", "completed", "closed", "pending_gso_validation"].includes(t.status) || t.actual_fuel_cost > 0).length,
     };
   }, [filteredTickets, releasedFiltered]);
 
@@ -126,10 +129,7 @@ const MayorPending = () => {
   const currentDisplayList = useMemo(() => {
     if (activeTab === "pending") return filteredTickets;
     if (activeTab === "funds_issued") return releasedFiltered.filter(t => t.status === 'funds_issued');
-    if (activeTab === "for_verification") return releasedFiltered.filter(t => t.status === 'in_transit' && !t.actual_fuel_cost);
-    if (activeTab === "verified") return releasedFiltered.filter(t => ["completed", "closed", "pending_gso_validation"].includes(t.status) || t.actual_fuel_cost > 0);
-    // ✅ I-APIL ANG returned_for_revision UG rejected
-    if (activeTab === "rejected") return releasedFiltered.filter(t => ['rejected', 'returned_for_revision'].includes(t.status));
+    if (activeTab === "received") return releasedFiltered.filter(t => ["acknowledged", "in_transit", "completed", "closed", "pending_gso_validation"].includes(t.status) || t.actual_fuel_cost > 0);
     return [];
   }, [activeTab, filteredTickets, releasedFiltered]);
 
@@ -208,7 +208,6 @@ const MayorPending = () => {
     } finally { setSubmitting(false); }
   };
 
-  // ✅ FIXED: Handle Reject with Hard Refresh
   const handleReject = async () => {
     if (!rejectionNote.trim() || rejectionNote.trim().length < 5) {
       return toast.error("Please provide a reason (at least 5 characters)");
@@ -225,7 +224,6 @@ const MayorPending = () => {
       setRejectionNote("");
       setSelectedTicket(null);
 
-      // Force re-fetch immediately
       queryClient.invalidateQueries({ queryKey: ["mayor-pending-tickets"] });
       queryClient.invalidateQueries({ queryKey: ["mayor-approved-tickets"] });
       await fetchTickets();
@@ -257,26 +255,21 @@ const MayorPending = () => {
         </div>
       </div>
 
+      {/* ✅ 3 TABS NALANG */}
       <div className="flex flex-wrap gap-3 mb-6">
         <button onClick={() => handleTabClick("pending")} className={cn("flex items-center justify-between px-5 py-3 rounded-xl border flex-1 transition-all", activeTab === "pending" ? "bg-blue-600/20 border-blue-500 text-blue-400" : "bg-[#121829] border-slate-800 text-slate-300 hover:bg-[#1a2235]")}>
           <div className="flex items-center gap-2"><Clock className="h-5 w-5" /><span className="font-semibold">Pending Release</span></div>
           <span className="bg-blue-600 text-white px-2 py-0.5 rounded-md text-xs font-bold">{counts.pending}</span>
         </button>
+        
         <button onClick={() => handleTabClick("funds_issued")} className={cn("flex items-center justify-between px-5 py-3 rounded-xl border flex-1 transition-all", activeTab === "funds_issued" ? "bg-emerald-600/20 border-emerald-500 text-emerald-400" : "bg-[#121829] border-slate-800 text-slate-300 hover:bg-[#1a2235]")}>
           <div className="flex items-center gap-2"><CheckCircle className="h-5 w-5" /><span className="font-semibold">Funds Issued</span></div>
           <span className="bg-emerald-600 text-white px-2 py-0.5 rounded-md text-xs font-bold">{counts.funds_issued}</span>
         </button>
-        <button onClick={() => handleTabClick("for_verification")} className={cn("flex items-center justify-between px-5 py-3 rounded-xl border flex-1 transition-all", activeTab === "for_verification" ? "bg-orange-600/20 border-orange-500 text-orange-400" : "bg-[#121829] border-slate-800 text-slate-300 hover:bg-[#1a2235]")}>
-          <div className="flex items-center gap-2"><Clock className="h-5 w-5" /><span className="font-semibold">For Verification</span></div>
-          <span className="bg-orange-600 text-white px-2 py-0.5 rounded-md text-xs font-bold">{counts.for_verification}</span>
-        </button>
-        <button onClick={() => handleTabClick("verified")} className={cn("flex items-center justify-between px-5 py-3 rounded-xl border flex-1 transition-all", activeTab === "verified" ? "bg-emerald-600/20 border-emerald-500 text-emerald-400" : "bg-[#121829] border-slate-800 text-slate-300 hover:bg-[#1a2235]")}>
-          <div className="flex items-center gap-2"><CheckCircle className="h-5 w-5" /><span className="font-semibold">Verified</span></div>
-          <span className="bg-emerald-600 text-white px-2 py-0.5 rounded-md text-xs font-bold">{counts.verified}</span>
-        </button>
-        <button onClick={() => handleTabClick("rejected")} className={cn("flex items-center justify-between px-5 py-3 rounded-xl border flex-1 transition-all", activeTab === "rejected" ? "bg-red-600/20 border-red-500 text-red-400" : "bg-[#121829] border-slate-800 text-slate-300 hover:bg-[#1a2235]")}>
-          <div className="flex items-center gap-2"><XCircle className="h-5 w-5" /><span className="font-semibold">Rejected</span></div>
-          <span className="bg-red-600 text-white px-2 py-0.5 rounded-md text-xs font-bold">{counts.rejected}</span>
+        
+        <button onClick={() => handleTabClick("received")} className={cn("flex items-center justify-between px-5 py-3 rounded-xl border flex-1 transition-all", activeTab === "received" ? "bg-emerald-600/20 border-emerald-500 text-emerald-400" : "bg-[#121829] border-slate-800 text-slate-300 hover:bg-[#1a2235]")}>
+          <div className="flex items-center gap-2"><CheckCircle className="h-5 w-5" /><span className="font-semibold">Received</span></div>
+          <span className="bg-emerald-600 text-white px-2 py-0.5 rounded-md text-xs font-bold">{counts.received}</span>
         </button>
       </div>
 
