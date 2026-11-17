@@ -85,11 +85,10 @@ const getTicketNumber = (trip) => {
   return trip?.trip_ticket_number || trip?.ticket_number || 'N/A';
 };
 
-const getDepartmentName = (trip) => {
-  if (trip?.department?.name) return trip.department.name;
-  if (trip?.department_name) return trip.department_name;
-  if (trip?.department?.department_name) return trip.department.department_name;
-  if (trip?.dept_name) return trip.dept_name;
+// ✅ DEPARTMENT CODE ONLY
+const getDepartmentCode = (trip) => {
+  if (trip?.department?.department_code) return trip.department.department_code;
+  if (trip?.department_code) return trip.department_code;
   return 'N/A';
 };
 
@@ -112,13 +111,6 @@ const getVehicleInfo = (trip) => {
     return `${trip.vehicle.plate_number || ''} ${trip.vehicle.vehicle_model || ''}`.trim() || 'N/A';
   }
   return trip?.plate_number || trip?.vehicle_model || 'N/A';
-};
-
-const getAmountReleased = (trip) => {
-  return trip?.amount_released || 
-         trip?.gas_slip?.amount_released || 
-         trip?.gas_slip?.amount || 
-         0;
 };
 
 // ✅ UNIFORM STATUS CONFIG
@@ -226,14 +218,6 @@ const formatDateTime = (dateString) => {
   } catch {
     return 'N/A';
   }
-};
-
-const formatCurrency = (amount) => {
-  return new Intl.NumberFormat('en-PH', {
-    style: 'currency',
-    currency: 'PHP',
-    minimumFractionDigits: 2,
-  }).format(amount || 0);
 };
 
 // ============================================
@@ -568,8 +552,8 @@ const GsoAllTrips = () => {
   const departments = useMemo(() => {
     const depts = new Set();
     trips.forEach(t => {
-      const name = getDepartmentName(t);
-      if (name && name !== 'N/A') depts.add(name);
+      const code = getDepartmentCode(t);
+      if (code && code !== 'N/A') depts.add(code);
     });
     return ['all', ...depts];
   }, [trips]);
@@ -591,7 +575,7 @@ const GsoAllTrips = () => {
     }
     
     if (departmentFilter !== 'all') {
-      filtered = filtered.filter(t => getDepartmentName(t) === departmentFilter);
+      filtered = filtered.filter(t => getDepartmentCode(t) === departmentFilter);
     }
     
     if (searchTerm) {
@@ -599,7 +583,7 @@ const GsoAllTrips = () => {
       filtered = filtered.filter(t =>
         getTicketNumber(t).toLowerCase().includes(search) ||
         (t.destination || '').toLowerCase().includes(search) ||
-        getDepartmentName(t).toLowerCase().includes(search) ||
+        getDepartmentCode(t).toLowerCase().includes(search) ||
         getDriverName(t).toLowerCase().includes(search) ||
         getVehicleInfo(t).toLowerCase().includes(search)
       );
@@ -932,19 +916,13 @@ const GsoAllTrips = () => {
                       Destination
                     </TableHead>
                     <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
-                      Department
+                      Dept.
                     </TableHead>
                     <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
                       Driver
                     </TableHead>
                     <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
                       Vehicle
-                    </TableHead>
-                    <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider text-center">
-                      Trips
-                    </TableHead>
-                    <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider text-right">
-                      Amount
                     </TableHead>
                     <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
                       Status
@@ -959,7 +937,9 @@ const GsoAllTrips = () => {
                     const ticketId = getTicketId(trip);
                     const tripCount = trip.trip_count || 0;
                     const hasHistory = tripCount > 0;
-                    const canCancel = ['pending_mayors_office', 'funds_issued', 'acknowledged'].includes(trip.status);
+                    
+                    // ✅ Pwede ra i-cancel kung Pending pa. Dili na pwede kung Ready o pataas.
+                    const canCancel = trip.status === 'pending_mayors_office';
 
                     return (
                       <TableRow 
@@ -989,7 +969,7 @@ const GsoAllTrips = () => {
                           <div className="flex items-center gap-1.5">
                             <Building2 className="h-3.5 w-3.5 text-slate-400" />
                             <span className="text-sm text-slate-600 dark:text-slate-400">
-                              {getDepartmentName(trip)}
+                              {getDepartmentCode(trip)}
                             </span>
                           </div>
                         </TableCell>
@@ -1005,17 +985,6 @@ const GsoAllTrips = () => {
                           <span className="text-sm text-slate-600 dark:text-slate-400">
                             {getVehicleInfo(trip)}
                           </span>
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <Badge className={cn(
-                            "font-mono font-bold",
-                            hasHistory ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" : "bg-slate-100 text-slate-400 dark:bg-slate-700 dark:text-slate-500"
-                          )}>
-                            {tripCount}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right font-medium text-slate-800 dark:text-white">
-                          {formatCurrency(getAmountReleased(trip))}
                         </TableCell>
                         <TableCell>
                           <StatusBadge status={trip.status} />
@@ -1050,7 +1019,7 @@ const GsoAllTrips = () => {
                               <span className="text-xs font-medium">History</span>
                             </Button>
 
-                            {/* ✅ Cancel Button (Only for Pending and Ready status) */}
+                            {/* ✅ Cancel Button (Only for Pending status) */}
                             {canCancel && (
                               <Button
                                 size="sm"
