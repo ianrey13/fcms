@@ -5,11 +5,17 @@ namespace App\Services;
 use App\Models\TripTicket;
 use App\Models\FuelReceipt;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 class FuelPredictionService
 {
+    protected $locationService;
+
+    public function __construct(FallbackLocationService $locationService)
+    {
+        $this->locationService = $locationService;
+    }
+
     /**
      * Suggest a release amount for a trip based on destination, efficiency, and weighted average price.
      */
@@ -21,7 +27,7 @@ class FuelPredictionService
             return $this->emptyResponse('Vehicle not found.');
         }
 
-        // 1. Get Expected Round-trip Distance (Using OSRM/Routing)
+        // 1. Get Expected Round-trip Distance gikan sa FallbackLocationService
         $distanceData = $this->getExpectedDistance($trip->destination);
         $oneWayDistance = $distanceData['distance'];
         $roundTripDistance = $oneWayDistance * 2; 
@@ -64,7 +70,7 @@ class FuelPredictionService
             'unit_price_hint'    => round($weightedPrice, 2),
             'basis'              => $basis,
             'message'            => sprintf(
-                "Based on OSRM Route (%.1f km round-trip) ÷ %.1f km/L × ₱%.2f/L.",
+                "Based on Fallback Route (%.1f km round-trip) ÷ %.1f km/L × ₱%.2f/L.",
                 $roundTripDistance,
                 $efficiency,
                 $weightedPrice
@@ -73,55 +79,30 @@ class FuelPredictionService
     }
 
     /**
-     * Get Expected Distance (1-way) using OSRM API based on destination text.
+     * Get Expected Distance gikan sa FallbackLocationService
      */
     private function getExpectedDistance($destination): array
     {
-        // Default coordinates sa Laguindingan (GSO / LGU Hall)
-        $originLat = 8.5833;
-        $originLng = 124.6667;
+        // Origin permi kay Laguindingan Municipal Hall
+        $origin = 'Laguindingan Municipal Hall'; 
         
-        // Fallback distance kung mapalpak ang API
-        $defaultDistance = 20.0;
-
         try {
-            // 1. Gamit ang Nominatim (OpenStreetMap) para makuha ang Coordinates sa Destination
-            $geoResponse = Http::withHeaders([
-                'User-Agent' => 'FCMS-Laguindingan/1.0' // Required sa Nominatim
-            ])->get('https://nominatim.openstreetmap.org/search', [
-                'q' => $destination . ', Misamis Oriental, Philippines',
-                'format' => 'json',
-                'limit' => 1
-            ]);
+            // Tawgon ang imong FallbackLocationService aron makuha ang hard-coded distance
+            $result = $this->locationService->calculateDistance($origin, [$destination]);
 
-            if ($geoResponse->failed() || empty($geoResponse->json())) {
-                return ['distance' => $defaultDistance, 'source' => 'default'];
+            if ($result && isset($result['success']) && $result['success'] && isset($result['distance_km'])) {
+                return [
+                    'distance' => (float) $result['distance_km'],
+                    'source' => 'fallback'
+                ];
             }
 
-            $location = $geoResponse->json()[0];
-            $destLat = (float) $location['lat'];
-            $destLng = (float) $location['lon'];
-
-            // 2. Gamit ang OSRM (Open Source Routing Machine) para makuha ang Road Distance
-            // (Kini mo-follow sa coastal roads, AOR, etc.)
-            $osrmResponse = Http::get("https://router.project-osrm.org/route/v1/driving/{$originLng},{$originLat};{$destLng},{$destLat}?overview=false");
-
-            if ($osrmResponse->failed() || empty($osrmResponse->json()['routes'])) {
-                return ['distance' => $defaultDistance, 'source' => 'default'];
-            }
-
-            // OSRM returns distance in meters, i-convert sa km
-            $distanceInMeters = $osrmResponse->json()['routes'][0]['distance'];
-            $distanceInKm = $distanceInMeters / 1000;
-
-            return [
-                'distance' => $distanceInKm,
-                'source' => 'osrm'
-            ];
-
+            // Default fallback kung mapalpak
+            return ['distance' => 20.0, 'source' => 'default'];
+            
         } catch (\Exception $e) {
-            Log::error('OSRM Distance Calculation Error: ' . $e->getMessage());
-            return ['distance' => $defaultDistance, 'source' => 'default'];
+            Log::error('Fallback Distance Calculation Error: ' . $e->getMessage());
+            return ['distance' => 20.0, 'source' => 'default'];
         }
     }
 
