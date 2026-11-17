@@ -1,19 +1,17 @@
 // src/pages/gso/GsoDashboard.jsx
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { useAuth } from "../../contexts/AuthContext";
 import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
 import { useOptimizedQuery } from "../../hooks/useOptimizedQuery";
 import { useAutoRefresh } from "../../hooks/useAutoRefresh";
-import { useRealtime } from "../../contexts/RealtimeContext";
 import { gsoAPI, vehicleAPI, gpsAPI, departmentAPI } from "../../services/api";
-import { MapContainer, TileLayer, Marker, ZoomControl, Polyline, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import {
     Car, CheckCircle, AlertTriangle, Wrench, RefreshCw, MapPin, Search,
     Activity, PlusCircle, Fuel, Clock, FileCheck, Loader2, Check,
-    Play, Square, User, Users, Target, Flag, Route, Calendar, X
+    Play, X, Calendar, Flag, Route
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -24,7 +22,7 @@ import { toast } from "react-hot-toast";
 import { cn } from "@/lib/utils";
 
 // ============================================
-// HELPERS & MAP ICONS
+// HELPERS
 // ============================================
 const extractArray = (response) => {
     if (!response) return [];
@@ -46,10 +44,6 @@ const createVehicleIcon = (plateNumber, vehicleModel) => {
             <div style="background-color:#3b82f6; width:32px; height:32px; border-radius:50%; border:2px solid white; display:flex; align-items:center; justify-content:center; box-shadow:0 4px 6px rgba(0,0,0,0.3); z-index:2;">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/></svg>
             </div>
-            <div style="position:absolute; top:38px; background-color:rgba(255,255,255,0.95); color:#0f172a; padding:2px 6px; border-radius:4px; font-size:10px; font-weight:700; white-space:nowrap; box-shadow:0 2px 4px rgba(0,0,0,0.2); border:1px solid #cbd5e1; z-index:1;">
-                ${plateNumber || 'Unknown'}
-                <span style="font-weight:400; font-size:9px; color:#64748b; display:block; text-align:center;">${vehicleModel || ''}</span>
-            </div>
         </div>`,
         iconSize: [120, 80], iconAnchor: [60, 40], popupAnchor: [0, -30],
     });
@@ -58,14 +52,8 @@ const createVehicleIcon = (plateNumber, vehicleModel) => {
 const createSvgIcon = (color, iconPath) => {
     return L.divIcon({
         className: 'custom-svg-icon',
-        html: `<div style="
-            background-color: ${color}; width: 28px; height: 28px; border-radius: 50%;
-            border: 2px solid white; display: flex; align-items: center; justify-content: center;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-        ">
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-                ${iconPath}
-            </svg>
+        html: `<div style="background-color: ${color}; width: 28px; height: 28px; border-radius: 50%; border: 2px solid white; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 6px rgba(0,0,0,0.3);">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">${iconPath}</svg>
         </div>`,
         iconSize: [28, 28], iconAnchor: [14, 14],
     });
@@ -77,7 +65,6 @@ const icons = {
     vehicle: createSvgIcon('#3b82f6', '<path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/>'),
 };
 
-// Helper para mo-center ang mapa sa route inig load
 const MapBounds = ({ coords }) => {
     const map = useMap();
     useEffect(() => {
@@ -95,16 +82,11 @@ const GsoDashboard = () => {
     const navigate = useNavigate();
     const queryClient = useQueryClient();
 
-    // States
     const [searchTerm, setSearchTerm] = useState("");
     const [deptFilter, setDeptFilter] = useState("all");
-    
-    // Validation Dialog States
     const [selectedTicket, setSelectedTicket] = useState(null);
     const [showValidateDialog, setShowValidateDialog] = useState(false);
     const [hasWatchedReplay, setHasWatchedReplay] = useState(false);
-    
-    // Replay States
     const [routeCoordinates, setRouteCoordinates] = useState([]);
     const [loadingRoute, setLoadingRoute] = useState(false);
     const [isReplaying, setIsReplaying] = useState(false);
@@ -121,7 +103,6 @@ const GsoDashboard = () => {
     useAutoRefresh(["gso-trip-updated", "gps-active-trips", "trip-completed"], fetchAllData);
 
     // ============ QUERIES ============
-    
     const { data: vehiclesRaw = [], isLoading: vehiclesLoading } = useOptimizedQuery({
         queryKey: ["gso-dashboard-vehicles"],
         queryFn: async () => extractArray(await vehicleAPI.getAll()),
@@ -146,14 +127,13 @@ const GsoDashboard = () => {
     });
     const activeTrips = useMemo(() => Array.isArray(activeTripsRaw) ? activeTripsRaw : [], [activeTripsRaw]);
 
-    // All Trips (History / Fuel Ledger)
     const { data: allTripsRaw = [], isLoading: tripsLoading } = useOptimizedQuery({
         queryKey: ["gso-dashboard-trips"],
         queryFn: async () => extractArray(await gsoAPI.getAllTrips()),
     });
     const allTrips = useMemo(() => Array.isArray(allTripsRaw) ? allTripsRaw : [], [allTripsRaw]);
 
-    // Pending Validation
+    // ✅ Gikuha na ang data sa validation
     const { data: pendingValidationRaw = [], isLoading: validationLoading } = useOptimizedQuery({
         queryKey: ["gso-pending-validation"],
         queryFn: async () => extractArray(await gsoAPI.getPendingValidation()),
@@ -181,7 +161,6 @@ const GsoDashboard = () => {
     });
 
     // ============ DERIVED DATA ============
-
     const totalVehicles = vehicles.length;
     const serviceable = vehicles.filter(v => v.status === 'active' && !v.maintenance_flag).length;
     const unserviceable = vehicles.filter(v => v.status !== 'active').length;
@@ -216,17 +195,18 @@ const GsoDashboard = () => {
     const displayTripData = activeTrips.length > 0 ? activeTrips[0] : null;
     const displayVehicle = displayTripData?.vehicle;
 
-    // ============================================
-    // FUEL LEDGER MAPPING FOR PENDING VALIDATION TABLE
-    // ============================================
+    // ✅ FIXED: Pag-extract sa `liters_availed` gikan sa `gas_slip`
     const pendingValidationLedger = useMemo(() => {
         return pendingValidation.map(trip => {
             const vehicle = vehicles.find(v => v.plate_number === trip.vehicle?.plate_number) || trip.vehicle;
+            
+            // Beginning (Initial fuel)
             const beginning = parseFloat(vehicle?.initial_estimated_fuel ?? vehicle?.current_fuel_balance ?? 0);
             
-            // ✅ Gikuha ang liters gikan sa gas_slip.fuel_receipt (gibalik sa backend)
-            const fuelIn = parseFloat(trip.liters_availed || 0);
+            // ✅ Gikuha gikan sa gas_slip.fuel_receipt based sa backend payload
+            const fuelIn = parseFloat(trip.gas_slip?.fuel_receipt?.liters_availed || trip.estimated_fuel_liters || 0);
             
+            // Distance
             const distance = parseFloat(trip.actual_distance_km || trip.gps_distance_km || 0);
             const efficiency = parseFloat(vehicle?.reference_efficiency || 10);
             const fuelOut = distance > 0 ? (distance / efficiency) : 0;
@@ -240,14 +220,14 @@ const GsoDashboard = () => {
                 fuelOut: fuelOut.toFixed(1),
                 balance: balance.toFixed(1),
                 vehicleString: trip.vehicle ? `${trip.vehicle.vehicle_model} - ${trip.vehicle.plate_number}` : 'N/A',
+                displayTicketNo: trip.ticket_number || trip.trip_ticket_number,
+                displayId: trip.id || trip.trip_ticket_id,
+                displayDate: trip.trip_date || trip.submitted_at,
             };
         });
     }, [pendingValidation, vehicles]);
 
-    // ============================================
-    // VALIDATION & REPLAY HANDLERS
-    // ============================================
-    
+    // ============ HANDLERS ============
     const handleOpenValidateDialog = async (trip) => {
         setSelectedTicket(trip);
         setShowValidateDialog(true);
@@ -256,18 +236,20 @@ const GsoDashboard = () => {
         setLoadingRoute(true);
 
         try {
-            const res = await gpsAPI.getTripRoute(trip.id || trip.trip_ticket_id);
+            const res = await gpsAPI.getTripRoute(trip.displayId);
             const track = res?.data?.data?.track || [];
             const coords = track.map(p => [p.latitude, p.longitude]);
             setRouteCoordinates(coords);
             
-            // Auto-play immediately after loading
             if (coords.length >= 2) {
                 setTimeout(() => startReplay(coords), 500);
+            } else {
+                setHasWatchedReplay(true); // Enable confirm button if walay route data
             }
         } catch (e) {
             console.error("Failed to load route", e);
             toast.error("Could not load route replay data.");
+            setHasWatchedReplay(true);
         } finally {
             setLoadingRoute(false);
         }
@@ -280,14 +262,13 @@ const GsoDashboard = () => {
         setHasWatchedReplay(false);
 
         let currentIdx = 0;
-        // ✅ Gipaspas ang replay (80ms)
         replayIntervalRef.current = setInterval(() => {
             currentIdx++;
             if (currentIdx >= coords.length) {
                 clearInterval(replayIntervalRef.current);
                 setIsReplaying(false);
                 setReplayIndex(0);
-                setHasWatchedReplay(true); // Enable Confirm button
+                setHasWatchedReplay(true); // ✅ Replay finished
                 return;
             }
             setReplayIndex(currentIdx);
@@ -384,15 +365,10 @@ const GsoDashboard = () => {
                             <h3 className="font-bold text-white flex items-center gap-2">
                                 <MapPin className="h-4 w-4 text-blue-500" /> Live Vehicle Tracking
                             </h3>
-                            <div className="flex items-center gap-1.5">
-                                <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-                                <span className="text-[10px] text-emerald-400 font-medium">Real-time</span>
-                            </div>
                         </div>
                         <div className="flex-1 relative bg-[#0b101c] min-h-[350px]">
                             <MapContainer center={[8.5833, 124.6667]} zoom={12} style={{ height: '100%', width: '100%' }} zoomControl={false} className="z-0">
                                 <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-                                <ZoomControl position="bottomright" />
                                 {activeTrips.map(trip => {
                                     if (!trip.current_location) return null;
                                     return (
@@ -400,30 +376,9 @@ const GsoDashboard = () => {
                                     );
                                 })}
                             </MapContainer>
-                            {displayTripData && displayVehicle && (
-                                <div className="absolute top-4 right-4 z-[400] bg-[#121829]/95 backdrop-blur-md border border-slate-700 rounded-xl p-4 w-72 shadow-2xl">
-                                    <div className="flex items-start justify-between mb-3 border-b border-slate-700 pb-2">
-                                        <div className="flex items-center gap-2">
-                                            <Car className="h-5 w-5 text-blue-500" />
-                                            <div>
-                                                <p className="font-bold text-white text-sm">{displayVehicle.vehicle_model}</p>
-                                                <p className="text-[10px] text-slate-400">Plate No. {displayVehicle.plate_number}</p>
-                                            </div>
-                                        </div>
-                                        <Badge className="bg-emerald-500/20 text-emerald-400 text-[9px] px-2">In Transit</Badge>
-                                    </div>
-                                    <div className="bg-[#0b101c] rounded-lg p-3 mb-3">
-                                        <p className="text-[10px] text-slate-400 mb-1 flex items-center gap-1"><Fuel className="h-3 w-3" /> Fuel Balance (Est.)</p>
-                                        <div className="flex items-end gap-2 mb-1">
-                                            <span className="text-xl font-bold text-white">{displayVehicle.current_fuel_balance?.toFixed(1) || 0} L</span>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
                         </div>
                     </Card>
 
-                    {/* FUEL BALANCE MONITORING */}
                     <Card className="bg-[#121829] border-slate-800 shadow-lg flex flex-col h-full">
                         <div className="p-4 border-b border-slate-800 flex justify-between items-center">
                             <h3 className="font-bold text-white flex items-center gap-2">
@@ -448,18 +403,12 @@ const GsoDashboard = () => {
                                 <tbody className="divide-y divide-slate-800/50">
                                     {filteredVehicles.map(v => {
                                         const balance = parseFloat(v.current_fuel_balance || 0);
-                                        const cap = parseFloat(v.tank_capacity || 60);
-                                        const pct = Math.min(100, (balance / cap) * 100);
                                         return (
                                             <tr key={v.vehicle_id} className="hover:bg-[#1a2235]">
                                                 <td className="px-3 py-3 font-medium text-white truncate max-w-[100px]">{v.vehicle_model}</td>
                                                 <td className="px-3 py-3 font-mono">{v.plate_number}</td>
-                                                <td className="px-3 py-3 text-right">
-                                                    <div className="flex flex-col items-end">
-                                                        <span className={cn("font-bold", pct < 20 ? "text-red-400" : pct < 50 ? "text-amber-400" : "text-emerald-400")}>
-                                                            {balance.toFixed(0)} L
-                                                        </span>
-                                                    </div>
+                                                <td className="px-3 py-3 text-right font-bold text-emerald-400">
+                                                    {balance.toFixed(1)} L
                                                 </td>
                                             </tr>
                                         );
@@ -470,7 +419,7 @@ const GsoDashboard = () => {
                     </Card>
                 </div>
 
-                {/* VEHICLE UTILIZATION & RECENT TRIPS (Gikuha ang Vehicle Status dinhi) */}
+                {/* VEHICLE UTILIZATION & RECENT TRIPS */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     <Card className="bg-[#121829] border-slate-800 shadow-lg p-4">
                         <h3 className="font-bold text-white mb-4 flex items-center gap-2">
@@ -546,13 +495,13 @@ const GsoDashboard = () => {
                     </Card>
                 </div>
 
-                {/* PENDING VALIDATION TABLE (Parehas sa 1st pic) */}
+                {/* ✅ PENDING VALIDATION TABLE (Saktong columns) */}
                 <Card className="bg-[#121829] border-slate-800 shadow-lg">
                     <CardHeader className="border-b border-slate-800 pb-4">
                         <div className="flex items-center justify-between">
                             <div>
                                 <CardTitle className="text-white flex items-center gap-2">
-                                    <FileCheck className="h-5 w-5 text-blue-500" /> Pending Validation
+                                    <FileCheck className="h-5 w-5 text-blue-500" /> Pending Validation & Fuel Ledger
                                 </CardTitle>
                                 <p className="text-xs text-slate-400 mt-1">Trips completed by the driver, awaiting GSO validation.</p>
                             </div>
@@ -580,9 +529,9 @@ const GsoDashboard = () => {
                                     ) : pendingValidationLedger.length === 0 ? (
                                         <tr><td colSpan={8} className="text-center py-6 text-slate-500">No pending validations.</td></tr>
                                     ) : pendingValidationLedger.map(trip => (
-                                        <tr key={trip.id} className="hover:bg-[#1a2235]">
-                                            <td className="px-4 py-3 whitespace-nowrap">{formatDateShort(trip.trip_date)}</td>
-                                            <td className="px-4 py-3 font-mono text-white">{trip.ticket_number}</td>
+                                        <tr key={trip.displayId} className="hover:bg-[#1a2235]">
+                                            <td className="px-4 py-3 whitespace-nowrap">{formatDateShort(trip.displayDate)}</td>
+                                            <td className="px-4 py-3 font-mono text-white">{trip.displayTicketNo}</td>
                                             <td className="px-4 py-3 font-medium text-white">{trip.vehicleString}</td>
                                             <td className="px-4 py-3 text-right text-slate-400">{trip.beginning}</td>
                                             <td className="px-4 py-3 text-right text-emerald-400">{trip.fuelIn}</td>
@@ -604,7 +553,6 @@ const GsoDashboard = () => {
                         </div>
                     </CardContent>
                 </Card>
-
             </div>
 
             {/* VALIDATE & REPLAY DIALOG */}
@@ -632,7 +580,7 @@ const GsoDashboard = () => {
                                     <Calendar className="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0" />
                                     <div>
                                         <p className="text-xs text-slate-400 font-medium">Trip Ticket No.</p>
-                                        <p className="text-sm font-bold text-white font-mono">{selectedTicket?.ticket_number}</p>
+                                        <p className="text-sm font-bold text-white font-mono">{selectedTicket?.displayTicketNo}</p>
                                     </div>
                                 </div>
                                 <div className="flex items-start gap-3">
@@ -662,11 +610,7 @@ const GsoDashboard = () => {
                                     <MapContainer center={[8.5833, 124.6667]} zoom={12} style={{ height: '100%', width: '100%' }} zoomControl={false}>
                                         <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
                                         <MapBounds coords={routeCoordinates} />
-                                        
-                                        <Polyline 
-                                            positions={routeCoordinates} 
-                                            color="#3b82f6" weight={4} opacity={0.8} 
-                                        />
+                                        <Polyline positions={routeCoordinates} color="#3b82f6" weight={4} opacity={0.8} />
                                         <Marker position={routeCoordinates[0]} icon={icons.start} />
                                         <Marker position={routeCoordinates[routeCoordinates.length - 1]} icon={icons.end} />
                                         {isReplaying && <Marker position={routeCoordinates[replayIndex]} icon={icons.vehicle} />}
@@ -679,10 +623,9 @@ const GsoDashboard = () => {
                                 )}
                             </div>
 
-                            {/* Confirm Button */}
                             <div className="p-4 bg-[#121829] border-t border-slate-800 flex items-center justify-end">
                                 <Button 
-                                    onClick={() => validateMutation.mutate({ ticketId: selectedTicket?.id })}
+                                    onClick={() => validateMutation.mutate({ ticketId: selectedTicket?.displayId })}
                                     disabled={validateMutation.isPending || !hasWatchedReplay}
                                     className={cn(
                                         "text-white font-bold h-10 px-8 rounded-xl shadow-lg transition-all",
