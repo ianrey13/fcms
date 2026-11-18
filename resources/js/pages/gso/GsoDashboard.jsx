@@ -558,7 +558,7 @@ const GsoDashboard = () => {
                                                 <td className="px-3 py-3 font-medium text-white truncate max-w-[100px]">{v.vehicle_model}</td>
                                                 <td className="px-3 py-3 font-mono">{v.plate_number}</td>
                                                 <td className="px-3 py-3 text-right font-bold text-emerald-400">
-                                                    {balance.toFixed(1)} L
+                                                    {parseFloat(balance.toFixed(2))} L
                                                 </td>
                                             </tr>
                                         );
