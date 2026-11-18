@@ -1,4 +1,8 @@
 // src/pages/mayor/MayorPending.jsx
+// ============================================
+// FIXED VERSION — daan nga UI structure + dynamic MO department ID
+// ============================================
+
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { useAutoRefresh } from "../../hooks/useAutoRefresh";
@@ -73,8 +77,9 @@ const MayorPending = () => {
   const [showTankWarning, setShowTankWarning] = useState(false);
   const [pendingPayload, setPendingPayload] = useState(null);
 
-  // ✅ DYNAMIC: Mayor's Office department ID (gikuha gikan sa all_departments)
+  // ✅ DYNAMIC: Mayor's Office department ID — dili na hardcoded
   const [moDepartmentId, setMoDepartmentId] = useState(null);
+  const [allDepartments, setAllDepartments] = useState([]);
 
   const fetchTicketsRef = useRef(null);
 
@@ -93,7 +98,17 @@ const MayorPending = () => {
         mayorsOfficeAPI.getPendingTickets(),
         mayorsOfficeAPI.getApprovedTickets()
       ]);
-      setTickets(Array.isArray(pendingRes.data?.data) ? pendingRes.data.data : []);
+
+      // ✅ Kuhaon ang all_departments gikan sa response (kung naa)
+      const pendingData = pendingRes.data;
+      const deptsFromResponse = pendingData?.all_departments || pendingData?.data?.all_departments;
+      if (Array.isArray(deptsFromResponse) && deptsFromResponse.length > 0) {
+        setAllDepartments(deptsFromResponse);
+        const mo = deptsFromResponse.find(d => d.department_code === 'MO');
+        if (mo) setMoDepartmentId(mo.department_id);
+      }
+
+      setTickets(Array.isArray(pendingData?.data) ? pendingData.data : []);
       setReleasedTickets(Array.isArray(approvedRes.data?.data) ? approvedRes.data.data : []);
     } catch (error) { toast.error("Failed to load tickets"); }
     finally { setLoading(false); }
@@ -101,6 +116,27 @@ const MayorPending = () => {
 
   useEffect(() => { fetchTicketsRef.current = fetchTickets; }, [fetchTickets]);
   useEffect(() => { fetchTickets(); }, [fetchTickets]);
+
+  // ✅ FALLBACK: Kung wala sa response, kuhaon gikan sa dedicated endpoint
+  useEffect(() => {
+    if (moDepartmentId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        if (mayorsOfficeAPI.getAllDepartmentsForSelector) {
+          const res = await mayorsOfficeAPI.getAllDepartmentsForSelector();
+          const depts = res.data?.data || [];
+          if (cancelled) return;
+          setAllDepartments(depts);
+          const mo = depts.find(d => d.department_code === 'MO');
+          if (mo) setMoDepartmentId(mo.department_id);
+        }
+      } catch (e) {
+        // silent — backend may not have this endpoint
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [moDepartmentId]);
 
   const filteredTickets = useMemo(() => {
     return tickets.filter((ticket) => searchTerm === "" ||
@@ -172,15 +208,20 @@ const MayorPending = () => {
 
   const suggestion = suggestionResponse?.data?.data;
 
-  // ✅ DYNAMIC: Kuhaon ang Mayor's Office ID gikan sa all_departments (kung naa)
+  // ✅ FALLBACK: Kung ang suggestion response naay all_departments, gamita
   useEffect(() => {
-    if (!selectedTicket) return;
-    const allDepts = suggestionResponse?.data?.data?.all_departments || selectedTicket?.all_departments;
-    if (Array.isArray(allDepts) && allDepts.length > 0) {
-      const mo = allDepts.find(d => d.department_code === 'MO');
-      if (mo) setMoDepartmentId(mo.department_id);
+    if (moDepartmentId) return;
+    const depts =
+      suggestionResponse?.data?.data?.all_departments ||
+      suggestionResponse?.data?.all_departments;
+    if (Array.isArray(depts) && depts.length > 0) {
+      const mo = depts.find(d => d.department_code === 'MO');
+      if (mo) {
+        setMoDepartmentId(mo.department_id);
+        setAllDepartments(depts);
+      }
     }
-  }, [selectedTicket, suggestionResponse]);
+  }, [suggestionResponse, moDepartmentId]);
 
   const handleApprove = async () => {
     if (!amountReleased || parseFloat(amountReleased) <= 0) {
@@ -188,13 +229,18 @@ const MayorPending = () => {
     }
     const amount = parseFloat(amountReleased);
 
-    // ✅ DYNAMIC: Gamita ang moDepartmentId kung naa, fallback sa 1
+    // ✅ VALIDATION: Kung cross-dept pero wala pa na-load ang MO ID
+    if (isCrossDepartment && !moDepartmentId) {
+      return toast.error("Mayor's Office department not found. Please refresh the page.");
+    }
+
+    // ✅ DYNAMIC: Gamita ang moDepartmentId (dili na hardcoded)
     const chargeToDeptId = isCrossDepartment
-      ? (moDepartmentId ?? 1)
+      ? moDepartmentId
       : selectedTicket.department_id;
 
-    // 🔴 FRONTEND VALIDATION: Ayaw i-allow ang cross-dept kung parehas ra ang department
-    if (isCrossDepartment && chargeToDeptId === selectedTicket.department_id) {
+    // ✅ VALIDATION: Kung parehas ra ang department, ayaw i-allow
+    if (isCrossDepartment && String(chargeToDeptId) === String(selectedTicket.department_id)) {
       return toast.error(
         "Cross-Department is selected, but this ticket is already from the Mayor's Office. Please uncheck the Cross-Department option."
       );
