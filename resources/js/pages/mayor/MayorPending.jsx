@@ -1,6 +1,6 @@
 // src/pages/mayor/MayorPending.jsx
 // ============================================
-// FIXED VERSION — daan nga UI structure + dynamic MO department ID
+// FRONTEND-ONLY FIX — walay usbon sa backend
 // ============================================
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
@@ -77,9 +77,10 @@ const MayorPending = () => {
   const [showTankWarning, setShowTankWarning] = useState(false);
   const [pendingPayload, setPendingPayload] = useState(null);
 
-  // ✅ DYNAMIC: Mayor's Office department ID — dili na hardcoded
+  // ✅ FRONTEND-ONLY: Dynamic MO department ID
   const [moDepartmentId, setMoDepartmentId] = useState(null);
   const [allDepartments, setAllDepartments] = useState([]);
+  const [moLookupDone, setMoLookupDone] = useState(false);
 
   const fetchTicketsRef = useRef(null);
 
@@ -99,13 +100,16 @@ const MayorPending = () => {
         mayorsOfficeAPI.getApprovedTickets()
       ]);
 
-      // ✅ Kuhaon ang all_departments gikan sa response (kung naa)
       const pendingData = pendingRes.data;
+      // ✅ Kuhaon ang all_departments gikan sa response (kung gi-return sa backend)
       const deptsFromResponse = pendingData?.all_departments || pendingData?.data?.all_departments;
       if (Array.isArray(deptsFromResponse) && deptsFromResponse.length > 0) {
         setAllDepartments(deptsFromResponse);
         const mo = deptsFromResponse.find(d => d.department_code === 'MO');
-        if (mo) setMoDepartmentId(mo.department_id);
+        if (mo) {
+          setMoDepartmentId(mo.department_id);
+          setMoLookupDone(true);
+        }
       }
 
       setTickets(Array.isArray(pendingData?.data) ? pendingData.data : []);
@@ -117,26 +121,31 @@ const MayorPending = () => {
   useEffect(() => { fetchTicketsRef.current = fetchTickets; }, [fetchTickets]);
   useEffect(() => { fetchTickets(); }, [fetchTickets]);
 
-  // ✅ FALLBACK: Kung wala sa response, kuhaon gikan sa dedicated endpoint
+  // ✅ FRONTEND-ONLY FALLBACK: Kung wala sa getPendingTickets response, kuhaon via getAllDepartmentsForSelector
   useEffect(() => {
-    if (moDepartmentId) return;
+    if (moLookupDone || moDepartmentId) return;
     let cancelled = false;
     (async () => {
       try {
-        if (mayorsOfficeAPI.getAllDepartmentsForSelector) {
+        if (typeof mayorsOfficeAPI.getAllDepartmentsForSelector === 'function') {
           const res = await mayorsOfficeAPI.getAllDepartmentsForSelector();
           const depts = res.data?.data || [];
           if (cancelled) return;
           setAllDepartments(depts);
           const mo = depts.find(d => d.department_code === 'MO');
-          if (mo) setMoDepartmentId(mo.department_id);
+          if (mo) {
+            setMoDepartmentId(mo.department_id);
+            setMoLookupDone(true);
+          }
         }
       } catch (e) {
-        // silent — backend may not have this endpoint
+        // silent — kung wala ang endpoint, dili mo-crash
+        console.warn("Could not fetch departments for MO lookup:", e?.message);
+        if (!cancelled) setMoLookupDone(true);
       }
     })();
     return () => { cancelled = true; };
-  }, [moDepartmentId]);
+  }, [moLookupDone, moDepartmentId]);
 
   const filteredTickets = useMemo(() => {
     return tickets.filter((ticket) => searchTerm === "" ||
@@ -208,7 +217,7 @@ const MayorPending = () => {
 
   const suggestion = suggestionResponse?.data?.data;
 
-  // ✅ FALLBACK: Kung ang suggestion response naay all_departments, gamita
+  // ✅ FRONTEND-ONLY FALLBACK: Kung ang suggestion response naay all_departments
   useEffect(() => {
     if (moDepartmentId) return;
     const depts =
@@ -219,6 +228,7 @@ const MayorPending = () => {
       if (mo) {
         setMoDepartmentId(mo.department_id);
         setAllDepartments(depts);
+        setMoLookupDone(true);
       }
     }
   }, [suggestionResponse, moDepartmentId]);
@@ -229,7 +239,7 @@ const MayorPending = () => {
     }
     const amount = parseFloat(amountReleased);
 
-    // ✅ VALIDATION: Kung cross-dept pero wala pa na-load ang MO ID
+    // ✅ FRONTEND VALIDATION: Kung cross-dept pero wala pa na-load ang MO ID
     if (isCrossDepartment && !moDepartmentId) {
       return toast.error("Mayor's Office department not found. Please refresh the page.");
     }
@@ -239,7 +249,7 @@ const MayorPending = () => {
       ? moDepartmentId
       : selectedTicket.department_id;
 
-    // ✅ VALIDATION: Kung parehas ra ang department, ayaw i-allow
+    // ✅ FRONTEND VALIDATION: Kung parehas ra ang department, ayaw i-allow
     if (isCrossDepartment && String(chargeToDeptId) === String(selectedTicket.department_id)) {
       return toast.error(
         "Cross-Department is selected, but this ticket is already from the Mayor's Office. Please uncheck the Cross-Department option."
