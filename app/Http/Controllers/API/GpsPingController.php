@@ -1461,7 +1461,7 @@ class GpsPingController extends Controller
      * Get real-time trip stats (distance, fuel, speed)
      * Uses the SAME filter set as calculateTripDistance for consistent numbers.
      */
-    public function getRealtimeStats(Request $request, $tripId)
+        public function getRealtimeStats(Request $request, $tripId)
     {
         try {
             $user = $request->user();
@@ -1487,7 +1487,7 @@ class GpsPingController extends Controller
             $maxSpeed = 0;
             $totalTime = 0;
             $prevPing = null;
-            $fuelEfficiency = $trip->vehicle?->fuel_efficiency ?? 10;
+            $fuelEfficiency = $trip->vehicle?->reference_efficiency ?? 10;
 
             foreach ($pings as $ping) {
                 if ($ping->speed_kmh && $ping->speed_kmh > $maxSpeed) {
@@ -1504,9 +1504,11 @@ class GpsPingController extends Controller
                 ? ($totalDistance / $totalTime) * 3.6
                 : 0;
 
-            $estimatedFuelConsumed = ($totalDistance > 0 && $fuelEfficiency > 0)
-                ? $totalDistance / $fuelEfficiency
-                : 0;
+            // ✅ BAG-ONG FORMULA SA FUEL OUT: (3.2 + actual gps distance) ÷ reference efficiency
+            $estimatedFuelConsumed = 0;
+            if ($fuelEfficiency > 0) {
+                $estimatedFuelConsumed = (3.2 + $totalDistance) / $fuelEfficiency;
+            }
 
             $currentTripNumber = TripHistory::where('trip_ticket_id', $tripId)
                 ->where('status', 'in_progress')

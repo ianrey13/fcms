@@ -256,10 +256,9 @@ const GsoDashboard = () => {
     // ============================================
     // HELPER: Compute Ledger Row (OPTION A - SYNCED SA DB)
     // ============================================
-    const computeLedgerRow = useCallback((trip) => {
+        const computeLedgerRow = useCallback((trip) => {
         const vehicle = vehicles.find(v => v.plate_number === trip.vehicle?.plate_number) || trip.vehicle;
         
-        // ✅ OPTION A: Gikuha nato ang tinuod nga balance sa database isip beginning
         const actualBalance = parseFloat(vehicle?.current_fuel_balance ?? 0);
         
         const fuelIn = parseFloat(
@@ -269,29 +268,18 @@ const GsoDashboard = () => {
             0
         );
         
-        // ✅ Since Balance = Beginning + Fuel In - Fuel Out
-        // Unya ang actual DB Balance mao ang pinaka-final, ato i-reverse engineer ang Fuel Out
-        // para mo-match jud tanan sa database.
-        let fuelOut = 0;
-        if (actualBalance > 0 || fuelIn > 0) {
-            fuelOut = actualBalance + fuelIn - actualBalance; 
-            // Simpler: Beginning = actualBalance, Balance = actualBalance, so Out = In.
-            // Pero aron realistic, kung naay distance, ato i-calculate.
-        }
-        
         const distance = parseFloat(trip.actual_distance_km || trip.gps_distance_km || 0);
         const efficiency = parseFloat(vehicle?.reference_efficiency || 10);
         
-        // Kung naay distance, kwentahon ang fuel out. Kung wala, 0.
-        fuelOut = distance > 0 ? (distance / efficiency) : 0;
+        // ✅ BAG-ONG FORMULA SA FUEL OUT: (3.2 + distance) ÷ efficiency
+        let fuelOut = 0;
+        if (efficiency > 0) {
+            fuelOut = (3.2 + distance) / efficiency;
+        }
         
-        // Ang Beginning himuon natong (DB Balance - In + Out) aron mo tugma jud ang ending balance sa DB Balance
         const beginning = actualBalance - fuelIn + fuelOut;
-        
-        // Kani na dayon ang ending balance nga mo-match sa Fuel Balance Monitoring
         const balance = beginning + fuelIn - fuelOut;
 
-        // ✅ DRIVER NAME FALLBACK
         const driverName = trip.driver_name || 
                            trip.driver?.user?.full_name || 
                            trip.driver?.full_name || 
@@ -311,7 +299,6 @@ const GsoDashboard = () => {
             displayDate: trip.trip_date || trip.submitted_at,
         };
     }, [vehicles]);
-
     // ============================================
     // VALIDATION & REPLAY HANDLERS
     // ============================================

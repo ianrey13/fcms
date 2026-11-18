@@ -14,6 +14,7 @@ class FallbackLocationService
             'laguindingan_municipal_hall' => [
                 'name' => 'Laguindingan Municipal Hall',
                 'distance_km' => 0,
+                'distance_to_municipal_hall_km' => 0,
                 'lat' => 8.573217025849702,
                 'lng' => 124.44408491080871,
                 'type' => 'origin',
@@ -24,6 +25,7 @@ class FallbackLocationService
             'laguindingan' => [
                 'name' => 'Laguindingan',
                 'distance_km' => 0,
+                'distance_to_municipal_hall_km' => 0,
                 'lat' => 8.573217025849702,
                 'lng' => 124.44408491080871,
                 'type' => 'municipality',
@@ -32,10 +34,11 @@ class FallbackLocationService
                 'aliases' => ['laguindingan poblacion'],
             ],
             
-            // ============ LAGUINDINGAN BARANGAYS ============
+            // ============ LAGUINDINGAN BARANGAYS (Updated from JSON) ============
             'aromahon' => [
                 'name' => 'Aromahon, Laguindingan',
-                'distance_km' => 2.7,
+                'distance_km' => 5.3,
+                'distance_to_municipal_hall_km' => 2.5,
                 'lat' => 8.5681,
                 'lng' => 124.4247,
                 'type' => 'barangay',
@@ -45,7 +48,8 @@ class FallbackLocationService
             ],
             'gasi' => [
                 'name' => 'Gasi, Laguindingan',
-                'distance_km' => 3.3,
+                'distance_km' => 4.0,
+                'distance_to_municipal_hall_km' => 3.0,
                 'lat' => 8.5924,
                 'lng' => 124.4352,
                 'type' => 'barangay',
@@ -55,7 +59,8 @@ class FallbackLocationService
             ],
             'kibaghot' => [
                 'name' => 'Kibaghot, Laguindingan',
-                'distance_km' => 3.4,
+                'distance_km' => 0.8,
+                'distance_to_municipal_hall_km' => 3.7,
                 'lat' => 8.5905,
                 'lng' => 124.4514,
                 'type' => 'barangay',
@@ -65,7 +70,8 @@ class FallbackLocationService
             ],
             'lapad' => [
                 'name' => 'Lapad, Laguindingan',
-                'distance_km' => 3.5,
+                'distance_km' => 6.1,
+                'distance_to_municipal_hall_km' => 2.8,
                 'lat' => 8.5504,
                 'lng' => 124.4303,
                 'type' => 'barangay',
@@ -75,7 +81,8 @@ class FallbackLocationService
             ],
             'liberty' => [
                 'name' => 'Liberty, Laguindingan',
-                'distance_km' => 4.6,
+                'distance_km' => 5.0,
+                'distance_to_municipal_hall_km' => 4.6,
                 'lat' => 8.6048,
                 'lng' => 124.4447,
                 'type' => 'barangay',
@@ -85,7 +92,8 @@ class FallbackLocationService
             ],
             'mauswagon' => [
                 'name' => 'Mauswagon, Laguindingan',
-                'distance_km' => 5.2,
+                'distance_km' => 8.7,
+                'distance_to_municipal_hall_km' => 5.3,
                 'lat' => 8.6008,
                 'lng' => 124.4140,
                 'type' => 'barangay',
@@ -95,7 +103,8 @@ class FallbackLocationService
             ],
             'moog' => [
                 'name' => 'Moog, Laguindingan',
-                'distance_km' => 6.4,
+                'distance_km' => 2.5,
+                'distance_to_municipal_hall_km' => 5.7,
                 'lat' => 8.6079,
                 'lng' => 124.4695,
                 'type' => 'barangay',
@@ -105,7 +114,8 @@ class FallbackLocationService
             ],
             'poblacion' => [
                 'name' => 'Poblacion, Laguindingan',
-                'distance_km' => 1.0,
+                'distance_km' => 3.2,
+                'distance_to_municipal_hall_km' => 1.0,
                 'lat' => 8.5796,
                 'lng' => 124.4445,
                 'type' => 'barangay',
@@ -115,7 +125,8 @@ class FallbackLocationService
             ],
             'sambulawan' => [
                 'name' => 'Sambulawan, Laguindingan',
-                'distance_km' => 3.3,
+                'distance_km' => 6.4,
+                'distance_to_municipal_hall_km' => 3.4,
                 'lat' => 8.5889,
                 'lng' => 124.4198,
                 'type' => 'barangay',
@@ -125,7 +136,8 @@ class FallbackLocationService
             ],
             'sinai' => [
                 'name' => 'Sinai, Laguindingan',
-                'distance_km' => 2.0,
+                'distance_km' => 5.1,
+                'distance_to_municipal_hall_km' => 2.0,
                 'lat' => 8.5786,
                 'lng' => 124.4260,
                 'type' => 'barangay',
@@ -135,7 +147,8 @@ class FallbackLocationService
             ],
             'tubajon' => [
                 'name' => 'Tubajon, Laguindingan',
-                'distance_km' => 11.2,
+                'distance_km' => 11.8,
+                'distance_to_municipal_hall_km' => 10.9,
                 'lat' => 8.6214,
                 'lng' => 124.4618,
                 'type' => 'barangay',
@@ -148,6 +161,7 @@ class FallbackLocationService
             'all_barangay' => [
                 'name' => 'All Barangay',
                 'distance_km' => 11.4,
+                'distance_to_municipal_hall_km' => 10.9,
                 'lat' => 8.621431183919565,
                 'lng' => 124.4619632769859,
                 'type' => 'group',
@@ -158,6 +172,7 @@ class FallbackLocationService
             'coastal_barangay' => [
                 'name' => 'Coastal Barangay',
                 'distance_km' => 11.4,
+                'distance_to_municipal_hall_km' => 10.9,
                 'lat' => 8.621427701784217,
                 'lng' => 124.46134992481697,
                 'type' => 'group',
@@ -168,6 +183,7 @@ class FallbackLocationService
             'aor_laguindingan' => [
                 'name' => 'AOR Laguindingan',
                 'distance_km' => 11.4,
+                'distance_to_municipal_hall_km' => 10.9,
                 'lat' => 8.624609137625352,
                 'lng' => 124.46365073632487,
                 'type' => 'group',
@@ -178,6 +194,7 @@ class FallbackLocationService
             'laguindingan_airport' => [
                 'name' => 'Laguindingan Airport',
                 'distance_km' => 4.9,
+                'distance_to_municipal_hall_km' => 3.0,
                 'lat' => 8.610260789398502,
                 'lng' => 124.45795811031401,
                 'type' => 'landmark',
@@ -188,6 +205,7 @@ class FallbackLocationService
             'gk_heights' => [
                 'name' => 'GK Heights',
                 'distance_km' => 5.0,
+                'distance_to_municipal_hall_km' => 3.0,
                 'lat' => 8.6100,
                 'lng' => 124.4500,
                 'type' => 'landmark',
@@ -200,6 +218,7 @@ class FallbackLocationService
             'alubijid_baybay' => [
                 'name' => 'Baybay, Alubijid',
                 'distance_km' => 4.2,
+                'distance_to_municipal_hall_km' => 6.0,
                 'lat' => 8.5870,
                 'lng' => 124.4835,
                 'type' => 'barangay',
@@ -210,6 +229,7 @@ class FallbackLocationService
             'alubijid_benigwayan' => [
                 'name' => 'Benigwayan, Alubijid',
                 'distance_km' => 5.2,
+                'distance_to_municipal_hall_km' => 5.0,
                 'lat' => 8.5458,
                 'lng' => 124.4457,
                 'type' => 'barangay',
@@ -220,6 +240,7 @@ class FallbackLocationService
             'alubijid_calatcat' => [
                 'name' => 'Calatcat, Alubijid',
                 'distance_km' => 7.0,
+                'distance_to_municipal_hall_km' => 7.0,
                 'lat' => 8.5507,
                 'lng' => 124.4767,
                 'type' => 'barangay',
@@ -230,6 +251,7 @@ class FallbackLocationService
             'alubijid_lagtang' => [
                 'name' => 'Lagtang, Alubijid',
                 'distance_km' => 5.4,
+                'distance_to_municipal_hall_km' => 6.0,
                 'lat' => 8.5657,
                 'lng' => 124.4846,
                 'type' => 'barangay',
@@ -240,6 +262,7 @@ class FallbackLocationService
             'alubijid_lanao' => [
                 'name' => 'Lanao, Alubijid',
                 'distance_km' => 4.0,
+                'distance_to_municipal_hall_km' => 4.0,
                 'lat' => 8.5785,
                 'lng' => 124.4653,
                 'type' => 'barangay',
@@ -250,6 +273,7 @@ class FallbackLocationService
             'alubijid_loguilo' => [
                 'name' => 'Loguilo, Alubijid',
                 'distance_km' => 6.9,
+                'distance_to_municipal_hall_km' => 8.0,
                 'lat' => 8.5754,
                 'lng' => 124.4993,
                 'type' => 'barangay',
@@ -260,6 +284,7 @@ class FallbackLocationService
             'alubijid_lourdes' => [
                 'name' => 'Lourdes, Alubijid',
                 'distance_km' => 7.5,
+                'distance_to_municipal_hall_km' => 8.0,
                 'lat' => 8.5232,
                 'lng' => 124.4340,
                 'type' => 'barangay',
@@ -270,6 +295,7 @@ class FallbackLocationService
             'alubijid_lumbo' => [
                 'name' => 'Lumbo, Alubijid',
                 'distance_km' => 2.1,
+                'distance_to_municipal_hall_km' => 2.5,
                 'lat' => 8.5719,
                 'lng' => 124.4575,
                 'type' => 'barangay',
@@ -280,6 +306,7 @@ class FallbackLocationService
             'alubijid_molocboloc' => [
                 'name' => 'Molocboloc, Alubijid',
                 'distance_km' => 4.8,
+                'distance_to_municipal_hall_km' => 4.0,
                 'lat' => 8.5850,
                 'lng' => 124.4657,
                 'type' => 'barangay',
@@ -290,6 +317,7 @@ class FallbackLocationService
             'alubijid_poblacion' => [
                 'name' => 'Poblacion, Alubijid',
                 'distance_km' => 4.2,
+                'distance_to_municipal_hall_km' => 4.5,
                 'lat' => 8.5745,
                 'lng' => 124.4744,
                 'type' => 'barangay',
@@ -300,6 +328,7 @@ class FallbackLocationService
             'alubijid_sampatulog' => [
                 'name' => 'Sampatulog, Alubijid',
                 'distance_km' => 9.3,
+                'distance_to_municipal_hall_km' => 9.0,
                 'lat' => 8.5380,
                 'lng' => 124.4586,
                 'type' => 'barangay',
@@ -310,6 +339,7 @@ class FallbackLocationService
             'alubijid_sungay' => [
                 'name' => 'Sungay, Alubijid',
                 'distance_km' => 18.1,
+                'distance_to_municipal_hall_km' => 18.0,
                 'lat' => 8.4510,
                 'lng' => 124.4070,
                 'type' => 'barangay',
@@ -320,6 +350,7 @@ class FallbackLocationService
             'alubijid_talaba' => [
                 'name' => 'Talaba, Alubijid',
                 'distance_km' => 8.1,
+                'distance_to_municipal_hall_km' => 8.0,
                 'lat' => 8.5418,
                 'lng' => 124.4745,
                 'type' => 'barangay',
@@ -330,6 +361,7 @@ class FallbackLocationService
             'alubijid_taparak' => [
                 'name' => 'Taparak, Alubijid',
                 'distance_km' => 13.4,
+                'distance_to_municipal_hall_km' => 13.0,
                 'lat' => 8.4791,
                 'lng' => 124.4112,
                 'type' => 'barangay',
@@ -340,6 +372,7 @@ class FallbackLocationService
             'alubijid_tugasnon' => [
                 'name' => 'Tugasnon, Alubijid',
                 'distance_km' => 14.3,
+                'distance_to_municipal_hall_km' => 14.0,
                 'lat' => 8.4963,
                 'lng' => 124.4558,
                 'type' => 'barangay',
@@ -350,6 +383,7 @@ class FallbackLocationService
             'alubijid_tula' => [
                 'name' => 'Tula, Alubijid',
                 'distance_km' => 20.3,
+                'distance_to_municipal_hall_km' => 20.0,
                 'lat' => 8.4334,
                 'lng' => 124.4167,
                 'type' => 'barangay',
@@ -360,6 +394,7 @@ class FallbackLocationService
             'alubijid_municipality' => [
                 'name' => 'Alubijid',
                 'distance_km' => 6.1, 
+                'distance_to_municipal_hall_km' => 6.0,
                 'lat' => 8.571642437832274,
                 'lng' => 124.47303079635617,
                 'type' => 'municipality',
@@ -372,6 +407,7 @@ class FallbackLocationService
             'el_salvador' => [
                 'name' => 'El Salvador City',
                 'distance_km' => 9.5, 
+                'distance_to_municipal_hall_km' => 9.5,
                 'lat' => 8.562529843533776,
                 'lng' => 124.52683585497097,
                 'type' => 'city',
@@ -382,6 +418,7 @@ class FallbackLocationService
             'opol' => [
                 'name' => 'Opol',
                 'distance_km' => 17.7, 
+                'distance_to_municipal_hall_km' => 17.7,
                 'lat' => 8.524410195364489,
                 'lng' => 124.57426905264148,
                 'type' => 'municipality',
@@ -392,6 +429,7 @@ class FallbackLocationService
             'amoros' => [
                 'name' => 'Amoros, El Salvador',
                 'distance_km' => 16.3, 
+                'distance_to_municipal_hall_km' => 16.3,
                 'lat' => 8.5380, 
                 'lng' => 124.5550,
                 'type' => 'barangay',
@@ -402,6 +440,7 @@ class FallbackLocationService
             'initao' => [
                 'name' => 'Initao',
                 'distance_km' => 23.8,
+                'distance_to_municipal_hall_km' => 23.8,
                 'lat' => 8.500924580259463,
                 'lng' => 124.30392001162559,
                 'type' => 'municipality',
@@ -412,6 +451,7 @@ class FallbackLocationService
             'naawan' => [
                 'name' => 'Naawan',
                 'distance_km' => 32.3,
+                'distance_to_municipal_hall_km' => 32.3,
                 'lat' => 8.440138269449958,
                 'lng' => 124.29149613187153,
                 'type' => 'municipality',
@@ -422,6 +462,7 @@ class FallbackLocationService
             'manticao' => [
                 'name' => 'Manticao',
                 'distance_km' => 36.1,
+                'distance_to_municipal_hall_km' => 36.1,
                 'lat' => 8.410951658886399,
                 'lng' => 124.28840622722058,
                 'type' => 'municipality',
@@ -432,6 +473,7 @@ class FallbackLocationService
             'lugait' => [
                 'name' => 'Lugait',
                 'distance_km' => 44.8,
+                'distance_to_municipal_hall_km' => 44.8,
                 'lat' => 8.35476410172233,
                 'lng' => 124.26056724906071,
                 'type' => 'municipality',
@@ -442,6 +484,7 @@ class FallbackLocationService
             'polymedic' => [
                 'name' => 'Cagayan de Oro Polymedic Medical Plaza',
                 'distance_km' => 25.5,
+                'distance_to_municipal_hall_km' => 25.5,
                 'lat' => 8.498859389869986,
                 'lng' => 124.62997864341865,
                 'type' => 'landmark',
@@ -452,6 +495,7 @@ class FallbackLocationService
             'cdo_city_hall' => [
                 'name' => 'Cagayan de Oro City',
                 'distance_km' => 29.0,
+                'distance_to_municipal_hall_km' => 29.0,
                 'lat' => 8.481725211952732,
                 'lng' => 124.64077461100696,
                 'type' => 'landmark',
@@ -462,6 +506,7 @@ class FallbackLocationService
             'doctors_sabal' => [
                 'name' => "Doctors' Sabal Hospital",
                 'distance_km' => 29.0,
+                'distance_to_municipal_hall_km' => 29.0,
                 'lat' => 8.48738039407041,
                 'lng' => 124.64796674252271,
                 'type' => 'landmark',
@@ -472,6 +517,7 @@ class FallbackLocationService
             'nmmc' => [
                 'name' => 'Northern Mindanao Medical Center',
                 'distance_km' => 29.2,
+                'distance_to_municipal_hall_km' => 29.2,
                 'lat' => 8.486057186358508,
                 'lng' => 124.64994047759362,
                 'type' => 'landmark',
@@ -482,6 +528,7 @@ class FallbackLocationService
             'cdo_provincial_capitol' => [
                 'name' => 'Provincial Capitol',
                 'distance_km' => 29.4,
+                'distance_to_municipal_hall_km' => 29.4,
                 'lat' => 8.484947954002099,
                 'lng' => 124.64840582748698,
                 'type' => 'landmark',
@@ -492,6 +539,7 @@ class FallbackLocationService
             'gingoog' => [
                 'name' => 'Gingoog City',
                 'distance_km' => 60.0,
+                'distance_to_municipal_hall_km' => 60.0,
                 'lat' => 8.8167,
                 'lng' => 125.1000,
                 'type' => 'city',
@@ -502,6 +550,7 @@ class FallbackLocationService
             'iligan' => [
                 'name' => 'Iligan City',
                 'distance_km' => 88.5,
+                'distance_to_municipal_hall_km' => 88.5,
                 'lat' => 8.2280,
                 'lng' => 124.2383,
                 'type' => 'city',
@@ -512,6 +561,7 @@ class FallbackLocationService
             'ozamiz' => [
                 'name' => 'Ozamiz City',
                 'distance_km' => 118.0,
+                'distance_to_municipal_hall_km' => 118.0,
                 'lat' => 8.1455,
                 'lng' => 123.8445,
                 'type' => 'city',
@@ -522,6 +572,7 @@ class FallbackLocationService
             'malaybalay' => [
                 'name' => 'Malaybalay City',
                 'distance_km' => 123.0,
+                'distance_to_municipal_hall_km' => 123.0,
                 'lat' => 8.1567,
                 'lng' => 125.1331,
                 'type' => 'city',
@@ -532,6 +583,7 @@ class FallbackLocationService
             'valencia' => [
                 'name' => 'Valencia City',
                 'distance_km' => 154.0,
+                'distance_to_municipal_hall_km' => 154.0,
                 'lat' => 7.9044,
                 'lng' => 125.0928,
                 'type' => 'city',
@@ -542,6 +594,7 @@ class FallbackLocationService
             'butuan' => [
                 'name' => 'Butuan City',
                 'distance_km' => 202.0,
+                'distance_to_municipal_hall_km' => 202.0,
                 'lat' => 8.9475,
                 'lng' => 125.5437,
                 'type' => 'city',
@@ -552,6 +605,7 @@ class FallbackLocationService
             'davao' => [
                 'name' => 'Davao City',
                 'distance_km' => 317.0,
+                'distance_to_municipal_hall_km' => 317.0,
                 'lat' => 7.1907,
                 'lng' => 125.4553,
                 'type' => 'city',
@@ -562,6 +616,7 @@ class FallbackLocationService
             'surigao' => [
                 'name' => 'Surigao City',
                 'distance_km' => 322.0,
+                'distance_to_municipal_hall_km' => 322.0,
                 'lat' => 9.7836,
                 'lng' => 125.4955,
                 'type' => 'city',
@@ -572,6 +627,7 @@ class FallbackLocationService
             'zamboanga' => [
                 'name' => 'Zamboanga City',
                 'distance_km' => 465.0,
+                'distance_to_municipal_hall_km' => 465.0,
                 'lat' => 6.9127,
                 'lng' => 122.0680,
                 'type' => 'city',
@@ -642,6 +698,7 @@ class FallbackLocationService
                 'lng' => (float) $lng,
                 'type' => $type,
                 'distance_km' => (float) ($location['distance_km'] ?? 0),
+                'distance_to_municipal_hall_km' => (float) ($location['distance_to_municipal_hall_km'] ?? 0),
                 'priority' => $location['priority'] ?? 5,
                 'region' => $location['region'] ?? 'Unknown',
             ];
@@ -725,9 +782,25 @@ class FallbackLocationService
         $result = $this->calculateDistance($originAddress, $destinationAddresses);
         if (!$result['success']) return $result;
 
-        $multiplier = $roundTrip ? 2 : 1;
-        $distanceKm = $result['distance_km'] * $multiplier;
-        $durationMinutes = $result['duration_minutes'] * $multiplier;
+        $distanceKm = $result['distance_km'];
+        
+        // ✅ BAG-ONG FORMULA: (3.2 + distance_km + distance_to_municipal_hall_km)
+        $distanceToHall = 0;
+        if (is_string($destinationAddresses)) {
+            $destinationAddresses = [$destinationAddresses];
+        }
+        
+        foreach ($destinationAddresses as $dest) {
+            $destData = $this->findLocation($dest) ?? $this->findLocationByPartialMatch($dest);
+            if ($destData) {
+                $distanceToHall += (float) ($destData['distance_to_municipal_hall_km'] ?? 0);
+            }
+        }
+        
+        // Ang 3.2 km kay gikan Municipal Hall to Fuel Station
+        $totalEstimateDistance = 3.2 + $distanceKm + $distanceToHall;
+        
+        $durationMinutes = $this->estimateDuration($totalEstimateDistance, $destData);
 
         $efficiency = 10;
         $fuelType = 'gasoline';
@@ -744,7 +817,7 @@ class FallbackLocationService
         }
 
         $fuelPrice = $this->getFuelPrice($fuelType);
-        $estimatedLiters = round($distanceKm / $efficiency, 2);
+        $estimatedLiters = round($totalEstimateDistance / $efficiency, 2);
         $estimatedCost = round($estimatedLiters * $fuelPrice, 2);
 
         $estimatedLitersWithBuffer = round($estimatedLiters * 1.1, 2);
@@ -754,8 +827,8 @@ class FallbackLocationService
             'success' => true,
             'origin' => $result['origin'],
             'destinations' => $result['destinations'],
-            'distance_km' => round($distanceKm, 2),
-            'duration_minutes' => round($durationMinutes, 1),
+            'distance_km' => round($totalEstimateDistance, 2),
+            'duration_minutes' => round($durationMinutes, 2),
             'estimated_liters' => $estimatedLitersWithBuffer,
             'estimated_cost' => $estimatedCostWithBuffer,
             'fuel_efficiency_km_per_liter' => $efficiency,
