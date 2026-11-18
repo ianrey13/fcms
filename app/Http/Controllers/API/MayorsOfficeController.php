@@ -1089,15 +1089,25 @@ class MayorsOfficeController extends Controller
     /**
      * Verify a receipt with editable fields
      */ 
-         public function verifyReceipt(Request $request, $id)
+           public function verifyReceipt(Request $request, $id)
     {
         try {
+            // ✅ GIDUGANG ANG RULE PARA SA UNIQUE INVOICE NUMBER
             $validator = Validator::make($request->all(), [
-                'invoice_number' => 'nullable|string|max:100',
+                'invoice_number' => [
+                    'nullable',
+                    'string',
+                    'max:100',
+                    // Siguroha nga unique ang invoice number, gawas sa kaniadtong gi-edit karon ($id)
+                    Rule::unique('fuel_receipt', 'invoice_number')->ignore($id, 'fuel_receipt_id')
+                ],
                 'amount_on_receipt' => 'required|numeric|min:0',
                 'unit_price' => 'nullable|numeric|min:0',
                 'remarks' => 'nullable|string|max:500',
                 'status' => 'nullable|string|in:verified,discrepancy',
+            ], [
+                // ✅ CUSTOM ERROR MESSAGE
+                'invoice_number.unique' => '❌ This Invoice Number is already used by another receipt.',
             ]);
 
             if ($validator->fails()) {
@@ -1107,8 +1117,6 @@ class MayorsOfficeController extends Controller
             $receipt = FuelReceipt::with(['gasSlip.tripTicket'])->findOrFail($id);
             $gasSlip = $receipt->gasSlip;
             $trip = $gasSlip ? $gasSlip->tripTicket : null;
-
-            // ✅ GITANGGTANG ANG TANAN NGA GUARDS PARA INDEPENDENT SILA SA GSO
 
             $amountOnReceipt = (float) $request->amount_on_receipt;
             $amountReleased = (float) $gasSlip->amount_released;
@@ -1127,9 +1135,6 @@ class MayorsOfficeController extends Controller
 
             $receipt->save();
 
-            // ✅ DILI NATONG HILABTAN ANG gasSlip->reconciliation_status 
-            // kay para na sa GSO. Mag-save lang ta sa DO fields.
-            // Kung wala pa kay verified_by_do/verified_at_do sa DB, i-save nato sa reconciliation_note
             $gasSlip->reconciliation_note = "DO Remarks: " . ($request->remarks ?? 'None');
             $gasSlip->save();
 

@@ -128,7 +128,12 @@ const MayorReceiptVerification = () => {
       if (nextPending && activeTab === "pending") handleSelectReceipt(nextPending);
       else { setSelectedReceipt(null); setActiveTab("verified"); }
     },
-    onError: (error) => toast.error(error.response?.data?.message || "Failed to verify receipt"),
+    onError: (error) => {
+      const errMsg = error.response?.data?.errors?.invoice_number?.[0] 
+                  || error.response?.data?.message 
+                  || "Failed to verify receipt";
+      toast.error(errMsg);
+    },
   });
 
   const handleSelectReceipt = (receipt) => {
@@ -149,6 +154,19 @@ const MayorReceiptVerification = () => {
 
     if (isDiscrepancy && !editData.remarks) {
         return toast.error("Please provide remarks for the discrepancy.");
+    }
+
+    // ✅ FRONTEND VALIDATION: Check for Duplicate Invoice Number
+    const inputInvoice = editData.invoice_number.trim().toLowerCase();
+    
+    const isDuplicate = verifiedReceipts.some(r => 
+        r.invoice_number?.trim().toLowerCase() === inputInvoice &&
+        r.id !== selectedReceipt.id && 
+        r.fuel_receipt_id !== selectedReceipt.fuel_receipt_id
+    );
+
+    if (isDuplicate) {
+        return toast.error("❌ This Invoice Number is already used by another receipt.");
     }
 
     verifyMutation.mutate({
@@ -374,7 +392,6 @@ const MayorReceiptVerification = () => {
               </div>
 
               <div className="p-5 border-t border-slate-800 flex gap-3">
-                {/* ✅ Giusab nako ang disabled condition. Mo-allow na siya og click kung pending pa ang status. */}
                 <Button 
                     onClick={() => handleVerify(false)} 
                     disabled={verifyMutation.isPending || selectedReceipt.status === 'verified'} 
