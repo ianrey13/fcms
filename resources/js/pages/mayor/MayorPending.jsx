@@ -73,6 +73,12 @@ const MayorPending = () => {
   const [showTankWarning, setShowTankWarning] = useState(false);
   const [pendingPayload, setPendingPayload] = useState(null);
 
+  // ✅ HARD-CODE ANG MO DEPARTMENT ID
+  // Sa tinuod nga production, makuha ni nimo gikan sa user context o API
+  // Apan base sa imong `MayorsOfficeController`, ang MO dept ID kay makuha nimo
+  // pinaagi sa pagpangita sa department_code === 'MO'
+  const MO_DEPARTMENT_ID = 1; // Ilisi ni sa exact ID sa Mayor's Office sa imong DB
+
   const fetchTicketsRef = useRef(null);
 
   const fetchAllData = useCallback(() => {
@@ -110,7 +116,6 @@ const MayorPending = () => {
     return releasedTickets.filter(t => t.department_name?.toLowerCase().includes(searchTerm.toLowerCase()) || t.ticket_number?.toLowerCase().includes(searchTerm.toLowerCase()));
   }, [releasedTickets, searchTerm]);
 
-  // ✅ 3 TABS NALANG: Pending, Funds Issued, Received
   const counts = useMemo(() => {
     return {
       pending: filteredTickets.length,
@@ -176,10 +181,16 @@ const MayorPending = () => {
     }
     const amount = parseFloat(amountReleased);
 
+    // ✅ KUNG CROSS-DEPARTMENT, GAMITA ANG MO_DEPARTMENT_ID
+    // KUNG DILI, GAMITA ANG DEPARTMENT_ID SA TICKET
+    const chargeToDeptId = isCrossDepartment 
+      ? MO_DEPARTMENT_ID 
+      : selectedTicket.department_id;
+
     if (suggestion && suggestion.available && amount > suggestion.suggested_amount) {
         setPendingPayload({
             amount_released: amount,
-            charge_to_department_id: selectedTicket.department_id,
+            charge_to_department_id: chargeToDeptId,
             is_cross_department: isCrossDepartment,
             cross_department_reason: isCrossDepartment ? "Mayor's Office Release" : null,
         });
@@ -189,7 +200,7 @@ const MayorPending = () => {
 
     submitApprove({
         amount_released: amount,
-        charge_to_department_id: selectedTicket.department_id,
+        charge_to_department_id: chargeToDeptId,
         is_cross_department: isCrossDepartment,
         cross_department_reason: isCrossDepartment ? "Mayor's Office Release" : null,
     });
@@ -255,7 +266,6 @@ const MayorPending = () => {
         </div>
       </div>
 
-      {/* ✅ 3 TABS NALANG */}
       <div className="flex flex-wrap gap-3 mb-6">
         <button onClick={() => handleTabClick("pending")} className={cn("flex items-center justify-between px-5 py-3 rounded-xl border flex-1 transition-all", activeTab === "pending" ? "bg-blue-600/20 border-blue-500 text-blue-400" : "bg-[#121829] border-slate-800 text-slate-300 hover:bg-[#1a2235]")}>
           <div className="flex items-center gap-2"><Clock className="h-5 w-5" /><span className="font-semibold">Pending Release</span></div>
