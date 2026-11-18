@@ -118,13 +118,31 @@ const getReceiptImageUrls = (receipt) => {
 };
 
 const getReceiptStatus = (receipt) => {
-    const doOk  = receipt?.do_verification_status === 'verified';
+    // ✅ GSO Verified ra ang mohatag og "Verified" status
     const gsoOk = receipt?.gso_validation_status === 'verified';
 
-    if (doOk || gsoOk) {
+    if (gsoOk) {
         return { color: 'bg-emerald-500', label: 'Verified', icon: CheckCircle };
     }
+
+    // Kung na-verify na sa DO pero wala pay liters → Pending japon sa GSO
+    const doVerified = receipt?.do_verification_status === 'verified'
+                    || (receipt?.invoice_number && parseFloat(receipt?.amount) > 0);
+
+    if (doVerified) {
+        return {
+            color: 'bg-blue-500',
+            label: 'DO Verified — Awaiting Liters',
+            icon: Clock
+        };
+    }
+
     return { color: 'bg-yellow-500', label: 'Pending', icon: Clock };
+};
+
+// ✅ GSO ra ang basehan sa "verified"
+const isVerified = (r) => {
+    return r?.gso_validation_status === 'verified';
 };
 
 const formatDate = (date) => {

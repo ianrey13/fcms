@@ -143,56 +143,72 @@ const MayorReceiptVerification = () => {
 
   const handleInputChange = (field, value) => setEditData(prev => ({ ...prev, [field]: value }));
 
-  const handleVerify = (isDiscrepancy = false) => {
+ const handleVerify = (isDiscrepancy = false) => {
     if (!editData.invoice_number) return toast.error("Invoice Number is required");
     if (!editData.amount_on_receipt) return toast.error("Amount is required");
-    
-    // Kung discrepancy, required ang remarks
-    if (isDiscrepancy && !editData.remarks) return toast.error("Please provide remarks for the discrepancy.");
+
+    if (isDiscrepancy && !editData.remarks) {
+        return toast.error("Please provide remarks for the discrepancy.");
+    }
 
     verifyMutation.mutate({
-      receiptId: selectedReceipt.id || selectedReceipt.fuel_receipt_id,
-      data: {
-        invoice_number: editData.invoice_number,
-        unit_price: parseFloat(editData.unit_price) || null,
-        amount_on_receipt: parseFloat(editData.amount_on_receipt) || 0,
-        remarks: editData.remarks,
-        status: isDiscrepancy ? 'discrepancy' : 'verified',
-      }
+        receiptId: selectedReceipt.id || selectedReceipt.fuel_receipt_id,
+        data: {
+            invoice_number: editData.invoice_number,
+            unit_price: parseFloat(editData.unit_price) || null,
+            amount_on_receipt: parseFloat(editData.amount_on_receipt) || 0,
+            remarks: editData.remarks,
+            status: isDiscrepancy ? 'discrepancy' : 'verified',
+        }
     });
-  };
+};
 
-  // ✅ FILTER LOGIC PARA SA TABS (Base sa Amount Difference)
-  const filteredList = useMemo(() => {
+ // ✅ FILTER LOGIC PARA SA TABS
+const filteredList = useMemo(() => {
     let list = [];
-    
+
     if (activeTab === "pending") {
-      list = pendingReceipts;
+        // Pending: wala pa na-verify sa DO (wala pay invoice_number)
+        list = pendingReceipts.filter(r => !r.invoice_number || !r.amount);
     } else if (activeTab === "verified") {
-      // Verified tab: Verified status ug WALAY discrepancy (Variance = 0)
-      list = verifiedReceipts.filter(r => 
-        r.status === 'verified' && (parseFloat(r.amount) - parseFloat(r.amount_released) === 0)
-      );
+        // DO Verified: naay invoice_number ug amount, pero pending pa sa GSO
+        list = verifiedReceipts.filter(r => {
+            const doVerified = r.invoice_number && parseFloat(r.amount) > 0;
+            const gsoVerified = r.gso_validation_status === 'verified';
+            return doVerified && !gsoVerified;
+        });
     } else if (activeTab === "discrepancy") {
-      // Discrepancy tab: Verified status PERO NAAY discrepancy (Variance != 0) o kaha gi-flag as discrepancy
-      list = verifiedReceipts.filter(r => 
-        r.status === 'discrepancy' || (parseFloat(r.amount) - parseFloat(r.amount_released) !== 0)
-      );
+        // Discrepancy: naay variance o gi-flag as discrepancy
+        list = verifiedReceipts.filter(r => {
+            const doVerified = r.invoice_number && parseFloat(r.amount) > 0;
+            const variance = parseFloat(r.amount) - parseFloat(r.amount_released);
+            return doVerified && (r.status === 'discrepancy' || variance !== 0);
+        });
     }
 
     if (!searchTerm) return list;
     const q = searchTerm.toLowerCase();
-    return list.filter(r => 
-      r.ticket_number?.toLowerCase().includes(q) || r.plate_number?.toLowerCase().includes(q) || r.department_name?.toLowerCase().includes(q)
+    return list.filter(r =>
+        r.ticket_number?.toLowerCase().includes(q) ||
+        r.plate_number?.toLowerCase().includes(q) ||
+        r.department_name?.toLowerCase().includes(q)
     );
-  }, [activeTab, pendingReceipts, verifiedReceipts, searchTerm]);
+}, [activeTab, pendingReceipts, verifiedReceipts, searchTerm]);
 
-  // ✅ COUNTS PARA SA TABS
-  const counts = {
-    pending: pendingReceipts.length,
-    verified: verifiedReceipts.filter(r => r.status === 'verified' && (parseFloat(r.amount) - parseFloat(r.amount_released) === 0)).length,
-    discrepancy: verifiedReceipts.filter(r => r.status === 'discrepancy' || (parseFloat(r.amount) - parseFloat(r.amount_released) !== 0)).length,
-  };
+// ✅ COUNTS PARA SA TABS
+const counts = {
+    pending: pendingReceipts.filter(r => !r.invoice_number || !r.amount).length,
+    verified: verifiedReceipts.filter(r => {
+        const doVerified = r.invoice_number && parseFloat(r.amount) > 0;
+        const gsoVerified = r.gso_validation_status === 'verified';
+        return doVerified && !gsoVerified;
+    }).length,
+    discrepancy: verifiedReceipts.filter(r => {
+        const doVerified = r.invoice_number && parseFloat(r.amount) > 0;
+        const variance = parseFloat(r.amount) - parseFloat(r.amount_released);
+        return doVerified && (r.status === 'discrepancy' || variance !== 0);
+    }).length,
+};
 
   const releasedAmount = parseFloat(selectedReceipt?.amount_released) || 0;
   const receiptAmount = parseFloat(editData.amount_on_receipt) || 0;
