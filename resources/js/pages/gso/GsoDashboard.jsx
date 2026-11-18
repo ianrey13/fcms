@@ -189,18 +189,36 @@ const GsoDashboard = () => {
     });
     const activeTrips = useMemo(() => Array.isArray(activeTripsRaw) ? activeTripsRaw : [], [activeTripsRaw]);
 
-    const { data: allTripsRaw = [], isLoading: tripsLoading } = useOptimizedQuery({
+      const { data: allTripsRaw = [], isLoading: tripsLoading } = useOptimizedQuery({
         queryKey: ["gso-dashboard-trips"],
         queryFn: async () => {
             const trips = extractArray(await gsoAPI.getAllTrips());
+            
+            // ✅ FILTER: Ayaw i-apil sa ledger kung Pending pa o wala pay Gas Slip (pondo)
             return trips.filter(trip => {
                 const status = (trip.status || "").toLowerCase();
-                return !['cancelled', 'rejected', 'returned_for_revision'].includes(status);
+                const hasGasSlip = trip.gasSlip || trip.gas_slip || trip.gas_slip_id;
+                
+                // 1. Tangtangon ang cancelled/rejected/returned
+                if (['cancelled', 'rejected', 'returned_for_revision'].includes(status)) {
+                    return false;
+                }
+                
+                // 2. Tangtangon kung pending_mayors_office ug wala pay gas slip
+                if (status === 'pending_mayors_office' && !hasGasSlip) {
+                    return false;
+                }
+                
+                // 3. Tangtangon kung bag-o pa lang gi-create (walay gas slip ug wala pay nadagan nga distance)
+                if (!hasGasSlip && !trip.actual_distance_km && !trip.gps_distance_km) {
+                    return false; 
+                }
+
+                return true;
             });
         },
     });
     const allTrips = useMemo(() => Array.isArray(allTripsRaw) ? allTripsRaw : [], [allTripsRaw]);
-
     const { data: pendingValidationRaw = [], isLoading: validationLoading } = useOptimizedQuery({
         queryKey: ["gso-pending-validation"],
         queryFn: async () => extractArray(await gsoAPI.getPendingValidation()),
