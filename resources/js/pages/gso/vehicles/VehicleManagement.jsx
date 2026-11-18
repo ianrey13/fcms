@@ -140,8 +140,9 @@ const FuelLevelBar = ({ balance, tankCapacity }) => {
     return (
         <div className="min-w-[120px]">
             <div className="flex items-center justify-between text-[10px] mb-1">
+                {/* ✅ Giusab gikan sa .toFixed(1) ngadto sa .toFixed(2) + parseFloat */}
                 <span className={`font-semibold ${textColor}`}>
-                    {safeBalance.toFixed(1)} L
+                    {parseFloat(safeBalance.toFixed(2))} L
                 </span>
                 <span className="text-slate-400">
                     / {safeTank.toFixed(0)} L
