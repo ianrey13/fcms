@@ -190,18 +190,18 @@ const GsoDashboard = () => {
     });
     const activeTrips = useMemo(() => Array.isArray(activeTripsRaw) ? activeTripsRaw : [], [activeTripsRaw]);
 
-    const { data: allTripsRaw = [], isLoading: tripsLoading } = useOptimizedQuery({
+       const { data: allTripsRaw = [], isLoading: tripsLoading } = useOptimizedQuery({
         queryKey: ["gso-dashboard-trips"],
-        queryFn: async () => extractArray(await gsoAPI.getAllTrips()),
+        queryFn: async () => {
+            const trips = extractArray(await gsoAPI.getAllTrips());
+            // ✅ FILTER OUT CANCELLED/REJECTED/RETURNED SA PINAKA-UNA PA LANG
+            return trips.filter(trip => {
+                const status = (trip.status || "").toLowerCase();
+                return !['cancelled', 'rejected', 'returned_for_revision'].includes(status);
+            });
+        },
     });
-
-    // ✅ FILTER OUT CANCELLED/REJECTED PARA DILI MA-APIL SA LEDGER
-    const allTrips = useMemo(() => {
-        if (!Array.isArray(allTripsRaw)) return [];
-        return allTripsRaw.filter(trip => 
-            !['cancelled', 'rejected', 'returned_for_revision'].includes(trip.status)
-        );
-    }, [allTripsRaw]);
+    const allTrips = useMemo(() => Array.isArray(allTripsRaw) ? allTripsRaw : [], [allTripsRaw]);
 
     const { data: pendingValidationRaw = [], isLoading: validationLoading } = useOptimizedQuery({
         queryKey: ["gso-pending-validation"],
