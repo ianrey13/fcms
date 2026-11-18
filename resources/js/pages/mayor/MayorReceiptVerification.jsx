@@ -143,7 +143,7 @@ const MayorReceiptVerification = () => {
 
   const handleInputChange = (field, value) => setEditData(prev => ({ ...prev, [field]: value }));
 
- const handleVerify = (isDiscrepancy = false) => {
+  const handleVerify = (isDiscrepancy = false) => {
     if (!editData.invoice_number) return toast.error("Invoice Number is required");
     if (!editData.amount_on_receipt) return toast.error("Amount is required");
 
@@ -161,24 +161,20 @@ const MayorReceiptVerification = () => {
             status: isDiscrepancy ? 'discrepancy' : 'verified',
         }
     });
-};
+  };
 
- // ✅ FILTER LOGIC PARA SA TABS
-const filteredList = useMemo(() => {
+  const filteredList = useMemo(() => {
     let list = [];
 
     if (activeTab === "pending") {
-        // Pending: wala pa na-verify sa DO (wala pay invoice_number)
         list = pendingReceipts.filter(r => !r.invoice_number || !r.amount);
     } else if (activeTab === "verified") {
-        // DO Verified: naay invoice_number ug amount, pero pending pa sa GSO
         list = verifiedReceipts.filter(r => {
             const doVerified = r.invoice_number && parseFloat(r.amount) > 0;
             const gsoVerified = r.gso_validation_status === 'verified';
             return doVerified && !gsoVerified;
         });
     } else if (activeTab === "discrepancy") {
-        // Discrepancy: naay variance o gi-flag as discrepancy
         list = verifiedReceipts.filter(r => {
             const doVerified = r.invoice_number && parseFloat(r.amount) > 0;
             const variance = parseFloat(r.amount) - parseFloat(r.amount_released);
@@ -193,10 +189,9 @@ const filteredList = useMemo(() => {
         r.plate_number?.toLowerCase().includes(q) ||
         r.department_name?.toLowerCase().includes(q)
     );
-}, [activeTab, pendingReceipts, verifiedReceipts, searchTerm]);
+  }, [activeTab, pendingReceipts, verifiedReceipts, searchTerm]);
 
-// ✅ COUNTS PARA SA TABS
-const counts = {
+  const counts = {
     pending: pendingReceipts.filter(r => !r.invoice_number || !r.amount).length,
     verified: verifiedReceipts.filter(r => {
         const doVerified = r.invoice_number && parseFloat(r.amount) > 0;
@@ -208,7 +203,7 @@ const counts = {
         const variance = parseFloat(r.amount) - parseFloat(r.amount_released);
         return doVerified && (r.status === 'discrepancy' || variance !== 0);
     }).length,
-};
+  };
 
   const releasedAmount = parseFloat(selectedReceipt?.amount_released) || 0;
   const receiptAmount = parseFloat(editData.amount_on_receipt) || 0;
@@ -379,8 +374,21 @@ const counts = {
               </div>
 
               <div className="p-5 border-t border-slate-800 flex gap-3">
-                <Button onClick={() => handleVerify(false)} disabled={verifyMutation.isPending || selectedReceipt.status !== 'pending'} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold h-12 rounded-xl"><CheckCircle className="h-5 w-5 mr-2" /> Mark as Verified</Button>
-                <Button onClick={() => handleVerify(true)} disabled={verifyMutation.isPending || selectedReceipt.status !== 'pending'} className="flex-1 bg-amber-600 hover:bg-amber-700 text-white font-bold h-12 rounded-xl"><Scale className="h-5 w-5 mr-2" /> Mark as Verified (with Discrepancy)</Button>
+                {/* ✅ Giusab nako ang disabled condition. Mo-allow na siya og click kung pending pa ang status. */}
+                <Button 
+                    onClick={() => handleVerify(false)} 
+                    disabled={verifyMutation.isPending || selectedReceipt.status === 'verified'} 
+                    className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold h-12 rounded-xl"
+                >
+                    <CheckCircle className="h-5 w-5 mr-2" /> Mark as Verified
+                </Button>
+                <Button 
+                    onClick={() => handleVerify(true)} 
+                    disabled={verifyMutation.isPending || selectedReceipt.status === 'verified'} 
+                    className="flex-1 bg-amber-600 hover:bg-amber-700 text-white font-bold h-12 rounded-xl"
+                >
+                    <Scale className="h-5 w-5 mr-2" /> Mark as Verified (with Discrepancy)
+                </Button>
               </div>
             </>
           )}

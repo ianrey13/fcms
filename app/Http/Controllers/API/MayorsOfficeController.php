@@ -1089,115 +1089,82 @@ class MayorsOfficeController extends Controller
     /**
      * Verify a receipt with editable fields
      */ 
-    public function verifyReceipt(Request $request, $id)
+       public function verifyReceipt(Request $request, $id)
     {
         try {
-            $user = $request->user();
-            if (!$user->isMayorsOffice()) {
-                return response()->json(['message' => 'Unauthorized'], 403);
-            }
-
             $validator = Validator::make($request->all(), [
-                'invoice_number'    => 'required|string|max:50',
+                'invoice_number' => 'nullable|string|max:100',
                 'amount_on_receipt' => 'required|numeric|min:0',
-                'liters_availed'    => 'nullable|numeric|min:0',
-                'unit_price'        => 'required|numeric|min:0.01',
-                'status'            => 'nullable|in:verified,discrepancy',
+                'unit_price' => 'nullable|numeric|min:0',
+                'remarks' => 'nullable|string|max:500',
+                'status' => 'nullable|string|in:verified,discrepancy',
             ]);
 
             if ($validator->fails()) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Validation failed',
-                    'errors'  => $validator->errors(),
-                ], 422);
+                return response()->json(['success' => false, 'errors' => $validator->errors()], 422);
             }
 
-            $fuelReceipt = FuelReceipt::findOrFail($id);
-            $gasSlip     = GasSlip::findOrFail($fuelReceipt->gas_slip_id);
+            $receipt = FuelReceipt::with(['gasSlip.tripTicket'])->findOrFail($id);
+            $gasSlip = $gasSlip = $receipt->gasSlip;
+            $trip = $gasSlip ? $gasSlip->tripTicket : null;
 
-            // ✅ Check kung na-validate na sa GSO (naay liters_availed)
-            if ($fuelReceipt->liters_availed > 0) {
+            if ($gasSlip->reconciliation_status === 'verified') {
                 return response()->json([
-                    'success' => false,
-                    'message' => 'This receipt has already been validated by GSO (liters recorded).',
+                    'success' => false, 
+                    'message' => 'This receipt has already been finalized and verified.'
                 ], 400);
             }
 
-            if ($request->amount_on_receipt > $gasSlip->amount_released) {
-                return response()->json([
-                    'success' => false,
-                    'message' => sprintf(
-                        'Receipt amount ₱%s exceeds released amount ₱%s.',
-                        number_format($request->amount_on_receipt, 2),
-                        number_format($gasSlip->amount_released, 2)
-                    ),
-                ], 422);
-            }
+            // ✅ GITANGGTANG ANG GUARD NGA "already validated by GSO (liters recorded)"
+            // Kay ang DO (Mayor's Office) maoy una mo-verify sa amount base sa resibo.
+            // Ang GSO na ang mo-validate sa katapusan (liters).
 
-            DB::beginTransaction();
+            $amountOnReceipt = (float) $request->amount_on_receipt;
+            $amountReleased = (float) $gasSlip->amount_released;
 
-            if ($request->has('invoice_number')) {
-                $fuelReceipt->invoice_number = $request->invoice_number;
-            }
+            // Check if amount on receipt exceeds amount released
+            $variance = $amountOnReceipt - $amountReleased;
+            $isDiscrepancy = abs($variance) > 0.01 || $request->status === 'discrepancy';
 
-            $fuelReceipt->amount_on_receipt = $request->amount_on_receipt;
-
-            if ($request->filled('liters_availed')) {
-                $fuelReceipt->liters_availed = $request->liters_availed;
-            }
+            $receipt->invoice_number = $request->invoice_number;
+            $receipt->amount_on_receipt = $amountOnReceipt;
+            
+            // Compute unit price if not provided and liters exist
             if ($request->filled('unit_price')) {
-                $fuelReceipt->unit_price = $request->unit_price;
+                $receipt->unit_price = (float) $request->unit_price;
+            } elseif ($receipt->liters_availed > 0 && $amountOnReceipt > 0) {
+                $receipt->unit_price = round($amountOnReceipt / $receipt->liters_availed, 2);
             }
 
-            if (
-                $request->filled('liters_availed') &&
-                !$request->filled('unit_price') &&
-                (float) $request->liters_availed > 0
-            ) {
-                $fuelReceipt->unit_price = round(
-                    $request->amount_on_receipt / (float) $request->liters_availed,
-                    2
+            $receipt->save();
+
+            $gasSlip->reconciliation_status = $isDiscrepancy ? 'discrepancy' : 'verified';
+            $gasSlip->reconciliation_note = $request->remarks;
+            $gasSlip->reconciled_by = $request->user()->user_id;
+            $gasSlip->reconciled_at = now();
+            $gasSlip->save();
+
+            if ($trip) {
+                NotificationHelper::send(
+                    $trip->submitted_by,
+                    'trip_reconciled',
+                    'trip_ticket',
+                    $trip->trip_ticket_id,
+                    "Receipt for Trip {$trip->trip_ticket_number} has been " . ($isDiscrepancy ? 'flagged with a discrepancy' : 'verified') . " by the Mayor's Office."
                 );
             }
 
-            // ✅ I-SET ANG DO VERIFICATION STATUS
-            $doStatus = $request->input('status', 'verified');
-            $fuelReceipt->verification_status = $doStatus;
-            $fuelReceipt->verified_at         = now();
-            $fuelReceipt->verified_by         = $user->user_id;
-            $fuelReceipt->save();
-
-            // ✅ AYAW I-SET ANG reconciliation_status = 'verified'
-            // Kay ang GSO pa ang mo-verify pinaagi sa liters
-            $gasSlip->save();
-
-            DB::commit();
-
             return response()->json([
                 'success' => true,
-                'message' => 'Receipt verified successfully (awaiting GSO liters validation)',
-                'data' => [
-                    'receipt_id'            => $id,
-                    'gas_slip_id'           => $gasSlip->gas_slip_id,
-                    'verification_status'   => $fuelReceipt->verification_status,
-                    'invoice_number'        => $fuelReceipt->invoice_number,
-                    'liters_availed'        => $fuelReceipt->liters_availed,
-                    'unit_price'            => $fuelReceipt->unit_price,
-                    'amount_on_receipt'     => $fuelReceipt->amount_on_receipt,
-                    'amount_released'       => $gasSlip->amount_released,
-                    'verified_at'           => $fuelReceipt->verified_at,
-                    'verified_by'           => $fuelReceipt->verified_by,
-                ],
+                'message' => $isDiscrepancy ? 'Receipt verified with discrepancy.' : 'Receipt verified successfully.',
+                'data' => $receipt
             ]);
-        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
-            return response()->json(['success' => false, 'message' => 'Receipt not found'], 404);
+
         } catch (\Exception $e) {
-            DB::rollBack();
             Log::error('Verify receipt error: ' . $e->getMessage());
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to verify receipt: ' . $e->getMessage(),
+                'message' => 'Failed to verify receipt: ' . $e->getMessage()
             ], 500);
         }
     }
