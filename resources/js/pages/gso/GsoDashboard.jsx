@@ -125,7 +125,6 @@ const MapBounds = ({ coords }) => {
     return null;
 };
 
-// ✅ COMPONENT PARA MO-FOLLOW ANG MAPA SA REPLAY
 const ReplayMarker = ({ position, icon }) => {
     const map = useMap();
     useEffect(() => {
@@ -190,11 +189,10 @@ const GsoDashboard = () => {
     });
     const activeTrips = useMemo(() => Array.isArray(activeTripsRaw) ? activeTripsRaw : [], [activeTripsRaw]);
 
-       const { data: allTripsRaw = [], isLoading: tripsLoading } = useOptimizedQuery({
+    const { data: allTripsRaw = [], isLoading: tripsLoading } = useOptimizedQuery({
         queryKey: ["gso-dashboard-trips"],
         queryFn: async () => {
             const trips = extractArray(await gsoAPI.getAllTrips());
-            // ✅ FILTER OUT CANCELLED/REJECTED/RETURNED SA PINAKA-UNA PA LANG
             return trips.filter(trip => {
                 const status = (trip.status || "").toLowerCase();
                 return !['cancelled', 'rejected', 'returned_for_revision'].includes(status);
@@ -265,11 +263,12 @@ const GsoDashboard = () => {
     const displayVehicle = displayTripData?.vehicle;
 
     // ============================================
-    // HELPER: Compute Ledger Row (OPTION A - SYNCED SA DB)
+    // HELPER: Compute Ledger Row
     // ============================================
     const computeLedgerRow = useCallback((trip) => {
         const vehicle = vehicles.find(v => v.plate_number === trip.vehicle?.plate_number) || trip.vehicle;
         
+        // Ang current fuel balance gikan sa vehicle table
         const actualBalance = parseFloat(vehicle?.current_fuel_balance ?? 0);
         
         const fuelIn = parseFloat(
@@ -278,17 +277,37 @@ const GsoDashboard = () => {
             trip.liters_availed || 
             0
         );
-        
-        const distance = parseFloat(trip.actual_distance_km || trip.gps_distance_km || 0);
-        const efficiency = parseFloat(vehicle?.reference_efficiency || 10);
-        
-        // ✅ FORMULA SA FUEL OUT: (3.2 + distance) ÷ efficiency
+
+        const status = (trip.status || "").toLowerCase();
+        const isCompleted = ['completed', 'pending_gso_validation', 'closed'].includes(status);
+
         let fuelOut = 0;
-        if (efficiency > 0) {
-            fuelOut = (3.2 + distance) / efficiency;
+        let distance = 0;
+
+        // Kung nahuman na ang byahe, diha pa nato i-compute ang Fuel Out
+        if (isCompleted) {
+            distance = parseFloat(trip.actual_distance_km || trip.gps_distance_km || 0);
+            const efficiency = parseFloat(vehicle?.reference_efficiency || 10);
+            
+            if (efficiency > 0) {
+                fuelOut = (3.2 + distance) / efficiency;
+            }
+        }
+
+        // ✅ Ang Beginning Balance:
+        // Kung naay snapshot sa trip, gamita na. 
+        // Kung wala, i-compute: Beginning = Current - FuelIn + FuelOut
+        let beginning = 0;
+        
+        if (trip.vehicle_snapshot?.initial_fuel_balance !== undefined && trip.vehicle_snapshot?.initial_fuel_balance !== null) {
+             beginning = parseFloat(trip.vehicle_snapshot.initial_fuel_balance);
+        } else {
+             beginning = actualBalance - fuelIn + fuelOut;
         }
         
-        const beginning = actualBalance - fuelIn + fuelOut;
+        // ✅ Ang Balance:
+        // Kung nahuman na, Balance = Beginning + FuelIn - FuelOut.
+        // Kung wala pa, Balance = Beginning (kay wala pay nahurot).
         const balance = beginning + fuelIn - fuelOut;
 
         const driverName = trip.driver_name || 
