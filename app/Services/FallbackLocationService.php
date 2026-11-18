@@ -777,7 +777,7 @@ class FallbackLocationService
         ];
     }
 
-    public function calculateTripEstimate($originAddress, $destinationAddresses, $vehicleId = null, $roundTrip = true)
+       public function calculateTripEstimate($originAddress, $destinationAddresses, $vehicleId = null, $roundTrip = true)
     {
         $result = $this->calculateDistance($originAddress, $destinationAddresses);
         if (!$result['success']) return $result;
@@ -790,6 +790,7 @@ class FallbackLocationService
             $destinationAddresses = [$destinationAddresses];
         }
         
+        $destData = null;
         foreach ($destinationAddresses as $dest) {
             $destData = $this->findLocation($dest) ?? $this->findLocationByPartialMatch($dest);
             if ($destData) {
@@ -800,7 +801,8 @@ class FallbackLocationService
         // Ang 3.2 km kay gikan Municipal Hall to Fuel Station
         $totalEstimateDistance = 3.2 + $distanceKm + $distanceToHall;
         
-        $durationMinutes = $this->estimateDuration($totalEstimateDistance, $destData);
+        // Dili na kinahanglan i-multiply og 2 kay ang formula naglakip na sa round trip
+        $durationMinutes = $this->estimateDuration($totalEstimateDistance, $destData ?? ['type' => 'municipality']);
 
         $efficiency = 10;
         $fuelType = 'gasoline';
@@ -820,6 +822,7 @@ class FallbackLocationService
         $estimatedLiters = round($totalEstimateDistance / $efficiency, 2);
         $estimatedCost = round($estimatedLiters * $fuelPrice, 2);
 
+        // 10% buffer
         $estimatedLitersWithBuffer = round($estimatedLiters * 1.1, 2);
         $estimatedCostWithBuffer = round($estimatedCost * 1.1, 2);
 
@@ -827,7 +830,7 @@ class FallbackLocationService
             'success' => true,
             'origin' => $result['origin'],
             'destinations' => $result['destinations'],
-            'distance_km' => round($totalEstimateDistance, 2),
+            'distance_km' => round($totalEstimateDistance, 2), // Kini na ang 10.3 km na round trip base sa formula
             'duration_minutes' => round($durationMinutes, 2),
             'estimated_liters' => $estimatedLitersWithBuffer,
             'estimated_cost' => $estimatedCostWithBuffer,
