@@ -577,7 +577,9 @@ const GsoDashboard = () => {
                             <h3 className="font-bold text-white flex items-center gap-2">
                                 <Clock className="h-4 w-4 text-blue-500" /> Recent Trip Tickets
                             </h3>
-                            <button onClick={() => navigate('/gso/trips')} className="text-[10px] text-blue-400 hover:text-blue-300">View All →</button>
+                            <button onClick={() => navigate('/gso/alltrips')} className="text-[10px] text-blue-400 hover:text-blue-300">
+        View All →
+    </button>
                         </div>
                         <div className="overflow-x-auto flex-1">
                             <table className="w-full text-left text-xs text-slate-300">
