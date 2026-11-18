@@ -33,7 +33,7 @@ class FallbackLocationService
                 'region' => 'Misamis Oriental',
                 'aliases' => ['laguindingan poblacion'],
             ],
-            
+
             // ============ LAGUINDINGAN BARANGAYS (Updated from JSON) ============
             'aromahon' => [
                 'name' => 'Aromahon, Laguindingan',
@@ -393,7 +393,7 @@ class FallbackLocationService
             ],
             'alubijid_municipality' => [
                 'name' => 'Alubijid',
-                'distance_km' => 6.1, 
+                'distance_km' => 6.1,
                 'distance_to_municipal_hall_km' => 6.0,
                 'lat' => 8.571642437832274,
                 'lng' => 124.47303079635617,
@@ -406,7 +406,7 @@ class FallbackLocationService
             // ============ NEARBY MUNICIPALITIES / CITIES ============
             'el_salvador' => [
                 'name' => 'El Salvador City',
-                'distance_km' => 9.5, 
+                'distance_km' => 9.5,
                 'distance_to_municipal_hall_km' => 9.5,
                 'lat' => 8.562529843533776,
                 'lng' => 124.52683585497097,
@@ -417,7 +417,7 @@ class FallbackLocationService
             ],
             'opol' => [
                 'name' => 'Opol',
-                'distance_km' => 17.7, 
+                'distance_km' => 17.7,
                 'distance_to_municipal_hall_km' => 17.7,
                 'lat' => 8.524410195364489,
                 'lng' => 124.57426905264148,
@@ -428,9 +428,9 @@ class FallbackLocationService
             ],
             'amoros' => [
                 'name' => 'Amoros, El Salvador',
-                'distance_km' => 16.3, 
+                'distance_km' => 16.3,
                 'distance_to_municipal_hall_km' => 16.3,
-                'lat' => 8.5380, 
+                'lat' => 8.5380,
                 'lng' => 124.5550,
                 'type' => 'barangay',
                 'priority' => 2,
@@ -756,7 +756,7 @@ class FallbackLocationService
                 $totalDistance += (float) $to['distance_km'];
                 continue;
             }
-            
+
             if ($this->isOriginLaguindingan($to) && ($from['distance_km'] ?? 0) > 0) {
                 $totalDistance += (float) $from['distance_km'];
                 continue;
@@ -770,39 +770,36 @@ class FallbackLocationService
         return [
             'success' => true,
             'distance_km' => round($totalDistance, 2),
-            'duration_minutes' => $this->estimateDuration($totalDistance, $points[count($points)-1]),
+            'duration_minutes' => $this->estimateDuration($totalDistance, $points[count($points) - 1]),
             'origin' => $originData['name'],
             'destinations' => $routeNames,
             'source' => 'multi_location_fixed',
         ];
     }
 
-       public function calculateTripEstimate($originAddress, $destinationAddresses, $vehicleId = null, $roundTrip = true)
+    public function calculateTripEstimate($originAddress, $destinationAddresses, $vehicleId = null, $roundTrip = true)
     {
-        $result = $this->calculateDistance($originAddress, $destinationAddresses);
-        if (!$result['success']) return $result;
-
-        $distanceKm = $result['distance_km'];
-        
-        // ✅ BAG-ONG FORMULA: (3.2 + distance_km + distance_to_municipal_hall_km)
-        $distanceToHall = 0;
         if (is_string($destinationAddresses)) {
             $destinationAddresses = [$destinationAddresses];
         }
-        
-        $destData = null;
+
+        $totalEstimateDistance = 0;
+        $routeNames = [];
+
         foreach ($destinationAddresses as $dest) {
             $destData = $this->findLocation($dest) ?? $this->findLocationByPartialMatch($dest);
-            if ($destData) {
-                $distanceToHall += (float) ($destData['distance_to_municipal_hall_km'] ?? 0);
-            }
+            if (!$destData) continue;
+
+            // ✅ DERETSO NGA FORMULA BASE SA IMONG INSTRUCTION:
+            // 3.2 (Munisipyo to Gas Station) + distance_km (Gas Station to Dest) + distance_to_municipal_hall_km (Dest to Munisipyo)
+            $distanceToDest = (float) ($destData['distance_km'] ?? 0);
+            $distanceBackToHall = (float) ($destData['distance_to_municipal_hall_km'] ?? 0);
+
+            $totalEstimateDistance += (3.2 + $distanceToDest + $distanceBackToHall);
+            $routeNames[] = $destData['name'];
         }
-        
-        // Ang 3.2 km kay gikan Municipal Hall to Fuel Station
-        $totalEstimateDistance = 3.2 + $distanceKm + $distanceToHall;
-        
-        // Dili na kinahanglan i-multiply og 2 kay ang formula naglakip na sa round trip
-        $durationMinutes = $this->estimateDuration($totalEstimateDistance, $destData ?? ['type' => 'municipality']);
+
+        if ($totalEstimateDistance < 0.1) $totalEstimateDistance = 0.1;
 
         $efficiency = 10;
         $fuelType = 'gasoline';
@@ -819,26 +816,28 @@ class FallbackLocationService
         }
 
         $fuelPrice = $this->getFuelPrice($fuelType);
+
+        // ✅ KANI ANG ESTIMATED FUEL REQUIREMENT
         $estimatedLiters = round($totalEstimateDistance / $efficiency, 2);
         $estimatedCost = round($estimatedLiters * $fuelPrice, 2);
 
-        // 10% buffer
+        // 10% buffer para sa traffic / detour
         $estimatedLitersWithBuffer = round($estimatedLiters * 1.1, 2);
         $estimatedCostWithBuffer = round($estimatedCost * 1.1, 2);
 
         return [
             'success' => true,
-            'origin' => $result['origin'],
-            'destinations' => $result['destinations'],
-            'distance_km' => round($totalEstimateDistance, 2), // Kini na ang 10.3 km na round trip base sa formula
-            'duration_minutes' => round($durationMinutes, 2),
+            'origin' => 'Laguindingan Municipal Hall',
+            'destinations' => $routeNames,
+            'distance_km' => round($totalEstimateDistance, 2), // Kani kay 10.3 km na
+            'duration_minutes' => round($totalEstimateDistance / 30 * 60, 1), // Approx 30km/h
             'estimated_liters' => $estimatedLitersWithBuffer,
             'estimated_cost' => $estimatedCostWithBuffer,
             'fuel_efficiency_km_per_liter' => $efficiency,
             'fuel_price_per_liter' => $fuelPrice,
             'fuel_type' => $fuelType,
             'is_round_trip' => $roundTrip,
-            'source' => $result['source'],
+            'source' => 'manual_formula',
         ];
     }
 
@@ -852,7 +851,7 @@ class FallbackLocationService
     private function estimateDuration($distanceKm, $destination)
     {
         $type = $destination['type'] ?? 'municipality';
-        $avgSpeedKmh = match($type) {
+        $avgSpeedKmh = match ($type) {
             'barangay'     => 30,
             'municipality' => 40,
             'city'         => 25,
@@ -882,7 +881,10 @@ class FallbackLocationService
             if (strpos($name, $query) !== false) $score = strlen($query) / max(strlen($name), 1) * 100;
             if (strpos($query, $name) !== false && strlen($name) > 3) $score = strlen($name) / max(strlen($query), 1) * 100;
             if (strpos(strtolower($key), $query) !== false) $score = max($score, 50);
-            if ($score > $bestScore) { $bestScore = $score; $bestMatch = $location; }
+            if ($score > $bestScore) {
+                $bestScore = $score;
+                $bestMatch = $location;
+            }
         }
         return $bestMatch;
     }
