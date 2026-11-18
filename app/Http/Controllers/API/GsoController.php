@@ -304,35 +304,49 @@ class GsoController extends Controller
      * Get all trips (for GSO admin view)
      */
     public function getAllTrips(Request $request)
-    {
-        try {
-            $user = $request->user();
+{
+    try {
+        $user = $request->user();
 
-            if (!$user->isGsoOffice()) {
-                return response()->json(['message' => 'Unauthorized'], 403);
-            }
-
-            $trips = TripTicket::with([
-                'department',
-                'driver.user',
-                'vehicle',
-                'gasSlip.fuelReceipt'
-            ])
-                ->orderBy('submitted_at', 'desc')
-                ->get();
-
-            return response()->json([
-                'success' => true,
-                'data' => $trips
-            ]);
-        } catch (\Exception $e) {
-            Log::error('Get all trips error: ' . $e->getMessage());
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to fetch trips: ' . $e->getMessage()
-            ], 500);
+        if (!$user->isGsoOffice()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
         }
+
+        $trips = TripTicket::with([
+            'department',
+            'driver.user',
+            'vehicle',
+            'gasSlip.fuelReceipt'
+        ])
+            ->orderBy('submitted_at', 'desc')
+            ->get()
+            ->map(function ($ticket) {
+                // ✅ IDUGANG KINI NGA PART
+                $driverName = null;
+                if ($ticket->driver && $ticket->driver->user) {
+                    $driverName = $ticket->driver->user->full_name;
+                } elseif ($ticket->driver) {
+                    $driverName = $ticket->driver->name ?? null;
+                }
+
+                // Idugang ang driver_name direkta sa top level sa object
+                $ticket->driver_name = $driverName;
+                
+                return $ticket;
+            });
+
+        return response()->json([
+            'success' => true,
+            'data' => $trips
+        ]);
+    } catch (\Exception $e) {
+        Log::error('Get all trips error: ' . $e->getMessage());
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to fetch trips: ' . $e->getMessage()
+        ], 500);
     }
+}
 
     /**
      * Get single ticket details
