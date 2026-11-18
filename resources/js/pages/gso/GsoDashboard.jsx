@@ -13,7 +13,7 @@ import 'leaflet/dist/leaflet.css';
 import {
     Car, CheckCircle, AlertTriangle, Wrench, RefreshCw, MapPin, Search,
     ChevronDown, Activity, PlusCircle, Fuel, Clock, FileCheck, Loader2, Check,
-    Play, Square, User, Users, Target, Flag, Route, Calendar, X, Truck
+    Play, Square, User, Users, Target, Flag, Route, Calendar, X, Truck, RotateCcw
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -39,7 +39,6 @@ const formatDateShort = (dateString) => {
     return new Date(dateString).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 };
 
-// ✅ UNIFORM STATUS PILL
 const StatusPill = ({ status }) => {
     let label = "Pending";
     let color = "bg-orange-500/20 text-orange-400 border-orange-500/30";
@@ -120,6 +119,17 @@ const MapBounds = ({ coords }) => {
         }
     }, [coords, map]);
     return null;
+};
+
+// ✅ COMPONENT PARA MO-FOLLOW ANG MAPA SA REPLAY
+const ReplayMarker = ({ position, icon }) => {
+    const map = useMap();
+    useEffect(() => {
+        if (position && position.length === 2) {
+            map.panTo(position, { animate: true, duration: 0.5 });
+        }
+    }, [position, map]);
+    return <Marker position={position} icon={icon} />;
 };
 
 // ============================================
@@ -250,7 +260,6 @@ const GsoDashboard = () => {
         const vehicle = vehicles.find(v => v.plate_number === trip.vehicle?.plate_number) || trip.vehicle;
         const beginning = parseFloat(vehicle?.initial_estimated_fuel ?? vehicle?.current_fuel_balance ?? 0);
         
-        // ✅ Gikuha gikan sa gas_slip.fuel_receipt (camelCase) ug fallback sa snake_case
         const fuelIn = parseFloat(
             trip.gasSlip?.fuelReceipt?.liters_availed || 
             trip.gas_slip?.fuel_receipt?.liters_availed || 
@@ -286,17 +295,32 @@ const GsoDashboard = () => {
         setHasWatchedReplay(false);
         setRouteCoordinates([]);
         setLoadingRoute(true);
+        setReplayIndex(0);
 
         try {
-            const res = await gpsAPI.getTripRoute(trip.displayId);
+            // ✅ SIGURADUHON NGA SAKTO ANG TICKET ID NGA GIKUHA
+            const tripId = trip.displayId || trip.id || trip.trip_ticket_id;
+            
+            if (!tripId) {
+                throw new Error("Invalid Trip ID");
+            }
+
+            const res = await gpsAPI.getTripRoute(tripId);
             const track = res?.data?.data?.track || [];
-            const coords = track.map(p => [p.latitude, p.longitude]);
+            
+            // ✅ SIGURADUHON NGA NUMBERS ANG COORDINATES
+            const coords = track
+                .map(p => [parseFloat(p.latitude), parseFloat(p.longitude)])
+                .filter(c => !isNaN(c[0]) && !isNaN(c[1]));
+
             setRouteCoordinates(coords);
             
             if (coords.length >= 2) {
-                setTimeout(() => startReplay(coords), 300);
+                // ✅ I-delay gamay aron makagawas ang mapa
+                setTimeout(() => startReplay(coords), 500);
             } else {
                 setHasWatchedReplay(true);
+                toast.error("No route points available for replay.");
             }
         } catch (e) {
             console.error("Failed to load route", e);
@@ -308,7 +332,10 @@ const GsoDashboard = () => {
     };
 
     const startReplay = (coords) => {
-        if (isReplaying) handleStopReplay();
+        if (replayIntervalRef.current) {
+            clearInterval(replayIntervalRef.current);
+            replayIntervalRef.current = null;
+        }
         setIsReplaying(true);
         setReplayIndex(0);
         setHasWatchedReplay(false);
@@ -318,8 +345,9 @@ const GsoDashboard = () => {
             currentIdx++;
             if (currentIdx >= coords.length) {
                 clearInterval(replayIntervalRef.current);
+                replayIntervalRef.current = null;
                 setIsReplaying(false);
-                setReplayIndex(0);
+                setReplayIndex(coords.length - 1);
                 setHasWatchedReplay(true);
                 return;
             }
@@ -341,6 +369,13 @@ const GsoDashboard = () => {
             if (replayIntervalRef.current) clearInterval(replayIntervalRef.current);
         };
     }, []);
+
+    // ✅ I-STOP ANG REPLAY KUNG MO-CLOSE ANG DIALOG
+    useEffect(() => {
+        if (!showValidateDialog) {
+            handleStopReplay();
+        }
+    }, [showValidateDialog]);
 
     return (
         <div className="min-h-screen bg-[#090e1a] p-4 md:p-6 font-sans text-slate-200">
@@ -550,9 +585,7 @@ const GsoDashboard = () => {
                     </Card>
                 </div>
 
-                {/* ============================================================ */}
                 {/* 5. PENDING VALIDATION TABLE */}
-                {/* ============================================================ */}
                 <Card className="bg-[#121829] border-slate-800 shadow-lg">
                     <CardHeader className="border-b border-slate-800 pb-4">
                         <div className="flex items-center justify-between">
@@ -609,9 +642,7 @@ const GsoDashboard = () => {
                     </CardContent>
                 </Card>
 
-                {/* ============================================================ */}
                 {/* 6. FUEL LEDGER TABLE */}
-                {/* ============================================================ */}
                 <Card className="bg-[#121829] border-slate-800 shadow-lg">
                     <CardHeader className="border-b border-slate-800 pb-4">
                         <div className="flex items-center justify-between">
@@ -649,7 +680,7 @@ const GsoDashboard = () => {
                                             <tr 
                                                 key={computed.displayId} 
                                                 className="hover:bg-[#1a2235] cursor-pointer transition-colors"
-                                                onClick={() => handleOpenValidateDialog(computed)}
+                                                onClick={() => handleOpenValidateDialog(trip)} // ✅ GAMITA ANG ORIGINAL NGA TRIP OBJECT
                                             >
                                                 <td className="px-4 py-3 whitespace-nowrap">{formatDateShort(computed.displayDate)}</td>
                                                 <td className="px-4 py-3 font-mono text-white">{computed.displayTicketNo}</td>
@@ -669,9 +700,7 @@ const GsoDashboard = () => {
 
             </div>
 
-            {/* ============================================================ */}
             {/* VALIDATE & REPLAY DIALOG */}
-            {/* ============================================================ */}
             <Dialog open={showValidateDialog} onOpenChange={setShowValidateDialog}>
                 <DialogContent className="sm:max-w-6xl bg-[#0f172a] border-slate-700 p-0 overflow-hidden rounded-2xl">
                     <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800">
@@ -744,7 +773,13 @@ const GsoDashboard = () => {
                                         <Polyline positions={routeCoordinates} color="#3b82f6" weight={4} opacity={0.8} />
                                         <Marker position={routeCoordinates[0]} icon={icons.start} />
                                         <Marker position={routeCoordinates[routeCoordinates.length - 1]} icon={icons.end} />
-                                        {isReplaying && <Marker position={routeCoordinates[replayIndex]} icon={icons.vehicle} />}
+                                        
+                                        {isReplaying && (
+                                            <ReplayMarker 
+                                                position={routeCoordinates[replayIndex]} 
+                                                icon={icons.vehicle} 
+                                            />
+                                        )}
                                     </MapContainer>
                                 ) : (
                                     <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-500">
@@ -754,8 +789,23 @@ const GsoDashboard = () => {
                                 )}
                             </div>
 
-                            <div className="p-4 bg-[#121829] border-t border-slate-800 flex items-center justify-end">
-                                {/* Kini nga button kay mo-validate lang kung ang trip kay naa sa pendingValidation (wala pa na-validate) */}
+                            <div className="p-4 bg-[#121829] border-t border-slate-800 flex items-center justify-between">
+                                {/* ✅ REPLAY CONTROLS */}
+                                <div className="flex items-center gap-2">
+                                    {routeCoordinates.length >= 2 && (
+                                        <Button 
+                                            size="sm" 
+                                            variant="outline" 
+                                            onClick={() => isReplaying ? handleStopReplay() : startReplay(routeCoordinates)}
+                                            className="border-slate-700 text-slate-300 hover:bg-slate-800 h-9"
+                                        >
+                                            {isReplaying ? <Square className="h-3.5 w-3.5 mr-2" /> : <Play className="h-3.5 w-3.5 mr-2" />}
+                                            {isReplaying ? "Stop" : "Replay"}
+                                        </Button>
+                                    )}
+                                </div>
+
+                                {/* ✅ CONFIRM BUTTON */}
                                 {pendingValidation.some(t => (t.id || t.trip_ticket_id) === (selectedTicket?.displayId || selectedTicket?.id || selectedTicket?.trip_ticket_id)) && (
                                     <Button 
                                         onClick={() => {
