@@ -298,10 +298,11 @@ const GsoAllTrips = () => {
 
   const trips = Array.isArray(tripsData) ? tripsData : [];
 
-  // ✅ CANCEL MUTATION
+    // ✅ CANCEL MUTATION
   const cancelMutation = useMutation({
     mutationFn: async ({ ticketId, reason }) => {
-      const response = await gsoAPI.cancelTrip(ticketId, reason);
+      // Giputos nato ang reason sa object aron mo-match sa backend validation
+      const response = await gsoAPI.cancelTrip(ticketId, { reason: reason });
       return response.data;
     },
     onSuccess: (data) => {
