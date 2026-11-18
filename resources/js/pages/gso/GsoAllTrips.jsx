@@ -1,6 +1,6 @@
 // src/pages/gso/GsoAllTrips.jsx
 // ============================================
-// MERGED: All Trips + Trip Ticket View
+// MERGED: All Trips + Trip Ticket View + Pagination
 // ============================================
 
 import React, { useState, useMemo } from 'react';
@@ -67,6 +67,8 @@ import {
   Zap,
   Shield,
   Ban,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { cn } from '@/lib/utils';
@@ -83,7 +85,6 @@ const getTicketNumber = (trip) => {
   return trip?.trip_ticket_number || trip?.ticket_number || 'N/A';
 };
 
-// ✅ DEPARTMENT CODE ONLY
 const getDepartmentCode = (trip) => {
   if (trip?.department?.department_code) return trip.department.department_code;
   if (trip?.department_code) return trip.department_code;
@@ -111,81 +112,20 @@ const getVehicleInfo = (trip) => {
   return trip?.plate_number || trip?.vehicle_model || 'N/A';
 };
 
-// ✅ UNIFORM STATUS CONFIG
 const getStatusConfig = (status) => {
   const configs = {
-    'pending_mayors_office': { 
-      color: 'bg-orange-500', 
-      label: 'Pending',
-      icon: Clock,
-      dotColor: 'bg-orange-500',
-    },
-    'funds_issued': { 
-      color: 'bg-blue-500', 
-      label: 'Ready',
-      icon: CheckCircle,
-      dotColor: 'bg-blue-500',
-    },
-    'acknowledged': { 
-      color: 'bg-blue-500', 
-      label: 'Ready',
-      icon: CheckCircle,
-      dotColor: 'bg-blue-500',
-    },
-    'in_transit': { 
-      color: 'bg-purple-500', 
-      label: 'In Transit',
-      icon: Truck,
-      dotColor: 'bg-purple-500',
-    },
-    'pending_reconciliation': { 
-      color: 'bg-purple-500', 
-      label: 'In Transit',
-      icon: Truck,
-      dotColor: 'bg-purple-500',
-    },
-    'pending_gso_validation': { 
-      color: 'bg-emerald-500', 
-      label: 'Completed',
-      icon: CheckCircle,
-      dotColor: 'bg-emerald-500',
-    },
-    'completed': { 
-      color: 'bg-emerald-500', 
-      label: 'Completed',
-      icon: CheckCircle,
-      dotColor: 'bg-emerald-500',
-    },
-    'closed': { 
-      color: 'bg-slate-600', 
-      label: 'Closed',
-      icon: CheckCircle,
-      dotColor: 'bg-slate-600',
-    },
-    'rejected': { 
-      color: 'bg-red-500', 
-      label: 'Rejected',
-      icon: XCircle,
-      dotColor: 'bg-red-500',
-    },
-    'cancelled': { 
-      color: 'bg-red-500', 
-      label: 'Cancelled',
-      icon: Ban,
-      dotColor: 'bg-red-500',
-    },
-    'returned_for_revision': { 
-      color: 'bg-red-500', 
-      label: 'Rejected',
-      icon: XCircle,
-      dotColor: 'bg-red-500',
-    },
-    'draft': {
-      color: 'bg-slate-400',
-      label: 'Draft',
-      icon: AlertCircle,
-      dotColor: 'bg-slate-400',
-    },
+    'pending_mayors_office': { color: 'bg-orange-500', label: 'Pending', icon: Clock, dotColor: 'bg-orange-500' },
+    'funds_issued': { color: 'bg-blue-500', label: 'Ready', icon: CheckCircle, dotColor: 'bg-blue-500' },
+    'acknowledged': { color: 'bg-blue-500', label: 'Ready', icon: CheckCircle, dotColor: 'bg-blue-500' },
+    'in_transit': { color: 'bg-purple-500', label: 'In Transit', icon: Truck, dotColor: 'bg-purple-500' },
+    'pending_reconciliation': { color: 'bg-purple-500', label: 'In Transit', icon: Truck, dotColor: 'bg-purple-500' },
+    'pending_gso_validation': { color: 'bg-emerald-500', label: 'Completed', icon: CheckCircle, dotColor: 'bg-emerald-500' },
+    'completed': { color: 'bg-emerald-500', label: 'Completed', icon: CheckCircle, dotColor: 'bg-emerald-500' },
+    'closed': { color: 'bg-slate-600', label: 'Closed', icon: CheckCircle, dotColor: 'bg-slate-600' },
+    'rejected': { color: 'bg-red-500', label: 'Rejected', icon: XCircle, dotColor: 'bg-red-500' },
+    'cancelled': { color: 'bg-red-500', label: 'Cancelled', icon: Ban, dotColor: 'bg-red-500' },
+    'returned_for_revision': { color: 'bg-red-500', label: 'Rejected', icon: XCircle, dotColor: 'bg-red-500' },
+    'draft': { color: 'bg-slate-400', label: 'Draft', icon: AlertCircle, dotColor: 'bg-slate-400' },
   };
   return configs[status] || { color: 'bg-slate-500', label: status || 'Unknown', icon: Clock, dotColor: 'bg-slate-500' };
 };
@@ -203,10 +143,6 @@ const formatDate = (dateString) => {
   }
 };
 
-// ============================================
-// STATUS BADGE COMPONENT
-// ============================================
-
 const StatusBadge = ({ status }) => {
   const config = getStatusConfig(status);
   const Icon = config.icon;
@@ -217,10 +153,6 @@ const StatusBadge = ({ status }) => {
     </Badge>
   );
 };
-
-// ============================================
-// STATS CARD COMPONENT
-// ============================================
 
 const StatsCard = ({ title, value, icon: Icon, color, subtitle, trend }) => {
   const getTrendIcon = () => {
@@ -236,9 +168,7 @@ const StatsCard = ({ title, value, icon: Icon, color, subtitle, trend }) => {
         <div>
           <p className="text-sm text-slate-500 dark:text-slate-400 font-medium">{title}</p>
           <p className="text-2xl font-bold text-slate-900 dark:text-white mt-1">{value}</p>
-          {subtitle && (
-            <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">{subtitle}</p>
-          )}
+          {subtitle && <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">{subtitle}</p>}
         </div>
         <div className={`p-2.5 rounded-xl bg-gradient-to-br ${color} shadow-lg`}>
           <Icon className="h-5 w-5 text-white" />
@@ -270,6 +200,10 @@ const GsoAllTrips = () => {
   const [showFilters, setShowFilters] = useState(false);
   const [selectedTrip, setSelectedTrip] = useState(null);
 
+  // ✅ Pagination States
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10; // Pwede nimo usbon kung pila ka rows kada page
+
   // ✅ Cancel States
   const [showCancelDialog, setShowCancelDialog] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
@@ -298,10 +232,9 @@ const GsoAllTrips = () => {
 
   const trips = Array.isArray(tripsData) ? tripsData : [];
 
-    // ✅ CANCEL MUTATION
+  // ✅ CANCEL MUTATION
   const cancelMutation = useMutation({
     mutationFn: async ({ ticketId, reason }) => {
-      // Giputos nato ang reason sa object aron mo-match sa backend validation
       const response = await gsoAPI.cancelTrip(ticketId, { reason: reason });
       return response.data;
     },
@@ -329,48 +262,16 @@ const GsoAllTrips = () => {
   const stats = useMemo(() => {
     const total = trips.length;
     const pending = trips.filter(t => t?.status === 'pending_mayors_office').length;
-    const ready = trips.filter(t => ['funds_issued', 'acknowledged'].includes(t?.status)).length;
     const inTransit = trips.filter(t => t?.status === 'in_transit').length;
     const completed = trips.filter(t => ['completed', 'pending_gso_validation'].includes(t?.status)).length;
     const closed = trips.filter(t => t?.status === 'closed').length;
-    const cancelled = trips.filter(t => t?.status === 'cancelled').length;
 
     return [
-      {
-        title: 'Total Trips',
-        value: total,
-        icon: Truck,
-        color: 'from-blue-500 to-blue-600',
-        subtitle: 'All time',
-      },
-      {
-        title: 'Pending',
-        value: pending,
-        icon: Clock,
-        color: 'from-orange-500 to-orange-600',
-        subtitle: 'Waiting for funds',
-      },
-      {
-        title: 'In Transit',
-        value: inTransit,
-        icon: Truck,
-        color: 'from-purple-500 to-purple-600',
-        subtitle: 'On the road',
-      },
-      {
-        title: 'Completed',
-        value: completed,
-        icon: Shield,
-        color: 'from-emerald-500 to-emerald-600',
-        subtitle: 'Needs closing',
-      },
-      {
-        title: 'Closed',
-        value: closed,
-        icon: CheckCircle,
-        color: 'from-slate-500 to-slate-600',
-        subtitle: 'Finished',
-      },
+      { title: 'Total Trips', value: total, icon: Truck, color: 'from-blue-500 to-blue-600', subtitle: 'All time' },
+      { title: 'Pending', value: pending, icon: Clock, color: 'from-orange-500 to-orange-600', subtitle: 'Waiting for funds' },
+      { title: 'In Transit', value: inTransit, icon: Truck, color: 'from-purple-500 to-purple-600', subtitle: 'On the road' },
+      { title: 'Completed', value: completed, icon: Shield, color: 'from-emerald-500 to-emerald-600', subtitle: 'Needs closing' },
+      { title: 'Closed', value: closed, icon: CheckCircle, color: 'from-slate-500 to-slate-600', subtitle: 'Finished' },
     ];
   }, [trips]);
 
@@ -418,6 +319,18 @@ const GsoAllTrips = () => {
     return filtered;
   }, [trips, statusFilter, departmentFilter, searchTerm]);
 
+  // ✅ PAGINATION LOGIC
+  const totalPages = Math.ceil(filteredTrips.length / itemsPerPage);
+  const paginatedTrips = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return filteredTrips.slice(startIndex, startIndex + itemsPerPage);
+  }, [filteredTrips, currentPage, itemsPerPage]);
+
+  // Reset page when filters change
+  useMemo(() => {
+    setCurrentPage(1);
+  }, [searchTerm, statusFilter, departmentFilter]);
+
   // ============ HANDLERS ============
   const handleViewTrip = (trip) => {
     const ticketId = getTicketId(trip);
@@ -428,7 +341,6 @@ const GsoAllTrips = () => {
     navigate(`/gso/tickets/${ticketId}`);
   };
 
-  // ✅ OPEN CANCEL DIALOG
   const handleOpenCancelDialog = (trip) => {
     setSelectedTrip(trip);
     setCancelReason("");
@@ -481,8 +393,7 @@ const GsoAllTrips = () => {
           <p className="text-red-600 dark:text-red-400 font-medium">Failed to load trips</p>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">{error.message}</p>
           <Button onClick={handleRefresh} className="mt-4 bg-blue-600 hover:bg-blue-700">
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Retry
+            <RefreshCw className="h-4 w-4 mr-2" /> Retry
           </Button>
         </div>
       </div>
@@ -520,8 +431,7 @@ const GsoAllTrips = () => {
             className="flex items-center gap-2 dark:border-slate-700 dark:text-slate-300"
             disabled={filteredTrips.length === 0}
           >
-            <FileSpreadsheet className="h-4 w-4" />
-            Export ({filteredTrips.length})
+            <FileSpreadsheet className="h-4 w-4" /> Export ({filteredTrips.length})
           </Button>
           <Button
             variant="outline"
@@ -529,15 +439,13 @@ const GsoAllTrips = () => {
             disabled={isFetching}
             className="flex items-center gap-2 dark:border-slate-700 dark:text-slate-300"
           >
-            <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
-            Refresh
+            <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} /> Refresh
           </Button>
           <Button
             onClick={() => navigate('/gso/create-trip')}
             className="bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 shadow-lg shadow-blue-500/20"
           >
-            <Plus className="h-4 w-4 mr-2" />
-            New Trip
+            <Plus className="h-4 w-4 mr-2" /> New Trip
           </Button>
         </div>
       </div>
@@ -568,18 +476,13 @@ const GsoAllTrips = () => {
                 onClick={() => setShowFilters(!showFilters)}
                 className="md:w-auto w-full dark:border-slate-700 dark:text-slate-300"
               >
-                <Filter className="h-4 w-4 mr-2" />
-                Filters
+                <Filter className="h-4 w-4 mr-2" /> Filters
                 {hasActiveFilters && (
                   <Badge className="ml-2 bg-blue-500 text-white text-[10px] px-1.5 py-0.5">
                     {statusFilter !== 'all' ? 1 : 0 + departmentFilter !== 'all' ? 1 : 0}
                   </Badge>
                 )}
-                {showFilters ? (
-                  <ChevronUp className="h-4 w-4 ml-2" />
-                ) : (
-                  <ChevronDown className="h-4 w-4 ml-2" />
-                )}
+                {showFilters ? <ChevronUp className="h-4 w-4 ml-2" /> : <ChevronDown className="h-4 w-4 ml-2" />}
               </Button>
             </div>
 
@@ -612,9 +515,7 @@ const GsoAllTrips = () => {
                   <SelectContent>
                     <SelectItem value="all">All Departments</SelectItem>
                     {departments.filter(d => d !== 'all').map((dept) => (
-                      <SelectItem key={dept} value={dept}>
-                        {dept}
-                      </SelectItem>
+                      <SelectItem key={dept} value={dept}>{dept}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -648,18 +549,15 @@ const GsoAllTrips = () => {
           <div className="flex items-center justify-between">
             <div>
               <CardTitle className="flex items-center gap-2 text-slate-800 dark:text-white">
-                <Truck className="h-5 w-5 text-blue-500" />
-                Trip Tickets
+                <Truck className="h-5 w-5 text-blue-500" /> Trip Tickets
               </CardTitle>
               <CardDescription className="dark:text-slate-400">
-                {filteredTrips.length} trip(s) found
-                {filteredTrips.length !== trips.length && ` (filtered from ${trips.length} total)`}
+                Showing {paginatedTrips.length} of {filteredTrips.length} trip(s)
               </CardDescription>
             </div>
             {filteredTrips.length > 0 && (
               <Badge className="bg-blue-500/20 text-blue-600 dark:text-blue-400 border-blue-500/30">
-                <Zap className="h-3 w-3 mr-1" />
-                {filteredTrips.length} records
+                <Zap className="h-3 w-3 mr-1" /> {filteredTrips.length} records
               </Badge>
             )}
           </div>
@@ -670,152 +568,133 @@ const GsoAllTrips = () => {
               <div className="w-20 h-20 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto mb-4">
                 <Truck className="h-10 w-10 text-slate-400 dark:text-slate-500" />
               </div>
-              <p className="text-slate-600 dark:text-slate-400 font-medium text-lg">
-                No trips found
-              </p>
+              <p className="text-slate-600 dark:text-slate-400 font-medium text-lg">No trips found</p>
               <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">
                 {trips.length === 0 
-                  ? 'No trips have been created yet. Create your first trip!'
+                  ? 'No trips have been created yet. Create your first trip!' 
                   : 'Try adjusting your filters to see more results'}
               </p>
-              {trips.length === 0 && (
-                <Button 
-                  onClick={() => navigate('/gso/create-trip')} 
-                  className="mt-6 bg-gradient-to-r from-blue-600 to-blue-500 shadow-lg shadow-blue-500/20"
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  Create First Trip
-                </Button>
-              )}
-              {trips.length > 0 && hasActiveFilters && (
-                <Button
-                  variant="outline"
-                  onClick={clearFilters}
-                  className="mt-6 dark:border-slate-700 dark:text-slate-300"
-                >
-                  Clear Filters
-                </Button>
-              )}
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-slate-50 dark:bg-slate-900/50 border-b dark:border-slate-700">
-                    <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
-                      Ticket #
-                    </TableHead>
-                    <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
-                      Date
-                    </TableHead>
-                    <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
-                      Destination
-                    </TableHead>
-                    <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
-                      Dept.
-                    </TableHead>
-                    <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
-                      Driver
-                    </TableHead>
-                    <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
-                      Vehicle
-                    </TableHead>
-                    <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">
-                      Status
-                    </TableHead>
-                    <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider text-center">
-                      Actions
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredTrips.map((trip) => {
-                    const ticketId = getTicketId(trip);
-                    
-                    // ✅ Pwede ra i-cancel kung Pending pa. Dili na pwede kung Ready o pataas.
-                    const canCancel = trip.status === 'pending_mayors_office';
+            <>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-slate-50 dark:bg-slate-900/50 border-b dark:border-slate-700">
+                      <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Ticket #</TableHead>
+                      <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Date</TableHead>
+                      <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Destination</TableHead>
+                      <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Dept.</TableHead>
+                      <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Driver</TableHead>
+                      <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Vehicle</TableHead>
+                      <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider">Status</TableHead>
+                      <TableHead className="font-semibold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider text-center">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {paginatedTrips.map((trip) => {
+                      const ticketId = getTicketId(trip);
+                      const canCancel = trip.status === 'pending_mayors_office';
 
-                    return (
-                      <TableRow 
-                        key={ticketId || Math.random()} 
-                        className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors group"
-                      >
-                        <TableCell className="font-mono font-semibold text-slate-800 dark:text-white">
-                          {getTicketNumber(trip)}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-1.5">
-                            <Calendar className="h-3.5 w-3.5 text-slate-400" />
-                            <span className="text-sm text-slate-600 dark:text-slate-400">
-                              {formatDate(trip.trip_date)}
-                            </span>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-1.5">
-                            <MapPin className="h-3.5 w-3.5 text-slate-400" />
-                            <span className="text-sm text-slate-600 dark:text-slate-400 truncate max-w-[120px]">
-                              {trip.destination || 'N/A'}
-                            </span>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-1.5">
-                            <Building2 className="h-3.5 w-3.5 text-slate-400" />
-                            <span className="text-sm text-slate-600 dark:text-slate-400">
-                              {getDepartmentCode(trip)}
-                            </span>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-1.5">
-                            <User className="h-3.5 w-3.5 text-slate-400" />
-                            <span className="text-sm text-slate-600 dark:text-slate-400">
-                              {getDriverName(trip)}
-                            </span>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <span className="text-sm text-slate-600 dark:text-slate-400">
-                            {getVehicleInfo(trip)}
-                          </span>
-                        </TableCell>
-                        <TableCell>
-                          <StatusBadge status={trip.status} />
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <div className="flex items-center justify-center gap-1.5">
-                            {/* View Trip Button */}
-                            <Button
-                              size="sm"
-                              onClick={() => handleViewTrip(trip)}
-                              className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 h-8 flex items-center gap-1 rounded-lg transition-all duration-200 hover:scale-105 active:scale-95 shadow-sm shadow-blue-500/20"
-                              title="View Trip Details"
-                            >
-                              <Eye className="h-3.5 w-3.5" />
-                              <span className="text-xs font-medium">View</span>
-                            </Button>
-
-                            {/* ✅ Cancel Button (Only for Pending status) */}
-                            {canCancel && (
+                      return (
+                        <TableRow key={ticketId || Math.random()} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors group">
+                          <TableCell className="font-mono font-semibold text-slate-800 dark:text-white">{getTicketNumber(trip)}</TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-1.5">
+                              <Calendar className="h-3.5 w-3.5 text-slate-400" />
+                              <span className="text-sm text-slate-600 dark:text-slate-400">{formatDate(trip.trip_date)}</span>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-1.5">
+                              <MapPin className="h-3.5 w-3.5 text-slate-400" />
+                              <span className="text-sm text-slate-600 dark:text-slate-400 truncate max-w-[120px]">{trip.destination || 'N/A'}</span>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-1.5">
+                              <Building2 className="h-3.5 w-3.5 text-slate-400" />
+                              <span className="text-sm text-slate-600 dark:text-slate-400">{getDepartmentCode(trip)}</span>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-1.5">
+                              <User className="h-3.5 w-3.5 text-slate-400" />
+                              <span className="text-sm text-slate-600 dark:text-slate-400">{getDriverName(trip)}</span>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <span className="text-sm text-slate-600 dark:text-slate-400">{getVehicleInfo(trip)}</span>
+                          </TableCell>
+                          <TableCell>
+                            <StatusBadge status={trip.status} />
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <div className="flex items-center justify-center gap-1.5">
                               <Button
                                 size="sm"
-                                onClick={() => handleOpenCancelDialog(trip)}
-                                className="bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 h-8 flex items-center gap-1 rounded-lg transition-all duration-200 hover:scale-105 active:scale-95 shadow-sm shadow-red-500/20"
-                                title="Cancel Trip"
+                                onClick={() => handleViewTrip(trip)}
+                                className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 h-8 flex items-center gap-1 rounded-lg transition-all duration-200 hover:scale-105 active:scale-95 shadow-sm shadow-blue-500/20"
                               >
-                                <Ban className="h-3.5 w-3.5" />
-                                <span className="text-xs font-medium">Cancel</span>
+                                <Eye className="h-3.5 w-3.5" />
+                                <span className="text-xs font-medium">View</span>
                               </Button>
-                            )}
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
+
+                              {canCancel && (
+                                <Button
+                                  size="sm"
+                                  onClick={() => handleOpenCancelDialog(trip)}
+                                  className="bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 h-8 flex items-center gap-1 rounded-lg transition-all duration-200 hover:scale-105 active:scale-95 shadow-sm shadow-red-500/20"
+                                >
+                                  <Ban className="h-3.5 w-3.5" />
+                                  <span className="text-xs font-medium">Cancel</span>
+                                </Button>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+
+              {/* ✅ PAGINATION CONTROLS */}
+              {totalPages > 1 && (
+                <div className="flex items-center justify-between px-4 py-3 border-t border-slate-200 dark:border-slate-700">
+                  <div className="text-sm text-slate-500 dark:text-slate-400">
+                    Showing <span className="font-medium">{(currentPage - 1) * itemsPerPage + 1}</span> to{' '}
+                    <span className="font-medium">
+                      {Math.min(currentPage * itemsPerPage, filteredTrips.length)}
+                    </span>{' '}
+                    of <span className="font-medium">{filteredTrips.length}</span> results
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                      disabled={currentPage === 1}
+                      className="h-8 px-3 dark:border-slate-700 dark:text-slate-300"
+                    >
+                      <ChevronLeft className="h-4 w-4 mr-1" /> Previous
+                    </Button>
+                    <div className="text-sm font-medium text-slate-600 dark:text-slate-400">
+                      Page {currentPage} of {totalPages}
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                      disabled={currentPage === totalPages}
+                      className="h-8 px-3 dark:border-slate-700 dark:text-slate-300"
+                    >
+                      Next <ChevronRight className="h-4 w-4 ml-1" />
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </CardContent>
       </Card>
