@@ -1089,7 +1089,7 @@ class MayorsOfficeController extends Controller
     /**
      * Verify a receipt with editable fields
      */ 
-       public function verifyReceipt(Request $request, $id)
+         public function verifyReceipt(Request $request, $id)
     {
         try {
             $validator = Validator::make($request->all(), [
@@ -1105,31 +1105,20 @@ class MayorsOfficeController extends Controller
             }
 
             $receipt = FuelReceipt::with(['gasSlip.tripTicket'])->findOrFail($id);
-            $gasSlip = $gasSlip = $receipt->gasSlip;
+            $gasSlip = $receipt->gasSlip;
             $trip = $gasSlip ? $gasSlip->tripTicket : null;
 
-            if ($gasSlip->reconciliation_status === 'verified') {
-                return response()->json([
-                    'success' => false, 
-                    'message' => 'This receipt has already been finalized and verified.'
-                ], 400);
-            }
-
-            // ✅ GITANGGTANG ANG GUARD NGA "already validated by GSO (liters recorded)"
-            // Kay ang DO (Mayor's Office) maoy una mo-verify sa amount base sa resibo.
-            // Ang GSO na ang mo-validate sa katapusan (liters).
+            // ✅ GITANGGTANG ANG TANAN NGA GUARDS PARA INDEPENDENT SILA SA GSO
 
             $amountOnReceipt = (float) $request->amount_on_receipt;
             $amountReleased = (float) $gasSlip->amount_released;
 
-            // Check if amount on receipt exceeds amount released
             $variance = $amountOnReceipt - $amountReleased;
             $isDiscrepancy = abs($variance) > 0.01 || $request->status === 'discrepancy';
 
             $receipt->invoice_number = $request->invoice_number;
             $receipt->amount_on_receipt = $amountOnReceipt;
             
-            // Compute unit price if not provided and liters exist
             if ($request->filled('unit_price')) {
                 $receipt->unit_price = (float) $request->unit_price;
             } elseif ($receipt->liters_availed > 0 && $amountOnReceipt > 0) {
@@ -1138,10 +1127,10 @@ class MayorsOfficeController extends Controller
 
             $receipt->save();
 
-            $gasSlip->reconciliation_status = $isDiscrepancy ? 'discrepancy' : 'verified';
-            $gasSlip->reconciliation_note = $request->remarks;
-            $gasSlip->reconciled_by = $request->user()->user_id;
-            $gasSlip->reconciled_at = now();
+            // ✅ DILI NATONG HILABTAN ANG gasSlip->reconciliation_status 
+            // kay para na sa GSO. Mag-save lang ta sa DO fields.
+            // Kung wala pa kay verified_by_do/verified_at_do sa DB, i-save nato sa reconciliation_note
+            $gasSlip->reconciliation_note = "DO Remarks: " . ($request->remarks ?? 'None');
             $gasSlip->save();
 
             if ($trip) {
@@ -1150,7 +1139,7 @@ class MayorsOfficeController extends Controller
                     'trip_reconciled',
                     'trip_ticket',
                     $trip->trip_ticket_id,
-                    "Receipt for Trip {$trip->trip_ticket_number} has been " . ($isDiscrepancy ? 'flagged with a discrepancy' : 'verified') . " by the Mayor's Office."
+                    "Receipt for Trip {$trip->trip_ticket_number} has been verified by the Mayor's Office."
                 );
             }
 
