@@ -64,6 +64,11 @@ const StatusPill = ({ status }) => {
         label = "Closed";
         color = "bg-slate-600/50 text-slate-300 border-slate-500/50";
         Icon = CheckCircle;
+    } else if (status === "cancelled") {
+        // ✅ IDUGANG KINI ARON MA-CANCELLED ANG DISPLAY
+        label = "Cancelled";
+        color = "bg-red-500/20 text-red-400 border-red-500/30";
+        Icon = X;
     }
 
     return (
