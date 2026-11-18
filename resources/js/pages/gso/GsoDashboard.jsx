@@ -704,138 +704,144 @@ const GsoDashboard = () => {
 
             </div>
 
-            {/* VALIDATE & REPLAY DIALOG */}
-            <Dialog open={showValidateDialog} onOpenChange={setShowValidateDialog}>
-                <DialogContent className="sm:max-w-6xl bg-[#0f172a] border-slate-700 p-0 overflow-hidden rounded-2xl">
-                    <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800">
-                        <div className="flex items-center gap-3">
-                            <div className="p-2 rounded-xl bg-blue-500/20 text-blue-500 border border-blue-500/30">
-                                <MapPin className="h-5 w-5" />
-                            </div>
-                            <div>
-                                <h2 className="text-xl font-bold text-white">Trip Validation</h2>
-                                <p className="text-xs text-slate-400">Review the completed trip details before confirming.</p>
-                            </div>
-                        </div>
-                        <button onClick={() => setShowValidateDialog(false)} className="text-slate-400 hover:text-white transition-colors">
-                            <X className="h-6 w-6" />
-                        </button>
-                    </div>
+           {/* VALIDATE & REPLAY DIALOG */}
+<Dialog open={showValidateDialog} onOpenChange={setShowValidateDialog}>
+    <DialogContent className="sm:max-w-6xl bg-[#0f172a] border-slate-700 p-0 overflow-hidden rounded-2xl">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800">
+            <div className="flex items-center gap-3">
+                <div className="p-2 rounded-xl bg-blue-500/20 text-blue-500 border border-blue-500/30">
+                    <MapPin className="h-5 w-5" />
+                </div>
+                <div>
+                    <h2 className="text-xl font-bold text-white">Trip Validation</h2>
+                    <p className="text-xs text-slate-400">Review the completed trip details before confirming.</p>
+                </div>
+            </div>
+            <button onClick={() => setShowValidateDialog(false)} className="text-slate-400 hover:text-white transition-colors">
+                <X className="h-6 w-6" />
+            </button>
+        </div>
 
-                    <div className="flex flex-col md:flex-row h-[600px]">
-                        <div className="w-full md:w-[320px] bg-[#121829] border-r border-slate-800 p-6 overflow-y-auto flex-shrink-0">
-                            <div className="space-y-5">
-                                <div className="flex items-start gap-3">
-                                    <Calendar className="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0" />
-                                    <div>
-                                        <p className="text-xs text-slate-400 font-medium">Trip Ticket No.</p>
-                                        <p className="text-sm font-bold text-white font-mono">{selectedTicket?.displayTicketNo || selectedTicket?.trip_ticket_number}</p>
-                                    </div>
-                                </div>
-                                <div className="flex items-start gap-3">
-                                    <User className="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0" />
-                                    <div>
-                                        <p className="text-xs text-slate-400 font-medium">Driver</p>
-                                        {/* ✅ FIX: KUMPLETO NGA DRIVER FALLBACK */}
-                                        <p className="text-sm font-bold text-white">
-                                            {selectedTicket?.driver_name || 
-                                             selectedTicket?.driver?.user?.full_name || 
-                                             selectedTicket?.driver?.full_name || 
-                                             selectedTicket?.driver?.name || 
-                                             'N/A'}
-                                        </p>
-                                    </div>
-                                </div>
-                                <div className="flex items-start gap-3">
-                                    <Car className="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0" />
-                                    <div>
-                                        <p className="text-xs text-slate-400 font-medium">Vehicle</p>
-                                        <p className="text-sm font-bold text-white">{selectedTicket?.vehicle?.vehicle_model || 'N/A'}</p>
-                                        <p className="text-[10px] text-slate-400 font-mono">{selectedTicket?.vehicle?.plate_number || 'N/A'}</p>
-                                    </div>
-                                </div>
-                                <div className="flex items-start gap-3">
-                                    <Flag className="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0" />
-                                    <div>
-                                        <p className="text-xs text-slate-400 font-medium">Destination</p>
-                                        <p className="text-sm font-bold text-white">{selectedTicket?.destination || 'N/A'}</p>
-                                    </div>
-                                </div>
-                                <div className="flex items-start gap-3">
-                                    <Route className="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0" />
-                                    <div>
-                                        <p className="text-xs text-slate-400 font-medium">Actual Distance</p>
-                                        <p className="text-sm font-bold text-white">{selectedTicket?.actual_distance_km || 0} km</p>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="flex-1 relative bg-[#0b101c] flex flex-col">
-                            <div className="flex-1 relative">
-                                {loadingRoute ? (
-                                    <div className="absolute inset-0 flex items-center justify-center bg-slate-900/50 z-10">
-                                        <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
-                                    </div>
-                                ) : routeCoordinates.length > 0 ? (
-                                    <MapContainer bounds={routeCoordinates} style={{ height: '100%', width: '100%' }} zoomControl={false}>
-                                        <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-                                        <MapBounds coords={routeCoordinates} />
-                                        <Polyline positions={routeCoordinates} color="#3b82f6" weight={4} opacity={0.8} />
-                                        <Marker position={routeCoordinates[0]} icon={icons.start} />
-                                        <Marker position={routeCoordinates[routeCoordinates.length - 1]} icon={icons.end} />
-                                        
-                                        {isReplaying && (
-                                            <ReplayMarker 
-                                                position={routeCoordinates[replayIndex]} 
-                                                icon={icons.vehicle} 
-                                            />
-                                        )}
-                                    </MapContainer>
-                                ) : (
-                                    <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-500">
-                                        <MapPin className="h-8 w-8 mb-2" />
-                                        <p>No route data available</p>
-                                    </div>
-                                )}
-                            </div>
-
-                            <div className="p-4 bg-[#121829] border-t border-slate-800 flex items-center justify-between">
-                                <div className="flex items-center gap-2">
-                                    {routeCoordinates.length >= 2 && (
-                                        <Button 
-                                            size="sm" 
-                                            variant="outline" 
-                                            onClick={() => isReplaying ? handleStopReplay() : startReplay(routeCoordinates)}
-                                            className="border-slate-700 text-slate-300 hover:bg-slate-800 h-9"
-                                        >
-                                            {isReplaying ? <Square className="h-3.5 w-3.5 mr-2" /> : <Play className="h-3.5 w-3.5 mr-2" />}
-                                            {isReplaying ? "Stop" : "Replay"}
-                                        </Button>
-                                    )}
-                                </div>
-
-                                {pendingValidation.some(t => (t.id || t.trip_ticket_id) === (selectedTicket?.displayId || selectedTicket?.id || selectedTicket?.trip_ticket_id)) && (
-                                    <Button 
-                                        onClick={() => {
-                                            const ticketId = selectedTicket?.id || selectedTicket?.trip_ticket_id;
-                                            validateMutation.mutate({ ticketId });
-                                        }} 
-                                        disabled={validateMutation.isPending || !hasWatchedReplay}
-                                        className={cn(
-                                            "text-white font-bold h-10 px-8 rounded-xl shadow-lg transition-all",
-                                            hasWatchedReplay ? "bg-emerald-600 hover:bg-emerald-500 shadow-emerald-500/20" : "bg-slate-700 text-slate-400 cursor-not-allowed shadow-none"
-                                        )}
-                                    >
-                                        {validateMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2"/> : <Check className="h-4 w-4 mr-2"/>}
-                                        {hasWatchedReplay ? "Confirm" : "Waiting for Replay..."}
-                                    </Button>
-                                )}
-                            </div>
+        <div className="flex flex-col md:flex-row h-[600px]">
+            <div className="w-full md:w-[320px] bg-[#121829] border-r border-slate-800 p-6 overflow-y-auto flex-shrink-0">
+                <div className="space-y-5">
+                    <div className="flex items-start gap-3">
+                        <Calendar className="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0" />
+                        <div>
+                            <p className="text-xs text-slate-400 font-medium">Trip Ticket No.</p>
+                            <p className="text-sm font-bold text-white font-mono">
+                                {selectedTicket?.displayTicketNo || selectedTicket?.trip_ticket_number || selectedTicket?.ticket_number || 'N/A'}
+                            </p>
                         </div>
                     </div>
-                </DialogContent>
-            </Dialog>
+                    <div className="flex items-start gap-3">
+                        <User className="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0" />
+                        <div>
+                            <p className="text-xs text-slate-400 font-medium">Driver</p>
+                            {/* ✅ DAGHAN NGA FALLBACKS ARON SIGURADONG MAKUHA ANG DRIVER */}
+                            <p className="text-sm font-bold text-white">
+                                {selectedTicket?.driver_name || 
+                                 selectedTicket?.driver?.user?.full_name || 
+                                 (selectedTicket?.driver?.user?.first_name 
+                                     ? `${selectedTicket.driver.user.first_name} ${selectedTicket.driver.user.last_name || ''}`.trim()
+                                     : null) ||
+                                 selectedTicket?.driver?.full_name || 
+                                 selectedTicket?.driver?.name || 
+                                 'N/A'}
+                            </p>
+                        </div>
+                    </div>
+                    <div className="flex items-start gap-3">
+                        <Car className="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0" />
+                        <div>
+                            <p className="text-xs text-slate-400 font-medium">Vehicle</p>
+                            <p className="text-sm font-bold text-white">{selectedTicket?.vehicle?.vehicle_model || 'N/A'}</p>
+                            <p className="text-[10px] text-slate-400 font-mono">{selectedTicket?.vehicle?.plate_number || 'N/A'}</p>
+                        </div>
+                    </div>
+                    <div className="flex items-start gap-3">
+                        <Flag className="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0" />
+                        <div>
+                            <p className="text-xs text-slate-400 font-medium">Destination</p>
+                            <p className="text-sm font-bold text-white">{selectedTicket?.destination || 'N/A'}</p>
+                        </div>
+                    </div>
+                    <div className="flex items-start gap-3">
+                        <Route className="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0" />
+                        <div>
+                            <p className="text-xs text-slate-400 font-medium">Actual Distance</p>
+                            <p className="text-sm font-bold text-white">{selectedTicket?.actual_distance_km || 0} km</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div className="flex-1 relative bg-[#0b101c] flex flex-col">
+                <div className="flex-1 relative">
+                    {loadingRoute ? (
+                        <div className="absolute inset-0 flex items-center justify-center bg-slate-900/50 z-10">
+                            <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+                        </div>
+                    ) : routeCoordinates.length > 0 ? (
+                        <MapContainer bounds={routeCoordinates} style={{ height: '100%', width: '100%' }} zoomControl={false}>
+                            <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                            <MapBounds coords={routeCoordinates} />
+                            <Polyline positions={routeCoordinates} color="#3b82f6" weight={4} opacity={0.8} />
+                            <Marker position={routeCoordinates[0]} icon={icons.start} />
+                            <Marker position={routeCoordinates[routeCoordinates.length - 1]} icon={icons.end} />
+                            
+                            {isReplaying && (
+                                <ReplayMarker 
+                                    position={routeCoordinates[replayIndex]} 
+                                    icon={icons.vehicle} 
+                                />
+                            )}
+                        </MapContainer>
+                    ) : (
+                        <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-500">
+                            <MapPin className="h-8 w-8 mb-2" />
+                            <p>No route data available</p>
+                        </div>
+                    )}
+                </div>
+
+                <div className="p-4 bg-[#121829] border-t border-slate-800 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                        {routeCoordinates.length >= 2 && (
+                            <Button 
+                                size="sm" 
+                                variant="outline" 
+                                onClick={() => isReplaying ? handleStopReplay() : startReplay(routeCoordinates)}
+                                className="border-slate-700 text-slate-300 hover:bg-slate-800 h-9"
+                            >
+                                {isReplaying ? <Square className="h-3.5 w-3.5 mr-2" /> : <Play className="h-3.5 w-3.5 mr-2" />}
+                                {isReplaying ? "Stop" : "Replay"}
+                            </Button>
+                        )}
+                    </div>
+
+                    {/* ✅ IPAKITA ANG CONFIRM BUTTON KUNG PENDING VALIDATION ANG TRIP */}
+                    {(pendingValidation.some(t => (t.id || t.trip_ticket_id) === (selectedTicket?.displayId || selectedTicket?.id || selectedTicket?.trip_ticket_id))) && (
+                        <Button 
+                            onClick={() => {
+                                const ticketId = selectedTicket?.id || selectedTicket?.trip_ticket_id;
+                                validateMutation.mutate({ ticketId });
+                            }} 
+                            disabled={validateMutation.isPending || !hasWatchedReplay}
+                            className={cn(
+                                "text-white font-bold h-10 px-8 rounded-xl shadow-lg transition-all",
+                                hasWatchedReplay ? "bg-emerald-600 hover:bg-emerald-500 shadow-emerald-500/20" : "bg-slate-700 text-slate-400 cursor-not-allowed shadow-none"
+                            )}
+                        >
+                            {validateMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2"/> : <Check className="h-4 w-4 mr-2"/>}
+                            {hasWatchedReplay ? "Confirm" : "Waiting for Replay..."}
+                        </Button>
+                    )}
+                </div>
+            </div>
+        </div>
+    </DialogContent>
+</Dialog>
 
         </div>
     );
