@@ -6,8 +6,8 @@ import { mayorsOfficeAPI } from "../../services/api";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
-  Clock, RefreshCw, Loader2, Truck, XCircle, Info, 
-  CheckCircle, FileText, Check, ArrowRight, 
+  Clock, RefreshCw, Loader2, Truck, XCircle, Info,
+  CheckCircle, FileText, Check, ArrowRight,
   Sparkles, Fuel, AlertTriangle, Activity, Edit, User, Users, Building2, Lock
 } from "lucide-react";
 import {
@@ -32,15 +32,15 @@ const formatCurrency = (amount) => {
 
 const StatusPill = ({ status }) => {
   let label = "Pending", color = "bg-orange-500/20 text-orange-400 border-orange-500/30", Icon = Clock;
-  
+
   if (status === "pending_mayors_office") {
     label = "Pending Release"; color = "bg-orange-500/20 text-orange-400 border-orange-500/30"; Icon = Clock;
-  } else if (status === "funds_issued") { 
-    label = "Funds Issued"; color = "bg-blue-500/20 text-blue-400 border-blue-500/30"; Icon = CheckCircle; 
-  } else if (["acknowledged", "in_transit", "completed", "closed", "pending_gso_validation"].includes(status)) { 
-    label = "Received"; color = "bg-emerald-500/20 text-emerald-400 border-emerald-500/30"; Icon = CheckCircle; 
-  } else if (["rejected", "returned_for_revision"].includes(status)) { 
-    label = "Rejected"; color = "bg-red-500/20 text-red-400 border-red-500/30"; Icon = XCircle; 
+  } else if (status === "funds_issued") {
+    label = "Funds Issued"; color = "bg-blue-500/20 text-blue-400 border-blue-500/30"; Icon = CheckCircle;
+  } else if (["acknowledged", "in_transit", "completed", "closed", "pending_gso_validation"].includes(status)) {
+    label = "Received"; color = "bg-emerald-500/20 text-emerald-400 border-emerald-500/30"; Icon = CheckCircle;
+  } else if (["rejected", "returned_for_revision"].includes(status)) {
+    label = "Rejected"; color = "bg-red-500/20 text-red-400 border-red-500/30"; Icon = XCircle;
   }
 
   return (
@@ -57,27 +57,24 @@ const MayorPending = () => {
   const [tickets, setTickets] = useState([]);
   const [releasedTickets, setReleasedTickets] = useState([]);
   const [loading, setLoading] = useState(true);
-  
+
   const [selectedTicket, setSelectedTicket] = useState(null);
   const [showRightPanel, setShowRightPanel] = useState(false);
-  
+
   const [showRejectDialog, setShowRejectDialog] = useState(false);
   const [rejectionNote, setRejectionNote] = useState("");
-  
+
   const [amountReleased, setAmountReleased] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
-  
+
   const [isCrossDepartment, setIsCrossDepartment] = useState(false);
   const [requestingDeptBalance, setRequestingDeptBalance] = useState(null);
   const [showTankWarning, setShowTankWarning] = useState(false);
   const [pendingPayload, setPendingPayload] = useState(null);
 
-  // ✅ HARD-CODE ANG MO DEPARTMENT ID
-  // Sa tinuod nga production, makuha ni nimo gikan sa user context o API
-  // Apan base sa imong `MayorsOfficeController`, ang MO dept ID kay makuha nimo
-  // pinaagi sa pagpangita sa department_code === 'MO'
-  const MO_DEPARTMENT_ID = 1; // Ilisi ni sa exact ID sa Mayor's Office sa imong DB
+  // ✅ DYNAMIC: Mayor's Office department ID (gikuha gikan sa all_departments)
+  const [moDepartmentId, setMoDepartmentId] = useState(null);
 
   const fetchTicketsRef = useRef(null);
 
@@ -98,7 +95,7 @@ const MayorPending = () => {
       ]);
       setTickets(Array.isArray(pendingRes.data?.data) ? pendingRes.data.data : []);
       setReleasedTickets(Array.isArray(approvedRes.data?.data) ? approvedRes.data.data : []);
-    } catch (error) { toast.error("Failed to load tickets"); } 
+    } catch (error) { toast.error("Failed to load tickets"); }
     finally { setLoading(false); }
   }, []);
 
@@ -106,7 +103,7 @@ const MayorPending = () => {
   useEffect(() => { fetchTickets(); }, [fetchTickets]);
 
   const filteredTickets = useMemo(() => {
-    return tickets.filter((ticket) => searchTerm === "" || 
+    return tickets.filter((ticket) => searchTerm === "" ||
       ticket.ticket_number?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       ticket.destination?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       ticket.department_name?.toLowerCase().includes(searchTerm.toLowerCase()));
@@ -143,7 +140,7 @@ const MayorPending = () => {
     setShowRightPanel(true);
     setAmountReleased("");
     setIsCrossDepartment(false);
-    
+
     if (activeTab === "pending") {
       await fetchDepartmentBalance(ticket.department_id);
     }
@@ -175,34 +172,50 @@ const MayorPending = () => {
 
   const suggestion = suggestionResponse?.data?.data;
 
+  // ✅ DYNAMIC: Kuhaon ang Mayor's Office ID gikan sa all_departments (kung naa)
+  useEffect(() => {
+    if (!selectedTicket) return;
+    const allDepts = suggestionResponse?.data?.data?.all_departments || selectedTicket?.all_departments;
+    if (Array.isArray(allDepts) && allDepts.length > 0) {
+      const mo = allDepts.find(d => d.department_code === 'MO');
+      if (mo) setMoDepartmentId(mo.department_id);
+    }
+  }, [selectedTicket, suggestionResponse]);
+
   const handleApprove = async () => {
     if (!amountReleased || parseFloat(amountReleased) <= 0) {
       return toast.error("Please enter a valid amount");
     }
     const amount = parseFloat(amountReleased);
 
-    // ✅ KUNG CROSS-DEPARTMENT, GAMITA ANG MO_DEPARTMENT_ID
-    // KUNG DILI, GAMITA ANG DEPARTMENT_ID SA TICKET
-    const chargeToDeptId = isCrossDepartment 
-      ? MO_DEPARTMENT_ID 
+    // ✅ DYNAMIC: Gamita ang moDepartmentId kung naa, fallback sa 1
+    const chargeToDeptId = isCrossDepartment
+      ? (moDepartmentId ?? 1)
       : selectedTicket.department_id;
 
-    if (suggestion && suggestion.available && amount > suggestion.suggested_amount) {
-        setPendingPayload({
-            amount_released: amount,
-            charge_to_department_id: chargeToDeptId,
-            is_cross_department: isCrossDepartment,
-            cross_department_reason: isCrossDepartment ? "Mayor's Office Release" : null,
-        });
-        setShowTankWarning(true);
-        return;
+    // 🔴 FRONTEND VALIDATION: Ayaw i-allow ang cross-dept kung parehas ra ang department
+    if (isCrossDepartment && chargeToDeptId === selectedTicket.department_id) {
+      return toast.error(
+        "Cross-Department is selected, but this ticket is already from the Mayor's Office. Please uncheck the Cross-Department option."
+      );
     }
 
-    submitApprove({
+    if (suggestion && suggestion.available && amount > suggestion.suggested_amount) {
+      setPendingPayload({
         amount_released: amount,
         charge_to_department_id: chargeToDeptId,
         is_cross_department: isCrossDepartment,
         cross_department_reason: isCrossDepartment ? "Mayor's Office Release" : null,
+      });
+      setShowTankWarning(true);
+      return;
+    }
+
+    submitApprove({
+      amount_released: amount,
+      charge_to_department_id: chargeToDeptId,
+      is_cross_department: isCrossDepartment,
+      cross_department_reason: isCrossDepartment ? "Mayor's Office Release" : null,
     });
   };
 
@@ -228,7 +241,7 @@ const MayorPending = () => {
     try {
       const ticketId = selectedTicket.id || selectedTicket.trip_ticket_id;
       await mayorsOfficeAPI.rejectTicket(ticketId, rejectionNote);
-      
+
       toast.success("Ticket rejected successfully");
       setShowRejectDialog(false);
       setShowRightPanel(false);
@@ -238,10 +251,10 @@ const MayorPending = () => {
       queryClient.invalidateQueries({ queryKey: ["mayor-pending-tickets"] });
       queryClient.invalidateQueries({ queryKey: ["mayor-approved-tickets"] });
       await fetchTickets();
-      
+
     } catch (error) {
-      const errorMsg = error.response?.data?.errors?.review_note?.[0] 
-                    || error.response?.data?.message 
+      const errorMsg = error.response?.data?.errors?.review_note?.[0]
+                    || error.response?.data?.message
                     || "Failed to reject ticket";
       toast.error(errorMsg);
     } finally {
@@ -255,7 +268,7 @@ const MayorPending = () => {
 
   return (
     <div className="min-h-screen bg-[#090e1a] p-4 md:p-6 font-sans text-slate-200 flex flex-col">
-      
+
       <div className="flex items-center gap-4 mb-6">
         <div className="p-4 rounded-full bg-blue-600 shadow-[0_0_20px_rgba(37,99,235,0.4)]">
           <ArrowRight className="h-8 w-8 text-white -rotate-45" />
@@ -271,12 +284,12 @@ const MayorPending = () => {
           <div className="flex items-center gap-2"><Clock className="h-5 w-5" /><span className="font-semibold">Pending Release</span></div>
           <span className="bg-blue-600 text-white px-2 py-0.5 rounded-md text-xs font-bold">{counts.pending}</span>
         </button>
-        
+
         <button onClick={() => handleTabClick("funds_issued")} className={cn("flex items-center justify-between px-5 py-3 rounded-xl border flex-1 transition-all", activeTab === "funds_issued" ? "bg-emerald-600/20 border-emerald-500 text-emerald-400" : "bg-[#121829] border-slate-800 text-slate-300 hover:bg-[#1a2235]")}>
           <div className="flex items-center gap-2"><CheckCircle className="h-5 w-5" /><span className="font-semibold">Funds Issued</span></div>
           <span className="bg-emerald-600 text-white px-2 py-0.5 rounded-md text-xs font-bold">{counts.funds_issued}</span>
         </button>
-        
+
         <button onClick={() => handleTabClick("received")} className={cn("flex items-center justify-between px-5 py-3 rounded-xl border flex-1 transition-all", activeTab === "received" ? "bg-emerald-600/20 border-emerald-500 text-emerald-400" : "bg-[#121829] border-slate-800 text-slate-300 hover:bg-[#1a2235]")}>
           <div className="flex items-center gap-2"><CheckCircle className="h-5 w-5" /><span className="font-semibold">Received</span></div>
           <span className="bg-emerald-600 text-white px-2 py-0.5 rounded-md text-xs font-bold">{counts.received}</span>
@@ -284,7 +297,7 @@ const MayorPending = () => {
       </div>
 
       <div className="flex flex-col lg:flex-row gap-6 flex-1">
-        
+
         <div className={cn("bg-[#121829] border border-slate-800 rounded-2xl shadow-lg flex flex-col transition-all duration-300", showRightPanel ? "w-full lg:w-3/5" : "w-full")}>
           <div className="p-4 border-b border-slate-800 flex justify-between items-center gap-4">
             <div className="relative flex-1">
@@ -329,7 +342,7 @@ const MayorPending = () => {
             </div>
 
             <div className="p-5 flex-1 overflow-y-auto space-y-5">
-              
+
               <div className="bg-[#0b101c] rounded-xl p-4 border border-slate-800 text-sm">
                 <div className="flex items-center gap-2 mb-3 pb-2 border-b border-slate-800">
                   <Truck className="h-4 w-4 text-blue-500" />
@@ -337,13 +350,13 @@ const MayorPending = () => {
                 </div>
                 <div className="grid grid-cols-3 gap-y-2">
                   <span className="text-slate-500">Date</span><span className="col-span-2 text-slate-200">: {formatDate(selectedTicket.trip_date)}</span>
-                  
+
                   <span className="text-slate-500 flex items-center gap-1"><User className="h-3 w-3"/> Driver</span>
                   <span className="col-span-2 text-slate-200">: {selectedTicket.driver_name || selectedTicket.driver?.user?.full_name || selectedTicket.driver?.name || "N/A"}</span>
-                  
+
                   <span className="text-slate-500 flex items-center gap-1"><Users className="h-3 w-3"/> Passenger</span>
                   <span className="col-span-2 text-slate-200">: {selectedTicket.passenger_name || "N/A"}</span>
-                  
+
                   <span className="text-slate-500">Trip Ticket No.</span><span className="col-span-2 text-slate-200">: {selectedTicket.ticket_number}</span>
                   <span className="text-slate-500">Department</span><span className="col-span-2 text-slate-200">: {selectedTicket.department_name}</span>
                   <span className="text-slate-500">Vehicle</span><span className="col-span-2 text-slate-200">: {selectedTicket.vehicle?.plate_number}</span>
@@ -360,7 +373,7 @@ const MayorPending = () => {
                   </div>
                   <Badge variant="outline" className="text-[10px] border-blue-800 text-blue-400 bg-blue-950/30">Estimate Only</Badge>
                 </div>
-                
+
                 <div className="flex items-center gap-6">
                   <div className="relative w-24 h-12 overflow-hidden flex items-end justify-center pb-1">
                     <svg viewBox="0 0 100 50" className="absolute inset-0 w-full h-full">
@@ -414,7 +427,7 @@ const MayorPending = () => {
                         <span className="text-xs text-slate-400">≈ {suggestion.suggested_liters ? suggestion.suggested_liters.toFixed(1) : '0.0'} L × ₱{suggestion.unit_price_hint || 0} / L</span>
                       </div>
                       <p className="text-[11px] text-amber-200/70">{suggestion.message}</p>
-                      
+
                       <Button
                         type="button"
                         size="sm"
@@ -433,8 +446,8 @@ const MayorPending = () => {
                         <Building2 className="h-4 w-4 text-slate-400" /> Charge To
                       </label>
                       <div className="flex items-center gap-2">
-                        <input 
-                          type="checkbox" 
+                        <input
+                          type="checkbox"
                           id="crossDept"
                           checked={isCrossDepartment}
                           onChange={(e) => setIsCrossDepartment(e.target.checked)}
@@ -458,21 +471,21 @@ const MayorPending = () => {
                     </label>
                     <div className="relative">
                       <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">₱</span>
-                      <Input 
-                        type="number" 
-                        value={amountReleased} 
-                        onChange={(e) => setAmountReleased(e.target.value)} 
-                        placeholder="Enter amount" 
-                        className="pl-8 bg-[#0b101c] border-slate-700 text-white text-lg font-mono h-12 rounded-xl" 
+                      <Input
+                        type="number"
+                        value={amountReleased}
+                        onChange={(e) => setAmountReleased(e.target.value)}
+                        placeholder="Enter amount"
+                        className="pl-8 bg-[#0b101c] border-slate-700 text-white text-lg font-mono h-12 rounded-xl"
                       />
                     </div>
                   </div>
                 </>
               ) : (
                 <div className="pt-4 border-t border-slate-800">
-                   <Button 
-                     onClick={() => {/* Logic for editing here */}} 
-                     variant="outline" 
+                   <Button
+                     onClick={() => {/* Logic for editing here */}}
+                     variant="outline"
                      className="w-full h-12 rounded-xl border-blue-600 text-blue-400 hover:bg-blue-950"
                    >
                      <Edit className="h-5 w-5 mr-2" /> Edit Details
@@ -507,12 +520,12 @@ const MayorPending = () => {
           </DialogHeader>
           <div className="space-y-4 py-2">
             <Label className="text-slate-300">Reason for Rejection</Label>
-            <Textarea 
-              placeholder="Enter reason (at least 5 characters)..." 
-              value={rejectionNote} 
-              onChange={(e) => setRejectionNote(e.target.value)} 
-              className="bg-[#0b101c] border-slate-700 text-white" 
-              rows={4} 
+            <Textarea
+              placeholder="Enter reason (at least 5 characters)..."
+              value={rejectionNote}
+              onChange={(e) => setRejectionNote(e.target.value)}
+              className="bg-[#0b101c] border-slate-700 text-white"
+              rows={4}
             />
             {rejectionNote.trim().length > 0 && rejectionNote.trim().length < 5 && (
               <p className="text-xs text-red-400">Reason must be at least 5 characters.</p>
@@ -520,9 +533,9 @@ const MayorPending = () => {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowRejectDialog(false)} className="border-slate-700 text-slate-300">Cancel</Button>
-            <Button 
-              onClick={handleReject} 
-              disabled={submitting || rejectionNote.trim().length < 5} 
+            <Button
+              onClick={handleReject}
+              disabled={submitting || rejectionNote.trim().length < 5}
               className="bg-red-600 hover:bg-red-700 text-white"
             >
               {submitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <XCircle className="h-4 w-4 mr-2" />}
