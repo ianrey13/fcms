@@ -273,8 +273,16 @@ const GsoDashboard = () => {
         
         const balance = beginning + fuelIn - fuelOut;
 
+        // ✅ DRIVER NAME FALLBACK
+        const driverName = trip.driver_name || 
+                           trip.driver?.user?.full_name || 
+                           trip.driver?.full_name || 
+                           trip.driver?.name || 
+                           'N/A';
+
         return {
             ...trip,
+            driver_name: driverName, // I-attach ang saktong driver_name
             beginning: beginning.toFixed(1),
             fuelIn: fuelIn.toFixed(1),
             fuelOut: fuelOut.toFixed(1),
@@ -298,7 +306,6 @@ const GsoDashboard = () => {
         setReplayIndex(0);
 
         try {
-            // ✅ SIGURADUHON NGA SAKTO ANG TICKET ID NGA GIKUHA
             const tripId = trip.displayId || trip.id || trip.trip_ticket_id;
             
             if (!tripId) {
@@ -308,7 +315,6 @@ const GsoDashboard = () => {
             const res = await gpsAPI.getTripRoute(tripId);
             const track = res?.data?.data?.track || [];
             
-            // ✅ SIGURADUHON NGA NUMBERS ANG COORDINATES
             const coords = track
                 .map(p => [parseFloat(p.latitude), parseFloat(p.longitude)])
                 .filter(c => !isNaN(c[0]) && !isNaN(c[1]));
@@ -316,7 +322,6 @@ const GsoDashboard = () => {
             setRouteCoordinates(coords);
             
             if (coords.length >= 2) {
-                // ✅ I-delay gamay aron makagawas ang mapa
                 setTimeout(() => startReplay(coords), 500);
             } else {
                 setHasWatchedReplay(true);
@@ -370,7 +375,6 @@ const GsoDashboard = () => {
         };
     }, []);
 
-    // ✅ I-STOP ANG REPLAY KUNG MO-CLOSE ANG DIALOG
     useEffect(() => {
         if (!showValidateDialog) {
             handleStopReplay();
@@ -623,7 +627,7 @@ const GsoDashboard = () => {
                                             <td className="px-4 py-3 font-mono text-white">{trip.ticket_number || trip.trip_ticket_number}</td>
                                             <td className="px-4 py-3">{trip.vehicle?.plate_number || 'N/A'}</td>
                                             <td className="px-4 py-3 truncate max-w-[150px]">{trip.destination}</td>
-                                            <td className="px-4 py-3">{trip.driver_name || 'N/A'}</td>
+                                            <td className="px-4 py-3">{trip.driver_name || trip.driver?.user?.full_name || 'N/A'}</td>
                                             <td className="px-4 py-3 text-right font-bold text-white">{trip.actual_distance_km || 0}</td>
                                             <td className="px-4 py-3 text-center">
                                                 <Button 
@@ -680,7 +684,7 @@ const GsoDashboard = () => {
                                             <tr 
                                                 key={computed.displayId} 
                                                 className="hover:bg-[#1a2235] cursor-pointer transition-colors"
-                                                onClick={() => handleOpenValidateDialog(trip)} // ✅ GAMITA ANG ORIGINAL NGA TRIP OBJECT
+                                                onClick={() => handleOpenValidateDialog(computed)} // ✅ GAMITA ANG COMPUTED NGA NA.AY DRIVER_NAME
                                             >
                                                 <td className="px-4 py-3 whitespace-nowrap">{formatDateShort(computed.displayDate)}</td>
                                                 <td className="px-4 py-3 font-mono text-white">{computed.displayTicketNo}</td>
@@ -732,7 +736,14 @@ const GsoDashboard = () => {
                                     <User className="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0" />
                                     <div>
                                         <p className="text-xs text-slate-400 font-medium">Driver</p>
-                                        <p className="text-sm font-bold text-white">{selectedTicket?.driver_name || selectedTicket?.driver?.name || 'N/A'}</p>
+                                        {/* ✅ FIX: KUMPLETO NGA DRIVER FALLBACK */}
+                                        <p className="text-sm font-bold text-white">
+                                            {selectedTicket?.driver_name || 
+                                             selectedTicket?.driver?.user?.full_name || 
+                                             selectedTicket?.driver?.full_name || 
+                                             selectedTicket?.driver?.name || 
+                                             'N/A'}
+                                        </p>
                                     </div>
                                 </div>
                                 <div className="flex items-start gap-3">
@@ -790,7 +801,6 @@ const GsoDashboard = () => {
                             </div>
 
                             <div className="p-4 bg-[#121829] border-t border-slate-800 flex items-center justify-between">
-                                {/* ✅ REPLAY CONTROLS */}
                                 <div className="flex items-center gap-2">
                                     {routeCoordinates.length >= 2 && (
                                         <Button 
@@ -805,7 +815,6 @@ const GsoDashboard = () => {
                                     )}
                                 </div>
 
-                                {/* ✅ CONFIRM BUTTON */}
                                 {pendingValidation.some(t => (t.id || t.trip_ticket_id) === (selectedTicket?.displayId || selectedTicket?.id || selectedTicket?.trip_ticket_id)) && (
                                     <Button 
                                         onClick={() => {
