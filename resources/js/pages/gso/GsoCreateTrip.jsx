@@ -14,7 +14,7 @@ import {
 import { toast } from "react-hot-toast";
 import { cn } from "@/lib/utils";
 import { debounce } from "lodash";
-import RouteMap from "../../components/map/RouteMap"; // ✅ I-import balik ang RouteMap
+import RouteMap from "../../components/map/RouteMap";
 
 // ============================================
 // CONSTANTS
@@ -176,11 +176,14 @@ const MultiStopDestination = ({ stops, onChange, vehicleId, onEstimateChange }) 
 
             if (totalDistance === 0) { onEstimateChange(null); return; }
 
-            const roundTripDistance = Math.round(totalDistance * 2 * 100) / 100;
-            const estimatedLiters = Math.round((roundTripDistance / efficiency) * 1.1 * 100) / 100;
+            // ✅ GITANGGTANG ANG * 2 KAY ANG FORMULA SA BACKEND NAGLAKIP NA SA ROUND TRIP
+            const finalDistance = Math.round(totalDistance * 100) / 100;
+            
+            // Compute estimated liters base sa final distance ug efficiency
+            const estimatedLiters = Math.round((finalDistance / efficiency) * 1.1 * 100) / 100;
             const estimatedCost = Math.round(estimatedLiters * fuelPrice * 100) / 100;
 
-            onEstimateChange({ distance_km: roundTripDistance, estimated_liters: estimatedLiters, estimated_cost: estimatedCost });
+            onEstimateChange({ distance_km: finalDistance, estimated_liters: estimatedLiters, estimated_cost: estimatedCost });
         } catch (error) { onEstimateChange(null); }
     }, [onEstimateChange]);
 
