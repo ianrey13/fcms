@@ -1088,7 +1088,7 @@ class MayorsOfficeController extends Controller
 
     /**
      * Verify a receipt with editable fields
-     */
+     */ 
     public function verifyReceipt(Request $request, $id)
     {
         try {

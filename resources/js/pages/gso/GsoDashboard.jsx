@@ -254,11 +254,13 @@ const GsoDashboard = () => {
     const displayVehicle = displayTripData?.vehicle;
 
     // ============================================
-    // HELPER: Compute Ledger Row
+    // HELPER: Compute Ledger Row (OPTION A - SYNCED SA DB)
     // ============================================
     const computeLedgerRow = useCallback((trip) => {
         const vehicle = vehicles.find(v => v.plate_number === trip.vehicle?.plate_number) || trip.vehicle;
-        const beginning = parseFloat(vehicle?.initial_estimated_fuel ?? vehicle?.current_fuel_balance ?? 0);
+        
+        // ✅ OPTION A: Gikuha nato ang tinuod nga balance sa database isip beginning
+        const actualBalance = parseFloat(vehicle?.current_fuel_balance ?? 0);
         
         const fuelIn = parseFloat(
             trip.gasSlip?.fuelReceipt?.liters_availed || 
@@ -267,10 +269,26 @@ const GsoDashboard = () => {
             0
         );
         
+        // ✅ Since Balance = Beginning + Fuel In - Fuel Out
+        // Unya ang actual DB Balance mao ang pinaka-final, ato i-reverse engineer ang Fuel Out
+        // para mo-match jud tanan sa database.
+        let fuelOut = 0;
+        if (actualBalance > 0 || fuelIn > 0) {
+            fuelOut = actualBalance + fuelIn - actualBalance; 
+            // Simpler: Beginning = actualBalance, Balance = actualBalance, so Out = In.
+            // Pero aron realistic, kung naay distance, ato i-calculate.
+        }
+        
         const distance = parseFloat(trip.actual_distance_km || trip.gps_distance_km || 0);
         const efficiency = parseFloat(vehicle?.reference_efficiency || 10);
-        const fuelOut = distance > 0 ? (distance / efficiency) : 0;
         
+        // Kung naay distance, kwentahon ang fuel out. Kung wala, 0.
+        fuelOut = distance > 0 ? (distance / efficiency) : 0;
+        
+        // Ang Beginning himuon natong (DB Balance - In + Out) aron mo tugma jud ang ending balance sa DB Balance
+        const beginning = actualBalance - fuelIn + fuelOut;
+        
+        // Kani na dayon ang ending balance nga mo-match sa Fuel Balance Monitoring
         const balance = beginning + fuelIn - fuelOut;
 
         // ✅ DRIVER NAME FALLBACK
@@ -282,7 +300,7 @@ const GsoDashboard = () => {
 
         return {
             ...trip,
-            driver_name: driverName, // I-attach ang saktong driver_name
+            driver_name: driverName,
             beginning: beginning.toFixed(1),
             fuelIn: fuelIn.toFixed(1),
             fuelOut: fuelOut.toFixed(1),
@@ -684,7 +702,7 @@ const GsoDashboard = () => {
                                             <tr 
                                                 key={computed.displayId} 
                                                 className="hover:bg-[#1a2235] cursor-pointer transition-colors"
-                                                onClick={() => handleOpenValidateDialog(computed)} // ✅ GAMITA ANG COMPUTED NGA NA.AY DRIVER_NAME
+                                                onClick={() => handleOpenValidateDialog(computed)}
                                             >
                                                 <td className="px-4 py-3 whitespace-nowrap">{formatDateShort(computed.displayDate)}</td>
                                                 <td className="px-4 py-3 font-mono text-white">{computed.displayTicketNo}</td>
@@ -738,7 +756,6 @@ const GsoDashboard = () => {
                         <User className="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0" />
                         <div>
                             <p className="text-xs text-slate-400 font-medium">Driver</p>
-                            {/* ✅ DAGHAN NGA FALLBACKS ARON SIGURADONG MAKUHA ANG DRIVER */}
                             <p className="text-sm font-bold text-white">
                                 {selectedTicket?.driver_name || 
                                  selectedTicket?.driver?.user?.full_name || 
@@ -820,7 +837,6 @@ const GsoDashboard = () => {
                         )}
                     </div>
 
-                    {/* ✅ IPAKITA ANG CONFIRM BUTTON KUNG PENDING VALIDATION ANG TRIP */}
                     {(pendingValidation.some(t => (t.id || t.trip_ticket_id) === (selectedTicket?.displayId || selectedTicket?.id || selectedTicket?.trip_ticket_id))) && (
                         <Button 
                             onClick={() => {
