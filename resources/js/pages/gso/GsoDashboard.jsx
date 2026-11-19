@@ -400,18 +400,7 @@ const GsoDashboard = () => {
     const displayTripData = activeTrips.length > 0 ? activeTrips[0] : null;
     const displayVehicle = displayTripData?.vehicle;
 
-    // ============================================
-    // FUEL LEDGER (chained per vehicle)
-    //
-    // Rule:  beginning(trip N) = balance(trip N-1) sa PAREHAS nga sakyanan
-    //        balance = beginning + fuelIn - fuelOut
-    //
-    // Anchor (beginning sa pinakaunang trip sa sakyanan):
-    //   1) vehicle_snapshot.initial_fuel_balance kung naa
-    //   2) kung wala: back-calc ONCE gikan sa current_fuel_balance
-    //      anchor = current_balance - sum(fuelIn) + sum(fuelOut)
-    // ============================================
-    const ledgerRows = useMemo(() => {
+        const ledgerRows = useMemo(() => {
         // 1) per-trip raw values
         const rows = allTrips.map((trip) => {
             const vehicle =
@@ -439,7 +428,10 @@ const GsoDashboard = () => {
                 ? toNum(trip.actual_distance_km || trip.gps_distance_km)
                 : 0;
             const efficiency = toNum(vehicle?.reference_efficiency) || 10;
-            const fuelOut = distance > 0 ? (3.2 + distance) / efficiency : 0;
+            
+            // ✅ ROUND TO 2 DECIMALS ANG FUEL OUT
+            const rawFuelOut = distance > 0 ? (3.2 + distance) / efficiency : 0;
+            const fuelOut = parseFloat(rawFuelOut.toFixed(2));
 
             const snap = trip.vehicle_snapshot?.initial_fuel_balance;
 
@@ -451,9 +443,8 @@ const GsoDashboard = () => {
                     trip.vehicle?.vehicle_id ??
                     trip.vehicle?.plate_number ??
                     "unknown",
-                fuelIn,
+                fuelIn: parseFloat(fuelIn.toFixed(2)),
                 fuelOut,
-                isClosed: status === "closed",
                 snapshotBeginning:
                     snap !== undefined && snap !== null ? toNum(snap) : null,
                 sortTime: new Date(
@@ -476,12 +467,7 @@ const GsoDashboard = () => {
 
             const first = list[0];
             const totalIn = list.reduce((s, r) => s + r.fuelIn, 0);
-            // current_fuel_balance dili pa nag-deduct sa completed nga wala pa
-            // ma-validate (closed). Closed ra ang i-add back sa back-calc.
-            const totalOut = list.reduce(
-                (s, r) => s + (r.isClosed ? r.fuelOut : 0),
-                0,
-            );
+            const totalOut = list.reduce((s, r) => s + r.fuelOut, 0);
 
             const anchor =
                 first.snapshotBeginning !== null
@@ -490,12 +476,15 @@ const GsoDashboard = () => {
                       totalIn +
                       totalOut;
 
-            let prev = anchor;
+            let prev = parseFloat(anchor.toFixed(2));
+            
             list.forEach((r) => {
                 r.beginning = prev;
-                r.balance = r.beginning + r.fuelIn - r.fuelOut;
+                
+                // ✅ ROUND ANG BALANCE TO 2 DECIMALS
+                const rawBalance = r.beginning + r.fuelIn - r.fuelOut;
+                r.balance = parseFloat(rawBalance.toFixed(2));
 
-                // Debug: i-warn kung dili mo-match ang snapshot sa chain
                 if (
                     r.snapshotBeginning !== null &&
                     Math.abs(r.snapshotBeginning - r.beginning) > 0.01
@@ -525,10 +514,10 @@ const GsoDashboard = () => {
                     r.trip.driver?.full_name ||
                     r.trip.driver?.name ||
                     "N/A",
-                beginning: fmtNum(r.beginning),
-                fuelIn: fmtNum(r.fuelIn),
-                fuelOut: fmtNum(r.fuelOut),
-                balance: fmtNum(r.balance),
+                beginning: r.beginning.toFixed(2),
+                fuelIn: r.fuelIn.toFixed(2),
+                fuelOut: r.fuelOut.toFixed(2),
+                balance: r.balance.toFixed(2),
                 vehicleString: r.trip.vehicle
                     ? `${r.trip.vehicle.vehicle_model} - ${r.trip.vehicle.plate_number}`
                     : "N/A",

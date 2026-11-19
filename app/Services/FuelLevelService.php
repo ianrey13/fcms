@@ -21,6 +21,7 @@ class FuelLevelService
 
         if ($eff <= 0) $eff = 10;
 
+        // Total liters purchased
         $purchasedLiters = (float) FuelReceipt::query()
             ->join('gas_slip as gs', 'fuel_receipt.gas_slip_id', '=', 'gs.gas_slip_id')
             ->join('trip_ticket as tt', 'gs.trip_ticket_id', '=', 'tt.trip_ticket_id')
@@ -28,12 +29,20 @@ class FuelLevelService
             ->whereNotNull('fuel_receipt.liters_availed')
             ->sum('fuel_receipt.liters_availed');
 
-        $totalDistance = (float) TripTicket::where('vehicle_id', $vehicle->vehicle_id)
+        // ✅ GET ALL COMPLETED TRIPS PARA MA-COUNT NATO ANG (3.2 + DISTANCE) PER TRIP
+        $trips = TripTicket::where('vehicle_id', $vehicle->vehicle_id)
             ->whereNotNull('actual_distance_km')
             ->where('actual_distance_km', '>', 0)
-            ->sum('actual_distance_km');
+            ->whereIn('status', ['completed', 'pending_gso_validation', 'closed'])
+            ->get(['actual_distance_km']);
 
-        $consumedLiters = $totalDistance / $eff;
+        $consumedLiters = 0;
+        foreach ($trips as $trip) {
+            $distance = (float) $trip->actual_distance_km;
+            // ✅ BAG-ONG FORMULA: (3.2 + distance) / efficiency
+            $consumedLiters += (3.2 + $distance) / $eff;
+        }
+
         $rawBalance = $initial + $purchasedLiters - $consumedLiters;
         $clamped = max(0, min($rawBalance, $tank));
 
@@ -41,11 +50,11 @@ class FuelLevelService
             'vehicle_id'        => $vehicle->vehicle_id,
             'initial'           => round($initial, 2),
             'purchased_liters'  => round($purchasedLiters, 2),
-            'total_distance_km' => round($totalDistance, 2),
+            'total_distance_km' => round((float) $trips->sum('actual_distance_km'), 2),
             'efficiency'        => round($eff, 2),
             'consumed_liters'   => round($consumedLiters, 2),
             'raw_balance'       => round($rawBalance, 2),
-            'clamped_balance'   => round($clamped, 2),
+            'clamped_balance'   => round($clamped, 2), // Kani ang i-save sa DB
             'tank_capacity'     => round($tank, 2),
             'percentage'        => $tank > 0 ? round(($clamped / $tank) * 100, 2) : 0,
             'anomaly'           => $this->detectAnomaly($rawBalance, $tank),
