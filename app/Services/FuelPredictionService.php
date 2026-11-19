@@ -11,6 +11,11 @@ class FuelPredictionService
 {
     protected $locationService;
 
+    /**
+     * Round-trip distance nga gamiton kung dili ma-compute ang destination.
+     */
+    private const DEFAULT_ROUND_TRIP_KM = 40.0;
+
     public function __construct(FallbackLocationService $locationService)
     {
         $this->locationService = $locationService;
@@ -19,15 +24,16 @@ class FuelPredictionService
     public function suggestFor(TripTicket $trip): array
     {
         $vehicle = $trip->vehicle;
-        
+
         if (!$vehicle) {
             return $this->emptyResponse('Vehicle not found.');
         }
 
-        // 1. Get Expected Round-trip Distance gikan sa FallbackLocationService
-        $distanceData = $this->getExpectedDistance($trip->destination);
-        $oneWayDistance = $distanceData['distance'];
-        $roundTripDistance = $oneWayDistance * 2; 
+        // 1. Round-trip distance — PAREHAS nga formula sa Create Trip:
+        //    3.2 (Hall → Gas Station) + distance to destination + destination → Hall
+        //    (naa na ang round trip, dili na i-multiply sa 2)
+        $distanceData = $this->getRoundTripDistance($trip->destination, $vehicle->vehicle_id);
+        $roundTripDistance = $distanceData['distance'];
 
         if ($roundTripDistance <= 0) {
             return $this->emptyResponse('Cannot calculate distance for this destination.');
@@ -59,8 +65,8 @@ class FuelPredictionService
             'sample_size'        => $weightedPriceData['sample_size'],
             'suggested_amount'   => round($suggestedAmount, 2),
             'suggested_liters'   => round($estimatedLiters, 2),
-            'range_min'          => round($suggestedAmount * 0.9, 2), 
-            'range_max'          => round($suggestedAmount * 1.1, 2), 
+            'range_min'          => round($suggestedAmount * 0.9, 2),
+            'range_max'          => round($suggestedAmount * 1.1, 2),
             'avg_amount'         => round($suggestedAmount, 2),
             'avg_liters'         => round($estimatedLiters, 2),
             'unit_price_hint'    => round($weightedPrice, 2),
@@ -75,30 +81,48 @@ class FuelPredictionService
     }
 
     /**
-     * Get Expected Distance gikan sa FallbackLocationService
+     * Round-trip distance gikan sa FallbackLocationService::calculateTripEstimate()
+     * — mao ra ni ang function nga gigamit sa Create Trip, aron dili magkalahi ang numero.
+     *
+     * Ang destination sa ticket kay gi-join sa Create Trip gamit ang ", "
+     * (pananglitan "Moog" o "Moog, Gasi"), mao nga i-split nato balik.
      */
-    private function getExpectedDistance($destination): array
+    private function getRoundTripDistance($destination, $vehicleId = null): array
     {
-        // Origin permi kay Laguindingan Municipal Hall
-        $origin = 'Laguindingan Municipal Hall'; 
-        
-        try {
-            // Tawgon ang FallbackLocationService
-            $result = $this->locationService->calculateDistance($origin, [$destination]);
+        $stops = array_values(array_filter(array_map(
+            'trim',
+            explode(',', (string) $destination)
+        )));
 
-            if ($result && isset($result['success']) && $result['success'] && isset($result['distance_km'])) {
+        if (empty($stops)) {
+            return ['distance' => self::DEFAULT_ROUND_TRIP_KM, 'source' => 'default'];
+        }
+
+        try {
+            $result = $this->locationService->calculateTripEstimate(
+                'Laguindingan Municipal Hall',
+                $stops,
+                $vehicleId,
+                true
+            );
+
+            // Kung walay na-recognize nga destination, 'destinations' kay empty
+            // (ug ang distance kay 0.1 minimum lang) — ayaw gamita.
+            if (
+                !empty($result['success'])
+                && !empty($result['destinations'])
+                && (float) ($result['distance_km'] ?? 0) > 0.1
+            ) {
                 return [
                     'distance' => (float) $result['distance_km'],
-                    'source' => 'fallback'
+                    'source'   => 'fallback',
                 ];
             }
-
-            return ['distance' => 20.0, 'source' => 'default'];
-            
         } catch (\Exception $e) {
             Log::error('Fallback Distance Calculation Error: ' . $e->getMessage());
-            return ['distance' => 20.0, 'source' => 'default'];
         }
+
+        return ['distance' => self::DEFAULT_ROUND_TRIP_KM, 'source' => 'default'];
     }
 
     private function calculateWeightedAveragePrice($fuelType): array
@@ -125,7 +149,7 @@ class FuelPredictionService
         foreach ($receipts as $receipt) {
             $liters = (float) $receipt->liters_availed;
             $price  = (float) $receipt->unit_price;
-            
+
             $totalCost += ($liters * $price);
             $totalLiters += $liters;
         }
