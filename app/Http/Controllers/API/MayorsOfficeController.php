@@ -2463,7 +2463,7 @@ class MayorsOfficeController extends Controller
         }
     }
 
-    public function getHistoryTickets(Request $request)
+        public function getHistoryTickets(Request $request)
     {
         try {
             $user = $request->user();
@@ -2473,6 +2473,9 @@ class MayorsOfficeController extends Controller
 
             $trips = TripTicket::with(['vehicle', 'department', 'driver.user', 'gasSlip'])
                 ->whereIn('status', [
+                    'funds_issued',             // ✅ IDUGANG KINI
+                    'acknowledged',             // ✅ IDUGANG KINI
+                    'in_transit',               // ✅ IDUGANG KINI
                     'closed',
                     'completed',
                     'cancelled',
