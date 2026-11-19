@@ -1663,85 +1663,45 @@ class MayorsOfficeController extends Controller
     }
 
     public function getVerifiedReceipts(Request $request)
-    {
-        try {
-            $user = $request->user();
-            if (!$user->isMayorsOffice()) {
-                return response()->json(['message' => 'Unauthorized'], 403);
-            }
+{
+    $receipts = FuelReceipt::with([
+        'gasSlip.tripTicket.vehicle',
+        'gasSlip.tripTicket.driver.user',
+        'gasSlip.tripTicket.department'
+    ])
+    ->whereNotNull('receipt_photo_path')
+    ->orderBy('updated_at', 'desc')
+    ->get()
+    ->map(function($receipt) {
+        $trip = $receipt->gasSlip?->tripTicket;
+        return [
+            'id' => $receipt->fuel_receipt_id,
+            'fuel_receipt_id' => $receipt->fuel_receipt_id,
+            'ticket_number' => $trip?->trip_ticket_number ?? 'N/A',
+            'department_name' => $trip?->department?->department_name ?? 'N/A',
+            'plate_number' => $trip?->vehicle?->plate_number ?? 'N/A',
+            'driver_name' => $trip?->driver?->user?->full_name ?? 'N/A',
+            'destination' => $trip?->destination ?? 'N/A',
+            'purpose' => $trip?->purpose ?? 'N/A',
+            'trip_date' => $trip?->trip_date,
+            'amount_released' => $receipt->gasSlip?->amount_released ?? 0,
+            'amount' => $receipt->amount_on_receipt ?? 0,
+            'invoice_number' => $receipt->invoice_number,
+            'unit_price' => $receipt->unit_price,
+            'liters_availed' => $receipt->liters_availed,
+            'receipt_photo_path' => $receipt->receipt_photo_path,
+            'receipt_url' => $receipt->receipt_photo_path ? asset($receipt->receipt_photo_path) : null,
+            'status' => $receipt->gasSlip?->reconciliation_status === 'verified' ? 'verified' : ($receipt->invoice_number ? 'verified' : 'pending'),
+            'remarks' => $receipt->gasSlip?->reconciliation_note,
+            'gso_validation_status' => $trip?->status === 'closed' ? 'verified' : 'pending',
+        ];
+    });
 
-            $query = DB::table('fuel_receipt as fr')
-                ->join('gas_slip as gs', 'fr.gas_slip_id', '=', 'gs.gas_slip_id')
-                ->join('trip_ticket as tt', 'gs.trip_ticket_id', '=', 'tt.trip_ticket_id')
-                ->join('vehicles as v', 'tt.vehicle_id', '=', 'v.vehicle_id')
-                ->join('drivers as d', 'tt.driver_id', '=', 'd.driver_id')
-                ->join('users as u_driver', 'd.user_id', '=', 'u_driver.user_id')
-                ->join('departments as dept', 'tt.department_id', '=', 'dept.department_id')
-                ->leftJoin('users as u_verifier', 'fr.verified_by', '=', 'u_verifier.user_id')
-                ->select(
-                    'fr.fuel_receipt_id as id',
-                    'fr.invoice_number',
-                    'fr.unit_price',
-                    'gs.amount_released',
-                    'tt.trip_ticket_number as ticket_number',
-                    DB::raw("CONCAT(u_driver.first_name, ' ', u_driver.last_name) as driver_name"),
-                    'v.plate_number',
-                    'v.fuel_type',
-                    'dept.department_name',
-                    'fr.liters_availed as liters',
-                    'fr.amount_on_receipt as amount',
-                    'fr.receipt_photo_path',
-                    'fr.receipt_uploaded_at as uploaded_at',
-                    'fr.gps_distance_km',
-                    'fr.verification_status as status',
-                    'fr.verified_at',
-                    DB::raw("CONCAT(u_verifier.first_name, ' ', u_verifier.last_name) as verified_by_name"),
-                    'tt.trip_date',
-                    'tt.purpose',
-                    'tt.destination'
-                )
-                ->whereNotNull('fr.receipt_photo_path')
-                // ✅ KUHAON TANAN NGA NA-VERIFY NA SA DO
-                ->whereIn('fr.verification_status', ['verified', 'discrepancy']);
-
-            if ($request->filled('start_date') && $request->filled('end_date')) {
-                $query->whereBetween('fr.verified_at', [
-                    \Carbon\Carbon::parse($request->start_date)->startOfDay(),
-                    \Carbon\Carbon::parse($request->end_date)->endOfDay(),
-                ]);
-            }
-
-            if ($request->filled('department_id')) {
-                $query->where('tt.department_id', $request->department_id);
-            }
-
-            $receipts = $query->orderBy('fr.verified_at', 'desc')
-                ->get()
-                ->map(function ($receipt) {
-                    $receipt->receipt_url = $receipt->receipt_photo_path
-                        ? asset('receipts/' . basename($receipt->receipt_photo_path))
-                        : null;
-
-                    // ✅ COMPUTE ANG VARIANCE SA BACKEND
-                    $receipt->variance = (float)$receipt->amount - (float)$receipt->amount_released;
-
-                    return $receipt;
-                });
-
-            return response()->json([
-                'success' => true,
-                'data'    => $receipts,
-                'total'   => $receipts->count(),
-            ]);
-        } catch (\Exception $e) {
-            Log::error('MO get verified receipts error: ' . $e->getMessage());
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to fetch verified receipts: ' . $e->getMessage(),
-            ], 500);
-        }
-    }
-
+    return response()->json([
+        'success' => true,
+        'data' => $receipts
+    ]);
+}
 
     /**
      * Weekly budget tracking — dedicated endpoint
