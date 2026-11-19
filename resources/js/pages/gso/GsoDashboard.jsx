@@ -464,6 +464,22 @@ const GsoDashboard = () => {
             };
         });
 
+        // DEBUG (tangtangon human ma-debug): inputs sa Fuel Out matag trip
+        console.table(
+            rows.map((r) => ({
+                tt: r.trip.trip_ticket_number,
+                status: r.trip.status,
+                actual_km: r.trip.actual_distance_km,
+                gps_km: r.trip.gps_distance_km,
+                receipt_gps_km:
+                    r.trip.gas_slip?.fuel_receipt?.gps_distance_km ??
+                    r.trip.gasSlip?.fuelReceipt?.gps_distance_km,
+                vehicle: r.vehicle?.plate_number,
+                efficiency: r.vehicle?.reference_efficiency,
+                fuelOut: r.fuelOut,
+            })),
+        );
+
         // 2) group per vehicle, oldest -> newest, roll the balance forward
         const groups = {};
         rows.forEach((r) => {
