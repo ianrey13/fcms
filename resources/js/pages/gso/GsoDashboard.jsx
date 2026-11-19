@@ -400,7 +400,20 @@ const GsoDashboard = () => {
     const displayTripData = activeTrips.length > 0 ? activeTrips[0] : null;
     const displayVehicle = displayTripData?.vehicle;
 
-           const ledgerRows = useMemo(() => {
+    // ============================================
+    // FUEL LEDGER (forward chain per vehicle)
+    //
+    //   beginning(trip N) = balance(trip N-1)   [parehas nga sakyanan]
+    //   balance           = beginning + fuelIn - fuelOut
+    //
+    // Anchor (beginning sa pinakaunang trip sa sakyanan):
+    //   1) vehicle.initial_estimated_fuel  (parehas sa FuelLevelService)
+    //   2) fallback ra: current_fuel_balance - totalIn + totalOut
+    //      (dili kasaligan kung na-clamp sa tank capacity ang balance)
+    // ============================================
+    const ledgerRows = useMemo(() => {
+        const r2 = (n) => parseFloat(toNum(n).toFixed(2));
+
         // 1) per-trip raw values
         const rows = allTrips.map((trip) => {
             const vehicle =
@@ -427,9 +440,9 @@ const GsoDashboard = () => {
                 ? toNum(trip.actual_distance_km || trip.gps_distance_km)
                 : 0;
             const efficiency = toNum(vehicle?.reference_efficiency) || 10;
-            
+
+            // parehas sa FuelLevelService: (3.2 + distance) / efficiency
             const rawFuelOut = distance > 0 ? (3.2 + distance) / efficiency : 0;
-            const fuelOut = parseFloat(rawFuelOut.toFixed(2));
 
             return {
                 trip,
@@ -439,8 +452,9 @@ const GsoDashboard = () => {
                     trip.vehicle?.vehicle_id ??
                     trip.vehicle?.plate_number ??
                     "unknown",
-                fuelIn: parseFloat(fuelIn.toFixed(2)),
-                fuelOut,
+                fuelIn: r2(fuelIn),
+                fuelOut: r2(rawFuelOut),
+                tank: toNum(vehicle?.tank_capacity) || null,
                 sortTime: new Date(
                     trip.created_at ||
                         trip.submitted_at ||
@@ -457,31 +471,38 @@ const GsoDashboard = () => {
         });
 
         Object.values(groups).forEach((list) => {
-            // Pagsort gikan sa pinaka-daang trip padulong sa pinaka-bag-o
             list.sort((a, b) => a.sortTime - b.sortTime);
 
-            // ✅ KINAHANGLAN ANG PINAKA-LATEST NGA TRIP MO-MATCH SA DATABASE
-            // Atong kwentahon ang tanan gikan sa pinaka-ubos (latest) pabalik sa pinaka-unang trip.
-            const latestTrip = list[list.length - 1];
-            let runningBalance = toNum(latestTrip.vehicle?.current_fuel_balance);
+            const first = list[0];
+            const totalIn = list.reduce((s, r) => s + r.fuelIn, 0);
+            const totalOut = list.reduce((s, r) => s + r.fuelOut, 0);
 
-            // I-set ang balance sa pinaka-latest
-            latestTrip.balance = parseFloat(runningBalance.toFixed(2));
-            latestTrip.beginning = parseFloat(
-                (latestTrip.balance - latestTrip.fuelIn + latestTrip.fuelOut).toFixed(2)
-            );
+            const initialRaw = first.vehicle?.initial_estimated_fuel;
+            const hasInitial =
+                initialRaw !== undefined &&
+                initialRaw !== null &&
+                initialRaw !== "";
 
-            // Balikon nato (backwards) ang pagkwenta para sa mga nag-una nga trips
-            for (let i = list.length - 2; i >= 0; i--) {
-                const current = list[i];
-                const nextTrip = list[i + 1];
-
-                // Ang ending balance sa current kay mao ang beginning sa sunod
-                current.balance = nextTrip.beginning;
-                current.beginning = parseFloat(
-                    (current.balance - current.fuelIn + current.fuelOut).toFixed(2)
+            let anchor;
+            if (hasInitial) {
+                anchor = toNum(initialRaw);
+            } else {
+                anchor =
+                    toNum(first.vehicle?.current_fuel_balance) -
+                    totalIn +
+                    totalOut;
+                console.warn(
+                    "Ledger fallback: walay initial_estimated_fuel sa vehicle data",
+                    first.vehicle?.plate_number,
                 );
             }
+
+            let prev = r2(anchor);
+            list.forEach((r) => {
+                r.beginning = prev;
+                r.balance = r2(r.beginning + r.fuelIn - r.fuelOut);
+                prev = r.balance;
+            });
         });
 
         // 3) display newest first
@@ -499,6 +520,8 @@ const GsoDashboard = () => {
                 fuelIn: r.fuelIn.toFixed(2),
                 fuelOut: r.fuelOut.toFixed(2),
                 balance: r.balance.toFixed(2),
+                overTank: r.tank !== null && r.balance > r.tank + 0.01,
+                tankCapacity: r.tank,
                 vehicleString: r.trip.vehicle
                     ? `${r.trip.vehicle.vehicle_model} - ${r.trip.vehicle.plate_number}`
                     : "N/A",
@@ -1175,7 +1198,19 @@ const GsoDashboard = () => {
                                                 <td className="px-4 py-3 text-right text-red-400">
                                                     {computed.fuelOut}
                                                 </td>
-                                                <td className="px-4 py-3 text-right font-bold text-white">
+                                                <td
+                                                    className={cn(
+                                                        "px-4 py-3 text-right font-bold",
+                                                        computed.overTank
+                                                            ? "text-amber-400"
+                                                            : "text-white",
+                                                    )}
+                                                    title={
+                                                        computed.overTank
+                                                            ? `Mas dako kaysa tank capacity (${computed.tankCapacity} L). I-check ang liters/tank data.`
+                                                            : undefined
+                                                    }
+                                                >
                                                     {computed.balance}
                                                 </td>
                                             </tr>
