@@ -400,7 +400,7 @@ const GsoDashboard = () => {
     const displayTripData = activeTrips.length > 0 ? activeTrips[0] : null;
     const displayVehicle = displayTripData?.vehicle;
 
-        const ledgerRows = useMemo(() => {
+           const ledgerRows = useMemo(() => {
         // 1) per-trip raw values
         const rows = allTrips.map((trip) => {
             const vehicle =
@@ -423,17 +423,13 @@ const GsoDashboard = () => {
                 "closed",
             ].includes(status);
 
-            // Fuel Out: kung naay tinuod nga nadagan ra (distance > 0)
             const distance = isCompleted
                 ? toNum(trip.actual_distance_km || trip.gps_distance_km)
                 : 0;
             const efficiency = toNum(vehicle?.reference_efficiency) || 10;
             
-            // ✅ ROUND TO 2 DECIMALS ANG FUEL OUT
             const rawFuelOut = distance > 0 ? (3.2 + distance) / efficiency : 0;
             const fuelOut = parseFloat(rawFuelOut.toFixed(2));
-
-            const snap = trip.vehicle_snapshot?.initial_fuel_balance;
 
             return {
                 trip,
@@ -445,8 +441,6 @@ const GsoDashboard = () => {
                     "unknown",
                 fuelIn: parseFloat(fuelIn.toFixed(2)),
                 fuelOut,
-                snapshotBeginning:
-                    snap !== undefined && snap !== null ? toNum(snap) : null,
                 sortTime: new Date(
                     trip.created_at ||
                         trip.submitted_at ||
@@ -463,44 +457,31 @@ const GsoDashboard = () => {
         });
 
         Object.values(groups).forEach((list) => {
+            // Pagsort gikan sa pinaka-daang trip padulong sa pinaka-bag-o
             list.sort((a, b) => a.sortTime - b.sortTime);
 
-            const first = list[0];
-            const totalIn = list.reduce((s, r) => s + r.fuelIn, 0);
-            const totalOut = list.reduce((s, r) => s + r.fuelOut, 0);
+            // ✅ KINAHANGLAN ANG PINAKA-LATEST NGA TRIP MO-MATCH SA DATABASE
+            // Atong kwentahon ang tanan gikan sa pinaka-ubos (latest) pabalik sa pinaka-unang trip.
+            const latestTrip = list[list.length - 1];
+            let runningBalance = toNum(latestTrip.vehicle?.current_fuel_balance);
 
-            const anchor =
-                first.snapshotBeginning !== null
-                    ? first.snapshotBeginning
-                    : toNum(first.vehicle?.current_fuel_balance) -
-                      totalIn +
-                      totalOut;
+            // I-set ang balance sa pinaka-latest
+            latestTrip.balance = parseFloat(runningBalance.toFixed(2));
+            latestTrip.beginning = parseFloat(
+                (latestTrip.balance - latestTrip.fuelIn + latestTrip.fuelOut).toFixed(2)
+            );
 
-            let prev = parseFloat(anchor.toFixed(2));
-            
-            list.forEach((r) => {
-                r.beginning = prev;
-                
-                // ✅ ROUND ANG BALANCE TO 2 DECIMALS
-                const rawBalance = r.beginning + r.fuelIn - r.fuelOut;
-                r.balance = parseFloat(rawBalance.toFixed(2));
+            // Balikon nato (backwards) ang pagkwenta para sa mga nag-una nga trips
+            for (let i = list.length - 2; i >= 0; i--) {
+                const current = list[i];
+                const nextTrip = list[i + 1];
 
-                if (
-                    r.snapshotBeginning !== null &&
-                    Math.abs(r.snapshotBeginning - r.beginning) > 0.01
-                ) {
-                    console.warn(
-                        "Ledger mismatch",
-                        r.trip.trip_ticket_number,
-                        {
-                            snapshot: r.snapshotBeginning,
-                            chained: r.beginning,
-                        },
-                    );
-                }
-
-                prev = r.balance;
-            });
+                // Ang ending balance sa current kay mao ang beginning sa sunod
+                current.balance = nextTrip.beginning;
+                current.beginning = parseFloat(
+                    (current.balance - current.fuelIn + current.fuelOut).toFixed(2)
+                );
+            }
         });
 
         // 3) display newest first
