@@ -280,14 +280,14 @@ const GsoDashboard = () => {
     const displayTripData = activeTrips.length > 0 ? activeTrips[0] : null;
     const displayVehicle = displayTripData?.vehicle;
 
-    // ============================================
+       // ============================================
     // HELPER: Compute Ledger Row
     // ============================================
     const computeLedgerRow = useCallback((trip) => {
         const vehicle = vehicles.find(v => v.plate_number === trip.vehicle?.plate_number) || trip.vehicle;
         
-        // Ang current fuel balance gikan sa vehicle table
-        const actualBalance = parseFloat(vehicle?.current_fuel_balance ?? 0);
+        // Kasamtangan nga balance sa sakyanan karon
+        const currentActualBalance = parseFloat(vehicle?.current_fuel_balance ?? 0);
         
         const fuelIn = parseFloat(
             trip.gasSlip?.fuelReceipt?.liters_availed || 
@@ -302,7 +302,6 @@ const GsoDashboard = () => {
         let fuelOut = 0;
         let distance = 0;
 
-        // Kung nahuman na ang byahe, diha pa nato i-compute ang Fuel Out
         if (isCompleted) {
             distance = parseFloat(trip.actual_distance_km || trip.gps_distance_km || 0);
             const efficiency = parseFloat(vehicle?.reference_efficiency || 10);
@@ -312,20 +311,18 @@ const GsoDashboard = () => {
             }
         }
 
-        // ✅ Ang Beginning Balance:
-        // Kung naay snapshot sa trip, gamita na. 
-        // Kung wala, i-compute: Beginning = Current - FuelIn + FuelOut
+        // ✅ KUHAON ANG BEGINNING SA VEHICLE SNAPSHOT KUNG NAA
         let beginning = 0;
         
         if (trip.vehicle_snapshot?.initial_fuel_balance !== undefined && trip.vehicle_snapshot?.initial_fuel_balance !== null) {
+             // Kung naay snapshot gikan sa backend (pananglitan pagka-create sa ticket)
              beginning = parseFloat(trip.vehicle_snapshot.initial_fuel_balance);
         } else {
-             beginning = actualBalance - fuelIn + fuelOut;
+             // Kung wala, i-compute base sa current balance
+             beginning = currentActualBalance - fuelIn + fuelOut;
         }
         
-        // ✅ Ang Balance:
-        // Kung nahuman na, Balance = Beginning + FuelIn - FuelOut.
-        // Kung wala pa, Balance = Beginning (kay wala pay nahurot).
+        // ✅ ANG BALANCE KAY: Beginning + Fuel In - Fuel Out
         const balance = beginning + fuelIn - fuelOut;
 
         const driverName = trip.driver_name || 
@@ -337,10 +334,10 @@ const GsoDashboard = () => {
         return {
             ...trip,
             driver_name: driverName,
-            beginning: beginning.toFixed(1),
-            fuelIn: fuelIn.toFixed(1),
-            fuelOut: fuelOut.toFixed(1),
-            balance: balance.toFixed(1),
+            beginning: parseFloat(beginning.toFixed(2)), // Gi-round sa 2 decimals
+            fuelIn: parseFloat(fuelIn.toFixed(2)),
+            fuelOut: parseFloat(fuelOut.toFixed(2)),
+            balance: parseFloat(balance.toFixed(2)),
             vehicleString: trip.vehicle ? `${trip.vehicle.vehicle_model} - ${trip.vehicle.plate_number}` : 'N/A',
             displayTicketNo: trip.ticket_number || trip.trip_ticket_number,
             displayId: trip.id || trip.trip_ticket_id,
