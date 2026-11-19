@@ -107,6 +107,10 @@ const MayorHistory = () => {
   const [dateTo, setDateTo] = useState("");
   const [showDateFilter, setShowDateFilter] = useState(false);
 
+  // ✅ Pagination States
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10; 
+
   const fetchAllData = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ["mayor-history-tickets"] });
     fetchTickets();
@@ -179,6 +183,18 @@ const MayorHistory = () => {
       return true;
     });
   }, [tickets, statusFilter, search, dateFrom, dateTo]);
+
+  // ✅ PAGINATION LOGIC
+  const totalPages = Math.ceil(filtered.length / itemsPerPage);
+  const paginatedTickets = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return filtered.slice(startIndex, startIndex + itemsPerPage);
+  }, [filtered, currentPage, itemsPerPage]);
+
+  // Reset page when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, statusFilter, dateFrom, dateTo]);
 
   const totalAmount = filtered.reduce((s, t) => s + getAmount(t), 0);
 
@@ -349,7 +365,7 @@ const MayorHistory = () => {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filtered.map((ticket) => (
+                  paginatedTickets.map((ticket) => (
                     <TableRow key={ticket.trip_ticket_id} className="border-slate-800/50 hover:bg-[#1a2235] transition-colors">
                       <TableCell className="text-sm text-slate-300 py-4 whitespace-nowrap">
                         {formatDate(ticket.trip_date)}
@@ -379,15 +395,50 @@ const MayorHistory = () => {
             </Table>
           </div>
           
-          {/* Table Footer */}
-          <div className="p-4 border-t border-slate-800 flex items-center justify-between text-sm text-slate-500 bg-[#0b101c]">
-            <span>Showing 1-{filtered.length} of {filtered.length} records</span>
+          {/* ✅ PAGINATION FOOTER */}
+          <div className="p-4 border-t border-slate-800 flex flex-col sm:flex-row items-center justify-between text-sm text-slate-500 bg-[#0b101c] gap-4">
+            <span>
+              Showing {filtered.length > 0 ? (currentPage - 1) * itemsPerPage + 1 : 0}-
+              {Math.min(currentPage * itemsPerPage, filtered.length)} of {filtered.length} records
+            </span>
+            
             <div className="flex items-center gap-1">
-              <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-white hover:bg-slate-800 rounded-lg">
+              {/* Previous Button */}
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                disabled={currentPage === 1}
+                className="h-8 w-8 text-slate-500 hover:text-white hover:bg-slate-800 rounded-lg disabled:opacity-50"
+              >
                 <ChevronLeft className="h-4 w-4" />
               </Button>
-              <Button size="icon" className="h-8 w-8 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold">1</Button>
-              <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-white hover:bg-slate-800 rounded-lg">
+
+              {/* Page Numbers */}
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+                <Button 
+                  key={page}
+                  onClick={() => setCurrentPage(page)}
+                  size="icon" 
+                  className={cn(
+                    "h-8 w-8 rounded-lg text-xs font-bold",
+                    currentPage === page 
+                      ? "bg-blue-600 hover:bg-blue-700 text-white" 
+                      : "bg-transparent hover:bg-slate-800 text-slate-400"
+                  )}
+                >
+                  {page}
+                </Button>
+              ))}
+
+              {/* Next Button */}
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                disabled={currentPage === totalPages || totalPages === 0}
+                className="h-8 w-8 text-slate-500 hover:text-white hover:bg-slate-800 rounded-lg disabled:opacity-50"
+              >
                 <ChevronRight className="h-4 w-4" />
               </Button>
             </div>
