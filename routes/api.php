@@ -387,6 +387,9 @@ Route::post('pending-gas-slips/{tripTicketId}/complete', [GsoController::class, 
         Route::get('reports/summary', [ReportsController::class, 'getReportSummary']);
         Route::get('trips/{id}/history', [DriverController::class, 'getTripHistory']);
         Route::get('trips/history/all', [DriverController::class, 'getAllTripHistory']);
+
+        Route::post('/driver/trips/{id}/pause', [DriverController::class, 'pauseTrip']);
+Route::post('/driver/trips/{id}/resume', [DriverController::class, 'resumeTrip']);
     });
 
     // ============ GPS (General Access - Authenticated Users) ============
