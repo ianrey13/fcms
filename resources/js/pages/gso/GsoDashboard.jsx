@@ -454,6 +454,8 @@ const GsoDashboard = () => {
                     "unknown",
                 fuelIn: r2(fuelIn),
                 fuelOut: r2(rawFuelOut),
+                distance,
+                efficiency,
                 tank: toNum(vehicle?.tank_capacity) || null,
                 sortTime: new Date(
                     trip.created_at ||
@@ -463,22 +465,6 @@ const GsoDashboard = () => {
                 ).getTime(),
             };
         });
-
-        // DEBUG (tangtangon human ma-debug): inputs sa Fuel Out matag trip
-        console.table(
-            rows.map((r) => ({
-                tt: r.trip.trip_ticket_number,
-                status: r.trip.status,
-                actual_km: r.trip.actual_distance_km,
-                gps_km: r.trip.gps_distance_km,
-                receipt_gps_km:
-                    r.trip.gas_slip?.fuel_receipt?.gps_distance_km ??
-                    r.trip.gasSlip?.fuelReceipt?.gps_distance_km,
-                vehicle: r.vehicle?.plate_number,
-                efficiency: r.vehicle?.reference_efficiency,
-                fuelOut: r.fuelOut,
-            })),
-        );
 
         // 2) group per vehicle, oldest -> newest, roll the balance forward
         const groups = {};
@@ -535,6 +521,8 @@ const GsoDashboard = () => {
                 beginning: r.beginning.toFixed(2),
                 fuelIn: r.fuelIn.toFixed(2),
                 fuelOut: r.fuelOut.toFixed(2),
+                distanceKm: r.distance,
+                efficiencyUsed: r.efficiency,
                 balance: r.balance.toFixed(2),
                 overTank: r.tank !== null && r.balance > r.tank + 0.01,
                 tankCapacity: r.tank,
@@ -1213,6 +1201,11 @@ const GsoDashboard = () => {
                                                 </td>
                                                 <td className="px-4 py-3 text-right text-red-400">
                                                     {computed.fuelOut}
+                                                    {computed.distanceKm > 0 && (
+                                                        <div className="text-[10px] font-normal text-slate-500">
+                                                            {computed.distanceKm} km ÷ {computed.efficiencyUsed}
+                                                        </div>
+                                                    )}
                                                 </td>
                                                 <td
                                                     className={cn(
