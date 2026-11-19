@@ -441,8 +441,8 @@ const GsoDashboard = () => {
                 : 0;
             const efficiency = toNum(vehicle?.reference_efficiency) || 10;
 
-            // parehas sa FuelLevelService: (3.2 + distance) / efficiency
-            const rawFuelOut = distance > 0 ? (3.2 + distance) / efficiency : 0;
+            // Fuel out = distance / efficiency (GPS magsugod na sa Municipal Hall)
+            const rawFuelOut = distance > 0 ? distance / efficiency : 0;
 
             return {
                 trip,
