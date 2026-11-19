@@ -208,7 +208,7 @@ const GsoAllTrips = () => {
   const [showCancelDialog, setShowCancelDialog] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
 
-  // ============ QUERY ============
+   // ============ QUERY ============
   const { 
     data: tripsData, 
     isLoading, 
@@ -228,6 +228,10 @@ const GsoAllTrips = () => {
         return [];
       }
     },
+    
+    staleTime: 0,
+    refetchOnMount: 'always', 
+    refetchOnWindowFocus: true, 
   });
 
   const trips = Array.isArray(tripsData) ? tripsData : [];
