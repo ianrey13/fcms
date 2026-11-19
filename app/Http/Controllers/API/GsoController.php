@@ -316,6 +316,7 @@ class GsoController extends Controller
                 'department',
                 'driver.user',
                 'vehicle',
+                'vehicleSnapshot',
                 'gasSlip.fuelReceipt'
             ])
                 // ✅ BACKEND FILTER: Dili kuhaon ang cancelled, rejected, ug returned

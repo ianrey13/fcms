@@ -80,6 +80,15 @@ const formatDateShort = (dateString) => {
     });
 };
 
+// Safe number parser (NaN / null / undefined -> 0)
+const toNum = (v) => {
+    const n = parseFloat(v);
+    return Number.isFinite(n) ? n : 0;
+};
+
+// Round to 2 decimals, drop trailing zeros
+const fmtNum = (n) => Number(toNum(n).toFixed(2)).toString();
+
 const StatusPill = ({ status }) => {
     let label = "Pending";
     let color = "bg-orange-500/20 text-orange-400 border-orange-500/30";
@@ -392,25 +401,30 @@ const GsoDashboard = () => {
     const displayVehicle = displayTripData?.vehicle;
 
     // ============================================
-    // HELPER: Compute Ledger Row
+    // FUEL LEDGER (chained per vehicle)
+    //
+    // Rule:  beginning(trip N) = balance(trip N-1) sa PAREHAS nga sakyanan
+    //        balance = beginning + fuelIn - fuelOut
+    //
+    // Anchor (beginning sa pinakaunang trip sa sakyanan):
+    //   1) vehicle_snapshot.initial_fuel_balance kung naa
+    //   2) kung wala: back-calc ONCE gikan sa current_fuel_balance
+    //      anchor = current_balance - sum(fuelIn) + sum(fuelOut)
     // ============================================
-    const computeLedgerRow = useCallback(
-        (trip) => {
+    const ledgerRows = useMemo(() => {
+        // 1) per-trip raw values
+        const rows = allTrips.map((trip) => {
             const vehicle =
+                vehicles.find((v) => v.vehicle_id === trip.vehicle_id) ||
                 vehicles.find(
                     (v) => v.plate_number === trip.vehicle?.plate_number,
-                ) || trip.vehicle;
+                ) ||
+                trip.vehicle;
 
-            // Kasamtangan nga balance sa sakyanan karon
-            const actualBalance = parseFloat(
-                vehicle?.current_fuel_balance ?? 0,
-            );
-
-            const fuelIn = parseFloat(
-                trip.gasSlip?.fuelReceipt?.liters_availed ||
-                    trip.gas_slip?.fuel_receipt?.liters_availed ||
-                    trip.liters_availed ||
-                    0,
+            const fuelIn = toNum(
+                trip.gasSlip?.fuelReceipt?.liters_availed ??
+                    trip.gas_slip?.fuel_receipt?.liters_availed ??
+                    trip.liters_availed,
             );
 
             const status = (trip.status || "").toLowerCase();
@@ -420,72 +434,104 @@ const GsoDashboard = () => {
                 "closed",
             ].includes(status);
 
-            let fuelOut = 0;
-            let distance = 0;
+            // Fuel Out: kung naay tinuod nga nadagan ra (distance > 0)
+            const distance = isCompleted
+                ? toNum(trip.actual_distance_km || trip.gps_distance_km)
+                : 0;
+            const efficiency = toNum(vehicle?.reference_efficiency) || 10;
+            const fuelOut = distance > 0 ? (3.2 + distance) / efficiency : 0;
 
-            if (isCompleted) {
-                distance = parseFloat(
-                    trip.actual_distance_km || trip.gps_distance_km || 0,
-                );
-                const efficiency = parseFloat(
-                    vehicle?.reference_efficiency || 10,
-                );
-
-                if (efficiency > 0) {
-                    fuelOut = (3.2 + distance) / efficiency;
-                }
-            }
-
-            // ✅ KUHAON ANG BEGINNING SA VEHICLE SNAPSHOT KUNG NAA
-            let beginning = 0;
-
-            if (
-                trip.vehicle_snapshot?.initial_fuel_balance !== undefined &&
-                trip.vehicle_snapshot?.initial_fuel_balance !== null
-            ) {
-                beginning = parseFloat(
-                    trip.vehicle_snapshot.initial_fuel_balance,
-                );
-            } else {
-                // Kung wala, i-compute base sa current balance
-                beginning = actualBalance - fuelIn + fuelOut;
-            }
-
-            // ✅ ANG BALANCE KAY: Beginning + Fuel In - Fuel Out
-            const balance = beginning + fuelIn - fuelOut;
-
-            const driverName =
-                trip.driver_name ||
-                trip.driver?.user?.full_name ||
-                trip.driver?.full_name ||
-                trip.driver?.name ||
-                "N/A";
-
-            // Helper para sa formatting: I-round sa 2 decimal places, unya kuhaon ang trailing zeros
-            const formatNum = (num) => {
-                // I-round sa 2 decimal places
-                const rounded = Number(num.toFixed(2));
-                // Ibalik isip string (automatic nang matangtang ang .00)
-                return rounded.toString();
-            };
+            const snap = trip.vehicle_snapshot?.initial_fuel_balance;
 
             return {
-                ...trip,
-                driver_name: driverName,
-                beginning: formatNum(beginning),
-                fuelIn: formatNum(fuelIn),
-                fuelOut: formatNum(fuelOut),
-                balance: formatNum(balance),
-                vehicleString: trip.vehicle
-                    ? `${trip.vehicle.vehicle_model} - ${trip.vehicle.plate_number}`
-                    : "N/A",
-                displayTicketNo: trip.ticket_number || trip.trip_ticket_number,
-                displayId: trip.id || trip.trip_ticket_id,
-                displayDate: trip.trip_date || trip.submitted_at,
+                trip,
+                vehicle,
+                vehicleKey:
+                    trip.vehicle_id ??
+                    trip.vehicle?.vehicle_id ??
+                    trip.vehicle?.plate_number ??
+                    "unknown",
+                fuelIn,
+                fuelOut,
+                snapshotBeginning:
+                    snap !== undefined && snap !== null ? toNum(snap) : null,
+                sortTime: new Date(
+                    trip.created_at ||
+                        trip.submitted_at ||
+                        trip.trip_date ||
+                        0,
+                ).getTime(),
             };
-        },
-        [vehicles],
-    );
+        });
+
+        // 2) group per vehicle, oldest -> newest, roll the balance forward
+        const groups = {};
+        rows.forEach((r) => {
+            (groups[r.vehicleKey] = groups[r.vehicleKey] || []).push(r);
+        });
+
+        Object.values(groups).forEach((list) => {
+            list.sort((a, b) => a.sortTime - b.sortTime);
+
+            const first = list[0];
+            const totalIn = list.reduce((s, r) => s + r.fuelIn, 0);
+            const totalOut = list.reduce((s, r) => s + r.fuelOut, 0);
+
+            const anchor =
+                first.snapshotBeginning !== null
+                    ? first.snapshotBeginning
+                    : toNum(first.vehicle?.current_fuel_balance) -
+                      totalIn +
+                      totalOut;
+
+            let prev = anchor;
+            list.forEach((r) => {
+                r.beginning = prev;
+                r.balance = r.beginning + r.fuelIn - r.fuelOut;
+
+                // Debug: i-warn kung dili mo-match ang snapshot sa chain
+                if (
+                    r.snapshotBeginning !== null &&
+                    Math.abs(r.snapshotBeginning - r.beginning) > 0.01
+                ) {
+                    console.warn(
+                        "Ledger mismatch",
+                        r.trip.trip_ticket_number,
+                        {
+                            snapshot: r.snapshotBeginning,
+                            chained: r.beginning,
+                        },
+                    );
+                }
+
+                prev = r.balance;
+            });
+        });
+
+        // 3) display newest first
+        return [...rows]
+            .sort((a, b) => b.sortTime - a.sortTime)
+            .map((r) => ({
+                ...r.trip,
+                driver_name:
+                    r.trip.driver_name ||
+                    r.trip.driver?.user?.full_name ||
+                    r.trip.driver?.full_name ||
+                    r.trip.driver?.name ||
+                    "N/A",
+                beginning: fmtNum(r.beginning),
+                fuelIn: fmtNum(r.fuelIn),
+                fuelOut: fmtNum(r.fuelOut),
+                balance: fmtNum(r.balance),
+                vehicleString: r.trip.vehicle
+                    ? `${r.trip.vehicle.vehicle_model} - ${r.trip.vehicle.plate_number}`
+                    : "N/A",
+                displayTicketNo:
+                    r.trip.ticket_number || r.trip.trip_ticket_number,
+                displayId: r.trip.id || r.trip.trip_ticket_id,
+                displayDate: r.trip.trip_date || r.trip.submitted_at,
+            }));
+    }, [allTrips, vehicles]);
 
     // ============================================
     // VALIDATION & REPLAY HANDLERS
@@ -1071,7 +1117,7 @@ const GsoDashboard = () => {
                                 </p>
                             </div>
                             <Badge className="bg-slate-700 text-slate-200">
-                                {allTrips.length} entries
+                                {ledgerRows.length} entries
                             </Badge>
                         </div>
                     </CardHeader>
@@ -1113,7 +1159,7 @@ const GsoDashboard = () => {
                                                 <Loader2 className="h-5 w-5 animate-spin mx-auto text-blue-500" />
                                             </td>
                                         </tr>
-                                    ) : allTrips.length === 0 ? (
+                                    ) : ledgerRows.length === 0 ? (
                                         <tr>
                                             <td
                                                 colSpan={7}
@@ -1123,47 +1169,41 @@ const GsoDashboard = () => {
                                             </td>
                                         </tr>
                                     ) : (
-                                        allTrips.map((trip) => {
-                                            const computed =
-                                                computeLedgerRow(trip);
-                                            return (
-                                                <tr
-                                                    key={computed.displayId}
-                                                    className="hover:bg-[#1a2235] cursor-pointer transition-colors"
-                                                    onClick={() =>
-                                                        handleOpenValidateDialog(
-                                                            computed,
-                                                        )
-                                                    }
-                                                >
-                                                    <td className="px-4 py-3 whitespace-nowrap">
-                                                        {formatDateShort(
-                                                            computed.displayDate,
-                                                        )}
-                                                    </td>
-                                                    <td className="px-4 py-3 font-mono text-white">
-                                                        {
-                                                            computed.displayTicketNo
-                                                        }
-                                                    </td>
-                                                    <td className="px-4 py-3">
-                                                        {computed.vehicleString}
-                                                    </td>
-                                                    <td className="px-4 py-3 text-right text-slate-400">
-                                                        {computed.beginning}
-                                                    </td>
-                                                    <td className="px-4 py-3 text-right text-emerald-400">
-                                                        {computed.fuelIn}
-                                                    </td>
-                                                    <td className="px-4 py-3 text-right text-red-400">
-                                                        {computed.fuelOut}
-                                                    </td>
-                                                    <td className="px-4 py-3 text-right font-bold text-white">
-                                                        {computed.balance}
-                                                    </td>
-                                                </tr>
-                                            );
-                                        })
+                                        ledgerRows.map((computed) => (
+                                            <tr
+                                                key={computed.displayId}
+                                                className="hover:bg-[#1a2235] cursor-pointer transition-colors"
+                                                onClick={() =>
+                                                    handleOpenValidateDialog(
+                                                        computed,
+                                                    )
+                                                }
+                                            >
+                                                <td className="px-4 py-3 whitespace-nowrap">
+                                                    {formatDateShort(
+                                                        computed.displayDate,
+                                                    )}
+                                                </td>
+                                                <td className="px-4 py-3 font-mono text-white">
+                                                    {computed.displayTicketNo}
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    {computed.vehicleString}
+                                                </td>
+                                                <td className="px-4 py-3 text-right text-slate-400">
+                                                    {computed.beginning}
+                                                </td>
+                                                <td className="px-4 py-3 text-right text-emerald-400">
+                                                    {computed.fuelIn}
+                                                </td>
+                                                <td className="px-4 py-3 text-right text-red-400">
+                                                    {computed.fuelOut}
+                                                </td>
+                                                <td className="px-4 py-3 text-right font-bold text-white">
+                                                    {computed.balance}
+                                                </td>
+                                            </tr>
+                                        ))
                                     )}
                                 </tbody>
                             </table>
