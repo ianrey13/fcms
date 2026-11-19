@@ -4,6 +4,7 @@ namespace App\Http\Controllers\API;
 
 use Illuminate\Support\Facades\Cache;
 use App\Http\Controllers\Controller;
+use Illuminate\Validation\Rule;
 use App\Models\TripTicket;
 use App\Models\GasSlip;
 use App\Models\FuelReceipt;
