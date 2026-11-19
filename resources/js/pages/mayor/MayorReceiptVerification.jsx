@@ -123,10 +123,13 @@ const MayorReceiptVerification = () => {
     mutationFn: async ({ receiptId, data }) => await mayorsOfficeAPI.verifyReceipt(receiptId, data),
     onSuccess: () => {
       toast.success("Receipt processed successfully!");
+      
+      // ✅ I-invalidate ang duha ka query aron mo-refresh
       queryClient.invalidateQueries({ queryKey: ["mayor-receipt-verification"] });
-      const nextPending = pendingReceipts.find(r => r.id !== selectedReceipt?.id);
-      if (nextPending && activeTab === "pending") handleSelectReceipt(nextPending);
-      else { setSelectedReceipt(null); setActiveTab("verified"); }
+      
+      // ✅ I-set dayon sa Verified tab ug i-clear ang selection
+      setActiveTab("verified");
+      setSelectedReceipt(null);
     },
     onError: (error) => {
       const errMsg = error.response?.data?.errors?.invoice_number?.[0] 
@@ -156,7 +159,7 @@ const MayorReceiptVerification = () => {
         return toast.error("Please provide remarks for the discrepancy.");
     }
 
-    // ✅ FRONTEND VALIDATION: Check for Duplicate Invoice Number
+    // FRONTEND VALIDATION: Check for Duplicate Invoice Number
     const inputInvoice = editData.invoice_number.trim().toLowerCase();
     
     const isDuplicate = verifiedReceipts.some(r => 
@@ -181,6 +184,7 @@ const MayorReceiptVerification = () => {
     });
   };
 
+  // ✅ GITANGGTANG ANG GSO FILTER PARA MAKITA TANAN
   const filteredList = useMemo(() => {
     let list = [];
 
@@ -188,9 +192,8 @@ const MayorReceiptVerification = () => {
         list = pendingReceipts.filter(r => !r.invoice_number || !r.amount);
     } else if (activeTab === "verified") {
         list = verifiedReceipts.filter(r => {
-            const doVerified = r.invoice_number && parseFloat(r.amount) > 0;
-            const gsoVerified = r.gso_validation_status === 'verified';
-            return doVerified && !gsoVerified;
+            // Ipakita tanan nga naay Invoice ug Amount gikan sa DO, bisan pag closed na sa GSO
+            return r.invoice_number && parseFloat(r.amount) > 0;
         });
     } else if (activeTab === "discrepancy") {
         list = verifiedReceipts.filter(r => {
@@ -209,12 +212,11 @@ const MayorReceiptVerification = () => {
     );
   }, [activeTab, pendingReceipts, verifiedReceipts, searchTerm]);
 
+  // ✅ GITANGGTANG SAD ANG GSO FILTER SA COUNTS
   const counts = {
     pending: pendingReceipts.filter(r => !r.invoice_number || !r.amount).length,
     verified: verifiedReceipts.filter(r => {
-        const doVerified = r.invoice_number && parseFloat(r.amount) > 0;
-        const gsoVerified = r.gso_validation_status === 'verified';
-        return doVerified && !gsoVerified;
+        return r.invoice_number && parseFloat(r.amount) > 0;
     }).length,
     discrepancy: verifiedReceipts.filter(r => {
         const doVerified = r.invoice_number && parseFloat(r.amount) > 0;
