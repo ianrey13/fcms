@@ -453,6 +453,7 @@ const GsoDashboard = () => {
                     "unknown",
                 fuelIn,
                 fuelOut,
+                isClosed: status === "closed",
                 snapshotBeginning:
                     snap !== undefined && snap !== null ? toNum(snap) : null,
                 sortTime: new Date(
@@ -475,7 +476,12 @@ const GsoDashboard = () => {
 
             const first = list[0];
             const totalIn = list.reduce((s, r) => s + r.fuelIn, 0);
-            const totalOut = list.reduce((s, r) => s + r.fuelOut, 0);
+            // current_fuel_balance dili pa nag-deduct sa completed nga wala pa
+            // ma-validate (closed). Closed ra ang i-add back sa back-calc.
+            const totalOut = list.reduce(
+                (s, r) => s + (r.isClosed ? r.fuelOut : 0),
+                0,
+            );
 
             const anchor =
                 first.snapshotBeginning !== null
