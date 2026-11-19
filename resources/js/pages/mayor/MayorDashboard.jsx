@@ -12,11 +12,12 @@ import { isWithinInterval, subDays, startOfMonth, endOfMonth, startOfWeek, endOf
 // ✅ GIDUGANG ANG INPUT UG CARD
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 
 import {
     ArrowRight, Activity, PieChart, Fuel, Building2, Car, Download, TrendingUp, 
     CheckCircle, Wallet, Scale, AlertTriangle, Info, Trophy, ShieldCheck, Calendar,
-    ChevronDown, Search, X
+    ChevronDown, ChevronLeft, ChevronRight, Search, X, BarChart3, Table as TableIcon
 } from "lucide-react";
 import {
     Cell, PieChart as RePieChart, Pie, ResponsiveContainer, Tooltip,
@@ -203,6 +204,11 @@ const MayorDashboard = () => {
     const [showMonitorDropdown, setShowMonitorDropdown] = useState(false);
     const monitorDropdownRef = useRef(null);
 
+    // ✅ Fuel Price Monitoring State
+    const [fuelTab, setFuelTab] = useState("gasoline");
+    const [fuelPage, setFuelPage] = useState(1);
+    const itemsPerPage = 5;
+
     useEffect(() => {
         const handleClickOutside = (event) => {
             if (monitorDropdownRef.current && !monitorDropdownRef.current.contains(event.target)) {
@@ -217,6 +223,7 @@ const MayorDashboard = () => {
         queryClient.invalidateQueries({ queryKey: ["mayor-approved-tickets"] });
         queryClient.invalidateQueries({ queryKey: ["mayor-department-budgets"] });
         queryClient.invalidateQueries({ queryKey: ["mayor-budget-history"] });
+        queryClient.invalidateQueries({ queryKey: ["mayor-fuel-receipts"] });
     }, [queryClient]);
 
     useAutoRefresh(["mayor-trip-updated", "gso-funds-released", "trip-completed"], fetchAllData, 1000);
@@ -258,12 +265,24 @@ const MayorDashboard = () => {
     });
     const budgetHistoryRaw = useSafeArray(historyRaw);
 
+    // ✅ FETCH FUEL RECEIPTS FOR PRICE MONITORING
+    const { data: fuelReceiptsRaw = [] } = useOptimizedQuery({
+        queryKey: ["mayor-fuel-receipts"],
+        queryFn: async () => {
+            try {
+                const response = await mayorsOfficeAPI.getVerifiedReceipts();
+                return extractArray(response);
+            } catch { return []; }
+        }
+    });
+    const fuelReceipts = useSafeArray(fuelReceiptsRaw);
+
     // ============ CALCULATIONS ============
     const departmentBudgets = useMemo(() => {
         return budgetData.map(dept => ({
             department_id: dept.department_id,
             department_name: dept.department_name,
-            department_code: dept.department_code || "", // For search
+            department_code: dept.department_code || "",
             allocated: parseFloat(dept.allocated_amount ?? dept.annual_amount ?? dept.allocated ?? 0),
             spent: parseFloat(dept.spent_amount ?? dept.used_amount ?? dept.spent ?? 0),
             remaining: parseFloat(dept.remaining_amount ?? 0),
@@ -405,7 +424,6 @@ const MayorDashboard = () => {
             .slice(0, 5);
     }, [approvedTicketsRaw, transDept, transStatusFilter, transTimeFilter]);
 
-    // ✅ MONTHLY FUND MONITORING SEARCH FILTER
     const filteredMonitorDepts = useMemo(() => {
         if (!monitorSearch) return departmentBudgets;
         const lowerSearch = monitorSearch.toLowerCase();
@@ -483,6 +501,45 @@ const MayorDashboard = () => {
 
         return monthlyData;
     }, [approvedTicketsRaw, budgetHistoryRaw, activeMonitorDept]);
+
+    // ✅ FUEL PRICE MONITORING LOGIC
+    const fuelPriceData = useMemo(() => {
+        const fuelTypeMap = { gasoline: 'gasoline', premium: 'premium', diesel: 'diesel' };
+        const targetType = fuelTypeMap[fuelTab];
+
+        return fuelReceipts.filter(r => {
+            const vType = r.vehicle?.fuel_type?.toLowerCase() || r.fuel_type?.toLowerCase();
+            return vType === targetType;
+        }).sort((a, b) => new Date(b.trip_date || b.created_at) - new Date(a.trip_date || a.created_at));
+    }, [fuelReceipts, fuelTab]);
+
+    const weightedAvgData = useMemo(() => {
+        const last30Days = subDays(new Date(), 30);
+        let totalCost = 0;
+        let totalLiters = 0;
+
+        fuelPriceData.forEach(r => {
+            const date = new Date(r.trip_date || r.created_at);
+            if (date >= last30Days) {
+                const amt = parseFloat(r.amount) || 0;
+                const liters = parseFloat(r.liters_availed) || 0;
+                // Only include if we have both amount and liters to calculate accurate weighted avg
+                if (amt > 0 && liters > 0) {
+                    totalCost += amt;
+                    totalLiters += liters;
+                }
+            }
+        });
+
+        return totalLiters > 0 ? (totalCost / totalLiters) : 0;
+    }, [fuelPriceData]);
+
+    const paginatedFuelData = useMemo(() => {
+        const start = (fuelPage - 1) * itemsPerPage;
+        return fuelPriceData.slice(start, start + itemsPerPage);
+    }, [fuelPriceData, fuelPage]);
+
+    const totalPages = Math.ceil(fuelPriceData.length / itemsPerPage) || 1;
 
     if (approvedLoading || budgetLoading) return <SkeletonPage />;
 
@@ -580,18 +637,16 @@ const MayorDashboard = () => {
                 </Card>
             </div>
 
-            {/* 2. Budget Allocation Pie Chart (Full Width Section) */}
+            {/* 2. Budget Allocation Pie Chart */}
             <div className="mb-6">
                 <Card className="bg-[#121829] border border-slate-800 rounded-2xl shadow-lg p-6">
                     <div className="flex items-center justify-between mb-4">
                         <h3 className="font-bold text-white text-lg flex items-center gap-2">
                             <PieChart className="h-5 w-5 text-blue-400" /> BUDGET ALLOCATION
                         </h3>
-                        <button className="text-xs text-blue-400 font-medium">View Details →</button>
                     </div>
                     
                     <div className="flex flex-col items-center">
-                        {/* Larger Pie Chart */}
                         <div className="relative w-[300px] h-[300px] md:w-[350px] md:h-[350px]">
                             <ResponsiveContainer width="100%" height="100%">
                                 <RePieChart>
@@ -616,7 +671,6 @@ const MayorDashboard = () => {
                             </div>
                         </div>
 
-                        {/* Legend Below Pie */}
                         <div className="mt-6 grid grid-cols-2 md:grid-cols-4 gap-4 w-full max-w-4xl">
                             {pieData.map((d, i) => (
                                 <div key={i} className="flex items-center justify-between bg-slate-800/40 p-2 rounded-lg border border-slate-700/50">
@@ -634,9 +688,8 @@ const MayorDashboard = () => {
                 </Card>
             </div>
 
-            {/* 3. Middle Row: Top Consumers & Trend (Below Pie) */}
+            {/* 3. Middle Row: Top Consumers & Trend */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-                {/* ✅ Top Fund Consumers (Removed Progress Bars) */}
                 <Card className="bg-[#121829] border border-slate-800 rounded-2xl shadow-lg p-5">
                     <div className="flex items-center justify-between mb-6">
                         <h3 className="font-bold text-white flex items-center gap-2">
@@ -674,7 +727,6 @@ const MayorDashboard = () => {
                     </div>
                 </Card>
 
-                {/* Fund Trend Overview */}
                 <Card className="bg-[#121829] border border-slate-800 rounded-2xl shadow-lg p-5 relative">
                     <div className="flex items-center justify-between mb-6 z-20 relative">
                         <h3 className="font-bold text-white flex items-center gap-2">
@@ -713,17 +765,15 @@ const MayorDashboard = () => {
                 </Card>
             </div>
 
-            {/* 4. Bottom Rows: Monthly Monitoring & Transactions (Stacked) */}
+            {/* 4. Bottom Rows: Monthly Monitoring & Transactions */}
             <div className="grid grid-cols-1 gap-6 mb-6">
                 
-                {/* ✅ Department Monthly Fund Monitoring (Search Bar) */}
                 <Card className="bg-[#121829] border border-slate-800 rounded-2xl shadow-lg p-0 overflow-visible">
                     <div className="flex flex-col md:flex-row md:items-center justify-between p-5 border-b border-slate-800 gap-4">
                         <h3 className="font-bold text-white flex items-center gap-2">
                             <Building2 className="h-4 w-4 text-blue-400" /> DEPARTMENT MONTHLY FUND MONITORING
                         </h3>
                         
-                        {/* Search Bar for Department */}
                         <div className="relative z-[100] w-full md:w-[300px]" ref={monitorDropdownRef}>
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
                             <Input 
@@ -746,7 +796,6 @@ const MayorDashboard = () => {
                                 </button>
                             )}
 
-                            {/* Dropdown results for search */}
                             {showMonitorDropdown && (
                                 <div className="absolute left-0 right-0 mt-1 bg-[#1e293b] border border-slate-700 rounded-lg shadow-2xl max-h-60 overflow-y-auto z-[999]">
                                     {filteredMonitorDepts.length === 0 ? (
@@ -800,14 +849,12 @@ const MayorDashboard = () => {
                     </div>
                 </Card>
 
-                {/* ✅ Department Transactions with Date & Status Filters */}
                 <Card className="bg-[#121829] border border-slate-800 rounded-2xl shadow-lg p-0 overflow-hidden relative">
                     <div className="flex flex-col md:flex-row md:items-center justify-between p-5 border-b border-slate-800 gap-4">
                         <h3 className="font-bold text-white flex items-center gap-2">
                             <Activity className="h-4 w-4 text-blue-400" /> DEPARTMENT TRANSACTIONS
                         </h3>
                         <div className="flex flex-wrap items-center gap-2 relative z-[50]">
-                            {/* Dept Filter */}
                             <CustomSelect 
                                 value={transDept}
                                 onChange={(val) => setTransDept(val)}
@@ -820,7 +867,6 @@ const MayorDashboard = () => {
                                     }))
                                 ]}
                             />
-                            {/* Status Filter */}
                             <CustomSelect 
                                 value={transStatusFilter}
                                 onChange={(val) => setTransStatusFilter(val)}
@@ -834,7 +880,6 @@ const MayorDashboard = () => {
                                     { value: "rejected", label: "Rejected" }
                                 ]}
                             />
-                            {/* ✅ Date Filter (Added Last Month) */}
                             <CustomSelect 
                                 value={transTimeFilter}
                                 onChange={(val) => setTransTimeFilter(val)}
@@ -846,7 +891,6 @@ const MayorDashboard = () => {
                                     { value: "two_weeks_ago", label: "Last 2 Weeks" }
                                 ]}
                             />
-                            <button className="text-[10px] text-blue-400 ml-2">View All →</button>
                         </div>
                     </div>
                     <div className="overflow-x-auto">
@@ -893,7 +937,7 @@ const MayorDashboard = () => {
                 </Card>
             </div>
 
-            {/* 5. Recent Fund Releases (Full Width Section) */}
+            {/* 5. Recent Fund Releases */}
             <div className="mb-6">
                 <Card className="bg-[#121829] border border-slate-800 rounded-2xl shadow-lg p-5">
                     <div className="flex items-center justify-between mb-4">
@@ -915,6 +959,148 @@ const MayorDashboard = () => {
                                 </div>
                             </div>
                         ))}
+                    </div>
+                </Card>
+            </div>
+
+            {/* ✅ 6. NEW SECTION: Fuel Price Monitoring & Analysis */}
+            <div className="mb-6">
+                <Card className="bg-[#121829] border border-slate-800 rounded-2xl shadow-lg p-6">
+                    <div className="mb-6">
+                        <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                            <Fuel className="h-5 w-5 text-blue-500" /> Fuel Price Monitoring & Analysis
+                        </h3>
+                        <p className="text-xs text-slate-400 mt-1">
+                            History of fuel prices for the year, with Weighted Average Price based on the last 30 days.
+                        </p>
+                    </div>
+
+                    <div className="flex flex-col lg:flex-row gap-6">
+                        
+                        {/* Left Side: Table with Tabs & Pagination */}
+                        <div className="flex-1 bg-[#0b101c] border border-slate-800 rounded-xl overflow-hidden flex flex-col">
+                            
+                            {/* Tabs */}
+                            <div className="flex items-center gap-1 border-b border-slate-800 p-2">
+                                <button 
+                                    onClick={() => { setFuelTab("gasoline"); setFuelPage(1); }}
+                                    className={cn(
+                                        "flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-lg transition-colors",
+                                        fuelTab === "gasoline" ? "bg-blue-600/20 text-blue-400 border border-blue-500/30" : "text-slate-400 hover:bg-slate-800/50"
+                                    )}
+                                >
+                                    <Fuel className="h-3.5 w-3.5" /> Gasoline
+                                </button>
+                                <button 
+                                    onClick={() => { setFuelTab("premium"); setFuelPage(1); }}
+                                    className={cn(
+                                        "flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-lg transition-colors",
+                                        fuelTab === "premium" ? "bg-amber-600/20 text-amber-400 border border-amber-500/30" : "text-slate-400 hover:bg-slate-800/50"
+                                    )}
+                                >
+                                    <Fuel className="h-3.5 w-3.5" /> Premium
+                                </button>
+                                <button 
+                                    onClick={() => { setFuelTab("diesel"); setFuelPage(1); }}
+                                    className={cn(
+                                        "flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-lg transition-colors",
+                                        fuelTab === "diesel" ? "bg-emerald-600/20 text-emerald-400 border border-emerald-500/30" : "text-slate-400 hover:bg-slate-800/50"
+                                    )}
+                                >
+                                    <Fuel className="h-3.5 w-3.5" /> Diesel
+                                </button>
+                            </div>
+
+                            {/* Table */}
+                            <div className="overflow-x-auto flex-1">
+                                <table className="w-full text-left text-xs">
+                                    <thead className="bg-[#121829] text-slate-400">
+                                        <tr>
+                                            <th className="px-4 py-3 font-medium">Trip Ticket #</th>
+                                            <th className="px-4 py-3 font-medium">Invoice #</th>
+                                            <th className="px-4 py-3 font-medium text-right">Quantity (L)</th>
+                                            <th className="px-4 py-3 font-medium text-right">Unit Price (₱/L)</th>
+                                            <th className="px-4 py-3 font-medium text-right">Total Cost (₱)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-800/50">
+                                        {paginatedFuelData.length === 0 ? (
+                                            <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-500">No fuel data available for {fuelTab}.</td></tr>
+                                        ) : paginatedFuelData.map((r, i) => {
+                                            const quantity = parseFloat(r.liters_availed) || 0;
+                                            const totalCost = parseFloat(r.amount) || 0;
+                                            
+                                            // ✅ CONDITIONAL: If quantity is 0, show dash for Quantity, Unit Price, and Total Cost
+                                            const hasQuantity = quantity > 0;
+                                            const displayQty = hasQuantity ? quantity.toFixed(2) : "-";
+                                            const displayUnit = hasQuantity ? `₱${(totalCost / quantity).toFixed(2)}` : "-";
+                                            const displayTotal = hasQuantity ? formatCurrency(totalCost) : "-";
+                                            const displayInvoice = r.invoice_number || `INV-${r.ticket_number?.replace(/\D/g, '') || '000'}`;
+
+                                            return (
+                                                <tr key={i} className="hover:bg-slate-800/20 transition-colors">
+                                                    <td className="px-4 py-3 text-slate-200 font-mono">{r.ticket_number || "N/A"}</td>
+                                                    <td className="px-4 py-3 text-slate-400 font-mono text-[10px]">{displayInvoice}</td>
+                                                    <td className="px-4 py-3 text-right text-slate-300 font-medium">{displayQty}</td>
+                                                    <td className="px-4 py-3 text-right text-slate-300 font-medium">{displayUnit}</td>
+                                                    <td className="px-4 py-3 text-right font-bold text-white">{displayTotal}</td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            {/* Pagination */}
+                            <div className="border-t border-slate-800 p-3 flex items-center justify-between bg-[#121829]">
+                                <span className="text-[10px] text-slate-400">
+                                    Showing {paginatedFuelData.length > 0 ? (fuelPage - 1) * itemsPerPage + 1 : 0} to {Math.min(fuelPage * itemsPerPage, fuelPriceData.length)} of {fuelPriceData.length} entries
+                                </span>
+                                <div className="flex gap-1">
+                                    <Button 
+                                        variant="outline" 
+                                        size="sm"
+                                        onClick={() => setFuelPage(p => Math.max(1, p - 1))}
+                                        disabled={fuelPage === 1}
+                                        className="h-6 w-6 p-0 border-slate-700 text-slate-400 hover:text-white"
+                                    >
+                                        <ChevronLeft className="h-3 w-3" />
+                                    </Button>
+                                    <Button 
+                                        variant="outline" 
+                                        size="sm"
+                                        onClick={() => setFuelPage(p => Math.min(totalPages, p + 1))}
+                                        disabled={fuelPage === totalPages}
+                                        className="h-6 w-6 p-0 border-slate-700 text-slate-400 hover:text-white"
+                                    >
+                                        <ChevronRight className="h-3 w-3" />
+                                    </Button>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Right Side: Weighted Average Card */}
+                        <div className="w-full lg:w-[280px] flex-shrink-0">
+                            <div className="bg-[#0b101c] border border-slate-800 rounded-xl p-5 h-full flex flex-col justify-center relative overflow-hidden">
+                                <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 rounded-full blur-2xl pointer-events-none" />
+                                <div className="flex items-center gap-2 mb-2 relative z-10">
+                                    <BarChart3 className="h-4 w-4 text-blue-400" />
+                                    <h4 className="text-xs font-bold text-white">Weighted Average Fuel Price</h4>
+                                </div>
+                                <p className="text-[10px] text-slate-400 mb-6 relative z-10">(Last 30 Days)</p>
+                                
+                                <div className="relative z-10">
+                                    <span className="text-4xl font-bold text-white tracking-tight">
+                                        {formatCurrency(weightedAvgData).split('.')[0]}
+                                    </span>
+                                    <span className="text-xl font-bold text-slate-400">
+                                        .{formatCurrency(weightedAvgData).split('.')[1]} 
+                                        <span className="text-sm font-medium ml-1">/L</span>
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
                     </div>
                 </Card>
             </div>
