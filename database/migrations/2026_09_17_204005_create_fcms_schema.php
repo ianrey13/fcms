@@ -236,6 +236,7 @@ return new class extends Migration
                 'funds_issued',
                 'in_transit',
                 'pending_reconciliation',
+                 'paused',  
                 'closed',
                 'rejected',
                 'cancelled',

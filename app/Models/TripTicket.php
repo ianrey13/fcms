@@ -72,6 +72,7 @@ class TripTicket extends Model
     public const STATUS_RETURNED_FOR_REVISION = 'returned_for_revision';
     public const STATUS_FUNDS_ISSUED = 'funds_issued';
     public const STATUS_IN_TRANSIT = 'in_transit';
+    public const STATUS_PAUSED = 'paused'; // ✅ GIDUGANG
     public const STATUS_COMPLETED = 'completed';
     public const STATUS_CLOSED = 'closed';
     public const STATUS_REJECTED = 'rejected';
@@ -161,12 +162,21 @@ class TripTicket extends Model
 
     public function canStartTrip()
     {
-        return $this->status === self::STATUS_FUNDS_ISSUED || $this->status === self::STATUS_ACKNOWLEDGED;
+        // ✅ GI-UPDATE: Apil na ang PAUSED aron makaresume
+        return in_array($this->status, [
+            self::STATUS_FUNDS_ISSUED, 
+            self::STATUS_ACKNOWLEDGED,
+            self::STATUS_PAUSED
+        ]);
     }
 
     public function canCompleteTrip()
     {
-        return $this->status === self::STATUS_IN_TRANSIT;
+        // ✅ GI-UPDATE: Apil na ang PAUSED kay pwede man i-complete bisan na-pause
+        return in_array($this->status, [
+            self::STATUS_IN_TRANSIT,
+            self::STATUS_PAUSED
+        ]);
     }
 
     public function isGsoCreated()
@@ -187,6 +197,7 @@ class TripTicket extends Model
             self::STATUS_RETURNED_FOR_REVISION => 'Returned for Revision',
             self::STATUS_FUNDS_ISSUED => 'Funds Issued',
             self::STATUS_IN_TRANSIT => 'In Transit',
+            self::STATUS_PAUSED => 'Paused', // ✅ GIDUGANG
             self::STATUS_PENDING_GSO_VALIDATION => 'Pending GSO Validation',
             self::STATUS_COMPLETED => 'Completed (Pending GSO)',
             self::STATUS_CLOSED => 'Closed',
@@ -206,6 +217,7 @@ class TripTicket extends Model
             self::STATUS_RETURNED_FOR_REVISION => 'purple',
             self::STATUS_FUNDS_ISSUED => 'green',
             self::STATUS_IN_TRANSIT => 'blue',
+            self::STATUS_PAUSED => 'orange', // ✅ GIDUGANG
             self::STATUS_PENDING_GSO_VALIDATION => 'indigo',
             self::STATUS_CLOSED => 'dark-green',
             self::STATUS_REJECTED => 'red',
@@ -275,8 +287,6 @@ class TripTicket extends Model
 
     /**
      * Sync actual_distance_km and actual_fuel_used from related records
-     *
-     * ✅ UPDATED: fuel liters are now entered by GSO/MO — sync to receipt's current value
      */
     public function syncActuals(): self
     {
@@ -284,7 +294,6 @@ class TripTicket extends Model
 
         $receipt = $this->gasSlip?->fuelReceipt;
         if ($receipt) {
-            // ✅ Explicitly sync to receipt's current liters value (or null if not entered yet)
             $liters = (float) ($receipt->liters_availed ?? 0);
             $this->actual_fuel_used = $liters > 0 ? $liters : null;
         } else {
@@ -298,10 +307,6 @@ class TripTicket extends Model
         return $this;
     }
 
-    /**
-     * ✅ NEW: Check if this trip can be validated/closed by GSO/MO
-     * Requires: status pending_gso_validation AND receipt has liters + amount
-     */
     public function canBeValidated(): bool
     {
         if ($this->status !== self::STATUS_PENDING_GSO_VALIDATION) {
@@ -310,13 +315,14 @@ class TripTicket extends Model
         $receipt = $this->gasSlip?->fuelReceipt;
         return $receipt && $receipt->hasFuelDetails();
     }
-    public function isMoGasSlipCreated(): bool
-{
-    return $this->source === 'mo_gas_slip';
-}
 
-public function isPendingGsoTicket(): bool
-{
-    return $this->status === self::STATUS_PENDING_GSO_TICKET;
-}
+    public function isMoGasSlipCreated(): bool
+    {
+        return $this->source === 'mo_gas_slip';
+    }
+
+    public function isPendingGsoTicket(): bool
+    {
+        return $this->status === self::STATUS_PENDING_GSO_TICKET;
+    }
 }
