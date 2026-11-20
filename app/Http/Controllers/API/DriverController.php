@@ -819,7 +819,7 @@ class DriverController extends Controller
         }
     }
 
-    public function getActiveTrip(Request $request)
+       public function getActiveTrip(Request $request)
     {
         try {
             $user = $request->user();
@@ -829,14 +829,21 @@ class DriverController extends Controller
                 return response()->json(['success' => false, 'message' => 'Driver record not found'], 404);
             }
 
-            //  Priority order: in_transit → acknowledged → funds_issued → completed
-            // Only return trips that have a valid destination and vehicle
+            // ✅ GI-DUGANGAN ANG 'paused' SA LISTAHAN
             $activeTrip = TripTicket::with(['vehicle', 'department', 'gasSlip.fuelReceipt', 'driver.user'])
                 ->where('driver_id', $driver->driver_id)
-                ->whereIn('status', ['in_transit', 'acknowledged', 'funds_issued', 'completed', 'pending_gso_ticket'])
+                ->whereIn('status', [
+                    'in_transit', 
+                    'paused', 
+                    'acknowledged', 
+                    'funds_issued', 
+                    'completed', 
+                    'pending_gso_ticket'
+                ])
                 ->whereNotNull('destination')
                 ->whereNotNull('vehicle_id')
-                ->orderByRaw("FIELD(status, 'in_transit', 'acknowledged', 'funds_issued', 'pending_gso_ticket', 'completed')")
+                // ✅ GI-DUGANGAN ANG 'paused' SA ORDER PARA MA-PRIORITY
+                ->orderByRaw("FIELD(status, 'in_transit', 'paused', 'acknowledged', 'funds_issued', 'pending_gso_ticket', 'completed')")
                 ->orderBy('updated_at', 'desc')
                 ->first();
 
