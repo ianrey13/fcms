@@ -1662,14 +1662,14 @@ class MayorsOfficeController extends Controller
         }
     }
 
-    public function getVerifiedReceipts(Request $request)
+   public function getVerifiedReceipts(Request $request)
 {
     $receipts = FuelReceipt::with([
         'gasSlip.tripTicket.vehicle',
         'gasSlip.tripTicket.driver.user',
         'gasSlip.tripTicket.department'
     ])
-    ->whereNotNull('receipt_photo_path')
+    ->whereNotNull('receipt_photo_path') 
     ->orderBy('updated_at', 'desc')
     ->get()
     ->map(function($receipt) {
@@ -1694,6 +1694,9 @@ class MayorsOfficeController extends Controller
             'status' => $receipt->gasSlip?->reconciliation_status === 'verified' ? 'verified' : ($receipt->invoice_number ? 'verified' : 'pending'),
             'remarks' => $receipt->gasSlip?->reconciliation_note,
             'gso_validation_status' => $trip?->status === 'closed' ? 'verified' : 'pending',
+            
+            // ✅ GIDUGANG: Kinahanglan ni para sa tabs sa Mayor Dashboard
+            'fuel_type' => $trip?->vehicle?->fuel_type ?? 'gasoline',
         ];
     });
 
