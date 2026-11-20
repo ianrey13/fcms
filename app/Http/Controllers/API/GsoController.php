@@ -798,7 +798,7 @@ class GsoController extends Controller
      * GSO validates and CLOSES the trip (final step)
      * ✅ Archive GPS pings before deleting them so route history survives.
      */
-    public function validateTrip(Request $request, $id)
+       public function validateTrip(Request $request, $id)
     {
         try {
             $user = $request->user();
@@ -815,7 +815,8 @@ class GsoController extends Controller
                 return response()->json(['errors' => $validator->errors()], 422);
             }
 
-            $ticket = TripTicket::where('trip_ticket_id', $id)
+            $ticket = TripTicket::with('gasSlip.fuelReceipt')
+                ->where('trip_ticket_id', $id)
                 ->whereIn('status', ['completed', 'pending_gso_validation'])
                 ->first();
 
@@ -823,6 +824,30 @@ class GsoController extends Controller
                 return response()->json([
                     'message' => 'Trip not found or not ready for validation. Current status must be completed or pending_gso_validation.'
                 ], 404);
+            }
+
+            // ✅ BACKEND GUARD: Check kung na-verify na sa DO ug naa nay liters
+            $receipt = $ticket->gasSlip?->fuelReceipt;
+
+            if (!$receipt) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Cannot validate: No fuel receipt uploaded for this trip.'
+                ], 422);
+            }
+
+            if ($receipt->verification_status !== 'verified') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Cannot validate: The fuel receipt has not been verified by the Mayor\'s Office yet.'
+                ], 422);
+            }
+
+            if ($receipt->liters_availed === null || (float) $receipt->liters_availed <= 0) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Cannot validate: Fuel liters have not been recorded yet.'
+                ], 422);
             }
 
             DB::beginTransaction();
@@ -845,9 +870,6 @@ class GsoController extends Controller
 
             // ============================================================
             // ✅ Archive GPS pings before deleting from hot table
-            // so route history (LiveTracking → History tab → Route) survives.
-            // Inside the transaction so a failed archive insert rolls back
-            // the entire closure — no risk of losing pings silently.
             // ============================================================
             $pings = \App\Models\GpsPing::where('trip_ticket_id', $ticket->trip_ticket_id)->get();
 
@@ -974,6 +996,17 @@ class GsoController extends Controller
                 ->whereIn('status', ['pending_gso_validation', 'completed'])
                 ->orderBy('submitted_at', 'desc')
                 ->get()
+                // ✅ FILTER: Dili ipakita kung wala pa na-verify sa DO o wala pay liters
+                ->filter(function ($ticket) {
+                    $receipt = $ticket->gasSlip?->fuelReceipt;
+
+                    if (!$receipt) return false; // Walay receipt
+
+                    $isVerifiedByDO = $receipt->verification_status === 'verified';
+                    $hasLiters = $receipt->liters_availed !== null && (float) $receipt->liters_availed > 0;
+
+                    return $isVerifiedByDO && $hasLiters;
+                })
                 ->map(function ($ticket) {
                     $fuelReceipt = $ticket->gasSlip?->fuelReceipt;
                     $isOldCompleted = $ticket->status === 'completed' &&
@@ -1013,7 +1046,8 @@ class GsoController extends Controller
                             'vehicle_model' => $ticket->vehicle->vehicle_model,
                         ] : null,
                     ];
-                });
+                })
+                ->values(); // Reset array keys human sa filter
 
             return response()->json([
                 'success' => true,
