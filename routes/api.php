@@ -346,8 +346,8 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         Route::post('trips/{id}/acknowledge', [DriverController::class, 'acknowledgeFunds']);
         Route::post('trips/{id}/start', [DriverController::class, 'startTrip']);
 
-        Route::post('/driver/trips/{id}/pause', [DriverController::class, 'pauseTrip']);
-        Route::post('/driver/trips/{id}/resume', [DriverController::class, 'resumeTrip']);
+      Route::post('trips/{id}/pause', [DriverController::class, 'pauseTrip']);
+        Route::post('trips/{id}/resume', [DriverController::class, 'resumeTrip']);
         Route::post('trips/{id}/complete', [DriverController::class, 'completeTrip']);
         Route::get('trips/{id}/gas-slip', [DriverController::class, 'getGasSlip']);
 
