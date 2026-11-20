@@ -14,53 +14,34 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { cn } from '@/lib/utils';
 import {
-    Car, Gauge, Clock, MapPin, User, Search, Fuel, Droplets, Activity
+    Car, Gauge, Clock, MapPin, User, Search, Fuel, Droplets, Activity, PauseCircle
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 
-// ============================================
-// CUSTOM MAP ICONS (SVG)
-// ============================================
+// ... (CREATE VEHICLE ICONS UG HELPER FUNCTIONS parehas sa imong original) ...
 
 const createVehicleIcon = (plateNumber, vehicleModel) => {
     return L.divIcon({
         className: 'custom-vehicle-icon',
         html: `<div style="
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            transform: translate(-50%, -50%);
-            position: relative;
-            width: 120px;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            transform: translate(-50%, -50%); position: relative; width: 120px;
         ">
             <div style="
-                background-color: #3b82f6;
-                width: 32px; height: 32px;
-                border-radius: 50%;
-                border: 2px solid white;
-                display: flex; align-items: center; justify-content: center;
-                box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-                z-index: 2;
+                background-color: #3b82f6; width: 32px; height: 32px; border-radius: 50%;
+                border: 2px solid white; display: flex; align-items: center; justify-content: center;
+                box-shadow: 0 4px 6px rgba(0,0,0,0.3); z-index: 2;
             ">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/>
                 </svg>
             </div>
             <div style="
-                position: absolute;
-                top: 38px;
-                background-color: rgba(255, 255, 255, 0.95);
-                color: #0f172a;
-                padding: 2px 6px;
-                border-radius: 4px;
-                font-size: 10px;
-                font-weight: 700;
-                white-space: nowrap;
-                box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-                border: 1px solid #cbd5e1;
-                z-index: 1;
+                position: absolute; top: 38px; background-color: rgba(255, 255, 255, 0.95);
+                color: #0f172a; padding: 2px 6px; border-radius: 4px; font-size: 10px;
+                font-weight: 700; white-space: nowrap; box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+                border: 1px solid #cbd5e1; z-index: 1;
             ">
                 ${plateNumber || 'Unknown'}
                 <span style="font-weight: 400; font-size: 9px; color: #64748b; display: block; text-align: center;">
@@ -68,9 +49,7 @@ const createVehicleIcon = (plateNumber, vehicleModel) => {
                 </span>
             </div>
         </div>`,
-        iconSize: [120, 80], 
-        iconAnchor: [60, 40], 
-        popupAnchor: [0, -30],
+        iconSize: [120, 80], iconAnchor: [60, 40], popupAnchor: [0, -30],
     });
 };
 
@@ -78,19 +57,15 @@ const createSvgIcon = (color, iconPath) => {
     return L.divIcon({
         className: 'custom-svg-icon',
         html: `<div style="
-            background-color: ${color};
-            width: 28px; height: 28px;
-            border-radius: 50%;
-            border: 2px solid white;
-            display: flex; align-items: center; justify-content: center;
+            background-color: ${color}; width: 28px; height: 28px; border-radius: 50%;
+            border: 2px solid white; display: flex; align-items: center; justify-content: center;
             box-shadow: 0 4px 6px rgba(0,0,0,0.3);
         ">
             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
                 ${iconPath}
             </svg>
         </div>`,
-        iconSize: [28, 28],
-        iconAnchor: [14, 14],
+        iconSize: [28, 28], iconAnchor: [14, 14],
     });
 };
 
@@ -99,14 +74,28 @@ const icons = {
     end: createSvgIcon('#ef4444', '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><line x1="4" y1="22" x2="4" y2="15"></line>'),
 };
 
-// ============================================
-// HELPER FUNCTIONS
-// ============================================
 const formatTime = (dateString) => {
     if (!dateString) return 'N/A';
     try {
         return new Date(dateString).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
     } catch { return 'N/A'; }
+};
+
+// ✅ HELPER PARA SA DYNAMIC STATUS BADGE
+const TripStatusBadge = ({ status }) => {
+    if (status === 'paused') {
+        return (
+            <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800 gap-1">
+                <PauseCircle className="h-3 w-3" /> Paused
+            </Badge>
+        );
+    }
+    // Default to In Transit
+    return (
+        <Badge variant="outline" className="text-[10px] bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800">
+            In Transit
+        </Badge>
+    );
 };
 
 const LiveTracking = () => {
@@ -123,7 +112,6 @@ const LiveTracking = () => {
     const mapRef = useRef(null);
     const hasSetupRef = useRef(false);
 
-    // ✅ Fetch Real Dashboard Stats
     const { data: dashboardData } = useOptimizedQuery({
         queryKey: ['gso-dashboard-stats'],
         queryFn: async () => {
@@ -133,7 +121,6 @@ const LiveTracking = () => {
         staleTime: 60000, 
     });
 
-    // Fetch Active Trips
     const { data: activeTripsRaw, isLoading } = useOptimizedQuery({
         queryKey: ['gps-active-trips-live'],
         queryFn: async () => {
@@ -150,7 +137,6 @@ const LiveTracking = () => {
 
     const activeTrips = useMemo(() => (Array.isArray(activeTripsRaw) ? activeTripsRaw : []), [activeTripsRaw]);
 
-    // Sync API data with local state
     useEffect(() => {
         if (!Array.isArray(activeTrips)) return;
         setTripsData(prev => {
@@ -165,7 +151,6 @@ const LiveTracking = () => {
         });
     }, [activeTrips]);
 
-    // WebSocket Real-time Updates
     useEffect(() => {
         if (hasSetupRef.current) return;
         hasSetupRef.current = true;
@@ -224,7 +209,6 @@ const LiveTracking = () => {
         }
     };
 
-    // ✅ Extract stats from dashboardData
     const totalVehicles = dashboardData?.total_vehicles || 0;
     const availableVehicles = dashboardData?.available_vehicles || 0;
     const inUseVehicles = dashboardData?.vehicles_in_use || 0;
@@ -234,7 +218,6 @@ const LiveTracking = () => {
         trip.vehicle?.vehicle_model?.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
-    // ✅ Calculate SIMULATED Fuel Info based on GPS Route
     const fuelInfo = useMemo(() => {
         if (!selectedTrip?.vehicle) return null;
         
@@ -244,9 +227,8 @@ const LiveTracking = () => {
         
         let distanceTraveled = 0;
 
-        // 1. Try to calculate distance from GPS route (if available)
         if (selectedTrip.route && selectedTrip.route.length > 1) {
-            const R = 6371; // Earth radius in km
+            const R = 6371;
             for (let i = 0; i < selectedTrip.route.length - 1; i++) {
                 const lat1 = selectedTrip.route[i].latitude;
                 const lon1 = selectedTrip.route[i].longitude;
@@ -259,36 +241,26 @@ const LiveTracking = () => {
                           Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
                           Math.sin(dLon/2) * Math.sin(dLon/2);
                 const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-                distanceTraveled += R * c; // in km
+                distanceTraveled += R * c;
             }
-        } 
-        // 2. Fallback to actual_distance_km if no GPS route
-        else if (selectedTrip.actual_distance_km) {
+        } else if (selectedTrip.actual_distance_km) {
             distanceTraveled = parseFloat(selectedTrip.actual_distance_km);
         }
         
-        // 3. If wala gihapon, simulate based on time passed (para naa jud makita)
         if (distanceTraveled === 0 && selectedTrip.trip_started_at) {
             const startTime = new Date(selectedTrip.trip_started_at);
             const now = new Date(selectedTrip.current_location?.recorded_at || new Date());
             const diffMinutes = Math.max(0, (now - startTime) / 60000);
-            distanceTraveled = diffMinutes * 0.5; // assume 30km/h average speed
+            distanceTraveled = diffMinutes * 0.5;
         }
 
-        // Fuel consumed = Distance / Efficiency
         const consumed = distanceTraveled / efficiency;
-        
-        // Simulated remaining balance
         const simulatedBalance = Math.max(0, currentBalance - consumed);
         const percent = tankCap > 0 ? Math.min(100, Math.max(0, (simulatedBalance / tankCap) * 100)) : 0;
 
         return {
-            tankCap,
-            currentBalance: simulatedBalance,
-            originalBalance: currentBalance,
-            consumed,
-            percent,
-            distanceTraveled
+            tankCap, currentBalance: simulatedBalance, originalBalance: currentBalance,
+            consumed, percent, distanceTraveled
         };
     }, [selectedTrip]);
 
@@ -298,8 +270,6 @@ const LiveTracking = () => {
 
     return (
         <div className="h-screen flex flex-col bg-slate-50 dark:bg-slate-950 font-sans">
-            
-            {/* ================= HEADER ================= */}
             <header className="flex-shrink-0 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-6 py-4 flex items-center justify-between">
                 <div>
                     <h1 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
@@ -320,13 +290,8 @@ const LiveTracking = () => {
                 </div>
             </header>
 
-            {/* ================= MAIN CONTENT ================= */}
             <div className="flex-1 flex flex-col lg:flex-row overflow-hidden p-4 gap-4">
-                
-                {/* LEFT PANEL: LIST */}
                 <div className="w-full lg:w-[420px] flex flex-col gap-4 flex-shrink-0">
-                    
-                    {/* REAL STATS ROW */}
                     <div className="grid grid-cols-2 gap-3">
                         <div className="bg-white dark:bg-slate-900 rounded-xl p-3 border border-slate-200 dark:border-slate-800">
                             <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Total Vehicles</p>
@@ -340,7 +305,6 @@ const LiveTracking = () => {
                         </div>
                     </div>
 
-                    {/* Search Bar */}
                     <div className="bg-white dark:bg-slate-900 rounded-xl p-3 border border-slate-200 dark:border-slate-800">
                         <div className="relative">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
@@ -354,7 +318,6 @@ const LiveTracking = () => {
                         </div>
                     </div>
 
-                    {/* Ongoing Trips List */}
                     <div className="flex-1 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-col overflow-hidden">
                         <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-900">
                             <h2 className="font-bold text-slate-800 dark:text-white text-sm">Ongoing Trips</h2>
@@ -394,9 +357,9 @@ const LiveTracking = () => {
                                         </div>
                                         <div className="text-right flex-shrink-0">
                                             <div className="flex flex-col items-end gap-1">
-                                                <Badge variant="outline" className="text-[10px] bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800">
-                                                    In Transit
-                                                </Badge>
+                                                {/* ✅ GIGAMIT ANG DYNAMIC STATUS BADGE */}
+                                                <TripStatusBadge status={trip.status} />
+                                                
                                                 <span className="text-[10px] text-slate-500 mt-1 flex items-center gap-1">
                                                     <Clock className="h-3 w-3" />
                                                     {formatTime(trip.current_location?.recorded_at)}
@@ -410,10 +373,7 @@ const LiveTracking = () => {
                     </div>
                 </div>
 
-                {/* RIGHT PANEL: MAP & DETAILS */}
                 <div className="flex-1 flex flex-col gap-4 min-w-0">
-                    
-                    {/* Map Container */}
                     <div className="flex-1 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden relative shadow-sm">
                         <MapContainer
                             ref={mapRef}
@@ -435,8 +395,6 @@ const LiveTracking = () => {
 
                                 return (
                                     <React.Fragment key={trip.trip_id}>
-                                        {/* GITANGGAL ANG POLYLINE PARA WALAY MAG-GUBOT NGA LINYA */}
-                                        
                                         {trip.route && trip.route.length > 0 && (
                                             <Marker position={[trip.route[0].latitude, trip.route[0].longitude]} icon={icons.start} />
                                         )}
@@ -454,7 +412,6 @@ const LiveTracking = () => {
                             })}
                         </MapContainer>
 
-                        {/* Map Controls */}
                         <div className="absolute top-4 left-4 z-[400] flex bg-white dark:bg-slate-800 rounded-lg shadow-sm p-1 border border-slate-200 dark:border-slate-700">
                             <button 
                                 onClick={() => setMapType('street')} 
@@ -471,7 +428,6 @@ const LiveTracking = () => {
                         </div>
                     </div>
 
-                    {/* Selected Trip Details */}
                     {selectedTrip && (
                         <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 shadow-sm flex-shrink-0">
                             
@@ -486,11 +442,14 @@ const LiveTracking = () => {
                                             <span className="text-slate-300 dark:text-slate-600">•</span>
                                             <span className="text-sm text-slate-500">{selectedTrip.vehicle?.vehicle_model}</span>
                                         </div>
-                                        <Badge variant="outline" className="text-[10px] bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-400 mt-1">In Transit</Badge>
+                                        
+                                        {/* ✅ GIGAMIT ANG DYNAMIC STATUS BADGE DINHI */}
+                                        <div className="mt-1">
+                                            <TripStatusBadge status={selectedTrip.status} />
+                                        </div>
                                     </div>
                                 </div>
 
-                                {/* ✅ Fuel Badge Display */}
                                 {fuelInfo && (
                                     <div className="flex flex-col items-end">
                                         <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700">
@@ -528,7 +487,6 @@ const LiveTracking = () => {
                                 </div>
                             </div>
 
-                            {/* ✅ Detailed Fuel Info */}
                             {fuelInfo && (
                                 <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800">
                                     <div className="flex items-center gap-6">
