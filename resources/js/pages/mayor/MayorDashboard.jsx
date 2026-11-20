@@ -534,6 +534,23 @@ const MayorDashboard = () => {
         return totalLiters > 0 ? (totalCost / totalLiters) : 0;
     }, [fuelPriceData]);
 
+    // ✅ KWENTA SA TOTAL PARA SA UBOS SA TABLE (Base sa tanang data sa tab, dili lang sa page)
+    const totalQuantity = useMemo(() => {
+        return fuelPriceData.reduce((sum, r) => {
+            const qty = parseFloat(r.liters_availed) || 0;
+            return qty > 0 ? sum + qty : sum; 
+        }, 0);
+    }, [fuelPriceData]);
+
+    const totalFuelCost = useMemo(() => {
+        return fuelPriceData.reduce((sum, r) => {
+            const amt = parseFloat(r.amount) || 0;
+            const qty = parseFloat(r.liters_availed) || 0;
+            // I-apil ra ang total cost kung naay quantity
+            return qty > 0 ? sum + amt : sum;
+        }, 0);
+    }, [fuelPriceData]);
+
     const paginatedFuelData = useMemo(() => {
         const start = (fuelPage - 1) * itemsPerPage;
         return fuelPriceData.slice(start, start + itemsPerPage);
@@ -1048,6 +1065,22 @@ const MayorDashboard = () => {
                                             );
                                         })}
                                     </tbody>
+                                    {/* ✅ TOTAL ROW SA UBOS SA TABLE */}
+                                    {paginatedFuelData.length > 0 && (
+                                        <tfoot className="bg-[#121829] border-t border-slate-700 text-xs">
+                                            <tr>
+                                                <td className="px-4 py-3 font-bold text-white">Total</td>
+                                                <td className="px-4 py-3"></td>
+                                                <td className="px-4 py-3 text-right font-bold text-white">
+                                                    {totalQuantity > 0 ? totalQuantity.toFixed(2) : "-"}
+                                                </td>
+                                                <td className="px-4 py-3"></td>
+                                                <td className="px-4 py-3 text-right font-bold text-white">
+                                                    {totalFuelCost > 0 ? formatCurrency(totalFuelCost) : "-"}
+                                                </td>
+                                            </tr>
+                                        </tfoot>
+                                    )}
                                 </table>
                             </div>
 
