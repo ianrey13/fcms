@@ -62,7 +62,7 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         Route::post('logout', [AuthController::class, 'logout']);
         Route::post('change-password', [AuthController::class, 'changePassword']);
         Route::post('update-profile', [AuthController::class, 'updateProfile']);
-        Route::post('change-first-password', [AuthController::class, 'changeFirstPassword']); 
+        Route::post('change-first-password', [AuthController::class, 'changeFirstPassword']);
     });
     // ============ PUSH TOKENS ============
     Route::post('push-token', [PushTokenController::class, 'store']);
@@ -235,8 +235,8 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
 
 
         // Gas Slip placeholder tickets
-Route::get('pending-gas-slips', [GsoController::class, 'getPendingGasSlipTickets']);
-Route::post('pending-gas-slips/{tripTicketId}/complete', [GsoController::class, 'completeGasSlipTicket']);
+        Route::get('pending-gas-slips', [GsoController::class, 'getPendingGasSlipTickets']);
+        Route::post('pending-gas-slips/{tripTicketId}/complete', [GsoController::class, 'completeGasSlipTicket']);
     });
 
     // ============ MAYOR'S OFFICE ============
@@ -314,8 +314,8 @@ Route::post('pending-gas-slips/{tripTicketId}/complete', [GsoController::class, 
         Route::get('cancelled-trips', [MayorsOfficeController::class, 'getCancelledTrips']);
         Route::post('tickets/{id}/cancel', [MayorsOfficeController::class, 'cancelTrip']);
 
-               // Gas Slips (MO-created)
-               Route::get('gas-slips/next-control-number', [MayorsOfficeController::class, 'getNextControlNumber']); // ← ADD
+        // Gas Slips (MO-created)
+        Route::get('gas-slips/next-control-number', [MayorsOfficeController::class, 'getNextControlNumber']); // ← ADD
         Route::post('gas-slips', [MayorsOfficeController::class, 'createGasSlip']);
         Route::get('gas-slips/pending', [MayorsOfficeController::class, 'getPendingGasSlips']);
         Route::post('gas-slips/{id}/cancel', [MayorsOfficeController::class, 'cancelGasSlip']);
@@ -329,7 +329,6 @@ Route::post('pending-gas-slips/{tripTicketId}/complete', [GsoController::class, 
 
         Route::get('tickets/{id}/suggest-release', [MayorsOfficeController::class, 'getSuggestedRelease']);
         Route::get('history', [MayorsOfficeController::class, 'getHistoryTickets']);
-
     });
 
     // ============ DRIVER ============
@@ -346,8 +345,12 @@ Route::post('pending-gas-slips/{tripTicketId}/complete', [GsoController::class, 
 
         Route::post('trips/{id}/acknowledge', [DriverController::class, 'acknowledgeFunds']);
         Route::post('trips/{id}/start', [DriverController::class, 'startTrip']);
+
+        Route::post('/driver/trips/{id}/pause', [DriverController::class, 'pauseTrip']);
+        Route::post('/driver/trips/{id}/resume', [DriverController::class, 'resumeTrip']);
         Route::post('trips/{id}/complete', [DriverController::class, 'completeTrip']);
         Route::get('trips/{id}/gas-slip', [DriverController::class, 'getGasSlip']);
+
 
         Route::post('trips/{id}/receipt', [DriverController::class, 'uploadReceipt']);
         Route::get('trips/{id}/receipt', [DriverController::class, 'getReceiptStatus']);
@@ -387,9 +390,6 @@ Route::post('pending-gas-slips/{tripTicketId}/complete', [GsoController::class, 
         Route::get('reports/summary', [ReportsController::class, 'getReportSummary']);
         Route::get('trips/{id}/history', [DriverController::class, 'getTripHistory']);
         Route::get('trips/history/all', [DriverController::class, 'getAllTripHistory']);
-
-        Route::post('/driver/trips/{id}/pause', [DriverController::class, 'pauseTrip']);
-Route::post('/driver/trips/{id}/resume', [DriverController::class, 'resumeTrip']);
     });
 
     // ============ GPS (General Access - Authenticated Users) ============
@@ -422,9 +422,9 @@ Route::post('/driver/trips/{id}/resume', [DriverController::class, 'resumeTrip']
 
 
         Route::get('recent-refuelings', [GpsPingController::class, 'getRecentRefuelings'])
-    ->middleware(['role:gso_office']);
-Route::get('completed-trips', [GpsPingController::class, 'getCompletedTrips'])
-    ->middleware(['role:gso_office']);
+            ->middleware(['role:gso_office']);
+        Route::get('completed-trips', [GpsPingController::class, 'getCompletedTrips'])
+            ->middleware(['role:gso_office']);
     });
 
     // ============ NOTIFICATIONS ============
