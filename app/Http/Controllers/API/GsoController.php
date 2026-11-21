@@ -303,7 +303,7 @@ class GsoController extends Controller
     /**
      * Get all trips (for GSO admin view)
      */
-    public function getAllTrips(Request $request)
+        public function getAllTrips(Request $request)
     {
         try {
             $user = $request->user();
@@ -319,8 +319,7 @@ class GsoController extends Controller
                 'vehicleSnapshot',
                 'gasSlip.fuelReceipt'
             ])
-                // ✅ BACKEND FILTER: Dili kuhaon ang cancelled, rejected, ug returned
-                ->whereNotIn('status', ['cancelled', 'rejected', 'returned_for_revision'])
+                // ❌ GITANGGAL ANG whereNotIn ARON MA-RETURN ANG TANAN
                 ->orderBy('submitted_at', 'desc')
                 ->get()
                 ->map(function ($ticket) {
