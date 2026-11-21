@@ -233,30 +233,40 @@ const MayorPending = () => {
     }
   }, [suggestionResponse, moDepartmentId]);
 
-  const handleApprove = async () => {
+   const handleApprove = async () => {
     if (!amountReleased || parseFloat(amountReleased) <= 0) {
       return toast.error("Please enter a valid amount");
     }
     const amount = parseFloat(amountReleased);
 
-    // ✅ FRONTEND VALIDATION: Kung cross-dept pero wala pa na-load ang MO ID
+  
+    const tankCap = parseFloat(selectedTicket?.vehicle?.tank_capacity || 60);
+    const currentFuel = parseFloat(selectedTicket?.vehicle?.current_fuel_balance || 0);
+
+   
+    const avgPrice = suggestion?.unit_price_hint || 88; 
+    const estimatedLitersToAdd = amount / avgPrice;
+    const projectedTotalFuel = currentFuel + estimatedLitersToAdd;
+    
+    const exceedsTank = projectedTotalFuel > tankCap;
+
+    // Validation
     if (isCrossDepartment && !moDepartmentId) {
       return toast.error("Mayor's Office department not found. Please refresh the page.");
     }
 
-    // ✅ DYNAMIC: Gamita ang moDepartmentId (dili na hardcoded)
     const chargeToDeptId = isCrossDepartment
       ? moDepartmentId
       : selectedTicket.department_id;
 
-    // ✅ FRONTEND VALIDATION: Kung parehas ra ang department, ayaw i-allow
     if (isCrossDepartment && String(chargeToDeptId) === String(selectedTicket.department_id)) {
       return toast.error(
         "Cross-Department is selected, but this ticket is already from the Mayor's Office. Please uncheck the Cross-Department option."
       );
     }
 
-    if (suggestion && suggestion.available && amount > suggestion.suggested_amount) {
+    // ✅ IPAKITA ANG WARNING KUNG MO-LAPAS SA TANK CAPACITY
+    if (exceedsTank) {
       setPendingPayload({
         amount_released: amount,
         charge_to_department_id: chargeToDeptId,
@@ -274,7 +284,6 @@ const MayorPending = () => {
       cross_department_reason: isCrossDepartment ? "Mayor's Office Release" : null,
     });
   };
-
   const submitApprove = async (payload) => {
     setSubmitting(true);
     try {
@@ -602,21 +611,39 @@ const MayorPending = () => {
       </Dialog>
 
       <Dialog open={showTankWarning} onOpenChange={setShowTankWarning}>
-        <DialogContent className="max-w-md bg-[#121829] border-slate-700 text-slate-200">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-amber-400">
-              <AlertTriangle className="h-5 w-5" /> Warning
-            </DialogTitle>
-            <DialogDescription className="text-slate-400 pt-2">
-              Fuel may exceed to tank capacity with that amount. Continue anyway?
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="mt-4 gap-2">
-            <Button variant="outline" onClick={() => setShowTankWarning(false)} className="border-slate-700 text-slate-300 hover:bg-slate-800">No, Cancel</Button>
-            <Button onClick={() => submitApprove(pendingPayload)} className="bg-amber-600 hover:bg-amber-700 text-white">Yes, Continue</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+  <DialogContent className="max-w-md bg-[#121829] border-slate-700 text-slate-200">
+    <DialogHeader>
+      <DialogTitle className="flex items-center gap-2 text-amber-400">
+        <AlertTriangle className="h-5 w-5" /> Fuel Exceeds Tank Capacity
+      </DialogTitle>
+      <DialogDescription className="text-slate-400 pt-2">
+        Based on the amount entered, the projected fuel level will exceed the vehicle's tank capacity.
+      </DialogDescription>
+    </DialogHeader>
+    <div className="bg-amber-950/30 p-3 rounded-lg border border-amber-900/50 my-4 space-y-1 text-sm">
+       <div className="flex justify-between">
+          <span className="text-slate-400">Current Balance:</span>
+          <span className="text-white font-bold">{currentFuel.toFixed(1)} L</span>
+       </div>
+       <div className="flex justify-between">
+          <span className="text-slate-400">Amount to Release:</span>
+          <span className="text-white font-bold">₱{parseFloat(amountReleased).toFixed(2)}</span>
+       </div>
+       <div className="flex justify-between">
+          <span className="text-slate-400">Est. Added Liters:</span>
+          <span className="text-amber-400 font-bold">+{(parseFloat(amountReleased) / (suggestion?.unit_price_hint || 88)).toFixed(1)} L</span>
+       </div>
+       <div className="flex justify-between border-t border-amber-900/50 pt-1 mt-1">
+          <span className="text-amber-500 font-bold">Projected Total:</span>
+          <span className="text-amber-500 font-bold">{((parseFloat(amountReleased) / (suggestion?.unit_price_hint || 88)) + currentFuel).toFixed(1)} L / {tankCap} L</span>
+       </div>
+    </div>
+    <DialogFooter className="mt-4 gap-2">
+      <Button variant="outline" onClick={() => setShowTankWarning(false)} className="border-slate-700 text-slate-300 hover:bg-slate-800">No, Cancel</Button>
+      <Button onClick={() => submitApprove(pendingPayload)} className="bg-amber-600 hover:bg-amber-700 text-white">Yes, Continue</Button>
+    </DialogFooter>
+  </DialogContent>
+</Dialog>
 
     </div>
   );

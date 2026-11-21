@@ -314,12 +314,20 @@ const GsoDashboard = () => {
         () => (Array.isArray(allTripsRaw) ? allTripsRaw : []),
         [allTripsRaw],
     );
-    const { data: pendingValidationRaw = [], isLoading: validationLoading } =
+     const { data: pendingValidationRaw = [], isLoading: validationLoading } =
         useOptimizedQuery({
             queryKey: ["gso-pending-validation"],
-            queryFn: async () =>
-                extractArray(await gsoAPI.getPendingValidation()),
+            queryFn: async () => {
+                const trips = extractArray(await gsoAPI.getPendingValidation());
+                
+                return trips.filter(trip => {
+                    const hasLiters = trip.gas_slip?.fuel_receipt?.liters_availed > 0;
+                    const isCompleted = (trip.actual_distance_km || 0) > 0;
+                    return hasLiters && isCompleted;
+                });
+            },
         });
+
     const pendingValidation = useMemo(
         () => (Array.isArray(pendingValidationRaw) ? pendingValidationRaw : []),
         [pendingValidationRaw],

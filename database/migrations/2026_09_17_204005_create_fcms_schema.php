@@ -243,7 +243,7 @@ return new class extends Migration
                 'acknowledged',
                 'pending_gso_validation',
                 'completed',
-                'pending_gso_ticket',   // ✅ ADD
+                'pending_gso_ticket',
             ])->default('draft');
 
             $table->integer('trip_count')->default(0);
