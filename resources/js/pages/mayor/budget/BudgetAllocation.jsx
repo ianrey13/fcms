@@ -14,7 +14,8 @@ import {
     Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import {
-    TrendingUp, TrendingDown, Edit, AlertCircle, Building2, Plus, Info, ArrowLeft, PhilippinePeso, History, Activity,
+    TrendingUp, TrendingDown, Edit, AlertCircle, Building2, Plus, Info, ArrowLeft, PhilippinePeso, History, Activity, 
+    CheckCircle2, ChevronLeft, ChevronRight
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { useNavigate } from "react-router-dom";
@@ -81,7 +82,7 @@ const FormField = ({ label, icon: Icon, required, error, touched, helper, childr
                 {React.cloneElement(children, {
                     className: cn(
                         children.props.className, 
-                        "dark:bg-slate-900 dark:border-slate-700 dark:text-white", // ✅ FIX: Dark mode input styles
+                        "dark:bg-slate-900 dark:border-slate-700 dark:text-white", 
                         hasError && "border-red-500 ring-red-500 focus:ring-red-500 bg-red-50/50 dark:bg-red-950/10"
                     )
                 })}
@@ -122,13 +123,16 @@ const BudgetAllocation = () => {
     const [showAddBudgetDialog, setShowAddBudgetDialog] = useState(false);
     const [addBudgetData, setAddBudgetData] = useState({ department_id: "", additional_amount: "", reason: "" });
     
-    // ✅ Added 'reason' to the initial form state
     const [formData, setFormData] = useState({ annual_amount: "", reason: "" });
     
     const [editErrors, setEditErrors] = useState({});
     const [editTouched, setEditTouched] = useState({});
     const [addErrors, setAddErrors] = useState({});
     const [addTouched, setAddTouched] = useState({});
+
+    // ✅ State for Transaction History Pagination
+    const [historyPage, setHistoryPage] = useState(1);
+    const historyRowsPerPage = 5;
 
     useAutoRefresh(["mayor-budget-updated", "mayor-trip-updated", "gso-funds-released"], () => {
         queryClient.invalidateQueries({ queryKey: ["annual-budgets", selectedYear] });
@@ -221,6 +225,86 @@ const BudgetAllocation = () => {
         };
     }, [budgetData, budgets]);
 
+    // ✅ CALCULATE TRANSACTION HISTORY WITH RUNNING BALANCE
+    const processedHistory = useMemo(() => {
+        if (!historyData || historyData.length === 0) return { rows: [], totals: {} };
+
+        // Sort oldest first to compute running balance correctly
+        const chronological = [...historyData].sort((a, b) => 
+            new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        );
+
+        let runningBalance = 0;
+        let totalAdded = 0;
+        let totalReleased = 0;
+
+        const computed = chronological.map(log => {
+            const added = parseFloat(log.added_amount) || 0;
+            const isRelease = log.action.toLowerCase().includes('release') || log.action.toLowerCase().includes('fund');
+            
+            if (isRelease) {
+                runningBalance -= Math.abs(added);
+                totalReleased += Math.abs(added);
+            } else {
+                runningBalance += Math.abs(added);
+                totalAdded += Math.abs(added);
+            }
+
+            // Map action to UI types
+            let txType = "Allocation";
+            let typeColor = "bg-emerald-500/20 text-emerald-400 border-emerald-500/30";
+            let TypeIcon = CheckCircle2;
+            
+            if (isRelease) {
+                txType = "Fund Release";
+                typeColor = "bg-red-500/20 text-red-400 border-red-500/30";
+                TypeIcon = TrendingDown;
+            } else if (log.action.toLowerCase().includes('additional')) {
+                txType = "Additional Allocation";
+                typeColor = "bg-emerald-500/20 text-emerald-400 border-emerald-500/30";
+                TypeIcon = TrendingUp;
+            } else if (log.action.toLowerCase().includes('initial')) {
+                txType = "Allocation";
+                typeColor = "bg-emerald-500/20 text-emerald-400 border-emerald-500/30";
+                TypeIcon = CheckCircle2;
+            }
+
+            return {
+                ...log,
+                displayDate: new Date(log.created_at),
+                referenceNo: log.reference_no || log.trip_ticket_number || `REF-${log.id || 'XXX'}`,
+                txType,
+                typeColor,
+                TypeIcon,
+                displayAmount: Math.abs(added),
+                isRelease,
+                runningBalance,
+                displayDestination: log.destination || log.purpose || "—",
+            };
+        });
+
+        // Reverse to show newest first
+        const reversed = [...computed].reverse();
+
+        return {
+            rows: reversed,
+            totals: {
+                totalAllocated: computed.length > 0 ? (runningBalance + totalReleased) : 0,
+                totalAdded,
+                totalReleased,
+                finalBalance: runningBalance
+            }
+        };
+    }, [historyData]);
+
+    // Pagination for Transaction History
+    const totalHistoryPages = Math.ceil(processedHistory.rows.length / historyRowsPerPage);
+    const currentHistoryData = useMemo(() => {
+        const firstPageIndex = (historyPage - 1) * historyRowsPerPage;
+        const lastPageIndex = firstPageIndex + historyRowsPerPage;
+        return processedHistory.rows.slice(firstPageIndex, lastPageIndex);
+    }, [historyPage, processedHistory.rows]);
+
     const formatCurrency = (amount) => {
         if (!amount || amount === 0) return "₱0.00";
         return new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", minimumFractionDigits: 2 }).format(amount);
@@ -236,7 +320,6 @@ const BudgetAllocation = () => {
         return <Badge className="bg-green-500">Active</Badge>;
     };
 
-    // ✅ Added reason validation
     const validateEditBudget = () => {
         const newErrors = {};
         if (!formData.annual_amount || parseFloat(formData.annual_amount) <= 0) {
@@ -266,7 +349,6 @@ const BudgetAllocation = () => {
 
     const handleEdit = (budget) => {
         setEditingBudget(budget);
-        // ✅ Reset reason when opening
         setFormData({ annual_amount: budget.annual_amount?.toString() || "", reason: "" });
         setShowEditDialog(true);
     };
@@ -277,7 +359,7 @@ const BudgetAllocation = () => {
             data: { 
                 department_id: editingBudget.department_id, 
                 annual_amount: parseFloat(formData.annual_amount),
-                reason: formData.reason // ✅ Send reason to backend
+                reason: formData.reason 
             } 
         });
     };
@@ -358,7 +440,6 @@ const BudgetAllocation = () => {
                         <Table>
                             <TableHeader className="sticky top-0 bg-slate-50 dark:bg-slate-900 z-10">
                                 <TableRow>
-                                    {/* ✅ FIX: Added dark:text-slate-300 for visibility */}
                                     <TableHead className="text-slate-600 dark:text-slate-300">Code</TableHead>
                                     <TableHead className="text-right text-slate-600 dark:text-slate-300">Annual Budget</TableHead>
                                     <TableHead className="text-right text-slate-600 dark:text-slate-300">Weekly Suggested</TableHead>
@@ -372,7 +453,6 @@ const BudgetAllocation = () => {
                                 {budgets.map((budget) => (
                                     <TableRow key={budget.department_id}>
                                         <TableCell><DepartmentTooltip code={budget.department_code} name={budget.department_name} /></TableCell>
-                                        {/* ✅ FIX: Dark mode color variants */}
                                         <TableCell className="text-right font-medium text-blue-600 dark:text-blue-400">{formatCurrency(budget.annual_amount)}</TableCell>
                                         <TableCell className="text-right text-purple-600 dark:text-purple-400">{formatCurrency(weeklySuggested(budget.annual_amount))}</TableCell>
                                         <TableCell className="text-right text-yellow-600 dark:text-yellow-400">{formatCurrency(budget.used_amount)}</TableCell>
@@ -404,73 +484,148 @@ const BudgetAllocation = () => {
                 </div>
 
                 {/* ============================================ */}
-                {/* BUDGET HISTORY (BELOW) */}
+                {/* ✅ TRANSACTION HISTORY (Replaced old Budget History) */}
                 {/* ============================================ */}
-                <Card className="dark:bg-slate-800/80 dark:border-slate-700 shadow-sm">
-                    <CardHeader className="border-b border-slate-200/60 dark:border-slate-700/60">
-                        <CardTitle className="flex items-center gap-2 text-slate-800 dark:text-white">
-                            <History className="h-5 w-5 text-purple-500" />
-                            Budget History
+                <Card className="dark:bg-[#0f172a] border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden relative">
+                    <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/5 rounded-full blur-3xl pointer-events-none" />
+
+                    <CardHeader className="border-b border-slate-200/60 dark:border-slate-800/60 pb-6 relative z-10">
+                        <CardTitle className="flex items-center gap-2 text-slate-800 dark:text-white text-xl">
+                            <History className="h-6 w-6 text-blue-500" />
+                            Transaction History
                         </CardTitle>
-                        <CardDescription>Record of all budget allocations and additions for {selectedYear}</CardDescription>
                     </CardHeader>
-                    <CardContent className="p-0">
+
+                    <CardContent className="p-0 relative z-10">
                         {historyLoading ? (
                             <div className="p-12 text-center text-slate-500 dark:text-slate-400"><Activity className="h-6 w-6 animate-spin mx-auto mb-2" /> Loading history...</div>
-                        ) : !historyData || historyData.length === 0 ? (
+                        ) : processedHistory.rows.length === 0 ? (
                             <div className="p-12 text-center text-slate-500 dark:text-slate-400">
                                 <History className="h-10 w-10 text-slate-300 dark:text-slate-600 mx-auto mb-2" />
                                 No budget history found for {selectedYear}.
                             </div>
                         ) : (
-                            <div className="overflow-x-auto">
-                                <Table>
-                                    <TableHeader>
-                                        <TableRow className="bg-slate-50 dark:bg-slate-900/50">
-                                            <TableHead className="text-slate-600 dark:text-slate-300">Date</TableHead>
-                                            <TableHead className="text-slate-600 dark:text-slate-300">Department</TableHead>
-                                            <TableHead className="text-slate-600 dark:text-slate-300">Action</TableHead>
-                                            <TableHead className="text-right text-slate-600 dark:text-slate-300">Previous</TableHead>
-                                            <TableHead className="text-right text-emerald-600 dark:text-emerald-400">Added</TableHead>
-                                            <TableHead className="text-right text-slate-600 dark:text-slate-300">New Total</TableHead>
-                                            <TableHead className="text-slate-600 dark:text-slate-300">Reason</TableHead>
-                                            <TableHead className="text-slate-600 dark:text-slate-300">By</TableHead>
-                                        </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
-                                        {historyData.map((log, i) => (
-                                            <TableRow key={i}>
-                                                <TableCell className="whitespace-nowrap text-xs text-slate-500 dark:text-slate-400">
-                                                    {format(new Date(log.created_at), 'MMM dd, yyyy h:mm a')}
-                                                </TableCell>
-                                                <TableCell className="font-medium text-slate-800 dark:text-slate-200">
-                                                    {log.department_name}
-                                                </TableCell>
-                                                <TableCell>
-                                                    <Badge variant="outline" className="capitalize text-xs dark:text-slate-300 dark:border-slate-600">
-                                                        {log.action.replace(/_/g, ' ')}
-                                                    </Badge>
-                                                </TableCell>
-                                                <TableCell className="text-right text-slate-500 dark:text-slate-400">
-                                                    {formatCurrency(log.previous_amount)}
-                                                </TableCell>
-                                                <TableCell className="text-right font-medium text-emerald-600 dark:text-emerald-400">
-                                                    +{formatCurrency(log.added_amount)}
-                                                </TableCell>
-                                                <TableCell className="text-right font-bold text-blue-600 dark:text-blue-400">
-                                                    {formatCurrency(log.new_amount)}
-                                                </TableCell>
-                                                <TableCell className="max-w-[200px] truncate text-slate-600 dark:text-slate-300" title={log.reason}>
-                                                    {log.reason || "—"}
-                                                </TableCell>
-                                                <TableCell className="text-xs text-slate-500 dark:text-slate-400">
-                                                    {log.user_name || "System"}
-                                                </TableCell>
+                            <>
+                                {/* SUMMARY HEADER */}
+                                <div className="bg-[#1e293b]/50 p-6 md:p-8 flex flex-col md:flex-row items-center justify-between gap-6 border-b border-slate-800">
+                                    <div className="flex items-center gap-6">
+                                        {/* Donut Chart */}
+                                        <div className="relative w-28 h-28 flex items-center justify-center">
+                                            <svg className="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
+                                                <path className="text-slate-700" strokeWidth="4" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                                                <path 
+                                                    className="text-blue-500" 
+                                                    strokeDasharray={`${(processedHistory.totals.finalBalance / (processedHistory.totals.finalBalance + processedHistory.totals.totalReleased || 1)) * 100}, 100`} 
+                                                    strokeWidth="4" 
+                                                    strokeLinecap="round" 
+                                                    stroke="currentColor" 
+                                                    fill="none" 
+                                                    d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" 
+                                                />
+                                            </svg>
+                                            <div className="absolute inset-0 flex flex-col items-center justify-center">
+                                                <span className="text-xl font-bold text-white">
+                                                    {Math.round((processedHistory.totals.finalBalance / (processedHistory.totals.finalBalance + processedHistory.totals.totalReleased || 1)) * 100)}%
+                                                </span>
+                                                <span className="text-[9px] font-medium text-slate-400 uppercase tracking-wider">Remaining</span>
+                                            </div>
+                                        </div>
+
+                                        {/* Legend */}
+                                        <div className="space-y-3">
+                                            <div className="flex items-center gap-2">
+                                                <span className="h-2.5 w-2.5 rounded-full bg-blue-500"></span>
+                                                <span className="text-sm text-slate-400">Remaining Balance</span>
+                                                <span className="font-bold text-white ml-auto">{formatCurrency(processedHistory.totals.finalBalance)}</span>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <span className="h-2.5 w-2.5 rounded-full bg-slate-600"></span>
+                                                <span className="text-sm text-slate-400">Total Released</span>
+                                                <span className="font-bold text-white ml-auto">{formatCurrency(processedHistory.totals.totalReleased)}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="text-center md:text-right md:border-l md:border-slate-700 md:pl-8">
+                                        <p className="text-sm text-slate-400 mb-1">Total Allocation</p>
+                                        <p className="text-3xl font-extrabold text-white">{formatCurrency(processedHistory.totals.finalBalance + processedHistory.totals.totalReleased)}</p>
+                                    </div>
+                                </div>
+
+                                {/* TRANSACTION TABLE */}
+                                <div className="overflow-x-auto">
+                                    <Table>
+                                        <TableHeader className="bg-[#0f172a]">
+                                            <TableRow className="border-slate-800 hover:bg-transparent">
+                                                <TableHead className="text-slate-400 font-medium">Date</TableHead>
+                                                <TableHead className="text-slate-400 font-medium">Reference No.</TableHead>
+                                                <TableHead className="text-slate-400 font-medium">Transaction Type</TableHead>
+                                                <TableHead className="text-slate-400 font-medium">Purpose</TableHead>
+                                                <TableHead className="text-slate-400 font-medium">Destination</TableHead>
+                                                <TableHead className="text-right text-slate-400 font-medium">Amount</TableHead>
+                                                <TableHead className="text-right text-slate-400 font-medium">Running Balance</TableHead>
                                             </TableRow>
-                                        ))}
-                                    </TableBody>
-                                </Table>
-                            </div>
+                                        </TableHeader>
+                                        <TableBody>
+                                            {currentHistoryData.map((log, i) => (
+                                                <TableRow key={i} className="border-slate-800/50 hover:bg-slate-800/30">
+                                                    <TableCell className="text-sm text-slate-300 whitespace-nowrap">
+                                                        {format(log.displayDate, 'MMM dd, yyyy')}
+                                                    </TableCell>
+                                                    <TableCell className="text-sm font-mono text-slate-300">
+                                                        {log.referenceNo}
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <Badge variant="outline" className={cn("px-2 py-0.5 text-[10px] font-bold rounded-full border", log.typeColor)}>
+                                                            <log.TypeIcon className="h-3 w-3 mr-1" />
+                                                            {log.txType}
+                                                        </Badge>
+                                                    </TableCell>
+                                                    <TableCell className="text-sm text-slate-400 max-w-[150px] truncate">
+                                                        {log.purpose || log.reason || "—"}
+                                                    </TableCell>
+                                                    <TableCell className="text-sm text-slate-400 max-w-[150px] truncate">
+                                                        {log.displayDestination}
+                                                    </TableCell>
+                                                    <TableCell className={cn("text-sm font-bold text-right whitespace-nowrap", log.isRelease ? "text-red-400" : "text-emerald-400")}>
+                                                        {log.isRelease ? '-' : '+'}{formatCurrency(log.displayAmount)}
+                                                    </TableCell>
+                                                    <TableCell className="text-sm font-bold text-right text-white whitespace-nowrap">
+                                                        {formatCurrency(log.runningBalance)}
+                                                    </TableCell>
+                                                </TableRow>
+                                            ))}
+                                        </TableBody>
+                                    </Table>
+                                </div>
+
+                                {/* PAGINATION */}
+                                <div className="p-4 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
+                                    <span>
+                                        Showing <span className="font-bold text-white">{((historyPage - 1) * historyRowsPerPage) + 1}</span> to <span className="font-bold text-white">{Math.min(historyPage * historyRowsPerPage, processedHistory.rows.length)}</span> of <span className="font-bold text-white">{processedHistory.rows.length}</span> transactions
+                                    </span>
+                                    <div className="flex gap-1">
+                                        <Button 
+                                            variant="outline" 
+                                            size="sm" 
+                                            className="h-8 px-2 bg-transparent border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white"
+                                            onClick={() => setHistoryPage(p => Math.max(1, p - 1))}
+                                            disabled={historyPage === 1}
+                                        >
+                                            <ChevronLeft className="h-4 w-4 mr-1" /> Previous
+                                        </Button>
+                                        <Button 
+                                            variant="outline" 
+                                            size="sm" 
+                                            className="h-8 px-2 bg-transparent border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white"
+                                            onClick={() => setHistoryPage(p => Math.min(totalHistoryPages, p + 1))}
+                                            disabled={historyPage === totalHistoryPages}
+                                        >
+                                            Next <ChevronRight className="h-4 w-4 ml-1" />
+                                        </Button>
+                                    </div>
+                                </div>
+                            </>
                         )}
                     </CardContent>
                 </Card>
@@ -491,7 +646,6 @@ const BudgetAllocation = () => {
                                 placeholder="e.g., 500000"
                             />
                         </FormField>
-                        {/* ✅ ADDED REASON FIELD */}
                         <FormField label="Reason" required error={editErrors.reason} touched={editTouched.reason} helper="e.g., Initial allocation for FY 2026">
                             <Input 
                                 value={formData.reason} 

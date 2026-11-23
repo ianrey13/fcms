@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
+
 class BudgetPolicyController extends Controller
 {
     /**
@@ -32,9 +33,6 @@ class BudgetPolicyController extends Controller
             ], 500);
         }
     }
-    
-    
-
 
     /**
      * Ensure annual_budgets table exists
@@ -80,7 +78,6 @@ class BudgetPolicyController extends Controller
                 ]);
             }
 
-            // Get weekly allocation from policy
             $policy = DB::table('dept_budget_policy')
                 ->where('department_id', $departmentId)
                 ->first();
@@ -107,12 +104,10 @@ class BudgetPolicyController extends Controller
         }
     }
 
-   
     /**
-     *  Update budget
-     *
+     * Update budget
      */
-     public function update(Request $request, $departmentId)
+    public function update(Request $request, $departmentId)
     {
         try {
             $validator = Validator::make($request->all(), [
@@ -135,7 +130,6 @@ class BudgetPolicyController extends Controller
             $currentYear = date('Y');
             $addAmount = $request->add_amount;
             
-            // 1. Get annual budget
             $annualBudget = DB::table('annual_budgets')
                 ->where('department_id', $departmentId)
                 ->where('fiscal_year', $currentYear)
@@ -151,7 +145,6 @@ class BudgetPolicyController extends Controller
             $previousAnnual = (float) $annualBudget->annual_amount;
             $newAnnual = $previousAnnual + $addAmount;
             
-            //  2. Update annual budget
             DB::table('annual_budgets')
                 ->where('budget_id', $annualBudget->budget_id)
                 ->update([
@@ -159,10 +152,8 @@ class BudgetPolicyController extends Controller
                     'updated_at' => now()
                 ]);
             
-            //  3. Recalculate weekly allocation (Annual / 52)
             $newWeeklyAllocation = $newAnnual / 52;
             
-            //  4. Update weekly policy
             $existingPolicy = DB::table('dept_budget_policy')
                 ->where('department_id', $departmentId)
                 ->first();
@@ -176,7 +167,6 @@ class BudgetPolicyController extends Controller
                     ]);
             }
             
-            //  5. Update current week allocation
             $weekNumber = date('W');
             $currentWeek = DB::table('weekly_budget_usage')
                 ->where('department_id', $departmentId)
@@ -193,7 +183,6 @@ class BudgetPolicyController extends Controller
                     ]);
             }
             
-            //  6. Update active period
             $weekStart = now()->startOfWeek()->toDateString();
             $existingPeriod = DB::table('dept_budget_period')
                 ->where('department_id', $departmentId)
@@ -209,7 +198,6 @@ class BudgetPolicyController extends Controller
                     ]);
             }
             
-            //  7. Log to budget history
             $department = DB::table('departments')
                 ->where('department_id', $departmentId)
                 ->first();
@@ -267,7 +255,6 @@ class BudgetPolicyController extends Controller
             
             DB::beginTransaction();
             
-            // Get policy before deleting
             $policy = DB::table('dept_budget_policy')
                 ->where('department_id', $departmentId)
                 ->first();
@@ -279,12 +266,10 @@ class BudgetPolicyController extends Controller
                 ], 404);
             }
             
-            // Delete policy
-            $deleted = DB::table('dept_budget_policy')
+            DB::table('dept_budget_policy')
                 ->where('department_id', $departmentId)
                 ->delete();
             
-            // Log deletion
             $department = DB::table('departments')
                 ->where('department_id', $departmentId)
                 ->first();
@@ -302,7 +287,6 @@ class BudgetPolicyController extends Controller
                 'created_at' => now(),
             ]);
             
-            // Close any active periods for this department
             DB::table('dept_budget_period')
                 ->where('department_id', $departmentId)
                 ->where('status', 'active')
@@ -327,30 +311,49 @@ class BudgetPolicyController extends Controller
         }
     }
     
-       /**
-     * Get budget history for a department or all
+    /**
+     * ✅ UPDATED: Get budget history with Trip Ticket & Destination JOIN
      */
     public function getBudgetHistory(Request $request)
     {
         try {
             $departmentId = $request->get('department_id');
-            $year = $request->get('year'); // ✅ Added year parameter support
+            $year = $request->get('year');
             $limit = $request->get('limit', 100);
             
-            $query = DB::table('budget_history')
-                ->orderBy('created_at', 'desc');
+            // ✅ I-JOIN ANG TRIP TICKET UG GAS SLIP PARA MAKUHA ANG REFERENCE NO UG DESTINATION
+            $query = DB::table('budget_history as bh')
+                ->leftJoin('gas_slip as gs', function($join) {
+                    // Match by amount and date (within 5 minutes buffer)
+                    $join->on(DB::raw('ABS(gs.amount_released - bh.added_amount)'), '<', DB::raw('0.01'))
+                         ->on(DB::raw('ABS(TIMESTAMPDIFF(MINUTE, gs.created_at, bh.created_at))'), '<=', DB::raw('5'));
+                })
+                ->leftJoin('trip_ticket as tt', 'gs.trip_ticket_id', '=', 'tt.trip_ticket_id')
+                ->select(
+                    'bh.*',
+                    'tt.trip_ticket_number as reference_no', // ✅ Trip Ticket Number
+                    'tt.destination',                        // ✅ Destination
+                    'tt.purpose'                             // ✅ Purpose
+                )
+                ->orderBy('bh.created_at', 'desc');
             
             if ($departmentId) {
-                $query->where('department_id', $departmentId);
+                $query->where('bh.department_id', $departmentId);
             }
 
-            // ✅ Optional: If you later add fiscal_year to budget_history, filter here.
-            // For now, if a year is passed, we filter by the year of the created_at date.
             if ($year) {
-                $query->whereYear('created_at', $year);
+                $query->whereYear('bh.created_at', $year);
             }
             
             $history = $query->limit($limit)->get();
+            
+            // ✅ Fallback mapping kung wala ma-match ang JOIN (e.g. initial allocation)
+            $history = $history->map(function ($log) {
+                if ($log->action === 'fund_released' && !$log->reference_no) {
+                    $log->reference_no = 'REF-' . str_pad($log->id, 4, '0', STR_PAD_LEFT);
+                }
+                return $log;
+            });
             
             return response()->json([
                 'success' => true,
@@ -382,7 +385,6 @@ class BudgetPolicyController extends Controller
                 ->get();
             
             foreach ($summary as $item) {
-                // Calculate spent amount
                 $spent = DB::table('gas_slip as gs')
                     ->join('dept_budget_period as dbp2', 'gs.period_id', '=', 'dbp2.period_id')
                     ->where('dbp2.department_id', $item->department_id)
@@ -438,7 +440,6 @@ class BudgetPolicyController extends Controller
             
             DB::beginTransaction();
             
-            // Close all active periods for this department
             DB::table('dept_budget_period')
                 ->where('department_id', $departmentId)
                 ->where('status', 'active')
@@ -447,7 +448,6 @@ class BudgetPolicyController extends Controller
                     'closed_at' => now()
                 ]);
             
-            // Check if period exists for this week
             $existingPeriod = DB::table('dept_budget_period')
                 ->where('department_id', $departmentId)
                 ->where('week_start', $weekStart)
@@ -472,14 +472,12 @@ class BudgetPolicyController extends Controller
                 ]);
             }
             
-            // Get policy and log activation
             $policy = DB::table('dept_budget_policy')
                 ->where('department_id', $departmentId)
                 ->first();
             
             $previousAmount = $policy ? $policy->default_weekly_allocation : 0;
             
-            // Update or create policy
             if ($policy) {
                 DB::table('dept_budget_policy')
                     ->where('department_id', $departmentId)
@@ -496,7 +494,6 @@ class BudgetPolicyController extends Controller
                 ]);
             }
             
-            // Log activation
             $department = DB::table('departments')
                 ->where('department_id', $departmentId)
                 ->first();
@@ -552,7 +549,6 @@ class BudgetPolicyController extends Controller
             
             DB::beginTransaction();
             
-            // Close all active periods
             $closedCount = DB::table('dept_budget_period')
                 ->where('status', 'active')
                 ->update([
@@ -680,378 +676,248 @@ class BudgetPolicyController extends Controller
     * Get all budget periods for reset history
     */
    public function getPeriods(Request $request)
-{
-    try {
-        $periods = DB::table('dept_budget_period as dbp')
-            ->join('departments as d', 'dbp.department_id', '=', 'd.department_id')
-            ->leftJoin('weekly_budget_usage as wbu', function($join) {
-                $join->on('dbp.department_id', '=', 'wbu.department_id')
-                     ->on('dbp.week_start', '=', 'wbu.week_start');
-            })
-            ->select(
-                'dbp.period_id',
-                'dbp.department_id',
-                'dbp.week_start',
-                'dbp.week_end',
-                'dbp.allocated_amount',
-                'dbp.status',
-                'dbp.closed_at',
-                'dbp.created_at',
-                'd.department_name',
-                'd.department_code',
-                DB::raw('COALESCE(wbu.amount_used, 0) as actual_used'),
-                DB::raw('COALESCE(wbu.weekly_allocation, dbp.allocated_amount) as allocated_amount')
-            )
-            ->orderBy('dbp.week_start', 'desc')
-            ->get();
+   {
+       try {
+           $periods = DB::table('dept_budget_period as dbp')
+               ->join('departments as d', 'dbp.department_id', '=', 'd.department_id')
+               ->leftJoin('weekly_budget_usage as wbu', function($join) {
+                   $join->on('dbp.department_id', '=', 'wbu.department_id')
+                        ->on('dbp.week_start', '=', 'wbu.week_start');
+               })
+               ->select(
+                   'dbp.period_id',
+                   'dbp.department_id',
+                   'dbp.week_start',
+                   'dbp.week_end',
+                   'dbp.allocated_amount',
+                   'dbp.status',
+                   'dbp.closed_at',
+                   'dbp.created_at',
+                   'd.department_name',
+                   'd.department_code',
+                   DB::raw('COALESCE(wbu.amount_used, 0) as actual_used'),
+                   DB::raw('COALESCE(wbu.weekly_allocation, dbp.allocated_amount) as allocated_amount')
+               )
+               ->orderBy('dbp.week_start', 'desc')
+               ->get();
 
-        return response()->json([
-            'success' => true,
-            'data' => $periods
-        ]);
-    } catch (\Exception $e) {
-        Log::error('Get periods error: ' . $e->getMessage());
-        return response()->json([
-            'success' => false,
-            'message' => 'Failed to fetch periods: ' . $e->getMessage(),
-            'data' => []
-        ], 500);
-    }
-}
-
+           return response()->json([
+               'success' => true,
+               'data' => $periods
+           ]);
+       } catch (\Exception $e) {
+           Log::error('Get periods error: ' . $e->getMessage());
+           return response()->json([
+               'success' => false,
+               'message' => 'Failed to fetch periods: ' . $e->getMessage(),
+               'data' => []
+           ], 500);
+       }
+   }
 
     /**
     * Get all departments with their budget data (for the frontend)
     */
- public function getAllDepartmentsWithBudget()
-{
-    try {
-        $result = [];
-        
-        $departments = DB::table('departments')
-            ->where('is_active', 1)
-            ->get();
-        
-        foreach ($departments as $dept) {
-            //  Kuhaon ang annual budget
-            $annualBudget = DB::table('annual_budgets')
-                ->where('department_id', $dept->department_id)
-                ->where('fiscal_year', date('Y'))
-                ->first();
+    public function getAllDepartmentsWithBudget()
+    {
+        try {
+            $result = [];
             
-            //  Kuhaon ang current week usage
-            $currentWeek = DB::table('weekly_budget_usage')
-                ->where('department_id', $dept->department_id)
-                ->where('week_number', date('W'))
-                ->where('year', date('Y'))
-                ->first();
+            $departments = DB::table('departments')
+                ->where('is_active', 1)
+                ->get();
             
-            //  Kuhaon ang policy (fallback)
-            $policy = DB::table('dept_budget_policy')
-                ->where('department_id', $dept->department_id)
-                ->first();
-            
-            //  Annual Budget Values
-            $annualAmount = $annualBudget ? (float) $annualBudget->annual_amount : 0;
-            $usedAmount = $annualBudget ? (float) $annualBudget->used_amount : 0;
-            $remainingAmount = $annualBudget ? (float) $annualBudget->remaining_amount : 0;
-            
-            //  Weekly Values
-            $weeklyAllocation = 0;
-            $weeklyUsed = 0;
-            
-            if ($currentWeek) {
-                $weeklyAllocation = (float) $currentWeek->weekly_allocation;
-                $weeklyUsed = (float) $currentWeek->amount_used;
-            } elseif ($policy) {
-                $weeklyAllocation = (float) $policy->default_weekly_allocation;
+            foreach ($departments as $dept) {
+                $annualBudget = DB::table('annual_budgets')
+                    ->where('department_id', $dept->department_id)
+                    ->where('fiscal_year', date('Y'))
+                    ->first();
+                
+                $currentWeek = DB::table('weekly_budget_usage')
+                    ->where('department_id', $dept->department_id)
+                    ->where('week_number', date('W'))
+                    ->where('year', date('Y'))
+                    ->first();
+                
+                $policy = DB::table('dept_budget_policy')
+                    ->where('department_id', $dept->department_id)
+                    ->first();
+                
+                $annualAmount = $annualBudget ? (float) $annualBudget->annual_amount : 0;
+                $usedAmount = $annualBudget ? (float) $annualBudget->used_amount : 0;
+                $remainingAmount = $annualBudget ? (float) $annualBudget->remaining_amount : 0;
+                
+                $weeklyAllocation = 0;
+                $weeklyUsed = 0;
+                
+                if ($currentWeek) {
+                    $weeklyAllocation = (float) $currentWeek->weekly_allocation;
+                    $weeklyUsed = (float) $currentWeek->amount_used;
+                } elseif ($policy) {
+                    $weeklyAllocation = (float) $policy->default_weekly_allocation;
+                }
+                
+                $result[] = [
+                    'department_id' => $dept->department_id,
+                    'department_name' => $dept->department_name,
+                    'department_code' => $dept->department_code,
+                    'annual_amount' => $annualAmount,
+                    'used_amount' => $usedAmount,
+                    'remaining_amount' => $remainingAmount,
+                    'weekly_allocation' => $weeklyAllocation,
+                    'weekly_used' => $weeklyUsed,
+                    'has_budget' => ($annualBudget || $policy) ? true : false,
+                    'status' => $annualBudget ? $annualBudget->status : 'inactive',
+                    'fiscal_year' => date('Y'),
+                ];
             }
             
-            //  Return sa frontend ang CORRECT field names
-            $result[] = [
-                'department_id' => $dept->department_id,
-                'department_name' => $dept->department_name,
-                'department_code' => $dept->department_code,
-                //  ANNUAL BUDGET (Primary)
-                'annual_amount' => $annualAmount,           // ← IMPORTANTE!
-                'used_amount' => $usedAmount,               // ← IMPORTANTE!
-                'remaining_amount' => $remainingAmount,      // ← IMPORTANTE!
-                //  WEEKLY ALLOCATION
-                'weekly_allocation' => $weeklyAllocation,
-                'weekly_used' => $weeklyUsed,
-                //  Other fields
-                'has_budget' => ($annualBudget || $policy) ? true : false,
-                'status' => $annualBudget ? $annualBudget->status : 'inactive',
-                'fiscal_year' => date('Y'),
-            ];
-        }
-        
-        return response()->json([
-            'success' => true,
-            'data' => $result
-        ]);
-        
-    } catch (\Exception $e) {
-        Log::error('getAllDepartmentsWithBudget error: ' . $e->getMessage());
-        return response()->json([
-            'success' => false,
-            'message' => $e->getMessage(),
-            'data' => []
-        ], 500);
-    }
-}
-
-/**
- *  Update Weekly Allocation - Log weekly amounts, not annual
- */
-public function updateWeeklyAllocation(Request $request, $departmentId)
-{
-    try {
-        $validator = Validator::make($request->all(), [
-            'weekly_allocation' => 'required|numeric|min:0.01',
-            'reason' => 'nullable|string|max:255',
-        ]);
-        
-        if ($validator->fails()) {
-            return response()->json(['errors' => $validator->errors()], 422);
-        }
-        
-        $user = $request->user();
-        
-        if ($user->role !== 'mayors_office' && $user->role !== 'gso_office') {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
-        
-        DB::beginTransaction();
-        
-        $currentYear = date('Y');
-        $newWeeklyAmount = $request->weekly_allocation;
-        $weekNumber = date('W');
-        $weekStart = now()->startOfWeek()->toDateString();
-        $weekEnd = now()->endOfWeek()->toDateString();
-        
-        //  1. Get annual budget
-        $annualBudget = DB::table('annual_budgets')
-            ->where('department_id', $departmentId)
-            ->where('fiscal_year', $currentYear)
-            ->first();
-        
-        if (!$annualBudget) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Annual budget not found. Please create one first.'
-            ], 404);
-        }
-        
-        $currentAnnual = (float) $annualBudget->annual_amount;
-        $currentUsed = (float) $annualBudget->used_amount;
-        
-        //  Get total weekly allocations for this year
-        $totalWeeklyAllocated = DB::table('weekly_budget_usage')
-            ->where('department_id', $departmentId)
-            ->where('year', $currentYear)
-            ->sum('weekly_allocation') ?? 0;
-            
-        $availableAmount = $currentAnnual - $currentUsed - $totalWeeklyAllocated;
-        
-        //  2. Check if weekly allocation exceeds available amount
-        if ($newWeeklyAmount > $availableAmount) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Insufficient available budget! Required: ₱' . number_format($newWeeklyAmount, 2) . 
-                            ', Available: ₱' . number_format($availableAmount, 2) . 
-                            ' (Annual: ₱' . number_format($currentAnnual, 2) . 
-                            ' - Used: ₱' . number_format($currentUsed, 2) . 
-                            ' - Allocated: ₱' . number_format($totalWeeklyAllocated, 2) . ')'
-            ], 422);
-        }
-        
-        //  3. Get existing weekly allocation for this week
-        $existingWeekly = DB::table('weekly_budget_usage')
-            ->where('department_id', $departmentId)
-            ->where('week_number', $weekNumber)
-            ->where('year', $currentYear)
-            ->first();
-        
-        $oldWeeklyAmount = $existingWeekly ? (float) $existingWeekly->weekly_allocation : 0;
-        $annualDeduction = $newWeeklyAmount - $oldWeeklyAmount;
-        
-        //  4. Update or create weekly usage
-        if ($existingWeekly) {
-            DB::table('weekly_budget_usage')
-                ->where('usage_id', $existingWeekly->usage_id)
-                ->update([
-                    'weekly_allocation' => $newWeeklyAmount,
-                    'updated_at' => now()
-                ]);
-        } else {
-            DB::table('weekly_budget_usage')->insert([
-                'department_id' => $departmentId,
-                'week_number' => $weekNumber,
-                'year' => $currentYear,
-                'week_start' => $weekStart,
-                'week_end' => $weekEnd,
-                'weekly_allocation' => $newWeeklyAmount,
-                'amount_used' => 0,
-                'created_at' => now(),
-                'updated_at' => now()
-            ]);
-        }
-        
-        //  5. Update annual budget (deduct difference)
-        DB::table('annual_budgets')
-            ->where('budget_id', $annualBudget->budget_id)
-            ->decrement('annual_amount', $annualDeduction);
-        
-        //  Get updated annual budget
-        $updatedAnnual = DB::table('annual_budgets')
-            ->where('budget_id', $annualBudget->budget_id)
-            ->first();
-        
-        //  6. Update policy
-        DB::table('dept_budget_policy')
-            ->updateOrInsert(
-                ['department_id' => $departmentId],
-                [
-                    'default_weekly_allocation' => $newWeeklyAmount,
-                    'updated_at' => now()
-                ]
-            );
-        
-        //  7. Update budget period
-        $existingPeriod = DB::table('dept_budget_period')
-            ->where('department_id', $departmentId)
-            ->where('week_start', $weekStart)
-            ->first();
-        
-        if ($existingPeriod) {
-            DB::table('dept_budget_period')
-                ->where('period_id', $existingPeriod->period_id)
-                ->update([
-                    'allocated_amount' => $newWeeklyAmount,
-                    'updated_at' => now()
-                ]);
-        } else {
-            DB::table('dept_budget_period')->insert([
-                'department_id' => $departmentId,
-                'week_start' => $weekStart,
-                'allocated_amount' => $newWeeklyAmount,
-                'status' => 'active',
-                'created_at' => now()
-            ]);
-        }
-        
-        //  8. Log to history - Use WEEKLY amounts, NOT annual
-        $department = DB::table('departments')
-            ->where('department_id', $departmentId)
-            ->first();
-        
-        DB::table('budget_history')->insert([
-            'department_id' => $departmentId,
-            'department_name' => $department->department_name ?? 'Unknown',
-            'action' => 'weekly_allocated',
-            'previous_amount' => $oldWeeklyAmount,          // ✅ FIXED: Weekly amount before
-            'added_amount' => $newWeeklyAmount - $oldWeeklyAmount, // ✅ FIXED: Weekly difference
-            'new_amount' => $newWeeklyAmount,               // ✅ FIXED: Weekly amount after
-            'reason' => $request->reason ?? "Weekly allocation for Week {$weekNumber}: ₱" . number_format($newWeeklyAmount, 2),
-            'user_id' => $user->user_id,
-            'user_name' => $user->full_name ?? $user->email,
-            'created_at' => now(),
-        ]);
-        
-        DB::commit();
-        
-        return response()->json([
-            'success' => true,
-            'message' => " Weekly allocation set for Week {$weekNumber}\n" .
-                        "Amount: ₱" . number_format($newWeeklyAmount, 2) . "\n" .
-                        "Annual budget adjustment: ₱" . number_format($annualDeduction, 2) . "\n" .
-                        "Remaining Annual: ₱" . number_format($updatedAnnual->annual_amount, 2),
-            'data' => [
-                'department_id' => $departmentId,
-                'week_number' => $weekNumber,
-                'weekly_allocation' => $newWeeklyAmount,
-                'old_weekly_allocation' => $oldWeeklyAmount,
-                'annual_before' => $currentAnnual,
-                'annual_after' => $updatedAnnual->annual_amount,
-                'annual_deducted' => $annualDeduction,
-            ]
-        ]);
-        
-    } catch (\Exception $e) {
-        DB::rollBack();
-        Log::error('Update weekly allocation error: ' . $e->getMessage());
-        return response()->json([
-            'success' => false,
-            'message' => 'Failed to update weekly allocation: ' . $e->getMessage()
-        ], 500);
-    }
-}
-
-/**
- * Process weekly surplus for a department
- */
-public function processSurplus(Request $request, $departmentId)
-{
-    try {
-        $user = $request->user();
-        
-        if ($user->role !== 'mayors_office' && $user->role !== 'gso_office') {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
-        
-        $year = date('Y');
-        $weekNumber = date('W') - 1; // Previous week
-       // $weekNumber = date('W'); // Current week (testing)
-
-        
-        // Get weekly allocation and actual usage
-        $weekly = DB::table('weekly_budget_usage')
-            ->where('department_id', $departmentId)
-            ->where('week_number', $weekNumber)
-            ->where('year', $year)
-            ->first();
-        
-        if (!$weekly) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Weekly budget not found for last week'
-            ], 404);
-        }
-        
-        $surplus = $weekly->weekly_allocation - $weekly->amount_used;
-        
-        if ($surplus <= 0) {
             return response()->json([
                 'success' => true,
-                'surplus' => 0,
-                'action' => 'none',
-                'message' => 'No surplus to return (used: ₱' . number_format($weekly->amount_used, 2) . ', allocated: ₱' . number_format($weekly->weekly_allocation, 2) . ')'
+                'data' => $result
             ]);
+            
+        } catch (\Exception $e) {
+            Log::error('getAllDepartmentsWithBudget error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+                'data' => []
+            ], 500);
         }
-        
-        DB::beginTransaction();
-        
+    }
+
+    /**
+     *  Update Weekly Allocation - Log weekly amounts, not annual
+     */
+    public function updateWeeklyAllocation(Request $request, $departmentId)
+    {
         try {
-            //  Return surplus to annual budget
-            DB::table('annual_budgets')
-                ->where('department_id', $departmentId)
-                ->where('fiscal_year', $year)
-                ->increment('annual_amount', $surplus);
-            
-            //  Log to surplus table
-            DB::table('weekly_budget_surplus')->insert([
-                'department_id' => $departmentId,
-                'week_number' => $weekNumber,
-                'year' => $year,
-                'allocated_amount' => $weekly->weekly_allocation,
-                'actual_used' => $weekly->amount_used,
-                'action' => 'returned_to_annual',
-                'created_at' => now(),
-                'updated_at' => now(),
+            $validator = Validator::make($request->all(), [
+                'weekly_allocation' => 'required|numeric|min:0.01',
+                'reason' => 'nullable|string|max:255',
             ]);
             
-            // Log to budget history
+            if ($validator->fails()) {
+                return response()->json(['errors' => $validator->errors()], 422);
+            }
+            
+            $user = $request->user();
+            
+            if ($user->role !== 'mayors_office' && $user->role !== 'gso_office') {
+                return response()->json(['message' => 'Unauthorized'], 403);
+            }
+            
+            DB::beginTransaction();
+            
+            $currentYear = date('Y');
+            $newWeeklyAmount = $request->weekly_allocation;
+            $weekNumber = date('W');
+            $weekStart = now()->startOfWeek()->toDateString();
+            $weekEnd = now()->endOfWeek()->toDateString();
+            
+            $annualBudget = DB::table('annual_budgets')
+                ->where('department_id', $departmentId)
+                ->where('fiscal_year', $currentYear)
+                ->first();
+            
+            if (!$annualBudget) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Annual budget not found. Please create one first.'
+                ], 404);
+            }
+            
+            $currentAnnual = (float) $annualBudget->annual_amount;
+            $currentUsed = (float) $annualBudget->used_amount;
+            
+            $totalWeeklyAllocated = DB::table('weekly_budget_usage')
+                ->where('department_id', $departmentId)
+                ->where('year', $currentYear)
+                ->sum('weekly_allocation') ?? 0;
+                
+            $availableAmount = $currentAnnual - $currentUsed - $totalWeeklyAllocated;
+            
+            if ($newWeeklyAmount > $availableAmount) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Insufficient available budget! Required: ₱' . number_format($newWeeklyAmount, 2) . 
+                                ', Available: ₱' . number_format($availableAmount, 2) . 
+                                ' (Annual: ₱' . number_format($currentAnnual, 2) . 
+                                ' - Used: ₱' . number_format($currentUsed, 2) . 
+                                ' - Allocated: ₱' . number_format($totalWeeklyAllocated, 2) . ')'
+                ], 422);
+            }
+            
+            $existingWeekly = DB::table('weekly_budget_usage')
+                ->where('department_id', $departmentId)
+                ->where('week_number', $weekNumber)
+                ->where('year', $currentYear)
+                ->first();
+            
+            $oldWeeklyAmount = $existingWeekly ? (float) $existingWeekly->weekly_allocation : 0;
+            $annualDeduction = $newWeeklyAmount - $oldWeeklyAmount;
+            
+            if ($existingWeekly) {
+                DB::table('weekly_budget_usage')
+                    ->where('usage_id', $existingWeekly->usage_id)
+                    ->update([
+                        'weekly_allocation' => $newWeeklyAmount,
+                        'updated_at' => now()
+                    ]);
+            } else {
+                DB::table('weekly_budget_usage')->insert([
+                    'department_id' => $departmentId,
+                    'week_number' => $weekNumber,
+                    'year' => $currentYear,
+                    'week_start' => $weekStart,
+                    'week_end' => $weekEnd,
+                    'weekly_allocation' => $newWeeklyAmount,
+                    'amount_used' => 0,
+                    'created_at' => now(),
+                    'updated_at' => now()
+                ]);
+            }
+            
+            DB::table('annual_budgets')
+                ->where('budget_id', $annualBudget->budget_id)
+                ->decrement('annual_amount', $annualDeduction);
+            
+            $updatedAnnual = DB::table('annual_budgets')
+                ->where('budget_id', $annualBudget->budget_id)
+                ->first();
+            
+            DB::table('dept_budget_policy')
+                ->updateOrInsert(
+                    ['department_id' => $departmentId],
+                    [
+                        'default_weekly_allocation' => $newWeeklyAmount,
+                        'updated_at' => now()
+                    ]
+                );
+            
+            $existingPeriod = DB::table('dept_budget_period')
+                ->where('department_id', $departmentId)
+                ->where('week_start', $weekStart)
+                ->first();
+            
+            if ($existingPeriod) {
+                DB::table('dept_budget_period')
+                    ->where('period_id', $existingPeriod->period_id)
+                    ->update([
+                        'allocated_amount' => $newWeeklyAmount,
+                        'updated_at' => now()
+                    ]);
+            } else {
+                DB::table('dept_budget_period')->insert([
+                    'department_id' => $departmentId,
+                    'week_start' => $weekStart,
+                    'allocated_amount' => $newWeeklyAmount,
+                    'status' => 'active',
+                    'created_at' => now()
+                ]);
+            }
+            
             $department = DB::table('departments')
                 ->where('department_id', $departmentId)
                 ->first();
@@ -1059,11 +925,11 @@ public function processSurplus(Request $request, $departmentId)
             DB::table('budget_history')->insert([
                 'department_id' => $departmentId,
                 'department_name' => $department->department_name ?? 'Unknown',
-                'action' => 'surplus_returned',
-                'previous_amount' => 0,
-                'added_amount' => $surplus,
-                'new_amount' => $surplus,
-                'reason' => "Week {$weekNumber} surplus returned to annual budget (₱" . number_format($surplus, 2) . ")",
+                'action' => 'weekly_allocated',
+                'previous_amount' => $oldWeeklyAmount,
+                'added_amount' => $newWeeklyAmount - $oldWeeklyAmount,
+                'new_amount' => $newWeeklyAmount,
+                'reason' => $request->reason ?? "Weekly allocation for Week {$weekNumber}: ₱" . number_format($newWeeklyAmount, 2),
                 'user_id' => $user->user_id,
                 'user_name' => $user->full_name ?? $user->email,
                 'created_at' => now(),
@@ -1073,59 +939,163 @@ public function processSurplus(Request $request, $departmentId)
             
             return response()->json([
                 'success' => true,
-                'surplus' => $surplus,
-                'action' => 'returned_to_annual',
-                'message' => " ₱" . number_format($surplus, 2) . " surplus returned to annual budget"
+                'message' => " Weekly allocation set for Week {$weekNumber}\n" .
+                            "Amount: ₱" . number_format($newWeeklyAmount, 2) . "\n" .
+                            "Annual budget adjustment: ₱" . number_format($annualDeduction, 2) . "\n" .
+                            "Remaining Annual: ₱" . number_format($updatedAnnual->annual_amount, 2),
+                'data' => [
+                    'department_id' => $departmentId,
+                    'week_number' => $weekNumber,
+                    'weekly_allocation' => $newWeeklyAmount,
+                    'old_weekly_allocation' => $oldWeeklyAmount,
+                    'annual_before' => $currentAnnual,
+                    'annual_after' => $updatedAnnual->annual_amount,
+                    'annual_deducted' => $annualDeduction,
+                ]
             ]);
             
         } catch (\Exception $e) {
             DB::rollBack();
+            Log::error('Update weekly allocation error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to update weekly allocation: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Process weekly surplus for a department
+     */
+    public function processSurplus(Request $request, $departmentId)
+    {
+        try {
+            $user = $request->user();
+            
+            if ($user->role !== 'mayors_office' && $user->role !== 'gso_office') {
+                return response()->json(['message' => 'Unauthorized'], 403);
+            }
+            
+            $year = date('Y');
+            $weekNumber = date('W') - 1;
+            
+            $weekly = DB::table('weekly_budget_usage')
+                ->where('department_id', $departmentId)
+                ->where('week_number', $weekNumber)
+                ->where('year', $year)
+                ->first();
+            
+            if (!$weekly) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Weekly budget not found for last week'
+                ], 404);
+            }
+            
+            $surplus = $weekly->weekly_allocation - $weekly->amount_used;
+            
+            if ($surplus <= 0) {
+                return response()->json([
+                    'success' => true,
+                    'surplus' => 0,
+                    'action' => 'none',
+                    'message' => 'No surplus to return (used: ₱' . number_format($weekly->amount_used, 2) . ', allocated: ₱' . number_format($weekly->weekly_allocation, 2) . ')'
+                ]);
+            }
+            
+            DB::beginTransaction();
+            
+            try {
+                DB::table('annual_budgets')
+                    ->where('department_id', $departmentId)
+                    ->where('fiscal_year', $year)
+                    ->increment('annual_amount', $surplus);
+                
+                DB::table('weekly_budget_surplus')->insert([
+                    'department_id' => $departmentId,
+                    'week_number' => $weekNumber,
+                    'year' => $year,
+                    'allocated_amount' => $weekly->weekly_allocation,
+                    'actual_used' => $weekly->amount_used,
+                    'action' => 'returned_to_annual',
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+                
+                $department = DB::table('departments')
+                    ->where('department_id', $departmentId)
+                    ->first();
+                
+                DB::table('budget_history')->insert([
+                    'department_id' => $departmentId,
+                    'department_name' => $department->department_name ?? 'Unknown',
+                    'action' => 'surplus_returned',
+                    'previous_amount' => 0,
+                    'added_amount' => $surplus,
+                    'new_amount' => $surplus,
+                    'reason' => "Week {$weekNumber} surplus returned to annual budget (₱" . number_format($surplus, 2) . ")",
+                    'user_id' => $user->user_id,
+                    'user_name' => $user->full_name ?? $user->email,
+                    'created_at' => now(),
+                ]);
+                
+                DB::commit();
+                
+                return response()->json([
+                    'success' => true,
+                    'surplus' => $surplus,
+                    'action' => 'returned_to_annual',
+                    'message' => " ₱" . number_format($surplus, 2) . " surplus returned to annual budget"
+                ]);
+                
+            } catch (\Exception $e) {
+                DB::rollBack();
+                Log::error('Process surplus error: ' . $e->getMessage());
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to process surplus: ' . $e->getMessage()
+                ], 500);
+            }
+            
+        } catch (\Exception $e) {
             Log::error('Process surplus error: ' . $e->getMessage());
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to process surplus: ' . $e->getMessage()
             ], 500);
         }
-        
-    } catch (\Exception $e) {
-        Log::error('Process surplus error: ' . $e->getMessage());
-        return response()->json([
-            'success' => false,
-            'message' => 'Failed to process surplus: ' . $e->getMessage()
-        ], 500);
     }
-}
 
-/**
- *  NEW: Get surplus history
- */
-public function getSurplusHistory(Request $request)
-{
-    try {
-        $departmentId = $request->get('department_id');
-        
-        $query = DB::table('weekly_budget_surplus')
-            ->join('departments', 'weekly_budget_surplus.department_id', '=', 'departments.department_id')
-            ->select('weekly_budget_surplus.*', 'departments.department_name', 'departments.department_code')
-            ->orderBy('created_at', 'desc');
-        
-        if ($departmentId) {
-            $query->where('weekly_budget_surplus.department_id', $departmentId);
+    /**
+     *  NEW: Get surplus history
+     */
+    public function getSurplusHistory(Request $request)
+    {
+        try {
+            $departmentId = $request->get('department_id');
+            
+            $query = DB::table('weekly_budget_surplus')
+                ->join('departments', 'weekly_budget_surplus.department_id', '=', 'departments.department_id')
+                ->select('weekly_budget_surplus.*', 'departments.department_name', 'departments.department_code')
+                ->orderBy('created_at', 'desc');
+            
+            if ($departmentId) {
+                $query->where('weekly_budget_surplus.department_id', $departmentId);
+            }
+            
+            $surplus = $query->get();
+            
+            return response()->json([
+                'success' => true,
+                'data' => $surplus
+            ]);
+            
+        } catch (\Exception $e) {
+            Log::error('Get surplus history error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to get surplus history: ' . $e->getMessage()
+            ], 500);
         }
-        
-        $surplus = $query->get();
-        
-        return response()->json([
-            'success' => true,
-            'data' => $surplus
-        ]);
-        
-    } catch (\Exception $e) {
-        Log::error('Get surplus history error: ' . $e->getMessage());
-        return response()->json([
-            'success' => false,
-            'message' => 'Failed to get surplus history: ' . $e->getMessage()
-        ], 500);
     }
-}
 }
