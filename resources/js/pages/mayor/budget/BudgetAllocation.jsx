@@ -225,11 +225,10 @@ const BudgetAllocation = () => {
         };
     }, [budgetData, budgets]);
 
-    // ✅ CALCULATE TRANSACTION HISTORY WITH RUNNING BALANCE
+       // ✅ CALCULATE TRANSACTION HISTORY WITH RUNNING BALANCE
     const processedHistory = useMemo(() => {
         if (!historyData || historyData.length === 0) return { rows: [], totals: {} };
 
-        // Sort oldest first to compute running balance correctly
         const chronological = [...historyData].sort((a, b) => 
             new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
         );
@@ -250,7 +249,6 @@ const BudgetAllocation = () => {
                 totalAdded += Math.abs(added);
             }
 
-            // Map action to UI types
             let txType = "Allocation";
             let typeColor = "bg-emerald-500/20 text-emerald-400 border-emerald-500/30";
             let TypeIcon = CheckCircle2;
@@ -263,27 +261,26 @@ const BudgetAllocation = () => {
                 txType = "Additional Allocation";
                 typeColor = "bg-emerald-500/20 text-emerald-400 border-emerald-500/30";
                 TypeIcon = TrendingUp;
-            } else if (log.action.toLowerCase().includes('initial')) {
-                txType = "Allocation";
-                typeColor = "bg-emerald-500/20 text-emerald-400 border-emerald-500/30";
-                TypeIcon = CheckCircle2;
             }
 
+            // ✅ DIRI NATO KUHAON ANG REFERENCE UG DESTINATION GIKAN SA BACKEND
             return {
                 ...log,
                 displayDate: new Date(log.created_at),
-                referenceNo: log.reference_no || log.trip_ticket_number || `REF-${log.id || 'XXX'}`,
+                // Kung 'Allocation', butangan natog ALLOC ang ref. Kung wala, fallback sa ID.
+                referenceNo: log.reference_no || (isRelease ? `REF-${log.id}` : 'ALLOC'), 
                 txType,
                 typeColor,
                 TypeIcon,
                 displayAmount: Math.abs(added),
                 isRelease,
                 runningBalance,
-                displayDestination: log.destination || log.purpose || "—",
+                // ✅ GI-FIX: Mugawas na ang tinuod nga destination kung fund release
+                displayDestination: log.destination || log.purpose || (isRelease ? "—" : "Annual Budget"),
+                displayPurpose: log.purpose || log.reason || "—",
             };
         });
 
-        // Reverse to show newest first
         const reversed = [...computed].reverse();
 
         return {
@@ -581,12 +578,12 @@ const BudgetAllocation = () => {
                                                             {log.txType}
                                                         </Badge>
                                                     </TableCell>
-                                                    <TableCell className="text-sm text-slate-400 max-w-[150px] truncate">
-                                                        {log.purpose || log.reason || "—"}
-                                                    </TableCell>
-                                                    <TableCell className="text-sm text-slate-400 max-w-[150px] truncate">
-                                                        {log.displayDestination}
-                                                    </TableCell>
+                                                   <TableCell className="text-sm text-slate-400 max-w-[150px] truncate">
+    {log.displayPurpose}
+</TableCell>
+<TableCell className="text-sm text-slate-400 max-w-[150px] truncate">
+    {log.displayDestination}
+</TableCell>
                                                     <TableCell className={cn("text-sm font-bold text-right whitespace-nowrap", log.isRelease ? "text-red-400" : "text-emerald-400")}>
                                                         {log.isRelease ? '-' : '+'}{formatCurrency(log.displayAmount)}
                                                     </TableCell>
