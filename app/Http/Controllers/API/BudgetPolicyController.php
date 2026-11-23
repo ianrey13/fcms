@@ -309,7 +309,7 @@ class BudgetPolicyController extends Controller
         }
     }
 
-    /**
+        /**
      * Get budget history for a department or all
      */
     public function getBudgetHistory(Request $request)
@@ -318,15 +318,15 @@ class BudgetPolicyController extends Controller
             $departmentId = $request->get('department_id');
             $year = $request->get('year');
             $limit = $request->get('limit', 100);
-
+            
             // ✅ I-JOIN ANG TRIP TICKET UG GAS SLIP PARA MAKUHA ANG REF NO UG DESTINATION
             $query = DB::table('budget_history as bh')
-                ->leftJoin('gas_slip as gs', function ($join) {
-                    // Match by exact amount and department, plus a 5-minute time window
+                // 1. I-match ang Gas Slip base sa Amount ug Time (within 5 minutes)
+                ->leftJoin('gas_slip as gs', function($join) {
                     $join->on(DB::raw('ABS(gs.amount_released - bh.added_amount)'), '<', DB::raw('0.01'))
-                        ->on(DB::raw('ABS(TIMESTAMPDIFF(MINUTE, gs.created_at, bh.created_at))'), '<=', DB::raw('5'))
-                        ->whereColumn('gs.created_by', 'bh.user_id'); // Optional: match user to be safer
+                         ->whereRaw('ABS(TIMESTAMPDIFF(MINUTE, gs.created_at, bh.created_at)) <= 5');
                 })
+                // 2. I-link ang Gas Slip ngadto sa Trip Ticket
                 ->leftJoin('trip_ticket as tt', 'gs.trip_ticket_id', '=', 'tt.trip_ticket_id')
                 ->leftJoin('departments as d', 'bh.department_id', '=', 'd.department_id')
                 ->select(
@@ -338,7 +338,7 @@ class BudgetPolicyController extends Controller
                     'tt.purpose'                             // ✅ Purpose
                 )
                 ->orderBy('bh.created_at', 'desc');
-
+            
             if ($departmentId) {
                 $query->where('bh.department_id', $departmentId);
             }
@@ -346,21 +346,29 @@ class BudgetPolicyController extends Controller
             if ($year) {
                 $query->whereYear('bh.created_at', $year);
             }
-
+            
             $history = $query->limit($limit)->get();
-
+            
             // ✅ Fallback mapping kung wala gihapon ma-match (e.g., Initial Budget / Additional Budget)
             $history = $history->map(function ($log) {
                 if ($log->action === 'fund_released') {
                     if (!$log->reference_no) {
+                        // Kung wala ma-match sa Gas Slip, pagamit og fallback REF
                         $log->reference_no = 'REF-' . str_pad($log->id, 4, '0', STR_PAD_LEFT);
+                        $log->destination = '—';
                     }
-                } else if ($log->action === 'annual_set' || $log->action === 'annual_added') {
+                } else if (in_array($log->action, ['annual_set', 'annual_added', 'weekly_allocated'])) {
                     $log->reference_no = 'ALLOC';
+                    $log->destination = 'Annual Budget';
+                    $log->purpose = $log->reason;
+                } else {
+                    // Fallback sa uban pang actions
+                    $log->reference_no = '—';
+                    $log->destination = '—';
                 }
                 return $log;
             });
-
+            
             return response()->json([
                 'success' => true,
                 'data' => $history
@@ -373,7 +381,6 @@ class BudgetPolicyController extends Controller
             ], 500);
         }
     }
-
     /**
      * Get budget summary with remaining amounts
      */
