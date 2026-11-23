@@ -360,21 +360,24 @@ const BudgetAllocation = () => {
                 typeColor =
                     "bg-emerald-500/20 text-emerald-400 border-emerald-500/30";
                 TypeIcon = TrendingUp;
+            } else if (log.action.toLowerCase().includes("reset")) {
+                txType = "System Reset";
+                typeColor =
+                    "bg-slate-500/20 text-slate-400 border-slate-500/30";
+                TypeIcon = Activity;
             }
 
-            // ✅ DIRI NATO KUHAON ANG SA BACKEND
+            // ✅ ANG MGA VALUE DIRI GIKAN NA SA BACKEND
             return {
                 ...log,
                 displayDate: new Date(log.created_at),
-                referenceNo:
-                    log.reference_no || (isRelease ? `REF-${log.id}` : "ALLOC"),
+                referenceNo: log.reference_no || "—",
                 txType,
                 typeColor,
                 TypeIcon,
                 displayAmount: Math.abs(added),
                 isRelease,
                 runningBalance,
-                // Mugawas na ang destination
                 displayDestination:
                     log.destination || (isRelease ? "—" : "Annual Budget"),
                 displayPurpose: log.purpose || log.reason || "—",

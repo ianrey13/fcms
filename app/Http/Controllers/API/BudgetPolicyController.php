@@ -312,30 +312,29 @@ class BudgetPolicyController extends Controller
         /**
      * Get budget history for a department or all
      */
-    public function getBudgetHistory(Request $request)
+        public function getBudgetHistory(Request $request)
     {
         try {
             $departmentId = $request->get('department_id');
             $year = $request->get('year');
             $limit = $request->get('limit', 100);
-            
-            // ✅ I-JOIN ANG TRIP TICKET UG GAS SLIP PARA MAKUHA ANG REF NO UG DESTINATION
+
+            // ✅ JOIN with Gas Slip & Trip Ticket to get Ref No & Destination
             $query = DB::table('budget_history as bh')
-                // 1. I-match ang Gas Slip base sa Amount ug Time (within 5 minutes)
                 ->leftJoin('gas_slip as gs', function($join) {
+                    // Match amount exactly, and within a 5-minute window of creation
                     $join->on(DB::raw('ABS(gs.amount_released - bh.added_amount)'), '<', DB::raw('0.01'))
                          ->whereRaw('ABS(TIMESTAMPDIFF(MINUTE, gs.created_at, bh.created_at)) <= 5');
                 })
-                // 2. I-link ang Gas Slip ngadto sa Trip Ticket
                 ->leftJoin('trip_ticket as tt', 'gs.trip_ticket_id', '=', 'tt.trip_ticket_id')
                 ->leftJoin('departments as d', 'bh.department_id', '=', 'd.department_id')
                 ->select(
                     'bh.*',
                     'd.department_name',
                     'd.department_code',
-                    'tt.trip_ticket_number as reference_no', // ✅ Trip Ticket Number
-                    'tt.destination',                        // ✅ Destination
-                    'tt.purpose'                             // ✅ Purpose
+                    'tt.trip_ticket_number as reference_no', 
+                    'tt.destination',                        
+                    'tt.purpose'                             
                 )
                 ->orderBy('bh.created_at', 'desc');
             
@@ -349,21 +348,24 @@ class BudgetPolicyController extends Controller
             
             $history = $query->limit($limit)->get();
             
-            // ✅ Fallback mapping kung wala gihapon ma-match (e.g., Initial Budget / Additional Budget)
+            // ✅ Fallback mapping formatting
             $history = $history->map(function ($log) {
-                if ($log->action === 'fund_released') {
+                // If it's a Fund Release
+                if (str_contains($log->action, 'fund') || str_contains($log->action, 'release')) {
                     if (!$log->reference_no) {
-                        // Kung wala ma-match sa Gas Slip, pagamit og fallback REF
                         $log->reference_no = 'REF-' . str_pad($log->id, 4, '0', STR_PAD_LEFT);
                         $log->destination = '—';
                     }
-                } else if (in_array($log->action, ['annual_set', 'annual_added', 'weekly_allocated'])) {
+                } 
+                // If it's an Annual or Weekly Allocation
+                else if (in_array($log->action, ['annual_created', 'annual_added', 'weekly_allocated', 'activated'])) {
                     $log->reference_no = 'ALLOC';
                     $log->destination = 'Annual Budget';
                     $log->purpose = $log->reason;
-                } else {
-                    // Fallback sa uban pang actions
-                    $log->reference_no = '—';
+                }
+                // Weekly reset or other system logs
+                else {
+                    $log->reference_no = 'SYS';
                     $log->destination = '—';
                 }
                 return $log;
@@ -381,7 +383,6 @@ class BudgetPolicyController extends Controller
             ], 500);
         }
     }
-    /**
      * Get budget summary with remaining amounts
      */
     public function getBudgetSummary()
