@@ -247,6 +247,27 @@ const DepartmentDatalist = ({ value, onChange, onBlur, error, touched, departmen
     }
   };
 
+  const handleSelect = (dept) => {
+    setSearchTerm(dept.department_name);
+    setSelectedDepartment(dept);
+    onChange(dept.department_id);
+    inputRef.current?.blur();
+  };
+
+  const handleClear = () => {
+    setSearchTerm("");
+    setSelectedDepartment(null);
+    onChange("");
+    inputRef.current?.focus();
+  };
+
+  const filteredDepartments = searchTerm.length > 0
+    ? departments.filter(d =>
+        d.department_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        d.department_code?.toLowerCase().includes(searchTerm.toLowerCase())
+      )
+    : [];
+
   return (
     <div className="relative w-full">
       <div className="relative">
@@ -278,7 +299,7 @@ const DepartmentDatalist = ({ value, onChange, onBlur, error, touched, departmen
         {searchTerm && (
           <button
             type="button"
-            onClick={() => { setSearchTerm(""); setSelectedDepartment(null); onChange(""); inputRef.current?.focus(); }}
+            onClick={handleClear}
             className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
           >
             <X className="h-4 w-4" />
@@ -291,7 +312,41 @@ const DepartmentDatalist = ({ value, onChange, onBlur, error, touched, departmen
         )}
       </div>
 
-      {/* GITANGGTANG ANG DROPDOWN SUGGESTIONS DINHI */}
+      {searchTerm.length > 0 && filteredDepartments.length > 0 && (
+        <div className="absolute z-50 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg max-h-60 overflow-auto">
+          {filteredDepartments.map((dept) => (
+            <div
+              key={dept.department_id}
+              onClick={() => handleSelect(dept)}
+              className={cn(
+                "px-4 py-2.5 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors flex items-center justify-between",
+                selectedDepartment?.department_id === dept.department_id && "bg-blue-50 dark:bg-blue-900/30"
+              )}
+            >
+              <div>
+                <span className="font-medium text-slate-800 dark:text-white">
+                  {dept.department_name}
+                </span>
+                {dept.department_code && (
+                  <span className="ml-2 text-xs text-slate-400 dark:text-slate-500">
+                    ({dept.department_code})
+                  </span>
+                )}
+              </div>
+              {selectedDepartment?.department_id === dept.department_id && (
+                <CheckCircle className="h-4 w-4 text-blue-600" />
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {searchTerm.length > 0 && filteredDepartments.length === 0 && (
+        <div className="absolute z-50 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg p-4 text-center">
+          <p className="text-sm text-slate-500 dark:text-slate-400">No departments found</p>
+        </div>
+      )}
+
       {selectedDepartment && (
         <div className="mt-2 bg-blue-50/50 dark:bg-blue-950/20 rounded-lg p-2.5 border border-blue-200 dark:border-blue-800">
           <div className="flex items-center gap-2">
