@@ -106,7 +106,7 @@ class VehicleController extends Controller
                 'fuel_capacity'          => 'nullable|numeric|min:0',
                 'tank_capacity'          => 'nullable|numeric|min:1|max:500',
                 'initial_estimated_fuel' => 'nullable|numeric|min:0|max:500',
-                'reference_efficiency'   => 'nullable|numeric|min:0.5|max:50',
+                'reference_efficiency'   => 'nullable|numeric|min:0.5|max:100',
             ]);
 
             if ($validator->fails()) {
@@ -231,7 +231,7 @@ class VehicleController extends Controller
                 'fuel_capacity'          => 'nullable|numeric|min:0',
                 'tank_capacity'          => 'nullable|numeric|min:1|max:500',
                 'initial_estimated_fuel' => 'nullable|numeric|min:0|max:500',
-                'reference_efficiency'   => 'nullable|numeric|min:0.5|max:50',
+                'reference_efficiency'   => 'nullable|numeric|min:0.5|max:100',
             ]);
 
             if ($validator->fails()) {
