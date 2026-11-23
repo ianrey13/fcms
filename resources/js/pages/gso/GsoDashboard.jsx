@@ -320,11 +320,7 @@ const GsoDashboard = () => {
             queryFn: async () => {
                 const trips = extractArray(await gsoAPI.getPendingValidation());
                 
-                return trips.filter(trip => {
-                    const hasLiters = trip.gas_slip?.fuel_receipt?.liters_availed > 0;
-                    const isCompleted = (trip.actual_distance_km || 0) > 0;
-                    return hasLiters && isCompleted;
-                });
+                
             },
         });
 
