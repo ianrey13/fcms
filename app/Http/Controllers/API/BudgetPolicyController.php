@@ -319,11 +319,12 @@ class BudgetPolicyController extends Controller
             $year = $request->get('year');
             $limit = $request->get('limit', 100);
 
-            // ✅ SAFE JOIN: Mag-match sa department, amount (rounded), ug time (within 5 mins)
+            // ✅ SAFE JOIN: Mag-match sa department, amount, ug time (within 5 mins)
             $query = DB::table('budget_history as bh')
                 ->leftJoin('gas_slip as gs', function ($join) {
                     $join->on('gs.amount_released', '=', 'bh.added_amount')
-                        ->on('gs.created_by', '=', 'bh.user_id') // Match kung parehas ang nag-release
+                        // Match creator if possible, or just rely on time & amount
+                        ->on('gs.created_by', '=', 'bh.user_id')
                         ->whereRaw('ABS(TIMESTAMPDIFF(MINUTE, gs.created_at, bh.created_at)) <= 5');
                 })
                 ->leftJoin('trip_ticket as tt', 'gs.trip_ticket_id', '=', 'tt.trip_ticket_id')
@@ -348,7 +349,7 @@ class BudgetPolicyController extends Controller
 
             $history = $query->limit($limit)->get();
 
-            // ✅ I-FORMAT ANG FALLBACK
+            // ✅ FALLBACK FORMATTING
             $history = $history->map(function ($log) {
                 $action = strtolower($log->action);
 
@@ -360,7 +361,6 @@ class BudgetPolicyController extends Controller
                 } else if (in_array($action, ['annual_created', 'annual_set', 'annual_added', 'weekly_allocated', 'activated'])) {
                     $log->reference_no = 'ALLOC';
                     $log->destination = 'Annual Budget';
-                    // Ipasa ang reason isip purpose
                     if (!$log->purpose) {
                         $log->purpose = $log->reason ?? 'Annual Budget';
                     }
@@ -383,7 +383,6 @@ class BudgetPolicyController extends Controller
             ], 500);
         }
     }
-
 
     /*
      * Get budget summary with remaining amounts

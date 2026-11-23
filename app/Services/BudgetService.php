@@ -18,7 +18,7 @@ class BudgetService
      */
     public function getOrCreateAnnualBudget($departmentId, $year = null)
     {
-$year = $year ?? $this->getActiveFiscalYear();
+        $year = $year ?? $this->getActiveFiscalYear();
         $budget = AnnualBudget::where('department_id', $departmentId)
             ->where('fiscal_year', $year)
             ->first();
@@ -57,7 +57,7 @@ $year = $year ?? $this->getActiveFiscalYear();
      */
     public function getRemainingBudget($departmentId, $year = null)
     {
-$year = $year ?? $this->getActiveFiscalYear();
+        $year = $year ?? $this->getActiveFiscalYear();
         $budget = AnnualBudget::where('department_id', $departmentId)
             ->where('fiscal_year', $year)
             ->first();
@@ -81,9 +81,11 @@ $year = $year ?? $this->getActiveFiscalYear();
     /**
      
      */
-    public function deductBudget($departmentId, $amount, $isCrossDepartment = false, $originalDepartmentId = null, $reason = null)
+       public function deductBudget($departmentId, $amount, $isCrossDepartment = false, $originalDepartmentId = null, $reason = null)
     {
-$year = $this->getActiveFiscalYear();
+        $year = $this->getActiveFiscalYear();
+        
+        // 1. Kuhaon ang budget
         $budget = AnnualBudget::where('department_id', $departmentId)
             ->where('fiscal_year', $year)
             ->first();
@@ -92,17 +94,37 @@ $year = $this->getActiveFiscalYear();
             throw new \Exception("No budget found for department ID: {$departmentId}");
         }
 
-        // Check if sufficient budget
+        // 2. Check kung naay enough budget
         if (!$this->hasSufficientBudget($departmentId, $amount, $year) && !$isCrossDepartment) {
             throw new \Exception("Insufficient budget for department ID: {$departmentId}");
         }
 
-        //  ALWAYS deduct from annual budget
+        // 3. I-save ang previous amount para sa history log
+        $previousUsed = (float) $budget->used_amount;
+
+        // 4. Deduct gikan sa annual budget
         $budget->used_amount += $amount;
         $budget->save();
 
-        //  ALWAYS record weekly usage
+        // 5. Record weekly usage
         $this->recordWeeklyUsage($departmentId, $amount);
+
+        // 6. ✅ INSERT SA BUDGET HISTORY (Aron ma-link nato ang Trip Ticket)
+        $dept = \App\Models\Department::find($departmentId);
+        
+        DB::table('budget_history')->insert([
+            'department_id' => $departmentId,
+            'department_name' => $dept ? $dept->department_name : 'Unknown',
+            'action' => 'fund_released', // Importante ni para makabalo ang query
+            'previous_amount' => $previousUsed,
+            'added_amount' => $amount,
+            'new_amount' => $budget->used_amount,
+            'reason' => $reason ?? 'Fund released for Trip Ticket',
+            'user_id' => auth()->id() ?? 1,
+            'user_name' => auth()->user()->full_name ?? 'System',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
 
         return true;
     }
@@ -284,7 +306,6 @@ $year = $this->getActiveFiscalYear();
                 'action' => 'returned_to_annual',
                 'message' => " ₱" . number_format($surplus, 2) . " surplus returned to annual budget"
             ];
-
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error('Process surplus error: ' . $e->getMessage());
@@ -323,7 +344,7 @@ $year = $this->getActiveFiscalYear();
      */
     public function getUsedAmount($departmentId, $year = null)
     {
-$year = $year ?? $this->getActiveFiscalYear();
+        $year = $year ?? $this->getActiveFiscalYear();
         $budget = AnnualBudget::where('department_id', $departmentId)
             ->where('fiscal_year', $year)
             ->first();
@@ -340,7 +361,7 @@ $year = $year ?? $this->getActiveFiscalYear();
      */
     public function getWeeklyAllocation($departmentId, $fiscalYear = null)
     {
-$fiscalYear = $fiscalYear ?? $this->getActiveFiscalYear();
+        $fiscalYear = $fiscalYear ?? $this->getActiveFiscalYear();
         //  Get policy for specific fiscal year
         $policy = DeptBudgetPolicy::where('department_id', $departmentId)
             ->where('fiscal_year', $fiscalYear)
@@ -389,18 +410,18 @@ $fiscalYear = $fiscalYear ?? $this->getActiveFiscalYear();
         return $usage->weekly_allocation - $usage->amount_used;
     }
 
-/**
- *  Get the raw annual amount for a department (current fiscal year)
- */
-public function getAnnualAmount($departmentId, $year = null)
-{
-$year = $year ?? $this->getActiveFiscalYear();
-    $budget = AnnualBudget::where('department_id', $departmentId)
-        ->where('fiscal_year', $year)
-        ->first();
+    /**
+     *  Get the raw annual amount for a department (current fiscal year)
+     */
+    public function getAnnualAmount($departmentId, $year = null)
+    {
+        $year = $year ?? $this->getActiveFiscalYear();
+        $budget = AnnualBudget::where('department_id', $departmentId)
+            ->where('fiscal_year', $year)
+            ->first();
 
-    return $budget ? (float) $budget->annual_amount : 0.0;
-}
+        return $budget ? (float) $budget->annual_amount : 0.0;
+    }
 
     /**
      *  Resolve the currently active fiscal year.
@@ -411,5 +432,4 @@ $year = $year ?? $this->getActiveFiscalYear();
         $active = \App\Models\FiscalYear::where('is_active', true)->first();
         return (int) ($active?->year ?? Carbon::now()->year);
     }
-
 }
