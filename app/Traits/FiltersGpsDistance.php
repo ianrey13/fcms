@@ -9,19 +9,14 @@ trait FiltersGpsDistance
     /**
      * GPS distance filter tuning — adjust per fleet if needed.
      */
-    protected float $gpsMinSegmentKm  = 0.015;   // 15 m noise floor
-    protected float $gpsMaxSegmentKm  = 5.0;     // 5 km teleport guard
-    protected float $gpsMaxSpeedKmh   = 120.0;   // 120 km/h speed ceiling
-    protected int   $gpsMaxGapSeconds = 300;     // 5 min max gap between pings
-    protected float $gpsEmaAlpha      = 0.3;     // EMA smoothing weight (0..1)
+    protected float $gpsMinSegmentKm  = 0.005;   
+    protected float $gpsMaxSegmentKm  = 5.0;     
+    protected float $gpsMaxSpeedKmh   = 120.0;   
+    protected int   $gpsMaxGapSeconds = 300;    
+    protected float $gpsEmaAlpha      = 0.7;     
 
     /**
      * Filter pings and sum only legitimate movement.
-     *
-     * Expects a Collection of objects/arrays with at minimum:
-     *   latitude, longitude, recorded_at
-     * Optional:
-     *   is_low_accuracy, accuracy_meters, speed_kmh
      */
     protected function filterAndSumGpsDistance(Collection $pings): float
     {
