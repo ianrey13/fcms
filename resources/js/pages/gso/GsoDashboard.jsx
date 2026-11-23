@@ -269,70 +269,75 @@ const GsoDashboard = () => {
         [activeTripsRaw],
     );
 
-    const { data: allTripsRaw = [], isLoading: tripsLoading } =
-        useOptimizedQuery({
-            queryKey: ["gso-dashboard-trips"],
-            queryFn: async () => {
-                const trips = extractArray(await gsoAPI.getAllTrips());
+   const { data: allTripsRaw = [], isLoading: tripsLoading } =
+    useOptimizedQuery({
+        queryKey: ["gso-dashboard-trips"],
+        queryFn: async () => {
+            const trips = extractArray(await gsoAPI.getAllTrips());
 
-                // ✅ FILTER: Ayaw i-apil sa ledger kung Pending pa o wala pay Gas Slip (pondo)
-                return trips.filter((trip) => {
-                    const status = (trip.status || "").toLowerCase();
-                    const hasGasSlip =
-                        trip.gasSlip || trip.gas_slip || trip.gas_slip_id;
+            return trips.filter((trip) => {
+                const status = (trip.status || "").toLowerCase();
+                const hasGasSlip =
+                    trip.gasSlip || trip.gas_slip || trip.gas_slip_id;
 
-                    // 1. Tangtangon ang cancelled/rejected/returned
-                    if (
-                        [
-                            "cancelled",
-                            "rejected",
-                            "returned_for_revision",
-                        ].includes(status)
-                    ) {
-                        return false;
-                    }
+                // 1. Tangtangon ang cancelled/rejected/returned
+                if (
+                    [
+                        "cancelled",
+                        "rejected",
+                        "returned_for_revision",
+                    ].includes(status)
+                ) {
+                    return false;
+                }
 
-                    // ✅ FIX: GITANGGTANG ANG FILTER SA pending_gso_validation/completed
-                    // ARON MA-APIL SILA SA LEDGER DAYON, dili maghulat ma-validate.
-                    // (Kaniadto: if (["pending_gso_validation", "completed"].includes(status)) return false;)
+                // ✅ I-BALIK: Tangtangon ang pending/completed sa LEDGER
+                // Kay naa sila sa Pending Validation table, dili sa ledger.
+                // Ma-appear ra sila sa ledger kung ma-validate na (status = 'closed')
+                if (
+                    ["pending_gso_validation", "completed"].includes(status)
+                ) {
+                    return false;
+                }
 
-                    // 2. Tangtangon kung pending_mayors_office ug wala pay gas slip
-                    if (status === "pending_mayors_office" && !hasGasSlip) {
-                        return false;
-                    }
+                // 2. Tangtangon kung pending_mayors_office ug wala pay gas slip
+                if (status === "pending_mayors_office" && !hasGasSlip) {
+                    return false;
+                }
 
-                    // 3. Tangtangon kung bag-o pa lang gi-create (walay gas slip ug wala pay nadagan nga distance)
-                    if (
-                        !hasGasSlip &&
-                        !trip.actual_distance_km &&
-                        !trip.gps_distance_km
-                    ) {
-                        return false;
-                    }
+                // 3. Tangtangon kung bag-o pa lang gi-create
+                if (
+                    !hasGasSlip &&
+                    !trip.actual_distance_km &&
+                    !trip.gps_distance_km
+                ) {
+                    return false;
+                }
 
-                    return true;
-                });
-            },
-        });
-    const allTrips = useMemo(
-        () => (Array.isArray(allTripsRaw) ? allTripsRaw : []),
-        [allTripsRaw],
-    );
+                return true;
+            });
+        },
+    });
+
+const allTrips = useMemo(
+    () => (Array.isArray(allTripsRaw) ? allTripsRaw : []),
+    [allTripsRaw],
+);
 
     // ✅ FIX: GIDUGANG ANG RETURN STATEMENT
     const { data: pendingValidationRaw = [], isLoading: validationLoading } =
-        useOptimizedQuery({
-            queryKey: ["gso-pending-validation"],
-            queryFn: async () => {
-                const trips = extractArray(await gsoAPI.getPendingValidation());
-                return trips; // ✅ KINI ANG KULANG SA UNA
-            },
-        });
+    useOptimizedQuery({
+        queryKey: ["gso-pending-validation"],
+        queryFn: async () => {
+            const trips = extractArray(await gsoAPI.getPendingValidation());
+            return trips; // ✅ KINI ANG KULANG SA UNA — wala ni sa imong original code
+        },
+    });
 
-    const pendingValidation = useMemo(
-        () => (Array.isArray(pendingValidationRaw) ? pendingValidationRaw : []),
-        [pendingValidationRaw],
-    );
+const pendingValidation = useMemo(
+    () => (Array.isArray(pendingValidationRaw) ? pendingValidationRaw : []),
+    [pendingValidationRaw],
+);
 
     // ============ MUTATIONS ============
     const validateMutation = useMutation({
