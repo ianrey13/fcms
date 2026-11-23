@@ -819,7 +819,7 @@ class DriverController extends Controller
         }
     }
 
-       public function getActiveTrip(Request $request)
+    public function getActiveTrip(Request $request)
     {
         try {
             $user = $request->user();
@@ -833,11 +833,11 @@ class DriverController extends Controller
             $activeTrip = TripTicket::with(['vehicle', 'department', 'gasSlip.fuelReceipt', 'driver.user'])
                 ->where('driver_id', $driver->driver_id)
                 ->whereIn('status', [
-                    'in_transit', 
-                    'paused', 
-                    'acknowledged', 
-                    'funds_issued', 
-                    'completed', 
+                    'in_transit',
+                    'paused',
+                    'acknowledged',
+                    'funds_issued',
+                    'completed',
                     'pending_gso_ticket'
                 ])
                 ->whereNotNull('destination')
@@ -1144,161 +1144,179 @@ class DriverController extends Controller
             return response()->json(['success' => false, 'message' => 'Failed to start trip: ' . $e->getMessage()], 500);
         }
     }
-
     public function completeTrip(Request $request, $id)
-{
-    try {
-        $user = $request->user();
+    {
+        try {
+            $user = $request->user();
 
-        $validator = Validator::make($request->all(), [
-            'latitude'  => 'nullable|numeric|between:-90,90',
-            'longitude' => 'nullable|numeric|between:-180,180',
-            'accuracy'  => 'nullable|numeric',
-            'is_done'   => 'nullable|boolean',
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json(['errors' => $validator->errors()], 422);
-        }
-
-        $driver = Driver::where('user_id', $user->user_id)->first();
-        if (!$driver) {
-            return response()->json(['success' => false, 'message' => 'Driver record not found'], 404);
-        }
-
-        $ticket = TripTicket::with('vehicle')
-            ->where('trip_ticket_id', $id)
-            ->where('driver_id', $driver->driver_id)
-            ->first();
-
-        if (!$ticket) {
-            return response()->json(['success' => false, 'message' => 'Trip ticket not found'], 404);
-        }
-
-        if (in_array($ticket->status, ['completed', 'pending_gso_validation', 'closed'])) {
-            return response()->json([
-                'success' => true,
-                'message' => 'Trip already completed',
-                'data' => ['trip_ticket_id' => $ticket->trip_ticket_id, 'status' => $ticket->status],
+            $validator = Validator::make($request->all(), [
+                'latitude'  => 'nullable|numeric|between:-90,90',
+                'longitude' => 'nullable|numeric|between:-180,180',
+                'accuracy'  => 'nullable|numeric',
+                'is_done'   => 'nullable|boolean',
             ]);
-        }
 
-        if (!in_array($ticket->status, ['in_transit', 'paused'])) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Cannot complete trip. Current status: ' . $ticket->status . '. Required: in_transit or paused',
-            ], 400);
-        }
+            if ($validator->fails()) {
+                return response()->json(['errors' => $validator->errors()], 422);
+            }
 
-        $wasPaused = $ticket->status === 'paused';
+            $driver = Driver::where('user_id', $user->user_id)->first();
+            if (!$driver) {
+                return response()->json(['success' => false, 'message' => 'Driver record not found'], 404);
+            }
 
-        DB::beginTransaction();
-
-        $finalDistance = 0.0;
-        $pingCount = 0;
-
-        if (!$wasPaused) {
-            // Final position, then close the current segment
-            $this->storeEdgePing((int) $id, $request->latitude, $request->longitude, $request->accuracy);
-
-            $tripHistory = TripHistory::where('trip_ticket_id', $id)
-                ->where('status', 'in_progress')
-                ->orderBy('trip_number', 'desc')
+            $ticket = TripTicket::with('vehicle')
+                ->where('trip_ticket_id', $id)
+                ->where('driver_id', $driver->driver_id)
                 ->first();
 
-            $pings = $this->segmentPings((int) $id, $tripHistory);
-            $pingCount = $pings->count();
-            $finalDistance = $this->filterAndSumGpsDistance($pings);
-
-            if ($tripHistory) {
-                $tripHistory->end_lat     = $request->latitude;
-                $tripHistory->end_lng     = $request->longitude;
-                $tripHistory->ended_at    = now();
-                $tripHistory->distance_km = $finalDistance;
-                $tripHistory->status      = 'completed';
-                $tripHistory->save();
+            if (!$ticket) {
+                return response()->json(['success' => false, 'message' => 'Trip ticket not found'], 404);
             }
-        }
-        // If it was paused, the last segment was already closed at pause time.
 
-        Log::info("Trip {$ticket->trip_ticket_number} completed", [
-            'trip_id'              => $id,
-            'was_paused'           => $wasPaused,
-            'pings_count'          => $pingCount,
-            'segment_distance_km'  => $finalDistance,
-        ]);
-
-        $gasSlip = GasSlip::where('trip_ticket_id', $id)->first();
-        if ($gasSlip) {
-            $fuelReceipt = FuelReceipt::where('gas_slip_id', $gasSlip->gas_slip_id)->first();
-            if ($fuelReceipt) {
-                $fuelReceipt->trip_ended_at = now();
-                $fuelReceipt->gps_distance_km =
-                    round((float) $fuelReceipt->gps_distance_km + $finalDistance, 2);
-                $fuelReceipt->trip_elapsed_minutes = $fuelReceipt->trip_started_at
-                    ? $fuelReceipt->trip_started_at->diffInMinutes(now())
-                    : null;
-
-                if ($request->filled('latitude') && $request->filled('longitude')) {
-                    $fuelReceipt->trip_end_gps_lat = $request->latitude;
-                    $fuelReceipt->trip_end_gps_lng = $request->longitude;
-                }
-                $fuelReceipt->save();
+            if (in_array($ticket->status, ['completed', 'pending_gso_validation', 'closed'])) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Trip already completed',
+                    'data' => ['trip_ticket_id' => $ticket->trip_ticket_id, 'status' => $ticket->status],
+                ]);
             }
-        }
 
-        // Pings are NOT deleted here. GSO validation archives them.
+            if (!in_array($ticket->status, ['in_transit', 'paused'])) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Cannot complete trip. Current status: ' . $ticket->status . '. Required: in_transit or paused',
+                ], 400);
+            }
 
-        $ticket->status = 'pending_gso_validation';
-        $ticket->syncActuals();
-        $ticket->save();
+            $wasPaused = $ticket->status === 'paused';
 
-        DB::commit();
+            DB::beginTransaction();
 
-        if ($ticket->vehicle) {
             try {
-                (new \App\Services\FuelLevelService())->recalculate($ticket->vehicle);
-            } catch (\Throwable $e) {
-                Log::warning('Fuel balance recalc failed during trip completion: ' . $e->getMessage());
+                $finalDistance = 0.0;
+                $pingCount = 0;
+
+                if (!$wasPaused) {
+                    // Final position, then close the current segment
+                    $this->storeEdgePing((int) $id, $request->latitude, $request->longitude, $request->accuracy);
+
+                    $tripHistory = TripHistory::where('trip_ticket_id', $id)
+                        ->where('status', 'in_progress')
+                        ->orderBy('trip_number', 'desc')
+                        ->first();
+
+                    // ✅ Kuhaa ang pings para sa CURRENT segment only
+                    $pings = $this->segmentPings((int) $id, $tripHistory);
+                    $pingCount = $pings->count();
+
+                    // ✅ I-FILTER ANG LOW ACCURACY PINGS
+                    $accuratePings = $pings->filter(fn($p) => !$p->is_low_accuracy)->values();
+
+                    // ✅ Compute distance gikan sa accurate pings lang
+                    $finalDistance = $this->filterAndSumGpsDistance($accuratePings);
+
+                    if ($tripHistory) {
+                        $tripHistory->end_lat     = $request->latitude;
+                        $tripHistory->end_lng     = $request->longitude;
+                        $tripHistory->ended_at    = now();
+                        $tripHistory->distance_km = $finalDistance;
+                        $tripHistory->status      = 'completed';
+                        $tripHistory->save();
+                    }
+                }
+                // If it was paused, the last segment was already closed at pause time.
+
+                Log::info("Trip {$ticket->trip_ticket_number} completed", [
+                    'trip_id'              => $id,
+                    'was_paused'           => $wasPaused,
+                    'pings_count'          => $pingCount,
+                    'segment_distance_km'  => $finalDistance,
+                ]);
+
+                // ✅ TANGGTANGON ang manual `gps_distance_km += $finalDistance`
+                // Ang `syncActuals()` na ang bahala sa pag-set gikan sa sum sa completed segments
+                $gasSlip = GasSlip::where('trip_ticket_id', $id)->first();
+                if ($gasSlip) {
+                    $fuelReceipt = FuelReceipt::where('gas_slip_id', $gasSlip->gas_slip_id)->first();
+                    if ($fuelReceipt) {
+                        $fuelReceipt->trip_ended_at = now();
+                        $fuelReceipt->trip_elapsed_minutes = $fuelReceipt->trip_started_at
+                            ? $fuelReceipt->trip_started_at->diffInMinutes(now())
+                            : null;
+
+                        if ($request->filled('latitude') && $request->filled('longitude')) {
+                            $fuelReceipt->trip_end_gps_lat = $request->latitude;
+                            $fuelReceipt->trip_end_gps_lng = $request->longitude;
+                        }
+                        $fuelReceipt->save();
+                    }
+                }
+
+                // Pings are NOT deleted here. GSO validation archives them.
+
+                $ticket->status = 'pending_gso_validation';
+                $ticket->syncActuals()->save();  // ✅ Nag-set na sa actual_distance_km gikan sa sum sa segments
+
+                // ✅ I-SYNC ang gps_distance_km gikan sa actual_distance_km
+                if ($gasSlip) {
+                    $fuelReceipt = FuelReceipt::where('gas_slip_id', $gasSlip->gas_slip_id)->first();
+                    if ($fuelReceipt) {
+                        $fuelReceipt->gps_distance_km = $ticket->actual_distance_km;
+                        $fuelReceipt->save();
+                    }
+                }
+
+                DB::commit();
+            } catch (\Exception $e) {
+                DB::rollBack();
+                throw $e;
             }
-        }
 
-        try {
-            broadcast(new TripCompleted(
-                $ticket->trip_ticket_id,
-                $request->latitude,
-                $request->longitude
-            ));
+            if ($ticket->vehicle) {
+                try {
+                    (new \App\Services\FuelLevelService())->recalculate($ticket->vehicle);
+                } catch (\Throwable $e) {
+                    Log::warning('Fuel balance recalc failed during trip completion: ' . $e->getMessage());
+                }
+            }
+
+            try {
+                broadcast(new TripCompleted(
+                    $ticket->trip_ticket_id,
+                    $request->latitude,
+                    $request->longitude
+                ));
+            } catch (\Exception $e) {
+                Log::warning('Failed to broadcast trip completion: ' . $e->getMessage());
+            }
+
+            $this->notifyGsoForValidation($ticket);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Trip completed! Awaiting GSO validation.',
+                'data' => [
+                    'trip_ticket_id'       => $ticket->trip_ticket_id,
+                    'status'               => $ticket->status,
+                    'trip_number'          => $ticket->trip_count,
+                    'trip_ended_at'        => now(),
+                    'pings_count'          => $pingCount,
+                    'computed_distance_km' => $finalDistance,
+                    'is_complete'          => true,
+                    'can_restart_tomorrow' => false,
+                    'actual_distance_km'   => $ticket->actual_distance_km,
+                    'actual_fuel_used'     => $ticket->actual_fuel_used,
+                    'end_lat'              => $request->latitude,
+                    'end_lng'              => $request->longitude,
+                ],
+            ]);
         } catch (\Exception $e) {
-            Log::warning('Failed to broadcast trip completion: ' . $e->getMessage());
+            DB::rollBack();
+            Log::error('Complete trip error: ' . $e->getMessage());
+            return response()->json(['success' => false, 'message' => 'Failed to complete trip: ' . $e->getMessage()], 500);
         }
-
-        $this->notifyGsoForValidation($ticket);
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Trip completed! Awaiting GSO validation.',
-            'data' => [
-                'trip_ticket_id'       => $ticket->trip_ticket_id,
-                'status'               => $ticket->status,
-                'trip_number'          => $ticket->trip_count,
-                'trip_ended_at'        => now(),
-                'pings_count'          => $pingCount,
-                'computed_distance_km' => $finalDistance,
-                'is_complete'          => true,
-                'can_restart_tomorrow' => false,
-                'actual_distance_km'   => $ticket->actual_distance_km,
-                'actual_fuel_used'     => $ticket->actual_fuel_used,
-                'end_lat'              => $request->latitude,
-                'end_lng'              => $request->longitude,
-            ],
-        ]);
-    } catch (\Exception $e) {
-        DB::rollBack();
-        Log::error('Complete trip error: ' . $e->getMessage());
-        return response()->json(['success' => false, 'message' => 'Failed to complete trip: ' . $e->getMessage()], 500);
     }
-}
     private function notifyGsoForValidation($ticket)
     {
         $gsoStaff = User::where('role', 'gso_office')->where('status', 'active')->get();
@@ -1562,288 +1580,280 @@ class DriverController extends Controller
         ]);
     }
 
-  public function pauseTrip(Request $request, $id)
-{
-    try {
-        $user = $request->user();
-
-        $validator = Validator::make($request->all(), [
-            'latitude'  => 'nullable|numeric|between:-90,90',
-            'longitude' => 'nullable|numeric|between:-180,180',
-            'accuracy'  => 'nullable|numeric',
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json(['errors' => $validator->errors()], 422);
-        }
-
-        $driver = Driver::where('user_id', $user->user_id)->first();
-        if (!$driver) {
-            return response()->json(['success' => false, 'message' => 'Driver record not found'], 404);
-        }
-
-        $ticket = TripTicket::with('vehicle')
-            ->where('trip_ticket_id', $id)
-            ->where('driver_id', $driver->driver_id)
-            ->first();
-
-        if (!$ticket) {
-            return response()->json(['success' => false, 'message' => 'Trip ticket not found'], 404);
-        }
-
-        if ($ticket->status === 'paused') {
-            return response()->json([
-                'success' => true,
-                'message' => 'Trip already paused',
-                'data' => [
-                    'trip_ticket_id' => $ticket->trip_ticket_id,
-                    'status' => $ticket->status,
-                    'actual_distance_km' => $ticket->actual_distance_km,
-                ],
-            ]);
-        }
-
-        if ($ticket->status !== 'in_transit') {
-            return response()->json([
-                'success' => false,
-                'message' => 'Cannot pause trip. Current status: ' . $ticket->status . '. Required: in_transit',
-            ], 400);
-        }
-
-        DB::beginTransaction();
-
+    public function pauseTrip(Request $request, $id)
+    {
         try {
-            // 1. Store final edge ping (kung naay method)
-            if (method_exists($this, 'storeEdgePing')) {
+            $user = $request->user();
+
+            $validator = Validator::make($request->all(), [
+                'latitude'  => 'nullable|numeric|between:-90,90',
+                'longitude' => 'nullable|numeric|between:-180,180',
+                'accuracy'  => 'nullable|numeric',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json(['errors' => $validator->errors()], 422);
+            }
+
+            $driver = Driver::where('user_id', $user->user_id)->first();
+            if (!$driver) {
+                return response()->json(['success' => false, 'message' => 'Driver record not found'], 404);
+            }
+
+            $ticket = TripTicket::with('vehicle')
+                ->where('trip_ticket_id', $id)
+                ->where('driver_id', $driver->driver_id)
+                ->first();
+
+            if (!$ticket) {
+                return response()->json(['success' => false, 'message' => 'Trip ticket not found'], 404);
+            }
+
+            // Idempotent
+            if ($ticket->status === 'paused') {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Trip already paused',
+                    'data' => [
+                        'trip_ticket_id' => $ticket->trip_ticket_id,
+                        'status' => $ticket->status,
+                        'actual_distance_km' => $ticket->actual_distance_km,
+                    ],
+                ]);
+            }
+
+            if ($ticket->status !== 'in_transit') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Cannot pause trip. Current status: ' . $ticket->status . '. Required: in_transit',
+                ], 400);
+            }
+
+            DB::beginTransaction();
+
+            try {
+                // 1. Store final edge ping
                 $this->storeEdgePing(
                     (int) $id,
                     $request->latitude,
                     $request->longitude,
                     $request->accuracy
                 );
-            }
 
-            // 2. Kuhaa ang current in-progress segment
-            $segment = TripHistory::where('trip_ticket_id', $id)
-                ->where('status', 'in_progress')
-                ->orderBy('trip_number', 'desc')
-                ->first();
+                // 2. Get current in-progress segment
+                $segment = TripHistory::where('trip_ticket_id', $id)
+                    ->where('status', 'in_progress')
+                    ->orderBy('trip_number', 'desc')
+                    ->first();
 
-            // 3. Compute segment distance — naay fallback kung wala ang segmentPings()
-            $segmentDistance = 0;
-            $pingCount = 0;
+                $segmentDistance = 0;
+                $pingCount = 0;
 
-            if ($segment) {
-                if (method_exists($this, 'segmentPings')) {
-                    $pings = $this->segmentPings((int) $id, $segment);
-                    $segmentDistance = $this->filterAndSumGpsDistance($pings);
-                    $pingCount = $pings->count();
-                } else {
-                    // ✅ FALLBACK: compute gikan sa GpsPing model directly
+                if ($segment) {
+                    // 3. Get pings for THIS segment only (gikan sa started_at)
                     $pings = GpsPing::where('trip_ticket_id', $id)
-                        ->where('is_low_accuracy', false)
                         ->where('recorded_at', '>=', $segment->started_at)
                         ->orderBy('recorded_at')
                         ->get();
 
                     $pingCount = $pings->count();
 
-                    $prev = null;
-                    foreach ($pings as $ping) {
-                        if ($prev) {
-                            $segmentDistance += $this->haversineGpsKm(
-                                (float) $prev->latitude,
-                                (float) $prev->longitude,
-                                (float) $ping->latitude,
-                                (float) $ping->longitude
-                            );
-                        }
-                        $prev = $ping;
-                    }
-                    $segmentDistance = round($segmentDistance, 2);
+                    // 4. ✅ I-FILTER ANG LOW ACCURACY PINGS
+                    $accuratePings = $pings->filter(function ($p) {
+                        return !$p->is_low_accuracy;
+                    })->values();
+
+                    // 5. Compute distance gikan sa accurate pings lang
+                    $segmentDistance = $this->filterAndSumGpsDistance($accuratePings);
+
+                    // 6. Close the segment with its distance
+                    $segment->end_lat     = $request->latitude;
+                    $segment->end_lng     = $request->longitude;
+                    $segment->ended_at    = now();
+                    $segment->distance_km = $segmentDistance;
+                    $segment->status      = 'completed';
+                    $segment->save();
+
+                    Log::info("Pause segment closed", [
+                        'trip_id' => $id,
+                        'trip_number' => $segment->trip_number,
+                        'segment_distance_km' => $segmentDistance,
+                        'total_pings' => $pingCount,
+                        'accurate_pings' => $accuratePings->count(),
+                    ]);
                 }
 
-                // 4. I-close ang segment
-                $segment->end_lat     = $request->latitude;
-                $segment->end_lng     = $request->longitude;
-                $segment->ended_at    = now();
-                $segment->distance_km = $segmentDistance;
-                $segment->status      = 'completed';
-                $segment->save();
+                // 7. Set ticket status to paused
+                $ticket->status = 'paused';
+                $ticket->save();
+
+                // 8. Sync actuals — sum of completed segments
+                $ticket->syncActuals()->save();
+
+                DB::commit();
+            } catch (\Exception $e) {
+                DB::rollBack();
+                throw $e;
             }
 
-            // 5. Set ticket to paused
-            $ticket->status = 'paused';
-            $ticket->save();
-
-            // 6. Sync actuals — gikan sa sum sa completed segments
-            $ticket->syncActuals()->save();
-
-            DB::commit();
-        } catch (\Exception $e) {
-            DB::rollBack();
-            throw $e;
-        }
-
-        // Fuel recalc AFTER commit
-        if ($ticket->vehicle) {
-            try {
-                (new \App\Services\FuelLevelService())->recalculate($ticket->vehicle);
-            } catch (\Throwable $e) {
-                Log::warning('Fuel balance recalc failed during trip pause: ' . $e->getMessage());
+            // Fuel recalc AFTER commit
+            if ($ticket->vehicle) {
+                try {
+                    (new \App\Services\FuelLevelService())->recalculate($ticket->vehicle);
+                } catch (\Throwable $e) {
+                    Log::warning('Fuel balance recalc failed during trip pause: ' . $e->getMessage());
+                }
             }
-        }
 
-        Log::info("Trip {$ticket->trip_ticket_number} paused", [
-            'trip_id'             => $id,
-            'segment_distance_km' => $segmentDistance,
-            'ping_count'          => $pingCount,
-            'total_actual_km'     => $ticket->actual_distance_km,
-        ]);
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Trip paused. Tap Continue Trip when you resume.',
-            'data' => [
-                'trip_ticket_id'      => $ticket->trip_ticket_id,
-                'status'              => $ticket->status,
-                'trip_number'         => $ticket->trip_count,
+            Log::info("Trip {$ticket->trip_ticket_number} paused", [
+                'trip_id'             => $id,
                 'segment_distance_km' => $segmentDistance,
-                'actual_distance_km'  => $ticket->actual_distance_km,
-                'actual_fuel_used'    => $ticket->actual_fuel_used,
-            ],
-        ]);
-    } catch (\Exception $e) {
-        DB::rollBack();
-        Log::error('Pause trip error: ' . $e->getMessage());
-        return response()->json([
-            'success' => false,
-            'message' => 'Failed to pause trip: ' . $e->getMessage()
-        ], 500);
-    }
-}
+                'ping_count'          => $pingCount,
+                'total_actual_km'     => $ticket->actual_distance_km,
+            ]);
 
-public function resumeTrip(Request $request, $id)
-{
-    try {
-        $user = $request->user();
-
-        $validator = Validator::make($request->all(), [
-            'latitude'  => 'nullable|numeric|between:-90,90',
-            'longitude' => 'nullable|numeric|between:-180,180',
-            'accuracy'  => 'nullable|numeric',
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json(['errors' => $validator->errors()], 422);
-        }
-
-        $driver = Driver::where('user_id', $user->user_id)->first();
-        if (!$driver) {
-            return response()->json(['success' => false, 'message' => 'Driver record not found'], 404);
-        }
-
-        $ticket = TripTicket::where('trip_ticket_id', $id)
-            ->where('driver_id', $driver->driver_id)
-            ->first();
-
-        if (!$ticket) {
-            return response()->json(['success' => false, 'message' => 'Trip ticket not found'], 404);
-        }
-
-        // Idempotent — kung in_transit na, ayaw na usba
-        if ($ticket->status === 'in_transit') {
             return response()->json([
                 'success' => true,
-                'message' => 'Trip already in progress',
+                'message' => 'Trip paused. Tap Continue Trip when you resume.',
                 'data' => [
-                    'trip_ticket_id' => $ticket->trip_ticket_id,
-                    'status' => $ticket->status,
+                    'trip_ticket_id'      => $ticket->trip_ticket_id,
+                    'status'              => $ticket->status,
+                    'trip_number'         => $ticket->trip_count,
+                    'segment_distance_km' => $segmentDistance,
+                    'actual_distance_km'  => $ticket->actual_distance_km,
+                    'actual_fuel_used'    => $ticket->actual_fuel_used,
                 ],
             ]);
-        }
-
-        if ($ticket->status !== 'paused') {
-            return response()->json([
-                'success' => false,
-                'message' => 'Cannot continue trip. Current status: ' . $ticket->status . '. Required: paused',
-            ], 400);
-        }
-
-        // Check kung naa'y lain nga active trip
-        $otherActive = TripTicket::where('driver_id', $driver->driver_id)
-            ->where('status', 'in_transit')
-            ->where('trip_ticket_id', '!=', $id)
-            ->exists();
-
-        if ($otherActive) {
-            return response()->json([
-                'success' => false,
-                'message' => 'You already have another trip in progress. Complete or pause it first.',
-            ], 400);
-        }
-
-        DB::beginTransaction();
-
-        try {
-            // 1. Increment trip_count (bag-ong segment)
-            $ticket->trip_count = ($ticket->trip_count ?? 0) + 1;
-            $ticket->status = 'in_transit';
-            $ticket->save();
-
-            // 2. Create NEW TripHistory segment
-            $tripHistory = TripHistory::create([
-                'trip_ticket_id' => $ticket->trip_ticket_id,
-                'trip_number'    => $ticket->trip_count,
-                'start_lat'      => $request->latitude,
-                'start_lng'      => $request->longitude,
-                'started_at'     => now(),
-                'status'         => 'in_progress',
-            ]);
-
-            // 3. Store edge ping para sa start sa new segment
-            $this->storeEdgePing(
-                (int) $id,
-                $request->latitude,
-                $request->longitude,
-                $request->accuracy
-            );
-
-            // 4. ✅ FIX: Recompute actuals gikan sa TOTAL pings
-            //    Kini mag-update sa actual_distance_km gikan sa tanan segments
-            $ticket->syncActuals()->save();
-
-            DB::commit();
         } catch (\Exception $e) {
             DB::rollBack();
-            throw $e;
+            Log::error('Pause trip error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to pause trip: ' . $e->getMessage()
+            ], 500);
         }
-
-        Log::info("Trip {$ticket->trip_ticket_number} resumed", [
-            'trip_id'         => $id,
-            'trip_number'     => $ticket->trip_count,
-            'total_actual_km' => $ticket->actual_distance_km,
-        ]);
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Trip continued! GPS tracking is active.',
-            'data' => [
-                'trip_ticket_id'  => $ticket->trip_ticket_id,
-                'status'          => $ticket->status,
-                'trip_number'     => $ticket->trip_count,
-                'trip_history_id' => $tripHistory->history_id,
-                'actual_distance_km' => $ticket->actual_distance_km,
-            ],
-        ]);
-    } catch (\Exception $e) {
-        DB::rollBack();
-        Log::error('Resume trip error: ' . $e->getMessage());
-        return response()->json([
-            'success' => false,
-            'message' => 'Failed to continue trip: ' . $e->getMessage()
-        ], 500);
     }
-}
 
+    public function resumeTrip(Request $request, $id)
+    {
+        try {
+            $user = $request->user();
+
+            $validator = Validator::make($request->all(), [
+                'latitude'  => 'nullable|numeric|between:-90,90',
+                'longitude' => 'nullable|numeric|between:-180,180',
+                'accuracy'  => 'nullable|numeric',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json(['errors' => $validator->errors()], 422);
+            }
+
+            $driver = Driver::where('user_id', $user->user_id)->first();
+            if (!$driver) {
+                return response()->json(['success' => false, 'message' => 'Driver record not found'], 404);
+            }
+
+            $ticket = TripTicket::where('trip_ticket_id', $id)
+                ->where('driver_id', $driver->driver_id)
+                ->first();
+
+            if (!$ticket) {
+                return response()->json(['success' => false, 'message' => 'Trip ticket not found'], 404);
+            }
+
+            // Idempotent
+            if ($ticket->status === 'in_transit') {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Trip already in progress',
+                    'data' => [
+                        'trip_ticket_id' => $ticket->trip_ticket_id,
+                        'status' => $ticket->status,
+                        'actual_distance_km' => $ticket->actual_distance_km,
+                    ],
+                ]);
+            }
+
+            if ($ticket->status !== 'paused') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Cannot continue trip. Current status: ' . $ticket->status . '. Required: paused',
+                ], 400);
+            }
+
+            // Check for other active trips
+            $otherActive = TripTicket::where('driver_id', $driver->driver_id)
+                ->where('status', 'in_transit')
+                ->where('trip_ticket_id', '!=', $id)
+                ->exists();
+
+            if ($otherActive) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You already have another trip in progress. Complete or pause it first.',
+                ], 400);
+            }
+
+            DB::beginTransaction();
+
+            try {
+                // 1. Increment trip_count for the new segment
+                $ticket->trip_count = ($ticket->trip_count ?? 0) + 1;
+                $ticket->status = 'in_transit';
+                $ticket->save();
+
+                // 2. Create NEW TripHistory for the resumed segment
+                $tripHistory = TripHistory::create([
+                    'trip_ticket_id' => $ticket->trip_ticket_id,
+                    'trip_number'    => $ticket->trip_count,
+                    'start_lat'      => $request->latitude,
+                    'start_lng'      => $request->longitude,
+                    'started_at'     => now(),
+                    'status'         => 'in_progress',
+                ]);
+
+                // 3. Store edge ping para sa start sa new segment
+                $this->storeEdgePing(
+                    (int) $id,
+                    $request->latitude,
+                    $request->longitude,
+                    $request->accuracy
+                );
+
+                // 4. Sync actuals — preserve total distance gikan sa tanan completed segments
+                $ticket->syncActuals()->save();
+
+                DB::commit();
+            } catch (\Exception $e) {
+                DB::rollBack();
+                throw $e;
+            }
+
+            Log::info("Trip {$ticket->trip_ticket_number} resumed", [
+                'trip_id'         => $id,
+                'trip_number'     => $ticket->trip_count,
+                'total_actual_km' => $ticket->actual_distance_km,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Trip continued! GPS tracking is active.',
+                'data' => [
+                    'trip_ticket_id'  => $ticket->trip_ticket_id,
+                    'status'          => $ticket->status,
+                    'trip_number'     => $ticket->trip_count,
+                    'trip_history_id' => $tripHistory->history_id,
+                    'actual_distance_km' => $ticket->actual_distance_km,
+                ],
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Resume trip error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to continue trip: ' . $e->getMessage()
+            ], 500);
+        }
+    }
 }
