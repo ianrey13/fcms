@@ -683,7 +683,7 @@ const MayorDashboard = () => {
                                 </RePieChart>
                             </ResponsiveContainer>
                             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                                <p className="text-2xl font-bold text-white">{formatCompact(allTimeTotals.totalAllocated)}</p>
+                                  <p className="text-xl md:text-2xl font-bold text-white">{formatCurrency(allTimeTotals.totalAllocated)}</p>
                                 <p className="text-xs text-slate-400 uppercase tracking-widest mt-1">Total Budget</p>
                             </div>
                         </div>
