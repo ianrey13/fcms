@@ -318,26 +318,21 @@ const BudgetAllocation = () => {
         };
     }, [budgetData, budgets]);
 
-    const processedHistory = useMemo(() => {
-        if (!historyData || historyData.length === 0)
-            return { rows: [], totals: {} };
+        const processedHistory = useMemo(() => {
+        if (!historyData || historyData.length === 0) return { rows: [], totals: {} };
 
-        const chronological = [...historyData].sort(
-            (a, b) =>
-                new Date(a.created_at).getTime() -
-                new Date(b.created_at).getTime(),
+        const chronological = [...historyData].sort((a, b) => 
+            new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
         );
 
         let runningBalance = 0;
         let totalAdded = 0;
         let totalReleased = 0;
 
-        const computed = chronological.map((log) => {
+        const computed = chronological.map(log => {
             const added = parseFloat(log.added_amount) || 0;
-            const isRelease =
-                log.action.toLowerCase().includes("release") ||
-                log.action.toLowerCase().includes("fund");
-
+            const isRelease = log.action.toLowerCase().includes('release') || log.action.toLowerCase().includes('fund');
+            
             if (isRelease) {
                 runningBalance -= Math.abs(added);
                 totalReleased += Math.abs(added);
@@ -347,39 +342,35 @@ const BudgetAllocation = () => {
             }
 
             let txType = "Allocation";
-            let typeColor =
-                "bg-emerald-500/20 text-emerald-400 border-emerald-500/30";
+            let typeColor = "bg-emerald-500/20 text-emerald-400 border-emerald-500/30";
             let TypeIcon = CheckCircle2;
-
+            
             if (isRelease) {
                 txType = "Fund Release";
                 typeColor = "bg-red-500/20 text-red-400 border-red-500/30";
                 TypeIcon = TrendingDown;
-            } else if (log.action.toLowerCase().includes("additional")) {
+            } else if (log.action.toLowerCase().includes('additional')) {
                 txType = "Additional Allocation";
-                typeColor =
-                    "bg-emerald-500/20 text-emerald-400 border-emerald-500/30";
+                typeColor = "bg-emerald-500/20 text-emerald-400 border-emerald-500/30";
                 TypeIcon = TrendingUp;
-            } else if (log.action.toLowerCase().includes("reset")) {
+            } else if (log.action.toLowerCase().includes('reset')) {
                 txType = "System Reset";
-                typeColor =
-                    "bg-slate-500/20 text-slate-400 border-slate-500/30";
+                typeColor = "bg-slate-500/20 text-slate-400 border-slate-500/30";
                 TypeIcon = Activity;
             }
 
-            // ✅ ANG MGA VALUE DIRI GIKAN NA SA BACKEND
+            // ✅ GIKAN NI SA BACKEND KARON
             return {
                 ...log,
                 displayDate: new Date(log.created_at),
-                referenceNo: log.reference_no || "—",
+                referenceNo: log.reference_no || '—', 
                 txType,
                 typeColor,
                 TypeIcon,
                 displayAmount: Math.abs(added),
                 isRelease,
                 runningBalance,
-                displayDestination:
-                    log.destination || (isRelease ? "—" : "Annual Budget"),
+                displayDestination: log.destination || (isRelease ? "—" : "Annual Budget"),
                 displayPurpose: log.purpose || log.reason || "—",
             };
         });
@@ -389,12 +380,11 @@ const BudgetAllocation = () => {
         return {
             rows: reversed,
             totals: {
-                totalAllocated:
-                    computed.length > 0 ? runningBalance + totalReleased : 0,
+                totalAllocated: computed.length > 0 ? (runningBalance + totalReleased) : 0,
                 totalAdded,
                 totalReleased,
-                finalBalance: runningBalance,
-            },
+                finalBalance: runningBalance
+            }
         };
     }, [historyData]);
 

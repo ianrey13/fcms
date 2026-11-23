@@ -81,11 +81,10 @@ class BudgetService
     /**
      
      */
-       public function deductBudget($departmentId, $amount, $isCrossDepartment = false, $originalDepartmentId = null, $reason = null)
+          public function deductBudget($departmentId, $amount, $isCrossDepartment = false, $originalDepartmentId = null, $reason = null)
     {
         $year = $this->getActiveFiscalYear();
         
-        // 1. Kuhaon ang budget
         $budget = AnnualBudget::where('department_id', $departmentId)
             ->where('fiscal_year', $year)
             ->first();
@@ -94,28 +93,27 @@ class BudgetService
             throw new \Exception("No budget found for department ID: {$departmentId}");
         }
 
-        // 2. Check kung naay enough budget
         if (!$this->hasSufficientBudget($departmentId, $amount, $year) && !$isCrossDepartment) {
             throw new \Exception("Insufficient budget for department ID: {$departmentId}");
         }
 
-        // 3. I-save ang previous amount para sa history log
+        // Get previous used amount for logging
         $previousUsed = (float) $budget->used_amount;
 
-        // 4. Deduct gikan sa annual budget
+        // Deduct from annual budget
         $budget->used_amount += $amount;
         $budget->save();
 
-        // 5. Record weekly usage
+        // Record weekly usage
         $this->recordWeeklyUsage($departmentId, $amount);
 
-        // 6. ✅ INSERT SA BUDGET HISTORY (Aron ma-link nato ang Trip Ticket)
+        // ✅ INSERT SA BUDGET HISTORY ARON MA-LINK SA TRIP TICKET
         $dept = \App\Models\Department::find($departmentId);
         
         DB::table('budget_history')->insert([
             'department_id' => $departmentId,
             'department_name' => $dept ? $dept->department_name : 'Unknown',
-            'action' => 'fund_released', // Importante ni para makabalo ang query
+            'action' => 'fund_released', // Importante ni para sa join
             'previous_amount' => $previousUsed,
             'added_amount' => $amount,
             'new_amount' => $budget->used_amount,

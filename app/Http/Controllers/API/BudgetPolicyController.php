@@ -312,20 +312,19 @@ class BudgetPolicyController extends Controller
     /**
      * Get budget history for a department or all
      */
-    public function getBudgetHistory(Request $request)
+       public function getBudgetHistory(Request $request)
     {
         try {
             $departmentId = $request->get('department_id');
             $year = $request->get('year');
             $limit = $request->get('limit', 100);
 
-            // ✅ SAFE JOIN: Mag-match sa department, amount, ug time (within 5 mins)
+            // ✅ I-JOIN ANG MGA TABLES PARA MAKUHA ANG TRIP TICKET UG DESTINATION
             $query = DB::table('budget_history as bh')
-                ->leftJoin('gas_slip as gs', function ($join) {
+                ->leftJoin('gas_slip as gs', function($join) {
                     $join->on('gs.amount_released', '=', 'bh.added_amount')
-                        // Match creator if possible, or just rely on time & amount
-                        ->on('gs.created_by', '=', 'bh.user_id')
-                        ->whereRaw('ABS(TIMESTAMPDIFF(MINUTE, gs.created_at, bh.created_at)) <= 5');
+                         ->on('gs.created_by', '=', 'bh.user_id')
+                         ->whereRaw('ABS(TIMESTAMPDIFF(MINUTE, gs.created_at, bh.created_at)) <= 5');
                 })
                 ->leftJoin('trip_ticket as tt', 'gs.trip_ticket_id', '=', 'tt.trip_ticket_id')
                 ->leftJoin('departments as d', 'bh.department_id', '=', 'd.department_id')
@@ -333,12 +332,12 @@ class BudgetPolicyController extends Controller
                     'bh.*',
                     'd.department_name',
                     'd.department_code',
-                    'tt.trip_ticket_number as reference_no',
-                    'tt.destination',
-                    'tt.purpose'
+                    'tt.trip_ticket_number as reference_no', 
+                    'tt.destination',                        
+                    'tt.purpose'                             
                 )
                 ->orderBy('bh.created_at', 'desc');
-
+            
             if ($departmentId) {
                 $query->where('bh.department_id', $departmentId);
             }
@@ -346,9 +345,9 @@ class BudgetPolicyController extends Controller
             if ($year) {
                 $query->whereYear('bh.created_at', $year);
             }
-
+            
             $history = $query->limit($limit)->get();
-
+            
             // ✅ FALLBACK FORMATTING
             $history = $history->map(function ($log) {
                 $action = strtolower($log->action);
@@ -358,19 +357,21 @@ class BudgetPolicyController extends Controller
                         $log->reference_no = 'REF-' . str_pad($log->id, 4, '0', STR_PAD_LEFT);
                         $log->destination = '—';
                     }
-                } else if (in_array($action, ['annual_created', 'annual_set', 'annual_added', 'weekly_allocated', 'activated'])) {
+                } 
+                else if (in_array($action, ['annual_created', 'annual_set', 'annual_added', 'weekly_allocated', 'activated'])) {
                     $log->reference_no = 'ALLOC';
                     $log->destination = 'Annual Budget';
                     if (!$log->purpose) {
                         $log->purpose = $log->reason ?? 'Annual Budget';
                     }
-                } else {
+                } 
+                else {
                     $log->reference_no = 'SYS';
                     $log->destination = '—';
                 }
                 return $log;
             });
-
+            
             return response()->json([
                 'success' => true,
                 'data' => $history
