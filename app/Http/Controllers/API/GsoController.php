@@ -793,11 +793,7 @@ class GsoController extends Controller
         }
     }
 
-    /**
-     * GSO validates and CLOSES the trip (final step)
-     * ✅ Archive GPS pings before deleting them so route history survives.
-     */
-       public function validateTrip(Request $request, $id)
+        public function validateTrip(Request $request, $id)
     {
         try {
             $user = $request->user();
@@ -825,7 +821,7 @@ class GsoController extends Controller
                 ], 404);
             }
 
-            // ✅ BACKEND GUARD: Check kung na-verify na sa DO ug naa nay liters
+            // ✅ GITANGGTANG ANG DO VERIFICATION CHECK
             $receipt = $ticket->gasSlip?->fuelReceipt;
 
             if (!$receipt) {
@@ -835,17 +831,11 @@ class GsoController extends Controller
                 ], 422);
             }
 
-            if ($receipt->verification_status !== 'verified') {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Cannot validate: The fuel receipt has not been verified by the Mayor\'s Office yet.'
-                ], 422);
-            }
-
+            // ✅ Ibilin lang ang check sa liters (kay GSO may tigbutang ani)
             if ($receipt->liters_availed === null || (float) $receipt->liters_availed <= 0) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Cannot validate: Fuel liters have not been recorded yet.'
+                    'message' => 'Cannot validate: Fuel liters have not been recorded yet. Please edit the liters first.'
                 ], 422);
             }
 
@@ -972,7 +962,7 @@ class GsoController extends Controller
         }
     }
 
-    /**
+       /**
      * Get trips pending GSO validation
      * Includes both 'pending_gso_validation' AND 'completed' statuses
      */
@@ -995,16 +985,11 @@ class GsoController extends Controller
                 ->whereIn('status', ['pending_gso_validation', 'completed'])
                 ->orderBy('submitted_at', 'desc')
                 ->get()
-                // ✅ FILTER: Dili ipakita kung wala pa na-verify sa DO o wala pay liters
+                // ✅ GITANGGTANG ANG DO VERIFICATION REQUIREMENT
+                // I-check lang kung naay nadagan nga distance gikan sa GPS
                 ->filter(function ($ticket) {
-                    $receipt = $ticket->gasSlip?->fuelReceipt;
-
-                    if (!$receipt) return false; // Walay receipt
-
-                    $isVerifiedByDO = $receipt->verification_status === 'verified';
-                    $hasLiters = $receipt->liters_availed !== null && (float) $receipt->liters_availed > 0;
-
-                    return $isVerifiedByDO && $hasLiters;
+                    $hasDistance = ($ticket->actual_distance_km ?? 0) > 0;
+                    return $hasDistance; 
                 })
                 ->map(function ($ticket) {
                     $fuelReceipt = $ticket->gasSlip?->fuelReceipt;
