@@ -331,6 +331,7 @@ const allTrips = useMemo(
         queryFn: async () => {
             const trips = extractArray(await gsoAPI.getPendingValidation());
             return trips; // ✅ KINI ANG KULANG SA UNA — wala ni sa imong original code
+            
         },
     });
 

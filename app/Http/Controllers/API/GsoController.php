@@ -303,7 +303,7 @@ class GsoController extends Controller
     /**
      * Get all trips (for GSO admin view)
      */
-        public function getAllTrips(Request $request)
+    public function getAllTrips(Request $request)
     {
         try {
             $user = $request->user();
@@ -793,7 +793,7 @@ class GsoController extends Controller
         }
     }
 
-        public function validateTrip(Request $request, $id)
+    public function validateTrip(Request $request, $id)
     {
         try {
             $user = $request->user();
@@ -962,90 +962,101 @@ class GsoController extends Controller
         }
     }
 
-       /**
+    /**
      * Get trips pending GSO validation
      * Includes both 'pending_gso_validation' AND 'completed' statuses
      */
-   public function getPendingValidation(Request $request)
-{
-    try {
-        $user = $request->user();
+    public function getPendingValidation(Request $request)
+    {
+        try {
+            $user = $request->user();
 
-        if (!$user->isGsoOffice()) {
-            return response()->json(['message' => 'Unauthorized'], 403);
+            if (!$user->isGsoOffice()) {
+                return response()->json(['message' => 'Unauthorized'], 403);
+            }
+
+            $trips = TripTicket::with([
+                'vehicle',
+                'department',
+                'driver.user',
+                'gasSlip',
+                'gasSlip.fuelReceipt',
+            ])
+                ->whereIn('status', [
+                    TripTicket::STATUS_PENDING_GSO_VALIDATION ?? 'pending_gso_validation',
+                    TripTicket::STATUS_COMPLETED ?? 'completed',
+                ])
+                ->orderBy('submitted_at', 'desc')
+                ->get()
+                ->map(function ($ticket) {
+                    $fuelReceipt = $ticket->gasSlip?->fuelReceipt;
+
+                    // ✅ Safe comparison — handle null updated_at
+                    $isOldCompleted = $ticket->status === 'completed'
+                        && $ticket->updated_at
+                        && $ticket->updated_at->lt(now()->subHours(24));
+
+                    return [
+                        'id' => $ticket->trip_ticket_id,
+                        'ticket_number' => $ticket->trip_ticket_number,
+                        'trip_date' => $ticket->trip_date,
+                        'destination' => $ticket->destination,
+                        'purpose' => $ticket->purpose,
+                        'status' => $ticket->status,
+                        'trip_count' => $ticket->trip_count ?? 0,
+                        'submitted_at' => $ticket->submitted_at,
+                        'updated_at' => $ticket->updated_at,
+                        'is_old_completed' => $isOldCompleted,
+                        'driver_name' => $ticket->driver?->user?->full_name,
+                        'department_name' => $ticket->department?->department_name,
+                        'amount_released' => $ticket->gasSlip?->amount_released,
+                        'estimated_distance_km' => $ticket->estimated_distance_km,
+                        'actual_distance_km' => $ticket->actual_distance_km,
+                        'estimated_fuel_liters' => $ticket->estimated_fuel_liters,
+                        'actual_fuel_used' => $ticket->actual_fuel_used,
+                        'gps_distance_km' => $fuelReceipt?->gps_distance_km,
+                        'trip_started_at' => $fuelReceipt?->trip_started_at,
+                        'trip_ended_at' => $fuelReceipt?->trip_ended_at,
+                        'start_lat' => $fuelReceipt?->trip_start_gps_lat,
+                        'start_lng' => $fuelReceipt?->trip_start_gps_lng,
+                        'end_lat' => $fuelReceipt?->trip_end_gps_lat,
+                        'end_lng' => $fuelReceipt?->trip_end_gps_lng,
+                        'has_receipt' => $fuelReceipt && $fuelReceipt->receipt_photo_path ? true : false,
+                        'receipt_url' => $fuelReceipt && $fuelReceipt->receipt_photo_path
+                            ? asset($fuelReceipt->receipt_photo_path)
+                            : null,
+                        'receipt_uploaded_at' => $fuelReceipt?->receipt_uploaded_at,
+                        'vehicle' => $ticket->vehicle ? [
+                            'plate_number' => $ticket->vehicle->plate_number,
+                            'vehicle_model' => $ticket->vehicle->vehicle_model,
+                        ] : null,
+                    ];
+                })
+                ->values();
+
+            return response()->json([
+                'success' => true,
+                'data' => $trips,
+                'meta' => [
+                    'pending_count' => $trips->count(),
+                    'pending_validation_count' => $trips->filter(
+                        fn($t) => $t['status'] === 'pending_gso_validation'
+                    )->count(),
+                    'completed_old_count' => $trips->filter(
+                        fn($t) => $t['status'] === 'completed'
+                    )->count(),
+                ],
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Get pending validation error: ' . $e->getMessage());
+            Log::error('Stack trace: ' . $e->getTraceAsString());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch pending validation: ' . $e->getMessage(),
+            ], 500);
         }
-
-        $trips = TripTicket::with([
-            'vehicle',
-            'department',
-            'driver.user',
-            'gasSlip',
-            'gasSlip.fuelReceipt'
-        ])
-            ->whereIn('status', ['pending_gso_validation', 'completed'])
-            ->orderBy('submitted_at', 'desc')
-            ->get()
-            // ✅ GITANGGTANG ANG FILTER — ipakita tanan pending/completed
-            ->map(function ($ticket) {
-                $fuelReceipt = $ticket->gasSlip?->fuelReceipt;
-                $isOldCompleted = $ticket->status === 'completed' &&
-                    $ticket->updated_at < now()->subHours(24);
-
-                return [
-                    'id' => $ticket->trip_ticket_id,
-                    'ticket_number' => $ticket->trip_ticket_number,
-                    'trip_date' => $ticket->trip_date,
-                    'destination' => $ticket->destination,
-                    'purpose' => $ticket->purpose,
-                    'status' => $ticket->status,
-                    'trip_count' => $ticket->trip_count ?? 0,
-                    'submitted_at' => $ticket->submitted_at,
-                    'updated_at' => $ticket->updated_at,
-                    'is_old_completed' => $isOldCompleted,
-                    'driver_name' => $ticket->driver?->user?->full_name,
-                    'department_name' => $ticket->department?->department_name,
-                    'amount_released' => $ticket->gasSlip?->amount_released,
-                    'estimated_distance_km' => $ticket->estimated_distance_km,
-                    'actual_distance_km' => $ticket->actual_distance_km,
-                    'estimated_fuel_liters' => $ticket->estimated_fuel_liters,
-                    'actual_fuel_used' => $ticket->actual_fuel_used,
-                    'gps_distance_km' => $fuelReceipt?->gps_distance_km,
-                    'trip_started_at' => $fuelReceipt?->trip_started_at,
-                    'trip_ended_at' => $fuelReceipt?->trip_ended_at,
-                    'start_lat' => $fuelReceipt?->trip_start_gps_lat,
-                    'start_lng' => $fuelReceipt?->trip_start_gps_lng,
-                    'end_lat' => $fuelReceipt?->trip_end_gps_lat,
-                    'end_lng' => $fuelReceipt?->trip_end_gps_lng,
-                    'has_receipt' => $fuelReceipt && $fuelReceipt->receipt_photo_path ? true : false,
-                    'receipt_url' => $fuelReceipt && $fuelReceipt->receipt_photo_path ?
-                        asset($fuelReceipt->receipt_photo_path) : null,
-                    'receipt_uploaded_at' => $fuelReceipt?->receipt_uploaded_at,
-                    'vehicle' => $ticket->vehicle ? [
-                        'plate_number' => $ticket->vehicle->plate_number,
-                        'vehicle_model' => $ticket->vehicle->vehicle_model,
-                    ] : null,
-                ];
-            })
-            ->values();
-
-        return response()->json([
-            'success' => true,
-            'data' => $trips,
-            'meta' => [
-                'pending_count' => $trips->count(),
-                'pending_validation_count' => $trips->filter(fn($t) => $t['status'] === 'pending_gso_validation')->count(),
-                'completed_old_count' => $trips->filter(fn($t) => $t['status'] === 'completed')->count(),
-            ]
-        ]);
-    } catch (\Exception $e) {
-        Log::error('Get pending validation error: ' . $e->getMessage());
-        Log::error('Stack trace: ' . $e->getTraceAsString());
-        return response()->json([
-            'success' => false,
-            'message' => 'Failed to fetch pending validation: ' . $e->getMessage()
-        ], 500);
     }
-}
 
     /**
      * Get trip history for a specific ticket (GSO view)
