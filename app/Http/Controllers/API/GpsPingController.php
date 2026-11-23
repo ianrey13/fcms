@@ -908,115 +908,171 @@ class GpsPingController extends Controller
      * Get trip details with all locations
      */
     public function getTripWithLocations(Request $request, $tripId)
-    {
-        try {
-            $user = $request->user();
+{
+    try {
+        $user = $request->user();
 
-            $trip = TripTicket::with(['driver', 'vehicle', 'department'])->find($tripId);
+        $trip = TripTicket::with(['driver.user', 'vehicle', 'department'])->find($tripId);
 
-            if (!$trip) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Trip not found'
-                ], 404);
-            }
-
-            $isGSO = $user->role === 'gso_office';
-            $isDriver = $trip->driver && (int) $trip->driver->user_id === (int) $user->user_id;
-            $isRequester = (int) $trip->submitted_by === (int) $user->user_id;
-
-            if (!$isGSO && !$isDriver && !$isRequester) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Unauthorized'
-                ], 403);
-            }
-
-          $pings = $this->getPingsOrArchive($tripId);
-
-            $totalDistance = $this->filterAndSumDistance($pings);
-            $maxSpeed = 0;
-            $prevPing = null;
-            $duration = 0;
-
-            foreach ($pings as $ping) {
-                if ($ping->speed_kmh && $ping->speed_kmh > $maxSpeed) {
-                    $maxSpeed = $ping->speed_kmh;
-                }
-
-                if ($prevPing) {
-                    $duration += $prevPing->recorded_at->diffInSeconds($ping->recorded_at);
-                }
-                $prevPing = $ping;
-            }
-
-            $avgSpeed = ($duration > 0 && $totalDistance > 0) ? ($totalDistance / $duration) * 3.6 : 0;
-
-            $tripHistory = TripHistory::where('trip_ticket_id', $tripId)
-                ->orderBy('trip_number', 'asc')
-                ->get();
-
-            $vehicle = $trip->vehicle;
-            $driver = $trip->driver;
-            $driverUser = $driver ? $driver->user : null;
-            $department = $trip->department;
-
-            return response()->json([
-                'success' => true,
-                'data' => [
-                    'trip' => [
-                        'trip_ticket_id' => $trip->trip_ticket_id,
-                        'trip_ticket_number' => $trip->trip_ticket_number,
-                        'destination' => $trip->destination,
-                        'status' => $trip->status,
-                        'trip_date' => $trip->trip_date,
-                        'vehicle' => [
-                            'plate_number' => $vehicle ? $vehicle->plate_number : 'Unknown',
-                            'vehicle_model' => $vehicle ? $vehicle->vehicle_model : 'Unknown',
-                        ],
-                        'driver' => [
-                            'name' => $driverUser ? $driverUser->full_name : 'Unknown',
-                        ],
-                        'department' => $department ? $department->department_name : 'Unknown',
-                    ],
-                    'stats' => [
-                        'total_pings' => $pings->count(),
-                        'total_distance_km' => round($totalDistance, 2),
-                        'max_speed_kmh' => round($maxSpeed, 2),
-                        'avg_speed_kmh' => round($avgSpeed, 2),
-                        'duration_minutes' => round($duration / 60, 2),
-                        'start_time' => $pings->first() ? $pings->first()->recorded_at : null,
-                        'end_time' => $pings->last() ? $pings->last()->recorded_at : null,
-                    ],
-                    'locations' => $pings->map(fn($ping) => [
-                        'latitude' => (float) $ping->latitude,
-                        'longitude' => (float) $ping->longitude,
-                        'speed_kmh' => (float) ($ping->speed_kmh ?? 0),
-                        'accuracy_meters' => (float) ($ping->accuracy_meters ?? 0),
-                        'recorded_at' => $ping->recorded_at,
-                    ]),
-                    'trip_history' => $tripHistory->map(fn($history) => [
-                        'trip_number' => $history->trip_number,
-                        'start_lat' => $history->start_lat,
-                        'start_lng' => $history->start_lng,
-                        'started_at' => $history->started_at,
-                        'end_lat' => $history->end_lat,
-                        'end_lng' => $history->end_lng,
-                        'ended_at' => $history->ended_at,
-                        'distance_km' => $history->distance_km,
-                        'status' => $history->status,
-                    ]),
-                ]
-            ]);
-
-        } catch (\Exception $e) {
-            Log::error('Get trip with locations error: ' . $e->getMessage());
+        if (!$trip) {
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to fetch trip: ' . $e->getMessage()
-            ], 500);
+                'message' => 'Trip not found'
+            ], 404);
         }
+
+        $isGSO = $user->role === 'gso_office';
+        $isDriver = $trip->driver && (int) $trip->driver->user_id === (int) $user->user_id;
+        $isRequester = (int) $trip->submitted_by === (int) $user->user_id;
+
+        if (!$isGSO && !$isDriver && !$isRequester) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized'
+            ], 403);
+        }
+
+        // ✅ All pings (live or archived), sorted chronologically
+        $pings = $this->getPingsOrArchive($tripId)
+            ->sortBy('recorded_at')
+            ->values();
+
+        // ✅ Trip history — segments (paused/resumed create multiple)
+        $tripHistory = TripHistory::where('trip_ticket_id', $tripId)
+            ->orderBy('trip_number', 'asc')
+            ->get();
+
+        // ✅ Group pings per segment (prefer trip_history_id, fallback to time window)
+        $segments = $tripHistory->map(function ($h) use ($pings) {
+            $segPings = $pings->filter(function ($p) use ($h) {
+                if (!empty($p->trip_history_id)) {
+                    return (int) $p->trip_history_id === (int) $h->history_id;
+                }
+                if (!$h->started_at) return false;
+                $start = \Carbon\Carbon::parse($h->started_at)->subMinutes(5);
+                $end = $h->ended_at
+                    ? \Carbon\Carbon::parse($h->ended_at)->addMinutes(5)
+                    : null;
+                return $p->recorded_at >= $start
+                    && ($end === null || $p->recorded_at <= $end);
+            })->sortBy('recorded_at')->values();
+
+            $accurate = $segPings->filter(fn($p) => !$p->is_low_accuracy)->values();
+            $segDistance = $this->filterAndSumDistance($accurate);
+
+            return [
+                'history_id'  => $h->history_id,
+                'trip_number' => $h->trip_number,
+                'status'      => $h->status,
+                'started_at'  => $h->started_at,
+                'ended_at'    => $h->ended_at,
+                'start_lat'   => $h->start_lat,
+                'start_lng'   => $h->start_lng,
+                'end_lat'     => $h->end_lat,
+                'end_lng'     => $h->end_lng,
+                'distance_km' => (float) $segDistance,
+                'ping_count'  => $segPings->count(),
+                'track'       => $segPings->map(fn($p) => [
+                    'latitude'        => (float) $p->latitude,
+                    'longitude'       => (float) $p->longitude,
+                    'speed_kmh'       => (float) ($p->speed_kmh ?? 0),
+                    'accuracy_meters' => (float) ($p->accuracy_meters ?? 0),
+                    'is_low_accuracy' => (bool) $p->is_low_accuracy,
+                    'recorded_at'     => $p->recorded_at,
+                ])->values(),
+            ];
+        })->values();
+
+        // ✅ Stats (overall, using only accurate pings)
+        $accurateAll = $pings->filter(fn($p) => !$p->is_low_accuracy)->values();
+        $totalDistance = $this->filterAndSumDistance($accurateAll);
+
+        $maxSpeed = 0;
+        $prevPing = null;
+        $duration = 0;
+        foreach ($accurateAll as $ping) {
+            if ($ping->speed_kmh && $ping->speed_kmh > $maxSpeed) {
+                $maxSpeed = (float) $ping->speed_kmh;
+            }
+            if ($prevPing) {
+                $duration += \Carbon\Carbon::parse($prevPing->recorded_at)
+                    ->diffInSeconds(\Carbon\Carbon::parse($ping->recorded_at));
+            }
+            $prevPing = $ping;
+        }
+        $avgSpeed = ($duration > 0 && $totalDistance > 0)
+            ? ($totalDistance / $duration) * 3600
+            : 0;
+
+        $vehicle = $trip->vehicle;
+        $driver = $trip->driver;
+        $driverUser = $driver ? $driver->user : null;
+        $department = $trip->department;
+
+        // ✅ Read-only flag for frontend (ledger view vs pending validation view)
+        $isPendingValidation = in_array($trip->status, [
+            'pending_gso_validation',
+            'completed',
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'trip' => [
+                    'trip_ticket_id'     => $trip->trip_ticket_id,
+                    'trip_ticket_number' => $trip->trip_ticket_number,
+                    'destination'        => $trip->destination,
+                    'purpose'            => $trip->purpose,
+                    'status'             => $trip->status,
+                    'trip_date'          => $trip->trip_date,
+                    'actual_distance_km' => $trip->actual_distance_km,
+                    'actual_fuel_used'   => $trip->actual_fuel_used,
+                    'estimated_distance_km' => $trip->estimated_distance_km,
+                    'estimated_fuel_liters' => $trip->estimated_fuel_liters,
+                    'is_pending_validation' => $isPendingValidation,
+                    'vehicle' => $vehicle ? [
+                        'vehicle_id'    => $vehicle->vehicle_id,
+                        'plate_number'  => $vehicle->plate_number,
+                        'vehicle_model' => $vehicle->vehicle_model,
+                        'fuel_type'     => $vehicle->fuel_type,
+                    ] : null,
+                    'driver' => $driverUser ? [
+                        'full_name' => $driverUser->full_name,
+                    ] : null,
+                    'department' => $department ? $department->department_name : null,
+                ],
+                'stats' => [
+                    'total_pings'       => $pings->count(),
+                    'accurate_pings'    => $accurateAll->count(),
+                    'total_distance_km' => round($totalDistance, 2),
+                    'max_speed_kmh'     => round($maxSpeed, 2),
+                    'avg_speed_kmh'     => round($avgSpeed, 2),
+                    'duration_minutes'  => round($duration / 60, 2),
+                    'segment_count'     => $segments->count(),
+                    'start_time'        => $pings->first()?->recorded_at,
+                    'end_time'          => $pings->last()?->recorded_at,
+                ],
+                // ✅ Per-segment breakdown — used for multi-polyline replay
+                'segments' => $segments,
+                // ✅ Flat track — backward compat
+                'track' => $accurateAll->map(fn($p) => [
+                    'latitude'        => (float) $p->latitude,
+                    'longitude'       => (float) $p->longitude,
+                    'speed_kmh'       => (float) ($p->speed_kmh ?? 0),
+                    'accuracy_meters' => (float) ($p->accuracy_meters ?? 0),
+                    'recorded_at'     => $p->recorded_at,
+                ])->values(),
+            ],
+        ]);
+
+    } catch (\Exception $e) {
+        Log::error('Get trip with locations error: ' . $e->getMessage());
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to fetch trip: ' . $e->getMessage()
+        ], 500);
     }
+}
 
        /**
      * Get all active trips with latest GPS location

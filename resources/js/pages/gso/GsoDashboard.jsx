@@ -31,7 +31,6 @@ import {
     RefreshCw,
     MapPin,
     Search,
-    ChevronDown,
     Activity,
     PlusCircle,
     Fuel,
@@ -39,17 +38,9 @@ import {
     FileCheck,
     Loader2,
     Check,
-    Play,
-    Square,
-    User,
-    Users,
-    Target,
-    Flag,
-    Route,
-    Calendar,
     X,
     Truck,
-    RotateCcw,
+    Eye,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -80,14 +71,10 @@ const formatDateShort = (dateString) => {
     });
 };
 
-// Safe number parser (NaN / null / undefined -> 0)
 const toNum = (v) => {
     const n = parseFloat(v);
     return Number.isFinite(n) ? n : 0;
 };
-
-// Round to 2 decimals, drop trailing zeros
-const fmtNum = (n) => Number(toNum(n).toFixed(2)).toString();
 
 const StatusPill = ({ status }) => {
     let label = "Pending";
@@ -102,8 +89,8 @@ const StatusPill = ({ status }) => {
         label = "Ready";
         color = "bg-blue-500/20 text-blue-400 border-blue-500/30";
         Icon = CheckCircle;
-    } else if (status === "in_transit") {
-        label = "In Transit";
+    } else if (status === "in_transit" || status === "paused") {
+        label = status === "paused" ? "Paused" : "In Transit";
         color = "bg-purple-500/20 text-purple-400 border-purple-500/30";
         Icon = Truck;
     } else if (status === "completed" || status === "pending_gso_validation") {
@@ -199,6 +186,15 @@ const ReplayMarker = ({ position, icon }) => {
     return <Marker position={position} icon={icon} />;
 };
 
+// Segment colors (alternate so paused/resumed segments are visually distinct)
+const SEGMENT_COLORS = [
+    "#3b82f6", // blue
+    "#8b5cf6", // purple
+    "#10b981", // emerald
+    "#f59e0b", // amber
+    "#ef4444", // red
+];
+
 // ============================================
 // MAIN COMPONENT
 // ============================================
@@ -209,11 +205,18 @@ const GsoDashboard = () => {
     const [searchTerm, setSearchTerm] = useState("");
     const [deptFilter, setDeptFilter] = useState("all");
 
+    // Validate dialog (Pending Validation table only)
     const [selectedTicket, setSelectedTicket] = useState(null);
     const [showValidateDialog, setShowValidateDialog] = useState(false);
     const [hasWatchedReplay, setHasWatchedReplay] = useState(false);
 
+    // Detail dialog (Ledger — READ ONLY)
+    const [detailTicket, setDetailTicket] = useState(null);
+    const [showDetailDialog, setShowDetailDialog] = useState(false);
+
+    // Shared route state
     const [routeCoordinates, setRouteCoordinates] = useState([]);
+    const [routeSegments, setRouteSegments] = useState([]);
     const [loadingRoute, setLoadingRoute] = useState(false);
     const [isReplaying, setIsReplaying] = useState(false);
     const [replayIndex, setReplayIndex] = useState(0);
@@ -269,76 +272,67 @@ const GsoDashboard = () => {
         [activeTripsRaw],
     );
 
-   const { data: allTripsRaw = [], isLoading: tripsLoading } =
-    useOptimizedQuery({
-        queryKey: ["gso-dashboard-trips"],
-        queryFn: async () => {
-            const trips = extractArray(await gsoAPI.getAllTrips());
+    const { data: allTripsRaw = [], isLoading: tripsLoading } =
+        useOptimizedQuery({
+            queryKey: ["gso-dashboard-trips"],
+            queryFn: async () => {
+                const trips = extractArray(await gsoAPI.getAllTrips());
+                return trips.filter((trip) => {
+                    const status = (trip.status || "").toLowerCase();
+                    const hasGasSlip =
+                        trip.gasSlip || trip.gas_slip || trip.gas_slip_id;
 
-            return trips.filter((trip) => {
-                const status = (trip.status || "").toLowerCase();
-                const hasGasSlip =
-                    trip.gasSlip || trip.gas_slip || trip.gas_slip_id;
+                    if (
+                        ["cancelled", "rejected", "returned_for_revision"].includes(
+                            status,
+                        )
+                    ) {
+                        return false;
+                    }
 
-                // 1. Tangtangon ang cancelled/rejected/returned
-                if (
-                    [
-                        "cancelled",
-                        "rejected",
-                        "returned_for_revision",
-                    ].includes(status)
-                ) {
-                    return false;
-                }
+                    // Pending validation lives in its own table, not the ledger
+                    if (
+                        ["pending_gso_validation", "completed"].includes(status)
+                    ) {
+                        return false;
+                    }
 
-                // ✅ I-BALIK: Tangtangon ang pending/completed sa LEDGER
-                // Kay naa sila sa Pending Validation table, dili sa ledger.
-                // Ma-appear ra sila sa ledger kung ma-validate na (status = 'closed')
-                if (
-                    ["pending_gso_validation", "completed"].includes(status)
-                ) {
-                    return false;
-                }
+                    if (status === "pending_mayors_office" && !hasGasSlip) {
+                        return false;
+                    }
 
-                // 2. Tangtangon kung pending_mayors_office ug wala pay gas slip
-                if (status === "pending_mayors_office" && !hasGasSlip) {
-                    return false;
-                }
+                    if (
+                        !hasGasSlip &&
+                        !trip.actual_distance_km &&
+                        !trip.gps_distance_km
+                    ) {
+                        return false;
+                    }
 
-                // 3. Tangtangon kung bag-o pa lang gi-create
-                if (
-                    !hasGasSlip &&
-                    !trip.actual_distance_km &&
-                    !trip.gps_distance_km
-                ) {
-                    return false;
-                }
+                    return true;
+                });
+            },
+        });
 
-                return true;
-            });
-        },
-    });
+    const allTrips = useMemo(
+        () => (Array.isArray(allTripsRaw) ? allTripsRaw : []),
+        [allTripsRaw],
+    );
 
-const allTrips = useMemo(
-    () => (Array.isArray(allTripsRaw) ? allTripsRaw : []),
-    [allTripsRaw],
-);
-
-    // ✅ FIX: GIDUGANG ANG RETURN STATEMENT
     const { data: pendingValidationRaw = [], isLoading: validationLoading } =
-    useOptimizedQuery({
-        queryKey: ["gso-pending-validation"],
-        queryFn: async () => {
-            const trips = extractArray(await gsoAPI.getPendingValidation());
-            return trips; // ✅ KINI ANG KULANG SA UNA — wala ni sa imong original code
-            
-        },
-    });
+        useOptimizedQuery({
+            queryKey: ["gso-pending-validation"],
+            queryFn: async () => {
+                const trips = extractArray(await gsoAPI.getPendingValidation());
+                return trips;
+            },
+        });
 
-const pendingValidation = useMemo(
-    () => (Array.isArray(pendingValidationRaw) ? pendingValidationRaw : []),
-    [pendingValidationRaw],
-);
+    const pendingValidation = useMemo(
+        () =>
+            Array.isArray(pendingValidationRaw) ? pendingValidationRaw : [],
+        [pendingValidationRaw],
+    );
 
     // ============ MUTATIONS ============
     const validateMutation = useMutation({
@@ -412,24 +406,12 @@ const pendingValidation = useMemo(
         return result.slice(0, 5);
     }, [vehicles, searchTerm, deptFilter]);
 
-    const displayTripData = activeTrips.length > 0 ? activeTrips[0] : null;
-    const displayVehicle = displayTripData?.vehicle;
-
     // ============================================
     // FUEL LEDGER (forward chain per vehicle)
-    //
-    //   beginning(trip N) = balance(trip N-1)   [parehas nga sakyanan]
-    //   balance           = beginning + fuelIn - fuelOut
-    //
-    // Anchor (beginning sa pinakaunang trip sa sakyanan):
-    //   1) vehicle.initial_estimated_fuel  (parehas sa FuelLevelService)
-    //   2) fallback ra: current_fuel_balance - totalIn + totalOut
-    //      (dili kasaligan kung na-clamp sa tank capacity ang balance)
     // ============================================
     const ledgerRows = useMemo(() => {
         const r2 = (n) => parseFloat(toNum(n).toFixed(2));
 
-        // 1) per-trip raw values
         const rows = allTrips.map((trip) => {
             const vehicle =
                 vehicles.find((v) => v.vehicle_id === trip.vehicle_id) ||
@@ -455,8 +437,6 @@ const pendingValidation = useMemo(
                 ? toNum(trip.actual_distance_km || trip.gps_distance_km)
                 : 0;
             const efficiency = toNum(vehicle?.reference_efficiency) || 10;
-
-            // Fuel out = distance / efficiency (GPS magsugod na sa Municipal Hall)
             const rawFuelOut = distance > 0 ? distance / efficiency : 0;
 
             return {
@@ -481,7 +461,6 @@ const pendingValidation = useMemo(
             };
         });
 
-        // 2) group per vehicle, oldest -> newest, roll the balance forward
         const groups = {};
         rows.forEach((r) => {
             (groups[r.vehicleKey] = groups[r.vehicleKey] || []).push(r);
@@ -522,7 +501,6 @@ const pendingValidation = useMemo(
             });
         });
 
-        // 3) display newest first
         return [...rows]
             .sort((a, b) => b.sortTime - a.sortTime)
             .map((r) => ({
@@ -552,48 +530,62 @@ const pendingValidation = useMemo(
     }, [allTrips, vehicles]);
 
     // ============================================
-    // VALIDATION & REPLAY HANDLERS
+    // SHARED: load route + segments
     // ============================================
-    const handleOpenValidateDialog = async (trip) => {
-        setSelectedTicket(trip);
-        setShowValidateDialog(true);
-        setHasWatchedReplay(false);
+    const loadRoute = useCallback(async (trip) => {
         setRouteCoordinates([]);
+        setRouteSegments([]);
         setLoadingRoute(true);
         setReplayIndex(0);
 
         try {
             const tripId = trip.displayId || trip.id || trip.trip_ticket_id;
-
-            if (!tripId) {
-                throw new Error("Invalid Trip ID");
-            }
+            if (!tripId) throw new Error("Invalid Trip ID");
 
             const res = await gpsAPI.getTripRoute(tripId);
-            const track = res?.data?.data?.track || [];
+            const data = res?.data?.data || {};
 
-            const coords = track
+            // ✅ Prefer segments (handles pause/resume correctly)
+            const rawSegments = Array.isArray(data.segments) ? data.segments : [];
+            const segments = rawSegments
+                .map((seg) => ({
+                    historyId: seg.history_id,
+                    tripNumber: seg.trip_number,
+                    status: seg.status,
+                    startedAt: seg.started_at,
+                    endedAt: seg.ended_at,
+                    distanceKm: toNum(seg.distance_km),
+                    pingCount: seg.ping_count ?? 0,
+                    coords: (seg.track || [])
+                        .map((p) => [
+                            parseFloat(p.latitude),
+                            parseFloat(p.longitude),
+                        ])
+                        .filter((c) => !isNaN(c[0]) && !isNaN(c[1])),
+                }))
+                .filter((seg) => seg.coords.length > 0);
+
+            const flatCoords = segments.flatMap((s) => s.coords);
+            const fallback = (data.track || [])
                 .map((p) => [parseFloat(p.latitude), parseFloat(p.longitude)])
                 .filter((c) => !isNaN(c[0]) && !isNaN(c[1]));
 
+            const coords = flatCoords.length > 0 ? flatCoords : fallback;
+
+            setRouteSegments(segments);
             setRouteCoordinates(coords);
 
-            if (coords.length >= 2) {
-                setTimeout(() => startReplay(coords), 500);
-            } else {
-                setHasWatchedReplay(true);
-                toast.error("No route points available for replay.");
-            }
+            return { segments, coords };
         } catch (e) {
             console.error("Failed to load route", e);
-            toast.error("Could not load route replay data.");
-            setHasWatchedReplay(true);
+            toast.error("Could not load route data.");
+            return { segments: [], coords: [] };
         } finally {
             setLoadingRoute(false);
         }
-    };
+    }, []);
 
-    const startReplay = (coords) => {
+    const startReplay = useCallback((coords) => {
         if (replayIntervalRef.current) {
             clearInterval(replayIntervalRef.current);
             replayIntervalRef.current = null;
@@ -615,17 +607,51 @@ const pendingValidation = useMemo(
             }
             setReplayIndex(currentIdx);
         }, 80);
-    };
+    }, []);
 
-    const handleStopReplay = () => {
+    const handleStopReplay = useCallback(() => {
         setIsReplaying(false);
         setReplayIndex(0);
         if (replayIntervalRef.current) {
             clearInterval(replayIntervalRef.current);
             replayIntervalRef.current = null;
         }
-    };
+    }, []);
 
+    // ============================================
+    // VALIDATE HANDLER (Pending Validation table ONLY)
+    // ============================================
+    const handleOpenValidateDialog = useCallback(
+        async (trip) => {
+            setSelectedTicket(trip);
+            setShowValidateDialog(true);
+            setHasWatchedReplay(false);
+
+            const { coords } = await loadRoute(trip);
+
+            if (coords.length >= 2) {
+                setTimeout(() => startReplay(coords), 500);
+            } else {
+                setHasWatchedReplay(true);
+                toast.error("No route points available for replay.");
+            }
+        },
+        [loadRoute, startReplay],
+    );
+
+    // ============================================
+    // DETAIL HANDLER (Ledger ONLY — READ ONLY)
+    // ============================================
+    const handleOpenDetailDialog = useCallback(
+        async (trip) => {
+            setDetailTicket(trip);
+            setShowDetailDialog(true);
+            await loadRoute(trip);
+        },
+        [loadRoute],
+    );
+
+    // Cleanup on unmount / dialog close
     useEffect(() => {
         return () => {
             if (replayIntervalRef.current)
@@ -637,7 +663,72 @@ const pendingValidation = useMemo(
         if (!showValidateDialog) {
             handleStopReplay();
         }
-    }, [showValidateDialog]);
+    }, [showValidateDialog, handleStopReplay]);
+
+    useEffect(() => {
+        if (!showDetailDialog) {
+            handleStopReplay();
+            setRouteCoordinates([]);
+            setRouteSegments([]);
+        }
+    }, [showDetailDialog, handleStopReplay]);
+
+    // ============================================
+    // RENDER HELPERS
+    // ============================================
+    const renderSegments = () => {
+        if (routeSegments.length > 0) {
+            return routeSegments.map((seg, i) => {
+                const color = SEGMENT_COLORS[i % SEGMENT_COLORS.length];
+                return (
+                    <Polyline
+                        key={`seg-${seg.historyId ?? i}`}
+                        positions={seg.coords}
+                        color={color}
+                        weight={4}
+                        dashArray={
+                            seg.status === "in_progress" ? "6 6" : undefined
+                        }
+                    />
+                );
+            });
+        }
+        if (routeCoordinates.length > 0) {
+            return (
+                <Polyline
+                    positions={routeCoordinates}
+                    color="#3b82f6"
+                    weight={4}
+                />
+            );
+        }
+        return null;
+    };
+
+    const renderSegmentBadges = () => {
+        if (routeSegments.length <= 1) return null;
+        return (
+            <div className="flex flex-wrap gap-2">
+                {routeSegments.map((seg, i) => {
+                    const color = SEGMENT_COLORS[i % SEGMENT_COLORS.length];
+                    return (
+                        <span
+                            key={`badge-${seg.historyId ?? i}`}
+                            className="text-[10px] font-bold px-2 py-1 rounded-full border"
+                            style={{
+                                color,
+                                borderColor: color,
+                                backgroundColor: color + "20",
+                            }}
+                        >
+                            Trip {seg.tripNumber} — {seg.distanceKm.toFixed(2)} km
+                            {seg.status === "in_progress" && " • in progress"}
+                        </span>
+                    );
+                })}
+            </div>
+        );
+    };
 
     return (
         <div className="min-h-screen bg-[#090e1a] p-4 md:p-6 font-sans text-slate-200">
@@ -1120,7 +1211,7 @@ const pendingValidation = useMemo(
                     </CardContent>
                 </Card>
 
-                {/* 6. FUEL LEDGER TABLE */}
+                {/* 6. FUEL LEDGER TABLE (READ-ONLY) */}
                 <Card className="bg-[#121829] border-slate-800 shadow-lg">
                     <CardHeader className="border-b border-slate-800 pb-4">
                         <div className="flex items-center justify-between">
@@ -1130,8 +1221,8 @@ const pendingValidation = useMemo(
                                     Fuel Ledger
                                 </CardTitle>
                                 <p className="text-xs text-slate-400 mt-1">
-                                    Trip fuel consumption history (Pending &
-                                    Validated).
+                                    Trip fuel consumption history. Click a row
+                                    to view details & route.
                                 </p>
                             </div>
                             <Badge className="bg-slate-700 text-slate-200">
@@ -1165,13 +1256,16 @@ const pendingValidation = useMemo(
                                         <th className="px-4 py-3 font-medium text-right">
                                             Balance (L)
                                         </th>
+                                        <th className="px-4 py-3 font-medium text-center">
+                                            View
+                                        </th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-800/50">
                                     {tripsLoading ? (
                                         <tr>
                                             <td
-                                                colSpan={7}
+                                                colSpan={8}
                                                 className="text-center py-6"
                                             >
                                                 <Loader2 className="h-5 w-5 animate-spin mx-auto text-blue-500" />
@@ -1180,7 +1274,7 @@ const pendingValidation = useMemo(
                                     ) : ledgerRows.length === 0 ? (
                                         <tr>
                                             <td
-                                                colSpan={7}
+                                                colSpan={8}
                                                 className="text-center py-6 text-slate-500"
                                             >
                                                 No trip history yet.
@@ -1190,12 +1284,7 @@ const pendingValidation = useMemo(
                                         ledgerRows.map((computed) => (
                                             <tr
                                                 key={computed.displayId}
-                                                className="hover:bg-[#1a2235] cursor-pointer transition-colors"
-                                                onClick={() =>
-                                                    handleOpenValidateDialog(
-                                                        computed,
-                                                    )
-                                                }
+                                                className="hover:bg-[#1a2235] transition-colors"
                                             >
                                                 <td className="px-4 py-3 whitespace-nowrap">
                                                     {formatDateShort(
@@ -1237,6 +1326,21 @@ const pendingValidation = useMemo(
                                                         </div>
                                                     )}
                                                 </td>
+                                                <td className="px-4 py-3 text-center">
+                                                    <Button
+                                                        size="sm"
+                                                        variant="ghost"
+                                                        onClick={() =>
+                                                            handleOpenDetailDialog(
+                                                                computed,
+                                                            )
+                                                        }
+                                                        className="h-8 px-2 text-xs text-blue-400 hover:text-blue-300 hover:bg-blue-600/10"
+                                                    >
+                                                        <Eye className="h-3.5 w-3.5 mr-1" />{" "}
+                                                        View
+                                                    </Button>
+                                                </td>
                                             </tr>
                                         ))
                                     )}
@@ -1246,7 +1350,7 @@ const pendingValidation = useMemo(
                     </CardContent>
                 </Card>
 
-                {/* 7. VALIDATE DIALOG */}
+                {/* 7. VALIDATE DIALOG (Pending Validation ONLY) */}
                 <Dialog
                     open={showValidateDialog}
                     onOpenChange={setShowValidateDialog}
@@ -1257,6 +1361,8 @@ const pendingValidation = useMemo(
                                 <FileCheck className="h-5 w-5 text-emerald-500" />
                                 Review & Validate Trip
                             </h2>
+
+                            {renderSegmentBadges()}
 
                             {selectedTicket && (
                                 <div className="grid grid-cols-2 gap-4 text-sm">
@@ -1301,7 +1407,6 @@ const pendingValidation = useMemo(
                                 </div>
                             )}
 
-                            {/* Map Replay */}
                             <div className="h-[300px] rounded-lg overflow-hidden border border-slate-700">
                                 {loadingRoute ? (
                                     <div className="flex items-center justify-center h-full">
@@ -1318,11 +1423,7 @@ const pendingValidation = useMemo(
                                     >
                                         <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
                                         <MapBounds coords={routeCoordinates} />
-                                        <Polyline
-                                            positions={routeCoordinates}
-                                            color="#3b82f6"
-                                            weight={4}
-                                        />
+                                        {renderSegments()}
                                         {routeCoordinates.length > 0 && (
                                             <>
                                                 <Marker
@@ -1379,14 +1480,10 @@ const pendingValidation = useMemo(
                                             selectedTicket?.id ||
                                             selectedTicket?.trip_ticket_id;
                                         if (!ticketId) {
-                                            toast.error(
-                                                "Invalid ticket ID",
-                                            );
+                                            toast.error("Invalid ticket ID");
                                             return;
                                         }
-                                        validateMutation.mutate({
-                                            ticketId,
-                                        });
+                                        validateMutation.mutate({ ticketId });
                                     }}
                                     disabled={
                                         validateMutation.isPending ||
@@ -1405,6 +1502,145 @@ const pendingValidation = useMemo(
                                             Validate & Close
                                         </>
                                     )}
+                                </Button>
+                            </div>
+                        </div>
+                    </DialogContent>
+                </Dialog>
+
+                {/* 8. DETAIL DIALOG (Ledger — READ ONLY) */}
+                <Dialog
+                    open={showDetailDialog}
+                    onOpenChange={setShowDetailDialog}
+                >
+                    <DialogContent className="max-w-4xl bg-[#121829] border-slate-800 text-white">
+                        <div className="space-y-4">
+                            <h2 className="text-lg font-bold flex items-center gap-2">
+                                <Eye className="h-5 w-5 text-blue-500" />
+                                Trip Details & Route
+                            </h2>
+
+                            {renderSegmentBadges()}
+
+                            {detailTicket && (
+                                <div className="grid grid-cols-2 gap-4 text-sm">
+                                    <div>
+                                        <p className="text-slate-400">TT No.</p>
+                                        <p className="font-mono text-white">
+                                            {detailTicket.displayTicketNo ||
+                                                detailTicket.ticket_number ||
+                                                detailTicket.trip_ticket_number}
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <p className="text-slate-400">
+                                            Destination
+                                        </p>
+                                        <p className="text-white">
+                                            {detailTicket.destination || "N/A"}
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <p className="text-slate-400">
+                                            Driver
+                                        </p>
+                                        <p className="text-white">
+                                            {detailTicket.driver_name ||
+                                                detailTicket.driver?.user
+                                                    ?.full_name ||
+                                                "N/A"}
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <p className="text-slate-400">
+                                            Distance
+                                        </p>
+                                        <p className="text-white">
+                                            {detailTicket.actual_distance_km ||
+                                                detailTicket.distanceKm ||
+                                                0}{" "}
+                                            km
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <p className="text-slate-400">
+                                            Fuel In
+                                        </p>
+                                        <p className="text-emerald-400 font-bold">
+                                            {detailTicket.fuelIn} L
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <p className="text-slate-400">
+                                            Fuel Out
+                                        </p>
+                                        <p className="text-red-400 font-bold">
+                                            {detailTicket.fuelOut} L
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <p className="text-slate-400">
+                                            Balance
+                                        </p>
+                                        <p className="text-white font-bold">
+                                            {detailTicket.balance} L
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <p className="text-slate-400">Status</p>
+                                        <StatusPill
+                                            status={detailTicket.status}
+                                        />
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="h-[350px] rounded-lg overflow-hidden border border-slate-700">
+                                {loadingRoute ? (
+                                    <div className="flex items-center justify-center h-full">
+                                        <Loader2 className="h-6 w-6 animate-spin text-blue-500" />
+                                    </div>
+                                ) : routeCoordinates.length > 0 ? (
+                                    <MapContainer
+                                        center={routeCoordinates[0]}
+                                        zoom={14}
+                                        style={{
+                                            height: "100%",
+                                            width: "100%",
+                                        }}
+                                    >
+                                        <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                                        <MapBounds coords={routeCoordinates} />
+                                        {renderSegments()}
+                                        <Marker
+                                            position={routeCoordinates[0]}
+                                            icon={icons.start}
+                                        />
+                                        <Marker
+                                            position={
+                                                routeCoordinates[
+                                                    routeCoordinates.length - 1
+                                                ]
+                                            }
+                                            icon={icons.end}
+                                        />
+                                    </MapContainer>
+                                ) : (
+                                    <div className="flex items-center justify-center h-full text-slate-500">
+                                        No route data available
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="flex justify-end">
+                                <Button
+                                    variant="outline"
+                                    onClick={() =>
+                                        setShowDetailDialog(false)
+                                    }
+                                    className="border-slate-700 text-white hover:bg-slate-800"
+                                >
+                                    Close
                                 </Button>
                             </div>
                         </div>
