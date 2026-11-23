@@ -1,12 +1,4 @@
 // src/pages/gso/users/AddUser.jsx
-// ============================================
-// ENHANCED: Improved validation with field highlighting
-// No duplicate toasts - single toast with all errors
-// Auto-focus first error field
-// + Title Case name formatting
-// + AlertDialog confirmation before create
-// ============================================
-
 import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -40,7 +32,6 @@ import {
   EyeOff,
   Zap,
   Users,
-  IdCard,
   X,
 } from "lucide-react";
 import { useCreateUser } from "../../../hooks/useUserManagement";
@@ -51,27 +42,24 @@ import { cn } from "@/lib/utils";
 // ============================================
 // ✅ NAME FORMATTING — Title Case with acronym preservation
 // ============================================
-
 const formatProperName = (value) => {
   if (!value || typeof value !== "string") return "";
 
   return value
     .trim()
-    .replace(/[^A-Za-z\s'\-\.]/g, "") // strip digits + specials (keep ' - .)
-    .replace(/\s+/g, " ") // collapse spaces
+    .replace(/[^A-Za-z\s'\-\.]/g, "") 
+    .replace(/\s+/g, " ") 
     .split(" ")
     .filter(Boolean)
     .map((word) => {
-      // Preserve 1–7 char ALL-CAPS acronyms/initials (RHU, MDRRMO, MO, G.)
       const stripped = word.replace(/[^A-Za-z]/g, "");
       if (
         stripped.length >= 1 &&
         stripped.length <= 7 &&
         stripped === stripped.toUpperCase()
       ) {
-        return word; // keep as-is
+        return word; 
       }
-      // Title Case — also capitalize after apostrophes and hyphens
       return word
         .toLowerCase()
         .replace(/(^|[\s'\-])([a-z])/g, (_, sep, ch) => sep + ch.toUpperCase());
@@ -82,10 +70,8 @@ const formatProperName = (value) => {
 // ============================================
 // ✅ GET AVAILABLE ROLES BASED ON DEPARTMENT
 // ============================================
-
 const getAvailableRoles = (departmentId, departments) => {
   const department = departments.find(d => d.department_id === parseInt(departmentId));
-
   if (!department) return [{ value: '', label: 'Select Role' }];
 
   const code = department.department_code?.toUpperCase() || '';
@@ -97,7 +83,6 @@ const getAvailableRoles = (departmentId, departments) => {
       { value: 'driver', label: 'Driver' },
     ];
   }
-
   if (code === 'MO') {
     return [
       { value: '', label: 'Select Role' },
@@ -105,7 +90,6 @@ const getAvailableRoles = (departmentId, departments) => {
       { value: 'driver', label: 'Driver' },
     ];
   }
-
   return [
     { value: '', label: 'Select Role' },
     { value: 'driver', label: 'Driver' },
@@ -115,19 +99,8 @@ const getAvailableRoles = (departmentId, departments) => {
 // ============================================
 // ✅ ENHANCED: Form Field with error highlighting
 // ============================================
-
-const FormField = ({
-  label,
-  icon: Icon,
-  required,
-  error,
-  touched,
-  helper,
-  children,
-  className,
-}) => {
+const FormField = ({ label, icon: Icon, required, error, touched, helper, children, className }) => {
   const hasError = touched && error;
-
   return (
     <div className={cn("space-y-1.5", className)}>
       <Label className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300">
@@ -137,10 +110,7 @@ const FormField = ({
       </Label>
       <div className="relative">
         {React.cloneElement(children, {
-          className: cn(
-            children.props.className,
-            hasError && "border-red-500 ring-red-500 focus:ring-red-500 bg-red-50/50 dark:bg-red-950/10"
-          )
+          className: cn(children.props.className, hasError && "border-red-500 ring-red-500 focus:ring-red-500 bg-red-50/50 dark:bg-red-950/10")
         })}
         {hasError && (
           <div className="absolute right-3 top-1/2 -translate-y-1/2">
@@ -150,14 +120,12 @@ const FormField = ({
       </div>
       {hasError && (
         <p className="text-red-500 text-xs flex items-center gap-1 mt-1 animate-fadeIn">
-          <AlertCircle className="h-3 w-3 flex-shrink-0" />
-          {error}
+          <AlertCircle className="h-3 w-3 flex-shrink-0" /> {error}
         </p>
       )}
       {helper && !hasError && (
         <p className="text-xs text-slate-400 dark:text-slate-500 flex items-center gap-1 mt-1">
-          <Info className="h-3 w-3" />
-          {helper}
+          <Info className="h-3 w-3" /> {helper}
         </p>
       )}
     </div>
@@ -167,7 +135,6 @@ const FormField = ({
 // ============================================
 // ✅ ROLE SELECT COMPONENT WITH DYNAMIC OPTIONS
 // ============================================
-
 const RoleSelect = ({ value, onChange, onBlur, error, touched, departmentId, departments }) => {
   const roleOptions = getAvailableRoles(departmentId, departments);
   const hasError = touched && error;
@@ -194,9 +161,7 @@ const RoleSelect = ({ value, onChange, onBlur, error, touched, departmentId, dep
         disabled={roleOptions.length === 2 && roleOptions[1]?.value === 'driver'}
       >
         {roleOptions.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
+          <option key={option.value} value={option.value}>{option.label}</option>
         ))}
       </select>
       {hasError && (
@@ -209,12 +174,12 @@ const RoleSelect = ({ value, onChange, onBlur, error, touched, departmentId, dep
 };
 
 // ============================================
-// DEPARTMENT DATALIST COMPONENT (with error highlighting)
+// ✅ DEPARTMENT DATALIST (Fixed Dropdown)
 // ============================================
-
 const DepartmentDatalist = ({ value, onChange, onBlur, error, touched, departments, loading }) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedDepartment, setSelectedDepartment] = useState(null);
+  const [showDropdown, setShowDropdown] = useState(false); // ✅ Gidugang nga state
   const inputRef = useRef(null);
   const hasError = touched && error;
 
@@ -234,16 +199,10 @@ const DepartmentDatalist = ({ value, onChange, onBlur, error, touched, departmen
   const handleInputChange = (e) => {
     const input = e.target.value;
     setSearchTerm(input);
+    setShowDropdown(true); // ✅ Ipakita ang dropdown kung nag-type
 
-    const match = departments.find(d =>
-      d.department_name.toLowerCase() === input.toLowerCase() ||
-      d.department_code?.toLowerCase() === input.toLowerCase()
-    );
-
-    if (match) {
-      setSelectedDepartment(match);
-      onChange(match.department_id);
-    } else if (input === "") {
+    // I-clear ang napili kung nag-usab ang gi-type
+    if (selectedDepartment && input !== selectedDepartment.department_name) {
       setSelectedDepartment(null);
       onChange("");
     }
@@ -253,6 +212,7 @@ const DepartmentDatalist = ({ value, onChange, onBlur, error, touched, departmen
     setSearchTerm(dept.department_name);
     setSelectedDepartment(dept);
     onChange(dept.department_id);
+    setShowDropdown(false); // ✅ Itago ang dropdown human mapili
     inputRef.current?.blur();
   };
 
@@ -260,6 +220,7 @@ const DepartmentDatalist = ({ value, onChange, onBlur, error, touched, departmen
     setSearchTerm("");
     setSelectedDepartment(null);
     onChange("");
+    setShowDropdown(false); // ✅ Itago ang dropdown kung gi-clear
     inputRef.current?.focus();
   };
 
@@ -269,6 +230,9 @@ const DepartmentDatalist = ({ value, onChange, onBlur, error, touched, departmen
         d.department_code?.toLowerCase().includes(searchTerm.toLowerCase())
       )
     : [];
+
+  // ✅ Tagoan ang dropdown kung naa nay napili o wala pay gi-type
+  const displayDropdown = showDropdown && !selectedDepartment && searchTerm.length > 0;
 
   return (
     <div className="relative w-full">
@@ -282,16 +246,22 @@ const DepartmentDatalist = ({ value, onChange, onBlur, error, touched, departmen
           placeholder="Type department name or code..."
           value={searchTerm}
           onChange={handleInputChange}
+          onFocus={() => {
+            if (!selectedDepartment) setShowDropdown(true); // ✅ Ipakita kung gi-focus ug wala pa napili
+          }}
           onBlur={() => {
-            if (searchTerm && !selectedDepartment) {
-              const match = departments.find(d =>
-                d.department_name.toLowerCase() === searchTerm.toLowerCase()
-              );
-              if (!match) {
-                onChange("");
+            // I-delay gamay aron maka-click ang user sa dropdown
+            setTimeout(() => {
+              if (searchTerm && !selectedDepartment) {
+                const match = departments.find(d =>
+                  d.department_name.toLowerCase() === searchTerm.toLowerCase()
+                );
+                if (!match) {
+                  onChange("");
+                }
               }
-            }
-            if (onBlur) onBlur();
+              if (onBlur) onBlur();
+            }, 200);
           }}
           className={cn(
             "pl-10 pr-10 bg-white dark:bg-slate-900 dark:border-slate-700",
@@ -319,36 +289,27 @@ const DepartmentDatalist = ({ value, onChange, onBlur, error, touched, departmen
         )}
       </div>
 
-      {searchTerm.length > 0 && filteredDepartments.length > 0 && (
+      {/* ✅ Giusab ang condition: displayDropdown na ang gigamit */}
+      {displayDropdown && filteredDepartments.length > 0 && (
         <div className="absolute z-50 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg max-h-60 overflow-auto">
           {filteredDepartments.map((dept) => (
             <div
               key={dept.department_id}
               onClick={() => handleSelect(dept)}
-              className={cn(
-                "px-4 py-2.5 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors flex items-center justify-between",
-                selectedDepartment?.department_id === dept.department_id && "bg-blue-50 dark:bg-blue-900/30"
-              )}
+              className="px-4 py-2.5 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors flex items-center justify-between"
             >
               <div>
-                <span className="font-medium text-slate-800 dark:text-white">
-                  {dept.department_name}
-                </span>
+                <span className="font-medium text-slate-800 dark:text-white">{dept.department_name}</span>
                 {dept.department_code && (
-                  <span className="ml-2 text-xs text-slate-400 dark:text-slate-500">
-                    ({dept.department_code})
-                  </span>
+                  <span className="ml-2 text-xs text-slate-400 dark:text-slate-500">({dept.department_code})</span>
                 )}
               </div>
-              {selectedDepartment?.department_id === dept.department_id && (
-                <CheckCircle className="h-4 w-4 text-blue-600" />
-              )}
             </div>
           ))}
         </div>
       )}
 
-      {searchTerm.length > 0 && filteredDepartments.length === 0 && !loading && (
+      {displayDropdown && filteredDepartments.length === 0 && !loading && (
         <div className="absolute z-50 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg p-4 text-center">
           <p className="text-sm text-slate-500 dark:text-slate-400">No departments found</p>
           <p className="text-xs text-slate-400 mt-1">Try a different search term</p>
@@ -370,8 +331,7 @@ const DepartmentDatalist = ({ value, onChange, onBlur, error, touched, departmen
       )}
       {hasError && !selectedDepartment && (
         <p className="text-red-500 text-xs flex items-center gap-1 mt-2 animate-fadeIn">
-          <AlertCircle className="h-3 w-3 flex-shrink-0" />
-          {error}
+          <AlertCircle className="h-3 w-3 flex-shrink-0" /> {error}
         </p>
       )}
     </div>
@@ -381,7 +341,6 @@ const DepartmentDatalist = ({ value, onChange, onBlur, error, touched, departmen
 // ============================================
 // MAIN COMPONENT
 // ============================================
-
 const AddUser = () => {
   const navigate = useNavigate();
   const createUser = useCreateUser();
@@ -406,7 +365,6 @@ const AddUser = () => {
   const [errors, setErrors] = useState({});
   const [touched, setTouched] = useState({});
 
-  // ============ FETCH DEPARTMENTS ============
   useEffect(() => {
     const fetchDepartments = async () => {
       try {
@@ -423,7 +381,6 @@ const AddUser = () => {
     fetchDepartments();
   }, []);
 
-  // ============ AUTO-SELECT ROLE WHEN DEPARTMENT CHANGES ============
   useEffect(() => {
     if (formData.department_id && departments.length > 0) {
       const available = getAvailableRoles(formData.department_id, departments);
@@ -435,98 +392,68 @@ const AddUser = () => {
     }
   }, [formData.department_id, departments]);
 
-  // ============================================
-  // ✅ ENHANCED VALIDATION - Single toast with all errors
-  // ============================================
-
   const validate = () => {
     const newErrors = {};
     const newTouched = {};
     const NAME_REGEX = /^[A-Za-z\s\.\-\'\,]+$/;
 
-    // Email validation
     if (!formData.email?.trim()) {
-      newErrors.email = "Email is required";
-      newTouched.email = true;
+      newErrors.email = "Email is required"; newTouched.email = true;
     } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email.trim())) {
-      newErrors.email = "Please enter a valid email address";
-      newTouched.email = true;
+      newErrors.email = "Please enter a valid email address"; newTouched.email = true;
     }
 
-    // First Name validation
     const firstName = formData.first_name?.trim() || "";
     if (!firstName) {
-      newErrors.first_name = "First name is required";
-      newTouched.first_name = true;
+      newErrors.first_name = "First name is required"; newTouched.first_name = true;
     } else if (firstName.length < 2) {
-      newErrors.first_name = "First name must be at least 2 characters";
-      newTouched.first_name = true;
+      newErrors.first_name = "First name must be at least 2 characters"; newTouched.first_name = true;
     } else if (firstName.length > 50) {
-      newErrors.first_name = "First name must be 50 characters or less";
-      newTouched.first_name = true;
+      newErrors.first_name = "First name must be 50 characters or less"; newTouched.first_name = true;
     } else if (!NAME_REGEX.test(firstName)) {
-      newErrors.first_name = "First name may only contain letters, spaces, and basic punctuation";
-      newTouched.first_name = true;
+      newErrors.first_name = "First name may only contain letters, spaces, and basic punctuation"; newTouched.first_name = true;
     }
 
-    // Last Name validation
     const lastName = formData.last_name?.trim() || "";
     if (!lastName) {
-      newErrors.last_name = "Last name is required";
-      newTouched.last_name = true;
+      newErrors.last_name = "Last name is required"; newTouched.last_name = true;
     } else if (lastName.length < 2) {
-      newErrors.last_name = "Last name must be at least 2 characters";
-      newTouched.last_name = true;
+      newErrors.last_name = "Last name must be at least 2 characters"; newTouched.last_name = true;
     } else if (lastName.length > 50) {
-      newErrors.last_name = "Last name must be 50 characters or less";
-      newTouched.last_name = true;
+      newErrors.last_name = "Last name must be 50 characters or less"; newTouched.last_name = true;
     } else if (!NAME_REGEX.test(lastName)) {
-      newErrors.last_name = "Last name may only contain letters, spaces, and basic punctuation";
-      newTouched.last_name = true;
+      newErrors.last_name = "Last name may only contain letters, spaces, and basic punctuation"; newTouched.last_name = true;
     }
 
-    // Middle Name validation (optional)
     const middleName = formData.middle_name?.trim() || "";
     if (middleName && middleName.length > 50) {
-      newErrors.middle_name = "Middle name must be 50 characters or less";
-      newTouched.middle_name = true;
+      newErrors.middle_name = "Middle name must be 50 characters or less"; newTouched.middle_name = true;
     } else if (middleName && !NAME_REGEX.test(middleName)) {
-      newErrors.middle_name = "Middle name may only contain letters, spaces, and basic punctuation";
-      newTouched.middle_name = true;
+      newErrors.middle_name = "Middle name may only contain letters, spaces, and basic punctuation"; newTouched.middle_name = true;
     }
 
-    // Department validation
     if (!formData.department_id) {
-      newErrors.department_id = "Department is required";
-      newTouched.department_id = true;
+      newErrors.department_id = "Department is required"; newTouched.department_id = true;
     }
 
-    // Role validation
     if (!formData.role) {
-      newErrors.role = "Role is required";
-      newTouched.role = true;
+      newErrors.role = "Role is required"; newTouched.role = true;
     } else {
       const availableRoles = getAvailableRoles(formData.department_id, departments);
       const validRoles = availableRoles.map(r => r.value).filter(v => v !== '');
       if (!validRoles.includes(formData.role)) {
-        newErrors.role = "Invalid role for selected department";
-        newTouched.role = true;
+        newErrors.role = "Invalid role for selected department"; newTouched.role = true;
       }
     }
 
-    // Password validation
     if (!formData.password) {
-      newErrors.password = "Password is required";
-      newTouched.password = true;
+      newErrors.password = "Password is required"; newTouched.password = true;
     } else if (formData.password.length < 8) {
-      newErrors.password = "Password must be at least 8 characters";
-      newTouched.password = true;
+      newErrors.password = "Password must be at least 8 characters"; newTouched.password = true;
     }
 
-    // Password confirmation validation
     if (formData.password !== formData.password_confirmation) {
-      newErrors.password_confirmation = "Passwords do not match";
-      newTouched.password_confirmation = true;
+      newErrors.password_confirmation = "Passwords do not match"; newTouched.password_confirmation = true;
     }
 
     setErrors(newErrors);
@@ -535,28 +462,19 @@ const AddUser = () => {
     if (Object.keys(newErrors).length > 0) {
       const errorMessages = Object.entries(newErrors).map(([field, msg]) => {
         const labels = {
-          email: 'Email',
-          first_name: 'First Name',
-          last_name: 'Last Name',
-          middle_name: 'Middle Name',
-          department_id: 'Department',
-          role: 'Role',
-          password: 'Password',
-          password_confirmation: 'Confirm Password'
+          email: 'Email', first_name: 'First Name', last_name: 'Last Name', middle_name: 'Middle Name',
+          department_id: 'Department', role: 'Role', password: 'Password', password_confirmation: 'Confirm Password'
         };
         const label = labels[field] || field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
         return `• ${label}: ${msg}`;
       });
 
       if (toastIdRef.current) toast.dismiss(toastIdRef.current);
-
       toastIdRef.current = toast.error(
         <div className="space-y-1">
           <div className="font-semibold text-red-600 dark:text-red-400">Please fix the following errors:</div>
           <div className="text-sm text-red-500 dark:text-red-300 space-y-0.5">
-            {errorMessages.map((msg, i) => (
-              <div key={i}>{msg}</div>
-            ))}
+            {errorMessages.map((msg, i) => (<div key={i}>{msg}</div>))}
           </div>
         </div>,
         { duration: 5000 }
@@ -564,46 +482,27 @@ const AddUser = () => {
 
       const firstField = Object.keys(newErrors)[0];
       if (firstField) {
-        const element = document.querySelector(`[name="${firstField}"]`) ||
-                        document.getElementById(firstField);
-        if (element) {
-          setTimeout(() => element.focus(), 100);
-        }
+        const element = document.querySelector(`[name="${firstField}"]`) || document.getElementById(firstField);
+        if (element) setTimeout(() => element.focus(), 100);
       }
-
       return false;
     }
-
     return true;
   };
 
-  const handleBlur = (field) => {
-    setTouched(prev => ({ ...prev, [field]: true }));
-  };
-
+  const handleBlur = (field) => setTouched(prev => ({ ...prev, [field]: true }));
   const hasError = (field) => touched[field] && errors[field];
 
   const handleChange = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
-    if (errors[field]) {
-      setErrors(prev => ({ ...prev, [field]: "" }));
-    }
+    if (errors[field]) setErrors(prev => ({ ...prev, [field]: "" }));
   };
-
-  // ============================================
-  // ✅ SUBMIT — validate, format names, then confirm
-  // ============================================
 
   const handleSubmitClick = (e) => {
     e.preventDefault();
-
     if (toastIdRef.current) toast.dismiss(toastIdRef.current);
+    if (!validate()) return;
 
-    if (!validate()) {
-      return;
-    }
-
-    // Normalize + format names BEFORE confirming so dialog shows final values
     const payload = {
       ...formData,
       email: formData.email.trim().toLowerCase(),
@@ -633,9 +532,7 @@ const AddUser = () => {
         const message = error.response?.data?.message || "Failed to create user";
 
         if (error.response?.data?.errors?.email) {
-          toastIdRef.current = toast.error(
-            `Email "${pendingPayload.email}" already exists. Please use a different email.`
-          );
+          toastIdRef.current = toast.error(`Email "${pendingPayload.email}" already exists. Please use a different email.`);
           setErrors(prev => ({ ...prev, email: "Email already exists" }));
           setTouched(prev => ({ ...prev, email: true }));
           document.querySelector('[name="email"]')?.focus();
@@ -649,303 +546,103 @@ const AddUser = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
       <div className="max-w-3xl mx-auto p-4 md:p-6">
-        {/* Header */}
         <div className="flex items-center gap-3 mb-6">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => navigate("/admin/users")}
-            className="rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 h-10 w-10"
-          >
+          <Button variant="ghost" size="icon" onClick={() => navigate("/admin/users")} className="rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 h-10 w-10">
             <ArrowLeft className="h-5 w-5" />
           </Button>
-          <div>
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 shadow-lg shadow-blue-500/20">
-                <UserPlus className="h-5 w-5 text-white" />
-              </div>
-              <div>
-                <h1 className="text-2xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 bg-clip-text text-transparent">
-                  Add New User
-                </h1>
-                <p className="text-sm text-slate-500 dark:text-slate-400">
-                  Create a new system user account
-                </p>
-              </div>
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 shadow-lg shadow-blue-500/20">
+              <UserPlus className="h-5 w-5 text-white" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 bg-clip-text text-transparent">Add New User</h1>
+              <p className="text-sm text-slate-500 dark:text-slate-400">Create a new system user account</p>
             </div>
           </div>
           <div className="ml-auto">
             <Badge className="bg-blue-500/20 text-blue-600 dark:text-blue-400 border-blue-500/30">
-              <Zap className="h-3 w-3 mr-1" />
-              New
+              <Zap className="h-3 w-3 mr-1" /> New
             </Badge>
           </div>
         </div>
 
-        {/* Form Card */}
         <Card className="dark:bg-slate-800/80 dark:border-slate-700 shadow-xl shadow-black/5">
           <CardHeader className="border-b border-slate-200/60 dark:border-slate-700/60">
-            <div>
-              <CardTitle className="flex items-center gap-2 text-slate-800 dark:text-white">
-                <Users className="h-5 w-5 text-blue-500" />
-                User Information
-              </CardTitle>
-              <CardDescription className="dark:text-slate-400">
-                Fill in the details below to create a new user
-              </CardDescription>
-            </div>
+            <CardTitle className="flex items-center gap-2 text-slate-800 dark:text-white">
+              <Users className="h-5 w-5 text-blue-500" /> User Information
+            </CardTitle>
+            <CardDescription className="dark:text-slate-400">Fill in the details below to create a new user</CardDescription>
           </CardHeader>
           <CardContent className="pt-6">
             <form onSubmit={handleSubmitClick} className="space-y-5">
-              {/* Email */}
-              <FormField
-                label="Email Address"
-                icon={Mail}
-                required
-                error={errors.email}
-                touched={touched.email}
-                helper="User's login email address"
-              >
-                <Input
-                  id="email"
-                  name="email"
-                  type="email"
-                  placeholder="user@example.com"
-                  value={formData.email}
-                  onChange={(e) => handleChange("email", e.target.value)}
-                  onBlur={() => handleBlur("email")}
-                  className="bg-white dark:bg-slate-900 dark:border-slate-700"
-                />
+              <FormField label="Email Address" icon={Mail} required error={errors.email} touched={touched.email} helper="User's login email address">
+                <Input id="email" name="email" type="email" placeholder="user@example.com" value={formData.email} onChange={(e) => handleChange("email", e.target.value)} onBlur={() => handleBlur("email")} className="bg-white dark:bg-slate-900 dark:border-slate-700" />
               </FormField>
 
-              {/* Name Fields */}
               <div className="grid grid-cols-2 gap-4">
-                <FormField
-                  label="First Name"
-                  icon={User}
-                  required
-                  error={errors.first_name}
-                  touched={touched.first_name}
-                >
-                  <Input
-                    id="first_name"
-                    name="first_name"
-                    placeholder="First name"
-                    value={formData.first_name}
-                    onChange={(e) => handleChange("first_name", e.target.value)}
-                    onBlur={() => handleBlur("first_name")}
-                    className="bg-white dark:bg-slate-900 dark:border-slate-700"
-                    maxLength={50}
-                  />
+                <FormField label="First Name" icon={User} required error={errors.first_name} touched={touched.first_name}>
+                  <Input id="first_name" name="first_name" placeholder="First name" value={formData.first_name} onChange={(e) => handleChange("first_name", e.target.value)} onBlur={() => handleBlur("first_name")} className="bg-white dark:bg-slate-900 dark:border-slate-700" maxLength={50} />
                 </FormField>
-
-                <FormField
-                  label="Last Name"
-                  icon={User}
-                  required
-                  error={errors.last_name}
-                  touched={touched.last_name}
-                >
-                  <Input
-                    id="last_name"
-                    name="last_name"
-                    placeholder="Last name"
-                    value={formData.last_name}
-                    onChange={(e) => handleChange("last_name", e.target.value)}
-                    onBlur={() => handleBlur("last_name")}
-                    className="bg-white dark:bg-slate-900 dark:border-slate-700"
-                    maxLength={50}
-                  />
+                <FormField label="Last Name" icon={User} required error={errors.last_name} touched={touched.last_name}>
+                  <Input id="last_name" name="last_name" placeholder="Last name" value={formData.last_name} onChange={(e) => handleChange("last_name", e.target.value)} onBlur={() => handleBlur("last_name")} className="bg-white dark:bg-slate-900 dark:border-slate-700" maxLength={50} />
                 </FormField>
               </div>
 
-              {/* Middle Name */}
-              <FormField
-                label="Middle Name"
-                icon={User}
-                error={errors.middle_name}
-                touched={touched.middle_name}
-                helper="Optional - user's middle name"
-              >
-                <Input
-                  id="middle_name"
-                  name="middle_name"
-                  placeholder="Middle name (optional)"
-                  value={formData.middle_name}
-                  onChange={(e) => handleChange("middle_name", e.target.value)}
-                  onBlur={() => handleBlur("middle_name")}
-                  className="bg-white dark:bg-slate-900 dark:border-slate-700"
-                  maxLength={50}
-                />
+              <FormField label="Middle Name" icon={User} error={errors.middle_name} touched={touched.middle_name} helper="Optional - user's middle name">
+                <Input id="middle_name" name="middle_name" placeholder="Middle name (optional)" value={formData.middle_name} onChange={(e) => handleChange("middle_name", e.target.value)} onBlur={() => handleBlur("middle_name")} className="bg-white dark:bg-slate-900 dark:border-slate-700" maxLength={50} />
               </FormField>
 
-              {/* Department */}
-              <FormField
-                label="Department"
-                icon={Building2}
-                required
-                error={errors.department_id}
-                touched={touched.department_id}
-              >
-                <DepartmentDatalist
-                  value={formData.department_id}
-                  onChange={(value) => handleChange("department_id", value)}
-                  onBlur={() => handleBlur("department_id")}
-                  error={errors.department_id}
-                  touched={touched.department_id}
-                  departments={departments}
-                  loading={loadingDepartments}
-                />
+              <FormField label="Department" icon={Building2} required error={errors.department_id} touched={touched.department_id}>
+                <DepartmentDatalist value={formData.department_id} onChange={(value) => handleChange("department_id", value)} onBlur={() => handleBlur("department_id")} error={errors.department_id} touched={touched.department_id} departments={departments} loading={loadingDepartments} />
               </FormField>
 
-              {/* Role - Dynamic based on department */}
-              <FormField
-                label="User Role"
-                icon={Shield}
-                required
-                error={errors.role}
-                touched={touched.role}
-                helper="Determines what the user can access"
-              >
-                <RoleSelect
-                  value={formData.role}
-                  onChange={(value) => handleChange("role", value)}
-                  onBlur={() => handleBlur("role")}
-                  error={errors.role}
-                  touched={touched.role}
-                  departmentId={formData.department_id}
-                  departments={departments}
-                />
+              <FormField label="User Role" icon={Shield} required error={errors.role} touched={touched.role} helper="Determines what the user can access">
+                <RoleSelect value={formData.role} onChange={(value) => handleChange("role", value)} onBlur={() => handleBlur("role")} error={errors.role} touched={touched.role} departmentId={formData.department_id} departments={departments} />
               </FormField>
 
-              {/* Password */}
               <div className="grid grid-cols-2 gap-4">
-                <FormField
-                  label="Password"
-                  icon={Key}
-                  required
-                  error={errors.password}
-                  touched={touched.password}
-                  helper="Minimum 8 characters"
-                >
+                <FormField label="Password" icon={Key} required error={errors.password} touched={touched.password} helper="Minimum 8 characters">
                   <div className="relative">
-                    <Input
-                      id="password"
-                      name="password"
-                      type={showPassword ? "text" : "password"}
-                      placeholder="••••••••"
-                      value={formData.password}
-                      onChange={(e) => handleChange("password", e.target.value)}
-                      onBlur={() => handleBlur("password")}
-                      className={cn(
-                        "bg-white dark:bg-slate-900 dark:border-slate-700 pr-10",
-                        hasError("password") && "border-red-500 ring-red-500"
-                      )}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                    >
+                    <Input id="password" name="password" type={showPassword ? "text" : "password"} placeholder="••••••••" value={formData.password} onChange={(e) => handleChange("password", e.target.value)} onBlur={() => handleBlur("password")} className={cn("bg-white dark:bg-slate-900 dark:border-slate-700 pr-10", hasError("password") && "border-red-500 ring-red-500")} />
+                    <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
                       {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </button>
                   </div>
                 </FormField>
 
-                <FormField
-                  label="Confirm Password"
-                  icon={Key}
-                  required
-                  error={errors.password_confirmation}
-                  touched={touched.password_confirmation}
-                >
+                <FormField label="Confirm Password" icon={Key} required error={errors.password_confirmation} touched={touched.password_confirmation}>
                   <div className="relative">
-                    <Input
-                      id="password_confirmation"
-                      name="password_confirmation"
-                      type={showConfirmPassword ? "text" : "password"}
-                      placeholder="••••••••"
-                      value={formData.password_confirmation}
-                      onChange={(e) => handleChange("password_confirmation", e.target.value)}
-                      onBlur={() => handleBlur("password_confirmation")}
-                      className={cn(
-                        "bg-white dark:bg-slate-900 dark:border-slate-700 pr-10",
-                        hasError("password_confirmation") && "border-red-500 ring-red-500"
-                      )}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                    >
+                    <Input id="password_confirmation" name="password_confirmation" type={showConfirmPassword ? "text" : "password"} placeholder="••••••••" value={formData.password_confirmation} onChange={(e) => handleChange("password_confirmation", e.target.value)} onBlur={() => handleBlur("password_confirmation")} className={cn("bg-white dark:bg-slate-900 dark:border-slate-700 pr-10", hasError("password_confirmation") && "border-red-500 ring-red-500")} />
+                    <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
                       {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </button>
                   </div>
                 </FormField>
               </div>
 
-              {/* Password Strength Indicator */}
               {formData.password && formData.password.length > 0 && (
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
                     <div className="flex-1 h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
-                      <div
-                        className={cn(
-                          "h-full rounded-full transition-all duration-300",
-                          formData.password.length < 4
-                            ? "bg-red-500 w-1/4"
-                            : formData.password.length < 8
-                            ? "bg-yellow-500 w-1/2"
-                            : formData.password.length < 12
-                            ? "bg-blue-500 w-3/4"
-                            : "bg-emerald-500 w-full"
-                        )}
-                      />
+                      <div className={cn("h-full rounded-full transition-all duration-300", formData.password.length < 4 ? "bg-red-500 w-1/4" : formData.password.length < 8 ? "bg-yellow-500 w-1/2" : formData.password.length < 12 ? "bg-blue-500 w-3/4" : "bg-emerald-500 w-full")} />
                     </div>
-                    <span className="text-xs font-medium text-slate-500 dark:text-slate-400 min-w-[60px]">
-                      {formData.password.length < 4 ? "Weak" : formData.password.length < 8 ? "Fair" : formData.password.length < 12 ? "Good" : "Strong"}
-                    </span>
+                    <span className="text-xs font-medium text-slate-500 dark:text-slate-400 min-w-[60px]">{formData.password.length < 4 ? "Weak" : formData.password.length < 8 ? "Fair" : formData.password.length < 12 ? "Good" : "Strong"}</span>
                   </div>
-                  <p className="text-[10px] text-slate-400 dark:text-slate-500">
-                    {formData.password.length} characters
-                  </p>
+                  <p className="text-[10px] text-slate-400 dark:text-slate-500">{formData.password.length} characters</p>
                 </div>
               )}
 
-              {/* Action Buttons */}
               <div className="flex gap-3 pt-4 border-t border-slate-200/60 dark:border-slate-700/60">
-                <Button
-                  type="submit"
-                  disabled={createUser.isPending}
-                  className="flex-1 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 shadow-lg shadow-blue-500/20 transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]"
-                >
-                  {createUser.isPending ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                      Creating...
-                    </>
-                  ) : (
-                    <>
-                      <CheckCircle className="h-4 w-4 mr-2" />
-                      Create User
-                    </>
-                  )}
+                <Button type="submit" disabled={createUser.isPending} className="flex-1 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 shadow-lg shadow-blue-500/20 transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]">
+                  {createUser.isPending ? (<><Loader2 className="h-4 w-4 animate-spin mr-2" />Creating...</>) : (<><CheckCircle className="h-4 w-4 mr-2" />Create User</>)}
                 </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => navigate("/admin/users")}
-                  className="flex-1 dark:border-slate-700 dark:text-slate-300"
-                >
-                  Cancel
-                </Button>
+                <Button type="button" variant="outline" onClick={() => navigate("/admin/users")} className="flex-1 dark:border-slate-700 dark:text-slate-300">Cancel</Button>
               </div>
             </form>
           </CardContent>
         </Card>
       </div>
 
-      {/* Confirm Create Dialog */}
       <AlertDialog open={showConfirm} onOpenChange={setShowConfirm}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -954,48 +651,21 @@ const AddUser = () => {
               <div className="space-y-2 pt-2">
                 <div className="grid grid-cols-3 gap-2 text-sm">
                   <span className="text-slate-500">Name:</span>
-                  <span className="col-span-2 font-medium text-slate-800 dark:text-slate-100">
-                    {pendingPayload?.first_name}{" "}
-                    {pendingPayload?.middle_name ? `${pendingPayload.middle_name} ` : ""}
-                    {pendingPayload?.last_name}
-                  </span>
-
+                  <span className="col-span-2 font-medium text-slate-800 dark:text-slate-100">{pendingPayload?.first_name}{" "}{pendingPayload?.middle_name ? `${pendingPayload.middle_name} ` : ""}{pendingPayload?.last_name}</span>
                   <span className="text-slate-500">Email:</span>
-                  <span className="col-span-2 font-medium text-slate-800 dark:text-slate-100 break-all">
-                    {pendingPayload?.email}
-                  </span>
-
+                  <span className="col-span-2 font-medium text-slate-800 dark:text-slate-100 break-all">{pendingPayload?.email}</span>
                   <span className="text-slate-500">Department:</span>
-                  <span className="col-span-2 font-medium text-slate-800 dark:text-slate-100">
-                    {departments.find(d => d.department_id === parseInt(pendingPayload?.department_id))?.department_name || "—"}
-                  </span>
-
+                  <span className="col-span-2 font-medium text-slate-800 dark:text-slate-100">{departments.find(d => d.department_id === parseInt(pendingPayload?.department_id))?.department_name || "—"}</span>
                   <span className="text-slate-500">Role:</span>
-                  <span className="col-span-2 font-medium text-slate-800 dark:text-slate-100">
-                    {pendingPayload?.role === "gso_office" ? "GSO Staff"
-                      : pendingPayload?.role === "mayors_office" ? "Disbursing Officer"
-                      : pendingPayload?.role === "driver" ? "Driver"
-                      : "—"}
-                  </span>
+                  <span className="col-span-2 font-medium text-slate-800 dark:text-slate-100">{pendingPayload?.role === "gso_office" ? "GSO Staff" : pendingPayload?.role === "mayors_office" ? "Disbursing Officer" : pendingPayload?.role === "driver" ? "Driver" : "—"}</span>
                 </div>
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={createUser.isPending}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleConfirmCreate}
-              disabled={createUser.isPending}
-              className="bg-blue-600 hover:bg-blue-700 text-white"
-            >
-              {createUser.isPending ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                  Creating...
-                </>
-              ) : (
-                "Create User"
-              )}
+            <AlertDialogAction onClick={handleConfirmCreate} disabled={createUser.isPending} className="bg-blue-600 hover:bg-blue-700 text-white">
+              {createUser.isPending ? (<><Loader2 className="h-4 w-4 animate-spin mr-2" />Creating...</>) : ("Create User")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
