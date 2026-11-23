@@ -390,6 +390,7 @@ return new class extends Migration
         Schema::create('gps_ping', function (Blueprint $table) {
             $table->bigIncrements('ping_id');
             $table->unsignedBigInteger('trip_ticket_id');
+            $table->unsignedBigInteger('trip_history_id')->nullable()->after('trip_ticket_id');
             $table->decimal('latitude', 10, 7);
             $table->decimal('longitude', 10, 7);
             $table->decimal('accuracy_meters', 10, 2)->nullable();
@@ -402,6 +403,7 @@ return new class extends Migration
             $table->timestamp('received_at')->useCurrent();
 
             $table->index('trip_ticket_id');
+             $table->index('trip_history_id', 'gps_ping_history_idx');
             $table->index('recorded_at');
             $table->foreign('trip_ticket_id')->references('trip_ticket_id')->on('trip_ticket')->onDelete('cascade');
         });

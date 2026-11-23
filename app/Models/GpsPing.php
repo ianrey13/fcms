@@ -12,6 +12,7 @@ class GpsPing extends Model
     
     protected $fillable = [
         'trip_ticket_id',
+        'trip_history_id',
         'latitude',
         'longitude',
         'accuracy_meters',
