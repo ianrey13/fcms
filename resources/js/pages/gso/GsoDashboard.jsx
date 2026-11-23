@@ -292,6 +292,10 @@ const GsoDashboard = () => {
                         return false;
                     }
 
+                     if (["pending_gso_validation", "completed"].includes(status)) {
+                    return false;
+                }
+
                     // 2. Tangtangon kung pending_mayors_office ug wala pay gas slip
                     if (status === "pending_mayors_office" && !hasGasSlip) {
                         return false;
