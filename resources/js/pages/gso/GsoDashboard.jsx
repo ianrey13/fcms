@@ -292,9 +292,9 @@ const GsoDashboard = () => {
                         return false;
                     }
 
-                     if (["pending_gso_validation", "completed"].includes(status)) {
-                    return false;
-                }
+                    // ✅ FIX: GITANGGTANG ANG FILTER SA pending_gso_validation/completed
+                    // ARON MA-APIL SILA SA LEDGER DAYON, dili maghulat ma-validate.
+                    // (Kaniadto: if (["pending_gso_validation", "completed"].includes(status)) return false;)
 
                     // 2. Tangtangon kung pending_mayors_office ug wala pay gas slip
                     if (status === "pending_mayors_office" && !hasGasSlip) {
@@ -318,13 +318,14 @@ const GsoDashboard = () => {
         () => (Array.isArray(allTripsRaw) ? allTripsRaw : []),
         [allTripsRaw],
     );
-     const { data: pendingValidationRaw = [], isLoading: validationLoading } =
+
+    // ✅ FIX: GIDUGANG ANG RETURN STATEMENT
+    const { data: pendingValidationRaw = [], isLoading: validationLoading } =
         useOptimizedQuery({
             queryKey: ["gso-pending-validation"],
             queryFn: async () => {
                 const trips = extractArray(await gsoAPI.getPendingValidation());
-                
-                
+                return trips; // ✅ KINI ANG KULANG SA UNA
             },
         });
 
@@ -1211,7 +1212,7 @@ const GsoDashboard = () => {
                                                     {computed.fuelOut}
                                                     {computed.distanceKm > 0 && (
                                                         <div className="text-[10px] font-normal text-slate-500">
-                                                            {computed.distanceKm} km ÷ {computed.efficiencyUsed}
+                                                            {computed.distanceKm} km ÷ {computed.efficiencyUsed} km/L
                                                         </div>
                                                     )}
                                                 </td>
@@ -1222,13 +1223,13 @@ const GsoDashboard = () => {
                                                             ? "text-amber-400"
                                                             : "text-white",
                                                     )}
-                                                    title={
-                                                        computed.overTank
-                                                            ? `Mas dako kaysa tank capacity (${computed.tankCapacity} L). I-check ang liters/tank data.`
-                                                            : undefined
-                                                    }
                                                 >
                                                     {computed.balance}
+                                                    {computed.overTank && (
+                                                        <div className="text-[10px] font-normal text-amber-500">
+                                                            ⚠ exceeds tank ({computed.tankCapacity} L)
+                                                        </div>
+                                                    )}
                                                 </td>
                                             </tr>
                                         ))
@@ -1238,133 +1239,76 @@ const GsoDashboard = () => {
                         </div>
                     </CardContent>
                 </Card>
-            </div>
 
-            {/* VALIDATE & REPLAY DIALOG */}
-            <Dialog
-                open={showValidateDialog}
-                onOpenChange={setShowValidateDialog}
-            >
-                <DialogContent className="sm:max-w-6xl bg-[#0f172a] border-slate-700 p-0 overflow-hidden rounded-2xl">
-                    <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800">
-                        <div className="flex items-center gap-3">
-                            <div className="p-2 rounded-xl bg-blue-500/20 text-blue-500 border border-blue-500/30">
-                                <MapPin className="h-5 w-5" />
-                            </div>
-                            <div>
-                                <h2 className="text-xl font-bold text-white">
-                                    Trip Validation
-                                </h2>
-                                <p className="text-xs text-slate-400">
-                                    Review the completed trip details before
-                                    confirming.
-                                </p>
-                            </div>
-                        </div>
-                        <button
-                            onClick={() => setShowValidateDialog(false)}
-                            className="text-slate-400 hover:text-white transition-colors"
-                        >
-                            <X className="h-6 w-6" />
-                        </button>
-                    </div>
+                {/* 7. VALIDATE DIALOG */}
+                <Dialog
+                    open={showValidateDialog}
+                    onOpenChange={setShowValidateDialog}
+                >
+                    <DialogContent className="max-w-4xl bg-[#121829] border-slate-800 text-white">
+                        <div className="space-y-4">
+                            <h2 className="text-lg font-bold flex items-center gap-2">
+                                <FileCheck className="h-5 w-5 text-emerald-500" />
+                                Review & Validate Trip
+                            </h2>
 
-                    <div className="flex flex-col md:flex-row h-[600px]">
-                        <div className="w-full md:w-[320px] bg-[#121829] border-r border-slate-800 p-6 overflow-y-auto flex-shrink-0">
-                            <div className="space-y-5">
-                                <div className="flex items-start gap-3">
-                                    <Calendar className="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0" />
+                            {selectedTicket && (
+                                <div className="grid grid-cols-2 gap-4 text-sm">
                                     <div>
-                                        <p className="text-xs text-slate-400 font-medium">
-                                            Trip Ticket No.
-                                        </p>
-                                        <p className="text-sm font-bold text-white font-mono">
-                                            {selectedTicket?.displayTicketNo ||
-                                                selectedTicket?.trip_ticket_number ||
-                                                selectedTicket?.ticket_number ||
-                                                "N/A"}
+                                        <p className="text-slate-400">TT No.</p>
+                                        <p className="font-mono text-white">
+                                            {selectedTicket.displayTicketNo ||
+                                                selectedTicket.ticket_number ||
+                                                selectedTicket.trip_ticket_number}
                                         </p>
                                     </div>
-                                </div>
-                                <div className="flex items-start gap-3">
-                                    <User className="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0" />
                                     <div>
-                                        <p className="text-xs text-slate-400 font-medium">
-                                            Driver
-                                        </p>
-                                        <p className="text-sm font-bold text-white">
-                                            {selectedTicket?.driver_name ||
-                                                selectedTicket?.driver?.user
-                                                    ?.full_name ||
-                                                (selectedTicket?.driver?.user
-                                                    ?.first_name
-                                                    ? `${selectedTicket.driver.user.first_name} ${selectedTicket.driver.user.last_name || ""}`.trim()
-                                                    : null) ||
-                                                selectedTicket?.driver
-                                                    ?.full_name ||
-                                                selectedTicket?.driver?.name ||
-                                                "N/A"}
-                                        </p>
-                                    </div>
-                                </div>
-                                <div className="flex items-start gap-3">
-                                    <Car className="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0" />
-                                    <div>
-                                        <p className="text-xs text-slate-400 font-medium">
-                                            Vehicle
-                                        </p>
-                                        <p className="text-sm font-bold text-white">
-                                            {selectedTicket?.vehicle
-                                                ?.vehicle_model || "N/A"}
-                                        </p>
-                                        <p className="text-[10px] text-slate-400 font-mono">
-                                            {selectedTicket?.vehicle
-                                                ?.plate_number || "N/A"}
-                                        </p>
-                                    </div>
-                                </div>
-                                <div className="flex items-start gap-3">
-                                    <Flag className="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0" />
-                                    <div>
-                                        <p className="text-xs text-slate-400 font-medium">
+                                        <p className="text-slate-400">
                                             Destination
                                         </p>
-                                        <p className="text-sm font-bold text-white">
-                                            {selectedTicket?.destination ||
+                                        <p className="text-white">
+                                            {selectedTicket.destination || "N/A"}
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <p className="text-slate-400">
+                                            Driver
+                                        </p>
+                                        <p className="text-white">
+                                            {selectedTicket.driver_name ||
+                                                selectedTicket.driver?.user
+                                                    ?.full_name ||
                                                 "N/A"}
                                         </p>
                                     </div>
-                                </div>
-                                <div className="flex items-start gap-3">
-                                    <Route className="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0" />
                                     <div>
-                                        <p className="text-xs text-slate-400 font-medium">
-                                            Actual Distance
+                                        <p className="text-slate-400">
+                                            Distance
                                         </p>
-                                        <p className="text-sm font-bold text-white">
-                                            {selectedTicket?.actual_distance_km ||
+                                        <p className="text-white">
+                                            {selectedTicket.actual_distance_km ||
+                                                selectedTicket.distanceKm ||
                                                 0}{" "}
                                             km
                                         </p>
                                     </div>
                                 </div>
-                            </div>
-                        </div>
+                            )}
 
-                        <div className="flex-1 relative bg-[#0b101c] flex flex-col">
-                            <div className="flex-1 relative">
+                            {/* Map Replay */}
+                            <div className="h-[300px] rounded-lg overflow-hidden border border-slate-700">
                                 {loadingRoute ? (
-                                    <div className="absolute inset-0 flex items-center justify-center bg-slate-900/50 z-10">
-                                        <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+                                    <div className="flex items-center justify-center h-full">
+                                        <Loader2 className="h-6 w-6 animate-spin text-blue-500" />
                                     </div>
                                 ) : routeCoordinates.length > 0 ? (
                                     <MapContainer
-                                        bounds={routeCoordinates}
+                                        center={routeCoordinates[0]}
+                                        zoom={14}
                                         style={{
                                             height: "100%",
                                             width: "100%",
                                         }}
-                                        zoomControl={false}
                                     >
                                         <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
                                         <MapBounds coords={routeCoordinates} />
@@ -1372,107 +1316,95 @@ const GsoDashboard = () => {
                                             positions={routeCoordinates}
                                             color="#3b82f6"
                                             weight={4}
-                                            opacity={0.8}
                                         />
-                                        <Marker
-                                            position={routeCoordinates[0]}
-                                            icon={icons.start}
-                                        />
-                                        <Marker
-                                            position={
-                                                routeCoordinates[
-                                                    routeCoordinates.length - 1
-                                                ]
-                                            }
-                                            icon={icons.end}
-                                        />
-
-                                        {isReplaying && (
-                                            <ReplayMarker
-                                                position={
-                                                    routeCoordinates[
-                                                        replayIndex
-                                                    ]
-                                                }
-                                                icon={icons.vehicle}
-                                            />
+                                        {routeCoordinates.length > 0 && (
+                                            <>
+                                                <Marker
+                                                    position={
+                                                        routeCoordinates[0]
+                                                    }
+                                                    icon={icons.start}
+                                                />
+                                                <Marker
+                                                    position={
+                                                        routeCoordinates[
+                                                            routeCoordinates.length -
+                                                                1
+                                                        ]
+                                                    }
+                                                    icon={icons.end}
+                                                />
+                                            </>
                                         )}
+                                        {isReplaying &&
+                                            replayIndex <
+                                                routeCoordinates.length && (
+                                                <ReplayMarker
+                                                    position={
+                                                        routeCoordinates[
+                                                            replayIndex
+                                                        ]
+                                                    }
+                                                    icon={icons.vehicle}
+                                                />
+                                            )}
                                     </MapContainer>
                                 ) : (
-                                    <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-500">
-                                        <MapPin className="h-8 w-8 mb-2" />
-                                        <p>No route data available</p>
+                                    <div className="flex items-center justify-center h-full text-slate-500">
+                                        No route data available
                                     </div>
                                 )}
                             </div>
 
-                            <div className="p-4 bg-[#121829] border-t border-slate-800 flex items-center justify-between">
-                                <div className="flex items-center gap-2">
-                                    {routeCoordinates.length >= 2 && (
-                                        <Button
-                                            size="sm"
-                                            variant="outline"
-                                            onClick={() =>
-                                                isReplaying
-                                                    ? handleStopReplay()
-                                                    : startReplay(
-                                                          routeCoordinates,
-                                                      )
-                                            }
-                                            className="border-slate-700 text-slate-300 hover:bg-slate-800 h-9"
-                                        >
-                                            {isReplaying ? (
-                                                <Square className="h-3.5 w-3.5 mr-2" />
-                                            ) : (
-                                                <Play className="h-3.5 w-3.5 mr-2" />
-                                            )}
-                                            {isReplaying ? "Stop" : "Replay"}
-                                        </Button>
-                                    )}
-                                </div>
-
-                                {pendingValidation.some(
-                                    (t) =>
-                                        (t.id || t.trip_ticket_id) ===
-                                        (selectedTicket?.displayId ||
+                            <div className="flex justify-end gap-2">
+                                <Button
+                                    variant="outline"
+                                    onClick={() =>
+                                        setShowValidateDialog(false)
+                                    }
+                                    className="border-slate-700 text-white hover:bg-slate-800"
+                                >
+                                    Cancel
+                                </Button>
+                                <Button
+                                    onClick={() => {
+                                        const ticketId =
+                                            selectedTicket?.displayId ||
                                             selectedTicket?.id ||
-                                            selectedTicket?.trip_ticket_id),
-                                ) && (
-                                    <Button
-                                        onClick={() => {
-                                            const ticketId =
-                                                selectedTicket?.id ||
-                                                selectedTicket?.trip_ticket_id;
-                                            validateMutation.mutate({
-                                                ticketId,
-                                            });
-                                        }}
-                                        disabled={
-                                            validateMutation.isPending ||
-                                            !hasWatchedReplay
+                                            selectedTicket?.trip_ticket_id;
+                                        if (!ticketId) {
+                                            toast.error(
+                                                "Invalid ticket ID",
+                                            );
+                                            return;
                                         }
-                                        className={cn(
-                                            "text-white font-bold h-10 px-8 rounded-xl shadow-lg transition-all",
-                                            hasWatchedReplay
-                                                ? "bg-emerald-600 hover:bg-emerald-500 shadow-emerald-500/20"
-                                                : "bg-slate-700 text-slate-400 cursor-not-allowed shadow-none",
-                                        )}
-                                    >
-                                        {validateMutation.isPending ? (
-                                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                                        ) : (
+                                        validateMutation.mutate({
+                                            ticketId,
+                                        });
+                                    }}
+                                    disabled={
+                                        validateMutation.isPending ||
+                                        !hasWatchedReplay
+                                    }
+                                    className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                                >
+                                    {validateMutation.isPending ? (
+                                        <>
+                                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                            Validating...
+                                        </>
+                                    ) : (
+                                        <>
                                             <Check className="h-4 w-4 mr-2" />
-                                        )}
-                                        {hasWatchedReplay
-                                            ? "Confirm"
-                                            : "Waiting for Replay..."}
-                                    </Button>
-                                )}
+                                            Validate & Close
+                                        </>
+                                    )}
+                                </Button>
                             </div>
                         </div>
-                    </div>
-                </DialogContent>
-            </Dialog>
+                    </DialogContent>
+                </Dialog>
+            </div>
         </div>
     );
 };
