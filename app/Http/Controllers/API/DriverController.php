@@ -1562,7 +1562,7 @@ class DriverController extends Controller
         ]);
     }
 
-   public function pauseTrip(Request $request, $id)
+  public function pauseTrip(Request $request, $id)
 {
     try {
         $user = $request->user();
@@ -1591,7 +1591,6 @@ class DriverController extends Controller
             return response()->json(['success' => false, 'message' => 'Trip ticket not found'], 404);
         }
 
-        // Idempotent — kung paused na, ayaw na usba
         if ($ticket->status === 'paused') {
             return response()->json([
                 'success' => true,
@@ -1614,13 +1613,15 @@ class DriverController extends Controller
         DB::beginTransaction();
 
         try {
-            // 1. Store final position FIRST (para maapil sa segment distance)
-            $this->storeEdgePing(
-                (int) $id,
-                $request->latitude,
-                $request->longitude,
-                $request->accuracy
-            );
+            // 1. Store final edge ping (kung naay method)
+            if (method_exists($this, 'storeEdgePing')) {
+                $this->storeEdgePing(
+                    (int) $id,
+                    $request->latitude,
+                    $request->longitude,
+                    $request->accuracy
+                );
+            }
 
             // 2. Kuhaa ang current in-progress segment
             $segment = TripHistory::where('trip_ticket_id', $id)
@@ -1628,27 +1629,54 @@ class DriverController extends Controller
                 ->orderBy('trip_number', 'desc')
                 ->first();
 
-            // 3. Compute distance sa KINI nga segment ONLY (gikan sa pings)
-            $pings = $this->segmentPings((int) $id, $segment);
-            $segmentDistance = $this->filterAndSumGpsDistance($pings);
+            // 3. Compute segment distance — naay fallback kung wala ang segmentPings()
+            $segmentDistance = 0;
+            $pingCount = 0;
 
-            // 4. I-close ang segment — pero AYAW i-add sa fuelReceipt
-            //    Ang fuelReceipt->gps_distance_km mag-reflect sa TOTAL gikan sa syncActuals()
             if ($segment) {
+                if (method_exists($this, 'segmentPings')) {
+                    $pings = $this->segmentPings((int) $id, $segment);
+                    $segmentDistance = $this->filterAndSumGpsDistance($pings);
+                    $pingCount = $pings->count();
+                } else {
+                    // ✅ FALLBACK: compute gikan sa GpsPing model directly
+                    $pings = GpsPing::where('trip_ticket_id', $id)
+                        ->where('is_low_accuracy', false)
+                        ->where('recorded_at', '>=', $segment->started_at)
+                        ->orderBy('recorded_at')
+                        ->get();
+
+                    $pingCount = $pings->count();
+
+                    $prev = null;
+                    foreach ($pings as $ping) {
+                        if ($prev) {
+                            $segmentDistance += $this->haversineGpsKm(
+                                (float) $prev->latitude,
+                                (float) $prev->longitude,
+                                (float) $ping->latitude,
+                                (float) $ping->longitude
+                            );
+                        }
+                        $prev = $ping;
+                    }
+                    $segmentDistance = round($segmentDistance, 2);
+                }
+
+                // 4. I-close ang segment
                 $segment->end_lat     = $request->latitude;
                 $segment->end_lng     = $request->longitude;
                 $segment->ended_at    = now();
                 $segment->distance_km = $segmentDistance;
-                $segment->status      = 'completed'; // segment finished (ticket = paused)
+                $segment->status      = 'completed';
                 $segment->save();
             }
 
-            // 5. Set ticket status to paused
+            // 5. Set ticket to paused
             $ticket->status = 'paused';
             $ticket->save();
 
-            // 6. ✅ FIX: Recompute actuals gikan sa TOTAL pings (dili gikan sa fuelReceipt accumulation)
-            //    Kini ang SINGLE SOURCE OF TRUTH — mag-set sa actual_distance_km ug actual_fuel_used
+            // 6. Sync actuals — gikan sa sum sa completed segments
             $ticket->syncActuals()->save();
 
             DB::commit();
@@ -1657,7 +1685,7 @@ class DriverController extends Controller
             throw $e;
         }
 
-        // Fuel balance recalc AFTER commit (best-effort)
+        // Fuel recalc AFTER commit
         if ($ticket->vehicle) {
             try {
                 (new \App\Services\FuelLevelService())->recalculate($ticket->vehicle);
@@ -1669,7 +1697,7 @@ class DriverController extends Controller
         Log::info("Trip {$ticket->trip_ticket_number} paused", [
             'trip_id'             => $id,
             'segment_distance_km' => $segmentDistance,
-            'ping_count'          => $pings->count(),
+            'ping_count'          => $pingCount,
             'total_actual_km'     => $ticket->actual_distance_km,
         ]);
 
