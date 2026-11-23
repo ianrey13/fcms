@@ -430,7 +430,7 @@ const EditVehicle = () => {
     if (!formData.reference_efficiency || isNaN(refEff) || refEff <= 0) {
       newErrors.reference_efficiency = "Reference efficiency must be greater than 0";
       newTouched.reference_efficiency = true;
-    } else if (refEff > 50) {
+    } else if (refEff > 100) {
       newErrors.reference_efficiency = "Reference efficiency must be 50 km/L or less";
       newTouched.reference_efficiency = true;
     }
@@ -797,7 +797,7 @@ const EditVehicle = () => {
                       type="number"
                       step="0.01"
                       min="0.5"
-                      max="50"
+                      max="100"
                       value={formData.reference_efficiency}
                       onChange={(e) => handleChange("reference_efficiency", e.target.value)}
                       onBlur={() => handleBlur("reference_efficiency")}
