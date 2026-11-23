@@ -11,7 +11,7 @@ import { cn } from '@/lib/utils';
 import {
     ArrowLeft, Car, Fuel, Gauge, MapPin, Clock, User, 
     Building2, Activity, Navigation, Play, Square, Loader2,
-    Maximize2, Minimize2, FileText, ChevronLeft, ChevronRight, ArrowUpDown
+    Maximize2, Minimize2, FileText, ChevronLeft, ChevronRight, ArrowUpDown, AlertTriangle
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -61,15 +61,24 @@ const MapUpdater = ({ bounds, markerPos, isReplaying }) => {
     return null;
 };
 
+// Helper to safely parse numbers
+const toNum = (v) => {
+    const n = parseFloat(v);
+    return Number.isFinite(n) ? n : 0;
+};
+
 const VehicleDetails = () => {
     const { id } = useParams();
     const navigate = useNavigate();
-    const [chartRange, setChartRange] = useState('7d');
     
-    // Table State
+    // Table State (Trip History)
     const [page, setPage] = useState(1);
     const [sortOrder, setSortOrder] = useState('desc');
     const rowsPerPage = 5; 
+
+    // Table State (Fuel Ledger)
+    const [ledgerPage, setLedgerPage] = useState(1);
+    const ledgerRowsPerPage = 5;
 
     const { data: vehicles = [], isLoading } = useVehicles();
     const vehicle = vehicles.find(v => v.vehicle_id === parseInt(id));
@@ -118,42 +127,85 @@ const VehicleDetails = () => {
         enabled: !!vehicle
     });
 
-    // Chart Data (Weekly)
-    const chartData = useMemo(() => {
-        if (!vehicle) return { labels: [], fuelIn: [], fuelOut: [], max: 100 };
-        const eff = parseFloat(vehicle.reference_efficiency || 10);
-        const weeklyData = {};
+    // ============================================
+    // ✅ FUEL LEDGER CALCULATION (PER VEHICLE)
+    // ============================================
+    const ledgerRows = useMemo(() => {
+        if (!vehicle) return [];
+        const r2 = (n) => parseFloat(toNum(n).toFixed(2));
 
-        fuelReceipts.forEach(r => {
-            const d = new Date(r.uploaded_at);
-            const weekStart = startOfWeek(d, { weekStartsOn: 1 });
-            const weekLabel = format(weekStart, 'MMM dd');
-            if (!weeklyData[weekLabel]) weeklyData[weekLabel] = { in: 0, out: 0, date: weekStart };
-            weeklyData[weekLabel].in += parseFloat(r.liters || 0);
+        const rows = historyData.map(trip => {
+            // 1. Match Fuel Receipt (for Fuel In)
+            // We match by ticket number since this is a specific vehicle's trip.
+            const matchedReceipt = fuelReceipts.find(r => 
+                r.trip_ticket_number === trip.ticket_number ||
+                r.trip_ticket_number === trip.trip_ticket_number
+            );
+
+            const fuelIn = toNum(matchedReceipt?.liters);
+            
+            // 2. Fuel Out
+            const distance = toNum(trip.actual_distance_km || trip.gps_distance_km);
+            const efficiency = toNum(vehicle.reference_efficiency) || 10;
+            const fuelOut = distance > 0 ? (distance / efficiency) : 0;
+
+            return {
+                trip,
+                fuelIn: r2(fuelIn),
+                fuelOut: r2(fuelOut),
+                distance,
+                efficiency,
+                sortTime: new Date(trip.updated_at || trip.trip_date || 0).getTime(),
+            };
         });
 
-        historyData.forEach(t => {
-            const d = new Date(t.updated_at || t.trip_date);
-            const weekStart = startOfWeek(d, { weekStartsOn: 1 });
-            const weekLabel = format(weekStart, 'MMM dd');
-            const dist = parseFloat(t.actual_distance_km || 0);
-            if (!weeklyData[weekLabel]) weeklyData[weekLabel] = { in: 0, out: 0, date: weekStart };
-            weeklyData[weekLabel].out += (dist / eff);
-        });
+        // Sort chronologically (oldest to newest) to compute the balance chain
+        rows.sort((a, b) => a.sortTime - b.sortTime);
 
-        let weeks = Object.keys(weeklyData).sort((a, b) => weeklyData[a].date - weeklyData[b].date);
-        if (chartRange === '7d') weeks = weeks.slice(-2);
-        else if (chartRange === '30d') weeks = weeks.slice(-4);
+        // Initialize Beginning Balance
+        const initialRaw = vehicle.initial_estimated_fuel;
+        const hasInitial = initialRaw !== undefined && initialRaw !== null && initialRaw !== '';
         
-        return { 
-            labels: weeks, 
-            fuelIn: weeks.map(w => weeklyData[w].in), 
-            fuelOut: weeks.map(w => weeklyData[w].out), 
-            max: Math.max(...weeks.map(w => Math.max(weeklyData[w].in, weeklyData[w].out)), 10) * 1.2 
-        };
-    }, [vehicle, fuelReceipts, historyData, chartRange]);
+        // Fallback calculation if no initial_estimated_fuel is set
+        const totalIn = rows.reduce((s, r) => s + r.fuelIn, 0);
+        const totalOut = rows.reduce((s, r) => s + r.fuelOut, 0);
+        let anchor = hasInitial 
+            ? toNum(initialRaw) 
+            : (toNum(vehicle.current_fuel_balance) - totalIn + totalOut);
 
-    // Sorting and Pagination for History Table
+        // Roll forward
+        let prev = r2(anchor);
+        rows.forEach(r => {
+            r.beginning = prev;
+            r.balance = r2(r.beginning + r.fuelIn - r.fuelOut);
+            prev = r.balance;
+        });
+
+        // Reverse to show newest first
+        return rows.reverse().map(r => ({
+            ...r.trip,
+            displayTicketNo: r.trip.ticket_number || r.trip.trip_ticket_number,
+            displayDate: r.trip.trip_date || r.trip.updated_at,
+            beginning: r.beginning.toFixed(2),
+            fuelIn: r.fuelIn.toFixed(2),
+            fuelOut: r.fuelOut.toFixed(2),
+            balance: r.balance.toFixed(2),
+            distanceKm: r.distance,
+            efficiencyUsed: r.efficiency,
+            overTank: (toNum(vehicle.tank_capacity) > 0) && (r.balance > toNum(vehicle.tank_capacity) + 0.01)
+        }));
+    }, [historyData, fuelReceipts, vehicle]);
+
+    // Pagination for Fuel Ledger
+    const totalLedgerPages = Math.ceil(ledgerRows.length / ledgerRowsPerPage);
+    const currentLedgerData = useMemo(() => {
+        const firstPageIndex = (ledgerPage - 1) * ledgerRowsPerPage;
+        const lastPageIndex = firstPageIndex + ledgerRowsPerPage;
+        return ledgerRows.slice(firstPageIndex, lastPageIndex);
+    }, [ledgerPage, ledgerRows]);
+
+
+    // Sorting and Pagination for Trip History Table
     const sortedHistory = useMemo(() => {
         let sorted = [...historyData];
         sorted.sort((a, b) => {
@@ -261,7 +313,6 @@ const VehicleDetails = () => {
                             <Button variant="outline" size="sm" onClick={() => navigate(`/admin/vehicles/edit/${id}`)} className="font-medium border-slate-300 dark:border-slate-700">Edit Details</Button>
                         </div>
                         
-                        {/* Department Info (Driver Removed) */}
                         <div className="flex items-center gap-3 mt-2 border-t border-slate-100 dark:border-slate-800 pt-4">
                             <Building2 className="h-10 w-10 p-2 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-xl" />
                             <div>
@@ -297,68 +348,99 @@ const VehicleDetails = () => {
                 </Card>
             </div>
 
-            {/* 2. Fuel Balance History Chart */}
-            <Card className="dark:bg-slate-900 border-slate-200 dark:border-slate-800 p-6 shadow-sm">
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+            {/* 2. Fuel Ledger Table (Replaces Chart) */}
+            <Card className="dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden flex flex-col min-h-[400px]">
+                <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-800/20">
                     <div>
                         <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2 text-lg">
-                            <Activity className="h-5 w-5 text-blue-500"/> Fuel Balance History
+                            <Fuel className="h-5 w-5 text-blue-500"/> Fuel Ledger
                         </h3>
-                        <p className="text-xs text-slate-500 mt-1 font-medium">Weekly summary of fuel added and consumed.</p>
+                        <p className="text-xs text-slate-500 mt-1 font-medium">Historical record of fuel consumption and additions.</p>
                     </div>
-                    <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-lg border border-slate-200 dark:border-slate-700">
-                        <button onClick={() => setChartRange('7d')} className={cn("px-3 py-1.5 text-xs font-bold rounded-md transition-colors", chartRange === '7d' ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300")}>Last 2 Weeks</button>
-                        <button onClick={() => setChartRange('30d')} className={cn("px-3 py-1.5 text-xs font-bold rounded-md transition-colors", chartRange === '30d' ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300")}>Last 4 Weeks</button>
-                        <button onClick={() => setChartRange('3m')} className={cn("px-3 py-1.5 text-xs font-bold rounded-md transition-colors", chartRange === '3m' ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300")}>All Time</button>
-                    </div>
+                    <Badge className="bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 border-blue-200 dark:border-blue-800 text-xs font-bold">
+                        {ledgerRows.length} Entries
+                    </Badge>
                 </div>
 
-                {fuelLoading || historyLoading ? (
-                    <div className="h-64 flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-blue-500" /></div>
-                ) : chartData.labels.length === 0 ? (
-                    <div className="h-64 flex flex-col items-center justify-center text-slate-400">
-                        <Fuel className="h-10 w-10 mb-2 opacity-50" />
-                        <p className="font-medium">No fuel or trip history found for this range.</p>
-                    </div>
-                ) : (
-                    <div className="h-72 w-full mt-4 flex items-end justify-around gap-2 md:gap-8 pb-8 border-b border-slate-200 dark:border-slate-700 relative">
-                        <div className="absolute left-0 top-0 bottom-8 flex flex-col justify-between text-[11px] font-bold text-slate-400">
-                            <span>{Math.round(chartData.max)} L</span>
-                            <span>0 L</span>
-                        </div>
-                        <div className="flex-1 flex justify-around items-end h-full ml-8">
-                            {chartData.labels.map((label, idx) => {
-                                const inVal = chartData.fuelIn[idx];
-                                const outVal = chartData.fuelOut[idx];
-                                const inPct = (inVal / chartData.max) * 100;
-                                const outPct = (outVal / chartData.max) * 100;
-                                return (
-                                    <div key={idx} className="flex flex-col items-center group w-1/3 max-w-[100px]">
-                                        <div className="flex items-end justify-center gap-1.5 h-full w-full">
-                                            <div className="relative w-1/2 flex justify-center group-hover:opacity-80 transition-opacity" style={{ height: `${inPct}%` }}>
-                                                <div className="w-full bg-emerald-500 rounded-t-md relative shadow-sm">
-                                                    {inVal > 0 && <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-xs font-bold text-emerald-500">+{inVal.toFixed(1)}</span>}
+                <div className="flex-1 overflow-x-auto">
+                    <table className="w-full text-left text-sm">
+                        <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-800 sticky top-0 z-10">
+                            <tr>
+                                <th className="px-4 py-3 font-bold">Date</th>
+                                <th className="px-4 py-3 font-bold">Trip Ticket No.</th>
+                                <th className="px-4 py-3 font-bold text-right">Beginning (L)</th>
+                                <th className="px-4 py-3 font-bold text-right text-emerald-600 dark:text-emerald-500">Fuel In (L)</th>
+                                <th className="px-4 py-3 font-bold text-right text-orange-600 dark:text-orange-500">Fuel Out (L)</th>
+                                <th className="px-4 py-3 font-bold text-right">Balance (L)</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300">
+                            {fuelLoading || historyLoading ? (
+                                <tr>
+                                    <td colSpan={6} className="px-4 py-12 text-center text-slate-500">
+                                        <Loader2 className="h-6 w-6 animate-spin text-blue-500 mx-auto mb-2" /> Loading ledger...
+                                    </td>
+                                </tr>
+                            ) : currentLedgerData.length === 0 ? (
+                                <tr>
+                                    <td colSpan={6} className="px-4 py-12 text-center text-slate-500">No ledger entries found.</td>
+                                </tr>
+                            ) : (
+                                currentLedgerData.map((row) => (
+                                    <tr key={row.id || row.trip_ticket_id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
+                                        <td className="px-4 py-3 whitespace-nowrap font-bold text-slate-900 dark:text-white">
+                                            {format(new Date(row.displayDate), 'MMM dd, yyyy')}
+                                        </td>
+                                        <td className="px-4 py-3 font-mono font-medium">{row.displayTicketNo}</td>
+                                        <td className="px-4 py-3 text-right font-medium text-slate-500">{row.beginning}</td>
+                                        <td className="px-4 py-3 text-right font-bold text-emerald-600 dark:text-emerald-400">+{row.fuelIn}</td>
+                                        <td className="px-4 py-3 text-right font-bold text-orange-600 dark:text-orange-400">
+                                            -{row.fuelOut}
+                                            {row.distanceKm > 0 && (
+                                                <div className="text-[10px] font-normal text-slate-400 dark:text-slate-500">
+                                                    {row.distanceKm} km ÷ {row.efficiencyUsed} km/L
                                                 </div>
-                                            </div>
-                                            <div className="relative w-1/2 flex justify-center group-hover:opacity-80 transition-opacity" style={{ height: `${outPct}%` }}>
-                                                <div className="w-full bg-orange-500 rounded-t-md relative shadow-sm">
-                                                    {outVal > 0 && <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-xs font-bold text-orange-500">-{outVal.toFixed(1)}</span>}
+                                            )}
+                                        </td>
+                                        <td className={cn("px-4 py-3 text-right font-bold", row.overTank ? "text-amber-500" : "text-slate-900 dark:text-white")}>
+                                            {row.balance}
+                                            {row.overTank && (
+                                                <div className="text-[10px] font-normal text-amber-500 flex items-center justify-end gap-1 mt-0.5">
+                                                    <AlertTriangle className="h-3 w-3" /> Exceeds Tank
                                                 </div>
-                                            </div>
-                                        </div>
-                                        <span className="text-xs font-bold text-slate-600 dark:text-slate-400 mt-4 text-center">{label}</span>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    </div>
-                )}
-                <div className="flex justify-center gap-8 mt-4">
-                    <div className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-300">
-                        <span className="w-3 h-3 rounded-sm bg-emerald-500"></span> Fuel In (+) 
-                    </div>
-                    <div className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-300">
-                        <span className="w-3 h-3 rounded-sm bg-orange-500"></span> Fuel Out (-)
+                                            )}
+                                        </td>
+                                    </tr>
+                                ))
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+
+                {/* Ledger Pagination */}
+                <div className="p-3 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500 bg-slate-50 dark:bg-slate-900/50 mt-auto">
+                    <span className="font-medium">
+                        {ledgerRows.length > 0 ? ((ledgerPage - 1) * ledgerRowsPerPage) + 1 : 0}-{Math.min(ledgerPage * ledgerRowsPerPage, ledgerRows.length)} of {ledgerRows.length}
+                    </span>
+                    <div className="flex gap-1">
+                        <Button 
+                            variant="outline" 
+                            size="icon" 
+                            className="h-7 w-7 dark:border-slate-700"
+                            onClick={() => setLedgerPage(p => Math.max(1, p - 1))}
+                            disabled={ledgerPage === 1 || ledgerRows.length === 0}
+                        >
+                            <ChevronLeft className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button 
+                            variant="outline" 
+                            size="icon" 
+                            className="h-7 w-7 dark:border-slate-700"
+                            onClick={() => setLedgerPage(p => Math.min(totalLedgerPages, p + 1))}
+                            disabled={ledgerPage === totalLedgerPages || ledgerRows.length === 0}
+                        >
+                            <ChevronRight className="h-3.5 w-3.5" />
+                        </Button>
                     </div>
                 </div>
             </Card>
