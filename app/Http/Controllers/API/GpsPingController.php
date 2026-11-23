@@ -17,7 +17,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use App\Traits\FiltersGpsDistance;
-use App\Services\FuelLevelService;
 
 class GpsPingController extends Controller
 {
@@ -25,14 +24,10 @@ class GpsPingController extends Controller
 
     /**
      * Accuracy threshold for a ping to be considered reliable.
+     * Pings with accuracy worse than this are flagged is_low_accuracy=true
+     * and excluded from distance calculations + live broadcasts.
      */
     private const ACCURACY_THRESHOLD = 30;
-
-    /**
-     * Stationary drift threshold (meters).
-     * If the vehicle is moving less than 2 km/h and the jump is less than 30m, it's GPS drift.
-     */
-    private const STATIONARY_DRIFT_THRESHOLD = 30;
 
     /**
      * Store a single GPS ping
@@ -110,9 +105,8 @@ class GpsPingController extends Controller
 
                     $speed = (float) ($request->speed_kmh ?? 0);
 
-                    // ✅ FIX: Increased threshold to 30m to kill stationary ghost distance
-                    if ($distMeters < self::STATIONARY_DRIFT_THRESHOLD && $speed < 2) {
-                        Log::info('Server skipped stationary drift', [
+                    if ($distMeters < 15 && $speed < 2) {
+                        Log::info('Server skipped jitter ping', [
                             'trip_id' => $request->trip_ticket_id,
                             'dist_m' => round($distMeters, 1),
                             'speed' => $speed,
@@ -120,7 +114,7 @@ class GpsPingController extends Controller
                         return response()->json([
                             'success' => true,
                             'skipped' => true,
-                            'reason' => 'stationary_drift',
+                            'reason' => 'jitter',
                         ]);
                     }
                 }
@@ -920,10 +914,10 @@ class GpsPingController extends Controller
         }
     }
 
-       /**
+    /**
      * Get all active trips with latest GPS location
      */
-    public function getActiveTrips(Request $request, FuelLevelService $fuelLevelService)
+    public function getActiveTrips(Request $request)
     {
         try {
             $user = $request->user();
@@ -969,23 +963,14 @@ class GpsPingController extends Controller
                 $driverUser = $driver ? $driver->user : null;
                 $department = $trip->department;
 
-                // ✅ Compute live fuel payload
-                $fuelInfo = $vehicle ? $fuelLevelService->compute($vehicle) : null;
-
                 $result[] = [
                     'trip_id' => $trip->trip_ticket_id,
                     'ticket_number' => $trip->trip_ticket_number ?? 'N/A',
                     'destination' => $trip->destination ?? 'N/A',
-                     'purpose' => $trip->purpose ?? 'N/A',
                     'status' => $trip->status ?? 'unknown',
                     'vehicle' => [
                         'plate_number' => $vehicle ? $vehicle->plate_number : 'Unknown',
                         'vehicle_model' => $vehicle ? $vehicle->vehicle_model : 'Unknown',
-                        // ✅ OVERRIDE STALE DB COLUMN WITH LIVE COMPUTATION
-                        'tank_capacity' => $vehicle ? $vehicle->tank_capacity : 60,
-                        'reference_efficiency' => $vehicle ? $vehicle->reference_efficiency : 10,
-                        'initial_estimated_fuel' => $vehicle ? $vehicle->initial_estimated_fuel : 0,
-                        'current_fuel_balance' => $fuelInfo ? $fuelInfo['clamped_balance'] : 0,
                     ],
                     'driver' => [
                         'name' => $driverUser ? $driverUser->full_name : 'Unknown',
@@ -1461,7 +1446,7 @@ class GpsPingController extends Controller
      * Get real-time trip stats (distance, fuel, speed)
      * Uses the SAME filter set as calculateTripDistance for consistent numbers.
      */
-        public function getRealtimeStats(Request $request, $tripId)
+    public function getRealtimeStats(Request $request, $tripId)
     {
         try {
             $user = $request->user();
@@ -1487,7 +1472,7 @@ class GpsPingController extends Controller
             $maxSpeed = 0;
             $totalTime = 0;
             $prevPing = null;
-            $fuelEfficiency = $trip->vehicle?->reference_efficiency ?? 10;
+            $fuelEfficiency = $trip->vehicle?->fuel_efficiency ?? 10;
 
             foreach ($pings as $ping) {
                 if ($ping->speed_kmh && $ping->speed_kmh > $maxSpeed) {
@@ -1504,11 +1489,9 @@ class GpsPingController extends Controller
                 ? ($totalDistance / $totalTime) * 3.6
                 : 0;
 
-            // ✅ BAG-ONG FORMULA SA FUEL OUT: (3.2 + actual gps distance) ÷ reference efficiency
-            $estimatedFuelConsumed = 0;
-            if ($fuelEfficiency > 0) {
-                $estimatedFuelConsumed = (3.2 + $totalDistance) / $fuelEfficiency;
-            }
+            $estimatedFuelConsumed = ($totalDistance > 0 && $fuelEfficiency > 0)
+                ? $totalDistance / $fuelEfficiency
+                : 0;
 
             $currentTripNumber = TripHistory::where('trip_ticket_id', $tripId)
                 ->where('status', 'in_progress')
