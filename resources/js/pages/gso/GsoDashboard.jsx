@@ -176,16 +176,31 @@ const MapBounds = ({ coords }) => {
     return null;
 };
 
-const ReplayMarker = ({ position, icon }) => {
+const ReplayMarker = ({ segments, replayIndex, icon }) => {
     const map = useMap();
+    
+    // Compute the exact coordinate for the current replayIndex
+    const getReplayPosition = () => {
+        let count = 0;
+        for (let seg of segments) {
+            if (replayIndex < count + seg.coords.length) {
+                return seg.coords[replayIndex - count];
+            }
+            count += seg.coords.length;
+        }
+        return null;
+    };
+
+    const position = getReplayPosition();
+
     useEffect(() => {
         if (position && position.length === 2) {
             map.panTo(position, { animate: true, duration: 0.5 });
         }
     }, [position, map]);
-    return <Marker position={position} icon={icon} />;
-};
 
+    return position ? <Marker position={position} icon={icon} /> : null;
+};
 // Segment colors (alternate so paused/resumed segments are visually distinct)
 const SEGMENT_COLORS = [
     "#3b82f6", // blue
@@ -585,7 +600,7 @@ const GsoDashboard = () => {
         }
     }, []);
 
-    const startReplay = useCallback((coords) => {
+       const startReplay = useCallback((segmentsData) => {
         if (replayIntervalRef.current) {
             clearInterval(replayIntervalRef.current);
             replayIntervalRef.current = null;
@@ -594,16 +609,28 @@ const GsoDashboard = () => {
         setReplayIndex(0);
         setHasWatchedReplay(false);
 
+        // ✅ I-flatten pero butangan og "null" sa tunga aron mabal-an nato asa mag-break
+        const flatWithBreaks = [];
+        segmentsData.forEach((seg, i) => {
+            if (i > 0) flatWithBreaks.push(null); // Marker for break
+            flatWithBreaks.push(...seg.coords);
+        });
+
         let currentIdx = 0;
         replayIntervalRef.current = setInterval(() => {
             currentIdx++;
-            if (currentIdx >= coords.length) {
+            if (currentIdx >= flatWithBreaks.length) {
                 clearInterval(replayIntervalRef.current);
                 replayIntervalRef.current = null;
                 setIsReplaying(false);
-                setReplayIndex(coords.length - 1);
+                setReplayIndex(flatWithBreaks.length - 1);
                 setHasWatchedReplay(true);
                 return;
+            }
+            
+            // Kung null (break), laktawi ang frame (dili i-update ang marker)
+            if (flatWithBreaks[currentIdx] === null) {
+                return; 
             }
             setReplayIndex(currentIdx);
         }, 80);
@@ -621,16 +648,20 @@ const GsoDashboard = () => {
     // ============================================
     // VALIDATE HANDLER (Pending Validation table ONLY)
     // ============================================
-    const handleOpenValidateDialog = useCallback(
+        const handleOpenValidateDialog = useCallback(
         async (trip) => {
             setSelectedTicket(trip);
             setShowValidateDialog(true);
             setHasWatchedReplay(false);
 
-            const { coords } = await loadRoute(trip);
+            const { segments, coords } = await loadRoute(trip);
 
             if (coords.length >= 2) {
-                setTimeout(() => startReplay(coords), 500);
+                // ✅ I-pass ang segments (kung naa), fallback sa coords
+                const replayData = segments.length > 0 
+                    ? segments 
+                    : [{ coords }]; // Fake segment kung wala
+                setTimeout(() => startReplay(replayData), 500);
             } else {
                 setHasWatchedReplay(true);
                 toast.error("No route points available for replay.");
@@ -639,16 +670,23 @@ const GsoDashboard = () => {
         [loadRoute, startReplay],
     );
 
-    // ============================================
-    // DETAIL HANDLER (Ledger ONLY — READ ONLY)
-    // ============================================
     const handleOpenDetailDialog = useCallback(
         async (trip) => {
             setDetailTicket(trip);
             setShowDetailDialog(true);
-            await loadRoute(trip);
+            
+            const { segments, coords } = await loadRoute(trip);
+
+            if (coords.length >= 2) {
+                const replayData = segments.length > 0 
+                    ? segments 
+                    : [{ coords }];
+                setTimeout(() => startReplay(replayData), 500);
+            } else {
+                toast.error("No route points available for replay.");
+            }
         },
-        [loadRoute],
+        [loadRoute, startReplay],
     );
 
     // Cleanup on unmount / dialog close
@@ -676,14 +714,15 @@ const GsoDashboard = () => {
     // ============================================
     // RENDER HELPERS
     // ============================================
-    const renderSegments = () => {
+        const renderSegments = () => {
+        // ✅ Kung naay segments, i-render KADA SEGMENT separately (walay connecting line)
         if (routeSegments.length > 0) {
             return routeSegments.map((seg, i) => {
                 const color = SEGMENT_COLORS[i % SEGMENT_COLORS.length];
                 return (
                     <Polyline
                         key={`seg-${seg.historyId ?? i}`}
-                        positions={seg.coords}
+                        positions={seg.coords} // Diri naka-render ang tagsa-tagsa ka linya
                         color={color}
                         weight={4}
                         dashArray={
@@ -693,6 +732,7 @@ const GsoDashboard = () => {
                 );
             });
         }
+        // Fallback ra ni kung wala gyuy segments data
         if (routeCoordinates.length > 0) {
             return (
                 <Polyline
@@ -1426,18 +1466,13 @@ const GsoDashboard = () => {
                                                 />
                                             </>
                                         )}
-                                        {isReplaying &&
-                                            replayIndex <
-                                                routeCoordinates.length && (
-                                                <ReplayMarker
-                                                    position={
-                                                        routeCoordinates[
-                                                            replayIndex
-                                                        ]
-                                                    }
-                                                    icon={icons.vehicle}
-                                                />
-                                            )}
+                                      {isReplaying && (
+    <ReplayMarker
+        segments={routeSegments.length > 0 ? routeSegments : [{ coords: routeCoordinates }]}
+        replayIndex={replayIndex}
+        icon={icons.vehicle}
+    />
+)}
                                     </MapContainer>
                                 ) : (
                                     <div className="flex items-center justify-center h-full text-slate-500">
