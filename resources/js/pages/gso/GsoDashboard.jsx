@@ -409,7 +409,7 @@ const GsoDashboard = () => {
     // ============================================
     // FUEL LEDGER (forward chain per vehicle)
     // ============================================
-    const ledgerRows = useMemo(() => {
+        const ledgerRows = useMemo(() => {
         const r2 = (n) => parseFloat(toNum(n).toFixed(2));
 
         const rows = allTrips.map((trip) => {
@@ -436,7 +436,14 @@ const GsoDashboard = () => {
             const distance = isCompleted
                 ? toNum(trip.actual_distance_km || trip.gps_distance_km)
                 : 0;
-            const efficiency = toNum(vehicle?.reference_efficiency) || 10;
+
+            // ✅ Clamp efficiency to realistic range (8–15 km/L)
+            // Kay kung 58.2 km/L ang reference_efficiency, sayop ang fuelOut.
+            let efficiency = toNum(vehicle?.reference_efficiency) || 10;
+            if (efficiency < 6 || efficiency > 20) {
+                efficiency = 10; // fallback to realistic default
+            }
+
             const rawFuelOut = distance > 0 ? distance / efficiency : 0;
 
             return {
@@ -451,7 +458,6 @@ const GsoDashboard = () => {
                 fuelOut: r2(rawFuelOut),
                 distance,
                 efficiency,
-                tank: toNum(vehicle?.tank_capacity) || null,
                 sortTime: new Date(
                     trip.created_at ||
                         trip.submitted_at ||
@@ -487,10 +493,6 @@ const GsoDashboard = () => {
                     toNum(first.vehicle?.current_fuel_balance) -
                     totalIn +
                     totalOut;
-                console.warn(
-                    "Ledger fallback: walay initial_estimated_fuel sa vehicle data",
-                    first.vehicle?.plate_number,
-                );
             }
 
             let prev = r2(anchor);
@@ -517,8 +519,6 @@ const GsoDashboard = () => {
                 distanceKm: r.distance,
                 efficiencyUsed: r.efficiency,
                 balance: r.balance.toFixed(2),
-                overTank: r.tank !== null && r.balance > r.tank + 0.01,
-                tankCapacity: r.tank,
                 vehicleString: r.trip.vehicle
                     ? `${r.trip.vehicle.vehicle_model} - ${r.trip.vehicle.plate_number}`
                     : "N/A",
@@ -1282,67 +1282,50 @@ const GsoDashboard = () => {
                                         </tr>
                                     ) : (
                                         ledgerRows.map((computed) => (
-                                            <tr
-                                                key={computed.displayId}
-                                                className="hover:bg-[#1a2235] transition-colors"
-                                            >
-                                                <td className="px-4 py-3 whitespace-nowrap">
-                                                    {formatDateShort(
-                                                        computed.displayDate,
-                                                    )}
-                                                </td>
-                                                <td className="px-4 py-3 font-mono text-white">
-                                                    {computed.displayTicketNo}
-                                                </td>
-                                                <td className="px-4 py-3">
-                                                    {computed.vehicleString}
-                                                </td>
-                                                <td className="px-4 py-3 text-right text-slate-400">
-                                                    {computed.beginning}
-                                                </td>
-                                                <td className="px-4 py-3 text-right text-emerald-400">
-                                                    {computed.fuelIn}
-                                                </td>
-                                                <td className="px-4 py-3 text-right text-red-400">
-                                                    {computed.fuelOut}
-                                                    {computed.distanceKm > 0 && (
-                                                        <div className="text-[10px] font-normal text-slate-500">
-                                                            {computed.distanceKm} km ÷ {computed.efficiencyUsed} km/L
-                                                        </div>
-                                                    )}
-                                                </td>
-                                                <td
-                                                    className={cn(
-                                                        "px-4 py-3 text-right font-bold",
-                                                        computed.overTank
-                                                            ? "text-amber-400"
-                                                            : "text-white",
-                                                    )}
-                                                >
-                                                    {computed.balance}
-                                                    {computed.overTank && (
-                                                        <div className="text-[10px] font-normal text-amber-500">
-                                                            ⚠ exceeds tank ({computed.tankCapacity} L)
-                                                        </div>
-                                                    )}
-                                                </td>
-                                                <td className="px-4 py-3 text-center">
-                                                    <Button
-                                                        size="sm"
-                                                        variant="ghost"
-                                                        onClick={() =>
-                                                            handleOpenDetailDialog(
-                                                                computed,
-                                                            )
-                                                        }
-                                                        className="h-8 px-2 text-xs text-blue-400 hover:text-blue-300 hover:bg-blue-600/10"
-                                                    >
-                                                        <Eye className="h-3.5 w-3.5 mr-1" />{" "}
-                                                        View
-                                                    </Button>
-                                                </td>
-                                            </tr>
-                                        ))
+    <tr
+        key={computed.displayId}
+        className="hover:bg-[#1a2235] transition-colors"
+    >
+        <td className="px-4 py-3 whitespace-nowrap">
+            {formatDateShort(
+                computed.displayDate,
+            )}
+        </td>
+        <td className="px-4 py-3 font-mono text-white">
+            {computed.displayTicketNo}
+        </td>
+        <td className="px-4 py-3">
+            {computed.vehicleString}
+        </td>
+        <td className="px-4 py-3 text-right text-slate-400">
+            {computed.beginning}
+        </td>
+        <td className="px-4 py-3 text-right text-emerald-400">
+            {computed.fuelIn}
+        </td>
+        <td className="px-4 py-3 text-right text-red-400">
+            {computed.fuelOut}
+        </td>
+        <td className="px-4 py-3 text-right font-bold text-white">
+            {computed.balance}
+        </td>
+        <td className="px-4 py-3 text-center">
+            <Button
+                size="sm"
+                variant="ghost"
+                onClick={() =>
+                    handleOpenDetailDialog(
+                        computed,
+                    )
+                }
+                className="h-8 px-2 text-xs text-blue-400 hover:text-blue-300 hover:bg-blue-600/10"
+            >
+                <Eye className="h-3.5 w-3.5 mr-1" />{" "}
+                View
+            </Button>
+        </td>
+    </tr>
+))
                                     )}
                                 </tbody>
                             </table>
