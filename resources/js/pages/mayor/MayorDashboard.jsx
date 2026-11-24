@@ -16,6 +16,9 @@ import {
     Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from "@/components/ui/dialog";
 
+// ✅ IMPORT ANG GAS SLIP VIEW
+import GasSlipView from "./reports/GasSlipView";
+
 import {
     ArrowRight, Activity, PieChart, Fuel, Building2, Car, Download, TrendingUp, 
     CheckCircle, Wallet, Scale, AlertTriangle, Info, Trophy, ShieldCheck, Calendar,
@@ -197,7 +200,7 @@ const MayorDashboard = () => {
     // ✅ State para sa gi-click nga slice sa Pie Chart
     const [selectedPieDept, setSelectedPieDept] = useState(null);
 
-    // ✅ State para sa Gas Slip Details Modal
+    // ✅ State para sa Gas Slip Details (Gagamit sa GasSlipView component)
     const [selectedGasSlip, setSelectedGasSlip] = useState(null);
 
     // ✅ Fuel Price Monitoring State
@@ -937,7 +940,7 @@ const MayorDashboard = () => {
                                                 <StatusBadge status={t.status} actualCost={t.actual_fuel_cost} />
                                             </td>
                                             <td className="px-4 py-3 text-center">
-                                                {/* ✅ CLICK TO VIEW GAS SLIP DETAILS */}
+                                                {/* ✅ CLICK TO OPEN GAS SLIP VIEW MODAL */}
                                                 <Button 
                                                     size="sm" 
                                                     variant="ghost" 
@@ -1138,82 +1141,13 @@ const MayorDashboard = () => {
                 </Card>
             </div>
 
-            {/* ✅ 7. GAS SLIP DETAILS DIALOG */}
-            <Dialog open={!!selectedGasSlip} onOpenChange={(open) => !open && setSelectedGasSlip(null)}>
-                <DialogContent className="max-w-md bg-[#121829] border-slate-800 text-white">
-                    <DialogHeader>
-                        <DialogTitle className="flex items-center gap-2">
-                            <FileText className="h-5 w-5 text-blue-400" />
-                            Gas Slip Details
-                        </DialogTitle>
-                        <DialogDescription className="text-slate-400">
-                            {selectedGasSlip?.ticket_number}
-                        </DialogDescription>
-                    </DialogHeader>
-                    
-                    {selectedGasSlip && (
-                        <div className="space-y-4 py-4">
-                            <div className="grid grid-cols-2 gap-4 text-sm">
-                                <div>
-                                    <p className="text-xs text-slate-500 mb-1">Driver</p>
-                                    <p className="font-medium text-white">{selectedGasSlip.driver_name || "—"}</p>
-                                </div>
-                                <div>
-                                    <p className="text-xs text-slate-500 mb-1">Vehicle</p>
-                                    <p className="font-medium text-white">{selectedGasSlip.vehicle?.plate_number || "—"}</p>
-                                </div>
-                                <div>
-                                    <p className="text-xs text-slate-500 mb-1">Destination</p>
-                                    <p className="font-medium text-white">{selectedGasSlip.destination || "—"}</p>
-                                </div>
-                                <div>
-                                    <p className="text-xs text-slate-500 mb-1">Purpose</p>
-                                    <p className="font-medium text-white">{selectedGasSlip.purpose || "—"}</p>
-                                </div>
-                            </div>
-
-                            <div className="bg-[#0f172a] rounded-lg p-4 border border-slate-800 space-y-3">
-                                <div className="flex justify-between items-center border-b border-slate-800 pb-2">
-                                    <span className="text-xs text-slate-400">Amount Released</span>
-                                    <span className="font-bold text-white">{formatCurrency(selectedGasSlip.amount_released)}</span>
-                                </div>
-                                <div className="flex justify-between items-center border-b border-slate-800 pb-2">
-                                    <span className="text-xs text-slate-400">Amount on Receipt</span>
-                                    <span className="font-bold text-white">{formatCurrency(selectedGasSlip.actual_fuel_cost)}</span>
-                                </div>
-                                <div className="flex justify-between items-center">
-                                    <span className="text-xs text-slate-400">Liters Availed</span>
-                                    <span className="font-bold text-white">{selectedGasSlip.liters_availed || "—"} L</span>
-                                </div>
-                            </div>
-
-                            {selectedGasSlip.receipt_url ? (
-                                <div className="space-y-2 mt-4">
-                                    <p className="text-xs font-bold text-slate-400 uppercase">Uploaded Receipt</p>
-                                    <div className="rounded-lg overflow-hidden border border-slate-700 bg-black/50 relative group cursor-pointer" onClick={() => handleDownloadReceipt(selectedGasSlip.receipt_url, selectedGasSlip.ticket_number)}>
-                                        <img 
-                                            src={selectedGasSlip.receipt_url} 
-                                            alt="Receipt" 
-                                            className="w-full h-48 object-cover opacity-80 group-hover:opacity-100 transition-opacity"
-                                        />
-                                        <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity">
-                                            <Download className="h-8 w-8 text-white" />
-                                        </div>
-                                    </div>
-                                </div>
-                            ) : (
-                                <div className="p-4 bg-orange-500/10 border border-orange-500/20 rounded-lg flex items-start gap-3">
-                                    <AlertTriangle className="h-5 w-5 text-orange-400 flex-shrink-0 mt-0.5" />
-                                    <div>
-                                        <p className="text-sm font-bold text-orange-400">No Receipt Uploaded</p>
-                                        <p className="text-xs text-orange-400/80 mt-1">The driver has not uploaded a receipt for this gas slip yet.</p>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    )}
-                </DialogContent>
-            </Dialog>
+            {/* ✅ 7. GAS SLIP DETAILS MODAL (Gikan sa GasSlipView.jsx) */}
+            {selectedGasSlip && (
+                <GasSlipView 
+                    gasSlip={selectedGasSlip} 
+                    onClose={() => setSelectedGasSlip(null)} 
+                />
+            )}
         </div>
     );
 };
