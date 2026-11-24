@@ -12,12 +12,15 @@ import { isWithinInterval, subDays, startOfMonth, endOfMonth, startOfWeek, endOf
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import {
+    Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
+} from "@/components/ui/dialog";
 
 import {
     ArrowRight, Activity, PieChart, Fuel, Building2, Car, Download, TrendingUp, 
     CheckCircle, Wallet, Scale, AlertTriangle, Info, Trophy, ShieldCheck, Calendar,
     ChevronDown, ChevronLeft, ChevronRight, Search, X, BarChart3, Table as TableIcon,
-    Landmark
+    Landmark, FileText, ExternalLink
 } from "lucide-react";
 import {
     Cell, PieChart as RePieChart, Pie, ResponsiveContainer, Tooltip,
@@ -45,14 +48,6 @@ const formatCurrency = (amount) => {
     const num = parseFloat(amount);
     if (isNaN(num)) return "₱0.00";
     return new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", minimumFractionDigits: 2 }).format(num);
-};
-
-const formatCompact = (amount) => {
-    const num = parseFloat(amount);
-    if (isNaN(num)) return "₱0";
-    if (num >= 1_000_000) return `₱${(num / 1_000_000).toFixed(2)}M`;
-    if (num >= 1_000) return `₱${(num / 1_000).toFixed(0)}k`;
-    return `₱${num.toFixed(0)}`;
 };
 
 const formatDateShort = (ds) => ds ? new Date(ds).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" }) : "—";
@@ -202,25 +197,13 @@ const MayorDashboard = () => {
     // ✅ State para sa gi-click nga slice sa Pie Chart
     const [selectedPieDept, setSelectedPieDept] = useState(null);
 
-    // ✅ Monthly Monitoring Search State
-    const [monitorSearch, setMonitorSearch] = useState("");
-    const [showMonitorDropdown, setShowMonitorDropdown] = useState(false);
-    const monitorDropdownRef = useRef(null);
+    // ✅ State para sa Gas Slip Details Modal
+    const [selectedGasSlip, setSelectedGasSlip] = useState(null);
 
     // ✅ Fuel Price Monitoring State
     const [fuelTab, setFuelTab] = useState("gasoline");
     const [fuelPage, setFuelPage] = useState(1);
     const itemsPerPage = 5;
-
-    useEffect(() => {
-        const handleClickOutside = (event) => {
-            if (monitorDropdownRef.current && !monitorDropdownRef.current.contains(event.target)) {
-                setShowMonitorDropdown(false);
-            }
-        };
-        document.addEventListener("mousedown", handleClickOutside);
-        return () => document.removeEventListener("mousedown", handleClickOutside);
-    }, []);
 
     const fetchAllData = useCallback(() => {
         queryClient.invalidateQueries({ queryKey: ["mayor-approved-tickets"] });
@@ -290,7 +273,7 @@ const MayorDashboard = () => {
             spent: parseFloat(dept.spent_amount ?? dept.used_amount ?? dept.spent ?? 0),
             remaining: parseFloat(dept.remaining_amount ?? 0),
             utilization: parseFloat(dept.utilization_percentage ?? dept.utilization ?? 0),
-        })).sort((a, b) => b.allocated - a.allocated); // Sorted by allocation para nindot tan-awon sa Pie
+        })).sort((a, b) => b.allocated - a.allocated);
     }, [budgetData]);
 
     const allTimeTotals = useMemo(() => {
@@ -449,84 +432,6 @@ const MayorDashboard = () => {
             .slice(0, 5);
     }, [approvedTicketsRaw, transDept, transStatusFilter, transTimeFilter]);
 
-    const filteredMonitorDepts = useMemo(() => {
-        if (!monitorSearch) return departmentBudgets;
-        const lowerSearch = monitorSearch.toLowerCase();
-        return departmentBudgets.filter(d => 
-            d.department_name.toLowerCase().includes(lowerSearch) || 
-            (d.department_code && d.department_code.toLowerCase().includes(lowerSearch))
-        );
-    }, [departmentBudgets, monitorSearch]);
-
-    const activeMonitorDept = useMemo(() => {
-        return departmentBudgets.find(d => d.department_name === monitorSearch);
-    }, [departmentBudgets, monitorSearch]);
-
-    const monthlyMonitoringData = useMemo(() => {
-        if (!activeMonitorDept) return [];
-
-        const tickets = approvedTicketsRaw.filter(t => t.department_name === activeMonitorDept.department_name);
-        const history = budgetHistoryRaw.filter(h => h.department_name === activeMonitorDept.department_name);
-
-        const createdRecord = history.find(h => h.action === 'annual_created');
-        let startingAnnualBudget = createdRecord ? parseFloat(createdRecord.new_amount) : 0;
-        
-        if (startingAnnualBudget === 0) {
-            startingAnnualBudget = activeMonitorDept.allocated || 0;
-        }
-
-        const months = [
-            "January", "February", "March", "April", "May", "June",
-            "July", "August", "September", "October", "November", "December"
-        ];
-
-        const currentYear = new Date().getFullYear();
-        const monthlyData = [];
-        let currentBalance = 0; 
-
-        months.forEach((monthName, index) => {
-            const monthHistory = history.filter(h => {
-                if (h.action !== 'annual_added') return false;
-                const d = new Date(h.created_at);
-                return d.getMonth() === index && d.getFullYear() === currentYear;
-            });
-            const additionalFunds = monthHistory.reduce((sum, h) => sum + (parseFloat(h.added_amount) || 0), 0);
-
-            const monthTickets = tickets.filter(t => {
-                if (!t.trip_date) return false;
-                const d = new Date(t.trip_date);
-                return d.getMonth() === index && d.getFullYear() === currentYear;
-            });
-            const consumed = monthTickets.reduce((sum, t) => {
-                const hasCost = t.actual_fuel_cost && parseFloat(t.actual_fuel_cost) > 0;
-                return sum + (hasCost ? parseFloat(t.actual_fuel_cost) : 0);
-            }, 0);
-
-            let beginningBalance;
-            if (index === 0) {
-                beginningBalance = startingAnnualBudget; 
-            } else {
-                beginningBalance = currentBalance; 
-            }
-
-            const endingBalance = beginningBalance + additionalFunds - consumed;
-
-            if (additionalFunds > 0 || consumed > 0 || index <= new Date().getMonth()) {
-                monthlyData.push({
-                    month: monthName,
-                    beginning: beginningBalance,
-                    additional: additionalFunds,
-                    consumed: consumed,
-                    ending: endingBalance
-                });
-            }
-
-            currentBalance = endingBalance;
-        });
-
-        return monthlyData;
-    }, [approvedTicketsRaw, budgetHistoryRaw, activeMonitorDept]);
-
     // ✅ FUEL PRICE MONITORING LOGIC
     const fuelPriceData = useMemo(() => {
         const fuelTypeMap = { gasoline: 'gasoline', premium: 'premium', diesel: 'diesel' };
@@ -676,7 +581,7 @@ const MayorDashboard = () => {
                 </Card>
             </div>
 
-                       {/* 2. INTERACTIVE BUDGET ALLOCATION & DETAILS */}
+            {/* 2. INTERACTIVE BUDGET ALLOCATION & DETAILS */}
             <div className="mb-6">
                 <Card className="bg-[#121829] border border-slate-800 rounded-2xl shadow-lg p-6">
                     <div className="flex items-center justify-between mb-6">
@@ -949,90 +854,8 @@ const MayorDashboard = () => {
                 </Card>
             </div>
 
-            {/* 4. Bottom Rows: Monthly Monitoring & Transactions */}
+            {/* 4. Bottom Rows: Transactions */}
             <div className="grid grid-cols-1 gap-6 mb-6">
-                
-                <Card className="bg-[#121829] border border-slate-800 rounded-2xl shadow-lg p-0 overflow-visible">
-                    <div className="flex flex-col md:flex-row md:items-center justify-between p-5 border-b border-slate-800 gap-4">
-                        <h3 className="font-bold text-white flex items-center gap-2">
-                            <Building2 className="h-4 w-4 text-blue-400" /> DEPARTMENT MONTHLY FUND MONITORING
-                        </h3>
-                        
-                        <div className="relative z-[100] w-full md:w-[300px]" ref={monitorDropdownRef}>
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-                            <Input 
-                                type="text"
-                                placeholder="Search department name/code..."
-                                value={monitorSearch}
-                                onChange={(e) => {
-                                    setMonitorSearch(e.target.value);
-                                    setShowMonitorDropdown(true);
-                                }}
-                                onFocus={() => setShowMonitorDropdown(true)}
-                                className="pl-9 pr-8 bg-slate-800/80 border-slate-700 text-white h-10 rounded-lg text-sm placeholder:text-slate-500 w-full"
-                            />
-                            {monitorSearch && (
-                                <button 
-                                    onClick={() => { setMonitorSearch(""); setShowMonitorDropdown(false); }}
-                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
-                                >
-                                    <X className="h-4 w-4" />
-                                </button>
-                            )}
-
-                            {showMonitorDropdown && (
-                                <div className="absolute left-0 right-0 mt-1 bg-[#1e293b] border border-slate-700 rounded-lg shadow-2xl max-h-60 overflow-y-auto z-[999]">
-                                    {filteredMonitorDepts.length === 0 ? (
-                                        <div className="px-3 py-2 text-xs text-slate-400 text-center">No departments found.</div>
-                                    ) : (
-                                        filteredMonitorDepts.map((d) => (
-                                            <div 
-                                                key={d.department_id}
-                                                onClick={() => {
-                                                    setMonitorSearch(d.department_name);
-                                                    setShowMonitorDropdown(false);
-                                                }}
-                                                className="px-3 py-2 text-xs cursor-pointer hover:bg-slate-700 transition-colors flex items-center justify-between"
-                                            >
-                                                <span className="text-slate-200">{d.department_name}</span>
-                                                {d.department_code && <span className="text-[10px] text-slate-500 bg-slate-800 px-1.5 py-0.5 rounded">{d.department_code}</span>}
-                                            </div>
-                                        ))
-                                    )}
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-left text-xs">
-                            <thead className="bg-[#0b101c] text-slate-400">
-                                <tr>
-                                    <th className="px-4 py-3 font-medium">Month</th>
-                                    <th className="px-4 py-3 font-medium text-right">Beginning Balance</th>
-                                    <th className="px-4 py-3 font-medium text-right">Additional Funds</th>
-                                    <th className="px-4 py-3 font-medium text-right">Consumed</th>
-                                    <th className="px-4 py-3 font-medium text-right">Ending Balance</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-800/50">
-                                {!activeMonitorDept ? (
-                                    <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-500">Please search and select a department to view data.</td></tr>
-                                ) : monthlyMonitoringData.length === 0 ? (
-                                    <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-500">No monthly data available.</td></tr>
-                                ) : monthlyMonitoringData.map((d, i) => (
-                                    <tr key={i} className="hover:bg-slate-800/20 transition-colors">
-                                        <td className="px-4 py-3 text-slate-200 font-medium">{d.month}</td>
-                                        <td className="px-4 py-3 text-right text-slate-300">{formatCurrency(d.beginning)}</td>
-                                        <td className="px-4 py-3 text-right text-slate-300">{formatCurrency(d.additional)}</td>
-                                        <td className="px-4 py-3 text-right text-slate-300">{formatCurrency(d.consumed)}</td>
-                                        <td className="px-4 py-3 text-right font-bold text-emerald-400">{formatCurrency(d.ending)}</td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                </Card>
-
                 <Card className="bg-[#121829] border border-slate-800 rounded-2xl shadow-lg p-0 overflow-hidden relative">
                     <div className="flex flex-col md:flex-row md:items-center justify-between p-5 border-b border-slate-800 gap-4">
                         <h3 className="font-bold text-white flex items-center gap-2">
@@ -1088,17 +911,18 @@ const MayorDashboard = () => {
                                     <th className="px-4 py-3 font-medium text-right">Amount Spent</th>
                                     <th className="px-4 py-3 font-medium text-center">Receipt</th>
                                     <th className="px-4 py-3 font-medium text-right">Status</th>
+                                    <th className="px-4 py-3 font-medium text-center">Action</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-800/50">
                                 {transactionsData.length === 0 ? (
-                                    <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-500">No transactions found.</td></tr>
+                                    <tr><td colSpan={8} className="px-4 py-8 text-center text-slate-500">No transactions found.</td></tr>
                                 ) : transactionsData.map((t, i) => {
                                     const hasCost = t.actual_fuel_cost && parseFloat(t.actual_fuel_cost) > 0;
                                     const amountSpentDisplay = hasCost ? formatCurrency(t.actual_fuel_cost) : "-";
 
                                     return (
-                                        <tr key={i} className="hover:bg-slate-800/20 transition-colors">
+                                        <tr key={i} className="hover:bg-slate-800/20 transition-colors group">
                                             <td className="px-4 py-3 text-slate-400">{formatDateShort(t.trip_date)}</td>
                                             <td className="px-4 py-3 text-slate-200 font-medium">{t.ticket_number}</td>
                                             <td className="px-4 py-3 text-slate-400">{t.vehicle?.plate_number}</td>
@@ -1111,6 +935,17 @@ const MayorDashboard = () => {
                                             </td>
                                             <td className="px-4 py-3 text-right">
                                                 <StatusBadge status={t.status} actualCost={t.actual_fuel_cost} />
+                                            </td>
+                                            <td className="px-4 py-3 text-center">
+                                                {/* ✅ CLICK TO VIEW GAS SLIP DETAILS */}
+                                                <Button 
+                                                    size="sm" 
+                                                    variant="ghost" 
+                                                    onClick={() => setSelectedGasSlip(t)}
+                                                    className="h-7 px-2 text-[10px] text-blue-400 hover:text-blue-300 hover:bg-blue-500/10"
+                                                >
+                                                    <FileText className="h-3.5 w-3.5 mr-1" /> View Slip
+                                                </Button>
                                             </td>
                                         </tr>
                                     );
@@ -1302,6 +1137,83 @@ const MayorDashboard = () => {
                     </div>
                 </Card>
             </div>
+
+            {/* ✅ 7. GAS SLIP DETAILS DIALOG */}
+            <Dialog open={!!selectedGasSlip} onOpenChange={(open) => !open && setSelectedGasSlip(null)}>
+                <DialogContent className="max-w-md bg-[#121829] border-slate-800 text-white">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2">
+                            <FileText className="h-5 w-5 text-blue-400" />
+                            Gas Slip Details
+                        </DialogTitle>
+                        <DialogDescription className="text-slate-400">
+                            {selectedGasSlip?.ticket_number}
+                        </DialogDescription>
+                    </DialogHeader>
+                    
+                    {selectedGasSlip && (
+                        <div className="space-y-4 py-4">
+                            <div className="grid grid-cols-2 gap-4 text-sm">
+                                <div>
+                                    <p className="text-xs text-slate-500 mb-1">Driver</p>
+                                    <p className="font-medium text-white">{selectedGasSlip.driver_name || "—"}</p>
+                                </div>
+                                <div>
+                                    <p className="text-xs text-slate-500 mb-1">Vehicle</p>
+                                    <p className="font-medium text-white">{selectedGasSlip.vehicle?.plate_number || "—"}</p>
+                                </div>
+                                <div>
+                                    <p className="text-xs text-slate-500 mb-1">Destination</p>
+                                    <p className="font-medium text-white">{selectedGasSlip.destination || "—"}</p>
+                                </div>
+                                <div>
+                                    <p className="text-xs text-slate-500 mb-1">Purpose</p>
+                                    <p className="font-medium text-white">{selectedGasSlip.purpose || "—"}</p>
+                                </div>
+                            </div>
+
+                            <div className="bg-[#0f172a] rounded-lg p-4 border border-slate-800 space-y-3">
+                                <div className="flex justify-between items-center border-b border-slate-800 pb-2">
+                                    <span className="text-xs text-slate-400">Amount Released</span>
+                                    <span className="font-bold text-white">{formatCurrency(selectedGasSlip.amount_released)}</span>
+                                </div>
+                                <div className="flex justify-between items-center border-b border-slate-800 pb-2">
+                                    <span className="text-xs text-slate-400">Amount on Receipt</span>
+                                    <span className="font-bold text-white">{formatCurrency(selectedGasSlip.actual_fuel_cost)}</span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                    <span className="text-xs text-slate-400">Liters Availed</span>
+                                    <span className="font-bold text-white">{selectedGasSlip.liters_availed || "—"} L</span>
+                                </div>
+                            </div>
+
+                            {selectedGasSlip.receipt_url ? (
+                                <div className="space-y-2 mt-4">
+                                    <p className="text-xs font-bold text-slate-400 uppercase">Uploaded Receipt</p>
+                                    <div className="rounded-lg overflow-hidden border border-slate-700 bg-black/50 relative group cursor-pointer" onClick={() => handleDownloadReceipt(selectedGasSlip.receipt_url, selectedGasSlip.ticket_number)}>
+                                        <img 
+                                            src={selectedGasSlip.receipt_url} 
+                                            alt="Receipt" 
+                                            className="w-full h-48 object-cover opacity-80 group-hover:opacity-100 transition-opacity"
+                                        />
+                                        <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <Download className="h-8 w-8 text-white" />
+                                        </div>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="p-4 bg-orange-500/10 border border-orange-500/20 rounded-lg flex items-start gap-3">
+                                    <AlertTriangle className="h-5 w-5 text-orange-400 flex-shrink-0 mt-0.5" />
+                                    <div>
+                                        <p className="text-sm font-bold text-orange-400">No Receipt Uploaded</p>
+                                        <p className="text-xs text-orange-400/80 mt-1">The driver has not uploaded a receipt for this gas slip yet.</p>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </DialogContent>
+            </Dialog>
         </div>
     );
 };
