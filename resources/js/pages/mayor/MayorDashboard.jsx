@@ -676,10 +676,10 @@ const MayorDashboard = () => {
                 </Card>
             </div>
 
-            {/* 2. Interactive Budget Allocation & Department Details */}
+                       {/* 2. INTERACTIVE BUDGET ALLOCATION & DETAILS */}
             <div className="mb-6">
                 <Card className="bg-[#121829] border border-slate-800 rounded-2xl shadow-lg p-6">
-                    <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center justify-between mb-6">
                         <h3 className="font-bold text-white text-lg flex items-center gap-2">
                             <PieChart className="h-5 w-5 text-blue-400" /> BUDGET ALLOCATION
                         </h3>
@@ -695,12 +695,17 @@ const MayorDashboard = () => {
                         )}
                     </div>
                     
-                    <div className="flex flex-col lg:flex-row items-center justify-center gap-8 min-h-[350px]">
+                    <div className="flex flex-col lg:flex-row gap-8 min-h-[400px]">
                         
                         {/* LEFT SIDE: Pie Chart */}
-                        <div className={cn("relative transition-all duration-300 w-full flex items-center justify-center", selectedPieDept ? "lg:w-5/12 gap-6" : "max-w-lg mx-auto")}>
-                            
-                            <div className={cn("relative transition-all duration-300", selectedPieDept ? "w-[200px] h-[200px] md:w-[250px] md:h-[250px]" : "w-[300px] h-[300px] md:w-[350px] md:h-[350px]")}>
+                        <div className={cn(
+                            "transition-all duration-300 flex flex-col items-center justify-center",
+                            selectedPieDept ? "w-full lg:w-5/12" : "w-full lg:w-1/2"
+                        )}>
+                            <div className={cn(
+                                "relative transition-all duration-300 w-full max-w-[350px] aspect-square",
+                                selectedPieDept ? "max-w-[280px]" : ""
+                            )}>
                                 <ResponsiveContainer width="100%" height="100%">
                                     <RePieChart>
                                         <Pie
@@ -708,7 +713,7 @@ const MayorDashboard = () => {
                                             dataKey="value"
                                             nameKey="name"
                                             cx="50%" cy="50%"
-                                            innerRadius={selectedPieDept ? "60%" : "65%"} 
+                                            innerRadius={selectedPieDept ? "65%" : "70%"} 
                                             outerRadius={selectedPieDept ? "85%" : "90%"}
                                             paddingAngle={2} 
                                             stroke="none"
@@ -725,7 +730,8 @@ const MayorDashboard = () => {
                                                 <Cell 
                                                     key={i} 
                                                     fill={entry.color} 
-                                                    opacity={selectedPieDept && selectedPieDept.name !== entry.name ? 0.3 : 1} 
+                                                    opacity={selectedPieDept && selectedPieDept.name !== entry.name ? 0.2 : 1} 
+                                                    className="transition-opacity duration-300"
                                                 />
                                             ))}
                                         </Pie>
@@ -733,137 +739,135 @@ const MayorDashboard = () => {
                                     </RePieChart>
                                 </ResponsiveContainer>
                                 <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                                    <p className="text-xl md:text-2xl font-bold text-white">{formatCurrency(allTimeTotals.totalAllocated)}</p>
-                                    <p className="text-xs text-slate-400 uppercase tracking-widest mt-1">Total Budget</p>
+                                    <p className="text-2xl font-bold text-white">{formatCurrency(allTimeTotals.totalAllocated)}</p>
+                                    <p className="text-[10px] text-slate-400 uppercase tracking-widest mt-1">Total Budget</p>
                                 </div>
-                            </div>
-
-                            {/* Legend */}
-                            <div className={cn(
-                                "grid gap-2", 
-                                selectedPieDept ? "grid-cols-1 w-[200px]" : "mt-6 grid-cols-2 md:grid-cols-4 w-full max-w-4xl mx-auto"
-                            )}>
-                                {pieData.map((d, i) => {
-                                    const isSelected = selectedPieDept?.name === d.name;
-                                    const isDimmed = selectedPieDept && !isSelected;
-                                    
-                                    return (
-                                        <div 
-                                            key={i} 
-                                            onClick={() => setSelectedPieDept(isSelected ? null : d)}
-                                            className={cn(
-                                                "flex items-center justify-between p-2 rounded-lg border transition-all cursor-pointer",
-                                                isSelected ? "bg-slate-700/60 border-slate-500 shadow-md" : 
-                                                isDimmed ? "bg-slate-800/20 border-transparent opacity-50" : 
-                                                "bg-slate-800/40 border-slate-700/50 hover:bg-slate-800/80"
-                                            )}
-                                        >
-                                            <div className="flex items-center gap-2 truncate">
-                                                <span className="h-2.5 w-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: d.color }} />
-                                                <span className="text-xs text-slate-300 truncate" title={d.name}>{d.name}</span>
-                                            </div>
-                                            <span className="text-xs font-semibold text-white ml-2">
-                                                {allTimeTotals.totalAllocated > 0 ? ((d.value / allTimeTotals.totalAllocated) * 100).toFixed(1) : 0}%
-                                            </span>
-                                        </div>
-                                    );
-                                })}
                             </div>
                         </div>
 
-                        {/* RIGHT SIDE: Selected Department Details & Transactions */}
-                        {selectedPieDept && (
-                            <div className="w-full lg:w-7/12 bg-[#0b101c] border border-slate-800 rounded-xl flex flex-col overflow-hidden animate-in fade-in slide-in-from-right-4 duration-300">
-                                
-                                <div className="p-6 border-b border-slate-800 bg-[#121829]">
-                                    <div className="flex items-start gap-4 mb-6">
-                                        <div className="p-3 bg-blue-500/10 rounded-xl">
-                                            <Landmark className="h-8 w-8 text-blue-400" />
-                                        </div>
-                                        <div>
-                                            <h4 className="text-xl font-bold text-white mb-1">{selectedPieDept.name}</h4>
-                                            <p className="text-xs text-slate-400">Department Details</p>
-                                        </div>
+                        {/* RIGHT SIDE: Legend (Kung walay selected) OR Details (Kung naay selected) */}
+                        <div className={cn(
+                            "transition-all duration-300 flex-1",
+                            selectedPieDept ? "w-full lg:w-7/12" : "w-full lg:w-1/2"
+                        )}>
+                            
+                            {!selectedPieDept ? (
+                                /* ✅ OVERVIEW MODE: Hapsay nga Legend List */
+                                <div className="bg-[#0b101c] border border-slate-800 rounded-xl p-4 h-full overflow-hidden flex flex-col">
+                                    <h4 className="text-xs font-bold text-slate-300 mb-3 flex items-center gap-2">
+                                        <Building2 className="h-4 w-4 text-blue-400" /> Department Breakdown
+                                    </h4>
+                                    <div className="overflow-y-auto pr-2 custom-scrollbar flex-1 space-y-2">
+                                        {pieData.map((d, i) => (
+                                            <div 
+                                                key={i} 
+                                                onClick={() => setSelectedPieDept(d)}
+                                                className="flex items-center justify-between p-2.5 rounded-lg bg-slate-800/30 hover:bg-slate-800/80 border border-slate-700/50 cursor-pointer transition-colors group"
+                                            >
+                                                <div className="flex items-center gap-3 truncate">
+                                                    <span className="h-3 w-3 rounded-full flex-shrink-0" style={{ backgroundColor: d.color }} />
+                                                    <span className="text-xs text-slate-300 truncate group-hover:text-white transition-colors">{d.name}</span>
+                                                </div>
+                                                <div className="flex items-center gap-4 flex-shrink-0">
+                                                    <span className="text-xs font-semibold text-white">{formatCurrency(d.value)}</span>
+                                                    <span className="text-[10px] font-bold bg-slate-700 px-2 py-0.5 rounded text-slate-300">
+                                                        {allTimeTotals.totalAllocated > 0 ? ((d.value / allTimeTotals.totalAllocated) * 100).toFixed(1) : 0}%
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        ))}
                                     </div>
+                                    <p className="text-[10px] text-slate-500 text-center mt-3">Click a department to view transactions</p>
+                                </div>
+                            ) : (
+                                /* ✅ FOCUS MODE: Department Details & Transactions */
+                                <div className="bg-[#0b101c] border border-slate-800 rounded-xl flex flex-col h-full animate-in fade-in slide-in-from-right-4 duration-300">
                                     
-                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                        <div className="flex flex-col gap-1">
-                                            <div className="flex items-center gap-1 text-xs text-slate-400 mb-1">
-                                                <Wallet className="h-3 w-3" /> Allocated Budget
+                                    {/* Header */}
+                                    <div className="p-5 border-b border-slate-800 bg-[#121829]">
+                                        <div className="flex items-start gap-4 mb-5">
+                                            <div className="p-3 bg-blue-500/10 rounded-xl">
+                                                <Landmark className="h-6 w-6 text-blue-400" />
                                             </div>
-                                            <p className="font-bold text-white text-sm">{formatCurrency(selectedDeptTotals?.allocated)}</p>
+                                            <div>
+                                                <h4 className="text-lg font-bold text-white mb-0.5">{selectedPieDept.name}</h4>
+                                                <p className="text-[10px] text-slate-400 uppercase tracking-wider">Department Details</p>
+                                            </div>
                                         </div>
-                                        <div className="flex flex-col gap-1">
-                                            <div className="flex items-center gap-1 text-xs text-slate-400 mb-1">
-                                                <ArrowRight className="h-3 w-3" /> Total Released
+                                        
+                                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                            <div>
+                                                <div className="flex items-center gap-1 text-[10px] text-slate-400 mb-1">
+                                                    <Wallet className="h-3 w-3" /> Allocated
+                                                </div>
+                                                <p className="font-bold text-white text-sm">{formatCurrency(selectedDeptTotals?.allocated)}</p>
                                             </div>
-                                            <p className="font-bold text-white text-sm">{formatCurrency(selectedDeptTotals?.totalReleased)}</p>
-                                        </div>
-                                        <div className="flex flex-col gap-1">
-                                            <div className="flex items-center gap-1 text-xs text-slate-400 mb-1">
-                                                <Scale className="h-3 w-3" /> Remaining Budget
+                                            <div>
+                                                <div className="flex items-center gap-1 text-[10px] text-slate-400 mb-1">
+                                                    <ArrowRight className="h-3 w-3" /> Released
+                                                </div>
+                                                <p className="font-bold text-white text-sm">{formatCurrency(selectedDeptTotals?.totalReleased)}</p>
                                             </div>
-                                            <p className="font-bold text-white text-sm">{formatCurrency(selectedDeptTotals?.remaining)}</p>
-                                        </div>
-                                        <div className="flex flex-col gap-1">
-                                            <div className="flex items-center gap-1 text-xs text-slate-400 mb-1">
-                                                <Activity className="h-3 w-3" /> Transactions
+                                            <div>
+                                                <div className="flex items-center gap-1 text-[10px] text-slate-400 mb-1">
+                                                    <Scale className="h-3 w-3" /> Remaining
+                                                </div>
+                                                <p className="font-bold text-emerald-400 text-sm">{formatCurrency(selectedDeptTotals?.remaining)}</p>
                                             </div>
-                                            <p className="font-bold text-white text-sm">{selectedDeptTotals?.txCount}</p>
+                                            <div>
+                                                <div className="flex items-center gap-1 text-[10px] text-slate-400 mb-1">
+                                                    <Activity className="h-3 w-3" /> Txns
+                                                </div>
+                                                <p className="font-bold text-white text-sm">{selectedDeptTotals?.txCount}</p>
+                                            </div>
                                         </div>
                                     </div>
-                                </div>
 
-                                <div className="px-4 py-3 bg-[#0f172a] border-b border-slate-800 flex items-center justify-between">
-                                    <h5 className="text-xs font-bold text-white flex items-center gap-2">
-                                        <TableIcon className="h-4 w-4 text-blue-400" /> Department Transaction Details
-                                    </h5>
-                                    <span className="text-[10px] text-slate-500">Fuel budget transactions for {selectedPieDept.name}</span>
-                                </div>
-
-                                <div className="overflow-x-auto flex-1 max-h-[300px]">
-                                    <table className="w-full text-left text-xs">
-                                        <thead className="bg-[#0f172a] text-slate-400 sticky top-0">
-                                            <tr>
-                                                <th className="px-4 py-3 font-medium">Date</th>
-                                                <th className="px-4 py-3 font-medium">TT No.</th>
-                                                <th className="px-4 py-3 font-medium">Purpose</th>
-                                                <th className="px-4 py-3 font-medium">Destination</th>
-                                                <th className="px-4 py-3 font-medium text-right">Amount Released</th>
-                                                <th className="px-4 py-3 font-medium text-right">Balance</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-slate-800/50">
-                                            {selectedDeptTransactions.length === 0 ? (
+                                    {/* Table */}
+                                    <div className="overflow-x-auto flex-1 max-h-[300px]">
+                                        <table className="w-full text-left text-xs">
+                                            <thead className="bg-[#0f172a] text-slate-400 sticky top-0 z-10">
                                                 <tr>
-                                                    <td colSpan={6} className="px-4 py-8 text-center text-slate-500">
-                                                        No transactions found for this department.
-                                                    </td>
+                                                    <th className="px-4 py-3 font-medium">Date</th>
+                                                    <th className="px-4 py-3 font-medium">TT No.</th>
+                                                    <th className="px-4 py-3 font-medium">Purpose</th>
+                                                    <th className="px-4 py-3 font-medium">Destination</th>
+                                                    <th className="px-4 py-3 font-medium text-right">Released</th>
+                                                    <th className="px-4 py-3 font-medium text-right">Balance</th>
                                                 </tr>
-                                            ) : (
-                                                selectedDeptTransactions.map((t, i) => {
-                                                    let runningBalance = selectedDeptTotals?.allocated || 0;
-                                                    for (let j = 0; j <= i; j++) {
-                                                        runningBalance -= parseFloat(selectedDeptTransactions[j].amount_released) || 0;
-                                                    }
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-800/50">
+                                                {selectedDeptTransactions.length === 0 ? (
+                                                    <tr>
+                                                        <td colSpan={6} className="px-4 py-8 text-center text-slate-500">
+                                                            No transactions found.
+                                                        </td>
+                                                    </tr>
+                                                ) : (
+                                                    selectedDeptTransactions.map((t, i) => {
+                                                        let runningBalance = selectedDeptTotals?.allocated || 0;
+                                                        for (let j = 0; j <= i; j++) {
+                                                            runningBalance -= parseFloat(selectedDeptTransactions[j].amount_released) || 0;
+                                                        }
 
-                                                    return (
-                                                        <tr key={i} className="hover:bg-slate-800/20 transition-colors">
-                                                            <td className="px-4 py-3 text-slate-300">{formatDateShort(t.trip_date)}</td>
-                                                            <td className="px-4 py-3 text-slate-300 font-mono">{t.ticket_number}</td>
-                                                            <td className="px-4 py-3 text-slate-400 truncate max-w-[120px]" title={t.purpose}>{t.purpose || "—"}</td>
-                                                            <td className="px-4 py-3 text-slate-400 truncate max-w-[120px]" title={t.destination}>{t.destination || "—"}</td>
-                                                            <td className="px-4 py-3 text-right font-medium text-white">{formatCurrency(t.amount_released)}</td>
-                                                            <td className="px-4 py-3 text-right font-bold text-emerald-400">{formatCurrency(runningBalance)}</td>
-                                                        </tr>
-                                                    );
-                                                })
-                                            )}
-                                        </tbody>
-                                    </table>
+                                                        return (
+                                                            <tr key={i} className="hover:bg-slate-800/20 transition-colors">
+                                                                <td className="px-4 py-3 text-slate-300 whitespace-nowrap">{formatDateShort(t.trip_date)}</td>
+                                                                <td className="px-4 py-3 text-slate-300 font-mono">{t.ticket_number}</td>
+                                                                <td className="px-4 py-3 text-slate-400 truncate max-w-[100px]" title={t.purpose}>{t.purpose || "—"}</td>
+                                                                <td className="px-4 py-3 text-slate-400 truncate max-w-[100px]" title={t.destination}>{t.destination || "—"}</td>
+                                                                <td className="px-4 py-3 text-right font-medium text-white">{formatCurrency(t.amount_released)}</td>
+                                                                <td className="px-4 py-3 text-right font-bold text-slate-200">{formatCurrency(runningBalance)}</td>
+                                                            </tr>
+                                                        );
+                                                    })
+                                                )}
+                                            </tbody>
+                                        </table>
+                                    </div>
                                 </div>
-                            </div>
-                        )}
+                            )}
+                        </div>
                     </div>
                 </Card>
             </div>
