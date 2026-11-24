@@ -11,7 +11,8 @@ import { cn } from '@/lib/utils';
 import {
     ArrowLeft, Car, Fuel, Gauge, MapPin, Clock, User, 
     Building2, Activity, Navigation, Play, Square, Loader2,
-    Maximize2, Minimize2, FileText, ChevronLeft, ChevronRight, ArrowUpDown, AlertTriangle
+    Maximize2, Minimize2, FileText, ChevronLeft, ChevronRight, ArrowUpDown, AlertTriangle,
+    BarChart3, Table as TableIcon
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -20,6 +21,9 @@ import {
     Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from "@/components/ui/dialog";
 import { format, startOfWeek } from 'date-fns';
+import {
+    LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
+} from 'recharts';
 
 // ============================================
 // CUSTOM MAP ICONS
@@ -80,6 +84,9 @@ const VehicleDetails = () => {
     const [ledgerPage, setLedgerPage] = useState(1);
     const ledgerRowsPerPage = 5;
 
+    // View State (Fuel Ledger)
+    const [ledgerView, setLedgerView] = useState('table'); // 'table' or 'chart'
+
     const { data: vehicles = [], isLoading } = useVehicles();
     const vehicle = vehicles.find(v => v.vehicle_id === parseInt(id));
 
@@ -136,7 +143,6 @@ const VehicleDetails = () => {
 
         const rows = historyData.map(trip => {
             // 1. Match Fuel Receipt (for Fuel In)
-            // We match by ticket number since this is a specific vehicle's trip.
             const matchedReceipt = fuelReceipts.find(r => 
                 r.trip_ticket_number === trip.ticket_number ||
                 r.trip_ticket_number === trip.trip_ticket_number
@@ -146,7 +152,10 @@ const VehicleDetails = () => {
             
             // 2. Fuel Out
             const distance = toNum(trip.actual_distance_km || trip.gps_distance_km);
-            const efficiency = toNum(vehicle.reference_efficiency) || 10;
+            // Clamp efficiency to realistic range (8-20 km/L) to avoid bad data
+            let efficiency = toNum(vehicle.reference_efficiency) || 10;
+            if (efficiency < 6 || efficiency > 20) efficiency = 10;
+            
             const fuelOut = distance > 0 ? (distance / efficiency) : 0;
 
             return {
@@ -195,6 +204,16 @@ const VehicleDetails = () => {
             overTank: (toNum(vehicle.tank_capacity) > 0) && (r.balance > toNum(vehicle.tank_capacity) + 0.01)
         }));
     }, [historyData, fuelReceipts, vehicle]);
+
+    // ✅ REVERSED DATA FOR CHART (oldest to newest)
+    const chartData = useMemo(() => {
+        return [...ledgerRows].reverse().map(r => ({
+            name: format(new Date(r.displayDate), 'MMM dd'),
+            fuelIn: Number(r.fuelIn),
+            fuelOut: Number(r.fuelOut),
+            balance: Number(r.balance)
+        }));
+    }, [ledgerRows]);
 
     // Pagination for Fuel Ledger
     const totalLedgerPages = Math.ceil(ledgerRows.length / ledgerRowsPerPage);
@@ -302,9 +321,7 @@ const VehicleDetails = () => {
                             <div>
                                 <div className="flex items-center gap-3 mb-1">
                                     <h2 className="text-3xl font-extrabold text-slate-900 dark:text-white font-mono">{vehicle.plate_number}</h2>
-                                    <Badge className={cn("px-2.5 py-1 text-xs font-bold", vehicle.status === 'active' ? "bg-emerald-500 hover:bg-emerald-600 text-white" : "bg-red-500 hover:bg-red-600 text-white")}>
-                                        ● {vehicle.status === 'active' ? 'Active' : 'Inactive'}
-                                    </Badge>
+                                   
                                 </div>
                                 <p className="text-slate-600 dark:text-slate-400 font-medium text-sm">
                                     {vehicle.vehicle_model} • {vehicle.fuel_type} • {vehicle.maintenance_flag ? 'Under Maintenance' : 'Serviceable'}
@@ -348,101 +365,171 @@ const VehicleDetails = () => {
                 </Card>
             </div>
 
-            {/* 2. Fuel Ledger Table (Replaces Chart) */}
+            {/* 2. Fuel Ledger Section (Table / Chart) */}
             <Card className="dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden flex flex-col min-h-[400px]">
-                <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-800/20">
+                <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-slate-50/50 dark:bg-slate-800/20">
                     <div>
                         <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2 text-lg">
                             <Fuel className="h-5 w-5 text-blue-500"/> Fuel Ledger
                         </h3>
                         <p className="text-xs text-slate-500 mt-1 font-medium">Historical record of fuel consumption and additions.</p>
                     </div>
-                    <Badge className="bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 border-blue-200 dark:border-blue-800 text-xs font-bold">
-                        {ledgerRows.length} Entries
-                    </Badge>
+                    
+                    <div className="flex items-center gap-3">
+                        <Badge className="bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 border-blue-200 dark:border-blue-800 text-xs font-bold hidden sm:inline-flex">
+                            {ledgerRows.length} Entries
+                        </Badge>
+                        
+                        {/* View Toggle */}
+                        <div className="flex bg-slate-200/60 dark:bg-slate-800 p-1 rounded-lg">
+                            <button
+                                onClick={() => setLedgerView('table')}
+                                className={cn(
+                                    "px-3 py-1.5 text-xs font-bold rounded-md flex items-center gap-1.5 transition-all",
+                                    ledgerView === 'table' 
+                                        ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm" 
+                                        : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+                                )}
+                            >
+                                <TableIcon className="h-3.5 w-3.5" /> Table
+                            </button>
+                            <button
+                                onClick={() => setLedgerView('chart')}
+                                className={cn(
+                                    "px-3 py-1.5 text-xs font-bold rounded-md flex items-center gap-1.5 transition-all",
+                                    ledgerView === 'chart' 
+                                        ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm" 
+                                        : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+                                )}
+                            >
+                                <BarChart3 className="h-3.5 w-3.5" /> Chart
+                            </button>
+                        </div>
+                    </div>
                 </div>
 
                 <div className="flex-1 overflow-x-auto">
-                    <table className="w-full text-left text-sm">
-                        <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-800 sticky top-0 z-10">
-                            <tr>
-                                <th className="px-4 py-3 font-bold">Date</th>
-                                <th className="px-4 py-3 font-bold">Trip Ticket No.</th>
-                                <th className="px-4 py-3 font-bold text-right">Beginning (L)</th>
-                                <th className="px-4 py-3 font-bold text-right text-emerald-600 dark:text-emerald-500">Fuel In (L)</th>
-                                <th className="px-4 py-3 font-bold text-right text-orange-600 dark:text-orange-500">Fuel Out (L)</th>
-                                <th className="px-4 py-3 font-bold text-right">Balance (L)</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300">
-                            {fuelLoading || historyLoading ? (
+                    {ledgerView === 'table' ? (
+                        <table className="w-full text-left text-sm">
+                            <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-800 sticky top-0 z-10">
                                 <tr>
-                                    <td colSpan={6} className="px-4 py-12 text-center text-slate-500">
-                                        <Loader2 className="h-6 w-6 animate-spin text-blue-500 mx-auto mb-2" /> Loading ledger...
-                                    </td>
+                                    <th className="px-4 py-3 font-bold">Date</th>
+                                    <th className="px-4 py-3 font-bold">Trip Ticket No.</th>
+                                    <th className="px-4 py-3 font-bold text-right">Beginning (L)</th>
+                                    <th className="px-4 py-3 font-bold text-right text-emerald-600 dark:text-emerald-500">Fuel In (L)</th>
+                                    <th className="px-4 py-3 font-bold text-right text-orange-600 dark:text-orange-500">Fuel Out (L)</th>
+                                    <th className="px-4 py-3 font-bold text-right">Balance (L)</th>
                                 </tr>
-                            ) : currentLedgerData.length === 0 ? (
-                                <tr>
-                                    <td colSpan={6} className="px-4 py-12 text-center text-slate-500">No ledger entries found.</td>
-                                </tr>
-                            ) : (
-                                currentLedgerData.map((row) => (
-                                    <tr key={row.id || row.trip_ticket_id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
-                                        <td className="px-4 py-3 whitespace-nowrap font-bold text-slate-900 dark:text-white">
-                                            {format(new Date(row.displayDate), 'MMM dd, yyyy')}
-                                        </td>
-                                        <td className="px-4 py-3 font-mono font-medium">{row.displayTicketNo}</td>
-                                        <td className="px-4 py-3 text-right font-medium text-slate-500">{row.beginning}</td>
-                                        <td className="px-4 py-3 text-right font-bold text-emerald-600 dark:text-emerald-400">+{row.fuelIn}</td>
-                                        <td className="px-4 py-3 text-right font-bold text-orange-600 dark:text-orange-400">
-                                            -{row.fuelOut}
-                                            {row.distanceKm > 0 && (
-                                                <div className="text-[10px] font-normal text-slate-400 dark:text-slate-500">
-                                                    {row.distanceKm} km ÷ {row.efficiencyUsed} km/L
-                                                </div>
-                                            )}
-                                        </td>
-                                        <td className={cn("px-4 py-3 text-right font-bold", row.overTank ? "text-amber-500" : "text-slate-900 dark:text-white")}>
-                                            {row.balance}
-                                            {row.overTank && (
-                                                <div className="text-[10px] font-normal text-amber-500 flex items-center justify-end gap-1 mt-0.5">
-                                                    <AlertTriangle className="h-3 w-3" /> Exceeds Tank
-                                                </div>
-                                            )}
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300">
+                                {fuelLoading || historyLoading ? (
+                                    <tr>
+                                        <td colSpan={6} className="px-4 py-12 text-center text-slate-500">
+                                            <Loader2 className="h-6 w-6 animate-spin text-blue-500 mx-auto mb-2" /> Loading ledger...
                                         </td>
                                     </tr>
-                                ))
+                                ) : currentLedgerData.length === 0 ? (
+                                    <tr>
+                                        <td colSpan={6} className="px-4 py-12 text-center text-slate-500">No ledger entries found.</td>
+                                    </tr>
+                                ) : (
+                                    currentLedgerData.map((row) => (
+                                        <tr key={row.id || row.trip_ticket_id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
+                                            <td className="px-4 py-3 whitespace-nowrap font-bold text-slate-900 dark:text-white">
+                                                {format(new Date(row.displayDate), 'MMM dd, yyyy')}
+                                            </td>
+                                            <td className="px-4 py-3 font-mono font-medium">{row.displayTicketNo}</td>
+                                            <td className="px-4 py-3 text-right font-medium text-slate-500">{row.beginning}</td>
+                                            <td className="px-4 py-3 text-right font-bold text-emerald-600 dark:text-emerald-400">+{row.fuelIn}</td>
+                                            <td className="px-4 py-3 text-right font-bold text-orange-600 dark:text-orange-400">
+                                                -{row.fuelOut}
+                                            </td>
+                                            <td className="px-4 py-3 text-right font-bold text-slate-900 dark:text-white">
+                                                {row.balance}
+                                            </td>
+                                        </tr>
+                                    ))
+                                )}
+                            </tbody>
+                        </table>
+                    ) : (
+                        /* ✅ CHART VIEW */
+                        <div className="p-4 h-[350px] w-full">
+                            {fuelLoading || historyLoading ? (
+                                <div className="h-full flex flex-col items-center justify-center text-slate-500">
+                                    <Loader2 className="h-8 w-8 animate-spin text-blue-500 mb-2" /> Loading chart...
+                                </div>
+                            ) : chartData.length === 0 ? (
+                                <div className="h-full flex items-center justify-center text-slate-500">
+                                    No data available for chart.
+                                </div>
+                            ) : (
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <LineChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+                                        <XAxis 
+                                            dataKey="name" 
+                                            tick={{ fontSize: 12, fill: '#64748b' }} 
+                                            tickLine={false} 
+                                            axisLine={false} 
+                                            dy={10}
+                                        />
+                                        <YAxis 
+                                            tick={{ fontSize: 12, fill: '#64748b' }} 
+                                            tickLine={false} 
+                                            axisLine={false} 
+                                            tickFormatter={(val) => `${val} L`}
+                                        />
+                                        <Tooltip 
+                                            contentStyle={{ 
+                                                backgroundColor: '#0f172a', 
+                                                border: '1px solid #1e293b', 
+                                                borderRadius: '8px', 
+                                                fontSize: '12px',
+                                                color: '#fff'
+                                            }}
+                                            itemStyle={{ color: '#fff' }}
+                                        />
+                                        <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
+                                        
+                                        <Line type="monotone" name="Fuel In" dataKey="fuelIn" stroke="#10b981" strokeWidth={2} dot={{ r: 4 }} />
+                                        <Line type="monotone" name="Fuel Out" dataKey="fuelOut" stroke="#ef4444" strokeWidth={2} dot={{ r: 4 }} />
+                                        <Line type="monotone" name="Balance" dataKey="balance" stroke="#3b82f6" strokeWidth={3} dot={{ r: 4 }} />
+                                    </LineChart>
+                                </ResponsiveContainer>
                             )}
-                        </tbody>
-                    </table>
+                        </div>
+                    )}
                 </div>
 
-                {/* Ledger Pagination */}
-                <div className="p-3 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500 bg-slate-50 dark:bg-slate-900/50 mt-auto">
-                    <span className="font-medium">
-                        {ledgerRows.length > 0 ? ((ledgerPage - 1) * ledgerRowsPerPage) + 1 : 0}-{Math.min(ledgerPage * ledgerRowsPerPage, ledgerRows.length)} of {ledgerRows.length}
-                    </span>
-                    <div className="flex gap-1">
-                        <Button 
-                            variant="outline" 
-                            size="icon" 
-                            className="h-7 w-7 dark:border-slate-700"
-                            onClick={() => setLedgerPage(p => Math.max(1, p - 1))}
-                            disabled={ledgerPage === 1 || ledgerRows.length === 0}
-                        >
-                            <ChevronLeft className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button 
-                            variant="outline" 
-                            size="icon" 
-                            className="h-7 w-7 dark:border-slate-700"
-                            onClick={() => setLedgerPage(p => Math.min(totalLedgerPages, p + 1))}
-                            disabled={ledgerPage === totalLedgerPages || ledgerRows.length === 0}
-                        >
-                            <ChevronRight className="h-3.5 w-3.5" />
-                        </Button>
+                {/* Ledger Pagination (Table View Only) */}
+                {ledgerView === 'table' && (
+                    <div className="p-3 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500 bg-slate-50 dark:bg-slate-900/50 mt-auto">
+                        <span className="font-medium">
+                            {ledgerRows.length > 0 ? ((ledgerPage - 1) * ledgerRowsPerPage) + 1 : 0}-{Math.min(ledgerPage * ledgerRowsPerPage, ledgerRows.length)} of {ledgerRows.length}
+                        </span>
+                        <div className="flex gap-1">
+                            <Button 
+                                variant="outline" 
+                                size="icon" 
+                                className="h-7 w-7 dark:border-slate-700"
+                                onClick={() => setLedgerPage(p => Math.max(1, p - 1))}
+                                disabled={ledgerPage === 1 || ledgerRows.length === 0}
+                            >
+                                <ChevronLeft className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button 
+                                variant="outline" 
+                                size="icon" 
+                                className="h-7 w-7 dark:border-slate-700"
+                                onClick={() => setLedgerPage(p => Math.min(totalLedgerPages, p + 1))}
+                                disabled={ledgerPage === totalLedgerPages || ledgerRows.length === 0}
+                            >
+                                <ChevronRight className="h-3.5 w-3.5" />
+                            </Button>
+                        </div>
                     </div>
-                </div>
+                )}
             </Card>
 
             {/* 3. Bottom Row: Map & Table */}
