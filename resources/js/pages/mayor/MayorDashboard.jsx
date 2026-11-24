@@ -1141,13 +1141,17 @@ const MayorDashboard = () => {
                 </Card>
             </div>
 
-            {/* ✅ 7. GAS SLIP DETAILS MODAL (Gikan sa GasSlipView.jsx) */}
-            {selectedGasSlip && (
-                <GasSlipView 
-                    gasSlip={selectedGasSlip} 
-                    onClose={() => setSelectedGasSlip(null)} 
-                />
-            )}
+            <Dialog open={!!selectedGasSlip} onOpenChange={(open) => !open && setSelectedGasSlip(null)}>
+                <DialogContent className="max-w-4xl bg-[#121829] border-slate-800 text-white p-0 overflow-hidden">
+                    {/* I-pass ang data sa GasSlipView */}
+                    {selectedGasSlip && (
+                        <GasSlipView 
+                            gasSlip={selectedGasSlip} 
+                            onClose={() => setSelectedGasSlip(null)} 
+                        />
+                    )}
+                </DialogContent>
+            </Dialog>
         </div>
     );
 };
