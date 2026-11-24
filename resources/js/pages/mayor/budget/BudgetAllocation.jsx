@@ -4,7 +4,7 @@ import { useAutoRefresh } from "../../../hooks/useAutoRefresh";
 import { useOptimizedQuery } from "../../../hooks/useOptimizedQuery";
 import { SkeletonPage, SkeletonTable } from "../../../components/ui/SkeletonCard";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -19,21 +19,13 @@ import {
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { useNavigate } from "react-router-dom";
-import api, { mayorsOfficeAPI } from "../../../services/api";
+import api from "../../../services/api";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 
 // ============================================
-// HELPERS & COMPONENTS
+// STATS CARD COMPONENT
 // ============================================
-const extractArray = (response) => {
-    if (!response) return [];
-    if (Array.isArray(response)) return response;
-    if (Array.isArray(response.data)) return response.data;
-    if (response.data && Array.isArray(response.data.data)) return response.data.data;
-    return [];
-};
-
 const StatsCard = ({ title, value, icon: Icon, color }) => (
     <Card className="dark:bg-slate-800/80 dark:border-slate-700 hover:shadow-lg transition-all duration-300">
         <CardContent className="pt-6">
@@ -50,6 +42,9 @@ const StatsCard = ({ title, value, icon: Icon, color }) => (
     </Card>
 );
 
+// ============================================
+// TOOLTIP COMPONENT
+// ============================================
 const DepartmentTooltip = ({ code, name }) => {
     const [show, setShow] = useState(false);
     return (
@@ -71,6 +66,9 @@ const DepartmentTooltip = ({ code, name }) => {
     );
 };
 
+// ============================================
+// FORM FIELD COMPONENT
+// ============================================
 const FormField = ({ label, icon: Icon, required, error, touched, helper, children, className }) => {
     const hasError = touched && error;
     return (
@@ -119,18 +117,21 @@ const BudgetAllocation = () => {
     
     const [selectedYear, setSelectedYear] = useState(null);
     
+    // Dialog States
     const [editingBudget, setEditingBudget] = useState(null);
     const [showEditDialog, setShowEditDialog] = useState(false);
     const [showAddBudgetDialog, setShowAddBudgetDialog] = useState(false);
-    const [addBudgetData, setAddBudgetData] = useState({ department_id: "", additional_amount: "", reason: "" });
     
-    const [formData, setFormData] = useState({ annual_amount: "", reason: "" });
+    // ✅ Gi-ilis ang 'reason' ngadto sa 'purpose'
+    const [addBudgetData, setAddBudgetData] = useState({ department_id: "", additional_amount: "", purpose: "" });
+    const [formData, setFormData] = useState({ annual_amount: "", purpose: "" });
     
     const [editErrors, setEditErrors] = useState({});
     const [editTouched, setEditTouched] = useState({});
     const [addErrors, setAddErrors] = useState({});
     const [addTouched, setAddTouched] = useState({});
 
+    // State for Transaction History Pagination
     const [historyPage, setHistoryPage] = useState(1);
     const historyRowsPerPage = 5;
 
@@ -138,7 +139,6 @@ const BudgetAllocation = () => {
         queryClient.invalidateQueries({ queryKey: ["annual-budgets", selectedYear] });
         queryClient.invalidateQueries({ queryKey: ["fiscal-years-active"] });
         queryClient.invalidateQueries({ queryKey: ["budget-history", selectedYear] });
-        queryClient.invalidateQueries({ queryKey: ["mo-approved-tickets"] });
     });
 
     const { data: yearsData, isLoading: yearsLoading } = useOptimizedQuery({
@@ -179,16 +179,7 @@ const BudgetAllocation = () => {
         enabled: !!selectedYear,
     });
 
-    // ✅ FETCH ALL RELEASED TRIPS PARA MAAPIL SA LEDGER
-    const { data: approvedTicketsRaw = [] } = useOptimizedQuery({
-        queryKey: ["mo-approved-tickets"],
-        queryFn: async () => {
-            const response = await mayorsOfficeAPI.getApprovedTickets();
-            return extractArray(response);
-        },
-        enabled: !!selectedYear,
-    });
-
+    // ✅ Gi-ilis ang 'reason' ngadto sa 'purpose'
     const setBudgetMutation = useMutation({
         mutationFn: async ({ data }) => {
             const response = await api.post("/mayors-office/annual-budgets", { fiscal_year: selectedYear, ...data });
@@ -237,45 +228,38 @@ const BudgetAllocation = () => {
     }, [budgetData, budgets]);
 
     // ============================================
-    // ✅ FIXED: MERGE ALLOCATIONS (History) + EXPENSES (Tickets)
+    // ✅ MERGED TRANSACTION HISTORY (ALLOCATIONS + EXPENSES)
     // ============================================
     const processedHistory = useMemo(() => {
         if (!historyData || historyData.length === 0) return { rows: [], totals: {} };
 
-        // 1. Kuhaon ang PUNDO gikan sa Budget History
+        // 1. Kuhaon ang Allocations (+)
         const allocations = historyData
-            .filter(h => ['annual_created', 'annual_added', 'weekly_allocated'].includes(h.action))
-            .map(h => {
-                let desc = "Additional allocation for operational requirements";
-                if (h.action === 'annual_created') desc = "Initial departmental fuel budget";
-                else if (h.action === 'annual_added') desc = "Additional allocation for operational requirements";
-                else if (h.action === 'weekly_allocated') desc = "Weekly operational budget allocation";
-
-                return {
-                    id: `alloc-${h.id}`,
-                    date: new Date(h.created_at),
-                    reference: h.action === 'annual_created' ? 'ALLOC-001' : `ALLOC-${String(h.id).padStart(3, '0')}`,
-                    description: desc,
-                    destination: "—",
-                    amount: parseFloat(h.added_amount) || 0,
-                    isRelease: false, // Plus (+)
-                };
-            });
-
-        // 2. Kuhaon ang GASTO gikan sa Trip Tickets
-        const expenses = approvedTicketsRaw
-            .filter(t => t.amount_released > 0) // Ensure naay amount
-            .map(t => ({
-                id: `exp-${t.ticket_number}`,
-                date: new Date(t.trip_date),
-                reference: t.ticket_number || "—",
-                description: t.purpose || "Fuel purchase",
-                destination: t.destination || "—",
-                amount: parseFloat(t.amount_released) || 0,
-                isRelease: true, // Minus (-)
+            .filter(h => ['annual_created', 'annual_added', 'weekly_allocated', 'activated'].includes(h.action))
+            .map(h => ({
+                id: `alloc-${h.id}`,
+                date: new Date(h.created_at),
+                reference: h.action === 'annual_created' ? 'ALLOC-001' : `ALLOC-${String(h.id).padStart(3, '0')}`,
+                description: h.purpose || h.reason || (h.action === 'annual_created' ? "Initial departmental fuel budget" : "Additional allocation"),
+                destination: "—",
+                amount: parseFloat(h.added_amount) || 0,
+                type: 'allocation'
             }));
 
-        // 3. I-merge ug i-sort gikan sa pinaka-karaan ngadto sa pinaka-bag-o
+        // 2. Kuhaon ang Expenses (-)
+        const expenses = historyData
+            .filter(h => h.action.toLowerCase().includes('release') || h.action.toLowerCase().includes('fund') || h.action.toLowerCase().includes('surplus'))
+            .map(h => ({
+                id: `exp-${h.id}`,
+                date: new Date(h.created_at),
+                reference: h.reference_no || `REF-${h.id}`,
+                description: h.purpose || h.reason || "Fund release for Trip Ticket",
+                destination: h.destination || "—",
+                amount: parseFloat(h.added_amount) || 0,
+                type: 'expense'
+            }));
+
+        // 3. Merge and sort oldest to newest
         const combined = [...allocations, ...expenses].sort((a, b) => a.date - b.date);
 
         // 4. Compute Running Balance
@@ -283,22 +267,20 @@ const BudgetAllocation = () => {
         let totalAdded = 0;
         let totalReleased = 0;
 
-        const computed = combined.map(log => {
-            if (log.isRelease) {
-                runningBalance -= log.amount;
-                totalReleased += log.amount;
+        const ledger = combined.map(tx => {
+            if (tx.type === 'allocation') {
+                runningBalance += tx.amount;
+                totalAdded += tx.amount;
             } else {
-                runningBalance += log.amount;
-                totalAdded += log.amount;
+                runningBalance -= tx.amount;
+                totalReleased += tx.amount;
             }
-            return { ...log, runningBalance };
+            return { ...tx, runningBalance };
         });
 
-        // 5. I-reverse aron latest ang mugawas sa pinaka-ibabaw
-        const reversed = [...computed].reverse();
-
+        // 5. Reverse for display (newest first)
         return {
-            rows: reversed,
+            rows: [...ledger].reverse(),
             totals: {
                 totalAllocated: totalAdded,
                 totalAdded,
@@ -306,8 +288,9 @@ const BudgetAllocation = () => {
                 finalBalance: runningBalance
             }
         };
-    }, [historyData, approvedTicketsRaw]);
+    }, [historyData]);
 
+    // Pagination for Transaction History
     const totalHistoryPages = Math.ceil(processedHistory.rows.length / historyRowsPerPage);
     const currentHistoryData = useMemo(() => {
         const firstPageIndex = (historyPage - 1) * historyRowsPerPage;
@@ -330,13 +313,14 @@ const BudgetAllocation = () => {
         return <Badge className="bg-green-500">Active</Badge>;
     };
 
+    // ✅ Gi-ilis ang 'reason' ngadto sa 'purpose'
     const validateEditBudget = () => {
         const newErrors = {};
         if (!formData.annual_amount || parseFloat(formData.annual_amount) <= 0) {
             newErrors.annual_amount = "Annual budget must be greater than 0";
         }
-        if (!formData.reason || formData.reason.trim().length < 3) {
-            newErrors.reason = "Reason must be at least 3 characters";
+        if (!formData.purpose || formData.purpose.trim().length < 3) {
+            newErrors.purpose = "Purpose must be at least 3 characters";
         }
         setEditErrors(newErrors);
         if (Object.keys(newErrors).length > 0) return false;
@@ -347,7 +331,7 @@ const BudgetAllocation = () => {
         const newErrors = {};
         if (!addBudgetData.department_id) newErrors.department_id = "Department is required";
         if (!addBudgetData.additional_amount || parseFloat(addBudgetData.additional_amount) <= 0) newErrors.additional_amount = "Amount must be > 0";
-        if (!addBudgetData.reason || addBudgetData.reason.trim().length < 3) newErrors.reason = "Reason must be at least 3 characters";
+        if (!addBudgetData.purpose || addBudgetData.purpose.trim().length < 3) newErrors.purpose = "Purpose must be at least 3 characters";
         
         setAddErrors(newErrors);
         if (Object.keys(newErrors).length > 0) {
@@ -359,7 +343,7 @@ const BudgetAllocation = () => {
 
     const handleEdit = (budget) => {
         setEditingBudget(budget);
-        setFormData({ annual_amount: budget.annual_amount?.toString() || "", reason: "" });
+        setFormData({ annual_amount: budget.annual_amount?.toString() || "", purpose: "" });
         setShowEditDialog(true);
     };
 
@@ -369,7 +353,7 @@ const BudgetAllocation = () => {
             data: { 
                 department_id: editingBudget.department_id, 
                 annual_amount: parseFloat(formData.annual_amount),
-                reason: formData.reason 
+                purpose: formData.purpose 
             } 
         });
     };
@@ -379,7 +363,7 @@ const BudgetAllocation = () => {
         addBudgetMutation.mutate({
             department_id: parseInt(addBudgetData.department_id),
             additional_amount: parseFloat(addBudgetData.additional_amount),
-            reason: addBudgetData.reason,
+            purpose: addBudgetData.purpose,
         });
     };
 
@@ -480,7 +464,7 @@ const BudgetAllocation = () => {
                                                     </Button>
                                                 ) : (
                                                     <Button variant="ghost" size="sm" onClick={() => {
-                                                        setAddBudgetData({ department_id: budget.department_id.toString(), additional_amount: "", reason: "" });
+                                                        setAddBudgetData({ department_id: budget.department_id.toString(), additional_amount: "", purpose: "" });
                                                         setShowAddBudgetDialog(true);
                                                     }} className="text-emerald-600 dark:text-emerald-400">
                                                         <Plus className="h-4 w-4" />
@@ -496,7 +480,7 @@ const BudgetAllocation = () => {
                 </div>
 
                 {/* ============================================ */}
-                {/* TRANSACTION HISTORY (MERGED LEDGER) */}
+                {/* TRANSACTION HISTORY */}
                 {/* ============================================ */}
                 <Card className="dark:bg-[#0f172a] border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden relative">
                     <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/5 rounded-full blur-3xl pointer-events-none" />
@@ -521,6 +505,7 @@ const BudgetAllocation = () => {
                                 {/* SUMMARY HEADER */}
                                 <div className="bg-[#1e293b]/50 p-6 md:p-8 flex flex-col md:flex-row items-center justify-between gap-6 border-b border-slate-800">
                                     <div className="flex items-center gap-6">
+                                        {/* Donut Chart */}
                                         <div className="relative w-28 h-28 flex items-center justify-center">
                                             <svg className="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
                                                 <path className="text-slate-700" strokeWidth="4" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
@@ -542,6 +527,7 @@ const BudgetAllocation = () => {
                                             </div>
                                         </div>
 
+                                        {/* Legend */}
                                         <div className="space-y-3">
                                             <div className="flex items-center gap-2">
                                                 <span className="h-2.5 w-2.5 rounded-full bg-blue-500"></span>
@@ -572,7 +558,7 @@ const BudgetAllocation = () => {
                                                 <TableHead className="text-slate-400 font-medium">Description</TableHead>
                                                 <TableHead className="text-slate-400 font-medium">Destination</TableHead>
                                                 <TableHead className="text-right text-slate-400 font-medium">Amount</TableHead>
-                                                <TableHead className="text-right text-slate-400 font-medium">Remaining Balance</TableHead>
+                                                <TableHead className="text-right text-slate-400 font-medium">Running Balance</TableHead>
                                             </TableRow>
                                         </TableHeader>
                                         <TableBody>
@@ -584,14 +570,14 @@ const BudgetAllocation = () => {
                                                     <TableCell className="text-sm font-mono text-slate-300">
                                                         {log.reference}
                                                     </TableCell>
-                                                    <TableCell className="text-sm text-slate-400 max-w-[200px] truncate" title={log.description}>
+                                                    <TableCell className="text-sm text-slate-300 max-w-[250px] truncate" title={log.description}>
                                                         {log.description}
                                                     </TableCell>
-                                                    <TableCell className="text-sm text-slate-400 max-w-[150px] truncate" title={log.destination}>
+                                                    <TableCell className="text-sm text-slate-400 max-w-[150px] truncate">
                                                         {log.destination}
                                                     </TableCell>
-                                                    <TableCell className={cn("text-sm font-bold text-right whitespace-nowrap", log.isRelease ? "text-red-400" : "text-emerald-400")}>
-                                                        {log.isRelease ? '-' : '+'}{formatCurrency(log.amount)}
+                                                    <TableCell className={cn("text-sm font-bold text-right whitespace-nowrap", log.type === 'expense' ? "text-red-400" : "text-emerald-400")}>
+                                                        {log.type === 'expense' ? '-' : '+'}{formatCurrency(log.amount)}
                                                     </TableCell>
                                                     <TableCell className="text-sm font-bold text-right text-white whitespace-nowrap">
                                                         {formatCurrency(log.runningBalance)}
@@ -649,11 +635,12 @@ const BudgetAllocation = () => {
                                 placeholder="e.g., 500000"
                             />
                         </FormField>
-                        <FormField label="Reason" required error={editErrors.reason} touched={editTouched.reason} helper="e.g., Initial allocation for FY 2026">
+                        {/* ✅ GIILISAN ANG LABEL NGADTO SA PURPOSE */}
+                        <FormField label="Purpose" required error={editErrors.purpose} touched={editTouched.purpose} helper="e.g., Initial allocation for FY 2026">
                             <Input 
-                                value={formData.reason} 
-                                onChange={(e) => setFormData({ ...formData, reason: e.target.value })} 
-                                placeholder="Reason for setting budget" 
+                                value={formData.purpose} 
+                                onChange={(e) => setFormData({ ...formData, purpose: e.target.value })} 
+                                placeholder="Purpose for setting budget" 
                             />
                         </FormField>
                     </div>
@@ -686,8 +673,9 @@ const BudgetAllocation = () => {
                         <FormField label="Additional Amount (₱)" required error={addErrors.additional_amount}>
                             <Input type="number" value={addBudgetData.additional_amount} onChange={(e) => setAddBudgetData({ ...addBudgetData, additional_amount: e.target.value })} />
                         </FormField>
-                        <FormField label="Reason" required error={addErrors.reason} helper="e.g., Mayor's Memo No. 2026-001">
-                            <Input value={addBudgetData.reason} onChange={(e) => setAddBudgetData({ ...addBudgetData, reason: e.target.value })} placeholder="Reason for adding budget" />
+                        {/* ✅ GIILISAN ANG LABEL NGADTO SA PURPOSE */}
+                        <FormField label="Purpose" required error={addErrors.purpose} helper="e.g., Mayor's Memo No. 2026-001">
+                            <Input value={addBudgetData.purpose} onChange={(e) => setAddBudgetData({ ...addBudgetData, purpose: e.target.value })} placeholder="Purpose for adding budget" />
                         </FormField>
                     </div>
                     <DialogFooter>
