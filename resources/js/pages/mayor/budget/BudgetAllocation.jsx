@@ -4,7 +4,7 @@ import { useAutoRefresh } from "../../../hooks/useAutoRefresh";
 import { useOptimizedQuery } from "../../../hooks/useOptimizedQuery";
 import { SkeletonPage, SkeletonTable } from "../../../components/ui/SkeletonCard";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -19,13 +19,21 @@ import {
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { useNavigate } from "react-router-dom";
-import api from "../../../services/api";
+import api, { mayorsOfficeAPI } from "../../../services/api";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 
 // ============================================
-// STATS CARD COMPONENT
+// HELPERS & COMPONENTS
 // ============================================
+const extractArray = (response) => {
+    if (!response) return [];
+    if (Array.isArray(response)) return response;
+    if (Array.isArray(response.data)) return response.data;
+    if (response.data && Array.isArray(response.data.data)) return response.data.data;
+    return [];
+};
+
 const StatsCard = ({ title, value, icon: Icon, color }) => (
     <Card className="dark:bg-slate-800/80 dark:border-slate-700 hover:shadow-lg transition-all duration-300">
         <CardContent className="pt-6">
@@ -42,9 +50,6 @@ const StatsCard = ({ title, value, icon: Icon, color }) => (
     </Card>
 );
 
-// ============================================
-// TOOLTIP COMPONENT
-// ============================================
 const DepartmentTooltip = ({ code, name }) => {
     const [show, setShow] = useState(false);
     return (
@@ -66,9 +71,6 @@ const DepartmentTooltip = ({ code, name }) => {
     );
 };
 
-// ============================================
-// FORM FIELD COMPONENT
-// ============================================
 const FormField = ({ label, icon: Icon, required, error, touched, helper, children, className }) => {
     const hasError = touched && error;
     return (
@@ -117,7 +119,6 @@ const BudgetAllocation = () => {
     
     const [selectedYear, setSelectedYear] = useState(null);
     
-    // Dialog States
     const [editingBudget, setEditingBudget] = useState(null);
     const [showEditDialog, setShowEditDialog] = useState(false);
     const [showAddBudgetDialog, setShowAddBudgetDialog] = useState(false);
@@ -130,7 +131,6 @@ const BudgetAllocation = () => {
     const [addErrors, setAddErrors] = useState({});
     const [addTouched, setAddTouched] = useState({});
 
-    // State for Transaction History Pagination
     const [historyPage, setHistoryPage] = useState(1);
     const historyRowsPerPage = 5;
 
@@ -138,6 +138,7 @@ const BudgetAllocation = () => {
         queryClient.invalidateQueries({ queryKey: ["annual-budgets", selectedYear] });
         queryClient.invalidateQueries({ queryKey: ["fiscal-years-active"] });
         queryClient.invalidateQueries({ queryKey: ["budget-history", selectedYear] });
+        queryClient.invalidateQueries({ queryKey: ["mo-approved-tickets"] });
     });
 
     const { data: yearsData, isLoading: yearsLoading } = useOptimizedQuery({
@@ -174,6 +175,16 @@ const BudgetAllocation = () => {
         queryFn: async () => {
             const response = await api.get(`/mayors-office/budget-history?year=${selectedYear}`);
             return response.data.data || [];
+        },
+        enabled: !!selectedYear,
+    });
+
+    // ✅ FETCH ALL RELEASED TRIPS PARA MAAPIL SA LEDGER
+    const { data: approvedTicketsRaw = [] } = useOptimizedQuery({
+        queryKey: ["mo-approved-tickets"],
+        queryFn: async () => {
+            const response = await mayorsOfficeAPI.getApprovedTickets();
+            return extractArray(response);
         },
         enabled: !!selectedYear,
     });
@@ -226,78 +237,77 @@ const BudgetAllocation = () => {
     }, [budgetData, budgets]);
 
     // ============================================
-    // ✅ FIXED: TRANSACTION HISTORY & RUNNING BALANCE
+    // ✅ FIXED: MERGE ALLOCATIONS (History) + EXPENSES (Tickets)
     // ============================================
     const processedHistory = useMemo(() => {
         if (!historyData || historyData.length === 0) return { rows: [], totals: {} };
 
-        const chronological = [...historyData].sort((a, b) => 
-            new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-        );
+        // 1. Kuhaon ang PUNDO gikan sa Budget History
+        const allocations = historyData
+            .filter(h => ['annual_created', 'annual_added', 'weekly_allocated'].includes(h.action))
+            .map(h => {
+                let desc = "Additional allocation for operational requirements";
+                if (h.action === 'annual_created') desc = "Initial departmental fuel budget";
+                else if (h.action === 'annual_added') desc = "Additional allocation for operational requirements";
+                else if (h.action === 'weekly_allocated') desc = "Weekly operational budget allocation";
 
+                return {
+                    id: `alloc-${h.id}`,
+                    date: new Date(h.created_at),
+                    reference: h.action === 'annual_created' ? 'ALLOC-001' : `ALLOC-${String(h.id).padStart(3, '0')}`,
+                    description: desc,
+                    destination: "—",
+                    amount: parseFloat(h.added_amount) || 0,
+                    isRelease: false, // Plus (+)
+                };
+            });
+
+        // 2. Kuhaon ang GASTO gikan sa Trip Tickets
+        const expenses = approvedTicketsRaw
+            .filter(t => t.amount_released > 0) // Ensure naay amount
+            .map(t => ({
+                id: `exp-${t.ticket_number}`,
+                date: new Date(t.trip_date),
+                reference: t.ticket_number || "—",
+                description: t.purpose || "Fuel purchase",
+                destination: t.destination || "—",
+                amount: parseFloat(t.amount_released) || 0,
+                isRelease: true, // Minus (-)
+            }));
+
+        // 3. I-merge ug i-sort gikan sa pinaka-karaan ngadto sa pinaka-bag-o
+        const combined = [...allocations, ...expenses].sort((a, b) => a.date - b.date);
+
+        // 4. Compute Running Balance
         let runningBalance = 0;
         let totalAdded = 0;
         let totalReleased = 0;
 
-        const computed = chronological.map(log => {
-            const added = parseFloat(log.added_amount) || 0;
-            const isRelease = log.action.toLowerCase().includes('release') || log.action.toLowerCase().includes('fund');
-            
-            if (isRelease) {
-                runningBalance -= Math.abs(added);
-                totalReleased += Math.abs(added);
+        const computed = combined.map(log => {
+            if (log.isRelease) {
+                runningBalance -= log.amount;
+                totalReleased += log.amount;
             } else {
-                runningBalance += Math.abs(added);
-                totalAdded += Math.abs(added);
+                runningBalance += log.amount;
+                totalAdded += log.amount;
             }
-
-            let txType = "Allocation";
-            let typeColor = "bg-emerald-500/20 text-emerald-400 border-emerald-500/30";
-            let TypeIcon = CheckCircle2;
-            
-            if (isRelease) {
-                txType = "Fund Release";
-                typeColor = "bg-red-500/20 text-red-400 border-red-500/30";
-                TypeIcon = TrendingDown;
-            } else if (log.action.toLowerCase().includes('additional')) {
-                txType = "Additional Allocation";
-                typeColor = "bg-emerald-500/20 text-emerald-400 border-emerald-500/30";
-                TypeIcon = TrendingUp;
-            } else if (log.action.toLowerCase().includes('reset')) {
-                txType = "System Reset";
-                typeColor = "bg-slate-500/20 text-slate-400 border-slate-500/30";
-                TypeIcon = Activity;
-            }
-
-            return {
-                ...log,
-                displayDate: new Date(log.created_at),
-                referenceNo: log.reference_no || '—', 
-                txType,
-                typeColor,
-                TypeIcon,
-                displayAmount: Math.abs(added),
-                isRelease,
-                runningBalance,
-                displayDestination: log.destination || (isRelease ? "—" : "Annual Budget"),
-                displayPurpose: log.purpose || log.reason || "—",
-            };
+            return { ...log, runningBalance };
         });
 
+        // 5. I-reverse aron latest ang mugawas sa pinaka-ibabaw
         const reversed = [...computed].reverse();
 
         return {
             rows: reversed,
             totals: {
-                totalAllocated: computed.length > 0 ? (runningBalance + totalReleased) : 0,
+                totalAllocated: totalAdded,
                 totalAdded,
                 totalReleased,
                 finalBalance: runningBalance
             }
         };
-    }, [historyData]);
+    }, [historyData, approvedTicketsRaw]);
 
-    // Pagination for Transaction History
     const totalHistoryPages = Math.ceil(processedHistory.rows.length / historyRowsPerPage);
     const currentHistoryData = useMemo(() => {
         const firstPageIndex = (historyPage - 1) * historyRowsPerPage;
@@ -376,7 +386,6 @@ const BudgetAllocation = () => {
     if (budgetError) return <div className="p-8 text-center text-red-500">Error loading data.</div>;
     if (yearsLoading || !selectedYear || isLoading || !budgetData) return <div className="p-6"><SkeletonPage /><SkeletonTable rows={5} cols={8} /></div>;
 
-    // ✅ Calculate Percentage safely (avoid division by zero)
     const remainingPct = (processedHistory.totals.finalBalance / (processedHistory.totals.totalAllocated || 1)) * 100;
 
     return (
@@ -487,7 +496,7 @@ const BudgetAllocation = () => {
                 </div>
 
                 {/* ============================================ */}
-                {/* TRANSACTION HISTORY */}
+                {/* TRANSACTION HISTORY (MERGED LEDGER) */}
                 {/* ============================================ */}
                 <Card className="dark:bg-[#0f172a] border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden relative">
                     <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/5 rounded-full blur-3xl pointer-events-none" />
@@ -512,7 +521,6 @@ const BudgetAllocation = () => {
                                 {/* SUMMARY HEADER */}
                                 <div className="bg-[#1e293b]/50 p-6 md:p-8 flex flex-col md:flex-row items-center justify-between gap-6 border-b border-slate-800">
                                     <div className="flex items-center gap-6">
-                                        {/* Donut Chart */}
                                         <div className="relative w-28 h-28 flex items-center justify-center">
                                             <svg className="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
                                                 <path className="text-slate-700" strokeWidth="4" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
@@ -534,7 +542,6 @@ const BudgetAllocation = () => {
                                             </div>
                                         </div>
 
-                                        {/* Legend */}
                                         <div className="space-y-3">
                                             <div className="flex items-center gap-2">
                                                 <span className="h-2.5 w-2.5 rounded-full bg-blue-500"></span>
@@ -562,36 +569,29 @@ const BudgetAllocation = () => {
                                             <TableRow className="border-slate-800 hover:bg-transparent">
                                                 <TableHead className="text-slate-400 font-medium">Date</TableHead>
                                                 <TableHead className="text-slate-400 font-medium">Reference No.</TableHead>
-                                                <TableHead className="text-slate-400 font-medium">Transaction Type</TableHead>
-                                                <TableHead className="text-slate-400 font-medium">Purpose</TableHead>
+                                                <TableHead className="text-slate-400 font-medium">Description</TableHead>
                                                 <TableHead className="text-slate-400 font-medium">Destination</TableHead>
                                                 <TableHead className="text-right text-slate-400 font-medium">Amount</TableHead>
-                                                <TableHead className="text-right text-slate-400 font-medium">Running Balance</TableHead>
+                                                <TableHead className="text-right text-slate-400 font-medium">Remaining Balance</TableHead>
                                             </TableRow>
                                         </TableHeader>
                                         <TableBody>
                                             {currentHistoryData.map((log, i) => (
                                                 <TableRow key={i} className="border-slate-800/50 hover:bg-slate-800/30">
                                                     <TableCell className="text-sm text-slate-300 whitespace-nowrap">
-                                                        {format(log.displayDate, 'MMM dd, yyyy')}
+                                                        {format(log.date, 'MMM dd, yyyy')}
                                                     </TableCell>
                                                     <TableCell className="text-sm font-mono text-slate-300">
-                                                        {log.referenceNo}
+                                                        {log.reference}
                                                     </TableCell>
-                                                    <TableCell>
-                                                        <Badge variant="outline" className={cn("px-2 py-0.5 text-[10px] font-bold rounded-full border", log.typeColor)}>
-                                                            <log.TypeIcon className="h-3 w-3 mr-1" />
-                                                            {log.txType}
-                                                        </Badge>
+                                                    <TableCell className="text-sm text-slate-400 max-w-[200px] truncate" title={log.description}>
+                                                        {log.description}
                                                     </TableCell>
-                                                    <TableCell className="text-sm text-slate-400 max-w-[150px] truncate">
-                                                        {log.displayPurpose}
-                                                    </TableCell>
-                                                    <TableCell className="text-sm text-slate-400 max-w-[150px] truncate">
-                                                        {log.displayDestination}
+                                                    <TableCell className="text-sm text-slate-400 max-w-[150px] truncate" title={log.destination}>
+                                                        {log.destination}
                                                     </TableCell>
                                                     <TableCell className={cn("text-sm font-bold text-right whitespace-nowrap", log.isRelease ? "text-red-400" : "text-emerald-400")}>
-                                                        {log.isRelease ? '-' : '+'}{formatCurrency(log.displayAmount)}
+                                                        {log.isRelease ? '-' : '+'}{formatCurrency(log.amount)}
                                                     </TableCell>
                                                     <TableCell className="text-sm font-bold text-right text-white whitespace-nowrap">
                                                         {formatCurrency(log.runningBalance)}
