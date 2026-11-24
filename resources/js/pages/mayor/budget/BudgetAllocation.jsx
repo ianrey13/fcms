@@ -2,50 +2,20 @@ import React, { useState, useEffect, useMemo } from "react";
 import { useQueryClient, useMutation } from "@tanstack/react-query";
 import { useAutoRefresh } from "../../../hooks/useAutoRefresh";
 import { useOptimizedQuery } from "../../../hooks/useOptimizedQuery";
-import {
-    SkeletonPage,
-    SkeletonTable,
-} from "../../../components/ui/SkeletonCard";
+import { SkeletonPage, SkeletonTable } from "../../../components/ui/SkeletonCard";
 import { Button } from "@/components/ui/button";
-import {
-    Card,
-    CardContent,
-    CardHeader,
-    CardTitle,
-    CardDescription,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
-    Table,
-    TableBody,
-    TableCell,
-    TableHead,
-    TableHeader,
-    TableRow,
+    Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import {
-    Dialog,
-    DialogContent,
-    DialogFooter,
-    DialogHeader,
-    DialogTitle,
+    Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import {
-    TrendingUp,
-    TrendingDown,
-    Edit,
-    AlertCircle,
-    Building2,
-    Plus,
-    Info,
-    ArrowLeft,
-    PhilippinePeso,
-    History,
-    Activity,
-    CheckCircle2,
-    ChevronLeft,
-    ChevronRight,
+    TrendingUp, TrendingDown, Edit, AlertCircle, Building2, Plus, Info, ArrowLeft, PhilippinePeso, History, Activity, 
+    CheckCircle2, ChevronLeft, ChevronRight
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { useNavigate } from "react-router-dom";
@@ -61,16 +31,10 @@ const StatsCard = ({ title, value, icon: Icon, color }) => (
         <CardContent className="pt-6">
             <div className="flex items-center justify-between">
                 <div>
-                    <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                        {title}
-                    </p>
-                    <p className="text-2xl font-bold text-slate-900 dark:text-white mt-1">
-                        {value}
-                    </p>
+                    <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">{title}</p>
+                    <p className="text-2xl font-bold text-slate-900 dark:text-white mt-1">{value}</p>
                 </div>
-                <div
-                    className={`p-3 rounded-xl bg-gradient-to-br ${color} shadow-lg`}
-                >
+                <div className={`p-3 rounded-xl bg-gradient-to-br ${color} shadow-lg`}>
                     <Icon className="h-6 w-6 text-white" />
                 </div>
             </div>
@@ -105,16 +69,7 @@ const DepartmentTooltip = ({ code, name }) => {
 // ============================================
 // FORM FIELD COMPONENT
 // ============================================
-const FormField = ({
-    label,
-    icon: Icon,
-    required,
-    error,
-    touched,
-    helper,
-    children,
-    className,
-}) => {
+const FormField = ({ label, icon: Icon, required, error, touched, helper, children, className }) => {
     const hasError = touched && error;
     return (
         <div className={cn("space-y-1.5", className)}>
@@ -126,11 +81,10 @@ const FormField = ({
             <div className="relative">
                 {React.cloneElement(children, {
                     className: cn(
-                        children.props.className,
-                        "dark:bg-slate-900 dark:border-slate-700 dark:text-white",
-                        hasError &&
-                            "border-red-500 ring-red-500 focus:ring-red-500 bg-red-50/50 dark:bg-red-950/10",
-                    ),
+                        children.props.className, 
+                        "dark:bg-slate-900 dark:border-slate-700 dark:text-white", 
+                        hasError && "border-red-500 ring-red-500 focus:ring-red-500 bg-red-50/50 dark:bg-red-950/10"
+                    )
                 })}
                 {hasError && (
                     <div className="absolute right-3 top-1/2 -translate-y-1/2">
@@ -160,79 +114,54 @@ const FormField = ({
 const BudgetAllocation = () => {
     const navigate = useNavigate();
     const queryClient = useQueryClient();
-
+    
     const [selectedYear, setSelectedYear] = useState(null);
-
+    
     // Dialog States
     const [editingBudget, setEditingBudget] = useState(null);
     const [showEditDialog, setShowEditDialog] = useState(false);
     const [showAddBudgetDialog, setShowAddBudgetDialog] = useState(false);
-    const [addBudgetData, setAddBudgetData] = useState({
-        department_id: "",
-        additional_amount: "",
-        reason: "",
-    });
-
+    const [addBudgetData, setAddBudgetData] = useState({ department_id: "", additional_amount: "", reason: "" });
+    
     const [formData, setFormData] = useState({ annual_amount: "", reason: "" });
-
+    
     const [editErrors, setEditErrors] = useState({});
     const [editTouched, setEditTouched] = useState({});
     const [addErrors, setAddErrors] = useState({});
     const [addTouched, setAddTouched] = useState({});
 
-    // ✅ State for Transaction History Pagination
+    // State for Transaction History Pagination
     const [historyPage, setHistoryPage] = useState(1);
     const historyRowsPerPage = 5;
 
-    useAutoRefresh(
-        ["mayor-budget-updated", "mayor-trip-updated", "gso-funds-released"],
-        () => {
-            queryClient.invalidateQueries({
-                queryKey: ["annual-budgets", selectedYear],
-            });
-            queryClient.invalidateQueries({
-                queryKey: ["fiscal-years-active"],
-            });
-            queryClient.invalidateQueries({
-                queryKey: ["budget-history", selectedYear],
-            });
-        },
-    );
+    useAutoRefresh(["mayor-budget-updated", "mayor-trip-updated", "gso-funds-released"], () => {
+        queryClient.invalidateQueries({ queryKey: ["annual-budgets", selectedYear] });
+        queryClient.invalidateQueries({ queryKey: ["fiscal-years-active"] });
+        queryClient.invalidateQueries({ queryKey: ["budget-history", selectedYear] });
+    });
 
     const { data: yearsData, isLoading: yearsLoading } = useOptimizedQuery({
         queryKey: ["fiscal-years-active"],
         queryFn: async () => {
             try {
-                const response = await api.get(
-                    "/mayors-office/fiscal-years?is_active=1",
-                );
+                const response = await api.get("/mayors-office/fiscal-years?is_active=1");
                 return response.data.data || [];
-            } catch (error) {
-                return [];
-            }
+            } catch (error) { return []; }
         },
         staleTime: 5 * 60 * 1000,
     });
 
     useEffect(() => {
         if (!yearsData || yearsData.length === 0) return;
-        const validYears = yearsData.map((y) =>
-            typeof y === "object" ? Number(y.year) : Number(y),
-        );
+        const validYears = yearsData.map((y) => typeof y === "object" ? Number(y.year) : Number(y));
         if (selectedYear && validYears.includes(selectedYear)) return;
         setSelectedYear(validYears.includes(2026) ? 2026 : validYears[0]);
     }, [yearsData, selectedYear]);
 
-    const {
-        data: budgetData,
-        isLoading,
-        error: budgetError,
-    } = useOptimizedQuery({
+    const { data: budgetData, isLoading, error: budgetError } = useOptimizedQuery({
         queryKey: ["annual-budgets", selectedYear],
         queryFn: async () => {
-            const response = await api.get(
-                `/mayors-office/annual-budgets/year/${selectedYear}`,
-            );
+            const response = await api.get(`/mayors-office/annual-budgets/year/${selectedYear}`);
             return response.data;
         },
         enabled: !!selectedYear,
@@ -243,9 +172,7 @@ const BudgetAllocation = () => {
     const { data: historyData, isLoading: historyLoading } = useOptimizedQuery({
         queryKey: ["budget-history", selectedYear],
         queryFn: async () => {
-            const response = await api.get(
-                `/mayors-office/budget-history?year=${selectedYear}`,
-            );
+            const response = await api.get(`/mayors-office/budget-history?year=${selectedYear}`);
             return response.data.data || [];
         },
         enabled: !!selectedYear,
@@ -253,10 +180,7 @@ const BudgetAllocation = () => {
 
     const setBudgetMutation = useMutation({
         mutationFn: async ({ data }) => {
-            const response = await api.post("/mayors-office/annual-budgets", {
-                fiscal_year: selectedYear,
-                ...data,
-            });
+            const response = await api.post("/mayors-office/annual-budgets", { fiscal_year: selectedYear, ...data });
             return response.data;
         },
         onSuccess: () => {
@@ -265,18 +189,12 @@ const BudgetAllocation = () => {
             queryClient.invalidateQueries(["annual-budgets"]);
             queryClient.invalidateQueries(["budget-history"]);
         },
-        onError: (error) =>
-            toast.error(
-                error.response?.data?.message || "Failed to set budget",
-            ),
+        onError: (error) => toast.error(error.response?.data?.message || "Failed to set budget"),
     });
 
     const addBudgetMutation = useMutation({
         mutationFn: async (data) => {
-            const response = await api.post(
-                "/mayors-office/annual-budgets/add",
-                { fiscal_year: selectedYear, ...data },
-            );
+            const response = await api.post("/mayors-office/annual-budgets/add", { fiscal_year: selectedYear, ...data });
             return response.data;
         },
         onSuccess: () => {
@@ -285,10 +203,7 @@ const BudgetAllocation = () => {
             queryClient.invalidateQueries(["annual-budgets"]);
             queryClient.invalidateQueries(["budget-history"]);
         },
-        onError: (error) =>
-            toast.error(
-                error.response?.data?.message || "Failed to add budget",
-            ),
+        onError: (error) => toast.error(error.response?.data?.message || "Failed to add budget"),
     });
 
     const budgets = useMemo(() => {
@@ -301,24 +216,19 @@ const BudgetAllocation = () => {
     const summary = useMemo(() => {
         if (!budgetData) return {};
         if (budgetData.summary) return budgetData.summary;
-        const total_allocated = budgets.reduce(
-            (s, b) => s + parseFloat(b.annual_amount || 0),
-            0,
-        );
-        const total_used = budgets.reduce(
-            (s, b) => s + parseFloat(b.used_amount || 0),
-            0,
-        );
+        const total_allocated = budgets.reduce((s, b) => s + parseFloat(b.annual_amount || 0), 0);
+        const total_used = budgets.reduce((s, b) => s + parseFloat(b.used_amount || 0), 0);
         return {
-            total_allocated,
-            total_used,
-            total_remaining: total_allocated - total_used,
+            total_allocated, total_used, total_remaining: total_allocated - total_used,
             departments_with_budget: budgets.filter((b) => b.has_budget).length,
             total_departments: budgets.length,
         };
     }, [budgetData, budgets]);
 
-        const processedHistory = useMemo(() => {
+    // ============================================
+    // ✅ FIXED: TRANSACTION HISTORY & RUNNING BALANCE
+    // ============================================
+    const processedHistory = useMemo(() => {
         if (!historyData || historyData.length === 0) return { rows: [], totals: {} };
 
         const chronological = [...historyData].sort((a, b) => 
@@ -359,7 +269,6 @@ const BudgetAllocation = () => {
                 TypeIcon = Activity;
             }
 
-            // ✅ GIKAN NI SA BACKEND KARON
             return {
                 ...log,
                 displayDate: new Date(log.created_at),
@@ -389,9 +298,7 @@ const BudgetAllocation = () => {
     }, [historyData]);
 
     // Pagination for Transaction History
-    const totalHistoryPages = Math.ceil(
-        processedHistory.rows.length / historyRowsPerPage,
-    );
+    const totalHistoryPages = Math.ceil(processedHistory.rows.length / historyRowsPerPage);
     const currentHistoryData = useMemo(() => {
         const firstPageIndex = (historyPage - 1) * historyRowsPerPage;
         const lastPageIndex = firstPageIndex + historyRowsPerPage;
@@ -400,11 +307,7 @@ const BudgetAllocation = () => {
 
     const formatCurrency = (amount) => {
         if (!amount || amount === 0) return "₱0.00";
-        return new Intl.NumberFormat("en-PH", {
-            style: "currency",
-            currency: "PHP",
-            minimumFractionDigits: 2,
-        }).format(amount);
+        return new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", minimumFractionDigits: 2 }).format(amount);
     };
 
     const weeklySuggested = (annualAmount) => {
@@ -413,17 +316,13 @@ const BudgetAllocation = () => {
     };
 
     const getStatusBadge = (status) => {
-        if (status === "not_set" || !status)
-            return <Badge className="bg-slate-400">Not Set</Badge>;
+        if (status === "not_set" || !status) return <Badge className="bg-slate-400">Not Set</Badge>;
         return <Badge className="bg-green-500">Active</Badge>;
     };
 
     const validateEditBudget = () => {
         const newErrors = {};
-        if (
-            !formData.annual_amount ||
-            parseFloat(formData.annual_amount) <= 0
-        ) {
+        if (!formData.annual_amount || parseFloat(formData.annual_amount) <= 0) {
             newErrors.annual_amount = "Annual budget must be greater than 0";
         }
         if (!formData.reason || formData.reason.trim().length < 3) {
@@ -436,16 +335,10 @@ const BudgetAllocation = () => {
 
     const validateAddBudget = () => {
         const newErrors = {};
-        if (!addBudgetData.department_id)
-            newErrors.department_id = "Department is required";
-        if (
-            !addBudgetData.additional_amount ||
-            parseFloat(addBudgetData.additional_amount) <= 0
-        )
-            newErrors.additional_amount = "Amount must be > 0";
-        if (!addBudgetData.reason || addBudgetData.reason.trim().length < 3)
-            newErrors.reason = "Reason must be at least 3 characters";
-
+        if (!addBudgetData.department_id) newErrors.department_id = "Department is required";
+        if (!addBudgetData.additional_amount || parseFloat(addBudgetData.additional_amount) <= 0) newErrors.additional_amount = "Amount must be > 0";
+        if (!addBudgetData.reason || addBudgetData.reason.trim().length < 3) newErrors.reason = "Reason must be at least 3 characters";
+        
         setAddErrors(newErrors);
         if (Object.keys(newErrors).length > 0) {
             toast.error("Please fix validation errors");
@@ -456,21 +349,18 @@ const BudgetAllocation = () => {
 
     const handleEdit = (budget) => {
         setEditingBudget(budget);
-        setFormData({
-            annual_amount: budget.annual_amount?.toString() || "",
-            reason: "",
-        });
+        setFormData({ annual_amount: budget.annual_amount?.toString() || "", reason: "" });
         setShowEditDialog(true);
     };
 
     const handleSetBudget = () => {
         if (!validateEditBudget()) return;
-        setBudgetMutation.mutate({
-            data: {
-                department_id: editingBudget.department_id,
+        setBudgetMutation.mutate({ 
+            data: { 
+                department_id: editingBudget.department_id, 
                 annual_amount: parseFloat(formData.annual_amount),
-                reason: formData.reason,
-            },
+                reason: formData.reason 
+            } 
         });
     };
 
@@ -483,32 +373,20 @@ const BudgetAllocation = () => {
         });
     };
 
-    if (budgetError)
-        return (
-            <div className="p-8 text-center text-red-500">
-                Error loading data.
-            </div>
-        );
-    if (yearsLoading || !selectedYear || isLoading || !budgetData)
-        return (
-            <div className="p-6">
-                <SkeletonPage />
-                <SkeletonTable rows={5} cols={8} />
-            </div>
-        );
+    if (budgetError) return <div className="p-8 text-center text-red-500">Error loading data.</div>;
+    if (yearsLoading || !selectedYear || isLoading || !budgetData) return <div className="p-6"><SkeletonPage /><SkeletonTable rows={5} cols={8} /></div>;
+
+    // ✅ Calculate Percentage safely (avoid division by zero)
+    const remainingPct = (processedHistory.totals.finalBalance / (processedHistory.totals.totalAllocated || 1)) * 100;
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
             <div className="space-y-6 p-4 md:p-6">
+                
                 {/* Header */}
                 <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                     <div className="flex items-center gap-3">
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => navigate("/mo/dashboard")}
-                            className="rounded-xl h-10 w-10 dark:text-slate-300"
-                        >
+                        <Button variant="ghost" size="icon" onClick={() => navigate('/mo/dashboard')} className="rounded-xl h-10 w-10 dark:text-slate-300">
                             <ArrowLeft className="h-5 w-5" />
                         </Button>
                         <div className="flex items-center gap-3">
@@ -516,12 +394,8 @@ const BudgetAllocation = () => {
                                 <PhilippinePeso className="h-5 w-5 text-white" />
                             </div>
                             <div>
-                                <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
-                                    Budget Management
-                                </h1>
-                                <p className="text-sm text-slate-500 dark:text-slate-400">
-                                    Manage allocations and view history
-                                </p>
+                                <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Budget Management</h1>
+                                <p className="text-sm text-slate-500 dark:text-slate-400">Manage allocations and view history</p>
                             </div>
                         </div>
                     </div>
@@ -531,32 +405,17 @@ const BudgetAllocation = () => {
                 <Card className="dark:bg-slate-800/80 dark:border-slate-700">
                     <CardContent className="pt-6">
                         <div className="flex flex-wrap items-center gap-4">
-                            <span className="font-medium text-slate-700 dark:text-slate-300">
-                                Select Fiscal Year:
-                            </span>
+                            <span className="font-medium text-slate-700 dark:text-slate-300">Select Fiscal Year:</span>
                             <div className="flex flex-wrap gap-2">
                                 {yearsData?.map((year) => {
-                                    const yVal =
-                                        typeof year === "object"
-                                            ? Number(year.year)
-                                            : Number(year);
+                                    const yVal = typeof year === "object" ? Number(year.year) : Number(year);
                                     return (
                                         <Button
                                             key={yVal}
-                                            variant={
-                                                selectedYear === yVal
-                                                    ? "default"
-                                                    : "outline"
-                                            }
+                                            variant={selectedYear === yVal ? "default" : "outline"}
                                             size="sm"
-                                            onClick={() =>
-                                                setSelectedYear(yVal)
-                                            }
-                                            className={
-                                                selectedYear === yVal
-                                                    ? "bg-blue-600 text-white"
-                                                    : "dark:text-slate-300 dark:border-slate-600"
-                                            }
+                                            onClick={() => setSelectedYear(yVal)}
+                                            className={selectedYear === yVal ? "bg-blue-600 text-white" : "dark:text-slate-300 dark:border-slate-600"}
                                         >
                                             {yVal}
                                         </Button>
@@ -569,137 +428,52 @@ const BudgetAllocation = () => {
 
                 {/* Stats Cards */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <StatsCard
-                        title="Total Annual Budget"
-                        value={formatCurrency(summary.total_allocated)}
-                        icon={PhilippinePeso}
-                        color="from-blue-500 to-blue-600"
-                    />
-                    <StatsCard
-                        title="Used"
-                        value={formatCurrency(summary.total_used)}
-                        icon={TrendingDown}
-                        color="from-yellow-500 to-yellow-600"
-                    />
-                    <StatsCard
-                        title="Remaining Annual"
-                        value={formatCurrency(summary.total_remaining)}
-                        icon={TrendingUp}
-                        color="from-emerald-500 to-emerald-600"
-                    />
-                    <StatsCard
-                        title="Departments"
-                        value={`${summary.departments_with_budget || 0} / ${summary.total_departments || 0}`}
-                        icon={Building2}
-                        color="from-purple-500 to-purple-600"
-                    />
+                    <StatsCard title="Total Annual Budget" value={formatCurrency(summary.total_allocated)} icon={PhilippinePeso} color="from-blue-500 to-blue-600" />
+                    <StatsCard title="Used" value={formatCurrency(summary.total_used)} icon={TrendingDown} color="from-yellow-500 to-yellow-600" />
+                    <StatsCard title="Remaining Annual" value={formatCurrency(summary.total_remaining)} icon={TrendingUp} color="from-emerald-500 to-emerald-600" />
+                    <StatsCard title="Departments" value={`${summary.departments_with_budget || 0} / ${summary.total_departments || 0}`} icon={Building2} color="from-purple-500 to-purple-600" />
                 </div>
 
                 {/* Allocation Table */}
                 <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
                     <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center">
-                        <h3 className="font-semibold text-slate-800 dark:text-white">
-                            Budget Details for {selectedYear}
-                        </h3>
+                        <h3 className="font-semibold text-slate-800 dark:text-white">Budget Details for {selectedYear}</h3>
                     </div>
                     <div className="overflow-auto max-h-[500px]">
                         <Table>
                             <TableHeader className="sticky top-0 bg-slate-50 dark:bg-slate-900 z-10">
                                 <TableRow>
-                                    <TableHead className="text-slate-600 dark:text-slate-300">
-                                        Code
-                                    </TableHead>
-                                    <TableHead className="text-right text-slate-600 dark:text-slate-300">
-                                        Annual Budget
-                                    </TableHead>
-                                    <TableHead className="text-right text-slate-600 dark:text-slate-300">
-                                        Weekly Suggested
-                                    </TableHead>
-                                    <TableHead className="text-right text-slate-600 dark:text-slate-300">
-                                        Used
-                                    </TableHead>
-                                    <TableHead className="text-right text-slate-600 dark:text-slate-300">
-                                        Remaining
-                                    </TableHead>
-                                    <TableHead className="text-center text-slate-600 dark:text-slate-300">
-                                        Status
-                                    </TableHead>
-                                    <TableHead className="text-right text-slate-600 dark:text-slate-300">
-                                        Actions
-                                    </TableHead>
+                                    <TableHead className="text-slate-600 dark:text-slate-300">Code</TableHead>
+                                    <TableHead className="text-right text-slate-600 dark:text-slate-300">Annual Budget</TableHead>
+                                    <TableHead className="text-right text-slate-600 dark:text-slate-300">Weekly Suggested</TableHead>
+                                    <TableHead className="text-right text-slate-600 dark:text-slate-300">Used</TableHead>
+                                    <TableHead className="text-right text-slate-600 dark:text-slate-300">Remaining</TableHead>
+                                    <TableHead className="text-center text-slate-600 dark:text-slate-300">Status</TableHead>
+                                    <TableHead className="text-right text-slate-600 dark:text-slate-300">Actions</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
                                 {budgets.map((budget) => (
                                     <TableRow key={budget.department_id}>
-                                        <TableCell>
-                                            <DepartmentTooltip
-                                                code={budget.department_code}
-                                                name={budget.department_name}
-                                            />
+                                        <TableCell><DepartmentTooltip code={budget.department_code} name={budget.department_name} /></TableCell>
+                                        <TableCell className="text-right font-medium text-blue-600 dark:text-blue-400">{formatCurrency(budget.annual_amount)}</TableCell>
+                                        <TableCell className="text-right text-purple-600 dark:text-purple-400">{formatCurrency(weeklySuggested(budget.annual_amount))}</TableCell>
+                                        <TableCell className="text-right text-yellow-600 dark:text-yellow-400">{formatCurrency(budget.used_amount)}</TableCell>
+                                        <TableCell className={cn("text-right font-medium", (budget.remaining_amount || 0) < 0 ? "text-red-600 dark:text-red-400" : "text-emerald-600 dark:text-emerald-400")}>
+                                            {formatCurrency(budget.remaining_amount)}
                                         </TableCell>
-                                        <TableCell className="text-right font-medium text-blue-600 dark:text-blue-400">
-                                            {formatCurrency(
-                                                budget.annual_amount,
-                                            )}
-                                        </TableCell>
-                                        <TableCell className="text-right text-purple-600 dark:text-purple-400">
-                                            {formatCurrency(
-                                                weeklySuggested(
-                                                    budget.annual_amount,
-                                                ),
-                                            )}
-                                        </TableCell>
-                                        <TableCell className="text-right text-yellow-600 dark:text-yellow-400">
-                                            {formatCurrency(budget.used_amount)}
-                                        </TableCell>
-                                        <TableCell
-                                            className={cn(
-                                                "text-right font-medium",
-                                                (budget.remaining_amount || 0) <
-                                                    0
-                                                    ? "text-red-600 dark:text-red-400"
-                                                    : "text-emerald-600 dark:text-emerald-400",
-                                            )}
-                                        >
-                                            {formatCurrency(
-                                                budget.remaining_amount,
-                                            )}
-                                        </TableCell>
-                                        <TableCell className="text-center">
-                                            {getStatusBadge(budget.status)}
-                                        </TableCell>
+                                        <TableCell className="text-center">{getStatusBadge(budget.status)}</TableCell>
                                         <TableCell className="text-right">
                                             <div className="flex justify-end gap-1">
                                                 {!budget.has_budget ? (
-                                                    <Button
-                                                        variant="ghost"
-                                                        size="sm"
-                                                        onClick={() =>
-                                                            handleEdit(budget)
-                                                        }
-                                                        className="text-green-600 dark:text-green-400"
-                                                    >
+                                                    <Button variant="ghost" size="sm" onClick={() => handleEdit(budget)} className="text-green-600 dark:text-green-400">
                                                         <Edit className="h-4 w-4" />
                                                     </Button>
                                                 ) : (
-                                                    <Button
-                                                        variant="ghost"
-                                                        size="sm"
-                                                        onClick={() => {
-                                                            setAddBudgetData({
-                                                                department_id:
-                                                                    budget.department_id.toString(),
-                                                                additional_amount:
-                                                                    "",
-                                                                reason: "",
-                                                            });
-                                                            setShowAddBudgetDialog(
-                                                                true,
-                                                            );
-                                                        }}
-                                                        className="text-emerald-600 dark:text-emerald-400"
-                                                    >
+                                                    <Button variant="ghost" size="sm" onClick={() => {
+                                                        setAddBudgetData({ department_id: budget.department_id.toString(), additional_amount: "", reason: "" });
+                                                        setShowAddBudgetDialog(true);
+                                                    }} className="text-emerald-600 dark:text-emerald-400">
                                                         <Plus className="h-4 w-4" />
                                                     </Button>
                                                 )}
@@ -713,7 +487,7 @@ const BudgetAllocation = () => {
                 </div>
 
                 {/* ============================================ */}
-                {/* ✅ TRANSACTION HISTORY (Replaced old Budget History) */}
+                {/* TRANSACTION HISTORY */}
                 {/* ============================================ */}
                 <Card className="dark:bg-[#0f172a] border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden relative">
                     <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/5 rounded-full blur-3xl pointer-events-none" />
@@ -727,10 +501,7 @@ const BudgetAllocation = () => {
 
                     <CardContent className="p-0 relative z-10">
                         {historyLoading ? (
-                            <div className="p-12 text-center text-slate-500 dark:text-slate-400">
-                                <Activity className="h-6 w-6 animate-spin mx-auto mb-2" />{" "}
-                                Loading history...
-                            </div>
+                            <div className="p-12 text-center text-slate-500 dark:text-slate-400"><Activity className="h-6 w-6 animate-spin mx-auto mb-2" /> Loading history...</div>
                         ) : processedHistory.rows.length === 0 ? (
                             <div className="p-12 text-center text-slate-500 dark:text-slate-400">
                                 <History className="h-10 w-10 text-slate-300 dark:text-slate-600 mx-auto mb-2" />
@@ -743,46 +514,23 @@ const BudgetAllocation = () => {
                                     <div className="flex items-center gap-6">
                                         {/* Donut Chart */}
                                         <div className="relative w-28 h-28 flex items-center justify-center">
-                                            <svg
-                                                className="w-full h-full transform -rotate-90"
-                                                viewBox="0 0 36 36"
-                                            >
-                                                <path
-                                                    className="text-slate-700"
-                                                    strokeWidth="4"
-                                                    stroke="currentColor"
-                                                    fill="none"
-                                                    d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                                                />
-                                                <path
-                                                    className="text-blue-500"
-                                                    strokeDasharray={`${(processedHistory.totals.finalBalance / (processedHistory.totals.finalBalance + processedHistory.totals.totalReleased || 1)) * 100}, 100`}
-                                                    strokeWidth="4"
-                                                    strokeLinecap="round"
-                                                    stroke="currentColor"
-                                                    fill="none"
-                                                    d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                                            <svg className="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
+                                                <path className="text-slate-700" strokeWidth="4" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                                                <path 
+                                                    className="text-blue-500" 
+                                                    strokeDasharray={`${remainingPct}, 100`} 
+                                                    strokeWidth="4" 
+                                                    strokeLinecap="round" 
+                                                    stroke="currentColor" 
+                                                    fill="none" 
+                                                    d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" 
                                                 />
                                             </svg>
                                             <div className="absolute inset-0 flex flex-col items-center justify-center">
                                                 <span className="text-xl font-bold text-white">
-                                                    {Math.round(
-                                                        (processedHistory.totals
-                                                            .finalBalance /
-                                                            (processedHistory
-                                                                .totals
-                                                                .finalBalance +
-                                                                processedHistory
-                                                                    .totals
-                                                                    .totalReleased ||
-                                                                1)) *
-                                                            100,
-                                                    )}
-                                                    %
+                                                    {remainingPct.toFixed(2)}%
                                                 </span>
-                                                <span className="text-[9px] font-medium text-slate-400 uppercase tracking-wider">
-                                                    Remaining
-                                                </span>
+                                                <span className="text-[9px] font-medium text-slate-400 uppercase tracking-wider">Remaining</span>
                                             </div>
                                         </div>
 
@@ -790,43 +538,20 @@ const BudgetAllocation = () => {
                                         <div className="space-y-3">
                                             <div className="flex items-center gap-2">
                                                 <span className="h-2.5 w-2.5 rounded-full bg-blue-500"></span>
-                                                <span className="text-sm text-slate-400">
-                                                    Remaining Balance
-                                                </span>
-                                                <span className="font-bold text-white ml-auto">
-                                                    {formatCurrency(
-                                                        processedHistory.totals
-                                                            .finalBalance,
-                                                    )}
-                                                </span>
+                                                <span className="text-sm text-slate-400">Remaining Balance</span>
+                                                <span className="font-bold text-white ml-auto">{formatCurrency(processedHistory.totals.finalBalance)}</span>
                                             </div>
                                             <div className="flex items-center gap-2">
                                                 <span className="h-2.5 w-2.5 rounded-full bg-slate-600"></span>
-                                                <span className="text-sm text-slate-400">
-                                                    Total Released
-                                                </span>
-                                                <span className="font-bold text-white ml-auto">
-                                                    {formatCurrency(
-                                                        processedHistory.totals
-                                                            .totalReleased,
-                                                    )}
-                                                </span>
+                                                <span className="text-sm text-slate-400">Total Released</span>
+                                                <span className="font-bold text-white ml-auto">{formatCurrency(processedHistory.totals.totalReleased)}</span>
                                             </div>
                                         </div>
                                     </div>
 
                                     <div className="text-center md:text-right md:border-l md:border-slate-700 md:pl-8">
-                                        <p className="text-sm text-slate-400 mb-1">
-                                            Total Allocation
-                                        </p>
-                                        <p className="text-3xl font-extrabold text-white">
-                                            {formatCurrency(
-                                                processedHistory.totals
-                                                    .finalBalance +
-                                                    processedHistory.totals
-                                                        .totalReleased,
-                                            )}
-                                        </p>
+                                        <p className="text-sm text-slate-400 mb-1">Total Allocation</p>
+                                        <p className="text-3xl font-extrabold text-white">{formatCurrency(processedHistory.totals.totalAllocated)}</p>
                                     </div>
                                 </div>
 
@@ -835,88 +560,44 @@ const BudgetAllocation = () => {
                                     <Table>
                                         <TableHeader className="bg-[#0f172a]">
                                             <TableRow className="border-slate-800 hover:bg-transparent">
-                                                <TableHead className="text-slate-400 font-medium">
-                                                    Date
-                                                </TableHead>
-                                                <TableHead className="text-slate-400 font-medium">
-                                                    Reference No.
-                                                </TableHead>
-                                                <TableHead className="text-slate-400 font-medium">
-                                                    Transaction Type
-                                                </TableHead>
-                                                <TableHead className="text-slate-400 font-medium">
-                                                    Purpose
-                                                </TableHead>
-                                                <TableHead className="text-slate-400 font-medium">
-                                                    Destination
-                                                </TableHead>
-                                                <TableHead className="text-right text-slate-400 font-medium">
-                                                    Amount
-                                                </TableHead>
-                                                <TableHead className="text-right text-slate-400 font-medium">
-                                                    Running Balance
-                                                </TableHead>
+                                                <TableHead className="text-slate-400 font-medium">Date</TableHead>
+                                                <TableHead className="text-slate-400 font-medium">Reference No.</TableHead>
+                                                <TableHead className="text-slate-400 font-medium">Transaction Type</TableHead>
+                                                <TableHead className="text-slate-400 font-medium">Purpose</TableHead>
+                                                <TableHead className="text-slate-400 font-medium">Destination</TableHead>
+                                                <TableHead className="text-right text-slate-400 font-medium">Amount</TableHead>
+                                                <TableHead className="text-right text-slate-400 font-medium">Running Balance</TableHead>
                                             </TableRow>
                                         </TableHeader>
                                         <TableBody>
-                                            {currentHistoryData.map(
-                                                (log, i) => (
-                                                    <TableRow
-                                                        key={i}
-                                                        className="border-slate-800/50 hover:bg-slate-800/30"
-                                                    >
-                                                        <TableCell className="text-sm text-slate-300 whitespace-nowrap">
-                                                            {format(
-                                                                log.displayDate,
-                                                                "MMM dd, yyyy",
-                                                            )}
-                                                        </TableCell>
-                                                        <TableCell className="text-sm font-mono text-slate-300">
-                                                            {log.referenceNo}
-                                                        </TableCell>
-                                                        <TableCell>
-                                                            <Badge
-                                                                variant="outline"
-                                                                className={cn(
-                                                                    "px-2 py-0.5 text-[10px] font-bold rounded-full border",
-                                                                    log.typeColor,
-                                                                )}
-                                                            >
-                                                                <log.TypeIcon className="h-3 w-3 mr-1" />
-                                                                {log.txType}
-                                                            </Badge>
-                                                        </TableCell>
-                                                        <TableCell className="text-sm text-slate-400 max-w-[150px] truncate">
-                                                            {log.displayPurpose}
-                                                        </TableCell>
-                                                        <TableCell className="text-sm text-slate-400 max-w-[150px] truncate">
-                                                            {
-                                                                log.displayDestination
-                                                            }
-                                                        </TableCell>
-                                                        <TableCell
-                                                            className={cn(
-                                                                "text-sm font-bold text-right whitespace-nowrap",
-                                                                log.isRelease
-                                                                    ? "text-red-400"
-                                                                    : "text-emerald-400",
-                                                            )}
-                                                        >
-                                                            {log.isRelease
-                                                                ? "-"
-                                                                : "+"}
-                                                            {formatCurrency(
-                                                                log.displayAmount,
-                                                            )}
-                                                        </TableCell>
-                                                        <TableCell className="text-sm font-bold text-right text-white whitespace-nowrap">
-                                                            {formatCurrency(
-                                                                log.runningBalance,
-                                                            )}
-                                                        </TableCell>
-                                                    </TableRow>
-                                                ),
-                                            )}
+                                            {currentHistoryData.map((log, i) => (
+                                                <TableRow key={i} className="border-slate-800/50 hover:bg-slate-800/30">
+                                                    <TableCell className="text-sm text-slate-300 whitespace-nowrap">
+                                                        {format(log.displayDate, 'MMM dd, yyyy')}
+                                                    </TableCell>
+                                                    <TableCell className="text-sm font-mono text-slate-300">
+                                                        {log.referenceNo}
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <Badge variant="outline" className={cn("px-2 py-0.5 text-[10px] font-bold rounded-full border", log.typeColor)}>
+                                                            <log.TypeIcon className="h-3 w-3 mr-1" />
+                                                            {log.txType}
+                                                        </Badge>
+                                                    </TableCell>
+                                                    <TableCell className="text-sm text-slate-400 max-w-[150px] truncate">
+                                                        {log.displayPurpose}
+                                                    </TableCell>
+                                                    <TableCell className="text-sm text-slate-400 max-w-[150px] truncate">
+                                                        {log.displayDestination}
+                                                    </TableCell>
+                                                    <TableCell className={cn("text-sm font-bold text-right whitespace-nowrap", log.isRelease ? "text-red-400" : "text-emerald-400")}>
+                                                        {log.isRelease ? '-' : '+'}{formatCurrency(log.displayAmount)}
+                                                    </TableCell>
+                                                    <TableCell className="text-sm font-bold text-right text-white whitespace-nowrap">
+                                                        {formatCurrency(log.runningBalance)}
+                                                    </TableCell>
+                                                </TableRow>
+                                            ))}
                                         </TableBody>
                                     </Table>
                                 </div>
@@ -924,60 +605,26 @@ const BudgetAllocation = () => {
                                 {/* PAGINATION */}
                                 <div className="p-4 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
                                     <span>
-                                        Showing{" "}
-                                        <span className="font-bold text-white">
-                                            {(historyPage - 1) *
-                                                historyRowsPerPage +
-                                                1}
-                                        </span>{" "}
-                                        to{" "}
-                                        <span className="font-bold text-white">
-                                            {Math.min(
-                                                historyPage *
-                                                    historyRowsPerPage,
-                                                processedHistory.rows.length,
-                                            )}
-                                        </span>{" "}
-                                        of{" "}
-                                        <span className="font-bold text-white">
-                                            {processedHistory.rows.length}
-                                        </span>{" "}
-                                        transactions
+                                        Showing <span className="font-bold text-white">{((historyPage - 1) * historyRowsPerPage) + 1}</span> to <span className="font-bold text-white">{Math.min(historyPage * historyRowsPerPage, processedHistory.rows.length)}</span> of <span className="font-bold text-white">{processedHistory.rows.length}</span> transactions
                                     </span>
                                     <div className="flex gap-1">
-                                        <Button
-                                            variant="outline"
-                                            size="sm"
+                                        <Button 
+                                            variant="outline" 
+                                            size="sm" 
                                             className="h-8 px-2 bg-transparent border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white"
-                                            onClick={() =>
-                                                setHistoryPage((p) =>
-                                                    Math.max(1, p - 1),
-                                                )
-                                            }
+                                            onClick={() => setHistoryPage(p => Math.max(1, p - 1))}
                                             disabled={historyPage === 1}
                                         >
-                                            <ChevronLeft className="h-4 w-4 mr-1" />{" "}
-                                            Previous
+                                            <ChevronLeft className="h-4 w-4 mr-1" /> Previous
                                         </Button>
-                                        <Button
-                                            variant="outline"
-                                            size="sm"
+                                        <Button 
+                                            variant="outline" 
+                                            size="sm" 
                                             className="h-8 px-2 bg-transparent border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white"
-                                            onClick={() =>
-                                                setHistoryPage((p) =>
-                                                    Math.min(
-                                                        totalHistoryPages,
-                                                        p + 1,
-                                                    ),
-                                                )
-                                            }
-                                            disabled={
-                                                historyPage ===
-                                                totalHistoryPages
-                                            }
+                                            onClick={() => setHistoryPage(p => Math.min(totalHistoryPages, p + 1))}
+                                            disabled={historyPage === totalHistoryPages}
                                         >
-                                            Next{" "}
-                                            <ChevronRight className="h-4 w-4 ml-1" />
+                                            Next <ChevronRight className="h-4 w-4 ml-1" />
                                         </Button>
                                     </div>
                                 </div>
@@ -991,155 +638,61 @@ const BudgetAllocation = () => {
             <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
                 <DialogContent className="dark:bg-slate-800 dark:border-slate-700 max-w-md">
                     <DialogHeader>
-                        <DialogTitle className="dark:text-white">
-                            Set Annual Budget
-                        </DialogTitle>
+                        <DialogTitle className="dark:text-white">Set Annual Budget</DialogTitle>
                     </DialogHeader>
                     <div className="space-y-4 py-4">
-                        <FormField
-                            label="Annual Budget (₱)"
-                            required
-                            error={editErrors.annual_amount}
-                            touched={editTouched.annual_amount}
-                        >
-                            <Input
-                                type="number"
-                                value={formData.annual_amount}
-                                onChange={(e) =>
-                                    setFormData({
-                                        ...formData,
-                                        annual_amount: e.target.value,
-                                    })
-                                }
+                        <FormField label="Annual Budget (₱)" required error={editErrors.annual_amount} touched={editTouched.annual_amount}>
+                            <Input 
+                                type="number" 
+                                value={formData.annual_amount} 
+                                onChange={(e) => setFormData({ ...formData, annual_amount: e.target.value })} 
                                 placeholder="e.g., 500000"
                             />
                         </FormField>
-                        <FormField
-                            label="Reason"
-                            required
-                            error={editErrors.reason}
-                            touched={editTouched.reason}
-                            helper="e.g., Initial allocation for FY 2026"
-                        >
-                            <Input
-                                value={formData.reason}
-                                onChange={(e) =>
-                                    setFormData({
-                                        ...formData,
-                                        reason: e.target.value,
-                                    })
-                                }
-                                placeholder="Reason for setting budget"
+                        <FormField label="Reason" required error={editErrors.reason} touched={editTouched.reason} helper="e.g., Initial allocation for FY 2026">
+                            <Input 
+                                value={formData.reason} 
+                                onChange={(e) => setFormData({ ...formData, reason: e.target.value })} 
+                                placeholder="Reason for setting budget" 
                             />
                         </FormField>
                     </div>
                     <DialogFooter>
-                        <Button
-                            variant="outline"
-                            onClick={() => setShowEditDialog(false)}
-                            className="dark:text-slate-300 dark:border-slate-600"
-                        >
-                            Cancel
-                        </Button>
-                        <Button
-                            onClick={handleSetBudget}
-                            disabled={setBudgetMutation.isPending}
-                            className="bg-blue-600 hover:bg-blue-700 text-white"
-                        >
-                            Save Budget
-                        </Button>
+                        <Button variant="outline" onClick={() => setShowEditDialog(false)} className="dark:text-slate-300 dark:border-slate-600">Cancel</Button>
+                        <Button onClick={handleSetBudget} disabled={setBudgetMutation.isPending} className="bg-blue-600 hover:bg-blue-700 text-white">Save Budget</Button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
 
             {/* ADD BUDGET DIALOG */}
-            <Dialog
-                open={showAddBudgetDialog}
-                onOpenChange={setShowAddBudgetDialog}
-            >
+            <Dialog open={showAddBudgetDialog} onOpenChange={setShowAddBudgetDialog}>
                 <DialogContent className="dark:bg-slate-800 dark:border-slate-700 max-w-md">
                     <DialogHeader>
-                        <DialogTitle className="dark:text-white">
-                            Add Additional Budget
-                        </DialogTitle>
+                        <DialogTitle className="dark:text-white">Add Additional Budget</DialogTitle>
                     </DialogHeader>
                     <div className="space-y-4 py-4">
-                        <FormField
-                            label="Department"
-                            required
-                            error={addErrors.department_id}
-                        >
+                        <FormField label="Department" required error={addErrors.department_id}>
                             <select
                                 value={addBudgetData.department_id}
-                                onChange={(e) =>
-                                    setAddBudgetData({
-                                        ...addBudgetData,
-                                        department_id: e.target.value,
-                                    })
-                                }
+                                onChange={(e) => setAddBudgetData({ ...addBudgetData, department_id: e.target.value })}
                                 className="w-full px-3 py-2 border rounded-lg dark:bg-slate-900 dark:border-slate-700 dark:text-white"
                             >
                                 <option value="">Select Department</option>
                                 {budgets.map((b) => (
-                                    <option
-                                        key={b.department_id}
-                                        value={b.department_id}
-                                    >
-                                        {b.department_code} -{" "}
-                                        {b.department_name}
-                                    </option>
+                                    <option key={b.department_id} value={b.department_id}>{b.department_code} - {b.department_name}</option>
                                 ))}
                             </select>
                         </FormField>
-                        <FormField
-                            label="Additional Amount (₱)"
-                            required
-                            error={addErrors.additional_amount}
-                        >
-                            <Input
-                                type="number"
-                                value={addBudgetData.additional_amount}
-                                onChange={(e) =>
-                                    setAddBudgetData({
-                                        ...addBudgetData,
-                                        additional_amount: e.target.value,
-                                    })
-                                }
-                            />
+                        <FormField label="Additional Amount (₱)" required error={addErrors.additional_amount}>
+                            <Input type="number" value={addBudgetData.additional_amount} onChange={(e) => setAddBudgetData({ ...addBudgetData, additional_amount: e.target.value })} />
                         </FormField>
-                        <FormField
-                            label="Reason"
-                            required
-                            error={addErrors.reason}
-                            helper="e.g., Mayor's Memo No. 2026-001"
-                        >
-                            <Input
-                                value={addBudgetData.reason}
-                                onChange={(e) =>
-                                    setAddBudgetData({
-                                        ...addBudgetData,
-                                        reason: e.target.value,
-                                    })
-                                }
-                                placeholder="Reason for adding budget"
-                            />
+                        <FormField label="Reason" required error={addErrors.reason} helper="e.g., Mayor's Memo No. 2026-001">
+                            <Input value={addBudgetData.reason} onChange={(e) => setAddBudgetData({ ...addBudgetData, reason: e.target.value })} placeholder="Reason for adding budget" />
                         </FormField>
                     </div>
                     <DialogFooter>
-                        <Button
-                            variant="outline"
-                            onClick={() => setShowAddBudgetDialog(false)}
-                            className="dark:text-slate-300 dark:border-slate-600"
-                        >
-                            Cancel
-                        </Button>
-                        <Button
-                            onClick={handleAddBudget}
-                            disabled={addBudgetMutation.isPending}
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white"
-                        >
-                            Add Budget
-                        </Button>
+                        <Button variant="outline" onClick={() => setShowAddBudgetDialog(false)} className="dark:text-slate-300 dark:border-slate-600">Cancel</Button>
+                        <Button onClick={handleAddBudget} disabled={addBudgetMutation.isPending} className="bg-emerald-600 hover:bg-emerald-700 text-white">Add Budget</Button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
