@@ -201,6 +201,7 @@ const ReplayMarker = ({ segments, replayIndex, icon }) => {
 
     return position ? <Marker position={position} icon={icon} /> : null;
 };
+
 // Segment colors (alternate so paused/resumed segments are visually distinct)
 const SEGMENT_COLORS = [
     "#3b82f6", // blue
@@ -1642,6 +1643,14 @@ const GsoDashboard = () => {
                                             }
                                             icon={icons.end}
                                         />
+                                        {/* ✅ IDUGANG KINI NGA REPLAY MARKER */}
+                                        {isReplaying && (
+                                            <ReplayMarker
+                                                segments={routeSegments.length > 0 ? routeSegments : [{ coords: routeCoordinates }]}
+                                                replayIndex={replayIndex}
+                                                icon={icons.vehicle}
+                                            />
+                                        )}
                                     </MapContainer>
                                 ) : (
                                     <div className="flex items-center justify-center h-full text-slate-500">
