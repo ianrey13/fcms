@@ -12,9 +12,6 @@ import { isWithinInterval, subDays, startOfMonth, endOfMonth, startOfWeek, endOf
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import {
-    Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
-} from "@/components/ui/dialog";
 
 // ✅ IMPORT ANG GAS SLIP VIEW
 import GasSlipView from "./reports/GasSlipView";
@@ -1141,17 +1138,13 @@ const MayorDashboard = () => {
                 </Card>
             </div>
 
-            <Dialog open={!!selectedGasSlip} onOpenChange={(open) => !open && setSelectedGasSlip(null)}>
-                <DialogContent className="max-w-4xl bg-[#121829] border-slate-800 text-white p-0 overflow-hidden">
-                    {/* I-pass ang data sa GasSlipView */}
-                    {selectedGasSlip && (
-                        <GasSlipView 
-                            gasSlip={selectedGasSlip} 
-                            onClose={() => setSelectedGasSlip(null)} 
-                        />
-                    )}
-                </DialogContent>
-            </Dialog>
+            {/* ✅ GAS SLIP VIEW — direkta ra i-render (naa na siyay kaugalingon overlay) */}
+            {selectedGasSlip && (
+                <GasSlipView 
+                    ticket={selectedGasSlip} 
+                    onClose={() => setSelectedGasSlip(null)} 
+                />
+            )}
         </div>
     );
 };

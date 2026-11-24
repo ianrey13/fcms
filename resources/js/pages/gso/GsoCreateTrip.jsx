@@ -354,31 +354,87 @@ const GsoCreateTrip = () => {
         },
     });
 
-    const handleSubmit = (e) => {
-        e.preventDefault();
-        const newErrors = {};
-        if (!formData.driver_id) newErrors.driver_id = "Required";
-        if (!formData.vehicle_id) newErrors.vehicle_id = "Required";
-        if (!formData.purpose) newErrors.purpose = "Required";
-        if (stops.filter(s => s.address && s.lat).length === 0) newErrors.destination = "Required";
+   const handleSubmit = (e) => {
+    e.preventDefault();
 
-        if (Object.keys(newErrors).length > 0) {
-            setErrors(newErrors);
-            return toast.error("Please fill in all required fields.");
+    const newErrors = {};
+    if (!formData.driver_id) newErrors.driver_id = "Required";
+    if (!formData.vehicle_id) newErrors.vehicle_id = "Required";
+    if (!formData.purpose) newErrors.purpose = "Required";
+    if (stops.filter(s => s.address && s.lat && s.lng).length === 0) {
+        newErrors.destination = "Required";
+    }
+
+    if (Object.keys(newErrors).length > 0) {
+        setErrors(newErrors);
+        return toast.error("Please fill in all required fields.");
+    }
+
+    // ✅ Duplicate check (by coordinates)
+    const validStops = stops.filter(s => s.address && s.lat != null && s.lng != null);
+    const coordSet = new Set();
+    for (const stop of validStops) {
+        const key = `${stop.lat.toFixed(4)},${stop.lng.toFixed(4)}`;
+        if (coordSet.has(key)) {
+            toast.error("Duplicate destination detected. Please remove the duplicate stop.");
+            return;
+        }
+        coordSet.add(key);
+    }
+
+    // ✅ Build destination string — keep full location, append municipality
+    const destString = (() => {
+        const parts = stops
+            .filter(s => s.address)
+            .map(s => s.address.trim());
+
+        if (parts.length === 0) return "";
+
+        // Dedupe (case-insensitive) while preserving order
+        const seen = new Set();
+        const uniqueParts = parts.filter(p => {
+            const key = p.toLowerCase();
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
+
+        // Check if ALL stops are within Laguindingan
+        const allInLaguindingan = uniqueParts.every(p =>
+            p.toLowerCase().includes("laguindingan")
+        );
+
+        if (allInLaguindingan) {
+            // Extract just the barangay/location name (first comma chunk)
+            const names = uniqueParts.map(p => p.split(",")[0].trim());
+            return `${names.join(", ")}, Laguindingan, Misamis Oriental`;
         }
 
-        const destString = stops.filter(s => s.address).map(s => s.address.split(',')[0]).join(', ');
+        // Mixed destinations — keep full descriptions separated by "; "
+        return uniqueParts.join("; ");
+    })();
 
-        const payload = {
-            ...formData,
-            destination: destString,
-            estimated_distance_km: tripEstimate?.distance_km || 0,
-            estimated_fuel_liters: tripEstimate?.estimated_liters || 0,
-            estimated_cost: tripEstimate?.estimated_cost || 0,
-        };
+    // ✅ Guard: ensure destination is non-empty and valid
+    if (
+        !destString ||
+        destString.trim() === "" ||
+        destString === ", Misamis Oriental" ||
+        destString === ", Laguindingan, Misamis Oriental"
+    ) {
+        toast.error("Please enter at least one valid destination before submitting.");
+        return;
+    }
 
-        createTripMutation.mutate(payload);
+    const payload = {
+        ...formData,
+        destination: destString,
+        estimated_distance_km: tripEstimate?.distance_km || 0,
+        estimated_fuel_liters: tripEstimate?.estimated_liters || 0,
+        estimated_cost: tripEstimate?.estimated_cost || 0,
     };
+
+    createTripMutation.mutate(payload);
+};
 
     return (
         <div className="min-h-screen bg-[#090e1a] p-4 md:p-6 font-sans text-slate-200">
