@@ -9,7 +9,6 @@ import { SkeletonPage } from "../../components/ui/SkeletonCard";
 import api, { mayorsOfficeAPI } from "../../services/api";
 import { isWithinInterval, subDays, startOfMonth, endOfMonth, startOfWeek, endOfWeek, subMonths } from "date-fns";
 
-// ✅ GIDUGANG ANG INPUT UG CARD
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -17,7 +16,8 @@ import { Button } from "@/components/ui/button";
 import {
     ArrowRight, Activity, PieChart, Fuel, Building2, Car, Download, TrendingUp, 
     CheckCircle, Wallet, Scale, AlertTriangle, Info, Trophy, ShieldCheck, Calendar,
-    ChevronDown, ChevronLeft, ChevronRight, Search, X, BarChart3, Table as TableIcon
+    ChevronDown, ChevronLeft, ChevronRight, Search, X, BarChart3, Table as TableIcon,
+    Landmark
 } from "lucide-react";
 import {
     Cell, PieChart as RePieChart, Pie, ResponsiveContainer, Tooltip,
@@ -29,7 +29,7 @@ import { cn } from "@/lib/utils";
 // HELPERS
 // ============================================
 
-const DEPARTMENT_PALETTE = ["#3b82f6", "#10b981", "#8b5cf6", "#f59e0b", "#ef4444"];
+const DEPARTMENT_PALETTE = ["#3b82f6", "#10b981", "#8b5cf6", "#f59e0b", "#ef4444", "#14b8a6", "#f43f5e", "#6366f1", "#8b5cf6", "#ec4899"];
 
 const extractArray = (response) => {
     if (!response) return [];
@@ -199,6 +199,9 @@ const MayorDashboard = () => {
     const [transStatusFilter, setTransStatusFilter] = useState("all"); 
     const [transTimeFilter, setTransTimeFilter] = useState("this_month"); 
     
+    // ✅ State para sa gi-click nga slice sa Pie Chart
+    const [selectedPieDept, setSelectedPieDept] = useState(null);
+
     // ✅ Monthly Monitoring Search State
     const [monitorSearch, setMonitorSearch] = useState("");
     const [showMonitorDropdown, setShowMonitorDropdown] = useState(false);
@@ -287,7 +290,7 @@ const MayorDashboard = () => {
             spent: parseFloat(dept.spent_amount ?? dept.used_amount ?? dept.spent ?? 0),
             remaining: parseFloat(dept.remaining_amount ?? 0),
             utilization: parseFloat(dept.utilization_percentage ?? dept.utilization ?? 0),
-        })).sort((a, b) => b.spent - a.spent);
+        })).sort((a, b) => b.allocated - a.allocated); // Sorted by allocation para nindot tan-awon sa Pie
     }, [budgetData]);
 
     const allTimeTotals = useMemo(() => {
@@ -310,6 +313,28 @@ const MayorDashboard = () => {
                 department_id: d.department_id
             }));
     }, [departmentBudgets]);
+
+    // ✅ Filter transactions para sa selected Pie Department
+    const selectedDeptTransactions = useMemo(() => {
+        if (!selectedPieDept) return [];
+        return approvedTicketsRaw
+            .filter(t => t.department_name === selectedPieDept.name)
+            .sort((a, b) => new Date(b.trip_date) - new Date(a.trip_date));
+    }, [approvedTicketsRaw, selectedPieDept]);
+
+    // ✅ Selected department totals
+    const selectedDeptTotals = useMemo(() => {
+        if (!selectedPieDept) return null;
+        const dept = departmentBudgets.find(d => d.department_name === selectedPieDept.name);
+        const totalReleased = selectedDeptTransactions.reduce((sum, t) => sum + (parseFloat(t.amount_released) || 0), 0);
+        return {
+            allocated: dept?.allocated || 0,
+            spent: dept?.spent || 0,
+            remaining: dept?.remaining || 0,
+            totalReleased,
+            txCount: selectedDeptTransactions.length
+        };
+    }, [selectedPieDept, departmentBudgets, selectedDeptTransactions]);
 
     const topConsumersData = useMemo(() => {
         let filteredTickets = approvedTicketsRaw;
@@ -523,7 +548,6 @@ const MayorDashboard = () => {
             if (date >= last30Days) {
                 const amt = parseFloat(r.amount) || 0;
                 const liters = parseFloat(r.liters_availed) || 0;
-                // Only include if we have both amount and liters to calculate accurate weighted avg
                 if (amt > 0 && liters > 0) {
                     totalCost += amt;
                     totalLiters += liters;
@@ -534,7 +558,6 @@ const MayorDashboard = () => {
         return totalLiters > 0 ? (totalCost / totalLiters) : 0;
     }, [fuelPriceData]);
 
-    // ✅ KWENTA SA TOTAL PARA SA UBOS SA TABLE (Base sa tanang data sa tab, dili lang sa page)
     const totalQuantity = useMemo(() => {
         return fuelPriceData.reduce((sum, r) => {
             const qty = parseFloat(r.liters_availed) || 0;
@@ -546,7 +569,6 @@ const MayorDashboard = () => {
         return fuelPriceData.reduce((sum, r) => {
             const amt = parseFloat(r.amount) || 0;
             const qty = parseFloat(r.liters_availed) || 0;
-            // I-apil ra ang total cost kung naay quantity
             return qty > 0 ? sum + amt : sum;
         }, 0);
     }, [fuelPriceData]);
@@ -654,53 +676,194 @@ const MayorDashboard = () => {
                 </Card>
             </div>
 
-            {/* 2. Budget Allocation Pie Chart */}
+            {/* 2. Interactive Budget Allocation & Department Details */}
             <div className="mb-6">
                 <Card className="bg-[#121829] border border-slate-800 rounded-2xl shadow-lg p-6">
                     <div className="flex items-center justify-between mb-4">
                         <h3 className="font-bold text-white text-lg flex items-center gap-2">
                             <PieChart className="h-5 w-5 text-blue-400" /> BUDGET ALLOCATION
                         </h3>
+                        {selectedPieDept && (
+                            <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                onClick={() => setSelectedPieDept(null)} 
+                                className="text-slate-400 hover:text-white text-xs h-8"
+                            >
+                                <ArrowRight className="h-4 w-4 mr-1 rotate-180" /> Back to Overview
+                            </Button>
+                        )}
                     </div>
                     
-                    <div className="flex flex-col items-center">
-                        <div className="relative w-[300px] h-[300px] md:w-[350px] md:h-[350px]">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <RePieChart>
-                                    <Pie
-                                        data={pieData}
-                                        dataKey="value"
-                                        nameKey="name"
-                                        cx="50%" cy="50%"
-                                        innerRadius="65%" outerRadius="90%"
-                                        paddingAngle={2} stroke="none"
-                                    >
-                                        {pieData.map((entry, i) => (
-                                            <Cell key={i} fill={entry.color} />
-                                        ))}
-                                    </Pie>
-                                    <Tooltip content={<CustomPieTooltip />} />
-                                </RePieChart>
-                            </ResponsiveContainer>
-                            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                                  <p className="text-xl md:text-2xl font-bold text-white">{formatCurrency(allTimeTotals.totalAllocated)}</p>
-                                <p className="text-xs text-slate-400 uppercase tracking-widest mt-1">Total Budget</p>
+                    <div className="flex flex-col lg:flex-row items-center justify-center gap-8 min-h-[350px]">
+                        
+                        {/* LEFT SIDE: Pie Chart */}
+                        <div className={cn("relative transition-all duration-300 w-full flex items-center justify-center", selectedPieDept ? "lg:w-5/12 gap-6" : "max-w-lg mx-auto")}>
+                            
+                            <div className={cn("relative transition-all duration-300", selectedPieDept ? "w-[200px] h-[200px] md:w-[250px] md:h-[250px]" : "w-[300px] h-[300px] md:w-[350px] md:h-[350px]")}>
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <RePieChart>
+                                        <Pie
+                                            data={pieData}
+                                            dataKey="value"
+                                            nameKey="name"
+                                            cx="50%" cy="50%"
+                                            innerRadius={selectedPieDept ? "60%" : "65%"} 
+                                            outerRadius={selectedPieDept ? "85%" : "90%"}
+                                            paddingAngle={2} 
+                                            stroke="none"
+                                            onClick={(data) => {
+                                                if (selectedPieDept && selectedPieDept.name === data.name) {
+                                                    setSelectedPieDept(null);
+                                                } else {
+                                                    setSelectedPieDept(data);
+                                                }
+                                            }}
+                                            className="cursor-pointer outline-none"
+                                        >
+                                            {pieData.map((entry, i) => (
+                                                <Cell 
+                                                    key={i} 
+                                                    fill={entry.color} 
+                                                    opacity={selectedPieDept && selectedPieDept.name !== entry.name ? 0.3 : 1} 
+                                                />
+                                            ))}
+                                        </Pie>
+                                        <Tooltip content={<CustomPieTooltip />} />
+                                    </RePieChart>
+                                </ResponsiveContainer>
+                                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                                    <p className="text-xl md:text-2xl font-bold text-white">{formatCurrency(allTimeTotals.totalAllocated)}</p>
+                                    <p className="text-xs text-slate-400 uppercase tracking-widest mt-1">Total Budget</p>
+                                </div>
+                            </div>
+
+                            {/* Legend */}
+                            <div className={cn(
+                                "grid gap-2", 
+                                selectedPieDept ? "grid-cols-1 w-[200px]" : "mt-6 grid-cols-2 md:grid-cols-4 w-full max-w-4xl mx-auto"
+                            )}>
+                                {pieData.map((d, i) => {
+                                    const isSelected = selectedPieDept?.name === d.name;
+                                    const isDimmed = selectedPieDept && !isSelected;
+                                    
+                                    return (
+                                        <div 
+                                            key={i} 
+                                            onClick={() => setSelectedPieDept(isSelected ? null : d)}
+                                            className={cn(
+                                                "flex items-center justify-between p-2 rounded-lg border transition-all cursor-pointer",
+                                                isSelected ? "bg-slate-700/60 border-slate-500 shadow-md" : 
+                                                isDimmed ? "bg-slate-800/20 border-transparent opacity-50" : 
+                                                "bg-slate-800/40 border-slate-700/50 hover:bg-slate-800/80"
+                                            )}
+                                        >
+                                            <div className="flex items-center gap-2 truncate">
+                                                <span className="h-2.5 w-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: d.color }} />
+                                                <span className="text-xs text-slate-300 truncate" title={d.name}>{d.name}</span>
+                                            </div>
+                                            <span className="text-xs font-semibold text-white ml-2">
+                                                {allTimeTotals.totalAllocated > 0 ? ((d.value / allTimeTotals.totalAllocated) * 100).toFixed(1) : 0}%
+                                            </span>
+                                        </div>
+                                    );
+                                })}
                             </div>
                         </div>
 
-                        <div className="mt-6 grid grid-cols-2 md:grid-cols-4 gap-4 w-full max-w-4xl">
-                            {pieData.map((d, i) => (
-                                <div key={i} className="flex items-center justify-between bg-slate-800/40 p-2 rounded-lg border border-slate-700/50">
-                                    <div className="flex items-center gap-2 truncate">
-                                        <span className="h-2.5 w-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: d.color }} />
-                                        <span className="text-xs text-slate-300 truncate">{d.name}</span>
+                        {/* RIGHT SIDE: Selected Department Details & Transactions */}
+                        {selectedPieDept && (
+                            <div className="w-full lg:w-7/12 bg-[#0b101c] border border-slate-800 rounded-xl flex flex-col overflow-hidden animate-in fade-in slide-in-from-right-4 duration-300">
+                                
+                                <div className="p-6 border-b border-slate-800 bg-[#121829]">
+                                    <div className="flex items-start gap-4 mb-6">
+                                        <div className="p-3 bg-blue-500/10 rounded-xl">
+                                            <Landmark className="h-8 w-8 text-blue-400" />
+                                        </div>
+                                        <div>
+                                            <h4 className="text-xl font-bold text-white mb-1">{selectedPieDept.name}</h4>
+                                            <p className="text-xs text-slate-400">Department Details</p>
+                                        </div>
                                     </div>
-                                    <span className="text-xs font-semibold text-white ml-2">
-                                        {allTimeTotals.totalAllocated > 0 ? ((d.value / allTimeTotals.totalAllocated) * 100).toFixed(1) : 0}%
-                                    </span>
+                                    
+                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                        <div className="flex flex-col gap-1">
+                                            <div className="flex items-center gap-1 text-xs text-slate-400 mb-1">
+                                                <Wallet className="h-3 w-3" /> Allocated Budget
+                                            </div>
+                                            <p className="font-bold text-white text-sm">{formatCurrency(selectedDeptTotals?.allocated)}</p>
+                                        </div>
+                                        <div className="flex flex-col gap-1">
+                                            <div className="flex items-center gap-1 text-xs text-slate-400 mb-1">
+                                                <ArrowRight className="h-3 w-3" /> Total Released
+                                            </div>
+                                            <p className="font-bold text-white text-sm">{formatCurrency(selectedDeptTotals?.totalReleased)}</p>
+                                        </div>
+                                        <div className="flex flex-col gap-1">
+                                            <div className="flex items-center gap-1 text-xs text-slate-400 mb-1">
+                                                <Scale className="h-3 w-3" /> Remaining Budget
+                                            </div>
+                                            <p className="font-bold text-white text-sm">{formatCurrency(selectedDeptTotals?.remaining)}</p>
+                                        </div>
+                                        <div className="flex flex-col gap-1">
+                                            <div className="flex items-center gap-1 text-xs text-slate-400 mb-1">
+                                                <Activity className="h-3 w-3" /> Transactions
+                                            </div>
+                                            <p className="font-bold text-white text-sm">{selectedDeptTotals?.txCount}</p>
+                                        </div>
+                                    </div>
                                 </div>
-                            ))}
-                        </div>
+
+                                <div className="px-4 py-3 bg-[#0f172a] border-b border-slate-800 flex items-center justify-between">
+                                    <h5 className="text-xs font-bold text-white flex items-center gap-2">
+                                        <TableIcon className="h-4 w-4 text-blue-400" /> Department Transaction Details
+                                    </h5>
+                                    <span className="text-[10px] text-slate-500">Fuel budget transactions for {selectedPieDept.name}</span>
+                                </div>
+
+                                <div className="overflow-x-auto flex-1 max-h-[300px]">
+                                    <table className="w-full text-left text-xs">
+                                        <thead className="bg-[#0f172a] text-slate-400 sticky top-0">
+                                            <tr>
+                                                <th className="px-4 py-3 font-medium">Date</th>
+                                                <th className="px-4 py-3 font-medium">TT No.</th>
+                                                <th className="px-4 py-3 font-medium">Purpose</th>
+                                                <th className="px-4 py-3 font-medium">Destination</th>
+                                                <th className="px-4 py-3 font-medium text-right">Amount Released</th>
+                                                <th className="px-4 py-3 font-medium text-right">Balance</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-800/50">
+                                            {selectedDeptTransactions.length === 0 ? (
+                                                <tr>
+                                                    <td colSpan={6} className="px-4 py-8 text-center text-slate-500">
+                                                        No transactions found for this department.
+                                                    </td>
+                                                </tr>
+                                            ) : (
+                                                selectedDeptTransactions.map((t, i) => {
+                                                    let runningBalance = selectedDeptTotals?.allocated || 0;
+                                                    for (let j = 0; j <= i; j++) {
+                                                        runningBalance -= parseFloat(selectedDeptTransactions[j].amount_released) || 0;
+                                                    }
+
+                                                    return (
+                                                        <tr key={i} className="hover:bg-slate-800/20 transition-colors">
+                                                            <td className="px-4 py-3 text-slate-300">{formatDateShort(t.trip_date)}</td>
+                                                            <td className="px-4 py-3 text-slate-300 font-mono">{t.ticket_number}</td>
+                                                            <td className="px-4 py-3 text-slate-400 truncate max-w-[120px]" title={t.purpose}>{t.purpose || "—"}</td>
+                                                            <td className="px-4 py-3 text-slate-400 truncate max-w-[120px]" title={t.destination}>{t.destination || "—"}</td>
+                                                            <td className="px-4 py-3 text-right font-medium text-white">{formatCurrency(t.amount_released)}</td>
+                                                            <td className="px-4 py-3 text-right font-bold text-emerald-400">{formatCurrency(runningBalance)}</td>
+                                                        </tr>
+                                                    );
+                                                })
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </Card>
             </div>
@@ -980,7 +1143,7 @@ const MayorDashboard = () => {
                 </Card>
             </div>
 
-            {/* ✅ 6. NEW SECTION: Fuel Price Monitoring & Analysis */}
+            {/* 6. Fuel Price Monitoring & Analysis */}
             <div className="mb-6">
                 <Card className="bg-[#121829] border border-slate-800 rounded-2xl shadow-lg p-6">
                     <div className="mb-6">
@@ -1047,7 +1210,6 @@ const MayorDashboard = () => {
                                             const quantity = parseFloat(r.liters_availed) || 0;
                                             const totalCost = parseFloat(r.amount) || 0;
                                             
-                                            // ✅ CONDITIONAL: If quantity is 0, show dash for Quantity, Unit Price, and Total Cost
                                             const hasQuantity = quantity > 0;
                                             const displayQty = hasQuantity ? quantity.toFixed(2) : "-";
                                             const displayUnit = hasQuantity ? `₱${(totalCost / quantity).toFixed(2)}` : "-";
@@ -1065,7 +1227,6 @@ const MayorDashboard = () => {
                                             );
                                         })}
                                     </tbody>
-                                    {/* ✅ TOTAL ROW SA UBOS SA TABLE */}
                                     {paginatedFuelData.length > 0 && (
                                         <tfoot className="bg-[#121829] border-t border-slate-700 text-xs">
                                             <tr>
