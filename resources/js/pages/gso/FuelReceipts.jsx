@@ -117,32 +117,22 @@ const getReceiptImageUrls = (receipt) => {
     return [...new Set(urlsList)];
 };
 
+// ✅ UPDATED LOGIC: Pending or Verified ONLY
 const getReceiptStatus = (receipt) => {
-    // Gikan ni sa backend derived columns
-    const doStatus = receipt?.do_verification_status; 
     const gsoStatus = receipt?.gso_validation_status;
 
-    // 1. Kung Verified na sa GSO (naay Liters)
+    // 1. Kung Verified na (naay Liters)
     if (gsoStatus === 'verified') {
-        return { color: 'bg-emerald-500', label: 'Fully Verified', icon: CheckCircle };
+        return { color: 'bg-emerald-500', label: 'Verified', icon: CheckCircle };
     }
 
-    // 2. Kung Verified na sa DO pero wala pay Liters ang GSO
-    if (doStatus === 'verified' && gsoStatus === 'pending') {
-        return {
-            color: 'bg-blue-500',
-            label: 'DO Verified — Awaiting GSO',
-            icon: Clock
-        };
-    }
-
-    // 3. Kung Pending pa sa DO
-    return { color: 'bg-yellow-500', label: 'Pending DO', icon: Clock };
+    // 2. Pending pa (wala pay Liters)
+    return { color: 'bg-yellow-500', label: 'Pending', icon: Clock };
 };
 
 // ✅ Base sa verification_status (GSO validation)
 const isVerified = (r) => {
-    return r?.verification_status === 'verified';
+    return r?.gso_validation_status === 'verified';
 };
 
 const formatDate = (date) => {
@@ -346,7 +336,7 @@ const FuelReceipts = () => {
                 value: safeReceipts.filter(r => !isVerified(r)).length,
                 icon: Clock,
                 color: 'from-yellow-500 to-yellow-600',
-                subtitle: 'Awaiting verification',
+                subtitle: 'Awaiting liters input',
                 trend: 0,
             },
             {
@@ -354,7 +344,7 @@ const FuelReceipts = () => {
                 value: safeReceipts.filter(r => isVerified(r)).length,
                 icon: CheckCircle,
                 color: 'from-emerald-500 to-emerald-600',
-                subtitle: 'Approved receipts',
+                subtitle: 'Fully processed',
                 trend: 0,
             },
             {
@@ -429,9 +419,8 @@ const FuelReceipts = () => {
                             ...r,
                             liters: updated.liters_availed ?? liters,
                             unit_price: updated.unit_price ?? r.unit_price,
-                            // ✅ Gamit ang verification_status
-                            verification_status: updated.verification_status ?? 'verified',
-                            verified_at: updated.verified_at ?? new Date().toISOString(),
+                            // ✅ Gamit ang gso_validation_status
+                            gso_validation_status: 'verified',
                         };
                     }
                     return r;

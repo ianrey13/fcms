@@ -100,7 +100,6 @@ const VehicleDetails = () => {
     }, []);
 
     // ✅ GIKUHA TANAN NGA TRIPS PARA SA VEHICLE (Parehas sa GsoDashboard)
-    // Kini nga endpoint nag-return sa gasSlip ug fuelReceipt data
     const { data: historyData = [], isLoading: historyLoading } = useQuery({
         queryKey: ['vehicle-history', id],
         queryFn: async () => {
@@ -126,8 +125,8 @@ const VehicleDetails = () => {
         if (!vehicle) return [];
         const r2 = (n) => parseFloat(toNum(n).toFixed(2));
 
+        // 1. I-map ang tanang trips ngadto sa ledger rows (walay balance pa)
         const rows = historyData.map(trip => {
-            // ✅ Gikuha diretso gikan sa getAllTrips data (parehas sa GsoDashboard)
             const rawFuelIn = 
                 trip.gasSlip?.fuelReceipt?.liters_availed ??
                 trip.gas_slip?.fuel_receipt?.liters_availed ??
@@ -136,7 +135,6 @@ const VehicleDetails = () => {
             const hasFuelInput = rawFuelIn !== undefined && rawFuelIn !== null && rawFuelIn !== "";
             const fuelIn = hasFuelInput ? toNum(rawFuelIn) : null;
             
-            // Compute distance (Actual vs GPS)
             const isCompleted = ['completed', 'pending_gso_validation', 'closed'].includes(trip.status);
             const distance = isCompleted ? toNum(trip.actual_distance_km || trip.gps_distance_km) : 0;
             
@@ -155,29 +153,27 @@ const VehicleDetails = () => {
             };
         });
 
-        // Sort oldest to newest for balance calculation
+        // 2. Sort oldest to newest para ma-compute ang chain
         rows.sort((a, b) => a.sortTime - b.sortTime);
 
-        const initialRaw = vehicle.initial_estimated_fuel;
-        const hasInitial = initialRaw !== undefined && initialRaw !== null && initialRaw !== '';
-        
-        const totalIn = rows.reduce((s, r) => s + (r.fuelIn ?? 0), 0);
-        const totalOut = rows.reduce((s, r) => s + r.fuelOut, 0);
-        
-        // Calculate the anchor (start balance)
-        let anchor = hasInitial 
-            ? toNum(initialRaw) 
-            : (toNum(vehicle.current_fuel_balance) - totalIn + totalOut);
+        if (rows.length === 0) return [];
 
-        let prev = r2(anchor);
-        rows.forEach(r => {
-            r.beginning = prev;
-            // ✅ Balance: Beginning + Fuel In - Fuel Out
-            r.balance = r2(r.beginning + (r.fuelIn ?? 0) - r.fuelOut);
-            prev = r.balance;
-        });
+        // ✅ FIX: I-anchor ang pinaka-latest nga balance sa database (current_fuel_balance)
+        // Aron mag-match jud ang pinaka-last nga row sa ledger ug sa Current Fuel card.
+        const latestRow = rows[rows.length - 1];
+        latestRow.balance = r2(vehicle.current_fuel_balance);
+        latestRow.beginning = r2(latestRow.balance - (latestRow.fuelIn ?? 0) + latestRow.fuelOut);
 
-        // Reverse to show newest first in the table
+        // 3. Roll backwards from the latest row to calculate previous balances
+        for (let i = rows.length - 2; i >= 0; i--) {
+            const currentRow = rows[i];
+            const nextRow = rows[i + 1];
+            
+            currentRow.balance = nextRow.beginning;
+            currentRow.beginning = r2(currentRow.balance - (currentRow.fuelIn ?? 0) + currentRow.fuelOut);
+        }
+
+        // 4. I-reverse para newest first sa table display
         return rows.reverse().map(r => ({
             ...r.trip,
             displayTicketNo: r.trip.ticket_number || r.trip.trip_ticket_number,
