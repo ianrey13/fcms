@@ -179,7 +179,6 @@ const MapBounds = ({ coords }) => {
 const ReplayMarker = ({ segments, replayIndex, icon }) => {
     const map = useMap();
     
-    // Compute the exact coordinate for the current replayIndex
     const getReplayPosition = () => {
         let count = 0;
         for (let seg of segments) {
@@ -202,13 +201,12 @@ const ReplayMarker = ({ segments, replayIndex, icon }) => {
     return position ? <Marker position={position} icon={icon} /> : null;
 };
 
-// Segment colors (alternate so paused/resumed segments are visually distinct)
 const SEGMENT_COLORS = [
-    "#3b82f6", // blue
-    "#8b5cf6", // purple
-    "#10b981", // emerald
-    "#f59e0b", // amber
-    "#ef4444", // red
+    "#3b82f6", 
+    "#8b5cf6", 
+    "#10b981", 
+    "#f59e0b", 
+    "#ef4444", 
 ];
 
 // ============================================
@@ -221,16 +219,13 @@ const GsoDashboard = () => {
     const [searchTerm, setSearchTerm] = useState("");
     const [deptFilter, setDeptFilter] = useState("all");
 
-    // Validate dialog (Pending Validation table only)
     const [selectedTicket, setSelectedTicket] = useState(null);
     const [showValidateDialog, setShowValidateDialog] = useState(false);
     const [hasWatchedReplay, setHasWatchedReplay] = useState(false);
 
-    // Detail dialog (Ledger — READ ONLY)
     const [detailTicket, setDetailTicket] = useState(null);
     const [showDetailDialog, setShowDetailDialog] = useState(false);
 
-    // Shared route state
     const [routeCoordinates, setRouteCoordinates] = useState([]);
     const [routeSegments, setRouteSegments] = useState([]);
     const [loadingRoute, setLoadingRoute] = useState(false);
@@ -298,7 +293,6 @@ const GsoDashboard = () => {
                     const hasGasSlip =
                         trip.gasSlip || trip.gas_slip || trip.gas_slip_id;
 
-                    // Still hide cancelled/rejected
                     if (
                         ["cancelled", "rejected", "returned_for_revision"].includes(
                             status,
@@ -307,14 +301,10 @@ const GsoDashboard = () => {
                         return false;
                     }
 
-                    // ✅ KEEP "pending_gso_validation" and "completed" so they appear in Recent Trips
-
-                    // For pending_mayors_office, only show if funds have been released (has gas slip)
                     if (status === "pending_mayors_office" && !hasGasSlip) {
                         return false;
                     }
 
-                    // If no gas slip and no distance data, hide (likely incomplete/draft)
                     if (
                         !hasGasSlip &&
                         !trip.actual_distance_km &&
@@ -426,16 +416,14 @@ const GsoDashboard = () => {
     const ledgerRows = useMemo(() => {
         const r2 = (n) => parseFloat(toNum(n).toFixed(2));
 
-        // ✅ BAG-ONG FUNCTION: Diri nato i-filter out ang pending/completed
-        // para dili magubot ang ledger kung wala pa na-validate.
         const ledgerTrips = allTrips.filter(trip => {
-    const status = (trip.status || "").toLowerCase();
-    // Only exclude truly incomplete/cancelled trips
-    if (["cancelled", "rejected", "returned_for_revision", "pending_mayors_office"].includes(status)) {
-        return false;
-    }
-    return true;
-});
+            const status = (trip.status || "").toLowerCase();
+            // Only exclude truly incomplete/cancelled trips
+            if (["cancelled", "rejected", "returned_for_revision", "pending_mayors_office"].includes(status)) {
+                return false;
+            }
+            return true;
+        });
 
         const rows = ledgerTrips.map((trip) => {
             const vehicle =
@@ -445,11 +433,13 @@ const GsoDashboard = () => {
                 ) ||
                 trip.vehicle;
 
+            // ✅ FIXED: Tangtangon ang estimate fallback. 
+            // Kung wala pay input, 0 ang gamiton.
             const rawFuelIn = 
                 trip.gasSlip?.fuelReceipt?.liters_availed ??
                 trip.gas_slip?.fuel_receipt?.liters_availed ??
                 trip.liters_availed ??
-                trip.estimated_fuel_liters;
+                0;
 
             const fuelIn = toNum(rawFuelIn);
 
@@ -464,10 +454,9 @@ const GsoDashboard = () => {
                 ? toNum(trip.actual_distance_km || trip.gps_distance_km)
                 : 0;
 
-            // ✅ Clamp efficiency to realistic range (8–15 km/L)
             let efficiency = toNum(vehicle?.reference_efficiency) || 10;
             if (efficiency < 6 || efficiency > 20) {
-                efficiency = 10; // fallback to realistic default
+                efficiency = 10; 
             }
 
             const rawFuelOut = distance > 0 ? distance / efficiency : 0;
@@ -571,7 +560,6 @@ const GsoDashboard = () => {
             const res = await gpsAPI.getTripRoute(tripId);
             const data = res?.data?.data || {};
 
-            // ✅ Prefer segments (handles pause/resume correctly)
             const rawSegments = Array.isArray(data.segments) ? data.segments : [];
             const segments = rawSegments
                 .map((seg) => ({
@@ -620,10 +608,9 @@ const GsoDashboard = () => {
         setReplayIndex(0);
         setHasWatchedReplay(false);
 
-        // ✅ I-flatten pero butangan og "null" sa tunga aron mabal-an nato asa mag-break
         const flatWithBreaks = [];
         segmentsData.forEach((seg, i) => {
-            if (i > 0) flatWithBreaks.push(null); // Marker for break
+            if (i > 0) flatWithBreaks.push(null); 
             flatWithBreaks.push(...seg.coords);
         });
 
@@ -639,7 +626,6 @@ const GsoDashboard = () => {
                 return;
             }
             
-            // Kung null (break), laktawi ang frame (dili i-update ang marker)
             if (flatWithBreaks[currentIdx] === null) {
                 return; 
             }
@@ -657,7 +643,7 @@ const GsoDashboard = () => {
     }, []);
 
     // ============================================
-    // VALIDATE HANDLER (Pending Validation table ONLY)
+    // VALIDATE HANDLER
     // ============================================
     const handleOpenValidateDialog = useCallback(
         async (trip) => {
@@ -699,7 +685,6 @@ const GsoDashboard = () => {
         [loadRoute, startReplay],
     );
 
-    // Cleanup on unmount / dialog close
     useEffect(() => {
         return () => {
             if (replayIntervalRef.current)
@@ -725,7 +710,6 @@ const GsoDashboard = () => {
     // RENDER HELPERS
     // ============================================
     const renderSegments = () => {
-        // ✅ Kung naay segments, i-render KADA SEGMENT separately (walay connecting line)
         if (routeSegments.length > 0) {
             return routeSegments.map((seg, i) => {
                 const color = SEGMENT_COLORS[i % SEGMENT_COLORS.length];
@@ -742,7 +726,6 @@ const GsoDashboard = () => {
                 );
             });
         }
-        // Fallback ra ni kung wala gyuy segments data
         if (routeCoordinates.length > 0) {
             return (
                 <Polyline
