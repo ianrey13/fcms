@@ -20,7 +20,7 @@ import { Card } from '@/components/ui/card';
 import {
     Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from "@/components/ui/dialog";
-import { format, startOfWeek } from 'date-fns';
+import { format } from 'date-fns';
 import {
     LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
 } from 'recharts';
@@ -99,14 +99,19 @@ const VehicleDetails = () => {
         };
     }, []);
 
-    // ✅ Fetch Trip History gikan sa Completed Trips API
-    // Kini nga endpoint nag-return na sa gasSlip ug fuelReceipt details
+    // ✅ GIKUHA TANAN NGA TRIPS PARA SA VEHICLE (Parehas sa GsoDashboard)
+    // Kini nga endpoint nag-return sa gasSlip ug fuelReceipt data
     const { data: historyData = [], isLoading: historyLoading } = useQuery({
         queryKey: ['vehicle-history', id],
         queryFn: async () => {
-            const res = await gpsAPI.getCompletedTrips({ limit: 100 });
-            const trips = res?.data?.data || [];
-            return trips.filter(t => t.plate_number === vehicle?.plate_number);
+            const res = await gsoAPI.getAllTrips();
+            const allTrips = res?.data?.data || [];
+            
+            // Filter by plate number and only include trips that actually have distance/fuel
+            return allTrips.filter(t => 
+                t.vehicle?.plate_number === vehicle?.plate_number &&
+                !['cancelled', 'rejected', 'returned_for_revision', 'pending_mayors_office'].includes(t.status)
+            );
         },
         enabled: !!vehicle
     });
@@ -117,15 +122,12 @@ const VehicleDetails = () => {
         }
     }, [historyData]);
 
-    // ✅ GITANGGTANG ANG SEPARATE FUEL RECEIPTS FETCH
-    // Kay ang historyData na mismo ang naay data sa fuel receipts
-
     const ledgerRows = useMemo(() => {
         if (!vehicle) return [];
         const r2 = (n) => parseFloat(toNum(n).toFixed(2));
 
         const rows = historyData.map(trip => {
-            // ✅ FIXED: Gikuha diretso sa trip object, parehas sa GsoDashboard
+            // ✅ Gikuha diretso gikan sa getAllTrips data (parehas sa GsoDashboard)
             const rawFuelIn = 
                 trip.gasSlip?.fuelReceipt?.liters_availed ??
                 trip.gas_slip?.fuel_receipt?.liters_availed ??
@@ -134,7 +136,10 @@ const VehicleDetails = () => {
             const hasFuelInput = rawFuelIn !== undefined && rawFuelIn !== null && rawFuelIn !== "";
             const fuelIn = hasFuelInput ? toNum(rawFuelIn) : null;
             
-            const distance = toNum(trip.actual_distance_km || trip.gps_distance_km);
+            // Compute distance (Actual vs GPS)
+            const isCompleted = ['completed', 'pending_gso_validation', 'closed'].includes(trip.status);
+            const distance = isCompleted ? toNum(trip.actual_distance_km || trip.gps_distance_km) : 0;
+            
             let efficiency = toNum(vehicle.reference_efficiency) || 10;
             if (efficiency < 6 || efficiency > 20) efficiency = 10;
             
@@ -146,10 +151,11 @@ const VehicleDetails = () => {
                 fuelOut: r2(fuelOut),
                 distance,
                 efficiency,
-                sortTime: new Date(trip.updated_at || trip.trip_date || 0).getTime(),
+                sortTime: new Date(trip.created_at || trip.submitted_at || trip.trip_date || 0).getTime(),
             };
         });
 
+        // Sort oldest to newest for balance calculation
         rows.sort((a, b) => a.sortTime - b.sortTime);
 
         const initialRaw = vehicle.initial_estimated_fuel;
@@ -157,6 +163,8 @@ const VehicleDetails = () => {
         
         const totalIn = rows.reduce((s, r) => s + (r.fuelIn ?? 0), 0);
         const totalOut = rows.reduce((s, r) => s + r.fuelOut, 0);
+        
+        // Calculate the anchor (start balance)
         let anchor = hasInitial 
             ? toNum(initialRaw) 
             : (toNum(vehicle.current_fuel_balance) - totalIn + totalOut);
@@ -164,17 +172,18 @@ const VehicleDetails = () => {
         let prev = r2(anchor);
         rows.forEach(r => {
             r.beginning = prev;
-            // ✅ Kung null ang fuelIn, walay idugang sa balance
+            // ✅ Balance: Beginning + Fuel In - Fuel Out
             r.balance = r2(r.beginning + (r.fuelIn ?? 0) - r.fuelOut);
             prev = r.balance;
         });
 
+        // Reverse to show newest first in the table
         return rows.reverse().map(r => ({
             ...r.trip,
             displayTicketNo: r.trip.ticket_number || r.trip.trip_ticket_number,
-            displayDate: r.trip.trip_date || r.trip.updated_at,
+            displayDate: r.trip.trip_date || r.trip.submitted_at,
             beginning: r.beginning.toFixed(2),
-            fuelIn: r.fuelIn !== null ? r.fuelIn.toFixed(2) : null, // ✅ Null imbes 0.00
+            fuelIn: r.fuelIn !== null ? r.fuelIn.toFixed(2) : null, 
             fuelOut: r.fuelOut.toFixed(2),
             balance: r.balance.toFixed(2),
             distanceKm: r.distance,
@@ -202,8 +211,8 @@ const VehicleDetails = () => {
     const sortedHistory = useMemo(() => {
         let sorted = [...historyData];
         sorted.sort((a, b) => {
-            const dateA = new Date(a.trip_date).getTime();
-            const dateB = new Date(b.trip_date).getTime();
+            const dateA = new Date(a.trip_date || a.created_at).getTime();
+            const dateB = new Date(b.trip_date || b.created_at).getTime();
             return sortOrder === 'asc' ? dateA - dateB : dateB - dateA;
         });
         return sorted;
@@ -226,7 +235,8 @@ const VehicleDetails = () => {
         setRouteCoordinates([]); 
         handleStopReplay();
         try {
-            const res = await gpsAPI.getTripRoute(trip.trip_id);
+            const tripId = trip.trip_ticket_id || trip.id || trip.trip_id;
+            const res = await gpsAPI.getTripRoute(tripId);
             const track = res?.data?.data?.track || [];
             setRouteCoordinates(track.map(p => [p.latitude, p.longitude]));
         } catch (e) {
@@ -413,7 +423,6 @@ const VehicleDetails = () => {
                                             <td className="px-4 py-3 font-mono font-medium">{row.displayTicketNo}</td>
                                             <td className="px-4 py-3 text-right font-medium text-slate-500">{row.beginning}</td>
                                             <td className="px-4 py-3 text-right font-bold text-emerald-600 dark:text-emerald-400">
-                                                {/* ✅ DASH KUNG WALAY INPUT */}
                                                 {row.fuelIn !== null ? `+${row.fuelIn}` : '-'}
                                             </td>
                                             <td className="px-4 py-3 text-right font-bold text-orange-600 dark:text-orange-400">
@@ -614,7 +623,7 @@ const VehicleDetails = () => {
                                         const isSelected = selectedHistoryTrip?.trip_id === trip.trip_id;
                                         return (
                                             <tr 
-                                                key={trip.trip_id} 
+                                                key={trip.trip_id || trip.trip_ticket_id} 
                                                 onClick={() => handleViewRoute(trip)}
                                                 className={cn(
                                                     "cursor-pointer transition-colors",
@@ -622,9 +631,9 @@ const VehicleDetails = () => {
                                                 )}
                                             >
                                                 <td className="px-4 py-3 whitespace-nowrap font-bold text-slate-900 dark:text-white">
-                                                    {format(new Date(trip.trip_date), 'MMM dd, yyyy')}
+                                                    {format(new Date(trip.trip_date || trip.created_at), 'MMM dd, yyyy')}
                                                 </td>
-                                                <td className="px-4 py-3 font-mono font-medium">{trip.ticket_number}</td>
+                                                <td className="px-4 py-3 font-mono font-medium">{trip.ticket_number || trip.trip_ticket_number}</td>
                                                 <td className="px-4 py-3 truncate max-w-[150px] font-medium">{trip.destination}</td>
                                                 <td className="px-4 py-3 text-right font-bold text-slate-900 dark:text-white">{trip.actual_distance_km ? `${trip.actual_distance_km} km` : '—'}</td>
                                             </tr>
