@@ -912,46 +912,49 @@ const GsoDashboard = () => {
                                 />
                             </div>
                         </div>
-                        <div className="overflow-x-auto flex-1">
+                                                <div className="overflow-x-auto flex-1">
                             <table className="w-full text-left text-xs text-slate-300">
                                 <thead className="bg-[#0b101c] text-slate-500">
                                     <tr>
-                                        <th className="px-3 py-2 font-medium">
-                                            Vehicle
-                                        </th>
-                                        <th className="px-3 py-2 font-medium">
-                                            Plate No.
-                                        </th>
-                                        <th className="px-3 py-2 font-medium text-right">
-                                            Balance
-                                        </th>
+                                        <th className="px-3 py-2 font-medium">Date</th>
+                                        <th className="px-3 py-2 font-medium">TT Number</th>
+                                        <th className="px-3 py-2 font-medium">Destination</th>
+                                        <th className="px-3 py-2 font-medium">Status</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-800/50">
-                                    {filteredVehicles.map((v) => {
-                                        const balance = parseFloat(
-                                            v.current_fuel_balance || 0,
-                                        );
-                                        return (
+                                    {recentTrips.length === 0 ? (
+                                        <tr>
+                                            <td colSpan={4} className="px-3 py-4 text-center text-slate-500">
+                                                No recent trips.
+                                            </td>
+                                        </tr>
+                                    ) : (
+                                        recentTrips.map((trip) => (
                                             <tr
-                                                key={v.vehicle_id}
-                                                className="hover:bg-[#1a2235]"
+                                                key={trip.trip_ticket_id || trip.id}
+                                                className="hover:bg-[#1a2235] cursor-pointer"
+                                                onClick={() =>
+                                                    navigate(
+                                                        `/gso/tickets/${trip.trip_ticket_id || trip.id}`,
+                                                    )
+                                                }
                                             >
-                                                <td className="px-3 py-3 font-medium text-white truncate max-w-[100px]">
-                                                    {v.vehicle_model}
+                                                <td className="px-3 py-2 whitespace-nowrap">
+                                                    {formatDateShort(trip.trip_date || trip.created_at)}
                                                 </td>
-                                                <td className="px-3 py-3 font-mono">
-                                                    {v.plate_number}
+                                                <td className="px-3 py-2 font-mono text-white">
+                                                    {trip.trip_ticket_number || trip.ticket_number}
                                                 </td>
-                                                <td className="px-3 py-3 text-right font-bold text-emerald-400">
-                                                  {Number.isInteger(balance) 
-                                                        ? balance 
-                                                        : parseFloat(balance.toFixed(4))}{" "}
-                                                    L
+                                                <td className="px-3 py-2 truncate max-w-[100px]" title={trip.destination}>
+                                                    {trip.destination}
+                                                </td>
+                                                <td className="px-3 py-2">
+                                                    <StatusPill status={trip.status} />
                                                 </td>
                                             </tr>
-                                        );
-                                    })}
+                                        ))
+                                    )}
                                 </tbody>
                             </table>
                         </div>
