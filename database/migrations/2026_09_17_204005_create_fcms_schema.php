@@ -390,7 +390,7 @@ return new class extends Migration
         Schema::create('gps_ping', function (Blueprint $table) {
             $table->bigIncrements('ping_id');
             $table->unsignedBigInteger('trip_ticket_id');
-            $table->unsignedBigInteger('trip_history_id')->nullable()->after('trip_ticket_id');
+            $table->unsignedBigInteger('trip_history_id')->nullable();
             $table->decimal('latitude', 10, 7);
             $table->decimal('longitude', 10, 7);
             $table->decimal('accuracy_meters', 10, 2)->nullable();
