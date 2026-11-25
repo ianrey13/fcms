@@ -1,9 +1,10 @@
 // resources/js/components/layout/Layout.jsx
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom'; // ✅ IMPORT useNavigate
 import Sidebar from './Sidebar';
 import NotificationBell from '../notifications/NotificationBell';
 import { useAuth } from '../../contexts/AuthContext';
-import { Menu, Sun, Moon, ChevronDown, LogOut, Settings, User } from 'lucide-react';
+import { Menu, Sun, Moon } from 'lucide-react'; 
 import { Button } from '@/components/ui/button';
 import { Toaster } from 'react-hot-toast';
 import { cn } from '@/lib/utils';
@@ -13,8 +14,9 @@ const Layout = ({ children }) => {
   const [isMobile, setIsMobile] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [scrolled, setScrolled] = useState(false);
-  const [isProfileOpen, setIsProfileOpen] = useState(false);
+  
   const { user, logout } = useAuth();
+  const navigate = useNavigate(); // ✅ Initialize navigate
 
   // Check mobile screen
   useEffect(() => {
@@ -57,17 +59,6 @@ const Layout = ({ children }) => {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  // Close profile dropdown on click outside
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (isProfileOpen && !event.target.closest('.profile-dropdown')) {
-        setIsProfileOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [isProfileOpen]);
-
   const toggleDarkMode = () => {
     const newMode = !isDarkMode;
     setIsDarkMode(newMode);
@@ -83,11 +74,10 @@ const Layout = ({ children }) => {
   };
 
   const toggleSidebar = () => setIsSidebarOpen(!isSidebarOpen);
-  const toggleProfile = () => setIsProfileOpen(!isProfileOpen);
 
-  const handleLogout = () => {
-    setIsProfileOpen(false);
-    logout();
+  // ✅ Handle profile click navigation
+  const handleProfileClick = () => {
+    navigate('/profile');
   };
 
   const marginLeft = isMobile ? '0' : (isSidebarOpen ? '280px' : '72px');
@@ -215,16 +205,15 @@ const Layout = ({ children }) => {
             {/* Notification Bell */}
             {showNotificationBell && <NotificationBell />}
 
-            {/* User Profile Dropdown */}
-            <div className="relative profile-dropdown">
+            {/* User Profile Button (Navigates to Profile) */}
+            <div className="relative">
               <button
-                onClick={toggleProfile}
+                onClick={handleProfileClick} // ✅ CLICK PARA MO-ADTO SA PROFILE
                 className={cn(
                   "flex items-center gap-3 pl-3 ml-1 border-l border-slate-200 dark:border-slate-800",
                   "hover:opacity-80 transition-all duration-200 group"
                 )}
-                aria-label="User menu"
-                aria-expanded={isProfileOpen}
+                aria-label="View Profile"
               >
                 <div className="hidden md:block text-right">
                   <p className="text-sm font-semibold text-slate-800 dark:text-slate-200 leading-tight">
@@ -241,63 +230,7 @@ const Layout = ({ children }) => {
                   </div>
                   <div className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-emerald-500 border-2 border-white dark:border-slate-950 shadow-sm shadow-emerald-500/30" />
                 </div>
-
-                {/* <ChevronDown className={cn(
-                  "h-3.5 w-3.5 text-slate-400 dark:text-slate-500 transition-transform duration-200",
-                  isProfileOpen && "rotate-180"
-                )} /> */}
               </button>
-
-              {/* Profile Dropdown
-              {isProfileOpen && (
-                <div className="absolute right-0 mt-2 w-64 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl shadow-black/10 dark:shadow-black/40 border border-slate-200/60 dark:border-slate-800/60 z-50 overflow-hidden animate-scale-in origin-top-right">
-                  <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-800/60 bg-gradient-to-r from-slate-50/50 to-white dark:from-slate-900/50 dark:to-slate-900">
-                    <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">
-                      {getFullName()}
-                    </p>
-                    <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
-                      {user?.email || 'No email'}
-                    </p>
-                    <span className="inline-flex items-center mt-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-400">
-                      {user?.role_label || 'User'}
-                    </span>
-                  </div>
-
-                  <div className="p-1">
-                    <button
-                      onClick={() => {
-                        setIsProfileOpen(false);
-                        // Navigate to profile
-                      }}
-                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all duration-200 group"
-                    >
-                      <User className="h-4 w-4 text-slate-400 group-hover:text-blue-500 transition-colors" />
-                      <span>Profile Settings</span>
-                    </button>
-                    
-                    <button
-                      onClick={() => {
-                        setIsProfileOpen(false);
-                        // Navigate to settings
-                      }}
-                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all duration-200 group"
-                    >
-                      <Settings className="h-4 w-4 text-slate-400 group-hover:text-blue-500 transition-colors" />
-                      <span>System Settings</span>
-                    </button>
-                  </div>
-
-                  <div className="border-t border-slate-100 dark:border-slate-800/60 p-1">
-                    <button
-                      onClick={handleLogout}
-                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition-all duration-200 group"
-                    >
-                      <LogOut className="h-4 w-4 group-hover:rotate-12 transition-transform" />
-                      <span>Sign Out</span>
-                    </button>
-                  </div>
-                </div>
-              )} */}
             </div>
           </div>
         </div>

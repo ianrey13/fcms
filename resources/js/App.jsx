@@ -80,7 +80,7 @@ const StaffReports = lazy(() => import("./pages/staff/StaffReports"));
 
 // ============ SHARED PAGES ============
 const Reports = lazy(() => import("./pages/admin/Reports"));
-const Profile = lazy(() => import("./pages/admin/Profile"));
+const Profile = lazy(() => import("./pages/Profile"));
 const Help = lazy(() => import("./pages/admin/WorkInProgress"));
 
 // ============================================
