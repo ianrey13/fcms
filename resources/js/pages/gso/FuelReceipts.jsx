@@ -118,11 +118,11 @@ const getReceiptImageUrls = (receipt) => {
 };
 
 const getReceiptStatus = (receipt) => {
-    // Gikan ni sa backend: 'verified' or 'pending'
+    // Gikan ni sa backend derived columns
     const doStatus = receipt?.do_verification_status; 
     const gsoStatus = receipt?.gso_validation_status;
 
-    // 1. Kung Verified na sa GSO (meaning kompleto na ang process)
+    // 1. Kung Verified na sa GSO (naay Liters)
     if (gsoStatus === 'verified') {
         return { color: 'bg-emerald-500', label: 'Fully Verified', icon: CheckCircle };
     }
@@ -136,7 +136,7 @@ const getReceiptStatus = (receipt) => {
         };
     }
 
-    // 3. Kung Pending pa sa DO (wala pa na-verify sa DO)
+    // 3. Kung Pending pa sa DO
     return { color: 'bg-yellow-500', label: 'Pending DO', icon: Clock };
 };
 

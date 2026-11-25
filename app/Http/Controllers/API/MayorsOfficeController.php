@@ -1123,77 +1123,48 @@ class MayorsOfficeController extends Controller
     /**
      * Verify a receipt with editable fields
      */ 
-           public function verifyReceipt(Request $request, $id)
+              /**
+     * DO verifies a fuel receipt
+     */
+    public function verifyReceipt(Request $request, $id)
     {
         try {
-            // ✅ GIDUGANG ANG RULE PARA SA UNIQUE INVOICE NUMBER
+            $user = $request->user();
+            if (!$user->isMayorsOffice()) {
+                return response()->json(['message' => 'Unauthorized'], 403);
+            }
+
             $validator = Validator::make($request->all(), [
-                'invoice_number' => [
-                    'nullable',
-                    'string',
-                    'max:100',
-                    // Siguroha nga unique ang invoice number, gawas sa kaniadtong gi-edit karon ($id)
-                    Rule::unique('fuel_receipt', 'invoice_number')->ignore($id, 'fuel_receipt_id')
-                ],
+                'invoice_number'    => 'required|string|max:50|unique:fuel_receipt,invoice_number,' . $id . ',fuel_receipt_id',
                 'amount_on_receipt' => 'required|numeric|min:0',
-                'unit_price' => 'nullable|numeric|min:0',
-                'remarks' => 'nullable|string|max:500',
-                'status' => 'nullable|string|in:verified,discrepancy',
-            ], [
-                // ✅ CUSTOM ERROR MESSAGE
-                'invoice_number.unique' => '❌ This Invoice Number is already used by another receipt.',
+                'unit_price'        => 'nullable|numeric|min:0',
+                'status'            => 'nullable|in:verified,discrepancy',
+                'remarks'           => 'nullable|string|max:500',
             ]);
 
             if ($validator->fails()) {
-                return response()->json(['success' => false, 'errors' => $validator->errors()], 422);
+                return response()->json(['errors' => $validator->errors()], 422);
             }
 
-            $receipt = FuelReceipt::with(['gasSlip.tripTicket'])->findOrFail($id);
-            $gasSlip = $receipt->gasSlip;
-            $trip = $gasSlip ? $gasSlip->tripTicket : null;
+            $receipt = FuelReceipt::findOrFail($id);
 
-            $amountOnReceipt = (float) $request->amount_on_receipt;
-            $amountReleased = (float) $gasSlip->amount_released;
-
-            $variance = $amountOnReceipt - $amountReleased;
-            $isDiscrepancy = abs($variance) > 0.01 || $request->status === 'discrepancy';
-
-            $receipt->invoice_number = $request->invoice_number;
-            $receipt->amount_on_receipt = $amountOnReceipt;
+            $receipt->invoice_number    = $request->invoice_number;
+            $receipt->amount_on_receipt = $request->amount_on_receipt;
+            $receipt->unit_price        = $request->unit_price ?: round($request->amount_on_receipt / max((float) $receipt->liters_availed, 0.01), 2);
             
-            if ($request->filled('unit_price')) {
-                $receipt->unit_price = (float) $request->unit_price;
-            } elseif ($receipt->liters_availed > 0 && $amountOnReceipt > 0) {
-                $receipt->unit_price = round($amountOnReceipt / $receipt->liters_availed, 2);
-            }
+            // ✅ SET DO VERIFIED
+            $receipt->verification_status = $request->status ?? 'verified';
+            $receipt->verified_at = now();
 
             $receipt->save();
 
-            $gasSlip->reconciliation_note = "DO Remarks: " . ($request->remarks ?? 'None');
-            $gasSlip->save();
-
-            if ($trip) {
-                NotificationHelper::send(
-                    $trip->submitted_by,
-                    'trip_reconciled',
-                    'trip_ticket',
-                    $trip->trip_ticket_id,
-                    "Receipt for Trip {$trip->trip_ticket_number} has been verified by the Mayor's Office."
-                );
-            }
-
             return response()->json([
                 'success' => true,
-                'message' => $isDiscrepancy ? 'Receipt verified with discrepancy.' : 'Receipt verified successfully.',
-                'data' => $receipt
+                'message' => 'Receipt verified successfully.',
+                'data'    => $receipt
             ]);
-
         } catch (\Exception $e) {
-            Log::error('Verify receipt error: ' . $e->getMessage());
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to verify receipt: ' . $e->getMessage()
-            ], 500);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
     }
 
