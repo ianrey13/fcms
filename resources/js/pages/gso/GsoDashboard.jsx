@@ -429,13 +429,13 @@ const GsoDashboard = () => {
         // ✅ BAG-ONG FUNCTION: Diri nato i-filter out ang pending/completed
         // para dili magubot ang ledger kung wala pa na-validate.
         const ledgerTrips = allTrips.filter(trip => {
-            const status = (trip.status || "").toLowerCase();
-            // Dili nato i-apil sa ledger ang wala pa ma-validate
-            if (["pending_gso_validation", "completed"].includes(status)) {
-                return false;
-            }
-            return true;
-        });
+    const status = (trip.status || "").toLowerCase();
+    // Only exclude truly incomplete/cancelled trips
+    if (["cancelled", "rejected", "returned_for_revision", "pending_mayors_office"].includes(status)) {
+        return false;
+    }
+    return true;
+});
 
         const rows = ledgerTrips.map((trip) => {
             const vehicle =
