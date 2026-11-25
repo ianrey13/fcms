@@ -118,24 +118,26 @@ const getReceiptImageUrls = (receipt) => {
 };
 
 const getReceiptStatus = (receipt) => {
-    // ✅ Gamit ang existing verification_status (GSO validation)
-    const gsoOk = receipt?.verification_status === 'verified';
+    // Gikan ni sa backend: 'verified' or 'pending'
+    const doStatus = receipt?.do_verification_status; 
+    const gsoStatus = receipt?.gso_validation_status;
 
-    if (gsoOk) {
-        return { color: 'bg-emerald-500', label: 'Verified', icon: CheckCircle };
+    // 1. Kung Verified na sa GSO (meaning kompleto na ang process)
+    if (gsoStatus === 'verified') {
+        return { color: 'bg-emerald-500', label: 'Fully Verified', icon: CheckCircle };
     }
 
-    // Fallback: kung naay invoice_number ug amount, pero wala pay liters
-    const doVerified = receipt?.invoice_number && parseFloat(receipt?.amount) > 0;
-    if (doVerified) {
+    // 2. Kung Verified na sa DO pero wala pay Liters ang GSO
+    if (doStatus === 'verified' && gsoStatus === 'pending') {
         return {
             color: 'bg-blue-500',
-            label: 'DO Verified — Awaiting Liters',
+            label: 'DO Verified — Awaiting GSO',
             icon: Clock
         };
     }
 
-    return { color: 'bg-yellow-500', label: 'Pending', icon: Clock };
+    // 3. Kung Pending pa sa DO (wala pa na-verify sa DO)
+    return { color: 'bg-yellow-500', label: 'Pending DO', icon: Clock };
 };
 
 // ✅ Base sa verification_status (GSO validation)
