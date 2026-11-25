@@ -118,17 +118,15 @@ const getReceiptImageUrls = (receipt) => {
 };
 
 const getReceiptStatus = (receipt) => {
-    // ✅ GSO Verified ra ang mohatag og "Verified" status
-    const gsoOk = receipt?.gso_validation_status === 'verified';
+    // ✅ Gamit ang existing verification_status (GSO validation)
+    const gsoOk = receipt?.verification_status === 'verified';
 
     if (gsoOk) {
         return { color: 'bg-emerald-500', label: 'Verified', icon: CheckCircle };
     }
 
-    // Kung na-verify na sa DO pero wala pay liters → Pending japon sa GSO
-    const doVerified = receipt?.do_verification_status === 'verified'
-                    || (receipt?.invoice_number && parseFloat(receipt?.amount) > 0);
-
+    // Fallback: kung naay invoice_number ug amount, pero wala pay liters
+    const doVerified = receipt?.invoice_number && parseFloat(receipt?.amount) > 0;
     if (doVerified) {
         return {
             color: 'bg-blue-500',
@@ -140,9 +138,9 @@ const getReceiptStatus = (receipt) => {
     return { color: 'bg-yellow-500', label: 'Pending', icon: Clock };
 };
 
-// ✅ GSO ra ang basehan sa "verified"
+// ✅ Base sa verification_status (GSO validation)
 const isVerified = (r) => {
-    return r?.gso_validation_status === 'verified';
+    return r?.verification_status === 'verified';
 };
 
 const formatDate = (date) => {
@@ -330,12 +328,6 @@ const FuelReceipts = () => {
     const connectionStatus = isConnected ? "🟢 Live" : "🔴 Offline";
     const isRealTime = isConnected;
 
-    const isVerified = (r) => {
-        const doOk  = r?.do_verification_status === 'verified';
-        const gsoOk = r?.gso_validation_status === 'verified';
-        return doOk || gsoOk;
-    };
-
     const stats = useMemo(() => {
         const safeReceipts = Array.isArray(receipts) ? receipts : [];
         return [
@@ -435,16 +427,20 @@ const FuelReceipts = () => {
                             ...r,
                             liters: updated.liters_availed ?? liters,
                             unit_price: updated.unit_price ?? r.unit_price,
-                            gso_validation_status: updated.gso_validation_status ?? 'verified',
+                            // ✅ Gamit ang verification_status
+                            verification_status: updated.verification_status ?? 'verified',
+                            verified_at: updated.verified_at ?? new Date().toISOString(),
                         };
                     }
                     return r;
                 });
             });
 
+            // ✅ Force refetch from backend to ensure sync
+            queryClient.invalidateQueries({ queryKey: ["gso-fuel-receipts"] });
+
             toast.success('Liters saved');
 
-            // ✅ Close dialogs + reset state
             setShowConfirmSave(false);
             setShowReceiptDialog(false);
             setSelectedReceipt(null);
