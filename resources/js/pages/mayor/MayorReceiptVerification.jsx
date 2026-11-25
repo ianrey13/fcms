@@ -123,11 +123,7 @@ const MayorReceiptVerification = () => {
     mutationFn: async ({ receiptId, data }) => await mayorsOfficeAPI.verifyReceipt(receiptId, data),
     onSuccess: () => {
       toast.success("Receipt processed successfully!");
-      
-      // ✅ I-invalidate ang duha ka query aron mo-refresh
       queryClient.invalidateQueries({ queryKey: ["mayor-receipt-verification"] });
-      
-      // ✅ I-set dayon sa Verified tab ug i-clear ang selection
       setActiveTab("verified");
       setSelectedReceipt(null);
     },
@@ -151,17 +147,24 @@ const MayorReceiptVerification = () => {
 
   const handleInputChange = (field, value) => setEditData(prev => ({ ...prev, [field]: value }));
 
-  const handleVerify = (isDiscrepancy = false) => {
+  // ✅ SMART VERIFICATION LOGIC (Gikombinar ang duha ka buttons)
+  const handleVerify = () => {
     if (!editData.invoice_number) return toast.error("Invoice Number is required");
     if (!editData.amount_on_receipt) return toast.error("Amount is required");
 
-    if (isDiscrepancy && !editData.remarks) {
-        return toast.error("Please provide remarks for the discrepancy.");
+    const releasedAmount = parseFloat(selectedReceipt?.amount_released) || 0;
+    const receiptAmount = parseFloat(editData.amount_on_receipt) || 0;
+    const difference = receiptAmount - releasedAmount;
+
+    // Automatic discrepancy detection
+    const isDiscrepancy = difference !== 0;
+
+    if (isDiscrepancy && !editData.remarks.trim()) {
+        return toast.error("Please provide remarks explaining the discrepancy.");
     }
 
     // FRONTEND VALIDATION: Check for Duplicate Invoice Number
     const inputInvoice = editData.invoice_number.trim().toLowerCase();
-    
     const isDuplicate = verifiedReceipts.some(r => 
         r.invoice_number?.trim().toLowerCase() === inputInvoice &&
         r.id !== selectedReceipt.id && 
@@ -179,12 +182,11 @@ const MayorReceiptVerification = () => {
             unit_price: parseFloat(editData.unit_price) || null,
             amount_on_receipt: parseFloat(editData.amount_on_receipt) || 0,
             remarks: editData.remarks,
-            status: isDiscrepancy ? 'discrepancy' : 'verified',
+            status: isDiscrepancy ? 'discrepancy' : 'verified', // Backend mo-dawat niini
         }
     });
   };
 
-  // ✅ GITANGGTANG ANG GSO FILTER PARA MAKITA TANAN
   const filteredList = useMemo(() => {
     let list = [];
 
@@ -192,7 +194,6 @@ const MayorReceiptVerification = () => {
         list = pendingReceipts.filter(r => !r.invoice_number || !r.amount);
     } else if (activeTab === "verified") {
         list = verifiedReceipts.filter(r => {
-            // Ipakita tanan nga naay Invoice ug Amount gikan sa DO, bisan pag closed na sa GSO
             return r.invoice_number && parseFloat(r.amount) > 0;
         });
     } else if (activeTab === "discrepancy") {
@@ -212,7 +213,6 @@ const MayorReceiptVerification = () => {
     );
   }, [activeTab, pendingReceipts, verifiedReceipts, searchTerm]);
 
-  // ✅ GITANGGTANG SAD ANG GSO FILTER SA COUNTS
   const counts = {
     pending: pendingReceipts.filter(r => !r.invoice_number || !r.amount).length,
     verified: verifiedReceipts.filter(r => {
@@ -228,6 +228,7 @@ const MayorReceiptVerification = () => {
   const releasedAmount = parseFloat(selectedReceipt?.amount_released) || 0;
   const receiptAmount = parseFloat(editData.amount_on_receipt) || 0;
   const difference = receiptAmount - releasedAmount;
+  const hasDifference = difference !== 0;
 
   return (
     <div className="min-h-screen bg-[#090e1a] p-4 md:p-6 font-sans text-slate-200 flex flex-col">
@@ -382,31 +383,39 @@ const MayorReceiptVerification = () => {
                   </div>
                   <div>
                     <Label className="text-xs text-slate-400 flex justify-between"><span>Difference</span></Label>
-                    <div className={cn("mt-1 h-10 px-3 flex items-center font-bold rounded-lg border", difference !== 0 ? "bg-amber-600/10 border-amber-900/50 text-amber-400" : "bg-emerald-600/10 border-emerald-900/50 text-emerald-400")}>
+                    <div className={cn("mt-1 h-10 px-3 flex items-center font-bold rounded-lg border", hasDifference ? "bg-amber-600/10 border-amber-900/50 text-amber-400" : "bg-emerald-600/10 border-emerald-900/50 text-emerald-400")}>
                       {formatCurrency(difference)}
                     </div>
                   </div>
                   <div>
-                    <Label className="text-xs text-slate-400">Remarks (Optional)</Label>
-                    <Textarea value={editData.remarks} onChange={(e) => handleInputChange('remarks', e.target.value)} className="bg-[#0b101c] border-slate-700 text-white mt-1 text-sm resize-none h-16" placeholder="e.g. Fuel amount higher than released amount." />
+                    <Label className="text-xs text-slate-400">
+                      Remarks {hasDifference && <span className="text-red-500">* (Required for discrepancy)</span>}
+                    </Label>
+                    <Textarea 
+                      value={editData.remarks} 
+                      onChange={(e) => handleInputChange('remarks', e.target.value)} 
+                      className={cn(
+                        "bg-[#0b101c] border-slate-700 text-white mt-1 text-sm resize-none h-16",
+                        hasDifference && !editData.remarks.trim() && "border-red-500/50 focus:border-red-500"
+                      )} 
+                      placeholder={hasDifference ? "Explain why the receipt amount is different from released amount..." : "Optional remarks..."} 
+                    />
                   </div>
                 </div>
               </div>
 
               <div className="p-5 border-t border-slate-800 flex gap-3">
+                {/* ✅ ISA NA LANG KA BUTTON NGA SMART */}
                 <Button 
-                    onClick={() => handleVerify(false)} 
+                    onClick={handleVerify} 
                     disabled={verifyMutation.isPending || selectedReceipt.status === 'verified'} 
                     className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold h-12 rounded-xl"
                 >
-                    <CheckCircle className="h-5 w-5 mr-2" /> Mark as Verified
-                </Button>
-                <Button 
-                    onClick={() => handleVerify(true)} 
-                    disabled={verifyMutation.isPending || selectedReceipt.status === 'verified'} 
-                    className="flex-1 bg-amber-600 hover:bg-amber-700 text-white font-bold h-12 rounded-xl"
-                >
-                    <Scale className="h-5 w-5 mr-2" /> Mark as Verified (with Discrepancy)
+                    {verifyMutation.isPending ? (
+                        <><Loader2 className="h-5 w-5 mr-2 animate-spin" /> Processing...</>
+                    ) : (
+                        <><CheckCircle className="h-5 w-5 mr-2" /> Verify Receipt</>
+                    )}
                 </Button>
               </div>
             </>
