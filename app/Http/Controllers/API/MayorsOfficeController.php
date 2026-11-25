@@ -352,6 +352,7 @@ class MayorsOfficeController extends Controller
                         'charge_to_department_id' => $chargeToDept ? $chargeToDept->department_id : null,
                         'is_cross_department' => $ticket->gasSlip?->is_cross_department ?? false,
                         'cross_department_reason' => $ticket->gasSlip?->cross_department_reason ?? null,
+                        'charge_to' => $ticket->charge_to,
 
                         'amount_released' => $ticket->gasSlip ? $ticket->gasSlip->amount_released : 0,
                         'actual_fuel_cost' => (float) $actualCost,
