@@ -278,7 +278,7 @@ class MayorsOfficeController extends Controller
         return max(0, $this->getWeeklySuggested($departmentId) - $this->getWeeklyUsedAmount($departmentId));
     }
 
-    /**
+      /**
      * Get approved/funds issued tickets
      */
     public function getApprovedTickets(Request $request)
@@ -324,9 +324,18 @@ class MayorsOfficeController extends Controller
                             'plate_number' => $ticket->vehicle->plate_number,
                             'vehicle_model' => $ticket->vehicle->vehicle_model,
                             'fuel_type' => $ticket->vehicle->fuel_type,
-                            'current_fuel_balance' => $fuelInfo['clamped_balance'], // ✅ Live balance
-                            'tank_capacity' => (float) $ticket->vehicle->tank_capacity, // ✅ Tank capacity
+                            'current_fuel_balance' => $fuelInfo['clamped_balance'],
+                            'tank_capacity' => (float) $ticket->vehicle->tank_capacity,
                         ];
+                    }
+
+                    // ✅ KUHAON ANG CROSS-DEPARTMENT DETAILS
+                    $chargeToDept = null;
+                    if ($ticket->charge_to_department_id) {
+                        $chargeToDept = \App\Models\Department::find($ticket->charge_to_department_id);
+                    } elseif ($ticket->gasSlip?->is_cross_department && $ticket->gasSlip?->original_department_id) {
+                        // Kung cross dept, ang original_department_id mao ang gi-chargean
+                        $chargeToDept = \App\Models\Department::find($ticket->gasSlip->original_department_id);
                     }
 
                     return [
@@ -335,8 +344,15 @@ class MayorsOfficeController extends Controller
                         'trip_date' => $ticket->trip_date,
                         'destination' => $ticket->destination,
                         'status' => $ticket->status,
-                        'vehicle' => $vehicleData, // ✅ Gi-update
+                        'vehicle' => $vehicleData,
                         'department_name' => $ticket->department ? $ticket->department->department_name : null,
+                        
+                        // ✅ GIDUGANG NGA MGA FIELDS PARA SA CROSS-DEPT
+                        'charge_to_department_name' => $chargeToDept ? $chargeToDept->department_name : null,
+                        'charge_to_department_id' => $chargeToDept ? $chargeToDept->department_id : null,
+                        'is_cross_department' => $ticket->gasSlip?->is_cross_department ?? false,
+                        'cross_department_reason' => $ticket->gasSlip?->cross_department_reason ?? null,
+
                         'amount_released' => $ticket->gasSlip ? $ticket->gasSlip->amount_released : 0,
                         'actual_fuel_cost' => (float) $actualCost,
                         'actual_fuel_used' => (float) $ticket->actual_fuel_used,
@@ -345,9 +361,7 @@ class MayorsOfficeController extends Controller
                             ? asset($ticket->gasSlip->fuelReceipt->receipt_photo_path)
                             : null,
                         'is_mo_funded' => $ticket->created_by_mo_user_id !== null,
-                        'charged_to_department' => $ticket->charge_to_department_id ?
-                            \App\Models\Department::find($ticket->charge_to_department_id)?->department_name : null,
-                        'driver_name' => $driverName, // ✅ Naay driver_name
+                        'driver_name' => $driverName,
                         'driver' => $ticket->driver ? [
                             'driver_id' => $ticket->driver->driver_id,
                             'name' => $driverName,
@@ -356,10 +370,17 @@ class MayorsOfficeController extends Controller
                             ] : null,
                         ] : null,
                         'purpose' => $ticket->purpose,
-                        'passenger_name' => $ticket->passenger_name, // ✅ I-apil ang passenger name
+                        'passenger_name' => $ticket->passenger_name,
                         'created_at' => $ticket->created_at,
-                        'is_cross_department' => $ticket->gasSlip?->is_cross_department ?? false,
-                        'cross_department_reason' => $ticket->gasSlip?->cross_department_reason ?? null,
+                        
+                        // ✅ Para sa Gas Slip
+                        'gas_slip' => $ticket->gasSlip ? [
+                            'gas_slip_id' => $ticket->gasSlip->gas_slip_id,
+                            'amount_released' => $ticket->gasSlip->amount_released,
+                            'is_cross_department' => $ticket->gasSlip->is_cross_department ?? false,
+                            'cross_department_reason' => $ticket->gasSlip->cross_department_reason ?? null,
+                        ] : null,
+                        'gas_slip_data' => $ticket->gasSlip, // Optional: full gas slip data para sa GasSlipView
                     ];
                 });
 
