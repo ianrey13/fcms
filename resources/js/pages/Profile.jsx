@@ -1,18 +1,18 @@
 // src/pages/Profile.jsx
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { authAPI } from '../services/api'; // ✅ Gigamit ang authAPI
+import { authAPI } from '../services/api';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { User, Shield, Key, Save, Loader2, ArrowLeft, Mail, Building2, Fingerprint } from "lucide-react";
+import { User, Shield, Key, Save, Loader2, ArrowLeft, Mail, Building2 } from "lucide-react";
 import { toast } from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
 
 const Profile = () => {
-    const { user } = useAuth(); // Kuhaa ang user data gikan sa AuthContext
+    const { user } = useAuth(); 
     const navigate = useNavigate();
     
     const [isLoading, setIsLoading] = useState(false);
@@ -114,15 +114,7 @@ const Profile = () => {
                         </Badge>
 
                         <div className="w-full mt-8 pt-6 border-t border-slate-100 dark:border-slate-800 space-y-5 text-left">
-                            <div className="flex items-start gap-3">
-                                <div className="p-2 bg-slate-100 dark:bg-slate-800 rounded-lg text-slate-500">
-                                    <Fingerprint className="h-4 w-4" />
-                                </div>
-                                <div>
-                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Employee ID</p>
-                                    <p className="font-semibold text-slate-800 dark:text-slate-200 text-sm mt-0.5">{user?.employee_number || 'N/A'}</p>
-                                </div>
-                            </div>
+                            {/* Gi-tangtang ang Employee ID dinhi */}
                             
                             <div className="flex items-start gap-3">
                                 <div className="p-2 bg-slate-100 dark:bg-slate-800 rounded-lg text-slate-500">
