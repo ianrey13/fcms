@@ -195,18 +195,32 @@ const BudgetAllocation = () => {
     });
 
     const addBudgetMutation = useMutation({
-        mutationFn: async (data) => {
-            const response = await api.post("/mayors-office/annual-budgets/add", { fiscal_year: selectedYear, ...data });
-            return response.data;
-        },
-        onSuccess: () => {
-            toast.success("Additional budget added successfully");
-            setShowAddBudgetDialog(false);
-            queryClient.invalidateQueries(["annual-budgets"]);
-            queryClient.invalidateQueries(["budget-history"]);
-        },
-        onError: (error) => toast.error(error.response?.data?.message || "Failed to add budget"),
-    });
+    mutationFn: async (data) => {
+        const response = await api.post("/mayors-office/annual-budgets/add", { 
+            fiscal_year: selectedYear,
+            department_id: data.department_id,
+            additional_amount: data.additional_amount,
+            reason: data.purpose, 
+        });
+        return response.data;
+    },
+    onSuccess: () => {
+        toast.success("Additional budget added successfully");
+        setShowAddBudgetDialog(false);
+        queryClient.invalidateQueries(["annual-budgets"]);
+        queryClient.invalidateQueries(["budget-history"]);
+    },
+    onError: (error) => {
+        console.error("Add budget error:", error.response?.data);
+        const errors = error.response?.data?.errors;
+        if (errors) {
+            const firstError = Object.values(errors)[0]?.[0];
+            toast.error(firstError || "Validation failed");
+        } else {
+            toast.error(error.response?.data?.message || "Failed to add budget");
+        }
+    },
+});
 
     const budgets = useMemo(() => {
         const raw = budgetData?.data;

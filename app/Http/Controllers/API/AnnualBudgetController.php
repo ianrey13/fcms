@@ -379,7 +379,7 @@ class AnnualBudgetController extends Controller
                 'department_id' => 'required|exists:departments,department_id',
                 'fiscal_year' => 'required|integer|exists:fiscal_years,year',
                 'additional_amount' => 'required|numeric|min:0.01',
-                'reason' => 'required|string|max:255',
+                'purpose' => 'required|string|max:255',
             ]);
 
             if ($validator->fails()) {
