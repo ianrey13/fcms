@@ -418,28 +418,44 @@ const MayorDashboard = () => {
             }));
     }, [departmentBudgets]);
 
-    // ✅ Filter transactions para sa selected Pie Department
+    // ✅ Filter transactions para sa selected Pie Department (MO-CHARGE AWARE)
     const selectedDeptTransactions = useMemo(() => {
         if (!selectedPieDept) return [];
+
         return approvedTicketsRaw
-            .filter((t) => t.department_name === selectedPieDept.name)
+            .filter((t) => {
+                // Kung ang gi-chargean (charge_to) kay match sa gi-click nga department
+                const isChargedToSelected = 
+                    t.charge_to_department_name === selectedPieDept.name ||
+                    (t.department_name === selectedPieDept.name && !t.is_cross_department);
+
+                return isChargedToSelected;
+            })
             .sort((a, b) => new Date(b.trip_date) - new Date(a.trip_date));
     }, [approvedTicketsRaw, selectedPieDept]);
 
     // ✅ Selected department totals
     const selectedDeptTotals = useMemo(() => {
         if (!selectedPieDept) return null;
+        
         const dept = departmentBudgets.find(
             (d) => d.department_name === selectedPieDept.name,
         );
+        
+        // ✅ Kalkulahon ang total released base sa mga tickets nga gi-charge niini nga department
         const totalReleased = selectedDeptTransactions.reduce(
             (sum, t) => sum + (parseFloat(t.amount_released) || 0),
             0,
         );
+        
+        // ✅ Live remaining (Allocated - total released)
+        const allocated = dept?.allocated || 0;
+        const remaining = allocated - totalReleased;
+
         return {
-            allocated: dept?.allocated || 0,
+            allocated: allocated,
             spent: dept?.spent || 0,
-            remaining: dept?.remaining || 0,
+            remaining: remaining,
             totalReleased,
             txCount: selectedDeptTransactions.length,
         };
@@ -538,22 +554,66 @@ const MayorDashboard = () => {
         }));
     }, [approvedTicketsRaw, trendDept, departmentBudgets]);
 
-  const transactionsData = useMemo(() => {
-    return approvedTicketsRaw
-        .filter(t => {
-            // ✅ KUNG CROSS-DEPARTMENT, PERMI NI SIYA MUGAWAS SA MAYOR'S OFFICE
-            // Kay ang Mayor maoy nag-release sa funds (base sa cross_department_reason)
-            const isCrossDept = t.is_cross_department === true;
+    const transactionsData = useMemo(() => {
+        return approvedTicketsRaw
+            .filter(t => {
+                // ✅ KUNG CROSS-DEPARTMENT, PERMI NI SIYA MUGAWAS SA MAYOR'S OFFICE
+                // Kay ang Mayor maoy nag-release sa funds (base sa cross_department_reason)
+                const isCrossDept = t.is_cross_department === true;
 
-            if (isCrossDept) {
-                // Kung ang user nag-filter og specific department, i-check kung nag-match ba
-                if (transDept !== "all" && t.department_name !== transDept && t.charge_to_department_name !== transDept) {
-                    return false;
+                if (isCrossDept) {
+                    // Kung ang user nag-filter og specific department, i-check kung nag-match ba
+                    if (transDept !== "all" && t.department_name !== transDept && t.charge_to_department_name !== transDept) {
+                        return false;
+                    }
+                    
+                    // Check status filter
+                    const hasCost = t.actual_fuel_cost && parseFloat(t.actual_fuel_cost) > 0;
+                    let matchesStatus = true;
+                    if (transStatusFilter === "funds_issued") {
+                        matchesStatus = t.status === "funds_issued";
+                    } else if (transStatusFilter === "received") {
+                        matchesStatus = t.status === "acknowledged";
+                    } else if (transStatusFilter === "for_verification") {
+                        matchesStatus = t.status === "in_transit" && !hasCost;
+                    } else if (transStatusFilter === "verified") {
+                        matchesStatus = hasCost || ["completed", "closed", "pending_gso_validation", "pending_reconciliation"].includes(t.status);
+                    } else if (transStatusFilter === "rejected") {
+                        matchesStatus = t.status === "rejected";
+                    }
+
+                    // Check date filter
+                    let matchesDate = true;
+                    if (transTimeFilter !== "all_time") {
+                        const today = new Date();
+                        let start, end;
+                        if (transTimeFilter === "this_week") {
+                            start = startOfWeek(today, { weekStartsOn: 1 });
+                            end = endOfWeek(today, { weekStartsOn: 1 });
+                        } else if (transTimeFilter === "this_month") {
+                            start = startOfMonth(today);
+                            end = endOfMonth(today);
+                        } else if (transTimeFilter === "last_month") {
+                            const lastMonth = subMonths(today, 1);
+                            start = startOfMonth(lastMonth);
+                            end = endOfMonth(lastMonth);
+                        } else if (transTimeFilter === "two_weeks_ago") {
+                            start = subDays(today, 14);
+                            end = today;
+                        }
+                        if (!t.trip_date) return false;
+                        matchesDate = isWithinInterval(new Date(t.trip_date), { start, end });
+                    }
+
+                    return matchesStatus && matchesDate;
                 }
+
+                // Standard logic para sa wala na-cross department
+                const matchesDept = transDept === "all" || t.department_name === transDept;
                 
-                // Check status filter
-                const hasCost = t.actual_fuel_cost && parseFloat(t.actual_fuel_cost) > 0;
                 let matchesStatus = true;
+                const hasCost = t.actual_fuel_cost && parseFloat(t.actual_fuel_cost) > 0;
+                
                 if (transStatusFilter === "funds_issued") {
                     matchesStatus = t.status === "funds_issued";
                 } else if (transStatusFilter === "received") {
@@ -566,7 +626,6 @@ const MayorDashboard = () => {
                     matchesStatus = t.status === "rejected";
                 }
 
-                // Check date filter
                 let matchesDate = true;
                 if (transTimeFilter !== "all_time") {
                     const today = new Date();
@@ -589,54 +648,11 @@ const MayorDashboard = () => {
                     matchesDate = isWithinInterval(new Date(t.trip_date), { start, end });
                 }
 
-                return matchesStatus && matchesDate;
-            }
-
-            // Standard logic para sa wala na-cross department
-            const matchesDept = transDept === "all" || t.department_name === transDept;
-            
-            let matchesStatus = true;
-            const hasCost = t.actual_fuel_cost && parseFloat(t.actual_fuel_cost) > 0;
-            
-            if (transStatusFilter === "funds_issued") {
-                matchesStatus = t.status === "funds_issued";
-            } else if (transStatusFilter === "received") {
-                matchesStatus = t.status === "acknowledged";
-            } else if (transStatusFilter === "for_verification") {
-                matchesStatus = t.status === "in_transit" && !hasCost;
-            } else if (transStatusFilter === "verified") {
-                matchesStatus = hasCost || ["completed", "closed", "pending_gso_validation", "pending_reconciliation"].includes(t.status);
-            } else if (transStatusFilter === "rejected") {
-                matchesStatus = t.status === "rejected";
-            }
-
-            let matchesDate = true;
-            if (transTimeFilter !== "all_time") {
-                const today = new Date();
-                let start, end;
-                if (transTimeFilter === "this_week") {
-                    start = startOfWeek(today, { weekStartsOn: 1 });
-                    end = endOfWeek(today, { weekStartsOn: 1 });
-                } else if (transTimeFilter === "this_month") {
-                    start = startOfMonth(today);
-                    end = endOfMonth(today);
-                } else if (transTimeFilter === "last_month") {
-                    const lastMonth = subMonths(today, 1);
-                    start = startOfMonth(lastMonth);
-                    end = endOfMonth(lastMonth);
-                } else if (transTimeFilter === "two_weeks_ago") {
-                    start = subDays(today, 14);
-                    end = today;
-                }
-                if (!t.trip_date) return false;
-                matchesDate = isWithinInterval(new Date(t.trip_date), { start, end });
-            }
-
-            return matchesDept && matchesStatus && matchesDate;
-        })
-        .sort((a, b) => new Date(b.trip_date) - new Date(a.trip_date))
-        .slice(0, 5);
-}, [approvedTicketsRaw, transDept, transStatusFilter, transTimeFilter]);
+                return matchesDept && matchesStatus && matchesDate;
+            })
+            .sort((a, b) => new Date(b.trip_date) - new Date(a.trip_date))
+            .slice(0, 5);
+    }, [approvedTicketsRaw, transDept, transStatusFilter, transTimeFilter]);
 
     // ✅ FUEL PRICE MONITORING LOGIC
     const fuelPriceData = useMemo(() => {
@@ -1469,16 +1485,8 @@ const MayorDashboard = () => {
                                                     )}
                                                 </td>
                                                 <td className="px-4 py-3 text-slate-200 font-medium">
-                                                    <div className="flex items-center gap-2">
-                                                        {t.ticket_number}
-                                                        {t.is_cross_department && (
-                                                            <span className="text-[9px] bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded border border-amber-500/30 whitespace-nowrap">
-                                                                Charge to:{" "}
-                                                                {t.charge_to_department_name ||
-                                                                    "MO"}
-                                                            </span>
-                                                        )}
-                                                    </div>
+                                                    {/* ✅ WALA NAY CHARGE TO BADGE */}
+                                                    {t.ticket_number}
                                                 </td>
                                                 <td className="px-4 py-3 text-slate-400">
                                                     {t.vehicle?.plate_number}
