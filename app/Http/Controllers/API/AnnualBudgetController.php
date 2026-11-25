@@ -373,90 +373,91 @@ class AnnualBudgetController extends Controller
      * ADD additional budget to an existing annual budget (MO only)
      */
     public function addBudget(Request $request)
-    {
-        try {
-            $validator = Validator::make($request->all(), [
-                'department_id' => 'required|exists:departments,department_id',
-                'fiscal_year' => 'required|integer|exists:fiscal_years,year',
-                'additional_amount' => 'required|numeric|min:0.01',
-                'purpose' => 'required|string|max:255',
-            ]);
+{
+    try {
+        $validator = Validator::make($request->all(), [
+            'department_id' => 'required|exists:departments,department_id',
+            'fiscal_year' => 'required|integer|exists:fiscal_years,year',
+            'additional_amount' => 'required|numeric|min:0.01',
+            'purpose' => 'required|string|max:255',
+        ]);
 
-            if ($validator->fails()) {
-                return response()->json([
-                    'success' => false,
-                    'errors' => $validator->errors()
-                ], 422);
-            }
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'errors' => $validator->errors()
+            ], 422);
+        }
 
-            DB::beginTransaction();
+        DB::beginTransaction();
 
-            $budget = AnnualBudget::where('department_id', $request->department_id)
-                ->where('fiscal_year', $request->fiscal_year)
-                ->first();
+        $budget = AnnualBudget::where('department_id', $request->department_id)
+            ->where('fiscal_year', $request->fiscal_year)
+            ->first();
 
-            if (!$budget) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Budget not found for this department and year'
-                ], 404);
-            }
+        if (!$budget) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Budget not found for this department and year'
+            ], 404);
+        }
 
-            $oldAmount = (float) $budget->annual_amount;
-            $newAmount = $oldAmount + (float) $request->additional_amount;
+        $oldAmount = (float) $budget->annual_amount;
+        $newAmount = $oldAmount + (float) $request->additional_amount;
 
-            $budget->annual_amount = $newAmount;
-            $budget->weekly_ceiling = $this->computeWeeklySuggested($newAmount);
-            $budget->save();
+        $budget->annual_amount = $newAmount;
+        $budget->weekly_ceiling = $this->computeWeeklySuggested($newAmount);
+        $budget->save();
 
-            // Upsert scoped by (department_id, fiscal_year)
-            DeptBudgetPolicy::updateOrCreate(
-                [
-                    'department_id' => $request->department_id,
-                    'fiscal_year' => $request->fiscal_year,
-                ],
-                ['default_weekly_allocation' => $budget->weekly_ceiling]
-            );
-
-            // Log history
-            $department = Department::find($request->department_id);
-            BudgetHistory::create([
+        // Upsert scoped by (department_id, fiscal_year)
+        DeptBudgetPolicy::updateOrCreate(
+            [
                 'department_id' => $request->department_id,
-                'department_name' => $department->department_name ?? 'Unknown',
-                'action' => 'annual_added',
+                'fiscal_year' => $request->fiscal_year,
+            ],
+            ['default_weekly_allocation' => $budget->weekly_ceiling]
+        );
+
+        // Log history
+        $department = Department::find($request->department_id);
+        BudgetHistory::create([
+            'department_id' => $request->department_id,
+            'department_name' => $department->department_name ?? 'Unknown',
+            'action' => 'annual_added',
+            'previous_amount' => $oldAmount,
+            'added_amount' => $request->additional_amount,
+            'new_amount' => $newAmount,
+            // ✅ GIGAMIT NA ANG $request->purpose IMBES NGA $request->reason
+            'reason' => $request->purpose . " (+₱" . number_format($request->additional_amount, 2) . ")",
+            'user_id' => auth()->id(),
+            'user_name' => auth()->user()->full_name ?? 'System',
+        ]);
+
+        DB::commit();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Additional budget added successfully',
+            'data' => [
+                'department_id' => $budget->department_id,
+                'fiscal_year' => $budget->fiscal_year,
                 'previous_amount' => $oldAmount,
                 'added_amount' => $request->additional_amount,
                 'new_amount' => $newAmount,
-                'reason' => $request->reason . " (+₱" . number_format($request->additional_amount, 2) . ")",
-                'user_id' => auth()->id(),
-                'user_name' => auth()->user()->full_name ?? 'System',
-            ]);
+                'weekly_ceiling' => (float) $budget->weekly_ceiling,
+                'weekly_suggested' => $this->computeWeeklySuggested($newAmount),
+            ]
+        ]);
 
-            DB::commit();
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Additional budget added successfully',
-                'data' => [
-                    'department_id' => $budget->department_id,
-                    'fiscal_year' => $budget->fiscal_year,
-                    'previous_amount' => $oldAmount,
-                    'added_amount' => $request->additional_amount,
-                    'new_amount' => $newAmount,
-                    'weekly_ceiling' => (float) $budget->weekly_ceiling,
-                    'weekly_suggested' => $this->computeWeeklySuggested($newAmount),
-                ]
-            ]);
-
-        } catch (\Exception $e) {
-            DB::rollBack();
-            Log::error('Add budget error: ' . $e->getMessage());
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to add budget: ' . $e->getMessage()
-            ], 500);
-        }
+    } catch (\Exception $e) {
+        DB::rollBack();
+        Log::error('Add budget error: ' . $e->getMessage());
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to add budget: ' . $e->getMessage()
+        ], 500);
     }
+}
 
     /**
      * UPDATE annual budget (MO only)

@@ -373,13 +373,13 @@ const BudgetAllocation = () => {
     };
 
     const handleAddBudget = () => {
-        if (!validateAddBudget()) return;
-        addBudgetMutation.mutate({
-            department_id: parseInt(addBudgetData.department_id),
-            additional_amount: parseFloat(addBudgetData.additional_amount),
-            purpose: addBudgetData.purpose,
-        });
-    };
+    if (!validateAddBudget()) return;
+    addBudgetMutation.mutate({
+        department_id: parseInt(addBudgetData.department_id),
+        additional_amount: parseFloat(addBudgetData.additional_amount),
+        purpose: addBudgetData.purpose, // ✅ Kini ang i-send
+    });
+};
 
     if (budgetError) return <div className="p-8 text-center text-red-500">Error loading data.</div>;
     if (yearsLoading || !selectedYear || isLoading || !budgetData) return <div className="p-6"><SkeletonPage /><SkeletonTable rows={5} cols={8} /></div>;
