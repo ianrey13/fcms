@@ -1,7 +1,7 @@
 // src/pages/mayor/reports/GasSlipView.jsx
 // Official LGU Laguindingan Gas Slip — used by MayorPending, MayorApproved, and anywhere else
 
-import React, { useRef } from "react";
+import React from "react";
 import { Button } from "@/components/ui/button";
 import { Printer } from "lucide-react";
 import municipalLogo from "../../../assets/img/465557735_866766092283213_5502511239926698684_n.svg";
@@ -17,22 +17,28 @@ const safeAmount = (amount) => {
 const GasSlipView = ({ ticket, onClose }) => {
     if (!ticket) return null;
 
-    const driverName =
-        ticket.driver_name || ticket.driver?.name || "N/A";
+    const driverName = ticket.driver_name || ticket.driver?.name || "N/A";
     const fuelType = (ticket.vehicle?.fuel_type || "Diesel").toUpperCase();
     const amount = safeAmount(ticket.amount_released);
-    const liters = amount > 0 ? (amount / 58).toFixed(2) : "0.00";
+
+    // ✅ FIX: Kuhaon ang aktwal nga litro gikan sa GSO input (resibo), dili mag-base sa amount/58
+    const rawLiters = 
+        ticket.gasSlip?.fuelReceipt?.liters_availed ?? 
+        ticket.gas_slip?.fuel_receipt?.liters_availed ?? 
+        ticket.liters_availed ?? 
+        ticket.liters ?? 
+        0;
+    
+    // I-format ang litro (kung 0, ipakita ang "0.00")
+    const actualLiters = parseFloat(rawLiters) > 0 ? parseFloat(rawLiters) : 0;
+    const displayLiters = actualLiters.toFixed(2) + " L";
 
     const gasSlipData = {
-        control_number:
-            ticket.ticket_number || ticket.trip_ticket_number || "N/A",
+        control_number: ticket.ticket_number || ticket.trip_ticket_number || "N/A",
         driver_name: driverName,
-        vehicle_plate:
-            ticket.vehicle?.plate_number || ticket.vehicle_plate || "N/A",
+        vehicle_plate: ticket.vehicle?.plate_number || ticket.vehicle_plate || "N/A",
         vehicle_model: ticket.vehicle?.vehicle_model || "",
-        date: new Date(
-            ticket.created_at || ticket.trip_date || Date.now()
-        ).toLocaleDateString("en-US", {
+        date: new Date(ticket.created_at || ticket.trip_date || Date.now()).toLocaleDateString("en-US", {
             year: "numeric",
             month: "long",
             day: "numeric",
@@ -40,14 +46,12 @@ const GasSlipView = ({ ticket, onClose }) => {
         purpose: (ticket.purpose || "Official Trip").toUpperCase(),
         destination: (ticket.destination || "N/A").toUpperCase(),
         fuel_type: fuelType,
-        liters: liters + " L",
+        liters: displayLiters, // ✅ Gigamit na ang bag-ong compute
         amount: amount,
         mayor_name: "HON. ROY MACUA",
-        department:
-            ticket.department_name || ticket.department?.name || "N/A",
+        department: ticket.department_name || ticket.department?.name || "N/A",
     };
 
-    // ✅ FIXED: Print ONLY the gas slip content
     const handlePrint = () => {
         const printWindow = window.open("", "_blank", "width=600,height=800");
         if (!printWindow) {
