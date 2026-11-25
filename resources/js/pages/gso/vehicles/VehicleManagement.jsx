@@ -137,15 +137,18 @@ const FuelLevelBar = ({ balance, tankCapacity }) => {
         statusLabel = "Low";
     }
 
+    // ✅ FORMAT: Tangtangon ang unnecessary zeros apan i-retain ang .5 ug .1
+    const formattedBalance = parseFloat(safeBalance.toFixed(2)).toString();
+    const formattedTank = parseFloat(safeTank.toFixed(2)).toString();
+
     return (
         <div className="min-w-[120px]">
             <div className="flex items-center justify-between text-[10px] mb-1">
-                {/* ✅ Giusab gikan sa .toFixed(1) ngadto sa .toFixed(2) + parseFloat */}
                 <span className={`font-semibold ${textColor}`}>
-                    {parseFloat(safeBalance.toFixed(2))} L
+                    {formattedBalance} L
                 </span>
                 <span className="text-slate-400">
-                    / {safeTank.toFixed(0)} L
+                    / {formattedTank} L  {/* ✅ DILI NA .toFixed(0) */}
                 </span>
             </div>
             <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-1.5 overflow-hidden">
