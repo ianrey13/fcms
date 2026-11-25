@@ -427,6 +427,7 @@ const MayorPending = () => {
             return;
         }
 
+        // ✅ DIRETSO NA LANG PAG SUBMIT (Wala nay force release)
         submitApprove({
             amount_released: amount,
             charge_to_department_id: chargeToDeptId,
@@ -436,6 +437,7 @@ const MayorPending = () => {
                 : null,
         });
     };
+    
     const submitApprove = async (payload) => {
         setSubmitting(true);
         try {
@@ -450,6 +452,7 @@ const MayorPending = () => {
             setShowRightPanel(false);
             fetchTickets();
         } catch (error) {
+            // ✅ Diri mugawas ang error gikan sa backend bahin sa advance ticket
             toast.error(
                 error.response?.data?.message || "Failed to release funds",
             );

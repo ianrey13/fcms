@@ -433,7 +433,7 @@ class MayorsOfficeController extends Controller
     }
 }
 
-    /**
+        /**
      * Approve ticket and release funds and gaslip generation
      */
     public function approveTicket(Request $request, $id)
@@ -465,6 +465,16 @@ class MayorsOfficeController extends Controller
             return response()->json(['message' => 'Ticket not found or not eligible for fund release'], 404);
         }
 
+        // ✅ RESTORED: DATE VALIDATION (Dili pwede i-release kung advance ticket)
+        // I-check kung ang trip_date kay mas bag-o pa kaysa karon (today)
+        if (Carbon::parse($ticket->trip_date)->startOfDay()->isAfter(Carbon::today())) {
+            return response()->json([
+                'success' => false,
+                'message' => "This is an advance trip ticket scheduled for " . Carbon::parse($ticket->trip_date)->format('M d, Y') . ". Funds cannot be released yet. Please CANCEL this ticket if it is no longer needed, so a new ticket can be created on the actual trip date."
+            ], 422);
+        }
+        // ✅ END OF DATE VALIDATION
+
         $amountToRelease = (float) $request->amount_released;
         $chargeDepartmentId = $request->charge_to_department_id ?? $ticket->department_id;
         $chargeDepartment = Department::find($chargeDepartmentId);
@@ -486,13 +496,6 @@ class MayorsOfficeController extends Controller
                 'message' => '❌ Cross-Department usage selected but the same department is chosen. Please select a different department or uncheck the Cross-Department option.'
             ], 422);
         }
-
-        // if ($isCrossDepartment && empty($crossDepartmentReason)) {
-        //     return response()->json([
-        //         'success' => false,
-        //         'message' => '❌ Please provide a reason for cross-department fuel usage.'
-        //     ], 422);
-        // }
 
         // Active fiscal year (resolved once, used throughout)
         $activeYear = $this->budgetService->getActiveFiscalYear();
@@ -722,7 +725,6 @@ class MayorsOfficeController extends Controller
             ]
         ]);
     }
-
     /**
      *  Deduct from weekly budget (legacy — kept for backward compat)
      */
