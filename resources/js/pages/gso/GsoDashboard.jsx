@@ -373,6 +373,7 @@ const GsoDashboard = () => {
             .slice(0, 5); 
     }, [allTrips]);
 
+    // ✅ KINI ANG GIGAMIT SA FUEL BALANCE MONITORING
     const filteredVehicles = useMemo(() => {
         let result = vehicles;
         if (deptFilter !== "all") {
@@ -391,7 +392,7 @@ const GsoDashboard = () => {
                         .includes(lower),
             );
         }
-        return result.slice(0, 5);
+        return result.slice(0, 5); // Limit to 5 for dashboard view
     }, [vehicles, searchTerm, deptFilter]);
 
     // ============================================
@@ -402,7 +403,6 @@ const GsoDashboard = () => {
 
         const ledgerTrips = allTrips.filter(trip => {
             const status = (trip.status || "").toLowerCase();
-            // Only exclude truly incomplete/cancelled trips
             if (["cancelled", "rejected", "returned_for_revision", "pending_mayors_office"].includes(status)) {
                 return false;
             }
@@ -417,8 +417,6 @@ const GsoDashboard = () => {
                 ) ||
                 trip.vehicle;
 
-            // ✅ FIXED: Tangtangon ang estimate fallback. 
-            // Kung wala pay input, mahimong null (dili 0)
             const rawFuelIn = 
                 trip.gasSlip?.fuelReceipt?.liters_availed ??
                 trip.gas_slip?.fuel_receipt?.liters_availed ??
@@ -453,7 +451,7 @@ const GsoDashboard = () => {
                     trip.vehicle?.vehicle_id ??
                     trip.vehicle?.plate_number ??
                     "unknown",
-                fuelIn: fuelIn !== null ? r2(fuelIn) : null, // Keep null kung wala
+                fuelIn: fuelIn !== null ? r2(fuelIn) : null,
                 fuelOut: r2(rawFuelOut),
                 distance,
                 efficiency,
@@ -475,7 +473,6 @@ const GsoDashboard = () => {
             list.sort((a, b) => a.sortTime - b.sortTime);
 
             const first = list[0];
-            // Kung null ang fuelIn, i-treat as 0 para sa math calculation sa balance
             const totalIn = list.reduce((s, r) => s + (r.fuelIn ?? 0), 0);
             const totalOut = list.reduce((s, r) => s + r.fuelOut, 0);
 
@@ -498,7 +495,6 @@ const GsoDashboard = () => {
             let prev = r2(anchor);
             list.forEach((r) => {
                 r.beginning = prev;
-                // ✅ Kung null ang fuelIn, 0 ang idungag sa balance (walay kausaban)
                 r.balance = r2(r.beginning + (r.fuelIn ?? 0) - r.fuelOut);
                 prev = r.balance;
             });
@@ -515,7 +511,7 @@ const GsoDashboard = () => {
                     r.trip.driver?.name ||
                     "N/A",
                 beginning: r.beginning.toFixed(2),
-                fuelIn: r.fuelIn !== null ? r.fuelIn.toFixed(2) : null, // ✅ Null imbes 0.00
+                fuelIn: r.fuelIn !== null ? r.fuelIn.toFixed(2) : null,
                 fuelOut: r.fuelOut.toFixed(2),
                 distanceKm: r.distance,
                 efficiencyUsed: r.efficiency,
@@ -912,48 +908,63 @@ const GsoDashboard = () => {
                                 />
                             </div>
                         </div>
-                                                <div className="overflow-x-auto flex-1">
+                        
+                        {/* ✅ UPDATED: VEHICLE FUEL BALANCE TABLE */}
+                        <div className="overflow-x-auto flex-1">
                             <table className="w-full text-left text-xs text-slate-300">
                                 <thead className="bg-[#0b101c] text-slate-500">
                                     <tr>
-                                        <th className="px-3 py-2 font-medium">Date</th>
-                                        <th className="px-3 py-2 font-medium">TT Number</th>
-                                        <th className="px-3 py-2 font-medium">Destination</th>
-                                        <th className="px-3 py-2 font-medium">Status</th>
+                                        <th className="px-3 py-2 font-medium">Vehicle</th>
+                                        <th className="px-3 py-2 font-medium text-right">Balance</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-800/50">
-                                    {recentTrips.length === 0 ? (
+                                    {vehiclesLoading ? (
                                         <tr>
-                                            <td colSpan={4} className="px-3 py-4 text-center text-slate-500">
-                                                No recent trips.
+                                            <td colSpan={2} className="px-3 py-6 text-center text-slate-500">
+                                                <Loader2 className="h-4 w-4 animate-spin mx-auto" />
+                                            </td>
+                                        </tr>
+                                    ) : filteredVehicles.length === 0 ? (
+                                        <tr>
+                                            <td colSpan={2} className="px-3 py-4 text-center text-slate-500">
+                                                No vehicles found.
                                             </td>
                                         </tr>
                                     ) : (
-                                        recentTrips.map((trip) => (
-                                            <tr
-                                                key={trip.trip_ticket_id || trip.id}
-                                                className="hover:bg-[#1a2235] cursor-pointer"
-                                                onClick={() =>
-                                                    navigate(
-                                                        `/gso/tickets/${trip.trip_ticket_id || trip.id}`,
-                                                    )
-                                                }
-                                            >
-                                                <td className="px-3 py-2 whitespace-nowrap">
-                                                    {formatDateShort(trip.trip_date || trip.created_at)}
-                                                </td>
-                                                <td className="px-3 py-2 font-mono text-white">
-                                                    {trip.trip_ticket_number || trip.ticket_number}
-                                                </td>
-                                                <td className="px-3 py-2 truncate max-w-[100px]" title={trip.destination}>
-                                                    {trip.destination}
-                                                </td>
-                                                <td className="px-3 py-2">
-                                                    <StatusPill status={trip.status} />
-                                                </td>
-                                            </tr>
-                                        ))
+                                        filteredVehicles.map((v) => {
+                                            const currentFuel = toNum(v.current_fuel_balance);
+                                            const tankCap = toNum(v.tank_capacity) || 60;
+                                            const fuelPct = v.fuel_percentage || 0;
+                                            
+                                            return (
+                                                <tr key={v.vehicle_id} className="hover:bg-[#1a2235] transition-colors">
+                                                    <td className="px-3 py-3">
+                                                        <div className="flex flex-col">
+                                                            <span className="font-bold text-white text-sm truncate max-w-[120px]">{v.vehicle_model}</span>
+                                                            <span className="font-mono text-[10px] text-slate-400">{v.plate_number}</span>
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-3 py-3 text-right">
+                                                        <div className="flex flex-col items-end gap-1">
+                                                            <div className="font-bold text-white text-sm">
+                                                                {currentFuel.toFixed(2)} <span className="text-slate-400 text-xs font-normal">/ {tankCap.toFixed(0)} L</span>
+                                                            </div>
+                                                            {/* Visual Progress Bar */}
+                                                            <div className="w-16 h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                                                                <div 
+                                                                    className={cn(
+                                                                        "h-full rounded-full",
+                                                                        fuelPct > 50 ? "bg-emerald-500" : fuelPct > 20 ? "bg-amber-500" : "bg-red-500"
+                                                                    )} 
+                                                                    style={{ width: `${Math.min(fuelPct, 100)}%` }}
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })
                                     )}
                                 </tbody>
                             </table>
