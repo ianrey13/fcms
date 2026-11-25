@@ -283,37 +283,21 @@ const GsoDashboard = () => {
         [activeTripsRaw],
     );
 
-    const { data: allTripsRaw = [], isLoading: tripsLoading } =
+        const { data: allTripsRaw = [], isLoading: tripsLoading } =
         useOptimizedQuery({
             queryKey: ["gso-dashboard-trips"],
             queryFn: async () => {
                 const trips = extractArray(await gsoAPI.getAllTrips());
                 return trips.filter((trip) => {
                     const status = (trip.status || "").toLowerCase();
-                    const hasGasSlip =
-                        trip.gasSlip || trip.gas_slip || trip.gas_slip_id;
 
-                    if (
-                        ["cancelled", "rejected", "returned_for_revision"].includes(
-                            status,
-                        )
-                    ) {
+                  
+                    if (["cancelled", "rejected", "returned_for_revision"].includes(status)) {
                         return false;
                     }
 
-                    if (status === "pending_mayors_office" && !hasGasSlip) {
-                        return false;
-                    }
-
-                    if (
-                        !hasGasSlip &&
-                        !trip.actual_distance_km &&
-                        !trip.gps_distance_km
-                    ) {
-                        return false;
-                    }
-
-                    return true;
+                   
+                    return true; 
                 });
             },
         });
@@ -379,14 +363,14 @@ const GsoDashboard = () => {
     const utilizationPct =
         totalVehicles > 0 ? Math.round((inUse / totalVehicles) * 100) : 0;
 
-    const recentTrips = useMemo(() => {
+      const recentTrips = useMemo(() => {
         return [...allTrips]
-            .sort(
-                (a, b) =>
-                    new Date(b.created_at || b.trip_date) -
-                    new Date(a.created_at || a.trip_date),
-            )
-            .slice(0, 4);
+            .sort((a, b) => {
+                const dateA = new Date(a.created_at || a.trip_date || a.submitted_at || 0).getTime();
+                const dateB = new Date(b.created_at || b.trip_date || b.submitted_at || 0).getTime();
+                return dateB - dateA; // Latest first
+            })
+            .slice(0, 5); 
     }, [allTrips]);
 
     const filteredVehicles = useMemo(() => {
