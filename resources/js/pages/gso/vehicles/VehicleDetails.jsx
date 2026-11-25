@@ -54,7 +54,6 @@ const icons = {
     end: createSvgIcon('#ef4444', '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><line x1="4" y1="22" x2="4" y2="15"></line>'),
 };
 
-// ✅ SEPARATED COMPONENT FOR MAP UPDATES (Prevents blinking)
 const MapUpdater = ({ bounds, markerPos, isReplaying }) => {
     const map = useMap();
     useEffect(() => {
@@ -65,7 +64,6 @@ const MapUpdater = ({ bounds, markerPos, isReplaying }) => {
     return null;
 };
 
-// Helper to safely parse numbers
 const toNum = (v) => {
     const n = parseFloat(v);
     return Number.isFinite(n) ? n : 0;
@@ -75,22 +73,18 @@ const VehicleDetails = () => {
     const { id } = useParams();
     const navigate = useNavigate();
     
-    // Table State (Trip History)
     const [page, setPage] = useState(1);
     const [sortOrder, setSortOrder] = useState('desc');
     const rowsPerPage = 5; 
 
-    // Table State (Fuel Ledger)
     const [ledgerPage, setLedgerPage] = useState(1);
     const ledgerRowsPerPage = 5;
 
-    // View State (Fuel Ledger)
-    const [ledgerView, setLedgerView] = useState('table'); // 'table' or 'chart'
+    const [ledgerView, setLedgerView] = useState('table'); 
 
     const { data: vehicles = [], isLoading } = useVehicles();
     const vehicle = vehicles.find(v => v.vehicle_id === parseInt(id));
 
-    // State for Map
     const [selectedHistoryTrip, setSelectedHistoryTrip] = useState(null);
     const [isMapExpanded, setIsMapExpanded] = useState(false);
     const [routeCoordinates, setRouteCoordinates] = useState([]);
@@ -105,7 +99,8 @@ const VehicleDetails = () => {
         };
     }, []);
 
-    // Fetch Trip History
+    // ✅ Fetch Trip History gikan sa Completed Trips API
+    // Kini nga endpoint nag-return na sa gasSlip ug fuelReceipt details
     const { data: historyData = [], isLoading: historyLoading } = useQuery({
         queryKey: ['vehicle-history', id],
         queryFn: async () => {
@@ -116,43 +111,30 @@ const VehicleDetails = () => {
         enabled: !!vehicle
     });
 
-    // Auto-select the latest trip when data loads
     useEffect(() => {
         if (historyData.length > 0 && !selectedHistoryTrip) {
             handleViewRoute(historyData[0]);
         }
     }, [historyData]);
 
-    // Fetch Fuel Receipts
-    const { data: fuelReceipts = [], isLoading: fuelLoading } = useQuery({
-        queryKey: ['vehicle-fuel-receipts', vehicle?.plate_number],
-        queryFn: async () => {
-            const res = await gsoAPI.getFuelReceipts();
-            const allReceipts = res?.data?.data || [];
-            return allReceipts.filter(r => r.plate_number === vehicle?.plate_number);
-        },
-        enabled: !!vehicle
-    });
+    // ✅ GITANGGTANG ANG SEPARATE FUEL RECEIPTS FETCH
+    // Kay ang historyData na mismo ang naay data sa fuel receipts
 
-    // ============================================
-    // ✅ FUEL LEDGER CALCULATION (PER VEHICLE)
-    // ============================================
     const ledgerRows = useMemo(() => {
         if (!vehicle) return [];
         const r2 = (n) => parseFloat(toNum(n).toFixed(2));
 
         const rows = historyData.map(trip => {
-            // 1. Match Fuel Receipt (for Fuel In)
-            const matchedReceipt = fuelReceipts.find(r => 
-                r.trip_ticket_number === trip.ticket_number ||
-                r.trip_ticket_number === trip.trip_ticket_number
-            );
+            // ✅ FIXED: Gikuha diretso sa trip object, parehas sa GsoDashboard
+            const rawFuelIn = 
+                trip.gasSlip?.fuelReceipt?.liters_availed ??
+                trip.gas_slip?.fuel_receipt?.liters_availed ??
+                trip.liters_availed;
 
-            const fuelIn = toNum(matchedReceipt?.liters);
+            const hasFuelInput = rawFuelIn !== undefined && rawFuelIn !== null && rawFuelIn !== "";
+            const fuelIn = hasFuelInput ? toNum(rawFuelIn) : null;
             
-            // 2. Fuel Out
             const distance = toNum(trip.actual_distance_km || trip.gps_distance_km);
-            // Clamp efficiency to realistic range (8-20 km/L) to avoid bad data
             let efficiency = toNum(vehicle.reference_efficiency) || 10;
             if (efficiency < 6 || efficiency > 20) efficiency = 10;
             
@@ -160,7 +142,7 @@ const VehicleDetails = () => {
 
             return {
                 trip,
-                fuelIn: r2(fuelIn),
+                fuelIn: fuelIn !== null ? r2(fuelIn) : null,
                 fuelOut: r2(fuelOut),
                 distance,
                 efficiency,
@@ -168,54 +150,48 @@ const VehicleDetails = () => {
             };
         });
 
-        // Sort chronologically (oldest to newest) to compute the balance chain
         rows.sort((a, b) => a.sortTime - b.sortTime);
 
-        // Initialize Beginning Balance
         const initialRaw = vehicle.initial_estimated_fuel;
         const hasInitial = initialRaw !== undefined && initialRaw !== null && initialRaw !== '';
         
-        // Fallback calculation if no initial_estimated_fuel is set
-        const totalIn = rows.reduce((s, r) => s + r.fuelIn, 0);
+        const totalIn = rows.reduce((s, r) => s + (r.fuelIn ?? 0), 0);
         const totalOut = rows.reduce((s, r) => s + r.fuelOut, 0);
         let anchor = hasInitial 
             ? toNum(initialRaw) 
             : (toNum(vehicle.current_fuel_balance) - totalIn + totalOut);
 
-        // Roll forward
         let prev = r2(anchor);
         rows.forEach(r => {
             r.beginning = prev;
-            r.balance = r2(r.beginning + r.fuelIn - r.fuelOut);
+            // ✅ Kung null ang fuelIn, walay idugang sa balance
+            r.balance = r2(r.beginning + (r.fuelIn ?? 0) - r.fuelOut);
             prev = r.balance;
         });
 
-        // Reverse to show newest first
         return rows.reverse().map(r => ({
             ...r.trip,
             displayTicketNo: r.trip.ticket_number || r.trip.trip_ticket_number,
             displayDate: r.trip.trip_date || r.trip.updated_at,
             beginning: r.beginning.toFixed(2),
-            fuelIn: r.fuelIn.toFixed(2),
+            fuelIn: r.fuelIn !== null ? r.fuelIn.toFixed(2) : null, // ✅ Null imbes 0.00
             fuelOut: r.fuelOut.toFixed(2),
             balance: r.balance.toFixed(2),
             distanceKm: r.distance,
             efficiencyUsed: r.efficiency,
             overTank: (toNum(vehicle.tank_capacity) > 0) && (r.balance > toNum(vehicle.tank_capacity) + 0.01)
         }));
-    }, [historyData, fuelReceipts, vehicle]);
+    }, [historyData, vehicle]);
 
-    // ✅ REVERSED DATA FOR CHART (oldest to newest)
     const chartData = useMemo(() => {
         return [...ledgerRows].reverse().map(r => ({
             name: format(new Date(r.displayDate), 'MMM dd'),
-            fuelIn: Number(r.fuelIn),
+            fuelIn: r.fuelIn !== null ? Number(r.fuelIn) : 0,
             fuelOut: Number(r.fuelOut),
             balance: Number(r.balance)
         }));
     }, [ledgerRows]);
 
-    // Pagination for Fuel Ledger
     const totalLedgerPages = Math.ceil(ledgerRows.length / ledgerRowsPerPage);
     const currentLedgerData = useMemo(() => {
         const firstPageIndex = (ledgerPage - 1) * ledgerRowsPerPage;
@@ -223,8 +199,6 @@ const VehicleDetails = () => {
         return ledgerRows.slice(firstPageIndex, lastPageIndex);
     }, [ledgerPage, ledgerRows]);
 
-
-    // Sorting and Pagination for Trip History Table
     const sortedHistory = useMemo(() => {
         let sorted = [...historyData];
         sorted.sort((a, b) => {
@@ -302,7 +276,6 @@ const VehicleDetails = () => {
     return (
         <div className="min-h-screen bg-slate-50 dark:bg-slate-950 p-4 md:p-6 font-sans flex flex-col gap-6">
             
-            {/* Header */}
             <div>
                 <button onClick={() => navigate('/admin/vehicles')} className="flex items-center text-sm font-medium text-slate-500 hover:text-blue-600 mb-2 transition-colors">
                     <ArrowLeft className="h-4 w-4 mr-1" /> Back to Vehicles
@@ -310,7 +283,6 @@ const VehicleDetails = () => {
                 <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Vehicle Details</h1>
             </div>
 
-            {/* 1. Top Hero Section */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <Card className="lg:col-span-2 dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm flex flex-col md:flex-row overflow-hidden">
                     <div className="p-6 bg-slate-100/50 dark:bg-slate-800/30 flex items-center justify-center md:w-1/3">
@@ -367,7 +339,6 @@ const VehicleDetails = () => {
                 </Card>
             </div>
 
-            {/* 2. Fuel Ledger Section (Table / Chart) */}
             <Card className="dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden flex flex-col min-h-[400px]">
                 <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-slate-50/50 dark:bg-slate-800/20">
                     <div>
@@ -382,7 +353,6 @@ const VehicleDetails = () => {
                             {ledgerRows.length} Entries
                         </Badge>
                         
-                        {/* View Toggle */}
                         <div className="flex bg-slate-200/60 dark:bg-slate-800 p-1 rounded-lg">
                             <button
                                 onClick={() => setLedgerView('table')}
@@ -424,7 +394,7 @@ const VehicleDetails = () => {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300">
-                                {fuelLoading || historyLoading ? (
+                                {historyLoading ? (
                                     <tr>
                                         <td colSpan={6} className="px-4 py-12 text-center text-slate-500">
                                             <Loader2 className="h-6 w-6 animate-spin text-blue-500 mx-auto mb-2" /> Loading ledger...
@@ -442,7 +412,10 @@ const VehicleDetails = () => {
                                             </td>
                                             <td className="px-4 py-3 font-mono font-medium">{row.displayTicketNo}</td>
                                             <td className="px-4 py-3 text-right font-medium text-slate-500">{row.beginning}</td>
-                                            <td className="px-4 py-3 text-right font-bold text-emerald-600 dark:text-emerald-400">+{row.fuelIn}</td>
+                                            <td className="px-4 py-3 text-right font-bold text-emerald-600 dark:text-emerald-400">
+                                                {/* ✅ DASH KUNG WALAY INPUT */}
+                                                {row.fuelIn !== null ? `+${row.fuelIn}` : '-'}
+                                            </td>
                                             <td className="px-4 py-3 text-right font-bold text-orange-600 dark:text-orange-400">
                                                 -{row.fuelOut}
                                             </td>
@@ -455,9 +428,8 @@ const VehicleDetails = () => {
                             </tbody>
                         </table>
                     ) : (
-                        /* ✅ CHART VIEW */
                         <div className="p-4 h-[350px] w-full">
-                            {fuelLoading || historyLoading ? (
+                            {historyLoading ? (
                                 <div className="h-full flex flex-col items-center justify-center text-slate-500">
                                     <Loader2 className="h-8 w-8 animate-spin text-blue-500 mb-2" /> Loading chart...
                                 </div>
@@ -504,7 +476,6 @@ const VehicleDetails = () => {
                     )}
                 </div>
 
-                {/* Ledger Pagination (Table View Only) */}
                 {ledgerView === 'table' && (
                     <div className="p-3 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500 bg-slate-50 dark:bg-slate-900/50 mt-auto">
                         <span className="font-medium">
@@ -534,10 +505,7 @@ const VehicleDetails = () => {
                 )}
             </Card>
 
-            {/* 3. Bottom Row: Map & Table */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                
-                {/* MAP CARD (Left - Mini Version) */}
                 <Card className="dark:bg-slate-900 border-slate-200 dark:border-slate-800 flex flex-col overflow-hidden h-[500px] shadow-sm">
                     <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-800/20">
                         <div>
@@ -606,7 +574,6 @@ const VehicleDetails = () => {
                     </div>
                 </Card>
 
-                {/* TRIP HISTORY TABLE (Right) */}
                 <Card className="dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden flex flex-col h-[500px]">
                     <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-800/20">
                         <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2 text-sm">
@@ -668,7 +635,6 @@ const VehicleDetails = () => {
                         </table>
                     </div>
 
-                    {/* Pagination */}
                     <div className="p-3 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500 bg-slate-50 dark:bg-slate-900/50">
                         <span className="font-medium">
                             {((page - 1) * rowsPerPage) + 1}-{Math.min(page * rowsPerPage, sortedHistory.length)} of {sortedHistory.length}
@@ -697,7 +663,6 @@ const VehicleDetails = () => {
                 </Card>
             </div>
 
-            {/* ✅ FULLSCREEN MAP MODAL */}
             <Dialog open={isMapExpanded} onOpenChange={setIsMapExpanded}>
                 <DialogContent className="max-w-[95vw] w-[95vw] h-[95vh] p-0 overflow-hidden dark:bg-slate-900 dark:border-slate-700 flex flex-col">
                     <DialogHeader className="p-4 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 z-10">
@@ -709,7 +674,6 @@ const VehicleDetails = () => {
                                 </DialogDescription>
                             </div>
                             
-                            {/* Replay Controls */}
                             {routeCoordinates.length > 1 && (
                                 <div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-800 px-4 py-2 rounded-full border border-slate-200 dark:border-slate-700">
                                     <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Replay Trip</span>
