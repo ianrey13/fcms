@@ -434,14 +434,14 @@ const GsoDashboard = () => {
                 trip.vehicle;
 
             // ✅ FIXED: Tangtangon ang estimate fallback. 
-            // Kung wala pay input, 0 ang gamiton.
+            // Kung wala pay input, mahimong null (dili 0)
             const rawFuelIn = 
                 trip.gasSlip?.fuelReceipt?.liters_availed ??
                 trip.gas_slip?.fuel_receipt?.liters_availed ??
-                trip.liters_availed ??
-                0;
+                trip.liters_availed;
 
-            const fuelIn = toNum(rawFuelIn);
+            const hasFuelInput = rawFuelIn !== undefined && rawFuelIn !== null && rawFuelIn !== "";
+            const fuelIn = hasFuelInput ? toNum(rawFuelIn) : null;
 
             const status = (trip.status || "").toLowerCase();
             const isCompleted = [
@@ -469,7 +469,7 @@ const GsoDashboard = () => {
                     trip.vehicle?.vehicle_id ??
                     trip.vehicle?.plate_number ??
                     "unknown",
-                fuelIn: r2(fuelIn),
+                fuelIn: fuelIn !== null ? r2(fuelIn) : null, // Keep null kung wala
                 fuelOut: r2(rawFuelOut),
                 distance,
                 efficiency,
@@ -491,7 +491,8 @@ const GsoDashboard = () => {
             list.sort((a, b) => a.sortTime - b.sortTime);
 
             const first = list[0];
-            const totalIn = list.reduce((s, r) => s + r.fuelIn, 0);
+            // Kung null ang fuelIn, i-treat as 0 para sa math calculation sa balance
+            const totalIn = list.reduce((s, r) => s + (r.fuelIn ?? 0), 0);
             const totalOut = list.reduce((s, r) => s + r.fuelOut, 0);
 
             const initialRaw = first.vehicle?.initial_estimated_fuel;
@@ -513,7 +514,8 @@ const GsoDashboard = () => {
             let prev = r2(anchor);
             list.forEach((r) => {
                 r.beginning = prev;
-                r.balance = r2(r.beginning + r.fuelIn - r.fuelOut);
+                // ✅ Kung null ang fuelIn, 0 ang idungag sa balance (walay kausaban)
+                r.balance = r2(r.beginning + (r.fuelIn ?? 0) - r.fuelOut);
                 prev = r.balance;
             });
         });
@@ -529,7 +531,7 @@ const GsoDashboard = () => {
                     r.trip.driver?.name ||
                     "N/A",
                 beginning: r.beginning.toFixed(2),
-                fuelIn: r.fuelIn.toFixed(2),
+                fuelIn: r.fuelIn !== null ? r.fuelIn.toFixed(2) : null, // ✅ Null imbes 0.00
                 fuelOut: r.fuelOut.toFixed(2),
                 distanceKm: r.distance,
                 efficiencyUsed: r.efficiency,
@@ -1318,8 +1320,9 @@ const GsoDashboard = () => {
         <td className="px-4 py-3 text-right text-slate-400">
             {computed.beginning}
         </td>
+        {/* ✅ DASH KUNG WALAY INPUT */}
         <td className="px-4 py-3 text-right text-emerald-400">
-            {computed.fuelIn}
+            {computed.fuelIn !== null ? computed.fuelIn : "-"}
         </td>
         <td className="px-4 py-3 text-right text-red-400">
             {computed.fuelOut}
@@ -1562,8 +1565,9 @@ const GsoDashboard = () => {
                                         <p className="text-slate-400">
                                             Fuel In
                                         </p>
+                                        {/* ✅ DASH KUNG WALAY INPUT */}
                                         <p className="text-emerald-400 font-bold">
-                                            {detailTicket.fuelIn} L
+                                            {detailTicket.fuelIn !== null ? `${detailTicket.fuelIn} L` : "-"}
                                         </p>
                                     </div>
                                     <div>
