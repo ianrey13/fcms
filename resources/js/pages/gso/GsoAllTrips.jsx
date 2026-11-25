@@ -146,8 +146,13 @@ const formatDate = (dateString) => {
 const StatusBadge = ({ status }) => {
   const config = getStatusConfig(status);
   const Icon = config.icon;
+  
+  // ✅ Use transparent background with colored text/border based on status
   return (
-    <Badge className={`${config.color} text-white flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-medium`}>
+    <Badge 
+      variant="outline" 
+      className={`${config.color.replace('bg-', 'bg-opacity-20 text-').replace('-500', '-400')} ${config.color.replace('bg-', 'border-')} flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-medium bg-transparent`}
+    >
       <Icon className="h-3 w-3" />
       {config.label}
     </Badge>

@@ -246,7 +246,7 @@ const GsoDashboard = () => {
     }, [queryClient]);
 
     useAutoRefresh(
-        ["gso-trip-updated", "gps-active-trips", "trip-completed"],
+        ["gso-trip-updated", "gps-active-trips", "trip-completed", "trip-created"],
         fetchAllData,
     );
 
@@ -981,9 +981,9 @@ const GsoDashboard = () => {
                                                     {v.plate_number}
                                                 </td>
                                                 <td className="px-3 py-3 text-right font-bold text-emerald-400">
-                                                    {parseFloat(
-                                                        balance.toFixed(2),
-                                                    )}{" "}
+                                                  {Number.isInteger(balance) 
+                                                        ? balance 
+                                                        : parseFloat(balance.toFixed(4))}{" "}
                                                     L
                                                 </td>
                                             </tr>

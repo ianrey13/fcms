@@ -352,7 +352,9 @@ const VehicleDetails = () => {
                             <path className="text-blue-500" strokeDasharray={`${fuelPct}, 100`} strokeWidth="4" strokeLinecap="round" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
                         </svg>
                         <div className="absolute inset-0 flex flex-col items-center justify-center">
-                            <span className="text-2xl font-extrabold text-slate-900 dark:text-white">{currentFuel.toFixed(1)} L</span>
+                             <span className="text-2xl font-extrabold text-slate-900 dark:text-white">
+                                {Number.isInteger(currentFuel) ? currentFuel : parseFloat(currentFuel.toFixed(4))} L
+                            </span>
                             <span className="text-[10px] font-semibold text-slate-400 uppercase">Current Fuel</span>
                         </div>
                     </div>
