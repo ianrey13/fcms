@@ -793,7 +793,7 @@ class GsoController extends Controller
         }
     }
 
-        /**
+      /**
      * Get all fuel receipts (list for GSO admin view)
      * GET /api/admin/fuel-receipts
      */
@@ -804,10 +804,6 @@ class GsoController extends Controller
             if (!$user->isGsoOffice()) {
                 return response()->json(['message' => 'Unauthorized'], 403);
             }
-
-            $status       = $request->get('status');
-            $departmentId = $request->get('department_id');
-            $search       = $request->get('search');
 
             $query = DB::table('fuel_receipt as fr')
                 ->join('gas_slip as gs', 'fr.gas_slip_id', '=', 'gs.gas_slip_id')
@@ -824,10 +820,6 @@ class GsoController extends Controller
                     'tt.trip_date',
                     'tt.destination',
                     'tt.purpose',
-                    'tt.estimated_distance_km',
-                    'tt.actual_distance_km',
-                    'tt.estimated_fuel_liters',
-                    'tt.actual_fuel_used',
                     'v.plate_number',
                     'v.vehicle_model',
                     'v.fuel_type',
@@ -836,37 +828,14 @@ class GsoController extends Controller
                     'fr.amount_on_receipt as amount',
                     'fr.receipt_photo_path as receipt_url',
                     'fr.receipt_uploaded_at as uploaded_at',
-                    'fr.gps_distance_km',
                     'fr.invoice_number',
                     'fr.unit_price',
-
-                    // ✅ DO verification status
-                    'fr.verification_status as do_verification_status',
-                    'fr.verified_at as do_verified_at',
-
-                    // ✅ GSO validation status (based on actual GSO timestamp)
-                    DB::raw("CASE WHEN fr.gso_validated_at IS NOT NULL THEN 'verified' ELSE 'pending' END as gso_validation_status"),
-
+                    'fr.verification_status',
                     'gs.amount_released',
                     'gs.reconciliation_status as trip_status',
                     'gs.reconciliation_note',
                     DB::raw("CONCAT(u_driver.first_name, ' ', u_driver.last_name) as driver_name")
                 );
-
-            if ($status) {
-                $query->where('gs.reconciliation_status', $status);
-            }
-            if ($departmentId) {
-                $query->where('tt.department_id', $departmentId);
-            }
-            if ($search) {
-                $query->where(function ($q) use ($search) {
-                    $q->where('tt.trip_ticket_number', 'like', "%{$search}%")
-                        ->orWhere('v.plate_number', 'like', "%{$search}%")
-                        ->orWhere('v.vehicle_model', 'like', "%{$search}%")
-                        ->orWhere(DB::raw("CONCAT(u_driver.first_name, ' ', u_driver.last_name)"), 'like', "%{$search}%");
-                });
-            }
 
             $receipts = $query->orderBy('fr.receipt_uploaded_at', 'desc')->get();
 
@@ -874,28 +843,30 @@ class GsoController extends Controller
                 if ($r->receipt_url && !str_starts_with($r->receipt_url, 'http')) {
                     $r->receipt_url = asset($r->receipt_url);
                 }
+                
+                // ✅ NO NEW MIGRATIONS LOGIC
+                // DO Status: Base sa verification_status column
+                $r->do_verification_status = ($r->verification_status === 'verified') ? 'verified' : 'pending';
+                
+                // GSO Status: Base sa kung naay liters_availed
+                $r->gso_validation_status = ($r->liters > 0) ? 'verified' : 'pending';
+                
                 return $r;
             });
 
             return response()->json([
                 'success' => true,
                 'data'    => $receipts,
-                'meta'    => [
-                    'total' => $receipts->count(),
-                ],
+                'meta'    => ['total' => $receipts->count()],
             ]);
         } catch (\Exception $e) {
             Log::error('Get fuel receipts error: ' . $e->getMessage());
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to fetch fuel receipts: ' . $e->getMessage(),
-            ], 500);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
     }
 
     /**
      * GSO edits liters on an existing fuel receipt
-     * POST /api/admin/fuel-receipts/{id}/liters
      */
     public function updateFuelReceiptLiters(Request $request, $id)
     {
@@ -916,17 +887,12 @@ class GsoController extends Controller
             $receipt = FuelReceipt::findOrFail($id);
 
             DB::beginTransaction();
-
             try {
-                $oldLiters    = (float) $receipt->liters_availed;
-                $oldUnitPrice = (float) $receipt->unit_price;
-
                 $receipt->liters_availed = $request->liters_availed;
                 $receipt->updated_at     = now();
 
-                // ✅ SET GSO VALIDATION FIELDS ONLY (Do not overwrite DO verification)
-                $receipt->gso_validated_at = now();
-                $receipt->gso_validated_by = $user->user_id;
+                // ❌ WALA NA TAY GSO_VALIDATED_AT, MAO ANG LITERS ANG BASEHAN
+                // Ayaw hilabti ang verification_status kay para na sa DO
 
                 $receipt->save();
 
@@ -934,22 +900,10 @@ class GsoController extends Controller
                 if ($trip) {
                     $trip->syncActuals()->save();
                 }
-
                 DB::commit();
             } catch (\Exception $e) {
                 DB::rollBack();
                 throw $e;
-            }
-
-            if ($trip && $trip->vehicle_id) {
-                try {
-                    $vehicle = \App\Models\Vehicle::find($trip->vehicle_id);
-                    if ($vehicle) {
-                        (new \App\Services\FuelLevelService())->recalculate($vehicle);
-                    }
-                } catch (\Throwable $e) {
-                    Log::warning('Fuel balance recalc failed after liters update: ' . $e->getMessage());
-                }
             }
 
             return response()->json([
@@ -958,29 +912,16 @@ class GsoController extends Controller
                 'data'    => [
                     'fuel_receipt_id' => $receipt->fuel_receipt_id,
                     'liters_availed'  => (float) $receipt->liters_availed,
-                    'unit_price'      => (float) $receipt->unit_price,
-                    'do_verification_status' => $receipt->verification_status, // Retain DO status
-                    'gso_validation_status'  => $receipt->gso_validated_at ? 'verified' : 'pending',
-                    'updated_at'      => $receipt->updated_at,
+                    'gso_validation_status' => $receipt->liters_availed > 0 ? 'verified' : 'pending',
                 ],
             ]);
-        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Fuel receipt not found',
-            ], 404);
         } catch (\Exception $e) {
-            Log::error('Update fuel receipt liters error: ' . $e->getMessage());
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to update liters: ' . $e->getMessage(),
-            ], 500);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
     }
 
     /**
      * Validate and Close a Trip
-     * POST /api/gso/trips/{id}/validate
      */
     public function validateTrip(Request $request, $id)
     {
@@ -991,35 +932,22 @@ class GsoController extends Controller
                 return response()->json(['message' => 'Unauthorized'], 403);
             }
 
-            $validator = Validator::make($request->all(), [
-                'validation_note' => 'nullable|string|max:500',
-            ]);
-
-            if ($validator->fails()) {
-                return response()->json(['errors' => $validator->errors()], 422);
-            }
-
             $ticket = TripTicket::with('gasSlip.fuelReceipt')
                 ->where('trip_ticket_id', $id)
                 ->whereIn('status', ['completed', 'pending_gso_validation'])
                 ->first();
 
             if (!$ticket) {
-                return response()->json([
-                    'message' => 'Trip not found or not ready for validation. Current status must be completed or pending_gso_validation.'
-                ], 404);
+                return response()->json(['message' => 'Trip not found or not ready for validation.'], 404);
             }
 
             $receipt = $ticket->gasSlip?->fuelReceipt;
 
             if (!$receipt) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Cannot validate: No fuel receipt uploaded for this trip.'
-                ], 422);
+                return response()->json(['success' => false, 'message' => 'Cannot validate: No fuel receipt uploaded.'], 422);
             }
 
-            // ✅ DO MUST VERIFY FIRST
+            // ✅ DO MUST VERIFY FIRST (Base sa verification_status)
             if ($receipt->verification_status !== 'verified') {
                 return response()->json([
                     'success' => false,
@@ -1029,10 +957,7 @@ class GsoController extends Controller
 
             // ✅ GSO MUST INPUT LITERS
             if ($receipt->liters_availed === null || (float) $receipt->liters_availed <= 0) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Cannot validate: Fuel liters have not been recorded yet. Please edit the liters first.'
-                ], 422);
+                return response()->json(['success' => false, 'message' => 'Cannot validate: Fuel liters have not been recorded yet.'], 422);
             }
 
             DB::beginTransaction();
@@ -1046,77 +971,22 @@ class GsoController extends Controller
                 $gasSlip->reconciliation_status = 'verified';
                 $gasSlip->reconciled_by = $user->user_id;
                 $gasSlip->reconciled_at = now();
-                $gasSlip->reconciliation_note = $request->validation_note ?? 'Validated and closed by GSO';
                 $gasSlip->save();
             }
 
             $ticket->syncActuals();
             $ticket->save();
 
-            // Archive GPS pings
-            $pings = \App\Models\GpsPing::where('trip_ticket_id', $ticket->trip_ticket_id)->get();
-
-            if ($pings->isNotEmpty()) {
-                $archiveRows = $pings->map(fn($p) => [
-                    'original_ping_id'       => $p->ping_id,
-                    'trip_ticket_id'         => $p->trip_ticket_id,
-                    'latitude'               => $p->latitude,
-                    'longitude'              => $p->longitude,
-                    'accuracy_meters'        => $p->accuracy_meters,
-                    'speed_kmh'              => $p->speed_kmh,
-                    'heading_degrees'        => $p->heading_degrees,
-                    'is_low_accuracy'        => $p->is_low_accuracy,
-                    'is_queued_upload'       => $p->is_queued_upload,
-                    'has_mock_location_flag' => $p->has_mock_location_flag,
-                    'recorded_at'            => $p->recorded_at,
-                    'received_at'            => $p->received_at,
-                    'archived_at'            => now(),
-                ])->toArray();
-
-                DB::table('gps_ping_archive')->insert($archiveRows);
-                \App\Models\GpsPing::where('trip_ticket_id', $ticket->trip_ticket_id)->delete();
-            }
-
             DB::commit();
-
-            $message = "Trip {$ticket->trip_ticket_number} has been validated and CLOSED by GSO";
-
-            if ($ticket->driver_id) {
-                $driver = Driver::find($ticket->driver_id);
-                if ($driver && $driver->user_id) {
-                    NotificationHelper::send($driver->user_id, 'trip_closed', 'trip_ticket', $ticket->trip_ticket_id, $message);
-                }
-            }
-
-            $moStaff = User::where('role', 'mayors_office')->where('status', 'active')->get();
-            foreach ($moStaff as $mo) {
-                NotificationHelper::send($mo->user_id, 'trip_closed', 'trip_ticket', $ticket->trip_ticket_id, $message);
-            }
-
-            $deptStaff = User::where('department_id', $ticket->department_id)
-                ->where('status', 'active')
-                ->where('role', '!=', 'driver')
-                ->get();
-            foreach ($deptStaff as $staff) {
-                NotificationHelper::send($staff->user_id, 'trip_closed', 'trip_ticket', $ticket->trip_ticket_id, $message);
-            }
 
             return response()->json([
                 'success' => true,
-                'message' => $message,
-                'data' => [
-                    'trip_ticket_id' => $ticket->trip_ticket_id,
-                    'status' => $ticket->status,
-                    'closed_at' => $ticket->closed_at,
-                ]
+                'message' => "Trip {$ticket->trip_ticket_number} has been validated and CLOSED.",
+                'data' => ['status' => $ticket->status]
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error('Validate trip error: ' . $e->getMessage());
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to validate trip: ' . $e->getMessage()
-            ], 500);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
     }
 
@@ -1453,190 +1323,8 @@ class GsoController extends Controller
         }
     }
 
-        /**
-     * Get all fuel receipts (list for GSO admin view)
-     * GET /api/admin/fuel-receipts
-     */
-    public function getFuelReceipts(Request $request)
-    {
-        try {
-            $user = $request->user();
-            if (!$user->isGsoOffice()) {
-                return response()->json(['message' => 'Unauthorized'], 403);
-            }
-
-            $status       = $request->get('status');
-            $departmentId = $request->get('department_id');
-            $search       = $request->get('search');
-
-            $query = DB::table('fuel_receipt as fr')
-                ->join('gas_slip as gs', 'fr.gas_slip_id', '=', 'gs.gas_slip_id')
-                ->join('trip_ticket as tt', 'gs.trip_ticket_id', '=', 'tt.trip_ticket_id')
-                ->join('vehicles as v', 'tt.vehicle_id', '=', 'v.vehicle_id')
-                ->leftJoin('drivers as d', 'tt.driver_id', '=', 'd.driver_id')
-                ->leftJoin('users as u_driver', 'd.user_id', '=', 'u_driver.user_id')
-                ->leftJoin('departments as dept', 'tt.department_id', '=', 'dept.department_id')
-                ->select(
-                    'fr.fuel_receipt_id as id',
-                    'fr.fuel_receipt_id',
-                    'tt.trip_ticket_id',
-                    'tt.trip_ticket_number as ticket_number',
-                    'tt.trip_date',
-                    'tt.destination',
-                    'tt.purpose',
-                    'tt.estimated_distance_km',
-                    'tt.actual_distance_km',
-                    'tt.estimated_fuel_liters',
-                    'tt.actual_fuel_used',
-                    'v.plate_number',
-                    'v.vehicle_model',
-                    'v.fuel_type',
-                    'dept.department_name',
-                    'fr.liters_availed as liters',
-                    'fr.amount_on_receipt as amount',
-                    'fr.receipt_photo_path as receipt_url',
-                    'fr.receipt_uploaded_at as uploaded_at',
-                    'fr.gps_distance_km',
-                    'fr.invoice_number',
-                    'fr.unit_price',
-
-                    // ✅ DO verification status
-                    'fr.verification_status as do_verification_status',
-                    'fr.verified_at as do_verified_at',
-
-                    // ✅ GSO validation status (based on actual GSO timestamp)
-                    DB::raw("CASE WHEN fr.gso_validated_at IS NOT NULL THEN 'verified' ELSE 'pending' END as gso_validation_status"),
-
-                    'gs.amount_released',
-                    'gs.reconciliation_status as trip_status',
-                    'gs.reconciliation_note',
-                    DB::raw("CONCAT(u_driver.first_name, ' ', u_driver.last_name) as driver_name")
-                );
-
-            if ($status) {
-                $query->where('gs.reconciliation_status', $status);
-            }
-            if ($departmentId) {
-                $query->where('tt.department_id', $departmentId);
-            }
-            if ($search) {
-                $query->where(function ($q) use ($search) {
-                    $q->where('tt.trip_ticket_number', 'like', "%{$search}%")
-                        ->orWhere('v.plate_number', 'like', "%{$search}%")
-                        ->orWhere('v.vehicle_model', 'like', "%{$search}%")
-                        ->orWhere(DB::raw("CONCAT(u_driver.first_name, ' ', u_driver.last_name)"), 'like', "%{$search}%");
-                });
-            }
-
-            $receipts = $query->orderBy('fr.receipt_uploaded_at', 'desc')->get();
-
-            $receipts = $receipts->map(function ($r) {
-                if ($r->receipt_url && !str_starts_with($r->receipt_url, 'http')) {
-                    $r->receipt_url = asset($r->receipt_url);
-                }
-                return $r;
-            });
-
-            return response()->json([
-                'success' => true,
-                'data'    => $receipts,
-                'meta'    => [
-                    'total' => $receipts->count(),
-                ],
-            ]);
-        } catch (\Exception $e) {
-            Log::error('Get fuel receipts error: ' . $e->getMessage());
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to fetch fuel receipts: ' . $e->getMessage(),
-            ], 500);
-        }
-    }
-
-     /**
-     * GSO edits liters on an existing fuel receipt
-     * POST /api/admin/fuel-receipts/{id}/liters
-     */
-    public function updateFuelReceiptLiters(Request $request, $id)
-    {
-        try {
-            $user = $request->user();
-            if (!$user->isGsoOffice()) {
-                return response()->json(['message' => 'Unauthorized'], 403);
-            }
-
-            $validator = Validator::make($request->all(), [
-                'liters_availed' => 'required|numeric|min:0.01|max:9999.99',
-            ]);
-
-            if ($validator->fails()) {
-                return response()->json(['errors' => $validator->errors()], 422);
-            }
-
-            $receipt = FuelReceipt::findOrFail($id);
-
-            DB::beginTransaction();
-
-            try {
-                $oldLiters    = (float) $receipt->liters_availed;
-                $oldUnitPrice = (float) $receipt->unit_price;
-
-                $receipt->liters_availed = $request->liters_availed;
-                $receipt->updated_at     = now();
-
-                // ✅ SET GSO VALIDATION FIELDS ONLY (Do not overwrite DO verification)
-                $receipt->gso_validated_at = now();
-                $receipt->gso_validated_by = $user->user_id;
-
-                $receipt->save();
-
-                $trip = $receipt->gasSlip?->tripTicket;
-                if ($trip) {
-                    $trip->syncActuals()->save();
-                }
-
-                DB::commit();
-            } catch (\Exception $e) {
-                DB::rollBack();
-                throw $e;
-            }
-
-            if ($trip && $trip->vehicle_id) {
-                try {
-                    $vehicle = \App\Models\Vehicle::find($trip->vehicle_id);
-                    if ($vehicle) {
-                        (new \App\Services\FuelLevelService())->recalculate($vehicle);
-                    }
-                } catch (\Throwable $e) {
-                    Log::warning('Fuel balance recalc failed after liters update: ' . $e->getMessage());
-                }
-            }
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Liters updated successfully',
-                'data'    => [
-                    'fuel_receipt_id' => $receipt->fuel_receipt_id,
-                    'liters_availed'  => (float) $receipt->liters_availed,
-                    'unit_price'      => (float) $receipt->unit_price,
-                    'do_verification_status' => $receipt->verification_status, // Retain DO status
-                    'gso_validation_status'  => $receipt->gso_validated_at ? 'verified' : 'pending',
-                    'updated_at'      => $receipt->updated_at,
-                ],
-            ]);
-        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Fuel receipt not found',
-            ], 404);
-        } catch (\Exception $e) {
-            Log::error('Update fuel receipt liters error: ' . $e->getMessage());
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to update liters: ' . $e->getMessage(),
-            ], 500);
-        }
-    }
+     
+    
 
 
 
