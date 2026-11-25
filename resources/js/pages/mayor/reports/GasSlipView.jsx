@@ -21,17 +21,30 @@ const GasSlipView = ({ ticket, onClose }) => {
     const fuelType = (ticket.vehicle?.fuel_type || "Diesel").toUpperCase();
     const amount = safeAmount(ticket.amount_released);
 
-    // ✅ FIX: Kuhaon ang aktwal nga litro gikan sa GSO input (resibo), dili mag-base sa amount/58
+    // ✅ KUHAON ANG TANAN DATA GIKAN SA GSO INPUT (resibo)
+    // Priority: gas_slip.fuel_receipt (bag-ong backend) → gasSlip.fuelReceipt (camel) → fallbacks
     const rawLiters = 
-        ticket.gasSlip?.fuelReceipt?.liters_availed ?? 
         ticket.gas_slip?.fuel_receipt?.liters_availed ?? 
+        ticket.gasSlip?.fuelReceipt?.liters_availed ?? 
+        ticket.gas_slip_data?.fuel_receipt?.liters_availed ?? 
         ticket.liters_availed ?? 
         ticket.liters ?? 
         0;
     
-    // I-format ang litro (kung 0, ipakita ang "0.00")
     const actualLiters = parseFloat(rawLiters) > 0 ? parseFloat(rawLiters) : 0;
     const displayLiters = actualLiters.toFixed(2) + " L";
+
+    // ✅ Unit price ug invoice number gikan sa GSO input
+    const unitPrice = parseFloat(
+        ticket.gas_slip?.fuel_receipt?.unit_price ?? 
+        ticket.gasSlip?.fuelReceipt?.unit_price ?? 
+        0
+    ) || 0;
+
+    const invoiceNumber = 
+        ticket.gas_slip?.fuel_receipt?.invoice_number ?? 
+        ticket.gasSlip?.fuelReceipt?.invoice_number ?? 
+        "N/A";
 
     const gasSlipData = {
         control_number: ticket.ticket_number || ticket.trip_ticket_number || "N/A",
@@ -48,6 +61,8 @@ const GasSlipView = ({ ticket, onClose }) => {
         fuel_type: fuelType,
         liters: displayLiters,
         amount: amount,
+        unit_price: unitPrice,
+        invoice_number: invoiceNumber,
         mayor_name: "HON. ROY MACUA",
         department: ticket.department_name || ticket.department?.name || "N/A",
     };
@@ -266,7 +281,7 @@ const GasSlipView = ({ ticket, onClose }) => {
                                             : ""}
                                     </div>
                                 </div>
-                                {/* ✅ NEW ROW: Gasoline */}
+                                {/* ✅ GASOLINE ROW */}
                                 <div className="flex items-center mb-2">
                                     <div className="flex-1 text-sm italic text-gray-600 dark:text-slate-400">
                                         Gasoline
@@ -322,6 +337,24 @@ const GasSlipView = ({ ticket, onClose }) => {
                                 </span>
                                 <div className="flex-1 border-b border-gray-800 dark:border-slate-600 text-center text-sm font-bold tracking-wider pb-0.5">
                                     {gasSlipData.control_number}
+                                </div>
+                            </div>
+
+                            {/* ✅ UNIT PRICE & INVOICE NUMBER (from GSO input) */}
+                            <div className="flex items-center gap-3 mt-3">
+                                <span className="text-sm font-bold text-gray-800 dark:text-slate-300">
+                                    Unit Price
+                                </span>
+                                <div className="flex-1 border-b border-gray-800 dark:border-slate-600 text-center text-sm font-semibold pb-0.5">
+                                    ₱{gasSlipData.unit_price.toFixed(2)} / L
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-3 mt-3">
+                                <span className="text-sm font-bold text-gray-800 dark:text-slate-300">
+                                    Invoice No.
+                                </span>
+                                <div className="flex-1 border-b border-gray-800 dark:border-slate-600 text-center text-sm font-semibold pb-0.5">
+                                    {gasSlipData.invoice_number}
                                 </div>
                             </div>
                         </div>

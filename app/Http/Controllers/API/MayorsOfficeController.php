@@ -282,145 +282,156 @@ class MayorsOfficeController extends Controller
      * Get approved/funds issued tickets
      */
     public function getApprovedTickets(Request $request)
-    {
-        try {
-            $user = $request->user();
+{
+    try {
+        $user = $request->user();
 
-            if (!$user->isMayorsOffice()) {
-                return response()->json(['message' => 'Unauthorized'], 403);
-            }
-
-            $activeYear = $this->budgetService->getActiveFiscalYear();
-
-            $tickets = TripTicket::with(['vehicle', 'department', 'gasSlip.fuelReceipt', 'driver', 'driver.user'])
-                ->whereIn('status', [
-                    'funds_issued',
-                    'acknowledged',
-                    'pending_reconciliation',
-                    'in_transit',
-                    'pending_gso_validation',
-                    'completed',
-                    'closed',
-                    'returned_for_revision',
-                    'rejected',
-                ])
-                ->orderBy('submitted_at', 'desc')
-                ->get()
-                ->map(function ($ticket) {
-                    $driverName = null;
-                    if ($ticket->driver && $ticket->driver->user) {
-                        $driverName = $ticket->driver->user->full_name;
-                    } elseif ($ticket->driver) {
-                        $driverName = $ticket->driver->name ?? null;
-                    }
-
-                    $actualCost = $ticket->gasSlip?->fuelReceipt?->amount_on_receipt ?? 0;
-
-                    // ✅ KUHAON ANG LIVE FUEL BALANCE
-                    $vehicleData = null;
-                    if ($ticket->vehicle) {
-                        $fuelInfo = (new \App\Services\FuelLevelService())->compute($ticket->vehicle);
-                        $vehicleData = [
-                            'plate_number' => $ticket->vehicle->plate_number,
-                            'vehicle_model' => $ticket->vehicle->vehicle_model,
-                            'fuel_type' => $ticket->vehicle->fuel_type,
-                            'current_fuel_balance' => $fuelInfo['clamped_balance'],
-                            'tank_capacity' => (float) $ticket->vehicle->tank_capacity,
-                        ];
-                    }
-
-                    // ✅ KUHAON ANG CROSS-DEPARTMENT DETAILS
-                    $chargeToDept = null;
-                    if ($ticket->charge_to_department_id) {
-                        $chargeToDept = \App\Models\Department::find($ticket->charge_to_department_id);
-                    } elseif ($ticket->gasSlip?->is_cross_department && $ticket->gasSlip?->original_department_id) {
-                        // Kung cross dept, ang original_department_id mao ang gi-chargean
-                        $chargeToDept = \App\Models\Department::find($ticket->gasSlip->original_department_id);
-                    }
-
-                    return [
-                        'id' => $ticket->trip_ticket_id,
-                        'ticket_number' => $ticket->trip_ticket_number,
-                        'trip_date' => $ticket->trip_date,
-                        'destination' => $ticket->destination,
-                        'status' => $ticket->status,
-                        'vehicle' => $vehicleData,
-                        'department_name' => $ticket->department ? $ticket->department->department_name : null,
-                        
-                        // ✅ GIDUGANG NGA MGA FIELDS PARA SA CROSS-DEPT
-                        'charge_to_department_name' => $chargeToDept ? $chargeToDept->department_name : null,
-                        'charge_to_department_id' => $chargeToDept ? $chargeToDept->department_id : null,
-                        'is_cross_department' => $ticket->gasSlip?->is_cross_department ?? false,
-                        'cross_department_reason' => $ticket->gasSlip?->cross_department_reason ?? null,
-                        'charge_to' => $ticket->charge_to,
-
-                        'amount_released' => $ticket->gasSlip ? $ticket->gasSlip->amount_released : 0,
-                        'actual_fuel_cost' => (float) $actualCost,
-                        'actual_fuel_used' => (float) $ticket->actual_fuel_used,
-                        'actual_distance_km' => (float) $ticket->actual_distance_km,
-                        'receipt_url' => $ticket->gasSlip?->fuelReceipt?->receipt_photo_path
-                            ? asset($ticket->gasSlip->fuelReceipt->receipt_photo_path)
-                            : null,
-                        'is_mo_funded' => $ticket->created_by_mo_user_id !== null,
-                        'driver_name' => $driverName,
-                        'driver' => $ticket->driver ? [
-                            'driver_id' => $ticket->driver->driver_id,
-                            'name' => $driverName,
-                            'user' => $ticket->driver->user ? [
-                                'full_name' => $ticket->driver->user->full_name,
-                            ] : null,
-                        ] : null,
-                        'purpose' => $ticket->purpose,
-                        'passenger_name' => $ticket->passenger_name,
-                        'created_at' => $ticket->created_at,
-                        
-                        // ✅ Para sa Gas Slip
-                        'gas_slip' => $ticket->gasSlip ? [
-                            'gas_slip_id' => $ticket->gasSlip->gas_slip_id,
-                            'amount_released' => $ticket->gasSlip->amount_released,
-                            'is_cross_department' => $ticket->gasSlip->is_cross_department ?? false,
-                            'cross_department_reason' => $ticket->gasSlip->cross_department_reason ?? null,
-                        ] : null,
-                        'gas_slip_data' => $ticket->gasSlip, // Optional: full gas slip data para sa GasSlipView
-                    ];
-                });
-
-            $allTimeCount = $tickets->count();
-            $allTimeAmount = (float) $tickets->sum('amount_released');
-
-            $validPeriodIds = \App\Models\DeptBudgetPeriod::where('fiscal_year', $activeYear)
-                ->pluck('period_id')
-                ->toArray();
-
-            $fyTicketIds = \Illuminate\Support\Facades\DB::table('trip_ticket')
-                ->join('gas_slip', 'trip_ticket.trip_ticket_id', '=', 'gas_slip.trip_ticket_id')
-                ->whereIn('gas_slip.period_id', $validPeriodIds)
-                ->pluck('trip_ticket.trip_ticket_id')
-                ->toArray();
-
-            $fyCount = $tickets->filter(function ($t) use ($fyTicketIds) {
-                return in_array($t['id'], $fyTicketIds) || !TripTicket::find($t['id'])->gasSlip;
-            })->count();
-
-            return response()->json([
-                'success' => true,
-                'data' => $tickets,
-                'meta' => [
-                    'fiscal_year'      => $activeYear,
-                    'fy_count'         => $fyCount,
-                    'fy_amount'        => round($allTimeAmount, 2),
-                    'all_time_count'   => $allTimeCount,
-                    'all_time_amount'  => round($allTimeAmount, 2),
-                ],
-            ]);
-        } catch (\Exception $e) {
-            Log::error('Get approved tickets error: ' . $e->getMessage());
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to fetch approved tickets: ' . $e->getMessage()
-            ], 500);
+        if (!$user->isMayorsOffice()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
         }
+
+        $activeYear = $this->budgetService->getActiveFiscalYear();
+
+        $tickets = TripTicket::with(['vehicle', 'department', 'gasSlip.fuelReceipt', 'driver', 'driver.user'])
+            ->whereIn('status', [
+                'funds_issued',
+                'acknowledged',
+                'pending_reconciliation',
+                'in_transit',
+                'pending_gso_validation',
+                'completed',
+                'closed',
+                'returned_for_revision',
+                'rejected',
+            ])
+            ->orderBy('submitted_at', 'desc')
+            ->get()
+            ->map(function ($ticket) {
+                $driverName = null;
+                if ($ticket->driver && $ticket->driver->user) {
+                    $driverName = $ticket->driver->user->full_name;
+                } elseif ($ticket->driver) {
+                    $driverName = $ticket->driver->name ?? null;
+                }
+
+                $actualCost = $ticket->gasSlip?->fuelReceipt?->amount_on_receipt ?? 0;
+
+                // ✅ KUHAON ANG LIVE FUEL BALANCE
+                $vehicleData = null;
+                if ($ticket->vehicle) {
+                    $fuelInfo = (new \App\Services\FuelLevelService())->compute($ticket->vehicle);
+                    $vehicleData = [
+                        'plate_number' => $ticket->vehicle->plate_number,
+                        'vehicle_model' => $ticket->vehicle->vehicle_model,
+                        'fuel_type' => $ticket->vehicle->fuel_type,
+                        'current_fuel_balance' => $fuelInfo['clamped_balance'],
+                        'tank_capacity' => (float) $ticket->vehicle->tank_capacity,
+                    ];
+                }
+
+                // ✅ KUHAON ANG CROSS-DEPARTMENT DETAILS
+                $chargeToDept = null;
+                if ($ticket->charge_to_department_id) {
+                    $chargeToDept = \App\Models\Department::find($ticket->charge_to_department_id);
+                } elseif ($ticket->gasSlip?->is_cross_department && $ticket->gasSlip?->original_department_id) {
+                    $chargeToDept = \App\Models\Department::find($ticket->gasSlip->original_department_id);
+                }
+
+                return [
+                    'id' => $ticket->trip_ticket_id,
+                    'ticket_number' => $ticket->trip_ticket_number,
+                    'trip_date' => $ticket->trip_date,
+                    'destination' => $ticket->destination,
+                    'status' => $ticket->status,
+                    'vehicle' => $vehicleData,
+                    'department_name' => $ticket->department ? $ticket->department->department_name : null,
+                    
+                    // ✅ GIDUGANG NGA MGA FIELDS PARA SA CROSS-DEPT
+                    'charge_to_department_name' => $chargeToDept ? $chargeToDept->department_name : null,
+                    'charge_to_department_id' => $chargeToDept ? $chargeToDept->department_id : null,
+                    'is_cross_department' => $ticket->gasSlip?->is_cross_department ?? false,
+                    'cross_department_reason' => $ticket->gasSlip?->cross_department_reason ?? null,
+                    'charge_to' => $ticket->charge_to,
+
+                    'amount_released' => $ticket->gasSlip ? $ticket->gasSlip->amount_released : 0,
+                    'actual_fuel_cost' => (float) $actualCost,
+                    'actual_fuel_used' => (float) $ticket->actual_fuel_used,
+                    'actual_distance_km' => (float) $ticket->actual_distance_km,
+                    'receipt_url' => $ticket->gasSlip?->fuelReceipt?->receipt_photo_path
+                        ? asset($ticket->gasSlip->fuelReceipt->receipt_photo_path)
+                        : null,
+                    'is_mo_funded' => $ticket->created_by_mo_user_id !== null,
+                    'driver_name' => $driverName,
+                    'driver' => $ticket->driver ? [
+                        'driver_id' => $ticket->driver->driver_id,
+                        'name' => $driverName,
+                        'user' => $ticket->driver->user ? [
+                            'full_name' => $ticket->driver->user->full_name,
+                        ] : null,
+                    ] : null,
+                    'purpose' => $ticket->purpose,
+                    'passenger_name' => $ticket->passenger_name,
+                    'created_at' => $ticket->created_at,
+                    
+                    // ✅ Para sa Gas Slip
+                    'gas_slip' => $ticket->gasSlip ? [
+                        'gas_slip_id' => $ticket->gasSlip->gas_slip_id,
+                        'amount_released' => $ticket->gasSlip->amount_released,
+                        'is_cross_department' => $ticket->gasSlip->is_cross_department ?? false,
+                        'cross_department_reason' => $ticket->gasSlip->cross_department_reason ?? null,
+                        
+                        // ✅ IDUGANG KINI: Fuel Receipt Details (para sa liters ug uban pa)
+                        'fuel_receipt' => $ticket->gasSlip->fuelReceipt ? [
+                            'fuel_receipt_id' => $ticket->gasSlip->fuelReceipt->fuel_receipt_id,
+                            'liters_availed' => (float) $ticket->gasSlip->fuelReceipt->liters_availed,
+                            'amount_on_receipt' => (float) $ticket->gasSlip->fuelReceipt->amount_on_receipt,
+                            'unit_price' => (float) $ticket->gasSlip->fuelReceipt->unit_price,
+                            'invoice_number' => $ticket->gasSlip->fuelReceipt->invoice_number,
+                            'receipt_photo_path' => $ticket->gasSlip->fuelReceipt->receipt_photo_path,
+                            'receipt_uploaded_at' => $ticket->gasSlip->fuelReceipt->receipt_uploaded_at,
+                            'gps_distance_km' => (float) $ticket->gasSlip->fuelReceipt->gps_distance_km,
+                        ] : null,
+                    ] : null,
+                    'gas_slip_data' => $ticket->gasSlip, // Optional: full gas slip data para sa GasSlipView
+                ];
+            });
+
+        $allTimeCount = $tickets->count();
+        $allTimeAmount = (float) $tickets->sum('amount_released');
+
+        $validPeriodIds = \App\Models\DeptBudgetPeriod::where('fiscal_year', $activeYear)
+            ->pluck('period_id')
+            ->toArray();
+
+        $fyTicketIds = \Illuminate\Support\Facades\DB::table('trip_ticket')
+            ->join('gas_slip', 'trip_ticket.trip_ticket_id', '=', 'gas_slip.trip_ticket_id')
+            ->whereIn('gas_slip.period_id', $validPeriodIds)
+            ->pluck('trip_ticket.trip_ticket_id')
+            ->toArray();
+
+        $fyCount = $tickets->filter(function ($t) use ($fyTicketIds) {
+            return in_array($t['id'], $fyTicketIds) || !TripTicket::find($t['id'])->gasSlip;
+        })->count();
+
+        return response()->json([
+            'success' => true,
+            'data' => $tickets,
+            'meta' => [
+                'fiscal_year'      => $activeYear,
+                'fy_count'         => $fyCount,
+                'fy_amount'        => round($allTimeAmount, 2),
+                'all_time_count'   => $allTimeCount,
+                'all_time_amount'  => round($allTimeAmount, 2),
+            ],
+        ]);
+    } catch (\Exception $e) {
+        Log::error('Get approved tickets error: ' . $e->getMessage());
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to fetch approved tickets: ' . $e->getMessage()
+        ], 500);
     }
+}
 
     /**
      * Approve ticket and release funds and gaslip generation
