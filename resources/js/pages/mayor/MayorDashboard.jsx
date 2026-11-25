@@ -1616,7 +1616,7 @@ const MayorDashboard = () => {
                         </p>
                     </div>
 
-                    <div className="flex flex-col lg:flex-row gap-6">
+                                       <div className="flex flex-col lg:flex-row gap-6">
                         {/* Left Side: Table with Tabs & Pagination */}
                         <div className="flex-1 bg-[#0b101c] border border-slate-800 rounded-xl overflow-hidden flex flex-col">
                             {/* Tabs */}
@@ -1700,27 +1700,17 @@ const MayorDashboard = () => {
                                             </tr>
                                         ) : (
                                             paginatedFuelData.map((r, i) => {
-                                                const quantity =
-                                                    parseFloat(
-                                                        r.liters_availed,
-                                                    ) || 0;
-                                                const totalCost =
-                                                    parseFloat(r.amount) || 0;
+                                                const quantity = parseFloat(r.liters_availed) || 0;
+                                                const totalCost = parseFloat(r.amount) || 0;
+                                                const unitPrice = parseFloat(r.unit_price) || 0;
 
-                                                const hasQuantity =
-                                                    quantity > 0;
-                                                const displayQty = hasQuantity
-                                                    ? quantity.toFixed(2)
-                                                    : "-";
-                                                const displayUnit = hasQuantity
-                                                    ? `₱${(totalCost / quantity).toFixed(2)}`
-                                                    : "-";
-                                                const displayTotal = hasQuantity
-                                                    ? formatCurrency(totalCost)
-                                                    : "-";
-                                                const displayInvoice =
-                                                    r.invoice_number ||
-                                                    `INV-${r.ticket_number?.replace(/\D/g, "") || "000"}`;
+                                                const hasQuantity = quantity > 0;
+                                                
+                                                // ✅ DILI NA MAG-COMPUTE, KUHAAON NA GYUD DIREKTA SA DATABASE
+                                                const displayQty = hasQuantity ? quantity.toFixed(2) : "-";
+                                                const displayUnit = unitPrice > 0 ? `₱${unitPrice.toFixed(2)}` : "-";
+                                                const displayTotal = totalCost > 0 ? formatCurrency(totalCost) : "-";
+                                                const displayInvoice = r.invoice_number || `INV-${r.ticket_number?.replace(/\D/g, "") || "000"}`;
 
                                                 return (
                                                     <tr
@@ -1728,8 +1718,7 @@ const MayorDashboard = () => {
                                                         className="hover:bg-slate-800/20 transition-colors"
                                                     >
                                                         <td className="px-4 py-3 text-slate-200 font-mono">
-                                                            {r.ticket_number ||
-                                                                "N/A"}
+                                                            {r.ticket_number || "N/A"}
                                                         </td>
                                                         <td className="px-4 py-3 text-slate-400 font-mono text-[10px]">
                                                             {displayInvoice}
@@ -1757,17 +1746,13 @@ const MayorDashboard = () => {
                                                 <td className="px-4 py-3"></td>
                                                 <td className="px-4 py-3 text-right font-bold text-white">
                                                     {totalQuantity > 0
-                                                        ? totalQuantity.toFixed(
-                                                              2,
-                                                          )
+                                                        ? totalQuantity.toFixed(2)
                                                         : "-"}
                                                 </td>
                                                 <td className="px-4 py-3"></td>
                                                 <td className="px-4 py-3 text-right font-bold text-white">
                                                     {totalFuelCost > 0
-                                                        ? formatCurrency(
-                                                              totalFuelCost,
-                                                          )
+                                                        ? formatCurrency(totalFuelCost)
                                                         : "-"}
                                                 </td>
                                             </tr>
@@ -1837,19 +1822,11 @@ const MayorDashboard = () => {
 
                                 <div className="relative z-10">
                                     <span className="text-4xl font-bold text-white tracking-tight">
-                                        {
-                                            formatCurrency(
-                                                weightedAvgData,
-                                            ).split(".")[0]
-                                        }
+                                        {formatCurrency(weightedAvgData).split(".")[0]}
                                     </span>
                                     <span className="text-xl font-bold text-slate-400">
                                         .
-                                        {
-                                            formatCurrency(
-                                                weightedAvgData,
-                                            ).split(".")[1]
-                                        }
+                                        {formatCurrency(weightedAvgData).split(".")[1]}
                                         <span className="text-sm font-medium ml-1">
                                             /L
                                         </span>
