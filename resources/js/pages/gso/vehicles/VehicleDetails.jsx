@@ -158,22 +158,22 @@ const VehicleDetails = () => {
 
         if (rows.length === 0) return [];
 
-        // ✅ FIX: I-anchor ang pinaka-latest nga balance sa database (current_fuel_balance)
-        // Aron mag-match jud ang pinaka-last nga row sa ledger ug sa Current Fuel card.
-        const latestRow = rows[rows.length - 1];
-        latestRow.balance = r2(vehicle.current_fuel_balance);
-        latestRow.beginning = r2(latestRow.balance - (latestRow.fuelIn ?? 0) + latestRow.fuelOut);
+        const firstRow = rows[0];
+        const initialRaw = vehicle.initial_estimated_fuel;
+        const hasInitial = initialRaw !== undefined && initialRaw !== null && initialRaw !== '';
 
-        // 3. Roll backwards from the latest row to calculate previous balances
-        for (let i = rows.length - 2; i >= 0; i--) {
-            const currentRow = rows[i];
-            const nextRow = rows[i + 1];
-            
-            currentRow.balance = nextRow.beginning;
-            currentRow.beginning = r2(currentRow.balance - (currentRow.fuelIn ?? 0) + currentRow.fuelOut);
-        }
+        // ✅ FIX: Balikon nato ang forward calculation gikan sa pinaka-unang trip
+        let prev = hasInitial 
+            ? r2(toNum(initialRaw)) 
+            : r2(toNum(vehicle.current_fuel_balance) - rows.reduce((s, r) => s + (r.fuelIn ?? 0), 0) + rows.reduce((s, r) => s + r.fuelOut, 0));
 
-        // 4. I-reverse para newest first sa table display
+        rows.forEach(r => {
+            r.beginning = prev;
+            r.balance = r2(r.beginning + (r.fuelIn ?? 0) - r.fuelOut);
+            prev = r.balance;
+        });
+
+        // 3. I-reverse para newest first sa table display
         return rows.reverse().map(r => ({
             ...r.trip,
             displayTicketNo: r.trip.ticket_number || r.trip.trip_ticket_number,
@@ -181,12 +181,18 @@ const VehicleDetails = () => {
             beginning: r.beginning.toFixed(2),
             fuelIn: r.fuelIn !== null ? r.fuelIn.toFixed(2) : null, 
             fuelOut: r.fuelOut.toFixed(2),
-            balance: r.balance.toFixed(2),
+            balance: r.balance.toFixed(2), // Kini maoy mogawas sa ledger
             distanceKm: r.distance,
             efficiencyUsed: r.efficiency,
             overTank: (toNum(vehicle.tank_capacity) > 0) && (r.balance > toNum(vehicle.tank_capacity) + 0.01)
         }));
     }, [historyData, vehicle]);
+
+    // ✅ KINI ANG BAG-ONG CURRENT FUEL NGA MAGKUHA SA PINAKA-LATEST NGA BALANCE SA LEDGER
+    const computedCurrentFuel = useMemo(() => {
+        if (ledgerRows.length === 0) return toNum(vehicle?.current_fuel_balance);
+        return toNum(ledgerRows[0].balance); // Ang index 0 kay ang pinaka-latest kay reversed na
+    }, [ledgerRows, vehicle]);
 
     const chartData = useMemo(() => {
         return [...ledgerRows].reverse().map(r => ({
@@ -274,10 +280,12 @@ const VehicleDetails = () => {
     if (isLoading) return <div className="p-8 text-center text-slate-500">Loading vehicle details...</div>;
     if (!vehicle) return <div className="p-8 text-center text-red-500">Vehicle not found.</div>;
 
-    const currentFuel = parseFloat(vehicle.current_fuel_balance || 0);
+    // ✅ GIGAMIT NATO ANG computedCurrentFuel IMBES SA vehicle.current_fuel_balance
+    const currentFuel = computedCurrentFuel;
     const tankCap = parseFloat(vehicle.tank_capacity || 60);
     const refEff = parseFloat(vehicle.reference_efficiency || 10);
-    const fuelPct = vehicle.fuel_percentage || 0;
+    // Compute fuelPct base sa new currentFuel
+    const fuelPct = tankCap > 0 ? Math.min(100, Math.max(0, (currentFuel / tankCap) * 100)) : 0;
 
     return (
         <div className="min-h-screen bg-slate-50 dark:bg-slate-950 p-4 md:p-6 font-sans flex flex-col gap-6">
