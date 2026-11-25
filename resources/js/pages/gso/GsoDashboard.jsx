@@ -288,7 +288,7 @@ const GsoDashboard = () => {
         [activeTripsRaw],
     );
 
-        const { data: allTripsRaw = [], isLoading: tripsLoading } =
+    const { data: allTripsRaw = [], isLoading: tripsLoading } =
         useOptimizedQuery({
             queryKey: ["gso-dashboard-trips"],
             queryFn: async () => {
@@ -307,9 +307,7 @@ const GsoDashboard = () => {
                         return false;
                     }
 
-                    // ✅ FIX: REMOVED the block that hides "pending_gso_validation" and "completed".
-                    // These should still appear in Recent Trips and the Fuel Ledger,
-                    // even though they also appear in the Pending Validation table.
+                    // ✅ KEEP "pending_gso_validation" and "completed" so they appear in Recent Trips
 
                     // For pending_mayors_office, only show if funds have been released (has gas slip)
                     if (status === "pending_mayors_office" && !hasGasSlip) {
@@ -425,10 +423,21 @@ const GsoDashboard = () => {
     // ============================================
     // FUEL LEDGER (forward chain per vehicle)
     // ============================================
-        const ledgerRows = useMemo(() => {
+    const ledgerRows = useMemo(() => {
         const r2 = (n) => parseFloat(toNum(n).toFixed(2));
 
-        const rows = allTrips.map((trip) => {
+        // ✅ BAG-ONG FUNCTION: Diri nato i-filter out ang pending/completed
+        // para dili magubot ang ledger kung wala pa na-validate.
+        const ledgerTrips = allTrips.filter(trip => {
+            const status = (trip.status || "").toLowerCase();
+            // Dili nato i-apil sa ledger ang wala pa ma-validate
+            if (["pending_gso_validation", "completed"].includes(status)) {
+                return false;
+            }
+            return true;
+        });
+
+        const rows = ledgerTrips.map((trip) => {
             const vehicle =
                 vehicles.find((v) => v.vehicle_id === trip.vehicle_id) ||
                 vehicles.find(
@@ -436,12 +445,11 @@ const GsoDashboard = () => {
                 ) ||
                 trip.vehicle;
 
-                       // ✅ FIX: Fallback to estimated_fuel_liters if the actual receipt liters are not yet input
             const rawFuelIn = 
                 trip.gasSlip?.fuelReceipt?.liters_availed ??
                 trip.gas_slip?.fuel_receipt?.liters_availed ??
                 trip.liters_availed ??
-                trip.estimated_fuel_liters; // fallback for pending validation
+                trip.estimated_fuel_liters;
 
             const fuelIn = toNum(rawFuelIn);
 
@@ -457,7 +465,6 @@ const GsoDashboard = () => {
                 : 0;
 
             // ✅ Clamp efficiency to realistic range (8–15 km/L)
-            // Kay kung 58.2 km/L ang reference_efficiency, sayop ang fuelOut.
             let efficiency = toNum(vehicle?.reference_efficiency) || 10;
             if (efficiency < 6 || efficiency > 20) {
                 efficiency = 10; // fallback to realistic default
@@ -604,7 +611,7 @@ const GsoDashboard = () => {
         }
     }, []);
 
-       const startReplay = useCallback((segmentsData) => {
+    const startReplay = useCallback((segmentsData) => {
         if (replayIntervalRef.current) {
             clearInterval(replayIntervalRef.current);
             replayIntervalRef.current = null;
@@ -652,7 +659,7 @@ const GsoDashboard = () => {
     // ============================================
     // VALIDATE HANDLER (Pending Validation table ONLY)
     // ============================================
-        const handleOpenValidateDialog = useCallback(
+    const handleOpenValidateDialog = useCallback(
         async (trip) => {
             setSelectedTicket(trip);
             setShowValidateDialog(true);
@@ -661,10 +668,9 @@ const GsoDashboard = () => {
             const { segments, coords } = await loadRoute(trip);
 
             if (coords.length >= 2) {
-                // ✅ I-pass ang segments (kung naa), fallback sa coords
                 const replayData = segments.length > 0 
                     ? segments 
-                    : [{ coords }]; // Fake segment kung wala
+                    : [{ coords }];
                 setTimeout(() => startReplay(replayData), 500);
             } else {
                 setHasWatchedReplay(true);
@@ -718,7 +724,7 @@ const GsoDashboard = () => {
     // ============================================
     // RENDER HELPERS
     // ============================================
-        const renderSegments = () => {
+    const renderSegments = () => {
         // ✅ Kung naay segments, i-render KADA SEGMENT separately (walay connecting line)
         if (routeSegments.length > 0) {
             return routeSegments.map((seg, i) => {
@@ -726,7 +732,7 @@ const GsoDashboard = () => {
                 return (
                     <Polyline
                         key={`seg-${seg.historyId ?? i}`}
-                        positions={seg.coords} // Diri naka-render ang tagsa-tagsa ka linya
+                        positions={seg.coords}
                         color={color}
                         weight={4}
                         dashArray={
@@ -803,21 +809,6 @@ const GsoDashboard = () => {
                             </p>
                         </div>
                         <div className="flex gap-3">
-                            {/* <Button
-                                onClick={fetchAllData}
-                                variant="outline"
-                                className="bg-white/10 border-white/20 text-white hover:bg-white/20 rounded-xl h-10 px-4"
-                            >
-                                <RefreshCw
-                                    className={cn(
-                                        "h-4 w-4 mr-2",
-                                        (vehiclesLoading ||
-                                            activeTripsLoading) &&
-                                            "animate-spin",
-                                    )}
-                                />{" "}
-                                Refresh
-                            </Button> */}
                             <Button
                                 onClick={() => navigate("/gso/create-trip")}
                                 className="bg-blue-600 hover:bg-blue-500 text-white rounded-xl h-10 px-6 shadow-lg shadow-blue-500/20"
