@@ -800,7 +800,7 @@ const GsoDashboard = () => {
                             </p>
                         </div>
                         <div className="flex gap-3">
-                            <Button
+                            {/* <Button
                                 onClick={fetchAllData}
                                 variant="outline"
                                 className="bg-white/10 border-white/20 text-white hover:bg-white/20 rounded-xl h-10 px-4"
@@ -814,7 +814,7 @@ const GsoDashboard = () => {
                                     )}
                                 />{" "}
                                 Refresh
-                            </Button>
+                            </Button> */}
                             <Button
                                 onClick={() => navigate("/gso/create-trip")}
                                 className="bg-blue-600 hover:bg-blue-500 text-white rounded-xl h-10 px-6 shadow-lg shadow-blue-500/20"
