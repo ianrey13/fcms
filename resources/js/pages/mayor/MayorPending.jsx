@@ -677,6 +677,19 @@ const MayorPending = () => {
                         </div>
 
                         <div className="p-5 flex-1 overflow-y-auto space-y-5">
+                            
+                            {/* ✅ BAG-ONG DUGANG: Dako ug klaro nga Funds Released display */}
+                            {(activeTab === "funds_issued" || activeTab === "received") && (
+                                <div className="bg-emerald-950/30 border border-emerald-500/30 rounded-xl p-5 flex flex-col items-center justify-center text-center shadow-inner">
+                                    <span className="text-sm font-semibold text-emerald-400/80 uppercase tracking-widest mb-1 flex items-center gap-2">
+                                        <CheckCircle className="h-4 w-4" /> Funds Released
+                                    </span>
+                                    <span className="text-4xl font-extrabold text-emerald-400 font-mono tracking-tight">
+                                        {formatCurrency(selectedTicket.amount_released)}
+                                    </span>
+                                </div>
+                            )}
+
                             <div className="bg-[#0b101c] rounded-xl p-4 border border-slate-800 text-sm">
                                 <div className="flex items-center gap-2 mb-3 pb-2 border-b border-slate-800">
                                     <Truck className="h-4 w-4 text-blue-500" />
