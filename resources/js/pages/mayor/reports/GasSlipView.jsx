@@ -46,7 +46,7 @@ const GasSlipView = ({ ticket, onClose }) => {
         purpose: (ticket.purpose || "Official Trip").toUpperCase(),
         destination: (ticket.destination || "N/A").toUpperCase(),
         fuel_type: fuelType,
-        liters: displayLiters, // ✅ Gigamit na ang bag-ong compute
+        liters: displayLiters,
         amount: amount,
         mayor_name: "HON. ROY MACUA",
         department: ticket.department_name || ticket.department?.name || "N/A",
@@ -262,6 +262,22 @@ const GasSlipView = ({ ticket, onClose }) => {
                                     <div className="flex-1 border-b border-gray-800 dark:border-slate-600 text-center text-sm font-semibold pb-0.5 text-green-700 dark:text-green-400">
                                         {gasSlipData.fuel_type === "PREMIUM" ||
                                         gasSlipData.fuel_type === "UNLEADED"
+                                            ? `₱${gasSlipData.amount.toLocaleString()}`
+                                            : ""}
+                                    </div>
+                                </div>
+                                {/* ✅ NEW ROW: Gasoline */}
+                                <div className="flex items-center mb-2">
+                                    <div className="flex-1 text-sm italic text-gray-600 dark:text-slate-400">
+                                        Gasoline
+                                    </div>
+                                    <div className="flex-1 border-b border-gray-800 dark:border-slate-600 text-center text-sm font-semibold pb-0.5">
+                                        {gasSlipData.fuel_type === "GASOLINE"
+                                            ? gasSlipData.liters
+                                            : ""}
+                                    </div>
+                                    <div className="flex-1 border-b border-gray-800 dark:border-slate-600 text-center text-sm font-semibold pb-0.5 text-green-700 dark:text-green-400">
+                                        {gasSlipData.fuel_type === "GASOLINE"
                                             ? `₱${gasSlipData.amount.toLocaleString()}`
                                             : ""}
                                     </div>
