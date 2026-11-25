@@ -932,7 +932,7 @@ const GsoDashboard = () => {
                                             </td>
                                         </tr>
                                     ) : (
-                                        filteredVehicles.map((v) => {
+                                       filteredVehicles.map((v) => {
                                             const currentFuel = toNum(v.current_fuel_balance);
                                             const tankCap = toNum(v.tank_capacity) || 60;
                                             const fuelPct = v.fuel_percentage || 0;
@@ -948,7 +948,7 @@ const GsoDashboard = () => {
                                                     <td className="px-3 py-3 text-right">
                                                         <div className="flex flex-col items-end gap-1">
                                                             <div className="font-bold text-white text-sm">
-                                                                {currentFuel.toFixed(2)} <span className="text-slate-400 text-xs font-normal">/ {tankCap.toFixed(0)} L</span>
+                                                                {currentFuel.toFixed(2)} <span className="text-slate-400 text-xs font-normal">/ {tankCap.toFixed(2)} L</span>
                                                             </div>
                                                             {/* Visual Progress Bar */}
                                                             <div className="w-16 h-1.5 bg-slate-800 rounded-full overflow-hidden">
