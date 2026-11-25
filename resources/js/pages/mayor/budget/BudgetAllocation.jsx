@@ -200,7 +200,7 @@ const BudgetAllocation = () => {
             fiscal_year: selectedYear,
             department_id: data.department_id,
             additional_amount: data.additional_amount,
-            purpose: data.purpose, // ✅ I-send as 'purpose' (dili 'reason')
+            purpose: data.purpose, // ✅ Usbon gikan sa 'reason' ngadto sa 'purpose'
         });
         return response.data;
     },

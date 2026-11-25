@@ -428,7 +428,7 @@ class AnnualBudgetController extends Controller
             'added_amount' => $request->additional_amount,
             'new_amount' => $newAmount,
             // ✅ GIGAMIT NA ANG $request->purpose IMBES NGA $request->reason
-            'reason' => $request->purpose . " (+₱" . number_format($request->additional_amount, 2) . ")",
+            'reason' => $request->purpose, 
             'user_id' => auth()->id(),
             'user_name' => auth()->user()->full_name ?? 'System',
         ]);
