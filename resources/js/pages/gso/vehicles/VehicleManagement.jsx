@@ -1,7 +1,7 @@
 // src/pages/gso/vehicles/VehicleManagement.jsx
 import React, { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { useAutoRefresh } from "../../../hooks/useAutoRefresh";
 import { useRealtime } from "../../../contexts/RealtimeContext";
 import {
@@ -46,10 +46,14 @@ import {
     useDeleteVehicle,
     useToggleVehicleStatus,
 } from "../../../hooks/useVehicleManagement";
-import { useQuery } from "@tanstack/react-query";
-import { adminDepartmentAPI } from "../../../services/api";
+import { adminDepartmentAPI, gsoAPI } from "../../../services/api";
 import { toast } from "react-hot-toast";
 import { cn } from "@/lib/utils";
+
+const toNum = (v) => {
+    const n = parseFloat(v);
+    return Number.isFinite(n) ? n : 0;
+};
 
 // ============================================
 // STATS CARD COMPONENT
@@ -148,7 +152,7 @@ const FuelLevelBar = ({ balance, tankCapacity }) => {
                     {formattedBalance} L
                 </span>
                 <span className="text-slate-400">
-                    / {formattedTank} L  {/* ✅ DILI NA .toFixed(0) */}
+                    / {formattedTank} L
                 </span>
             </div>
             <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-1.5 overflow-hidden">
@@ -210,9 +214,24 @@ const VehicleManagement = () => {
     const deleteVehicle = useDeleteVehicle();
     const toggleStatus = useToggleVehicleStatus();
 
+    // ✅ KUHAON TANAN NGA TRIPS PARA MA-COMPUTE ANG LEDGER BALANCE
+    const { data: allTrips = [], isLoading: tripsLoading } = useQuery({
+        queryKey: ['all-trips-for-vehicles'],
+        queryFn: async () => {
+            try {
+                const res = await gsoAPI.getAllTrips();
+                return res?.data?.data || [];
+            } catch {
+                return [];
+            }
+        },
+        staleTime: 30000,
+    });
+
     useAutoRefresh(["gso-trip-updated", "new-notification"], () => {
         queryClient.invalidateQueries({ queryKey: ["vehicles"] });
         queryClient.invalidateQueries({ queryKey: ["departments"] });
+        queryClient.invalidateQueries({ queryKey: ["all-trips-for-vehicles"] });
     });
 
     const { data: departments = [] } = useQuery({
@@ -229,6 +248,65 @@ const VehicleManagement = () => {
         },
         staleTime: 5 * 60 * 1000,
     });
+
+    // ✅ COMPUTE LEDGER BALANCE PER VEHICLE
+    const vehicleLedgerBalances = useMemo(() => {
+        const balances = {};
+        
+        vehicles.forEach(v => {
+            const vehicleTrips = allTrips
+                .filter(t => 
+                    t.vehicle?.plate_number === v.plate_number &&
+                    !['cancelled', 'rejected', 'returned_for_revision', 'pending_mayors_office'].includes(t.status)
+                )
+                .map(trip => {
+                    const rawFuelIn = 
+                        trip.gasSlip?.fuelReceipt?.liters_availed ??
+                        trip.gas_slip?.fuel_receipt?.liters_availed ??
+                        trip.liters_availed;
+
+                    const hasFuelInput = rawFuelIn !== undefined && rawFuelIn !== null && rawFuelIn !== "";
+                    const fuelIn = hasFuelInput ? toNum(rawFuelIn) : null;
+                    
+                    const isCompleted = ['completed', 'pending_gso_validation', 'closed'].includes(trip.status);
+                    const distance = isCompleted ? toNum(trip.actual_distance_km || trip.gps_distance_km) : 0;
+                    
+                    let efficiency = toNum(v.reference_efficiency) || 10;
+                    if (efficiency < 6 || efficiency > 20) efficiency = 10;
+                    
+                    const fuelOut = distance > 0 ? (distance / efficiency) : 0;
+
+                    return {
+                        fuelIn,
+                        fuelOut,
+                        sortTime: new Date(trip.created_at || trip.submitted_at || trip.trip_date || 0).getTime(),
+                    };
+                });
+
+            if (vehicleTrips.length === 0) {
+                balances[v.vehicle_id] = toNum(v.current_fuel_balance);
+                return;
+            }
+
+            vehicleTrips.sort((a, b) => a.sortTime - b.sortTime);
+
+            const initialRaw = v.initial_estimated_fuel;
+            const hasInitial = initialRaw !== undefined && initialRaw !== null && initialRaw !== '';
+            
+            let prev = hasInitial 
+                ? toNum(initialRaw) 
+                : toNum(v.current_fuel_balance) - vehicleTrips.reduce((s, r) => s + (r.fuelIn ?? 0), 0) + vehicleTrips.reduce((s, r) => s + r.fuelOut, 0);
+
+            vehicleTrips.forEach(r => {
+                prev = prev + (r.fuelIn ?? 0) - r.fuelOut;
+            });
+
+            // Ang final prev kay ang pinaka-latest balance
+            balances[v.vehicle_id] = Math.max(0, prev); // Ayaw i-allow negative
+        });
+
+        return balances;
+    }, [vehicles, allTrips]);
 
     // ============ STATS ============
     const stats = useMemo(() => {
@@ -741,10 +819,13 @@ const VehicleManagement = () => {
                                                     vehicle.tank_capacity ??
                                                         vehicle.fuel_capacity,
                                                 ) || 60;
-                                            const currentBalance =
-                                                parseFloat(
-                                                    vehicle.current_fuel_balance,
-                                                ) || 0;
+                                            
+                                            // ✅ GIGAMIT NATO ANG LEDGER BALANCE IMBES SA DATABASE VALUE
+                                            const currentBalance = 
+                                                vehicleLedgerBalances[vehicle.vehicle_id] !== undefined
+                                                    ? vehicleLedgerBalances[vehicle.vehicle_id]
+                                                    : parseFloat(vehicle.current_fuel_balance) || 0;
+                                            
                                             const refEff = parseFloat(
                                                 vehicle.reference_efficiency,
                                             );
