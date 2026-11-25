@@ -288,7 +288,7 @@ const GsoDashboard = () => {
         [activeTripsRaw],
     );
 
-    const { data: allTripsRaw = [], isLoading: tripsLoading } =
+        const { data: allTripsRaw = [], isLoading: tripsLoading } =
         useOptimizedQuery({
             queryKey: ["gso-dashboard-trips"],
             queryFn: async () => {
@@ -298,6 +298,7 @@ const GsoDashboard = () => {
                     const hasGasSlip =
                         trip.gasSlip || trip.gas_slip || trip.gas_slip_id;
 
+                    // Still hide cancelled/rejected
                     if (
                         ["cancelled", "rejected", "returned_for_revision"].includes(
                             status,
@@ -306,17 +307,16 @@ const GsoDashboard = () => {
                         return false;
                     }
 
-                    // Pending validation lives in its own table, not the ledger
-                    if (
-                        ["pending_gso_validation", "completed"].includes(status)
-                    ) {
-                        return false;
-                    }
+                    // ✅ FIX: REMOVED the block that hides "pending_gso_validation" and "completed".
+                    // These should still appear in Recent Trips and the Fuel Ledger,
+                    // even though they also appear in the Pending Validation table.
 
+                    // For pending_mayors_office, only show if funds have been released (has gas slip)
                     if (status === "pending_mayors_office" && !hasGasSlip) {
                         return false;
                     }
 
+                    // If no gas slip and no distance data, hide (likely incomplete/draft)
                     if (
                         !hasGasSlip &&
                         !trip.actual_distance_km &&
@@ -436,11 +436,14 @@ const GsoDashboard = () => {
                 ) ||
                 trip.vehicle;
 
-            const fuelIn = toNum(
+                       // ✅ FIX: Fallback to estimated_fuel_liters if the actual receipt liters are not yet input
+            const rawFuelIn = 
                 trip.gasSlip?.fuelReceipt?.liters_availed ??
-                    trip.gas_slip?.fuel_receipt?.liters_availed ??
-                    trip.liters_availed,
-            );
+                trip.gas_slip?.fuel_receipt?.liters_availed ??
+                trip.liters_availed ??
+                trip.estimated_fuel_liters; // fallback for pending validation
+
+            const fuelIn = toNum(rawFuelIn);
 
             const status = (trip.status || "").toLowerCase();
             const isCompleted = [
