@@ -538,39 +538,22 @@ const MayorDashboard = () => {
         }));
     }, [approvedTicketsRaw, trendDept, departmentBudgets]);
 
-    const transactionsData = useMemo(() => {
-        return approvedTicketsRaw
-            .filter((t) => {
-                const isChargedToMO =
-                    t.charge_to_department_name
-                        ?.toLowerCase()
-                        .includes("mayor") ||
-                    t.department_name?.toLowerCase().includes("mayor") ||
-                    t.is_mo_funded === true;
+  const transactionsData = useMemo(() => {
+    return approvedTicketsRaw
+        .filter(t => {
+            // ✅ KUNG CROSS-DEPARTMENT, PERMI NI SIYA MUGAWAS SA MAYOR'S OFFICE
+            // Kay ang Mayor maoy nag-release sa funds (base sa cross_department_reason)
+            const isCrossDept = t.is_cross_department === true;
 
-                // ✅ KUNG CROSS-DEPT UG GI-CHARGE SA MO, APILON GYUD KINI PERMI
-                if (isChargedToMO) {
-                    // Kung ang user nag-filter og specific department, i-check kung nag-match ba
-                    if (
-                        transDept !== "all" &&
-                        !t.department_name
-                            ?.toLowerCase()
-                            .includes(transDept.toLowerCase())
-                    ) {
-                        return false;
-                    }
-                    // Pwede nimo i-skip ang ubang filters (status/date) para permi makita ang MO transactions
-                    return true;
+            if (isCrossDept) {
+                // Kung ang user nag-filter og specific department, i-check kung nag-match ba
+                if (transDept !== "all" && t.department_name !== transDept && t.charge_to_department_name !== transDept) {
+                    return false;
                 }
-
-                // Standard logic para sa wala na-cross department
-                const matchesDept =
-                    transDept === "all" || t.department_name === transDept;
-
+                
+                // Check status filter
+                const hasCost = t.actual_fuel_cost && parseFloat(t.actual_fuel_cost) > 0;
                 let matchesStatus = true;
-                const hasCost =
-                    t.actual_fuel_cost && parseFloat(t.actual_fuel_cost) > 0;
-
                 if (transStatusFilter === "funds_issued") {
                     matchesStatus = t.status === "funds_issued";
                 } else if (transStatusFilter === "received") {
@@ -578,18 +561,12 @@ const MayorDashboard = () => {
                 } else if (transStatusFilter === "for_verification") {
                     matchesStatus = t.status === "in_transit" && !hasCost;
                 } else if (transStatusFilter === "verified") {
-                    matchesStatus =
-                        hasCost ||
-                        [
-                            "completed",
-                            "closed",
-                            "pending_gso_validation",
-                            "pending_reconciliation",
-                        ].includes(t.status);
+                    matchesStatus = hasCost || ["completed", "closed", "pending_gso_validation", "pending_reconciliation"].includes(t.status);
                 } else if (transStatusFilter === "rejected") {
                     matchesStatus = t.status === "rejected";
                 }
 
+                // Check date filter
                 let matchesDate = true;
                 if (transTimeFilter !== "all_time") {
                     const today = new Date();
@@ -609,17 +586,57 @@ const MayorDashboard = () => {
                         end = today;
                     }
                     if (!t.trip_date) return false;
-                    matchesDate = isWithinInterval(new Date(t.trip_date), {
-                        start,
-                        end,
-                    });
+                    matchesDate = isWithinInterval(new Date(t.trip_date), { start, end });
                 }
 
-                return matchesDept && matchesStatus && matchesDate;
-            })
-            .sort((a, b) => new Date(b.trip_date) - new Date(a.trip_date))
-            .slice(0, 5);
-    }, [approvedTicketsRaw, transDept, transStatusFilter, transTimeFilter]);
+                return matchesStatus && matchesDate;
+            }
+
+            // Standard logic para sa wala na-cross department
+            const matchesDept = transDept === "all" || t.department_name === transDept;
+            
+            let matchesStatus = true;
+            const hasCost = t.actual_fuel_cost && parseFloat(t.actual_fuel_cost) > 0;
+            
+            if (transStatusFilter === "funds_issued") {
+                matchesStatus = t.status === "funds_issued";
+            } else if (transStatusFilter === "received") {
+                matchesStatus = t.status === "acknowledged";
+            } else if (transStatusFilter === "for_verification") {
+                matchesStatus = t.status === "in_transit" && !hasCost;
+            } else if (transStatusFilter === "verified") {
+                matchesStatus = hasCost || ["completed", "closed", "pending_gso_validation", "pending_reconciliation"].includes(t.status);
+            } else if (transStatusFilter === "rejected") {
+                matchesStatus = t.status === "rejected";
+            }
+
+            let matchesDate = true;
+            if (transTimeFilter !== "all_time") {
+                const today = new Date();
+                let start, end;
+                if (transTimeFilter === "this_week") {
+                    start = startOfWeek(today, { weekStartsOn: 1 });
+                    end = endOfWeek(today, { weekStartsOn: 1 });
+                } else if (transTimeFilter === "this_month") {
+                    start = startOfMonth(today);
+                    end = endOfMonth(today);
+                } else if (transTimeFilter === "last_month") {
+                    const lastMonth = subMonths(today, 1);
+                    start = startOfMonth(lastMonth);
+                    end = endOfMonth(lastMonth);
+                } else if (transTimeFilter === "two_weeks_ago") {
+                    start = subDays(today, 14);
+                    end = today;
+                }
+                if (!t.trip_date) return false;
+                matchesDate = isWithinInterval(new Date(t.trip_date), { start, end });
+            }
+
+            return matchesDept && matchesStatus && matchesDate;
+        })
+        .sort((a, b) => new Date(b.trip_date) - new Date(a.trip_date))
+        .slice(0, 5);
+}, [approvedTicketsRaw, transDept, transStatusFilter, transTimeFilter]);
 
     // ✅ FUEL PRICE MONITORING LOGIC
     const fuelPriceData = useMemo(() => {
