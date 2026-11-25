@@ -920,7 +920,7 @@ class GsoController extends Controller
         }
     }
 
-    /**
+       /**
      * Validate and Close a Trip
      */
     public function validateTrip(Request $request, $id)
@@ -947,17 +947,13 @@ class GsoController extends Controller
                 return response()->json(['success' => false, 'message' => 'Cannot validate: No fuel receipt uploaded.'], 422);
             }
 
-            // ✅ DO MUST VERIFY FIRST (Base sa verification_status)
-            if ($receipt->verification_status !== 'verified') {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Cannot validate: Receipt is not yet verified by the Disbursing Officer (DO).'
-                ], 422);
-            }
-
-            // ✅ GSO MUST INPUT LITERS
+            // ✅ GSO VALIDATION: Dili na mag-check sa DO. 
+            // Ang importante kay naay Liters nga gi-input ang GSO.
             if ($receipt->liters_availed === null || (float) $receipt->liters_availed <= 0) {
-                return response()->json(['success' => false, 'message' => 'Cannot validate: Fuel liters have not been recorded yet.'], 422);
+                return response()->json([
+                    'success' => false, 
+                    'message' => 'Cannot validate: Fuel liters have not been recorded yet. Please input the liters first before validating.'
+                ], 422);
             }
 
             DB::beginTransaction();
@@ -977,6 +973,28 @@ class GsoController extends Controller
             $ticket->syncActuals();
             $ticket->save();
 
+            // Archive GPS Pings
+            $pings = \App\Models\GpsPing::where('trip_ticket_id', $ticket->trip_ticket_id)->get();
+            if ($pings->isNotEmpty()) {
+                $archiveRows = $pings->map(fn($p) => [
+                    'original_ping_id'       => $p->ping_id,
+                    'trip_ticket_id'         => $p->trip_ticket_id,
+                    'latitude'               => $p->latitude,
+                    'longitude'              => $p->longitude,
+                    'accuracy_meters'        => $p->accuracy_meters,
+                    'speed_kmh'              => $p->speed_kmh,
+                    'heading_degrees'        => $p->heading_degrees,
+                    'is_low_accuracy'        => $p->is_low_accuracy,
+                    'is_queued_upload'       => $p->is_queued_upload,
+                    'has_mock_location_flag' => $p->has_mock_location_flag,
+                    'recorded_at'            => $p->recorded_at,
+                    'received_at'            => $p->received_at,
+                    'archived_at'            => now(),
+                ])->toArray();
+                DB::table('gps_ping_archive')->insert($archiveRows);
+                \App\Models\GpsPing::where('trip_ticket_id', $ticket->trip_ticket_id)->delete();
+            }
+
             DB::commit();
 
             return response()->json([
@@ -986,6 +1004,7 @@ class GsoController extends Controller
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
+            Log::error('Validate trip error: ' . $e->getMessage());
             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
     }
