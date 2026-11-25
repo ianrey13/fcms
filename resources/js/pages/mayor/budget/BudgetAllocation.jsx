@@ -194,13 +194,13 @@ const BudgetAllocation = () => {
         onError: (error) => toast.error(error.response?.data?.message || "Failed to set budget"),
     });
 
-    const addBudgetMutation = useMutation({
+   const addBudgetMutation = useMutation({
     mutationFn: async (data) => {
         const response = await api.post("/mayors-office/annual-budgets/add", { 
             fiscal_year: selectedYear,
             department_id: data.department_id,
             additional_amount: data.additional_amount,
-            reason: data.purpose, 
+            purpose: data.purpose, // ✅ I-send as 'purpose' (dili 'reason')
         });
         return response.data;
     },
