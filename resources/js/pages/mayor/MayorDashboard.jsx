@@ -419,22 +419,38 @@ const MayorDashboard = () => {
     }, [departmentBudgets]);
 
     // ✅ Filter transactions para sa selected Pie Department (MO-CHARGE AWARE)
-    const selectedDeptTransactions = useMemo(() => {
+      const selectedDeptTransactions = useMemo(() => {
         if (!selectedPieDept) return [];
-
+        
         return approvedTicketsRaw
             .filter((t) => {
-                // Kung ang gi-chargean (charge_to) kay match sa gi-click nga department
-                const isChargedToSelected = 
-                    t.charge_to_department_name === selectedPieDept.name ||
+                
+                const selectedDeptObj = departmentBudgets.find(
+                    (d) => d.department_name === selectedPieDept.name
+                );
+                const selectedCode = selectedDeptObj?.department_code?.toUpperCase();
+                
+              
+                const ticketChargeCode = t.charge_to?.toUpperCase();
+                const ticketDeptCode = t.department_code?.toUpperCase();
+                
+              
+               
+               
+                
+                const isMatch = 
+                    (selectedCode && ticketChargeCode === selectedCode) ||
+                    (selectedCode && ticketDeptCode === selectedCode) ||
+                    (t.charge_to_department_name === selectedPieDept.name) ||
                     (t.department_name === selectedPieDept.name && !t.is_cross_department);
 
-                return isChargedToSelected;
+                return isMatch;
             })
             .sort((a, b) => new Date(b.trip_date) - new Date(a.trip_date));
-    }, [approvedTicketsRaw, selectedPieDept]);
+    }, [approvedTicketsRaw, selectedPieDept, departmentBudgets]);
 
     // ✅ Selected department totals
+       // ✅ Selected department totals
     const selectedDeptTotals = useMemo(() => {
         if (!selectedPieDept) return null;
         
@@ -442,13 +458,13 @@ const MayorDashboard = () => {
             (d) => d.department_name === selectedPieDept.name,
         );
         
-        // ✅ Kalkulahon ang total released base sa mga tickets nga gi-charge niini nga department
+        // Kalkulahon ang total released base sa nakit-an nga transactions
         const totalReleased = selectedDeptTransactions.reduce(
             (sum, t) => sum + (parseFloat(t.amount_released) || 0),
             0,
         );
         
-        // ✅ Live remaining (Allocated - total released)
+        // Live remaining (Allocated - total released)
         const allocated = dept?.allocated || 0;
         const remaining = allocated - totalReleased;
 
