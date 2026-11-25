@@ -395,6 +395,65 @@ const GsoDashboard = () => {
         return result.slice(0, 5); // Limit to 5 for dashboard view
     }, [vehicles, searchTerm, deptFilter]);
 
+    // ✅ COMPUTE LEDGER BALANCE PER VEHICLE (Parehas sa VehicleDetails)
+    const vehicleLedgerBalances = useMemo(() => {
+        const balances = {};
+        
+        vehicles.forEach(v => {
+            const vehicleTrips = allTrips
+                .filter(t => 
+                    t.vehicle?.plate_number === v.plate_number &&
+                    !['cancelled', 'rejected', 'returned_for_revision', 'pending_mayors_office'].includes(t.status)
+                )
+                .map(trip => {
+                    const rawFuelIn = 
+                        trip.gasSlip?.fuelReceipt?.liters_availed ??
+                        trip.gas_slip?.fuel_receipt?.liters_availed ??
+                        trip.liters_availed;
+
+                    const hasFuelInput = rawFuelIn !== undefined && rawFuelIn !== null && rawFuelIn !== "";
+                    const fuelIn = hasFuelInput ? toNum(rawFuelIn) : null;
+                    
+                    const isCompleted = ['completed', 'pending_gso_validation', 'closed'].includes(trip.status);
+                    const distance = isCompleted ? toNum(trip.actual_distance_km || trip.gps_distance_km) : 0;
+                    
+                    let efficiency = toNum(v.reference_efficiency) || 10;
+                    if (efficiency < 6 || efficiency > 20) efficiency = 10;
+                    
+                    const fuelOut = distance > 0 ? (distance / efficiency) : 0;
+
+                    return {
+                        fuelIn,
+                        fuelOut,
+                        sortTime: new Date(trip.created_at || trip.submitted_at || trip.trip_date || 0).getTime(),
+                    };
+                });
+
+            if (vehicleTrips.length === 0) {
+                balances[v.vehicle_id] = toNum(v.current_fuel_balance);
+                return;
+            }
+
+            vehicleTrips.sort((a, b) => a.sortTime - b.sortTime);
+
+            const initialRaw = v.initial_estimated_fuel;
+            const hasInitial = initialRaw !== undefined && initialRaw !== null && initialRaw !== '';
+            
+            let prev = hasInitial 
+                ? toNum(initialRaw) 
+                : toNum(v.current_fuel_balance) - vehicleTrips.reduce((s, r) => s + (r.fuelIn ?? 0), 0) + vehicleTrips.reduce((s, r) => s + r.fuelOut, 0);
+
+            vehicleTrips.forEach(r => {
+                prev = prev + (r.fuelIn ?? 0) - r.fuelOut;
+            });
+
+            // Ang final prev kay ang pinaka-latest balance
+            balances[v.vehicle_id] = Math.max(0, prev); // Ayaw i-allow negative
+        });
+
+        return balances;
+    }, [vehicles, allTrips]);
+
     // ============================================
     // FUEL LEDGER (forward chain per vehicle)
     // ============================================
@@ -933,9 +992,14 @@ const GsoDashboard = () => {
                                         </tr>
                                     ) : (
                                        filteredVehicles.map((v) => {
-                                            const currentFuel = toNum(v.current_fuel_balance);
+                                            // ✅ GIGAMIT NATO ANG LEDGER BALANCE IMBES SA DATABASE VALUE
+                                            const currentFuel = 
+                                                vehicleLedgerBalances[v.vehicle_id] !== undefined
+                                                    ? vehicleLedgerBalances[v.vehicle_id]
+                                                    : toNum(v.current_fuel_balance);
+                                                    
                                             const tankCap = toNum(v.tank_capacity) || 60;
-                                            const fuelPct = v.fuel_percentage || 0;
+                                            const fuelPct = tankCap > 0 ? Math.min(100, Math.max(0, (currentFuel / tankCap) * 100)) : 0;
                                             
                                             return (
                                                 <tr key={v.vehicle_id} className="hover:bg-[#1a2235] transition-colors">
