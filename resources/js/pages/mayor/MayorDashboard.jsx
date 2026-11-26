@@ -1379,14 +1379,16 @@ const MayorDashboard = () => {
                 </Card>
             </div>
 
-            {/* 4. Bottom Rows: Transactions */}
+             {/* 4. Bottom Rows: Transactions */}
             <div className="grid grid-cols-1 gap-6 mb-6">
                 <Card className="bg-[#121829] border border-slate-800 rounded-2xl shadow-lg p-0 overflow-hidden relative">
                     <div className="flex flex-col md:flex-row md:items-center justify-between p-5 border-b border-slate-800 gap-4">
                         <h3 className="font-bold text-white flex items-center gap-2">
                             <Activity className="h-4 w-4 text-blue-400" />{" "}
-                            DEPARTMENT TRANSACTIONS
+                            TRANSACTION HISTORY
                         </h3>
+                        
+                        {/* ✅ FILTERS ROW */}
                         <div className="flex flex-wrap items-center gap-2 relative z-[50]">
                             <CustomSelect
                                 value={transDept}
@@ -1449,25 +1451,22 @@ const MayorDashboard = () => {
                                         Date
                                     </th>
                                     <th className="px-4 py-3 font-medium">
-                                        Control No.
+                                        Reference No.
                                     </th>
                                     <th className="px-4 py-3 font-medium">
-                                        Vehicle
+                                        Description
+                                    </th>
+                                    <th className="px-4 py-3 font-medium">
+                                        Department
+                                    </th>
+                                    <th className="px-4 py-3 font-medium">
+                                        Destination
                                     </th>
                                     <th className="px-4 py-3 font-medium text-right">
-                                        Amount Released
+                                        Amount
                                     </th>
                                     <th className="px-4 py-3 font-medium text-right">
-                                        Amount Spent
-                                    </th>
-                                    <th className="px-4 py-3 font-medium text-center">
-                                        Receipt
-                                    </th>
-                                    <th className="px-4 py-3 font-medium text-right">
-                                        Status
-                                    </th>
-                                    <th className="px-4 py-3 font-medium text-center">
-                                        Action
+                                        Running Balance
                                     </th>
                                 </tr>
                             </thead>
@@ -1475,7 +1474,7 @@ const MayorDashboard = () => {
                                 {transactionsData.length === 0 ? (
                                     <tr>
                                         <td
-                                            colSpan={8}
+                                            colSpan={7}
                                             className="px-4 py-8 text-center text-slate-500"
                                         >
                                             No transactions found.
@@ -1483,74 +1482,37 @@ const MayorDashboard = () => {
                                     </tr>
                                 ) : (
                                     transactionsData.map((t, i) => {
-                                        const hasCost =
-                                            t.actual_fuel_cost &&
-                                            parseFloat(t.actual_fuel_cost) > 0;
-                                        const amountSpentDisplay = hasCost
-                                            ? formatCurrency(t.actual_fuel_cost)
-                                            : "-";
-
+                                        // ✅ Compute Running Balance (simplified)
+                                        let runningBalance = 0;
+                                        // Optional: Pwede nimo i-compute ang running balance base sa tanan transactions
+                                        // o base sa allTimeTotals.totalRemaining
+                                        
                                         return (
                                             <tr
                                                 key={i}
                                                 className="hover:bg-slate-800/20 transition-colors group"
                                             >
                                                 <td className="px-4 py-3 text-slate-400">
-                                                    {formatDateShort(
-                                                        t.trip_date,
-                                                    )}
+                                                    {formatDateShort(t.trip_date)}
                                                 </td>
                                                 <td className="px-4 py-3 text-slate-200 font-medium">
-                                                    {/* ✅ WALA NAY CHARGE TO BADGE */}
                                                     {t.ticket_number}
                                                 </td>
                                                 <td className="px-4 py-3 text-slate-400">
-                                                    {t.vehicle?.plate_number}
+                                                    {t.purpose || "Official Trip"}
                                                 </td>
-                                                <td className="px-4 py-3 text-right text-slate-300">
-                                                    {formatCurrency(
-                                                        t.amount_released,
-                                                    )}
+                                                <td className="px-4 py-3 text-slate-400">
+                                                    {t.department_name}
                                                 </td>
-                                                <td className="px-4 py-3 text-right text-slate-300 font-medium">
-                                                    {amountSpentDisplay}
+                                                <td className="px-4 py-3 text-slate-400">
+                                                    {t.destination || "—"}
                                                 </td>
-                                                <td className="px-4 py-3 text-center">
-                                                    <button
-                                                        onClick={() =>
-                                                            handleDownloadReceipt(
-                                                                t.receipt_url,
-                                                                t.ticket_number,
-                                                            )
-                                                        }
-                                                        className="text-blue-400 hover:text-blue-300"
-                                                    >
-                                                        <Download className="h-4 w-4 mx-auto" />
-                                                    </button>
+                                                <td className="px-4 py-3 text-right text-emerald-400 font-bold">
+                                                    +{formatCurrency(t.amount_released)}
                                                 </td>
-                                                <td className="px-4 py-3 text-right">
-                                                    <StatusBadge
-                                                        status={t.status}
-                                                        actualCost={
-                                                            t.actual_fuel_cost
-                                                        }
-                                                    />
-                                                </td>
-                                                <td className="px-4 py-3 text-center">
-                                                    {/* ✅ CLICK TO OPEN GAS SLIP VIEW MODAL */}
-                                                    <Button
-                                                        size="sm"
-                                                        variant="ghost"
-                                                        onClick={() =>
-                                                            setSelectedGasSlip(
-                                                                t,
-                                                            )
-                                                        }
-                                                        className="h-7 px-2 text-[10px] text-blue-400 hover:text-blue-300 hover:bg-blue-500/10"
-                                                    >
-                                                        <FileText className="h-3.5 w-3.5 mr-1" />{" "}
-                                                        View Slip
-                                                    </Button>
+                                                <td className="px-4 py-3 text-right text-white font-bold">
+                                                    {/* Placeholder for running balance */}
+                                                    —
                                                 </td>
                                             </tr>
                                         );
@@ -1561,6 +1523,7 @@ const MayorDashboard = () => {
                     </div>
                 </Card>
             </div>
+
 
             {/* 5. Recent Fund Releases */}
             <div className="mb-6">
