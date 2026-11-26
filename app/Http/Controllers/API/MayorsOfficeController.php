@@ -1123,54 +1123,62 @@ class MayorsOfficeController extends Controller
         }
     }
 
-    /**
-     * Verify a receipt with editable fields
-     */
+   
     /**
      * DO verifies a fuel receipt
      */
     public function verifyReceipt(Request $request, $id)
-    {
-        try {
-            $user = $request->user();
-            if (!$user->isMayorsOffice()) {
-                return response()->json(['message' => 'Unauthorized'], 403);
-            }
-
-            $validator = Validator::make($request->all(), [
-                'invoice_number'    => 'required|string|max:50|unique:fuel_receipt,invoice_number,' . $id . ',fuel_receipt_id',
-                'amount_on_receipt' => 'required|numeric|min:0',
-                'unit_price'        => 'nullable|numeric|min:0',
-                'status'            => 'nullable|in:verified,discrepancy',
-                'remarks'           => 'nullable|string|max:500',
-            ]);
-
-            if ($validator->fails()) {
-                return response()->json(['errors' => $validator->errors()], 422);
-            }
-
-            $receipt = FuelReceipt::findOrFail($id);
-
-            $receipt->invoice_number    = $request->invoice_number;
-            $receipt->amount_on_receipt = $request->amount_on_receipt;
-            $receipt->unit_price        = $request->unit_price ?: round($request->amount_on_receipt / max((float) $receipt->liters_availed, 0.01), 2);
-
-            // ✅ SET DO VERIFIED
-            $receipt->verification_status = $request->status ?? 'verified';
-            $receipt->verified_at = now();
-
-            $receipt->save();
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Receipt verified successfully.',
-                'data'    => $receipt
-            ]);
-        } catch (\Exception $e) {
-            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+{
+    try {
+        $user = $request->user();
+        if (!$user->isMayorsOffice()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
         }
-    }
 
+        $validator = Validator::make($request->all(), [
+            'invoice_number'    => 'required|string|max:50|unique:fuel_receipt,invoice_number,' . $id . ',fuel_receipt_id',
+            'amount_on_receipt' => 'required|numeric|min:0',
+            'unit_price'        => 'nullable|numeric|min:0',
+            'status'            => 'nullable|string|in:verified,discrepancy', // Allow discrepancy from frontend
+            'remarks'           => 'nullable|string|max:500',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        $receipt = FuelReceipt::findOrFail($id);
+
+        // ✅ CAST TO FLOAT TO AVOID TRUNCATION
+        $amount = (float) $request->amount_on_receipt;
+        $unitPrice = $request->unit_price 
+            ? (float) $request->unit_price 
+            : round($amount / max((float) $receipt->liters_availed, 0.01), 2);
+
+        $receipt->invoice_number    = $request->invoice_number;
+        $receipt->amount_on_receipt = $amount;
+        $receipt->unit_price        = $unitPrice;
+
+        // ✅ ANG ENUM KAY ['pending', 'verified'] RA
+        // Busa kung 'discrepancy' ang gipasa, i-save gihapon nato isip 'verified'
+        // Apan ang remarks magpabilin aron mahibaw-an nga naay discrepancy
+        $status = $request->status === 'discrepancy' ? 'verified' : ($request->status ?? 'verified');
+        
+        $receipt->verification_status = $status;
+        $receipt->verified_at = now();
+
+        $receipt->save();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Receipt verified successfully.',
+            'data'    => $receipt
+        ]);
+    } catch (\Exception $e) {
+        \Log::error('Verify receipt error: ' . $e->getMessage());
+        return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+    }
+}
     // ============ HELPER METHODS ============
 
     private function getDepartmentBudgetInfo($departmentId)
