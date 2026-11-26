@@ -1390,18 +1390,18 @@ const MayorDashboard = () => {
                         
                         {/* ✅ FILTERS ROW */}
                         <div className="flex flex-wrap items-center gap-2 relative z-[50]">
-                            <CustomSelect
-                                value={transDept}
-                                onChange={(val) => setTransDept(val)}
-                                placeholder="All Departments"
-                                options={[
-                                    { value: "all", label: "All Departments" },
-                                    ...departmentBudgets.map((d) => ({
-                                        value: d.department_name,
-                                        label: d.department_name,
-                                    })),
-                                ]}
-                            />
+                            {/* ✅ SEARCH BAR PARA SA DEPARTMENT */}
+                            <div className="relative">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-500" />
+                                <Input
+                                    placeholder="Filter by Department..."
+                                    value={transDept === "all" ? "" : transDept}
+                                    onChange={(e) => setTransDept(e.target.value || "all")}
+                                    className="pl-9 h-8 text-xs bg-slate-800/80 border-slate-700 text-slate-300 rounded-lg w-48 focus:ring-1 focus:ring-blue-500"
+                                />
+                            </div>
+
+                            {/* Status Filter */}
                             <CustomSelect
                                 value={transStatusFilter}
                                 onChange={(val) => setTransStatusFilter(val)}
@@ -1421,6 +1421,7 @@ const MayorDashboard = () => {
                                     { value: "rejected", label: "Rejected" },
                                 ]}
                             />
+                            {/* Time Filter */}
                             <CustomSelect
                                 value={transTimeFilter}
                                 onChange={(val) => setTransTimeFilter(val)}
@@ -1483,15 +1484,11 @@ const MayorDashboard = () => {
                                 ) : (
                                     transactionsData.map((t, i) => {
                                         // ✅ RUNNING BALANCE COMPUTATION
-                                        // Kuhaon ang total allocation
                                         let runningBalance = allTimeTotals.totalAllocated;
                                         
-                                        // Subtract all transactions that happened before or on this one
-                                        // (Assuming ang transactionsData kay sorted newest first)
                                         for (let j = 0; j < transactionsData.length; j++) {
                                             const currentTx = transactionsData[j];
                                             
-                                            // Kung ang transaction kay mas bag-o pa kaysa sa current row, i-deduct siya
                                             const currentDate = new Date(currentTx.trip_date);
                                             const rowDate = new Date(t.trip_date);
                                             
@@ -1500,8 +1497,6 @@ const MayorDashboard = () => {
                                             }
                                         }
                                         
-                                        // Para ma-match sa imong screenshot, atong i-add pagbalik ang current row's amount
-                                        // kay ang "Running Balance" after sa transaction maoy atong ipakita
                                         runningBalance += parseFloat(t.amount_released) || 0;
 
                                         return (
