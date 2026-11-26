@@ -1,3 +1,4 @@
+// src/pages/mayor/BudgetAllocation.jsx
 import React, { useState, useEffect, useMemo } from "react";
 import { useQueryClient, useMutation } from "@tanstack/react-query";
 import { useAutoRefresh } from "../../../hooks/useAutoRefresh";
@@ -46,6 +47,8 @@ import {
     CheckCircle2,
     ChevronLeft,
     ChevronRight,
+    Search, // ✅ Gidugang ang Search icon
+    X, // ✅ Gidugang ang X icon para clear button
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { useNavigate } from "react-router-dom";
@@ -162,13 +165,15 @@ const BudgetAllocation = () => {
     const queryClient = useQueryClient();
 
     const [selectedYear, setSelectedYear] = useState(null);
+    
+    // ✅ BAG-ONG STATE PARA SA SEARCH BAR
+    const [searchDept, setSearchDept] = useState("");
 
     // Dialog States
     const [editingBudget, setEditingBudget] = useState(null);
     const [showEditDialog, setShowEditDialog] = useState(false);
     const [showAddBudgetDialog, setShowAddBudgetDialog] = useState(false);
 
-    // ✅ Gi-ilis ang 'reason' ngadto sa 'purpose'
     const [addBudgetData, setAddBudgetData] = useState({
         department_id: "",
         additional_amount: "",
@@ -255,7 +260,6 @@ const BudgetAllocation = () => {
         enabled: !!selectedYear,
     });
 
-    // ✅ Gi-ilis ang 'reason' ngadto sa 'purpose'
     const setBudgetMutation = useMutation({
         mutationFn: async ({ data }) => {
             const response = await api.post("/mayors-office/annual-budgets", {
@@ -284,7 +288,7 @@ const BudgetAllocation = () => {
                     fiscal_year: selectedYear,
                     department_id: data.department_id,
                     additional_amount: data.additional_amount,
-                    purpose: data.purpose, // ✅ Usbon gikan sa 'reason' ngadto sa 'purpose'
+                    purpose: data.purpose,
                 },
             );
             return response.data;
@@ -343,8 +347,14 @@ const BudgetAllocation = () => {
         if (!historyData || historyData.length === 0)
             return { rows: [], totals: {} };
 
+        // ✅ FILTER BY SEARCH TERM (Search Bar)
+        const searchLower = searchDept.toLowerCase();
+        const filteredHistory = historyData.filter(h => 
+            (h.department_name || "").toLowerCase().includes(searchLower)
+        );
+
         // 1. Kuhaon ang Allocations (+)
-        const allocations = historyData
+        const allocations = filteredHistory
             .filter((h) =>
                 [
                     "annual_created",
@@ -360,7 +370,6 @@ const BudgetAllocation = () => {
                     h.action === "annual_created"
                         ? "ALLOC-001"
                         : `ALLOC-${String(h.id).padStart(3, "0")}`,
-
                 description:
                     h.purpose ||
                     h.reason ||
@@ -374,7 +383,7 @@ const BudgetAllocation = () => {
             }));
 
         // 2. Kuhaon ang Expenses (-)
-        const expenses = historyData
+        const expenses = filteredHistory
             .filter(
                 (h) =>
                     h.action.toLowerCase().includes("release") ||
@@ -387,7 +396,7 @@ const BudgetAllocation = () => {
                 reference: h.reference_no || `REF-${h.id}`,
                 description:
                     h.purpose || h.reason || "Fund release for Trip Ticket",
-                     department: h.department_name || "—",
+                department: h.department_name || "—",
                 destination: h.destination || "—",
                 amount: parseFloat(h.added_amount) || 0,
                 type: "expense",
@@ -424,7 +433,7 @@ const BudgetAllocation = () => {
                 finalBalance: runningBalance,
             },
         };
-    }, [historyData]);
+    }, [historyData, searchDept]); // ✅ Idependensya ang searchDept
 
     // Pagination for Transaction History
     const totalHistoryPages = Math.ceil(
@@ -435,6 +444,11 @@ const BudgetAllocation = () => {
         const lastPageIndex = firstPageIndex + historyRowsPerPage;
         return processedHistory.rows.slice(firstPageIndex, lastPageIndex);
     }, [historyPage, processedHistory.rows]);
+
+    // ✅ Reset page kung mag-search
+    useEffect(() => {
+        setHistoryPage(1);
+    }, [searchDept]);
 
     const formatCurrency = (amount) => {
         if (!amount || amount === 0) return "₱0.00";
@@ -456,7 +470,6 @@ const BudgetAllocation = () => {
         return <Badge className="bg-green-500">Active</Badge>;
     };
 
-    // ✅ Gi-ilis ang 'reason' ngadto sa 'purpose'
     const validateEditBudget = () => {
         const newErrors = {};
         if (
@@ -518,7 +531,7 @@ const BudgetAllocation = () => {
         addBudgetMutation.mutate({
             department_id: parseInt(addBudgetData.department_id),
             additional_amount: parseFloat(addBudgetData.additional_amount),
-            purpose: addBudgetData.purpose, // ✅ Kini ang i-send
+            purpose: addBudgetData.purpose,
         });
     };
 
@@ -762,11 +775,30 @@ const BudgetAllocation = () => {
                 <Card className="dark:bg-[#0f172a] border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden relative">
                     <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/5 rounded-full blur-3xl pointer-events-none" />
 
-                    <CardHeader className="border-b border-slate-200/60 dark:border-slate-800/60 pb-6 relative z-10">
+                    <CardHeader className="border-b border-slate-200/60 dark:border-slate-800/60 pb-6 relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                         <CardTitle className="flex items-center gap-2 text-slate-800 dark:text-white text-xl">
                             <History className="h-6 w-6 text-blue-500" />
                             Transaction History
                         </CardTitle>
+                        
+                        {/* ✅ SEARCH BAR PARA SA DEPARTMENT */}
+                        <div className="relative w-full sm:w-64">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                            <Input
+                                placeholder="Search Department..."
+                                value={searchDept}
+                                onChange={(e) => setSearchDept(e.target.value)}
+                                className="pl-10 pr-10 h-9 text-sm dark:bg-slate-900 dark:border-slate-700 dark:text-white"
+                            />
+                            {searchDept && (
+                                <button
+                                    onClick={() => setSearchDept("")}
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                                >
+                                    <X className="h-4 w-4" />
+                                </button>
+                            )}
+                        </div>
                     </CardHeader>
 
                     <CardContent className="p-0 relative z-10">
@@ -778,7 +810,7 @@ const BudgetAllocation = () => {
                         ) : processedHistory.rows.length === 0 ? (
                             <div className="p-12 text-center text-slate-500 dark:text-slate-400">
                                 <History className="h-10 w-10 text-slate-300 dark:text-slate-600 mx-auto mb-2" />
-                                No budget history found for {selectedYear}.
+                                No budget history found for {selectedYear} {searchDept ? `matching "${searchDept}"` : ""}.
                             </div>
                         ) : (
                             <>
@@ -874,7 +906,7 @@ const BudgetAllocation = () => {
                                                 <TableHead className="text-slate-400 font-medium">
                                                     Description
                                                 </TableHead>
-                                                  <TableHead className="text-slate-400 font-medium">Department</TableHead>
+                                                <TableHead className="text-slate-400 font-medium">Department</TableHead>
                                                 <TableHead className="text-slate-400 font-medium">
                                                     Destination
                                                 </TableHead>
@@ -911,8 +943,8 @@ const BudgetAllocation = () => {
                                                             {log.description}
                                                         </TableCell>
                                                         <TableCell className="text-sm text-slate-400 max-w-[150px] truncate"> 
-                {log.department}
-            </TableCell>
+                                                            {log.department}
+                                                        </TableCell>
                                                         <TableCell className="text-sm text-slate-400 max-w-[150px] truncate">
                                                             {log.destination}
                                                         </TableCell>
@@ -1038,7 +1070,6 @@ const BudgetAllocation = () => {
                                 placeholder="e.g., 500000"
                             />
                         </FormField>
-                        {/* ✅ GIILISAN ANG LABEL NGADTO SA PURPOSE */}
                         <FormField
                             label="Purpose"
                             required
@@ -1132,7 +1163,6 @@ const BudgetAllocation = () => {
                                 }
                             />
                         </FormField>
-                        {/* ✅ GIILISAN ANG LABEL NGADTO SA PURPOSE */}
                         <FormField
                             label="Purpose"
                             required
