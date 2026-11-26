@@ -671,7 +671,7 @@ const GsoDashboard = () => {
                 return; 
             }
             setReplayIndex(currentIdx);
-        }, 80);
+        }, 200); // ✅ GIPASLOW ANG REPLAY (Gikan sa 80 ngadto sa 200 milliseconds)
     }, []);
 
     const handleStopReplay = useCallback(() => {
