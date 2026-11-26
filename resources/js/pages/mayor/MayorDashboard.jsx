@@ -1379,7 +1379,7 @@ const MayorDashboard = () => {
                 </Card>
             </div>
 
-             {/* 4. Bottom Rows: Transactions */}
+            {/* 4. Bottom Rows: Transactions */}
             <div className="grid grid-cols-1 gap-6 mb-6">
                 <Card className="bg-[#121829] border border-slate-800 rounded-2xl shadow-lg p-0 overflow-hidden relative">
                     <div className="flex flex-col md:flex-row md:items-center justify-between p-5 border-b border-slate-800 gap-4">
@@ -1482,11 +1482,28 @@ const MayorDashboard = () => {
                                     </tr>
                                 ) : (
                                     transactionsData.map((t, i) => {
-                                        // ✅ Compute Running Balance (simplified)
-                                        let runningBalance = 0;
-                                        // Optional: Pwede nimo i-compute ang running balance base sa tanan transactions
-                                        // o base sa allTimeTotals.totalRemaining
+                                        // ✅ RUNNING BALANCE COMPUTATION
+                                        // Kuhaon ang total allocation
+                                        let runningBalance = allTimeTotals.totalAllocated;
                                         
+                                        // Subtract all transactions that happened before or on this one
+                                        // (Assuming ang transactionsData kay sorted newest first)
+                                        for (let j = 0; j < transactionsData.length; j++) {
+                                            const currentTx = transactionsData[j];
+                                            
+                                            // Kung ang transaction kay mas bag-o pa kaysa sa current row, i-deduct siya
+                                            const currentDate = new Date(currentTx.trip_date);
+                                            const rowDate = new Date(t.trip_date);
+                                            
+                                            if (currentDate >= rowDate) {
+                                                runningBalance -= parseFloat(currentTx.amount_released) || 0;
+                                            }
+                                        }
+                                        
+                                        // Para ma-match sa imong screenshot, atong i-add pagbalik ang current row's amount
+                                        // kay ang "Running Balance" after sa transaction maoy atong ipakita
+                                        runningBalance += parseFloat(t.amount_released) || 0;
+
                                         return (
                                             <tr
                                                 key={i}
@@ -1511,8 +1528,7 @@ const MayorDashboard = () => {
                                                     +{formatCurrency(t.amount_released)}
                                                 </td>
                                                 <td className="px-4 py-3 text-right text-white font-bold">
-                                                    {/* Placeholder for running balance */}
-                                                    —
+                                                    {formatCurrency(runningBalance)}
                                                 </td>
                                             </tr>
                                         );
