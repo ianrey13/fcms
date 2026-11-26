@@ -1379,7 +1379,7 @@ const MayorDashboard = () => {
                 </Card>
             </div>
 
-            {/* 4. Bottom Rows: Transactions */}
+             {/* 4. Bottom Rows: Transactions */}
             <div className="grid grid-cols-1 gap-6 mb-6">
                 <Card className="bg-[#121829] border border-slate-800 rounded-2xl shadow-lg p-0 overflow-hidden relative">
                     <div className="flex flex-col md:flex-row md:items-center justify-between p-5 border-b border-slate-800 gap-4">
@@ -1388,16 +1388,16 @@ const MayorDashboard = () => {
                             TRANSACTION HISTORY
                         </h3>
                         
-                        {/* ✅ FILTERS ROW */}
+                        {/* ✅ FILTERS ROW (SEARCH BAR + DROPDOWNS) */}
                         <div className="flex flex-wrap items-center gap-2 relative z-[50]">
-                            {/* ✅ SEARCH BAR PARA SA DEPARTMENT */}
+                            {/* ✅ Search Bar para sa Department */}
                             <div className="relative">
                                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-500" />
                                 <Input
                                     placeholder="Filter by Department..."
                                     value={transDept === "all" ? "" : transDept}
-                                    onChange={(e) => setTransDept(e.target.value || "all")}
-                                    className="pl-9 h-8 text-xs bg-slate-800/80 border-slate-700 text-slate-300 rounded-lg w-48 focus:ring-1 focus:ring-blue-500"
+                                    onChange={(e) => setTransDept(e.target.value)}
+                                    className="pl-9 h-8 text-xs bg-[#0b101c] border-slate-700 text-slate-300 rounded-lg w-48 focus:ring-1 focus:ring-blue-500"
                                 />
                             </div>
 
@@ -1421,6 +1421,7 @@ const MayorDashboard = () => {
                                     { value: "rejected", label: "Rejected" },
                                 ]}
                             />
+                            
                             {/* Time Filter */}
                             <CustomSelect
                                 value={transTimeFilter}
@@ -1444,66 +1445,45 @@ const MayorDashboard = () => {
                             />
                         </div>
                     </div>
+                    
                     <div className="overflow-x-auto">
                         <table className="w-full text-left text-xs">
                             <thead className="bg-[#0b101c] text-slate-400">
                                 <tr>
-                                    <th className="px-4 py-3 font-medium">
-                                        Date
-                                    </th>
-                                    <th className="px-4 py-3 font-medium">
-                                        Reference No.
-                                    </th>
-                                    <th className="px-4 py-3 font-medium">
-                                        Description
-                                    </th>
-                                    <th className="px-4 py-3 font-medium">
-                                        Department
-                                    </th>
-                                    <th className="px-4 py-3 font-medium">
-                                        Destination
-                                    </th>
-                                    <th className="px-4 py-3 font-medium text-right">
-                                        Amount
-                                    </th>
-                                    <th className="px-4 py-3 font-medium text-right">
-                                        Running Balance
-                                    </th>
+                                    <th className="px-4 py-3 font-medium">Date</th>
+                                    <th className="px-4 py-3 font-medium">Reference No.</th>
+                                    <th className="px-4 py-3 font-medium">Description</th>
+                                    <th className="px-4 py-3 font-medium">Department</th>
+                                    <th className="px-4 py-3 font-medium">Destination</th>
+                                    <th className="px-4 py-3 font-medium text-right">Amount</th>
+                                    <th className="px-4 py-3 font-medium text-right">Running Balance</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-800/50">
                                 {transactionsData.length === 0 ? (
                                     <tr>
-                                        <td
-                                            colSpan={7}
-                                            className="px-4 py-8 text-center text-slate-500"
-                                        >
+                                        <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
                                             No transactions found.
                                         </td>
                                     </tr>
                                 ) : (
                                     transactionsData.map((t, i) => {
-                                        // ✅ RUNNING BALANCE COMPUTATION
+                                        // ✅ FIXED RUNNING BALANCE LOGIC
+                                        // Basehan nato ang pinaka-unang transaction sa filtered list
+                                        // ug mag-subtract padulong sa pinaka-latest
+                                        
+                                        // Kuhaon ang total allocation isip starting balance
                                         let runningBalance = allTimeTotals.totalAllocated;
                                         
-                                        for (let j = 0; j < transactionsData.length; j++) {
+                                        // Loop sa tanan transactions gikan sa pinaka-unang (oldest) 
+                                        // hangtud sa karon nga row, then subtract
+                                        for (let j = transactionsData.length - 1; j >= i; j--) {
                                             const currentTx = transactionsData[j];
-                                            
-                                            const currentDate = new Date(currentTx.trip_date);
-                                            const rowDate = new Date(t.trip_date);
-                                            
-                                            if (currentDate >= rowDate) {
-                                                runningBalance -= parseFloat(currentTx.amount_released) || 0;
-                                            }
+                                            runningBalance -= parseFloat(currentTx.amount_released) || 0;
                                         }
-                                        
-                                        runningBalance += parseFloat(t.amount_released) || 0;
 
                                         return (
-                                            <tr
-                                                key={i}
-                                                className="hover:bg-slate-800/20 transition-colors group"
-                                            >
+                                            <tr key={i} className="hover:bg-slate-800/20 transition-colors group">
                                                 <td className="px-4 py-3 text-slate-400">
                                                     {formatDateShort(t.trip_date)}
                                                 </td>
