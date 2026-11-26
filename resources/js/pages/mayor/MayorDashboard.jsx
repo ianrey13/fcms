@@ -1110,7 +1110,7 @@ const MayorDashboard = () => {
                                             <div>
                                                 <div className="flex items-center gap-1 text-[10px] text-slate-400 mb-1">
                                                     <Activity className="h-3 w-3" />{" "}
-                                                    Txns
+                                                    Trips
                                                 </div>
                                                 <p className="font-bold text-white text-sm">
                                                     {
